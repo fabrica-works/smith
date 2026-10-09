@@ -2257,13 +2257,14 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
             Some(cost)
         }
         Outcome::Exited { exit: _, head, tail, dropped: _ } => len(head)?.checked_add(len(tail)?),
-        Outcome::Ambiguous { count: _, lines } => {
-            u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::try_from(lines.len()).ok()?)
-        }
+        Outcome::EditFailed { edit: _, why } => match why {
+            tools::Mismatch::Ambiguous { count: _, lines } => {
+                u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::try_from(lines.len()).ok()?)
+            }
+            tools::Mismatch::NoMatch | tools::Mismatch::Unchanged => Some(0),
+        },
         Outcome::Written { .. }
         | Outcome::Edited { .. }
-        | Outcome::NoMatch
-        | Outcome::Unchanged
         | Outcome::NotGranted
         | Outcome::TooLong
         | Outcome::NotFile

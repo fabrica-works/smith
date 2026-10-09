@@ -21,8 +21,8 @@
 //! The checkout is shared, knowledge is not. Files are world state, reached
 //! through io and shared by every session; what a session's LLM has read, and
 //! at which version, belongs to its kit, along with the [`Authority`] the
-//! session was opened with. A file may be changed only if its current version
-//! was read; creating one needs no read.
+//! session was opened with. A write needs its current version
+//! read; an edit matches the version it loads, then stores only over that version.
 
 //! It keeps bounded kits, per-kit observed file versions, active calls and
 //! pending IO terminals. It never knows model text, provider dialects, run
@@ -54,7 +54,9 @@ mod window;
 
 pub use authority::{Authority, Grants, Repo};
 pub use boundary::{Done, Event, Expect, Op, Refusal, Request, Version};
-pub use call::{Call, Effect, Entry, Exit, Fault, Hit, Kind, Outcome, Tool, effect, tool};
+pub use call::{
+    Call, Effect, Entry, Exit, Fault, Hit, Kind, Mismatch, Occurrences, Outcome, Replacement, Tool, effect, tool,
+};
 pub use domain::{Domain, max_facts, max_out, step};
 pub use facts::{CallInfo, Fact, FactKind, Verdict};
 pub use limits::{Derivation, Field, Limits, derive, result_worst_case, worst_case};

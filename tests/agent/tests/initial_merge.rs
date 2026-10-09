@@ -128,7 +128,10 @@ fn scripts() -> Box<[Script]> {
                     call(b"read", br#"{"path":"../notes/data.txt"}"#),
                 ]),
                 calls(vec![call(b"write", br#"{"path":"conflict.txt","content":"resolved by the actual LLM"}"#)]),
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"old","new":"delivered-plain"}"#)]),
+                calls(vec![call(
+                    b"edit",
+                    br#"{"path":"../notes/data.txt","edits":[{"old":"old","new":"delivered-plain"}]}"#,
+                )]),
                 calls(vec![
                     Line::Text { text: b"Deliver the checked resolution.".as_slice().into() },
                     call(b"deliver", br#"{"ticket":"resolved-merge"}"#),

@@ -166,7 +166,7 @@ fn typed_scripts() -> Box<[Script]> {
             cue: b"@brief-main".as_slice().into(),
             turns: Box::new([
                 calls(vec![call(b"read", br#"{"path":"data.txt"}"#)], 2),
-                calls(vec![call(b"edit", br#"{"path":"data.txt","old":"old","new":"parent-change"}"#)], 3),
+                calls(vec![call(b"edit", br#"{"path":"data.txt","edits":[{"old":"old","new":"parent-change"}]}"#)], 3),
                 calls(vec![call(b"write", br#"{"path":"../archive/data.txt","content":"forbidden-main"}"#)], 5),
                 calls(vec![call(b"sub_agent", CHILD_INPUT)], 7),
                 calls(vec![call(b"finish", FINISH_INPUT)], 11),
@@ -179,7 +179,13 @@ fn typed_scripts() -> Box<[Script]> {
                     vec![call(b"read", br#"{"path":"data.txt"}"#), call(b"read", br#"{"path":"../archive/data.txt"}"#)],
                     13,
                 ),
-                calls(vec![call(b"edit", br#"{"path":"data.txt","old":"parent-change","new":"forbidden-child"}"#)], 17),
+                calls(
+                    vec![call(
+                        b"edit",
+                        br#"{"path":"data.txt","edits":[{"old":"parent-change","new":"forbidden-child"}]}"#,
+                    )],
+                    17,
+                ),
                 says(CHILD_RESULT, 19),
             ]),
         },

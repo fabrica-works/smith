@@ -61,7 +61,9 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
             output.put(b" bytes; cuts are marked. ");
         }
         Tool::Write => output.put(b"Write a file; read its current version first. "),
-        Tool::Edit => output.put(b"Edit a file already read; old must match once, or at least once with all. "),
+        Tool::Edit => output.put(
+            b"Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. ",
+        ),
         Tool::Shell => {
             output.put(b"Run a command; files may change. Max ");
             output.number(u64::from(stated.output_ceiling));
@@ -130,12 +132,11 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         }
         Tool::Edit => {
             path(stated, namespace, output);
-            output
-                .put(br#", "old":{"type":"string","description":"Text to match once, or at least once with all; max "#);
+            output.put(br#", "edits":{"type":"array","minItems":1,"description":"Apply in order and store once; none apply if one fails.","items":{"type":"object","properties":{"old":{"type":"string","description":"Text to match; aggregate old snippets max "#);
             payload(stated, output);
-            output.put(br#""},"new":{"type":"string","description":"Replacement text; max "#);
+            output.put(br#""},"new":{"type":"string","description":"Replacement text; aggregate new snippets max "#);
             payload(stated, output);
-            output.put(br#""},"all":{"type":"boolean","description":"False replaces one unique match; true replaces every match."}},"required":["path","old","new"]}"#);
+            output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}},"required":["path","edits"]}"#);
         }
         Tool::Shell => {
             output.put(br#""command":{"type":"string","description":"Shell command text."#);

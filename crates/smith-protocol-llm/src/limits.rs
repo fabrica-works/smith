@@ -129,7 +129,7 @@ pub fn render_worst_case(tools: &smith_domain::tools::Limits, host_answer: u32, 
         .checked_add(64)?;
     let shell =
         u64::from(tools.shell_head).checked_add(u64::from(tools.shell_tail))?.checked_mul(4)?.checked_add(96)?;
-    let ambiguity = u64::from(tools.match_lines).checked_mul(12)?.checked_add(64)?;
+    let ambiguity = u64::from(tools.match_lines).checked_mul(12)?.checked_add(96)?;
     // A working name and normalized path may each reach the path ceiling;
     // invalid bytes expand fourfold, with separators and failure wording.
     let failure_path = u64::from(tools.path_bytes).checked_mul(8)?.checked_add(96)?;

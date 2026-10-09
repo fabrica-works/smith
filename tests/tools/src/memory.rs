@@ -115,5 +115,13 @@ pub fn write(limits: &Limits, file: u64) -> Call {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn edit(limits: &Limits, file: u64) -> Call {
-    Call::Edit { path: path(limits, file), old: full(limits, b'x'), new: full(limits, b'y'), all: true }
+    let edits = (0..limits.file_bytes)
+        .map(|_| smith_domain_tools::Replacement {
+            old: b"x".as_slice().into(),
+            new: b"y".as_slice().into(),
+            occurrences: smith_domain_tools::Occurrences::All,
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    Call::Edit { path: path(limits, file), edits }
 }

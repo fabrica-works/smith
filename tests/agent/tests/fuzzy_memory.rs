@@ -564,7 +564,14 @@ impl Driver {
             1 => Call::List { path: path(&[b"src"]) },
             2 => Call::Search { path: path(&[b"src"]), pattern: bytes(3), glob: None },
             3 => Call::Write { path: lib(), content: bytes(size) },
-            4 => Call::Edit { path: lib(), old: bytes(1), new: bytes(size), all: false },
+            4 => Call::Edit {
+                path: lib(),
+                edits: Box::new([smith_domain::tools::Replacement {
+                    old: bytes(1),
+                    new: bytes(size),
+                    occurrences: smith_domain::tools::Occurrences::Once,
+                }]),
+            },
             5 => Call::Shell { command: bytes(8), timeout: None },
             6 if finish => return Decoded::Served { ask: self.finish(limits) },
             7 if agents => {

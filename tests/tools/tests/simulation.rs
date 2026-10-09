@@ -577,7 +577,7 @@ fn a_kit_edits_a_file_its_llm_read() {
 #[test]
 fn an_edit_that_would_be_wrong_changes_nothing() {
     let script = vec![
-        Step::Calls(vec![edit(b"src/lib.rs", b"fn one", b"fn uno", false)]),
+        Step::Calls(vec![edit(b"src/lib.rs", b"not-present", b"fn uno", false)]),
         Step::Calls(vec![read(b"src/lib.rs")]),
         Step::Calls(vec![
             edit(b"src/lib.rs", b"fn four", b"fn cuatro", false),
@@ -590,12 +590,12 @@ fn an_edit_that_would_be_wrong_changes_nothing() {
     ];
     let (answers, world) = run(Settings::calm(31), MODIFY, script);
     let expected = vec![
-        Outcome::NotRead,
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
         read_of(LIB, 0, 3, 3),
-        Outcome::NoMatch,
-        Outcome::Ambiguous { count: 3, lines: Box::new([1, 2, 3]) },
-        Outcome::Unchanged,
-        Outcome::NoMatch,
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::Ambiguous { count: 3, lines: Box::new([1, 2, 3]) } },
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::Unchanged },
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
         Outcome::TooLarge { size: 6044 },
         Outcome::ReadOnly { path: tools::Resolved::Working { path: b"docs/guide.md".as_slice().into() } },
     ];
@@ -604,7 +604,7 @@ fn an_edit_that_would_be_wrong_changes_nothing() {
 }
 
 #[test]
-fn an_edit_catches_a_change_made_before_it_loads_or_before_it_stores() {
+fn an_edit_matches_current_bytes_and_refuses_a_change_between_load_and_store() {
     let fixture = Fixture::new();
     let authorities = [fixture.authority(MODIFY), fixture.authority(MODIFY)];
     let mut world = World::new(Settings::calm(32), fixture.checkout);
@@ -639,8 +639,8 @@ fn an_edit_catches_a_change_made_before_it_loads_or_before_it_stores() {
         ],
     );
     world.run(ITERATIONS);
-    let theirs = b"pub fn one() {}\npub fn two() {}\npub fn tres() {}\n";
-    let expected = [read_of(LIB, 0, 3, 3), Outcome::Stale, read_of(theirs, 0, 3, 3), Outcome::Stale];
+    let theirs = b"pub fn uno() {}\npub fn two() {}\npub fn tres() {}\n";
+    let expected = [read_of(LIB, 0, 3, 3), Outcome::Edited { replaced: 1 }, read_of(theirs, 0, 3, 3), Outcome::Stale];
     assert_eq!(world.answers(editor), expected.iter().collect::<Vec<_>>());
     assert_eq!(world.answers(other), vec![&read_of(LIB, 0, 3, 3), &Outcome::Edited { replaced: 1 }]);
     assert_eq!(world.checkout().content(b"work/temper/src/lib.rs"), Some(&b"theirs\n"[..]));
@@ -1263,4 +1263,28 @@ fn a_command_whose_child_outlives_it_ends_with_its_group_at_the_deadline() {
     assert_eq!(out.pop(), Some(tools::Request::Closed { session: Token::new(1) }));
     domain.reclaim();
     assert_eq!((domain.kits(), domain.jobs()), (0, 0));
+}
+
+#[test]
+fn an_ordered_edit_batch_needs_no_read_and_stores_once_or_not_at_all() {
+    use smith_tools_world::calls::edits;
+    let script = vec![
+        Step::Calls(vec![edits(b"src/lib.rs", &[(b"fn one", b"fn uno", false), (b"pub fn", b"fn", true)])]),
+        Step::Calls(vec![edits(b"src/lib.rs", &[(b"fn uno", b"fn four", false), (b"missing", b"bad", false)])]),
+        Step::Calls(vec![write(b"src/lib.rs", b"known from the successful edit\n")]),
+    ];
+    let (answers, world) = run(Settings::calm(109), MODIFY, script);
+    assert_eq!(
+        answers,
+        vec![
+            Outcome::Edited { replaced: 4 },
+            Outcome::EditFailed { edit: 2, why: tools::Mismatch::NoMatch },
+            written(false)
+        ]
+    );
+    assert_eq!(world.stats().ops, 4, "successful load/store, failed load, final known-version write");
+    assert_eq!(
+        world.checkout().content(b"work/temper/src/lib.rs"),
+        Some(b"known from the successful edit\n".as_slice())
+    );
 }

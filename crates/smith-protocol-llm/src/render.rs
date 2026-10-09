@@ -296,24 +296,25 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             output.put(b"file changed; read it again")?;
             true
         }
-        Outcome::NoMatch => {
-            output.put(b"text to replace was not found")?;
-            true
-        }
-        Outcome::Ambiguous { count, lines } => {
-            output.put(b"text matches ")?;
-            output.number(u64::from(*count))?;
-            output.put(b" times, starting on lines ")?;
-            for (index, line) in lines.iter().enumerate() {
-                if index > 0 {
-                    output.put(b", ")?;
+        Outcome::EditFailed { edit, why } => {
+            output.put(b"edit ")?;
+            output.number(u64::from(*edit))?;
+            output.put(b" failed: ")?;
+            match why {
+                tools::Mismatch::NoMatch => output.put(b"text to replace was not found")?,
+                tools::Mismatch::Unchanged => output.put(b"replacement leaves the file unchanged")?,
+                tools::Mismatch::Ambiguous { count, lines } => {
+                    output.put(b"text matches ")?;
+                    output.number(u64::from(*count))?;
+                    output.put(b" times, starting on lines ")?;
+                    for (index, line) in lines.iter().enumerate() {
+                        if index > 0 {
+                            output.put(b", ")?;
+                        }
+                        output.number(u64::from(*line))?;
+                    }
                 }
-                output.number(u64::from(*line))?;
             }
-            true
-        }
-        Outcome::Unchanged => {
-            output.put(b"replacement leaves the file unchanged")?;
             true
         }
         Outcome::Failed { fault } => {

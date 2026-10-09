@@ -299,6 +299,8 @@ pub struct World {
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
     versions: BTreeSet<(u64, u64, Vec<u8>, u64)>,
+    /// Each edit owner stores only over the version its own load actually returned.
+    edit_loads: BTreeMap<Token, Option<(tools::Place, tools::Version)>>,
     /// The facts the tools told, by session.
     ///
     /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
@@ -337,6 +339,7 @@ impl World {
             owners: BTreeMap::new(),
             kits: BTreeMap::new(),
             versions: BTreeSet::new(),
+            edit_loads: BTreeMap::new(),
             facts: BTreeMap::new(),
             writable: BTreeMap::new(),
             untouched: None,
@@ -465,12 +468,18 @@ impl World {
                 tools::Event::Done { owner, .. } => Some(*self.owners.get(owner).expect("an operation io ran")),
                 tools::Event::Open { .. } | tools::Event::Close { .. } => None,
             };
+            let editing = matches!(&event, tools::Event::Call { call: Call::Edit { .. }, .. });
             let before = self.stage.out.len();
             tools::step(&mut self.tools, &self.stage.env, event, &mut self.stage.out);
             if let Some(session) = whose {
                 for request in self.stage.out.iter().skip(usize::try_from(before).expect("a small queue")) {
                     match request {
-                        tools::Request::Io { owner, .. } => drop(self.owners.insert(*owner, session)),
+                        tools::Request::Io { owner, .. } => {
+                            let _ = self.owners.insert(*owner, session);
+                            if editing {
+                                self.edit_loads.insert(*owner, None);
+                            }
+                        }
                         tools::Request::Opened { .. }
                         | tools::Request::Refused { .. }
                         | tools::Request::Answer { .. }
@@ -685,6 +694,13 @@ impl World {
                         let session = *self.owners.get(&owner).expect("an operation of a kit");
                         let known = (session, at.root.raw(), at.path.to_vec(), version.raw()[0]);
                         assert!(self.versions.contains(&known), "a kit's store expects a version io gave it there");
+                        if let Some(loaded) = self.edit_loads.get(&owner) {
+                            assert_eq!(
+                                loaded.as_ref(),
+                                Some(&(at.clone(), version)),
+                                "an edit stores only over the version its own load matched"
+                            );
+                        }
                     }
                     Expect::Absent => {}
                 }
@@ -722,6 +738,11 @@ impl World {
             Op::Spawn { .. } => unreachable!("a spawn is started, not run"),
         };
         let done = translate::perform(&mut self.checkout, op);
+        if let Done::Loaded { version, .. } = &done
+            && let Some(loaded) = self.edit_loads.get_mut(&owner)
+        {
+            *loaded = Some((at.clone(), *version));
+        }
         self.assert_untouched();
         match &done {
             Done::Loaded { version, .. } | Done::Stored { version } => {

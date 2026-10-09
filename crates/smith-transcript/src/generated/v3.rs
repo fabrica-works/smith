@@ -195,6 +195,14 @@ pub enum Path {
     AmbiguousLines,
     /// Bytes after `Ambiguous`.
     AmbiguousTail,
+    /// The tag of `Mismatch`.
+    MismatchTag,
+    /// The `edit` field of `EditFailed`.
+    EditFailedEdit,
+    /// The `why` field of `EditFailed`.
+    EditFailedWhy,
+    /// Bytes after `EditFailed`.
+    EditFailedTail,
     /// The tag of `Fault`.
     FaultTag,
     /// The `fault` field of `Failed`.
@@ -1768,6 +1776,132 @@ impl Ambiguous {
     }
 }
 
+/// `Mismatch` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Mismatch {
+    /// `no_match` without a payload.
+    NoMatch,
+    /// `ambiguous` carrying `Ambiguous`.
+    Ambiguous(Ambiguous),
+    /// `unchanged` without a payload.
+    Unchanged,
+}
+
+impl Mismatch {
+    /// Checks the payload against the given limits.
+    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        match self {
+            Self::Ambiguous(record) => Ambiguous::check(record, limits),
+            Self::NoMatch | Self::Unchanged => Ok(()),
+        }?;
+        if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.text_text > CEILINGS.text_text { return Err(Problem { path: Path::TextText, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_dialect > CEILINGS.opaque_dialect { return Err(Problem { path: Path::OpaqueDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_bytes > CEILINGS.opaque_bytes { return Err(Problem { path: Path::OpaqueBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.call_id > CEILINGS.call_id { return Err(Problem { path: Path::CallId, reason: skein_codec::Reason::Bound }); }
+        if limits.call_name > CEILINGS.call_name { return Err(Problem { path: Path::CallName, reason: skein_codec::Reason::Bound }); }
+        if limits.call_input > CEILINGS.call_input { return Err(Problem { path: Path::CallInput, reason: skein_codec::Reason::Bound }); }
+        if limits.entry_name > CEILINGS.entry_name { return Err(Problem { path: Path::EntryName, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_path > CEILINGS.hit_path { return Err(Problem { path: Path::HitPath, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_text > CEILINGS.hit_text { return Err(Problem { path: Path::HitText, reason: skein_codec::Reason::Bound }); }
+        if limits.read_content > CEILINGS.read_content { return Err(Problem { path: Path::ReadContent, reason: skein_codec::Reason::Bound }); }
+        if limits.listed_entries > CEILINGS.listed_entries { return Err(Problem { path: Path::ListedEntries, reason: skein_codec::Reason::Bound }); }
+        if limits.found_hits > CEILINGS.found_hits { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_head > CEILINGS.command_end_head { return Err(Problem { path: Path::CommandEndHead, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_last > CEILINGS.command_end_last { return Err(Problem { path: Path::CommandEndLast, reason: skein_codec::Reason::Bound }); }
+        if limits.ambiguous_lines > CEILINGS.ambiguous_lines { return Err(Problem { path: Path::AmbiguousLines, reason: skein_codec::Reason::Bound }); }
+        if limits.working_path_path > CEILINGS.working_path_path { return Err(Problem { path: Path::WorkingPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_directory > CEILINGS.other_path_directory { return Err(Problem { path: Path::OtherPathDirectory, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_path > CEILINGS.other_path_path { return Err(Problem { path: Path::OtherPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.outside_path_path > CEILINGS.outside_path_path { return Err(Problem { path: Path::OutsidePathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.field_problem_field > CEILINGS.field_problem_field { return Err(Problem { path: Path::FieldProblemField, reason: skein_codec::Reason::Bound }); }
+        if limits.said_text > CEILINGS.said_text { return Err(Problem { path: Path::SaidText, reason: skein_codec::Reason::Bound }); }
+        if limits.tool_result_id > CEILINGS.tool_result_id { return Err(Problem { path: Path::ToolResultId, reason: skein_codec::Reason::Bound }); }
+        if limits.message_blocks > CEILINGS.message_blocks { return Err(Problem { path: Path::MessageBlocks, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// Movable fields of `EditFailed`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EditFailedParts {
+    /// The `edit` field.
+    pub edit: u32,
+    /// The `why` field.
+    pub why: Mismatch,
+}
+
+/// `EditFailed` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EditFailed {
+    edit: u32,
+    why: Mismatch,
+}
+
+impl EditFailed {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: EditFailedParts) -> Result<Self, Problem> {
+        let EditFailedParts { edit, why } = parts;
+        let value = Self { edit, why };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `edit` field.
+    #[must_use]
+    pub fn edit(&self) -> u32 { self.edit }
+
+    /// Reads the `why` field.
+    #[must_use]
+    pub fn why(&self) -> &Mismatch { &self.why }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> EditFailedParts { EditFailedParts { edit: self.edit, why: self.why } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.text_text > CEILINGS.text_text { return Err(Problem { path: Path::TextText, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_dialect > CEILINGS.opaque_dialect { return Err(Problem { path: Path::OpaqueDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_bytes > CEILINGS.opaque_bytes { return Err(Problem { path: Path::OpaqueBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.call_id > CEILINGS.call_id { return Err(Problem { path: Path::CallId, reason: skein_codec::Reason::Bound }); }
+        if limits.call_name > CEILINGS.call_name { return Err(Problem { path: Path::CallName, reason: skein_codec::Reason::Bound }); }
+        if limits.call_input > CEILINGS.call_input { return Err(Problem { path: Path::CallInput, reason: skein_codec::Reason::Bound }); }
+        if limits.entry_name > CEILINGS.entry_name { return Err(Problem { path: Path::EntryName, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_path > CEILINGS.hit_path { return Err(Problem { path: Path::HitPath, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_text > CEILINGS.hit_text { return Err(Problem { path: Path::HitText, reason: skein_codec::Reason::Bound }); }
+        if limits.read_content > CEILINGS.read_content { return Err(Problem { path: Path::ReadContent, reason: skein_codec::Reason::Bound }); }
+        if limits.listed_entries > CEILINGS.listed_entries { return Err(Problem { path: Path::ListedEntries, reason: skein_codec::Reason::Bound }); }
+        if limits.found_hits > CEILINGS.found_hits { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_head > CEILINGS.command_end_head { return Err(Problem { path: Path::CommandEndHead, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_last > CEILINGS.command_end_last { return Err(Problem { path: Path::CommandEndLast, reason: skein_codec::Reason::Bound }); }
+        if limits.ambiguous_lines > CEILINGS.ambiguous_lines { return Err(Problem { path: Path::AmbiguousLines, reason: skein_codec::Reason::Bound }); }
+        if limits.working_path_path > CEILINGS.working_path_path { return Err(Problem { path: Path::WorkingPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_directory > CEILINGS.other_path_directory { return Err(Problem { path: Path::OtherPathDirectory, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_path > CEILINGS.other_path_path { return Err(Problem { path: Path::OtherPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.outside_path_path > CEILINGS.outside_path_path { return Err(Problem { path: Path::OutsidePathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.field_problem_field > CEILINGS.field_problem_field { return Err(Problem { path: Path::FieldProblemField, reason: skein_codec::Reason::Bound }); }
+        if limits.said_text > CEILINGS.said_text { return Err(Problem { path: Path::SaidText, reason: skein_codec::Reason::Bound }); }
+        if limits.tool_result_id > CEILINGS.tool_result_id { return Err(Problem { path: Path::ToolResultId, reason: skein_codec::Reason::Bound }); }
+        if limits.message_blocks > CEILINGS.message_blocks { return Err(Problem { path: Path::MessageBlocks, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
+        self.why.check(limits)?;
+        Ok(())
+    }
+}
+
 /// `Fault` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Fault {
@@ -2245,12 +2379,8 @@ pub enum Outcome {
     NotRead,
     /// `stale` without a payload.
     Stale,
-    /// `no_match` without a payload.
-    NoMatch,
-    /// `ambiguous` carrying `Ambiguous`.
-    Ambiguous(Ambiguous),
-    /// `unchanged` without a payload.
-    Unchanged,
+    /// `edit_failed` carrying `EditFailed`.
+    EditFailed(EditFailed),
     /// `failed` carrying `Failed`.
     Failed(Failed),
     /// `timed_out` without a payload.
@@ -2280,9 +2410,9 @@ impl Outcome {
             Self::Exited(record) => CommandEnd::check(record, limits),
             Self::Outside(record) | Self::ReadOnly(record) | Self::NotFound(record) | Self::NotDirectory(record) => ResolvedFailure::check(record, limits),
             Self::TooLarge(record) => TooLarge::check(record, limits),
-            Self::Ambiguous(record) => Ambiguous::check(record, limits),
+            Self::EditFailed(record) => EditFailed::check(record, limits),
             Self::Failed(record) => Failed::check(record, limits),
-            Self::NotGranted | Self::TooLong | Self::NotFile | Self::Linked | Self::Protected | Self::NotRead | Self::Stale | Self::NoMatch | Self::Unchanged | Self::TimedOut | Self::Cancelled | Self::Busy | Self::NulByte => Ok(()),
+            Self::NotGranted | Self::TooLong | Self::NotFile | Self::Linked | Self::Protected | Self::NotRead | Self::Stale | Self::TimedOut | Self::Cancelled | Self::Busy | Self::NulByte => Ok(()),
         }?;
         if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
         if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
@@ -4188,6 +4318,79 @@ impl Ambiguous {
     }
 }
 
+impl Mismatch {
+    /// Measures this variant's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        match self {
+            Self::Ambiguous(record) => 1_u32.checked_add(Ambiguous::measure(record)).expect("schema ceilings fit u32"),
+            Self::NoMatch | Self::Unchanged => 1,
+        }
+    }
+
+    /// Writes this variant's tag and payload.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        match self {
+            Self::NoMatch => writer.put(&[0_u8])?,
+            Self::Ambiguous(record) => { writer.put(&[1_u8])?; record.encode(writer)?; }
+            Self::Unchanged => writer.put(&[2_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole variant and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::MismatchTag, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let tag = reader.u8().ok_or(Problem { path: Path::MismatchTag, reason: skein_codec::Reason::Short })?;
+        let value = match tag {
+            0 => Self::NoMatch,
+            1 => Self::Ambiguous(Ambiguous::decode_from(limits, reader)?),
+            2 => Self::Unchanged,
+            _ => return Err(Problem { path: Path::MismatchTag, reason: skein_codec::Reason::Tag }),
+        };
+        Self::new(limits, value)
+    }
+}
+
+impl EditFailed {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        let field_why = &self.why;
+        size = size.checked_add(field_why.measure()).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_edit = &self.edit;
+        writer.put(&field_edit.to_be_bytes())?;
+        let field_why = &self.why;
+        field_why.encode(writer)?;
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::EditFailedTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_edit = reader.u32().ok_or(Problem { path: Path::EditFailedEdit, reason: skein_codec::Reason::Short })?;
+        let decoded_why = Mismatch::decode_from(limits, reader)?;
+        Self::new(limits, EditFailedParts { edit: decoded_edit, why: decoded_why })
+    }
+}
+
 impl Fault {
     /// Measures this variant's wire encoding.
     #[must_use]
@@ -4442,9 +4645,9 @@ impl Outcome {
             Self::Exited(record) => 1_u32.checked_add(CommandEnd::measure(record)).expect("schema ceilings fit u32"),
             Self::Outside(record) | Self::ReadOnly(record) | Self::NotFound(record) | Self::NotDirectory(record) => 1_u32.checked_add(ResolvedFailure::measure(record)).expect("schema ceilings fit u32"),
             Self::TooLarge(record) => 1_u32.checked_add(TooLarge::measure(record)).expect("schema ceilings fit u32"),
-            Self::Ambiguous(record) => 1_u32.checked_add(Ambiguous::measure(record)).expect("schema ceilings fit u32"),
+            Self::EditFailed(record) => 1_u32.checked_add(EditFailed::measure(record)).expect("schema ceilings fit u32"),
             Self::Failed(record) => 1_u32.checked_add(Failed::measure(record)).expect("schema ceilings fit u32"),
-            Self::NotGranted | Self::TooLong | Self::NotFile | Self::Linked | Self::Protected | Self::NotRead | Self::Stale | Self::NoMatch | Self::Unchanged | Self::TimedOut | Self::Cancelled | Self::Busy | Self::NulByte => 1,
+            Self::NotGranted | Self::TooLong | Self::NotFile | Self::Linked | Self::Protected | Self::NotRead | Self::Stale | Self::TimedOut | Self::Cancelled | Self::Busy | Self::NulByte => 1,
         }
     }
 
@@ -4469,14 +4672,12 @@ impl Outcome {
             Self::TooLarge(record) => { writer.put(&[15_u8])?; record.encode(writer)?; }
             Self::NotRead => writer.put(&[16_u8])?,
             Self::Stale => writer.put(&[17_u8])?,
-            Self::NoMatch => writer.put(&[18_u8])?,
-            Self::Ambiguous(record) => { writer.put(&[19_u8])?; record.encode(writer)?; }
-            Self::Unchanged => writer.put(&[20_u8])?,
-            Self::Failed(record) => { writer.put(&[21_u8])?; record.encode(writer)?; }
-            Self::TimedOut => writer.put(&[22_u8])?,
-            Self::Cancelled => writer.put(&[23_u8])?,
-            Self::Busy => writer.put(&[24_u8])?,
-            Self::NulByte => writer.put(&[25_u8])?,
+            Self::EditFailed(record) => { writer.put(&[18_u8])?; record.encode(writer)?; }
+            Self::Failed(record) => { writer.put(&[19_u8])?; record.encode(writer)?; }
+            Self::TimedOut => writer.put(&[20_u8])?,
+            Self::Cancelled => writer.put(&[21_u8])?,
+            Self::Busy => writer.put(&[22_u8])?,
+            Self::NulByte => writer.put(&[23_u8])?,
         }
         Ok(())
     }
@@ -4509,14 +4710,12 @@ impl Outcome {
             15 => Self::TooLarge(TooLarge::decode_from(limits, reader)?),
             16 => Self::NotRead,
             17 => Self::Stale,
-            18 => Self::NoMatch,
-            19 => Self::Ambiguous(Ambiguous::decode_from(limits, reader)?),
-            20 => Self::Unchanged,
-            21 => Self::Failed(Failed::decode_from(limits, reader)?),
-            22 => Self::TimedOut,
-            23 => Self::Cancelled,
-            24 => Self::Busy,
-            25 => Self::NulByte,
+            18 => Self::EditFailed(EditFailed::decode_from(limits, reader)?),
+            19 => Self::Failed(Failed::decode_from(limits, reader)?),
+            20 => Self::TimedOut,
+            21 => Self::Cancelled,
+            22 => Self::Busy,
+            23 => Self::NulByte,
             _ => return Err(Problem { path: Path::OutcomeTag, reason: skein_codec::Reason::Tag }),
         };
         Self::new(limits, value)
@@ -5577,6 +5776,48 @@ impl Ambiguous {
     }
 }
 
+impl Mismatch {
+    /// Maximum encoded bytes among variants.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(Ambiguous::worst_case_bytes(limits)?);
+        1_u64.checked_add(biggest)
+    }
+
+    /// Maximum heap held by any decoded variant.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(Ambiguous::worst_case_heap(limits)?);
+        Some(biggest)
+    }
+}
+
+impl EditFailed {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(4_u64)?;
+        size = size.checked_add(Mismatch::worst_case_bytes(limits)?)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(Mismatch::worst_case_heap(limits)?)?;
+        Some(heap)
+    }
+}
+
 impl Fault {
     /// Maximum encoded bytes among variants.
     #[must_use]
@@ -5738,7 +5979,7 @@ impl Outcome {
         biggest = biggest.max(ResolvedFailure::worst_case_bytes(limits)?);
         biggest = biggest.max(ResolvedFailure::worst_case_bytes(limits)?);
         biggest = biggest.max(TooLarge::worst_case_bytes(limits)?);
-        biggest = biggest.max(Ambiguous::worst_case_bytes(limits)?);
+        biggest = biggest.max(EditFailed::worst_case_bytes(limits)?);
         biggest = biggest.max(Failed::worst_case_bytes(limits)?);
         1_u64.checked_add(biggest)
     }
@@ -5759,7 +6000,7 @@ impl Outcome {
         biggest = biggest.max(ResolvedFailure::worst_case_heap(limits)?);
         biggest = biggest.max(ResolvedFailure::worst_case_heap(limits)?);
         biggest = biggest.max(TooLarge::worst_case_heap(limits)?);
-        biggest = biggest.max(Ambiguous::worst_case_heap(limits)?);
+        biggest = biggest.max(EditFailed::worst_case_heap(limits)?);
         biggest = biggest.max(Failed::worst_case_heap(limits)?);
         Some(biggest)
     }
@@ -6130,6 +6371,8 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(TooLarge::worst_case_bytes(limits)?);
     biggest = biggest.max(LineNumber::worst_case_bytes(limits)?);
     biggest = biggest.max(Ambiguous::worst_case_bytes(limits)?);
+    biggest = biggest.max(Mismatch::worst_case_bytes(limits)?);
+    biggest = biggest.max(EditFailed::worst_case_bytes(limits)?);
     biggest = biggest.max(Fault::worst_case_bytes(limits)?);
     biggest = biggest.max(Failed::worst_case_bytes(limits)?);
     biggest = biggest.max(WorkingPath::worst_case_bytes(limits)?);
@@ -6181,6 +6424,8 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(TooLarge::worst_case_heap(limits)?);
     biggest = biggest.max(LineNumber::worst_case_heap(limits)?);
     biggest = biggest.max(Ambiguous::worst_case_heap(limits)?);
+    biggest = biggest.max(Mismatch::worst_case_heap(limits)?);
+    biggest = biggest.max(EditFailed::worst_case_heap(limits)?);
     biggest = biggest.max(Fault::worst_case_heap(limits)?);
     biggest = biggest.max(Failed::worst_case_heap(limits)?);
     biggest = biggest.max(WorkingPath::worst_case_heap(limits)?);
@@ -6209,7 +6454,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Usage, UsageParts, Replay, ReplayParts, Text, TextParts, Opaque, OpaqueParts, Call, CallParts, Kind, Entry, EntryParts, Hit, HitParts, Read, ReadParts, Listed, ListedParts, Found, FoundParts, Written, WrittenParts, Edited, EditedParts, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Exit, CommandEnd, CommandEndParts, TooLarge, TooLargeParts, LineNumber, LineNumberParts, Ambiguous, AmbiguousParts, Fault, Failed, FailedParts, WorkingPath, WorkingPathParts, OtherPath, OtherPathParts, OutsidePath, OutsidePathParts, Resolved, ResolvedFailure, ResolvedFailureParts, Outcome, FieldProblem, FieldProblemParts, OversizeProblem, OversizeProblemParts, CutProblem, CutProblemParts, CallProblem, Said, SaidParts, Invalid, InvalidParts, OwnedOutcome, OwnedOutcomeParts, Returned, ToolResult, ToolResultParts, Block, Role, Message, MessageParts, Affinity, AffinityParts, TurnKind, Turn, TurnParts};
+    use super::{CEILINGS, Path, Usage, UsageParts, Replay, ReplayParts, Text, TextParts, Opaque, OpaqueParts, Call, CallParts, Kind, Entry, EntryParts, Hit, HitParts, Read, ReadParts, Listed, ListedParts, Found, FoundParts, Written, WrittenParts, Edited, EditedParts, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Exit, CommandEnd, CommandEndParts, TooLarge, TooLargeParts, LineNumber, LineNumberParts, Ambiguous, AmbiguousParts, Mismatch, EditFailed, EditFailedParts, Fault, Failed, FailedParts, WorkingPath, WorkingPathParts, OtherPath, OtherPathParts, OutsidePath, OutsidePathParts, Resolved, ResolvedFailure, ResolvedFailureParts, Outcome, FieldProblem, FieldProblemParts, OversizeProblem, OversizeProblemParts, CutProblem, CutProblemParts, CallProblem, Said, SaidParts, Invalid, InvalidParts, OwnedOutcome, OwnedOutcomeParts, Returned, ToolResult, ToolResultParts, Block, Role, Message, MessageParts, Affinity, AffinityParts, TurnKind, Turn, TurnParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -6710,6 +6955,86 @@ mod golden_tests {
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
         assert_eq!(Ambiguous::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_no_match_smallest() {
+        let value = Mismatch::NoMatch;
+        let golden: &[u8] = &[0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_no_match_full() {
+        let value = Mismatch::NoMatch;
+        let golden: &[u8] = &[0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_ambiguous_smallest() {
+        let value = Mismatch::Ambiguous(Ambiguous::new(&CEILINGS, AmbiguousParts { count: 0_u32, lines: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_ambiguous_full() {
+        let value = Mismatch::Ambiguous(Ambiguous::new(&CEILINGS, AmbiguousParts { count: u32::MAX, lines: { let mut items = skein_lib::List::with_capacity(1); items.push(LineNumber::new(&CEILINGS, LineNumberParts { number: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_unchanged_smallest() {
+        let value = Mismatch::Unchanged;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_mismatch_unchanged_full() {
+        let value = Mismatch::Unchanged;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Mismatch::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_edit_failed_smallest() {
+        let value = EditFailed::new(&CEILINGS, EditFailedParts { edit: 0_u32, why: Mismatch::NoMatch }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(EditFailed::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_edit_failed_full() {
+        let value = EditFailed::new(&CEILINGS, EditFailedParts { edit: u32::MAX, why: Mismatch::NoMatch }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(EditFailed::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
     }
 
     #[test]
@@ -7293,9 +7618,9 @@ mod golden_tests {
     }
 
     #[test]
-    fn enum_outcome_no_match_smallest() {
-        let value = Outcome::NoMatch;
-        let golden: &[u8] = &[18];
+    fn enum_outcome_edit_failed_smallest() {
+        let value = Outcome::EditFailed(EditFailed::new(&CEILINGS, EditFailedParts { edit: 0_u32, why: Mismatch::NoMatch }).expect("golden within ceilings"));
+        let golden: &[u8] = &[18, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7303,49 +7628,9 @@ mod golden_tests {
     }
 
     #[test]
-    fn enum_outcome_no_match_full() {
-        let value = Outcome::NoMatch;
-        let golden: &[u8] = &[18];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Outcome::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_outcome_ambiguous_smallest() {
-        let value = Outcome::Ambiguous(Ambiguous::new(&CEILINGS, AmbiguousParts { count: 0_u32, lines: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[19, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Outcome::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_outcome_ambiguous_full() {
-        let value = Outcome::Ambiguous(Ambiguous::new(&CEILINGS, AmbiguousParts { count: u32::MAX, lines: { let mut items = skein_lib::List::with_capacity(1); items.push(LineNumber::new(&CEILINGS, LineNumberParts { number: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"));
-        let golden: &[u8] = &[19, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Outcome::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_outcome_unchanged_smallest() {
-        let value = Outcome::Unchanged;
-        let golden: &[u8] = &[20];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Outcome::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_outcome_unchanged_full() {
-        let value = Outcome::Unchanged;
-        let golden: &[u8] = &[20];
+    fn enum_outcome_edit_failed_full() {
+        let value = Outcome::EditFailed(EditFailed::new(&CEILINGS, EditFailedParts { edit: u32::MAX, why: Mismatch::NoMatch }).expect("golden within ceilings"));
+        let golden: &[u8] = &[18, 255, 255, 255, 255, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7355,7 +7640,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_failed_smallest() {
         let value = Outcome::Failed(Failed::new(&CEILINGS, FailedParts { fault: Fault::Denied }).expect("golden within ceilings"));
-        let golden: &[u8] = &[21, 0];
+        let golden: &[u8] = &[19, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7365,7 +7650,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_failed_full() {
         let value = Outcome::Failed(Failed::new(&CEILINGS, FailedParts { fault: Fault::Denied }).expect("golden within ceilings"));
-        let golden: &[u8] = &[21, 0];
+        let golden: &[u8] = &[19, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7375,7 +7660,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_timed_out_smallest() {
         let value = Outcome::TimedOut;
-        let golden: &[u8] = &[22];
+        let golden: &[u8] = &[20];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7385,7 +7670,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_timed_out_full() {
         let value = Outcome::TimedOut;
-        let golden: &[u8] = &[22];
+        let golden: &[u8] = &[20];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7395,7 +7680,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_cancelled_smallest() {
         let value = Outcome::Cancelled;
-        let golden: &[u8] = &[23];
+        let golden: &[u8] = &[21];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7405,7 +7690,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_cancelled_full() {
         let value = Outcome::Cancelled;
-        let golden: &[u8] = &[23];
+        let golden: &[u8] = &[21];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7415,7 +7700,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_busy_smallest() {
         let value = Outcome::Busy;
-        let golden: &[u8] = &[24];
+        let golden: &[u8] = &[22];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7425,7 +7710,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_busy_full() {
         let value = Outcome::Busy;
-        let golden: &[u8] = &[24];
+        let golden: &[u8] = &[22];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7435,7 +7720,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_nul_byte_smallest() {
         let value = Outcome::NulByte;
-        let golden: &[u8] = &[25];
+        let golden: &[u8] = &[23];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7445,7 +7730,7 @@ mod golden_tests {
     #[test]
     fn enum_outcome_nul_byte_full() {
         let value = Outcome::NulByte;
-        let golden: &[u8] = &[25];
+        let golden: &[u8] = &[23];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

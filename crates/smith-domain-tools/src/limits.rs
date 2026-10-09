@@ -100,7 +100,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?;
     // A pure namespace listing borrows and sorts at most one name per mount.
     let names = List::<&[u8]>::worst_case(limits.repos)?;
-    kits.checked_add(jobs)?.checked_add(facts)?.checked_add(scratch)?.checked_add(names)?.checked_add(host_refs)
+    kits.checked_add(jobs)?
+        .checked_add(facts)?
+        .checked_add(scratch)?
+        .checked_add(names)?
+        .checked_add(host_refs)?
+        .checked_add(u64::from(limits.file_bytes).checked_mul(2)?)
 }
 
 /// Maximum dynamic ownership of this call's outcome, excluding its

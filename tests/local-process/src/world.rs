@@ -112,7 +112,7 @@ fn tool_scripts() -> Box<[api::Script]> {
     let turns = [
         ("read", r#"{"path":"original.txt"}"#),
         ("search", r#"{"pattern":"original","path":"original.txt"}"#),
-        ("edit", r#"{"path":"original.txt","old":"original","new":"edited"}"#),
+        ("edit", r#"{"path":"original.txt","edits":[{"old":"original","new":"edited"}]}"#),
         ("write", r#"{"path":"result.txt","content":"new\n"}"#),
         ("shell", r#"{"command":"printf 'ran\n' > command.txt"}"#),
         (

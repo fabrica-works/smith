@@ -43,7 +43,26 @@ pub fn write(at: &[u8], content: &[u8]) -> Call {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn edit(at: &[u8], old: &[u8], new: &[u8], all: bool) -> Call {
-    Call::Edit { path: path(at), old: old.into(), new: new.into(), all }
+    edits(at, &[(old, new, all)])
+}
+
+/// One ordered replacement list in the existing tools world.
+#[must_use]
+pub fn edits(at: &[u8], replacements: &[(&[u8], &[u8], bool)]) -> Call {
+    let edits = replacements
+        .iter()
+        .map(|(old, new, all)| smith_domain_tools::Replacement {
+            old: (*old).into(),
+            new: (*new).into(),
+            occurrences: if *all {
+                smith_domain_tools::Occurrences::All
+            } else {
+                smith_domain_tools::Occurrences::Once
+            },
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    Call::Edit { path: path(at), edits }
 }
 
 /// Runs `command` with the shell, for at most `timeout` if given.

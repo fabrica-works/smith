@@ -295,17 +295,9 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
         wire::Outcome::TooLarge(size) => tools::Outcome::TooLarge { size: size.size() },
         wire::Outcome::NotRead => tools::Outcome::NotRead,
         wire::Outcome::Stale => tools::Outcome::Stale,
-        wire::Outcome::NoMatch => tools::Outcome::NoMatch,
-        wire::Outcome::Ambiguous(ambiguous) => {
-            let mut lines = List::with_capacity(ambiguous.lines().len());
-            for line in ambiguous.lines() {
-                if lines.push(line.number()).is_err() {
-                    return Err(record::Refusal::TooLarge);
-                }
-            }
-            tools::Outcome::Ambiguous { count: ambiguous.count(), lines: lines.into_boxed() }
+        wire::Outcome::EditFailed(failed) => {
+            tools::Outcome::EditFailed { edit: failed.edit(), why: mismatch(failed.why())? }
         }
-        wire::Outcome::Unchanged => tools::Outcome::Unchanged,
         wire::Outcome::Failed(failed) => {
             let fault = match failed.fault() {
                 wire::Fault::Denied => tools::Fault::Denied,
@@ -378,4 +370,21 @@ fn component(name: &[u8]) -> Result<(), record::Refusal> {
         return Err(record::Refusal::Malformed);
     }
     Ok(())
+}
+
+fn mismatch(source: &wire::Mismatch) -> Result<tools::Mismatch, record::Refusal> {
+    let why = match source {
+        wire::Mismatch::NoMatch => tools::Mismatch::NoMatch,
+        wire::Mismatch::Unchanged => tools::Mismatch::Unchanged,
+        wire::Mismatch::Ambiguous(ambiguous) => {
+            let mut lines = List::with_capacity(ambiguous.lines().len());
+            for line in ambiguous.lines() {
+                if lines.push(line.number()).is_err() {
+                    return Err(record::Refusal::TooLarge);
+                }
+            }
+            tools::Mismatch::Ambiguous { count: ambiguous.count(), lines: lines.into_boxed() }
+        }
+    };
+    Ok(why)
 }

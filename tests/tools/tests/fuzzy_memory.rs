@@ -125,7 +125,19 @@ fn random_call(limits: &Limits, rng: &mut Rng) -> Call {
             // Mostly small, so that most edits fit and are stored.
             let len = if rng.chance(100) { u64::from(limits.file_bytes) } else { rng.below(8) };
             let new = vec![b'y'; usize::try_from(len).expect("small")];
-            Call::Edit { path: path(limits, file), old: b"x"[..].into(), new: new.into(), all: rng.chance(200) }
+            let edits = (0..rng.between(1, 4))
+                .map(|_| smith_domain_tools::Replacement {
+                    old: b"x".as_slice().into(),
+                    new: new.clone().into(),
+                    occurrences: if rng.chance(200) {
+                        smith_domain_tools::Occurrences::All
+                    } else {
+                        smith_domain_tools::Occurrences::Once
+                    },
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            Call::Edit { path: path(limits, file), edits }
         }
     }
 }

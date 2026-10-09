@@ -285,20 +285,10 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
         }
         tools::Outcome::NotRead => wire::Outcome::NotRead,
         tools::Outcome::Stale => wire::Outcome::Stale,
-        tools::Outcome::NoMatch => wire::Outcome::NoMatch,
-        tools::Outcome::Ambiguous { count: found, lines } => {
-            let mut output = List::with_capacity(count(lines.len())?);
-            for line in lines {
-                if output.push(wire::LineNumber::new(limits, wire::LineNumberParts { number: *line })?).is_err() {
-                    return Err(Error::ResultCapacity);
-                }
-            }
-            wire::Outcome::Ambiguous(wire::Ambiguous::new(
-                limits,
-                wire::AmbiguousParts { count: *found, lines: output },
-            )?)
-        }
-        tools::Outcome::Unchanged => wire::Outcome::Unchanged,
+        tools::Outcome::EditFailed { edit, why } => wire::Outcome::EditFailed(wire::EditFailed::new(
+            limits,
+            wire::EditFailedParts { edit: *edit, why: encode_mismatch(why, limits)? },
+        )?),
         tools::Outcome::Failed { fault } => {
             let fault = match fault {
                 tools::Fault::Denied => wire::Fault::Denied,
@@ -350,4 +340,24 @@ fn encode_resolved(source: &tools::Resolved, limits: &wire::v3::Limits) -> Resul
         }
     };
     Ok(value)
+}
+
+fn encode_mismatch(source: &tools::Mismatch, limits: &wire::v3::Limits) -> Result<wire::Mismatch, Error> {
+    let mismatch = match source {
+        tools::Mismatch::NoMatch => wire::Mismatch::NoMatch,
+        tools::Mismatch::Unchanged => wire::Mismatch::Unchanged,
+        tools::Mismatch::Ambiguous { count: found, lines } => {
+            let mut output = List::with_capacity(count(lines.len())?);
+            for line in lines {
+                if output.push(wire::LineNumber::new(limits, wire::LineNumberParts { number: *line })?).is_err() {
+                    return Err(Error::ResultCapacity);
+                }
+            }
+            wire::Mismatch::Ambiguous(wire::Ambiguous::new(
+                limits,
+                wire::AmbiguousParts { count: *found, lines: output },
+            )?)
+        }
+    };
+    Ok(mismatch)
 }

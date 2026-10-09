@@ -66,7 +66,7 @@ fn each_workspace_call_decodes_escaped_input_and_ignores_unknown_members() {
         (b"list", br#"{"path":".","future":false}"#, tools::Tool::List),
         (b"search", br#"{"pattern":"a\\nb","glob":"*.rs"}"#, tools::Tool::Search),
         (b"write", br#"{"path":"a","content":"line\nnext"}"#, tools::Tool::Write),
-        (b"edit", br#"{"path":"a","old":"before","new":"after","all":true}"#, tools::Tool::Edit),
+        (b"edit", br#"{"path":"a","edits":[{"old":"before","new":"after","all":true}]}"#, tools::Tool::Edit),
         (b"shell", br#"{"command":"printf ok","timeout":5}"#, tools::Tool::Shell),
     ];
     for (name, input, expected) in cases {
@@ -90,7 +90,7 @@ fn malformed_workspace_calls_have_field_named_typed_problems_then_correct() {
         (b"list", br"{}", b"path"),
         (b"search", br#"{"pattern":false}"#, b"pattern"),
         (b"write", br#"{"path":"a"}"#, b"content"),
-        (b"edit", br#"{"path":"a","old":"x"}"#, b"new"),
+        (b"edit", br#"{"path":"a","edits":[{"old":"x"}]}"#, b"new"),
         (b"shell", br#"{"command":"x","timeout":-1}"#, b"timeout"),
     ];
     for (name, input, field) in cases {
@@ -229,4 +229,39 @@ fn nesting_is_refused_for_any_agents_field_and_any_child_sub_agent_call() {
         let token = document.token(index).expect("within document");
         token.kind == skein_json::Kind::Key && document.text(token) == Some(b"agents".as_slice())
     }));
+}
+
+#[test]
+fn edit_replacements_decode_in_order_and_nested_unknown_members_do_not_become_fields() {
+    let input = r#"{"path":"a","edits":[{"old":"one\n","new":"two🌍","future":{"old":"ignored"}},{"new":"three","old":"two🌍","all":true}]}"#.as_bytes();
+    let llm::Decoded::Owned { call: tools::Call::Edit { edits, .. } } =
+        adapter::decode(b"edit", input, grants(), &[], llm::Asker::Main, &limits())
+    else {
+        panic!("ordered edit")
+    };
+    assert_eq!(edits.len(), 2);
+    assert_eq!(edits[0].old.as_ref(), b"one\n");
+    assert_eq!(edits[0].new.as_ref(), "two🌍".as_bytes());
+    assert_eq!(edits[0].occurrences, tools::Occurrences::Once);
+    assert_eq!(edits[1].old.as_ref(), "two🌍".as_bytes());
+    assert_eq!(edits[1].new.as_ref(), b"three");
+    assert_eq!(edits[1].occurrences, tools::Occurrences::All);
+    for input in [
+        br#"{"path":"a","old":"old","new":"new"}"#.as_slice(),
+        br#"{"path":"a","edits":[]}"#,
+        br#"{"path":"a","edits":{}}"#,
+        br#"{"path":"a","edits":[false]}"#,
+        br#"{"path":"a","edits":[[]]}"#,
+        br#"{"path":"a","edits":[{"old":0,"new":"new"}]}"#,
+        br#"{"path":"a","edits":[{"old":"old","new":"new","all":0}]}"#,
+    ] {
+        assert!(
+            matches!(
+                adapter::decode(b"edit", input, grants(), &[], llm::Asker::Main, &limits()),
+                llm::Decoded::Invalid { .. }
+            ),
+            "{}",
+            String::from_utf8_lossy(input)
+        );
+    }
 }

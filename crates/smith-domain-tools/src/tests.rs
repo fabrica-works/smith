@@ -5,8 +5,9 @@ use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, Id, List, Queue, ReplyTo, Time, Token, Wall};
 
+use crate::Replacement as Edit;
 use crate::authority::{self, Located, Target};
-use crate::edit::{self, Edit};
+use crate::edit;
 use crate::kit::Kit;
 use crate::knowledge::Knowledge;
 use crate::path;
@@ -251,7 +252,14 @@ fn write(text: &[u8], size: usize) -> Call {
 }
 
 fn edit(text: &[u8]) -> Call {
-    Call::Edit { path: path(text), old: bytes(b"a"), new: bytes(b"b"), all: false }
+    Call::Edit {
+        path: path(text),
+        edits: Box::new([crate::Replacement {
+            old: bytes(b"a"),
+            new: bytes(b"b"),
+            occurrences: crate::Occurrences::Once,
+        }]),
+    }
 }
 
 /// Opening a kit with `authority` under `limits` is refused as invalid.
@@ -291,7 +299,17 @@ fn reading_calls_have_the_read_effect_and_the_rest_write() {
         (Call::List { path: path(b".") }, Effect::Read),
         (Call::Search { path: path(b"."), pattern: bytes(b"fn main"), glob: None }, Effect::Read),
         (Call::Write { path: path(b"a"), content: bytes(b"") }, Effect::Write),
-        (Call::Edit { path: path(b"a"), old: bytes(b"x"), new: bytes(b"y"), all: false }, Effect::Write),
+        (
+            Call::Edit {
+                path: path(b"a"),
+                edits: Box::new([crate::Replacement {
+                    old: bytes(b"x"),
+                    new: bytes(b"y"),
+                    occurrences: crate::Occurrences::Once,
+                }]),
+            },
+            Effect::Write,
+        ),
         (Call::Shell { command: bytes(b"ls"), timeout: None }, Effect::Write),
     ];
     for (call, expected) in table {
@@ -526,8 +544,6 @@ fn calls_are_refused_at_the_entrance() {
             Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/.git/config") } },
         ),
         (inspect, read(b"a/very/long/path/that/does/not/fit/in/the/sixty/four/bytes/allowed"), Outcome::TooLong),
-        // What passes the entrance does not run yet.
-        (ALL, edit(b"src/lib.rs"), Outcome::NotRead),
     ];
     let mut h = Harness::new(Limits { kits: 32, ..LIMITS });
     for (index, (grants, call, expected)) in table.into_iter().enumerate() {
@@ -859,7 +875,11 @@ fn a_kit_that_forgot_a_file_must_read_it_again_to_change_it() {
 }
 
 fn snippet(old: &[u8], new: &[u8], all: bool) -> Edit {
-    Edit { old: Box::from(old), new: Box::from(new), all }
+    Edit {
+        old: Box::from(old),
+        new: Box::from(new),
+        occurrences: if all { crate::Occurrences::All } else { crate::Occurrences::Once },
+    }
 }
 
 fn edited(content: &[u8], replaced: u32) -> (Box<[u8]>, u32) {
@@ -871,7 +891,7 @@ fn edited(content: &[u8], replaced: u32) -> (Box<[u8]>, u32) {
 type Applied = Result<(Box<[u8]>, u32), Outcome>;
 
 fn ambiguous(count: u32, lines: &[u32]) -> Applied {
-    Err(Outcome::Ambiguous { count, lines: Box::from(lines) })
+    Err(Outcome::EditFailed { edit: 1, why: crate::Mismatch::Ambiguous { count, lines: Box::from(lines) } })
 }
 
 #[test]
@@ -883,7 +903,12 @@ fn an_edit_replaces_its_one_match_or_all_of_them() {
         (b"x\na\ny\na\na\n", snippet(b"a", b"b", false), &LIMITS, ambiguous(3, &[2, 4, 5])),
         (b"x\na\ny\na\na\n", snippet(b"a", b"b", false), &small, ambiguous(3, &[2, 4])),
         (b"x\na\ny\na\na\n", snippet(b"a", b"bb", true), &LIMITS, Ok(edited(b"x\nbb\ny\nbb\nbb\n", 3))),
-        (b"a b a", snippet(b"z", b"c", true), &LIMITS, Err(Outcome::NoMatch)),
+        (
+            b"a b a",
+            snippet(b"z", b"c", true),
+            &LIMITS,
+            Err(Outcome::EditFailed { edit: 1, why: crate::Mismatch::NoMatch }),
+        ),
         // Matches do not overlap.
         (b"aaa", snippet(b"aa", b"b", false), &LIMITS, Ok(edited(b"ba", 1))),
         (b"abc", snippet(b"abc", b"", false), &LIMITS, Ok(edited(b"", 1))),
@@ -891,7 +916,7 @@ fn an_edit_replaces_its_one_match_or_all_of_them() {
         (b"abc", snippet(b"b", b"012345", false), &small, Ok(edited(b"a012345c", 1))),
     ];
     for (content, edit, limits, expected) in table {
-        assert_eq!(edit::apply(content, &edit, limits), expected, "{content:?} {edit:?}");
+        assert_eq!(edit::apply(content, &edit, 1, limits), expected, "{content:?} {edit:?}");
     }
 }
 
@@ -902,14 +927,20 @@ fn known(h: &mut Harness, kit: Token, file: &[u8], content: &[u8], at: u64) {
 }
 
 fn change(text: &[u8], old: &[u8], new: &[u8]) -> Call {
-    Call::Edit { path: path(text), old: bytes(old), new: bytes(new), all: false }
+    Call::Edit {
+        path: path(text),
+        edits: Box::new([crate::Replacement {
+            old: bytes(old),
+            new: bytes(new),
+            occurrences: crate::Occurrences::Once,
+        }]),
+    }
 }
 
 #[test]
-fn an_edit_loads_the_file_its_llm_read_and_stores_it_edited() {
+fn an_edit_without_an_earlier_read_stores_over_the_version_it_loaded() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
-    known(&mut h, kit, b"src/lib.rs", b"fn one() {}\n", 3);
     let (owner, op) = h.start(kit, 2, change(b"src/lib.rs", b"one", b"uno"));
     assert_eq!(op, Op::Load { at: place(1, b"src/lib.rs"), max: LIMITS.file_bytes });
     let op = h.next(owner, Done::Loaded { content: bytes(b"fn one() {}\n"), version: version(3) });
@@ -919,14 +950,14 @@ fn an_edit_loads_the_file_its_llm_read_and_stores_it_edited() {
 }
 
 #[test]
-fn an_edit_of_a_file_changed_since_it_was_read_is_stale() {
+fn an_edit_matches_the_current_file_and_catches_a_change_after_its_load() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
     known(&mut h, kit, b"src/lib.rs", b"fn one() {}\n", 3);
-    // Changed before the load: nothing is stored.
+    // The current bytes no longer match the requested old text.
     let (owner, _) = h.start(kit, 2, change(b"src/lib.rs", b"one", b"uno"));
     let loaded = Done::Loaded { content: bytes(b"fn two() {}\n"), version: version(5) };
-    assert_eq!(h.end(owner, loaded), (2, Outcome::Stale));
+    assert_eq!(h.end(owner, loaded), (2, Outcome::EditFailed { edit: 1, why: crate::Mismatch::NoMatch }));
     assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(3)), "what the LLM read");
     // Changed between the load and the store.
     let (owner, _) = h.start(kit, 3, change(b"src/lib.rs", b"one", b"uno"));
@@ -939,7 +970,8 @@ fn an_edit_of_a_file_changed_since_it_was_read_is_stale() {
         h.end(owner, Done::Missing),
         (4, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper/src/lib.rs") } })
     );
-    assert_eq!(h.call(kit, change(b"src/lib.rs", b"one", b"uno")), Outcome::NotRead);
+    let (owner, _) = h.start(kit, 5, change(b"src/lib.rs", b"one", b"uno"));
+    assert_eq!(h.end(owner, Done::Missing).0, 5);
 }
 
 #[test]
@@ -948,15 +980,25 @@ fn an_edit_that_matches_nothing_or_too_much_stores_nothing() {
     let kit = h.open(1, authority(ALL));
     known(&mut h, kit, b"src/lib.rs", b"a\nb\na\n", 3);
     let table = [
-        (change(b"src/lib.rs", b"zzz", b"y"), Outcome::NoMatch),
-        (change(b"src/lib.rs", b"a", b"y"), Outcome::Ambiguous { count: 2, lines: Box::new([1, 3]) }),
+        (change(b"src/lib.rs", b"zzz", b"y"), Outcome::EditFailed { edit: 1, why: crate::Mismatch::NoMatch }),
+        (
+            change(b"src/lib.rs", b"a", b"y"),
+            Outcome::EditFailed { edit: 1, why: crate::Mismatch::Ambiguous { count: 2, lines: Box::new([1, 3]) } },
+        ),
     ];
     for (call, expected) in table {
         let (owner, _) = h.start(kit, 2, call);
         let loaded = Done::Loaded { content: bytes(b"a\nb\na\n"), version: version(3) };
         assert_eq!(h.end(owner, loaded), (2, expected));
     }
-    let all = Call::Edit { path: path(b"src/lib.rs"), old: bytes(b"a"), new: bytes(b"y"), all: true };
+    let all = Call::Edit {
+        path: path(b"src/lib.rs"),
+        edits: Box::new([crate::Replacement {
+            old: bytes(b"a"),
+            new: bytes(b"y"),
+            occurrences: crate::Occurrences::All,
+        }]),
+    };
     let (owner, _) = h.start(kit, 3, all);
     let loaded = Done::Loaded { content: bytes(b"a\nb\na\n"), version: version(3) };
     match h.next(owner, loaded) {
@@ -968,26 +1010,27 @@ fn an_edit_that_matches_nothing_or_too_much_stores_nothing() {
 }
 
 #[test]
-fn edits_are_refused_at_the_entrance_without_a_read_or_a_change() {
+fn edit_shape_bounds_are_refused_before_io_but_semantics_follow_the_loaded_bytes() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
-    assert_eq!(h.call(kit, change(b"src/lib.rs", b"a", b"b")), Outcome::NotRead);
-    known(&mut h, kit, b"src/lib.rs", b"a\n", 3);
-    let big = Call::Edit { path: path(b"src/lib.rs"), old: bytes(b"a"), new: Box::from(&[b'x'; 1025][..]), all: false };
     let table = [
-        (change(b"src/lib.rs", b"", b"b"), Outcome::NoMatch),
-        (change(b"src/lib.rs", b"a", b"a"), Outcome::Unchanged),
-        (big, Outcome::TooLarge { size: 1025 }),
-        (
-            change(b"vendor/lib/x.rs", b"a", b"b"),
-            Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } },
-        ),
+        (change(b"src/lib.rs", b"", b"b"), crate::Mismatch::NoMatch),
+        (change(b"src/lib.rs", b"a", b"a"), crate::Mismatch::Unchanged),
     ];
-    h.domain.reclaim();
-    for (call, expected) in table {
-        assert_eq!(h.call(kit, call.clone()), expected, "{call:?}");
+    for (call, why) in table {
+        let (owner, _) = h.start(kit, 1, call);
+        assert_eq!(
+            h.end(owner, Done::Loaded { content: bytes(b"a"), version: version(3) }),
+            (1, Outcome::EditFailed { edit: 1, why })
+        );
     }
-    assert_eq!(h.domain.jobs(), 0, "nothing ran");
+    let big = Call::Edit { path: path(b"src/lib.rs"), edits: Box::new([snippet(b"a", &[b'x'; 1025], false)]) };
+    assert_eq!(h.call(kit, big), Outcome::TooLarge { size: 1025 });
+    assert_eq!(
+        h.call(kit, change(b"vendor/lib/x.rs", b"a", b"b")),
+        Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } }
+    );
+    assert_eq!(h.domain.jobs(), 0);
 }
 
 #[test]
@@ -1541,4 +1584,47 @@ fn host_aliases_choose_whole_names_and_keep_the_namespace_root_pure() {
         h.call(kit, Call::List { path: path(b"/") }),
         Outcome::Listed { entries: Box::new([entry(b"work", Kind::Directory)]), more: 0 }
     );
+}
+
+#[test]
+fn ordered_edit_batches_use_previous_results_and_report_the_first_failure() {
+    let edits = Box::new([snippet(b"a", b"b", true), snippet(b"bb", b"c", false)]);
+    assert_eq!(edit::apply_edits(bytes(b"aa"), &edits[..], &LIMITS), Ok(edited(b"c", 3)));
+    let fails = Box::new([snippet(b"a", b"b", false), snippet(b"z", b"c", false), snippet(b"c", b"c", false)]);
+    assert_eq!(
+        edit::apply_edits(bytes(b"a"), &fails[..], &LIMITS),
+        Err(Outcome::EditFailed { edit: 2, why: crate::Mismatch::NoMatch })
+    );
+    let ambiguous = Box::new([snippet(b"a", b"bb", false), snippet(b"b", b"c", false)]);
+    assert_eq!(
+        edit::apply_edits(bytes(b"a"), &ambiguous[..], &LIMITS),
+        Err(Outcome::EditFailed { edit: 2, why: crate::Mismatch::Ambiguous { count: 2, lines: Box::new([1, 1]) } })
+    );
+}
+
+#[test]
+fn an_edit_batch_without_a_read_stores_once_and_a_failed_batch_stores_nothing() {
+    let mut h = Harness::new(LIMITS);
+    let kit = h.open(1, authority(ALL));
+    let call = Call::Edit {
+        path: path(b"src/lib.rs"),
+        edits: Box::new([snippet(b"one", b"two", false), snippet(b"two", b"three", false)]),
+    };
+    let (owner, _) = h.start(kit, 1, call);
+    assert_eq!(
+        h.next(owner, Done::Loaded { content: bytes(b"one"), version: version(7) }),
+        store(place(1, b"src/lib.rs"), b"three", Expect::Is { version: version(7) })
+    );
+    assert_eq!(h.end(owner, Done::Stored { version: version(8) }), (1, Outcome::Edited { replaced: 2 }));
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(8)));
+    let call = Call::Edit {
+        path: path(b"src/lib.rs"),
+        edits: Box::new([snippet(b"three", b"four", false), snippet(b"missing", b"bad", false)]),
+    };
+    let (owner, _) = h.start(kit, 2, call);
+    assert_eq!(
+        h.end(owner, Done::Loaded { content: bytes(b"three"), version: version(8) }),
+        (2, Outcome::EditFailed { edit: 2, why: crate::Mismatch::NoMatch })
+    );
+    assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(8)));
 }

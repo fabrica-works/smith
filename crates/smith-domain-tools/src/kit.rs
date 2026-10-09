@@ -34,8 +34,8 @@ use skein_lib::{Env, Id, List, Queue, ReplyTo, Set, Slab, Time, Token};
 use crate::authority::{self, Authority, Checkout, Located, Target};
 use crate::boundary::{Expect, Refusal, Request};
 use crate::call::{self, Call, Entry, Kind, Outcome};
+use crate::call::{Mismatch, Replacement};
 use crate::domain::Domain;
-use crate::edit::Edit;
 use crate::facts::{self, FactKind, Facts};
 use crate::job::{self, Job, Work};
 use crate::knowledge::Knowledge;
@@ -292,21 +292,10 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             };
             Work::Write { place: located.place, content, expect }
         }
-        Call::Edit { path, old, new, all } => {
+        Call::Edit { path, edits } => {
             let located = writable(&kit.checkout, &path, limits)?;
-            fits(&old, limits)?;
-            fits(&new, limits)?;
-            if old.is_empty() {
-                return Err(Outcome::NoMatch);
-            }
-            if old == new {
-                return Err(Outcome::Unchanged);
-            }
-            // A change needs the current version read: the load checks it is.
-            if kit.knowledge.version(&located.place).is_none() {
-                return Err(Outcome::NotRead);
-            }
-            Work::Edit { place: located.place, edit: Edit { old, new, all } }
+            replacements_fit(&edits, limits)?;
+            Work::Edit { place: located.place, edits }
         }
         Call::Shell { command, timeout } => {
             passable(&command)?;
@@ -370,4 +359,28 @@ fn fits(content: &[u8], limits: &Limits) -> Result<(), Outcome> {
 /// File-only calls cannot name the directory itself (domain/tools.md, section 2).
 fn file(place: &path::Place) -> Result<(), Outcome> {
     if place.path.is_empty() { Err(Outcome::NotFile) } else { Ok(()) }
+}
+
+/// The aggregate old/new buffers keep today's respective file-byte caps; the
+/// list cells also fit that bound. No semantic mismatch is decided before load.
+fn replacements_fit(edits: &[Replacement], limits: &Limits) -> Result<(), Outcome> {
+    if edits.is_empty() {
+        return Err(Outcome::EditFailed { edit: 1, why: Mismatch::NoMatch });
+    }
+    let cells = u64::try_from(edits.len()).or(Err(Outcome::TooLarge { size: u64::MAX }))?;
+    let mut old = 0_u64;
+    let mut new = 0_u64;
+    for replacement in edits {
+        old = old
+            .checked_add(u64::try_from(replacement.old.len()).or(Err(Outcome::TooLarge { size: u64::MAX }))?)
+            .ok_or(Outcome::TooLarge { size: u64::MAX })?;
+        new = new
+            .checked_add(u64::try_from(replacement.new.len()).or(Err(Outcome::TooLarge { size: u64::MAX }))?)
+            .ok_or(Outcome::TooLarge { size: u64::MAX })?;
+    }
+    let size = old.max(new).max(cells);
+    if size > u64::from(limits.file_bytes) {
+        return Err(Outcome::TooLarge { size });
+    }
+    Ok(())
 }

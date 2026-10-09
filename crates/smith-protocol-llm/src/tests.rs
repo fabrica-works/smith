@@ -68,9 +68,12 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
             },
             tools::Outcome::Listed { entries, more: u64::MAX },
             tools::Outcome::Found { hits, more: u64::MAX, timed_out: true },
-            tools::Outcome::Ambiguous {
-                count: u32::MAX,
-                lines: vec![u32::MAX; usize::try_from(caps.match_lines).unwrap()].into(),
+            tools::Outcome::EditFailed {
+                edit: 1,
+                why: tools::Mismatch::Ambiguous {
+                    count: u32::MAX,
+                    lines: vec![u32::MAX; usize::try_from(caps.match_lines).unwrap()].into(),
+                },
             },
             tools::Outcome::Exited {
                 exit: tools::Exit::Code { code: u8::MAX },
@@ -232,7 +235,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             2,
         ),
         (
-            "Edit a file already read; old must match once, or at least once with all. Batch writes, edits and commands; run serially in call order.",
+            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Batch writes, edits and commands; run serially in call order.",
             4,
         ),
         (

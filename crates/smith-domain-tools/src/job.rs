@@ -66,9 +66,10 @@ use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
 
 use crate::authority::{self, Checkout};
 use crate::boundary::{Done, Expect, Op, Request};
+use crate::call::Replacement;
 use crate::call::{Outcome, Tool};
 use crate::domain::Domain;
-use crate::edit::{self, Edit};
+use crate::edit;
 use crate::facts::{self, Facts};
 use crate::kit::{self, Kit};
 use crate::knowledge::Knowledge;
@@ -120,7 +121,7 @@ enum State {
 #[derive(Debug)]
 pub(crate) struct Editing {
     place: Place,
-    edit: Edit,
+    edits: Box<[Replacement]>,
     /// The call's, which its store keeps too.
     deadline: Time,
 }
@@ -153,7 +154,7 @@ pub(crate) enum Work {
     },
     Edit {
         place: Place,
-        edit: Edit,
+        edits: Box<[Replacement]>,
     },
     /// Runs `command` in `cwd` for at most `timeout`, in an uncontained process group.
     Shell {
@@ -216,9 +217,9 @@ pub(crate) fn start(
             let op = Op::Store { at: place.clone(), content, expect };
             (State::Storing { reply_to, place, change }, op)
         }
-        Work::Edit { place, edit } => {
+        Work::Edit { place, edits } => {
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
-            (State::Editing { reply_to, editing: Editing { place, edit, deadline: call_deadline } }, op)
+            (State::Editing { reply_to, editing: Editing { place, edits, deadline: call_deadline } }, op)
         }
         Work::Shell { cwd, command, timeout: _ } => {
             let place = cwd.clone();
@@ -392,8 +393,8 @@ fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Ne
     Next::Answer { reply_to, outcome }
 }
 
-/// Editing, loaded: make the edit and store it, if the file is as its LLM
-/// read it and the kit is not closing.
+/// Editing, loaded: match the ordered list and store only over this loaded
+/// version, if the kit is not closing.
 fn to_edit(
     kit: &mut Kit,
     id: Id<Job>,
@@ -403,19 +404,16 @@ fn to_edit(
     env: &Env<Limits>,
     out: &mut Queue<Request>,
 ) -> Next {
-    let Editing { place, edit, deadline } = editing;
+    let Editing { place, edits, deadline } = editing;
     let outcome = match done {
         Done::Loaded { content, version } => {
             if kit::closing(kit) {
                 return Next::Answer { reply_to, outcome: Outcome::Cancelled };
             }
-            if kit.knowledge.version(&place) != Some(version) {
-                return Next::Answer { reply_to, outcome: Outcome::Stale };
-            }
             if deadline <= env.now {
                 return Next::Answer { reply_to, outcome: Outcome::TimedOut };
             }
-            match edit::apply(&content, &edit, &env.limits) {
+            match edit::apply_edits(content, &edits, &env.limits) {
                 Ok((content, replaced)) => {
                     let deadline = deadline.min(env.now.saturating_add(env.limits.file_timeout));
                     let op = Op::Store { at: place.clone(), content, expect: Expect::Is { version } };
@@ -521,5 +519,6 @@ pub(crate) fn slots(limits: &Limits) -> Option<u32> {
 /// What a running job holds beyond its slot, or `None` past a `u64`: at most
 /// a place, and an edit's snippets.
 pub(crate) fn held(limits: &Limits) -> Option<u64> {
-    u64::from(limits.file_bytes).checked_mul(2)?.checked_add(u64::from(limits.path_bytes))
+    let cells = u64::try_from(size_of::<Replacement>()).ok()?.checked_mul(u64::from(limits.file_bytes))?;
+    u64::from(limits.file_bytes).checked_mul(2)?.checked_add(cells)?.checked_add(u64::from(limits.path_bytes))
 }

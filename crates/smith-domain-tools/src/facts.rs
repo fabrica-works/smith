@@ -111,14 +111,15 @@ pub enum Verdict {
     /// The file version changed since it was read.
     Stale,
     /// The edit snippet has no occurrence.
-    NoMatch,
+    NoMatch { edit: u32 },
     /// A single-occurrence edit found more than one match.
     Ambiguous {
+        edit: u32,
         /// Number of matched occurrences which made a single-occurrence edit ambiguous.
         count: u32,
     },
     /// The edit or write would change no file bytes.
-    Unchanged,
+    Unchanged { edit: u32 },
     /// One failed terminal with bounded diagnostics.
     Failed {
         /// Typed IO failure; this boundary carries no OS error text.
@@ -169,9 +170,14 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKin
         Outcome::TooLarge { .. } => (Verdict::TooLarge, 0),
         Outcome::NotRead => (Verdict::NotRead, 0),
         Outcome::Stale => (Verdict::Stale, 0),
-        Outcome::NoMatch => (Verdict::NoMatch, 0),
-        Outcome::Ambiguous { count, .. } => (Verdict::Ambiguous { count: *count }, 0),
-        Outcome::Unchanged => (Verdict::Unchanged, 0),
+        Outcome::EditFailed { edit, why } => {
+            let verdict = match why {
+                crate::Mismatch::NoMatch => Verdict::NoMatch { edit: *edit },
+                crate::Mismatch::Ambiguous { count, .. } => Verdict::Ambiguous { edit: *edit, count: *count },
+                crate::Mismatch::Unchanged => Verdict::Unchanged { edit: *edit },
+            };
+            (verdict, 0)
+        }
         Outcome::Failed { fault } => (Verdict::Failed { fault: *fault }, 0),
         Outcome::TimedOut => (Verdict::TimedOut, 0),
         Outcome::Cancelled => (Verdict::Cancelled, 0),

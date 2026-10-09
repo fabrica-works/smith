@@ -10,29 +10,34 @@ use alloc::boxed::Box;
 use skein_lib::bytes::{count, find_from};
 use skein_lib::{List, Writer};
 
-use crate::call::Outcome;
+use crate::call::{Mismatch, Occurrences, Outcome, Replacement};
 use crate::limits::Limits;
-
-/// What an edit asks for: `old` replaced with `new`, at its one occurrence, or
-/// at every one if `all`.
-#[derive(PartialEq, Eq, Hash, Debug)]
-pub(crate) struct Edit {
-    pub(crate) old: Box<[u8]>,
-    pub(crate) new: Box<[u8]>,
-    pub(crate) all: bool,
-}
 
 /// `content` with `edit` made, and how many occurrences it replaced; or the
 /// outcome that refuses it: `NoMatch`, `Ambiguous` with the lines of the
 /// first matches, or `TooLarge` if the file would outgrow what the tools
 /// store.
-pub(crate) fn apply(content: &[u8], edit: &Edit, limits: &Limits) -> Result<(Box<[u8]>, u32), Outcome> {
+pub(crate) fn apply(
+    content: &[u8],
+    edit: &Replacement,
+    number: u32,
+    limits: &Limits,
+) -> Result<(Box<[u8]>, u32), Outcome> {
+    if edit.old.is_empty() {
+        return Err(Outcome::EditFailed { edit: number, why: Mismatch::NoMatch });
+    }
+    if edit.old == edit.new {
+        return Err(Outcome::EditFailed { edit: number, why: Mismatch::Unchanged });
+    }
     let matches = count(content, &edit.old, u32::MAX);
     if matches == 0 {
-        return Err(Outcome::NoMatch);
+        return Err(Outcome::EditFailed { edit: number, why: Mismatch::NoMatch });
     }
-    if matches > 1 && !edit.all {
-        return Err(Outcome::Ambiguous { count: matches, lines: lines(content, &edit.old, limits.match_lines) });
+    if matches > 1 && edit.occurrences == Occurrences::Once {
+        return Err(Outcome::EditFailed {
+            edit: number,
+            why: Mismatch::Ambiguous { count: matches, lines: lines(content, &edit.old, limits.match_lines) },
+        });
     }
     let size = size(content.len(), matches, edit.old.len(), edit.new.len()).unwrap_or(u64::MAX);
     if size > u64::from(limits.file_bytes) {
@@ -48,6 +53,23 @@ pub(crate) fn apply(content: &[u8], edit: &Edit, limits: &Limits) -> Result<(Box
     }
     writer.put(content.get(from..).expect("the last match is within the content")).expect("sized above");
     Ok((writer.finish(), matches))
+}
+
+/// Apply the ordered list to owned scratch bytes; only the caller's final store changes the file.
+pub(crate) fn apply_edits(
+    mut content: Box<[u8]>,
+    edits: &[Replacement],
+    limits: &Limits,
+) -> Result<(Box<[u8]>, u32), Outcome> {
+    let mut number = 0_u32;
+    let mut replaced = 0_u32;
+    for edit in edits {
+        number = number.checked_add(1).ok_or(Outcome::TooLarge { size: u64::MAX })?;
+        let (next, count) = apply(&content, edit, number, limits)?;
+        replaced = replaced.checked_add(count).ok_or(Outcome::TooLarge { size: u64::MAX })?;
+        content = next;
+    }
+    Ok((content, replaced))
 }
 
 /// The size of a file of `len` bytes with `matches` occurrences of `old`

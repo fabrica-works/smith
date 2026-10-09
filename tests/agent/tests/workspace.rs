@@ -58,10 +58,16 @@ fn mixed_scripts() -> Box<[Script]> {
         Script {
             cue: b"@midreport".as_slice().into(),
             turns: vec![
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"old","new":"premature"}"#)], 1),
+                calls(
+                    vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"old","new":"premature"}]}"#)],
+                    1,
+                ),
                 calls(vec![call(b"read", br#"{"path":"../notes/data.txt"}"#)], 1),
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"old","new":"main"}"#)], 1),
-                calls(vec![call(b"edit", br#"{"path":"../archive/data.txt","old":"old","new":"forbidden"}"#)], 1),
+                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"old","new":"main"}]}"#)], 1),
+                calls(
+                    vec![call(b"edit", br#"{"path":"../archive/data.txt","edits":[{"old":"old","new":"forbidden"}]}"#)],
+                    1,
+                ),
                 calls(vec![call(b"write", br#"{"path":".git/HEAD","content":"forbidden"}"#)], 1),
                 calls(vec![call(b"sub_agent", br#"{"brief":"@mixed-read","tools":["inspect"]}"#)], 1),
                 calls(vec![call(b"sub_agent", br#"{"brief":"@mixed-write","tools":["inspect","modify"]}"#)], 1),
@@ -74,21 +80,39 @@ fn mixed_scripts() -> Box<[Script]> {
             cue: b"@mixed-read".as_slice().into(),
             turns: Box::new([
                 calls(vec![call(b"read", br#"{"path":"../reference/data.txt"}"#)], 1),
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"main","new":"forbidden"}"#)], 1),
+                calls(
+                    vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"main","new":"forbidden"}]}"#)],
+                    1,
+                ),
                 says(b"Read-only child done.", 1),
             ]),
         },
         Script {
             cue: b"@mixed-write".as_slice().into(),
             turns: Box::new([
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"main","new":"unread-child"}"#)], 1),
+                calls(
+                    vec![call(
+                        b"edit",
+                        br#"{"path":"../notes/data.txt","edits":[{"old":"main","new":"unread-child"}]}"#,
+                    )],
+                    1,
+                ),
                 calls(
                     vec![call(b"read", br#"{"path":"../notes/data.txt"}"#), call(b"read", br#"{"path":"data.txt"}"#)],
                     1,
                 ),
-                calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","old":"main","new":"child"}"#)], 1),
-                calls(vec![call(b"edit", br#"{"path":"data.txt","old":"old","new":"child-git"}"#)], 1),
-                calls(vec![call(b"edit", br#"{"path":"../reference/data.txt","old":"old","new":"forbidden"}"#)], 1),
+                calls(
+                    vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"main","new":"child"}]}"#)],
+                    1,
+                ),
+                calls(vec![call(b"edit", br#"{"path":"data.txt","edits":[{"old":"old","new":"child-git"}]}"#)], 1),
+                calls(
+                    vec![call(
+                        b"edit",
+                        br#"{"path":"../reference/data.txt","edits":[{"old":"old","new":"forbidden"}]}"#,
+                    )],
+                    1,
+                ),
                 says(b"Writable child done.", 1),
             ]),
         },

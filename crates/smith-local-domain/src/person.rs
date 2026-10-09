@@ -91,9 +91,7 @@ fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
             | tools::Outcome::TooLarge { .. }
             | tools::Outcome::NotRead
             | tools::Outcome::Stale
-            | tools::Outcome::NoMatch
-            | tools::Outcome::Ambiguous { .. }
-            | tools::Outcome::Unchanged
+            | tools::Outcome::EditFailed { .. }
             | tools::Outcome::Failed { .. }
             | tools::Outcome::TimedOut
             | tools::Outcome::Cancelled

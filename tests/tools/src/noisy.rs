@@ -5,7 +5,7 @@ use skein_fake_checkout::Checkout;
 use skein_lib::{Duration, Rng, Time};
 use smith_domain_tools::{Grants, Limits};
 
-use crate::calls::{edit, list, read, read_lines, search, shell, write};
+use crate::calls::{edit, edits, list, read, read_lines, search, shell, write};
 use crate::fixture::Fixture;
 use crate::{Settings, Span, Step, World};
 
@@ -142,7 +142,14 @@ fn noisy_calls(rng: &mut Rng) -> Vec<smith_domain_tools::Call> {
             4 | 5 => {
                 let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];
                 let new: &[u8] = if rng.chance(50) { old } else { b"edited" };
-                edit(path, old, new, rng.chance(300))
+                let count = rng.between(1, 3);
+                let replacements = (0..count)
+                    .map(|_| {
+                        let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];
+                        (old, new, rng.chance(300))
+                    })
+                    .collect::<Vec<_>>();
+                edits(path, &replacements)
             }
             _ => read(path),
         };

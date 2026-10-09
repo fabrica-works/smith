@@ -47,17 +47,9 @@ pub enum Call {
         /// Owned content blocks or file bytes, bounded by the enclosing record's byte cap.
         content: Box<[u8]>,
     },
-    /// Replace `old` with `new` in the file at `path`: its one occurrence, or
-    /// every one if `all`.
-    Edit {
-        path: Path,
-        /// Exact bytes whose occurrence the edit must match in a previously read file.
-        old: Box<[u8]>,
-        /// Replacement bytes for the matching edit occurrence.
-        new: Box<[u8]>,
-        /// Whether to replace every occurrence rather than require exactly one.
-        all: bool,
-    },
+    /// Apply replacements in order, store once over the loaded version, or apply none.
+    /// No earlier read is required; ends in `Edited`, `EditFailed` or a file terminal.
+    Edit { path: Path, edits: Box<[Replacement]> },
     /// Run `command` with the shell, in the working directory, for at most
     /// `timeout` if given and within the tools' own limit.
     Shell {
@@ -66,6 +58,34 @@ pub enum Call {
         /// Maximum time allowed for this completion or command.
         timeout: Option<Duration>,
     },
+}
+
+/// One ordered replacement sent by the protocol layer with an edit call.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Replacement {
+    pub old: Box<[u8]>,
+    pub new: Box<[u8]>,
+    pub occurrences: Occurrences,
+}
+
+/// The matching rule sent with one replacement; the tools enforce it on the current bytes.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Occurrences {
+    /// Exactly one match is required; ends in a replacement or an ambiguity refusal.
+    Once,
+    /// Every non-overlapping match is replaced; at least one must exist.
+    All,
+}
+
+/// Why the tools refused one replacement without storing any part of the edit.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Mismatch {
+    /// The old text is absent, including an empty snippet.
+    NoMatch,
+    /// A unique replacement matched count times; retained lines count from one.
+    Ambiguous { count: u32, lines: Box<[u32]> },
+    /// The old and new bytes are identical.
+    Unchanged,
 }
 
 /// Which tool a call is for, without its arguments.
@@ -219,19 +239,8 @@ pub enum Outcome {
     /// The file changed since the LLM read it, so it may not be changed
     /// until the LLM reads it again.
     Stale,
-    /// The snippet to replace is not in the file (an empty one never is).
-    NoMatch,
-    /// The snippet to replace is in the file `count` times, and the edit
-    /// was for one: `lines` are where the first few start, counting from 1.
-    Ambiguous {
-        /// Number of matched occurrences which made a single-occurrence edit ambiguous.
-        count: u32,
-        /// Starting line numbers of the first retained matches, counting from 1.
-        lines: Box<[u32]>,
-    },
-    /// The edit would leave the file as it is: the snippet and its
-    /// replacement are the same.
-    Unchanged,
+    /// The first failed replacement, counting from one; no edit was stored.
+    EditFailed { edit: u32, why: Mismatch },
     /// io failed.
     Failed {
         /// Typed IO failure; this boundary carries no OS error text.
@@ -323,8 +332,14 @@ impl Call {
                 owned_path(path)?.checked_add(owned_len(pattern)?)?.checked_add(glob)
             }
             Call::Write { path, content } => owned_path(path)?.checked_add(owned_len(content)?),
-            Call::Edit { path, old, new, all: _ } => {
-                owned_path(path)?.checked_add(owned_len(old)?)?.checked_add(owned_len(new)?)
+            Call::Edit { path, edits } => {
+                let mut cost = owned_path(path)?.checked_add(
+                    u64::try_from(size_of::<Replacement>()).ok()?.checked_mul(u64::try_from(edits.len()).ok()?)?,
+                )?;
+                for replacement in edits {
+                    cost = cost.checked_add(owned_len(&replacement.old)?)?.checked_add(owned_len(&replacement.new)?)?;
+                }
+                Some(cost)
             }
             Call::Shell { command, timeout: _ } => owned_len(command),
         };

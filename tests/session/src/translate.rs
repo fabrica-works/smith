@@ -3,15 +3,13 @@
 //! agent's side owns the tools' schemas, decodes the arguments the LLM writes
 //! into typed calls, and renders what comes of them as text.
 
-use std::collections::BTreeMap;
-
 use smith_domain_session::Event;
 use smith_domain_session::llm as agent;
 
 use crate::tickets::{Ticketed, Tickets};
 use skein_fake_llm_domain::api as provider;
 use skein_lib::Token;
-use smith_domain_tools::{Call, Effect, Exit, Grants, Name, Namespace, Outcome, Part, Path};
+use smith_domain_tools::{Call, Effect, Exit, Grants, Namespace, Outcome};
 
 /// The tools the agent's side offers, by name: the family that grants each,
 /// and its schema.
@@ -22,7 +20,7 @@ const TOOLS: [(&[u8], Family, &[u8]); 6] = [
     (b"list", Family::Inspect, br#"{"path":"string"}"#),
     (b"search", Family::Inspect, br#"{"path":"string","pattern":"string"}"#),
     (b"write", Family::Modify, br#"{"path":"string","content":"string"}"#),
-    (b"edit", Family::Modify, br#"{"path":"string","old":"string","new":"string"}"#),
+    (b"edit", Family::Modify, br#"{"path":"string","edits":[{"old":"string","new":"string"}]}"#),
     (b"shell", Family::Shell, br#"{"command":"string"}"#),
 ];
 
@@ -211,73 +209,29 @@ pub fn decode(name: &[u8], arguments: &[u8]) -> agent::Decoded {
 }
 
 fn call(name: &[u8], arguments: &[u8]) -> Result<Call, agent::Problem> {
-    let fields = object(arguments).ok_or(agent::Problem::NotAnObject)?;
-    let field = |key: &[u8]| -> Result<Box<[u8]>, agent::Problem> {
-        fields.get(key).map(|value| value.as_slice().into()).ok_or(agent::Problem::Missing { field: key.into() })
+    let client = skein_llm_world::limits();
+    let limits = smith_protocol_llm::Limits {
+        client,
+        tool_bytes: 32768,
+        rendered_result: client.dialect.string_bytes,
+        stated: smith_protocol_llm::Stated::from_tools(
+            &smith_tools_world::Settings::default().tools,
+            client.dialect.answer_bytes,
+        )
+        .expect("fixture numbers"),
     };
-    match name {
-        b"read" => Ok(Call::Read { path: path(&field(b"path")?)?, skip: 0, lines: None }),
-        b"list" => Ok(Call::List { path: path(&field(b"path")?)? }),
-        b"search" => Ok(Call::Search { path: path(&field(b"path")?)?, pattern: field(b"pattern")?, glob: None }),
-        b"write" => Ok(Call::Write { path: path(&field(b"path")?)?, content: field(b"content")? }),
-        b"edit" => {
-            let (old, new) = (field(b"old")?, field(b"new")?);
-            Ok(Call::Edit { path: path(&field(b"path")?)?, old, new, all: false })
-        }
-        b"shell" => Ok(Call::Shell { command: field(b"command")?, timeout: None }),
-        _ => Err(agent::Problem::UnknownTool),
+    match smith_protocol_llm::decode(
+        name,
+        arguments,
+        Grants { inspect: true, modify: true, shell: true },
+        &[],
+        smith_domain::llm::Asker::Main,
+        &limits,
+    ) {
+        smith_domain::llm::Decoded::Owned { call } => Ok(call),
+        smith_domain::llm::Decoded::Invalid { problem } => Err(problem),
+        smith_domain::llm::Decoded::Served { .. } => unreachable!("the finite fixture offers only owned tools"),
     }
-}
-
-/// The fields of a flat JSON object of strings without escapes, which is all
-/// the fake writes; `None` for anything else.
-///
-/// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-fn object(json: &[u8]) -> Option<BTreeMap<Vec<u8>, Vec<u8>>> {
-    let inner = json.strip_prefix(b"{")?.strip_suffix(b"}")?;
-    let mut fields = BTreeMap::new();
-    let mut rest = inner;
-    while !rest.is_empty() {
-        let (key, after) = string(rest)?;
-        let after = after.strip_prefix(b":")?;
-        let (value, after) = string(after)?;
-        fields.insert(key.to_vec(), value.to_vec());
-        rest = match after.strip_prefix(b",") {
-            Some(next) => next,
-            None if after.is_empty() => after,
-            None => return None,
-        };
-    }
-    Some(fields)
-}
-
-/// A JSON string at the start of `json`, and what follows it.
-///
-/// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-fn string(json: &[u8]) -> Option<(&[u8], &[u8])> {
-    let inner = json.strip_prefix(b"\"")?;
-    let end = inner.iter().position(|&byte| byte == b'"')?;
-    Some((&inner[..end], &inner[end + 1..]))
-}
-
-/// A path as the agent's protocol layer splits it.
-///
-/// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-fn path(text: &[u8]) -> Result<Path, agent::Problem> {
-    let bad = || agent::Problem::BadValue { field: b"path".as_slice().into() };
-    let absolute = text.first() == Some(&b'/');
-    let mut parts = Vec::new();
-    for piece in text.split(|&byte| byte == b'/').filter(|piece| !piece.is_empty()) {
-        parts.push(match piece {
-            b"." => Part::Current,
-            b".." => Part::Parent,
-            name => Part::Name { name: Name::new(name.into()).ok_or_else(bad)? },
-        });
-    }
-    if parts.is_empty() && !absolute {
-        return Err(bad());
-    }
-    Ok(Path { absolute, parts: parts.into() })
 }
 
 /// The text the LLM reads for what came of a call, and whether it failed.

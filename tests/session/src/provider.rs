@@ -12,11 +12,11 @@ use skein_fake_llm_domain::api::{InvalidInput, Menu};
 #[must_use]
 pub fn menu() -> Menu {
     let arguments: [&[u8]; 5] = [
-        br#"{"path":"src/lib.rs","content":"src/lib.rs: rewritten","command":"cargo test","old":"42","new":"43","pattern":"answer"}"#,
-        br#"{"path":"./README.md","content":"README.md: rewritten","command":"ls","old":"hello","new":"goodbye","pattern":"hello"}"#,
-        br#"{"path":"../outside.txt","content":"outside.txt: rewritten","command":"true","old":"a","new":"b","pattern":"outside"}"#,
-        br#"{"path":"docs","content":"docs: rewritten","command":"cat README.md","old":"guide","new":"manual","pattern":"guide"}"#,
-        br#"{"path":"notes.md","content":"notes.md: noted","command":"false","old":"noted","new":"kept","pattern":"noted"}"#,
+        br#"{"path":"src/lib.rs","content":"src/lib.rs: rewritten","command":"cargo test","pattern":"answer","edits":[{"old":"42","new":"43"}]}"#,
+        br#"{"path":"./README.md","content":"README.md: rewritten","command":"ls","pattern":"hello","edits":[{"old":"hello","new":"goodbye"}]}"#,
+        br#"{"path":"../outside.txt","content":"outside.txt: rewritten","command":"true","pattern":"outside","edits":[{"old":"a","new":"b"}]}"#,
+        br#"{"path":"docs","content":"docs: rewritten","command":"cat README.md","pattern":"guide","edits":[{"old":"guide","new":"manual"}]}"#,
+        br#"{"path":"notes.md","content":"notes.md: noted","command":"false","pattern":"noted","edits":[{"old":"noted","new":"kept"}]}"#,
     ];
     Menu {
         arguments: arguments.into_iter().map(Into::into).collect(),

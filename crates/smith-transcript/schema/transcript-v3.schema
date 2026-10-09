@@ -31,6 +31,8 @@ record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: 
 record TooLarge { size: u64 }
 record LineNumber { number: u32 }
 record Ambiguous { count: u32 lines: list 1024 LineNumber }
+enum Mismatch { no_match, ambiguous: Ambiguous, unchanged }
+record EditFailed { edit: u32 why: Mismatch }
 enum Fault { denied, no_space, other }
 record Failed { fault: Fault }
 record WorkingPath { path: bytes 4096 }
@@ -42,8 +44,8 @@ enum Outcome {
     read: Read, listed: Listed, found: Found, written: Written,
     edited: Edited, exited: CommandEnd, not_granted, outside: ResolvedFailure, read_only: ResolvedFailure,
     too_long, not_found: ResolvedFailure, not_file, linked, protected, not_directory: ResolvedFailure,
-    too_large: TooLarge, not_read, stale, no_match,
-    ambiguous: Ambiguous, unchanged, failed: Failed, timed_out,
+    too_large: TooLarge, not_read, stale, edit_failed: EditFailed,
+    failed: Failed, timed_out,
     cancelled, busy, nul_byte
 }
 

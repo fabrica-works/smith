@@ -134,12 +134,7 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
             },
         },
         Kind::Edit => llm::Decoded::Owned {
-            call: tools::Call::Edit {
-                path: path(&required_string(tokens, b"path")?)?,
-                old: required_string(tokens, b"old")?,
-                new: required_string(tokens, b"new")?,
-                all: optional_bool(tokens, b"all")?.unwrap_or(false),
-            },
+            call: tools::Call::Edit { path: path(&required_string(tokens, b"path")?)?, edits: replacements(tokens)? },
         },
         Kind::Shell => {
             let seconds = optional_u32(tokens, b"timeout")?;
@@ -207,6 +202,153 @@ fn field(document: &Document, name: &[u8]) -> Option<Compact> {
     None
 }
 
+/// A direct member's value index in one admitted compact object.
+fn member(document: &Document, start: usize, name: &[u8]) -> Option<usize> {
+    let mut depth = 0_u32;
+    for index in start..document.len() {
+        let record = document.token(index)?;
+        match record.kind {
+            JsonKind::ObjectStart | JsonKind::ArrayStart => depth = depth.checked_add(1)?,
+            JsonKind::ObjectEnd | JsonKind::ArrayEnd => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return None;
+                }
+            }
+            JsonKind::Key if depth == 1 && document.text(record)? == name => return index.checked_add(1),
+            JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::True
+            | JsonKind::False
+            | JsonKind::Null
+            | JsonKind::Long => {}
+        }
+    }
+    None
+}
+
+fn replacement_string(document: &Document, start: usize, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
+    let index = member(document, start, name).ok_or(missing(name))?;
+    let record = document.token(index).ok_or(llm::Problem::NotAnObject)?;
+    match record.kind {
+        JsonKind::String => Ok(document.text(record).ok_or(llm::Problem::NotAnObject)?.into()),
+        JsonKind::ObjectStart
+        | JsonKind::ObjectEnd
+        | JsonKind::ArrayStart
+        | JsonKind::ArrayEnd
+        | JsonKind::Key
+        | JsonKind::Number
+        | JsonKind::True
+        | JsonKind::False
+        | JsonKind::Null
+        | JsonKind::Long => Err(wrong_type(name)),
+    }
+}
+
+fn replacement(document: &Document, start: usize) -> Result<tools::Replacement, llm::Problem> {
+    let occurrences = match member(document, start, b"all") {
+        Some(index) => match document.token(index).ok_or(llm::Problem::NotAnObject)?.kind {
+            JsonKind::True => tools::Occurrences::All,
+            JsonKind::False => tools::Occurrences::Once,
+            JsonKind::ObjectStart
+            | JsonKind::ObjectEnd
+            | JsonKind::ArrayStart
+            | JsonKind::ArrayEnd
+            | JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::Null
+            | JsonKind::Long => return Err(wrong_type(b"all")),
+        },
+        None => tools::Occurrences::Once,
+    };
+    Ok(tools::Replacement {
+        old: replacement_string(document, start, b"old")?,
+        new: replacement_string(document, start, b"new")?,
+        occurrences,
+    })
+}
+
+fn replacements(document: &Document) -> Result<Box<[tools::Replacement]>, llm::Problem> {
+    let start = member(document, 0, b"edits").ok_or(missing(b"edits"))?;
+    if document.token(start).ok_or(llm::Problem::NotAnObject)?.kind != JsonKind::ArrayStart {
+        return Err(wrong_type(b"edits"));
+    }
+    let count = replacement_count(document, start)?;
+    if count == 0 {
+        return Err(bad_value(b"edits"));
+    }
+    let mut edits = List::with_capacity(count);
+    let mut depth = 0_u32;
+    for index in start..document.len() {
+        let record = document.token(index).ok_or(llm::Problem::NotAnObject)?;
+        match record.kind {
+            JsonKind::ObjectStart => {
+                if depth == 1 {
+                    edits.push(replacement(document, index)?).or(Err(llm::Problem::TooLarge))?;
+                }
+                depth = depth.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+            }
+            JsonKind::ArrayStart => depth = depth.checked_add(1).ok_or(llm::Problem::TooLarge)?,
+            JsonKind::ObjectEnd | JsonKind::ArrayEnd => {
+                depth = depth.checked_sub(1).ok_or(llm::Problem::NotAnObject)?;
+                if depth == 0 {
+                    break;
+                }
+            }
+            JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::True
+            | JsonKind::False
+            | JsonKind::Null
+            | JsonKind::Long => {}
+        }
+    }
+    Ok(edits.into_boxed())
+}
+
+fn replacement_count(document: &Document, start: usize) -> Result<u32, llm::Problem> {
+    let mut depth = 0_u32;
+    let mut count = 0_u32;
+    for index in start..document.len() {
+        let record = document.token(index).ok_or(llm::Problem::NotAnObject)?;
+        match record.kind {
+            JsonKind::ObjectStart => {
+                if depth == 1 {
+                    count = count.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+                }
+                depth = depth.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+            }
+            JsonKind::ArrayStart => {
+                if depth == 1 {
+                    return Err(wrong_type(b"edits"));
+                }
+                depth = depth.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+            }
+            JsonKind::ObjectEnd | JsonKind::ArrayEnd => {
+                depth = depth.checked_sub(1).ok_or(llm::Problem::NotAnObject)?;
+                if depth == 0 {
+                    break;
+                }
+            }
+            JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::True
+            | JsonKind::False
+            | JsonKind::Null
+            | JsonKind::Long => {
+                if depth == 1 {
+                    return Err(wrong_type(b"edits"));
+                }
+            }
+        }
+    }
+    Ok(count)
+}
+
 fn required_string(document: &Document, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
     match field(document, name) {
         Some(record) if record.kind == JsonKind::String => {
@@ -222,15 +364,6 @@ fn optional_string(document: &Document, name: &[u8]) -> Result<Option<Box<[u8]>>
         Some(record) if record.kind == JsonKind::String => {
             Ok(Some(document.text(&record).ok_or(llm::Problem::NotAnObject)?.into()))
         }
-        Some(_) => Err(wrong_type(name)),
-        None => Ok(None),
-    }
-}
-
-fn optional_bool(document: &Document, name: &[u8]) -> Result<Option<bool>, llm::Problem> {
-    match field(document, name) {
-        Some(record) if record.kind == JsonKind::True => Ok(Some(true)),
-        Some(record) if record.kind == JsonKind::False => Ok(Some(false)),
         Some(_) => Err(wrong_type(name)),
         None => Ok(None),
     }
