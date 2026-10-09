@@ -46,7 +46,7 @@ pub const CEILINGS: Limits = Limits {
     call_id: 256,
     call_name: 64,
     call_input: 1_048_576,
-    entry_name: 1_024,
+    entry_name: 4_096,
     hit_path: 4_096,
     hit_text: 4_096,
     read_content: 1_048_576,
@@ -8572,8 +8572,8 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Entry::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_024, true))).expect("field at ceiling");
-        let problem = Entry::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_025, false))).expect_err("field past ceiling");
+        Entry::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4_096, true))).expect("field at ceiling");
+        let problem = Entry::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4_097, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::EntryName, skein_codec::Reason::Bound));
     }
 

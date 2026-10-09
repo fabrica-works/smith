@@ -48,10 +48,7 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
         caps.search_bytes = u32::try_from(rng.next_u64() % 1024).unwrap();
         let bound = render_worst_case(&caps, 1024, 2048).unwrap();
         let entries = (0..caps.list_entries)
-            .map(|_| tools::Entry {
-                name: tools::Name::new(vec![0xff; 8].into()).unwrap(),
-                kind: tools::Kind::Directory,
-            })
+            .map(|_| tools::Entry { name: vec![0xff; 8].into(), kind: tools::Kind::Directory })
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let hits = (0..caps.search_hits)
@@ -223,8 +220,8 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
     let golden = [
         ("Read lines; cuts are marked. Batch independent reads, lists and searches side by side.", 3_usize),
         (
-            "List a directory; max 11 entries; omissions counted. List / for directory names. Batch independent reads, lists and searches side by side.",
-            1,
+            "List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max 11 entries; omitted files and directories counted once. List / for directory names. Batch independent reads, lists and searches side by side.",
+            3,
         ),
         (
             "Search files; max 13 matches, 127 bytes; cuts are marked. Batch independent reads, lists and searches side by side.",

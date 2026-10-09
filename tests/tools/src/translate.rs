@@ -5,7 +5,7 @@
 
 use skein_fake_checkout as fake;
 use skein_lib::Token;
-use smith_domain_tools::{Done, Entry, Exit, Expect, Fault, Hit, Kind, Name, Op, Part, Path, Place, Version};
+use smith_domain_tools::{Done, Exit, Expect, Fault, Hit, Name, Op, Part, Path, Place, Version};
 
 /// The path the LLM wrote, split at its slashes, as the protocol layer does.
 ///
@@ -143,29 +143,20 @@ pub fn perform(checkout: &mut fake::Checkout, op: Op) -> Done {
             Ok((content, found)) => Done::Loaded { content: content.into(), version: version(found) },
             Err(failure) => done(failure),
         },
-        Op::Scan { at, max, max_bytes } => {
-            let max = usize::try_from(max).expect("a small listing");
-            match checkout.scan(root(at.root), &at.path, max) {
-                Ok((entries, mut more)) => {
-                    let mut retained = Vec::with_capacity(entries.len());
-                    let mut bytes = 0_u64;
-                    let mut full = false;
-                    for found in entries {
-                        let found = entry(found);
-                        let cost = u64::try_from(core::mem::size_of::<Entry>())
-                            .expect("entry size")
-                            .checked_add(u64::try_from(found.name.as_bytes().len()).expect("name size"))
-                            .expect("bounded listing");
-                        let next = bytes.checked_add(cost).expect("bounded listing");
-                        if full || next > max_bytes {
-                            full = true;
-                            more = more.saturating_add(1);
-                        } else {
-                            bytes = next;
-                            retained.push(found);
-                        }
+        Op::List { at, depth, glob, max, max_bytes } => {
+            let command = listing_command(at.root, &at.path, glob.as_deref());
+            match checkout.spawn(root(at.root), &at.path, &command, &[], &[]) {
+                Ok(process) => {
+                    let line = u32::try_from(process.program.output.len()).expect("finite fixture output");
+                    let mut listing = smith_protocol_machine::Listing::new(max, max_bytes, depth, line);
+                    for byte in process.program.output {
+                        listing.push(byte);
                     }
-                    Done::Scanned { entries: retained.into_boxed_slice(), more }
+                    let exit = match process.program.exit {
+                        fake::Exit::Code(code) => skein_io::kernel::Exit::Code(code),
+                        fake::Exit::Signal(signal) => skein_io::kernel::Exit::Signal(u32::from(signal)),
+                    };
+                    listing.finish(Some(exit), false)
                 }
                 Err(failure) => done(failure),
             }
@@ -221,7 +212,7 @@ pub fn cut(done: Done, ran: u128, whole: u128) -> Done {
         | Done::Escapes
         | Done::Failed { .. }
         | Done::Loaded { .. }
-        | Done::Scanned { .. }
+        | Done::Listed { .. }
         | Done::Stored { .. }
         | Done::Conflict { .. }
         | Done::NotFile
@@ -236,16 +227,6 @@ fn hit((path, line, text): (Vec<u8>, usize, Vec<u8>)) -> Hit {
     Hit { path: path.into(), line: u32::try_from(line).expect("a short file"), text: text.into() }
 }
 
-fn entry((name, kind): (Vec<u8>, fake::Kind)) -> Entry {
-    let kind = match kind {
-        fake::Kind::File => Kind::File,
-        fake::Kind::Directory => Kind::Directory,
-        fake::Kind::Link => Kind::Link,
-        fake::Kind::Special => Kind::Other,
-    };
-    Entry { name: name_of(&name), kind }
-}
-
 fn done(failure: fake::Failure) -> Done {
     match failure {
         fake::Failure::Missing => Done::Missing,
@@ -257,4 +238,46 @@ fn done(failure: fake::Failure) -> Done {
         fake::Failure::Loop => Done::Failed { fault: Fault::Other },
         fake::Failure::Conflict { now } => Done::Conflict { now: now.map(version) },
     }
+}
+
+/// Register a finite selected-file output, using Skein's existing command fixture.
+/// Paths are relative to the requested directory and already selected by rg's
+/// ignore/glob rules; this adapter interprets neither rules nor the filesystem.
+pub fn listing_fixture(
+    checkout: &mut fake::Checkout,
+    root: Token,
+    directory: &[u8],
+    glob: Option<&[u8]>,
+    selected: &[&[u8]],
+) {
+    let command = listing_command(root, directory, glob);
+    let mut output = Vec::new();
+    for path in selected {
+        output.extend_from_slice(path);
+        output.push(0);
+    }
+    checkout.program(
+        &command,
+        fake::Program {
+            duration: std::time::Duration::from_millis(1),
+            output,
+            exit: fake::Exit::Code(0),
+            changes: Vec::new(),
+        },
+    );
+}
+
+fn listing_command(root: Token, directory: &[u8], glob: Option<&[u8]>) -> Vec<u8> {
+    let mut command = b"rg --files fixture\0".to_vec();
+    command.extend_from_slice(&root.raw().to_le_bytes());
+    command.extend_from_slice(directory);
+    command.push(0);
+    match glob {
+        Some(glob) => {
+            command.push(1);
+            command.extend_from_slice(glob);
+        }
+        None => command.push(0),
+    }
+    command
 }

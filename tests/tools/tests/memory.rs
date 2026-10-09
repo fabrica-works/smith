@@ -50,8 +50,11 @@ fn fill(limits: Limits) {
     for session in 0..limits.kits {
         let opened = step(Event::Open { session: Token::new(session.into()), authority: authority(&limits) });
         let [kit] = opened[..] else { panic!("{limits:?}: the authority fits") };
-        let list =
-            smith_domain_tools::Call::List { path: smith_domain_tools::Path { absolute: true, parts: Box::new([]) } };
+        let list = smith_domain_tools::Call::List {
+            path: smith_domain_tools::Path { absolute: true, parts: Box::new([]) },
+            depth: smith_domain_tools::Depth::Whole,
+            glob: None,
+        };
         assert!(
             step(Event::Call {
                 kit,

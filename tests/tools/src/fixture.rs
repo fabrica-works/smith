@@ -75,6 +75,19 @@ impl Fixture {
             (b"work/temper/src/new.rs", Some(b"new\n")),
         ];
         checkout.program(b"install hooks", program(100, b"", Exit::Code(0), &hooks));
+        crate::translate::listing_fixture(
+            &mut checkout,
+            repos[0].root,
+            b"",
+            None,
+            &[b"Cargo.toml", b"big.txt", b"long.txt", b"src/lib.rs", b"src/main.rs", b"vendor/lib/lib.rs"],
+        );
+        for path in [b"src".as_slice(), b"srclink"] {
+            crate::translate::listing_fixture(&mut checkout, repos[0].root, path, None, &[b"lib.rs", b"main.rs"]);
+        }
+        crate::translate::listing_fixture(&mut checkout, repos[0].root, b"vendor/lib", None, &[b"lib.rs"]);
+        crate::translate::listing_fixture(&mut checkout, repos[1].root, b"", None, &[b"lib.rs"]);
+        crate::translate::listing_fixture(&mut checkout, repos[2].root, b"", None, &[b"guide.md"]);
         Fixture { checkout, repos }
     }
 

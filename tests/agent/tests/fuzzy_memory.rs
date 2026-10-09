@@ -310,7 +310,7 @@ impl Driver {
                     self.seen[1] += 1;
                     let op = match op {
                         Op::Load { .. } => OpKind::Load,
-                        Op::Scan { .. } => OpKind::Scan,
+                        Op::List { .. } => OpKind::Scan,
                         Op::Store { .. } => OpKind::Store,
                         Op::Spawn { .. } => OpKind::Spawn,
                         Op::Search { hits, bytes: byte_cap, .. } => OpKind::Search { hits, byte_cap },
@@ -561,7 +561,7 @@ impl Driver {
         let lib = || path(&[b"src", b"lib.rs"]);
         let call = match self.rng.below(9) {
             0 => Call::Read { path: lib(), skip: 0, lines: None },
-            1 => Call::List { path: path(&[b"src"]) },
+            1 => Call::List { path: path(&[b"src"]), depth: smith_domain_tools::Depth::Whole, glob: None },
             2 => Call::Search { path: path(&[b"src"]), pattern: bytes(3), glob: None },
             3 => Call::Write { path: lib(), content: bytes(size) },
             4 => Call::Edit {
@@ -640,8 +640,8 @@ impl Driver {
             OpKind::Load => Done::Loaded { content: bytes(self.rng.below(u64::from(tools.file_bytes) + 1)), version },
             OpKind::Scan => {
                 let entries = (0..tools.list_entries)
-                    .map(|entry| Entry { name: name(format!("e{entry}").as_bytes()), kind: Kind::File });
-                Done::Scanned { entries: entries.collect(), more: 3 }
+                    .map(|entry| Entry { name: format!("e{entry}").into_bytes().into(), kind: Kind::File });
+                Done::Listed { entries: entries.collect(), more: 3 }
             }
             OpKind::Store => Done::Stored { version },
             OpKind::Spawn => {

@@ -27,10 +27,7 @@ fn workspace_successes_render_the_retained_content_and_counts() {
         ),
         (
             tools::Outcome::Listed {
-                entries: Box::new([tools::Entry {
-                    name: tools::Name::new(b"src".as_slice().into()).expect("valid entry"),
-                    kind: tools::Kind::Directory,
-                }]),
+                entries: Box::new([tools::Entry { name: b"src".as_slice().into(), kind: tools::Kind::Directory }]),
                 more: 3,
             },
             b"src\tdirectory\n... 3 more entries",

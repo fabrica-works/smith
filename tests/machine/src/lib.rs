@@ -191,6 +191,19 @@ impl World {
         self.run(&Job::Flood { owner, bytes: bytes.into(), head, tail })
     }
 
+    /// Deliver a finite rg-selected path script through the machine's existing child-event fixture.
+    pub fn listing(
+        &mut self,
+        owner: Token,
+        selected: &[u8],
+        depth: tools::Depth,
+        maximum: u32,
+        bytes: u64,
+    ) -> ToDomain {
+        assert!(selected.len() <= 4096, "bounded selected-file fixture");
+        self.run(&Job::Listing { owner, selected: selected.into(), depth, maximum, bytes })
+    }
+
     fn run(&mut self, job: &Job) -> ToDomain {
         let root = self.machine.borrow_mut().open(self.root_handle, b".", How::Directory).expect("fresh run root");
         let mut config = Config::calm();
@@ -228,6 +241,7 @@ impl Drop for World {
 enum Job {
     Request(FromDomain, bool),
     Flood { owner: Token, bytes: Box<[u8]>, head: u32, tail: u32 },
+    Listing { owner: Token, selected: Box<[u8]>, depth: tools::Depth, maximum: u32, bytes: u64 },
 }
 
 impl Job {
@@ -241,7 +255,7 @@ impl Job {
                 | FromDomain::Check { owner, .. }
                 | FromDomain::Abort { owner } => *owner,
             },
-            Self::Flood { owner, .. } => *owner,
+            Self::Flood { owner, .. } | Self::Listing { owner, .. } => *owner,
         }
     }
     fn copy(&self) -> Self {
@@ -265,6 +279,13 @@ impl Job {
                 },
                 *cancel,
             ),
+            Self::Listing { owner, selected, depth, maximum, bytes } => Self::Listing {
+                owner: *owner,
+                selected: selected.clone(),
+                depth: *depth,
+                maximum: *maximum,
+                bytes: *bytes,
+            },
             Self::Flood { owner, bytes, head, tail } => {
                 Self::Flood { owner: *owner, bytes: bytes.clone(), head: *head, tail: *tail }
             }
@@ -467,22 +488,53 @@ impl Application {
     }
 
     fn flood(&mut self, owner: Token, bytes: &[u8], head: u32, tail: u32) -> ToDomain {
+        let op = tools::Op::Spawn {
+            cwd: tools::Place { root: self.root, path: Box::new([]) },
+            command: Box::from(b"flood".as_slice()),
+            head,
+            tail,
+        };
+        self.child_output(owner, op, bytes)
+    }
+
+    fn listing(&mut self, owner: Token, selected: &[u8], depth: tools::Depth, maximum: u32, bytes: u64) -> ToDomain {
+        let op = tools::Op::List {
+            at: tools::Place { root: self.root, path: Box::new([]) },
+            depth,
+            glob: None,
+            max: maximum,
+            max_bytes: bytes,
+        };
+        self.child_output(owner, op, selected)
+    }
+
+    fn child_output(&mut self, owner: Token, op: tools::Op, bytes: &[u8]) -> ToDomain {
         let deadline = Time::from_nanos(100_000_000);
         self.component.from_domain(
             &self.machine_env,
-            FromDomain::Op {
-                owner,
-                op: tools::Op::Spawn {
-                    cwd: tools::Place { root: self.root, path: Box::new([]) },
-                    command: Box::from(&b"flood"[..]),
-                    head,
-                    tail,
-                },
-                deadline,
-            },
+            FromDomain::Op { owner, op, deadline },
             &mut self.to_domain,
             &mut self.below,
         );
+        if let Some(Below::OpenDirectory { .. }) = self.below.iter().next() {
+            drop(self.below.pop());
+            self.component.from_below(
+                &self.machine_env,
+                BelowEvent::File(file::Event::Opened { owner, file: Token::new(7999), len: 0 }),
+                &mut self.to_domain,
+                &mut self.below,
+            );
+            assert!(
+                matches!(self.below.pop(), Some(Below::File { request: file::Request::Close { .. }, .. })),
+                "listing directory is closed before spawn"
+            );
+            self.component.from_below(
+                &self.machine_env,
+                BelowEvent::File(file::Event::Closed { owner }),
+                &mut self.to_domain,
+                &mut self.below,
+            );
+        }
         match self.below.pop() {
             Some(Below::Spawn { .. }) => {}
             other => panic!("expected a flood spawn: {other:?}"),
@@ -570,6 +622,16 @@ impl Application {
                         &mut self.file_io,
                         deadline,
                         file::Request::OpenRead { owner, root: descriptor, name: path },
+                        &mut self.file_events,
+                        &mut self.file_subs,
+                    );
+                }
+                Below::OpenDirectory { owner, root, path, deadline } => {
+                    let descriptor = self.file_io.descriptor(root).expect("adopted root");
+                    file_layer::down_until(
+                        &mut self.file_io,
+                        deadline,
+                        file::Request::OpenDirectory { owner, root: descriptor, name: path, no_follow: false },
                         &mut self.file_events,
                         &mut self.file_subs,
                     );
@@ -689,6 +751,10 @@ impl Host for Application {
                         });
                     }
                     self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
+                }
+                Job::Listing { owner, selected, depth, maximum, bytes } => {
+                    let terminal = self.listing(owner, &selected, depth, maximum, bytes);
+                    self.terminals.push(terminal);
                 }
                 Job::Flood { owner, bytes, head, tail } => {
                     let terminal = self.flood(owner, &bytes, head, tail);

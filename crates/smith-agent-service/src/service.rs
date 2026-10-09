@@ -1735,7 +1735,9 @@ fn component_down(service: &mut Service) {
             break;
         }
         let waits_for_file = match service.machine_below.iter().next() {
-            Some(machine::Below::File { .. } | machine::Below::OpenRead { .. }) => !service.files.takes(),
+            Some(
+                machine::Below::File { .. } | machine::Below::OpenRead { .. } | machine::Below::OpenDirectory { .. },
+            ) => !service.files.takes(),
             Some(machine::Below::CancelFile { .. } | machine::Below::Spawn { .. } | machine::Below::Process(_))
             | None => false,
         };
@@ -1766,6 +1768,16 @@ fn component_down(service: &mut Service) {
                     &mut service.files,
                     deadline,
                     file::Request::OpenRead { owner, root: descriptor, name: path },
+                    &mut service.file_events,
+                    &mut service.file_submissions,
+                );
+            }
+            machine::Below::OpenDirectory { owner, root, path, deadline } => {
+                let descriptor = service.files.descriptor(root).expect("machine admitted an installed root");
+                file_layer::down_until(
+                    &mut service.files,
+                    deadline,
+                    file::Request::OpenDirectory { owner, root: descriptor, name: path, no_follow: false },
                     &mut service.file_events,
                     &mut service.file_submissions,
                 );

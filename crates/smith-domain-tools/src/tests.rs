@@ -296,7 +296,7 @@ fn names_are_never_empty_dots_or_slashes() {
 fn reading_calls_have_the_read_effect_and_the_rest_write() {
     let table = [
         (Call::Read { path: path(b"a"), skip: 0, lines: None }, Effect::Read),
-        (Call::List { path: path(b".") }, Effect::Read),
+        (Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None }, Effect::Read),
         (Call::Search { path: path(b"."), pattern: bytes(b"fn main"), glob: None }, Effect::Read),
         (Call::Write { path: path(b"a"), content: bytes(b"") }, Effect::Write),
         (
@@ -504,7 +504,7 @@ fn calls_are_refused_at_the_entrance() {
     let shell = Call::Shell { command: bytes(b"cargo test"), timeout: None };
     let table = [
         (modify, read(b"src/lib.rs"), Outcome::NotGranted),
-        (modify, Call::List { path: path(b".") }, Outcome::NotGranted),
+        (modify, Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None }, Outcome::NotGranted),
         (inspect, write(b"src/lib.rs", 1), Outcome::NotGranted),
         (inspect, edit(b"src/lib.rs"), Outcome::NotGranted),
         (inspect, shell.clone(), Outcome::NotGranted),
@@ -515,7 +515,7 @@ fn calls_are_refused_at_the_entrance() {
         ),
         (
             inspect,
-            Call::List { path: path(b"..") },
+            Call::List { path: path(b".."), depth: crate::Depth::Whole, glob: None },
             Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } },
         ),
         (
@@ -575,7 +575,7 @@ fn version(n: u64) -> Version {
 }
 
 fn entry(name: &[u8], kind: Kind) -> Entry {
-    Entry { name: Name::new(Box::from(name)).expect("a test name"), kind }
+    Entry { name: Box::from(name), kind }
 }
 
 fn span(skip: u32, lines: Option<u32>) -> Span {
@@ -684,10 +684,19 @@ fn every_other_end_of_a_load_answers_for_itself() {
 fn a_listing_scans_the_directory() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
-    let (owner, op) = h.start(kit, 1, Call::List { path: path(b"vendor/lib") });
-    assert_eq!(op, Op::Scan { at: place(2, b""), max: LIMITS.list_entries, max_bytes: LIMITS.list_bytes });
+    let (owner, op) = h.start(kit, 1, Call::List { path: path(b"vendor/lib"), depth: crate::Depth::Whole, glob: None });
+    assert_eq!(
+        op,
+        Op::List {
+            at: place(2, b""),
+            depth: crate::Depth::Whole,
+            glob: None,
+            max: LIMITS.list_entries,
+            max_bytes: LIMITS.list_bytes
+        }
+    );
     let entries: Box<[Entry]> = Box::new([entry(b"Cargo.toml", Kind::File), entry(b"src", Kind::Directory)]);
-    let (_, outcome) = h.end(owner, Done::Scanned { entries: entries.clone(), more: 3 });
+    let (_, outcome) = h.end(owner, Done::Listed { entries: entries.clone(), more: 3 });
     assert_eq!(outcome, Outcome::Listed { entries, more: 3 });
 
     let table = [
@@ -699,7 +708,7 @@ fn a_listing_scans_the_directory() {
         (Done::Cancelled, Outcome::Cancelled),
     ];
     for (done, expected) in table {
-        let (owner, _) = h.start(kit, 1, Call::List { path: path(b"src") });
+        let (owner, _) = h.start(kit, 1, Call::List { path: path(b"src"), depth: crate::Depth::Whole, glob: None });
         assert_eq!(h.end(owner, done), (1, expected));
     }
 }
@@ -743,7 +752,7 @@ fn closing_a_kit_cancels_its_calls_and_ends_with_the_last() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(9, authority(ALL));
     let (first, _) = h.start(kit, 1, read(b"a"));
-    let (second, _) = h.start(kit, 2, Call::List { path: path(b".") });
+    let (second, _) = h.start(kit, 2, Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None });
     let cancels = h.emit(Event::Close { kit });
     let mut cancelled = [first, second];
     cancelled.sort_unstable();
@@ -752,7 +761,7 @@ fn closing_a_kit_cancels_its_calls_and_ends_with_the_last() {
     assert_eq!(cancels, expected);
     assert_eq!(h.end(first, Done::Cancelled), (1, Outcome::Cancelled));
     // The listing won its race with the cancel.
-    let last = h.emit(Event::Done { owner: second, done: Done::Scanned { entries: Box::new([]), more: 0 } });
+    let last = h.emit(Event::Done { owner: second, done: Done::Listed { entries: Box::new([]), more: 0 } });
     let expected: Box<[Request]> = Box::new([
         Request::Answer {
             to: ReplyTo::new(Token::new(2)),
@@ -1003,7 +1012,7 @@ fn an_edit_that_matches_nothing_or_too_much_stores_nothing() {
     let loaded = Done::Loaded { content: bytes(b"a\nb\na\n"), version: version(3) };
     match h.next(owner, loaded) {
         Op::Store { content, .. } => assert_eq!(&*content, b"y\nb\ny\n"),
-        op @ (Op::Load { .. } | Op::Scan { .. } | Op::Spawn { .. } | Op::Search { .. }) => {
+        op @ (Op::Load { .. } | Op::List { .. } | Op::Spawn { .. } | Op::Search { .. }) => {
             panic!("expected the store, not {op:?}")
         }
     }
@@ -1275,7 +1284,7 @@ fn a_kit_tells_what_happens_as_facts() {
     );
     let (owner, _) = h.start(kit, 1, read(b"src/lib.rs"));
     drop(h.end(owner, Done::Loaded { content: bytes(b"one\ntwo\n"), version: version(1) }));
-    let (_, _) = h.start(kit, 2, Call::List { path: path(b"src") });
+    let (_, _) = h.start(kit, 2, Call::List { path: path(b"src"), depth: crate::Depth::Whole, glob: None });
     drop(h.emit(Event::Close { kit }));
     let expected = [
         Fact::Opened { session },
@@ -1345,7 +1354,7 @@ fn a_command_grant_does_not_depend_on_a_file_modify_grant() {
             assert_eq!(command, bytes(b"cargo test"));
             assert_eq!((head, tail), (LIMITS.shell_head, LIMITS.shell_tail));
         }
-        op @ (Op::Load { .. } | Op::Scan { .. } | Op::Store { .. } | Op::Search { .. }) => {
+        op @ (Op::Load { .. } | Op::List { .. } | Op::Store { .. } | Op::Search { .. }) => {
             panic!("expected a spawn, not {op:?}")
         }
     }
@@ -1464,7 +1473,10 @@ fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
         limits.list_bytes = bytes;
         let mut h = Harness::new(limits);
         let kit = h.open(1, named.clone());
-        assert_eq!(h.call(kit, Call::List { path: path(b"/") }), Outcome::Listed { entries: expected, more });
+        assert_eq!(
+            h.call(kit, Call::List { path: path(b"/"), depth: crate::Depth::Whole, glob: None }),
+            Outcome::Listed { entries: expected, more }
+        );
         assert!(h.domain.jobs.is_empty(), "the answer owns no IO job");
         assert_eq!(h.step(Event::Close { kit }), Some(Request::Closed { session: Token::new(1) }));
     }
@@ -1472,7 +1484,10 @@ fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
     let mut denied = named.clone();
     denied.grants.inspect = false;
     let kit = h.open(1, denied);
-    assert_eq!(h.call(kit, Call::List { path: path(b"/") }), Outcome::NotGranted);
+    assert_eq!(
+        h.call(kit, Call::List { path: path(b"/"), depth: crate::Depth::Whole, glob: None }),
+        Outcome::NotGranted
+    );
     let kit = h.open(2, named);
     let reply_to = ReplyTo::new(Token::new(99));
     assert_eq!(
@@ -1480,7 +1495,7 @@ fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
             kit,
             observation: None,
             reply_to,
-            call: Call::List { path: path(b"/") },
+            call: Call::List { path: path(b"/"), depth: crate::Depth::Whole, glob: None },
             deadline: Time::ZERO
         }),
         Some(Request::Answer { to: ReplyTo::new(Token::new(99)), outcome: Outcome::TimedOut })
@@ -1561,7 +1576,7 @@ fn host_aliases_choose_whole_names_and_keep_the_namespace_root_pure() {
         let (owner, op) = h.start(kit, 20, read(spelling));
         match op {
             Op::Load { at, .. } => assert_eq!(at, Place { root, path: bytes(tail) }),
-            Op::Scan { .. } | Op::Search { .. } | Op::Store { .. } | Op::Spawn { .. } => panic!("read loads"),
+            Op::List { .. } | Op::Search { .. } | Op::Store { .. } | Op::Spawn { .. } => panic!("read loads"),
         }
         let (_, outcome) = h.end(owner, Done::Missing);
         let path = if root == Token::new(1) {
@@ -1582,7 +1597,7 @@ fn host_aliases_choose_whole_names_and_keep_the_namespace_root_pure() {
     root.repos[0].host = Box::new([]);
     let kit = h.open(11, root);
     assert_eq!(
-        h.call(kit, Call::List { path: path(b"/") }),
+        h.call(kit, Call::List { path: path(b"/"), depth: crate::Depth::Whole, glob: None }),
         Outcome::Listed { entries: Box::new([entry(b"work", Kind::Directory)]), more: 0 }
     );
 }
@@ -1628,4 +1643,29 @@ fn an_edit_batch_without_a_read_stores_once_and_a_failed_batch_stores_nothing() 
         (2, Outcome::EditFailed { edit: 2, why: crate::Mismatch::NoMatch })
     );
     assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(8)));
+}
+
+#[test]
+fn list_controls_cross_once_and_zero_depth_is_refused_before_io() {
+    let mut harness = Harness::new(LIMITS);
+    let kit = harness.open(1, authority(ALL));
+    let (_, op) = harness.start(
+        kit,
+        1,
+        Call::List { path: path(b"src"), depth: crate::Depth::Levels(2), glob: Some(bytes(b"*.rs")) },
+    );
+    assert_eq!(
+        op,
+        Op::List {
+            at: place(1, b"src"),
+            depth: crate::Depth::Levels(2),
+            glob: Some(bytes(b"*.rs")),
+            max: LIMITS.list_entries,
+            max_bytes: LIMITS.list_bytes
+        }
+    );
+    assert_eq!(
+        harness.call(kit, Call::List { path: path(b"src"), depth: crate::Depth::Levels(0), glob: None }),
+        Outcome::Failed { fault: Fault::Other }
+    );
 }

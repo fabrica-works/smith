@@ -139,7 +139,7 @@ fn store_uses_no_follow_and_returns_digest() {
 }
 
 #[test]
-fn a_symbolic_link_refusal_becomes_linked_and_a_scan_keeps_more() {
+fn a_symbolic_link_refusal_becomes_linked() {
     let mut component = component();
     let mut to_domain = Queue::with_capacity(2);
     let mut below = Queue::with_capacity(2);
@@ -166,53 +166,6 @@ fn a_symbolic_link_refusal_becomes_linked_and_a_scan_keeps_more() {
         &mut below,
     );
     assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner: Token::new(1), done: tools::Done::Linked }));
-    component.from_domain(
-        &env(),
-        FromDomain::Op {
-            owner: Token::new(2),
-            op: tools::Op::Scan { at: place(b"src"), max: 2, max_bytes: 512 },
-            deadline: Time::from_nanos(u64::MAX),
-        },
-        &mut to_domain,
-        &mut below,
-    );
-    assert_eq!(
-        below.pop(),
-        Some(Below::File {
-            request: file::Request::Scan {
-                owner: Token::new(2),
-                root: Token::new(10),
-                path: Box::from(&b"src"[..]),
-                max: 2,
-                max_bytes: 512,
-                no_follow: false,
-            },
-            deadline: Time::from_nanos(u64::MAX)
-        })
-    );
-    component.from_below(
-        &env(),
-        BelowEvent::File(file::Event::Scanned {
-            owner: Token::new(2),
-            entries: Box::new([file::Entry { name: Box::from(&b"a"[..]), kind: kernel::Kind::File }]),
-            more: 3,
-        }),
-        &mut to_domain,
-        &mut below,
-    );
-    assert_eq!(
-        to_domain.pop(),
-        Some(ToDomain::Done {
-            owner: Token::new(2),
-            done: tools::Done::Scanned {
-                entries: Box::new([tools::Entry {
-                    name: tools::Name::new(Box::from(&b"a"[..])).expect("safe name"),
-                    kind: tools::Kind::File
-                }]),
-                more: 3,
-            }
-        })
-    );
 }
 
 #[test]
@@ -501,9 +454,17 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     op: tools::Op::Store { at: place(path), content: Box::new([]), expect: tools::Expect::Absent },
                     deadline,
                 },
-                2 => {
-                    FromDomain::Op { owner, op: tools::Op::Scan { at: place(path), max: 2, max_bytes: 512 }, deadline }
-                }
+                2 => FromDomain::Op {
+                    owner,
+                    op: tools::Op::List {
+                        at: place(path),
+                        depth: tools::Depth::Whole,
+                        glob: None,
+                        max: 2,
+                        max_bytes: 512,
+                    },
+                    deadline,
+                },
                 3 => FromDomain::Op {
                     owner,
                     op: tools::Op::Spawn { cwd: place(path), command: Box::from(&b"true"[..]), head: 4, tail: 4 },
@@ -555,9 +516,9 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     | file::Request::Remove { .. }
                     | file::Request::List { .. }) => panic!("unexpected file request: {other:?}"),
                 },
-                Below::OpenRead { path, .. } => assert_eq!(path.as_ref(), expected),
+                Below::OpenRead { path, .. } | Below::OpenDirectory { path, .. } => assert_eq!(path.as_ref(), expected),
                 Below::Spawn { spawn, .. } => {
-                    if operation == 3 {
+                    if operation == 2 || operation == 3 {
                         assert_eq!(spawn.dir.as_ref(), expected);
                     } else {
                         assert_eq!(spawn.dir.as_ref(), b".");
@@ -622,8 +583,11 @@ fn configured_variables_are_encoded_once_for_commands_and_checks_and_absent_for_
                         assert_eq!(spawn.env.as_ref(), expected.as_ref());
                     }
                 }
-                other
-                @ (Below::File { .. } | Below::OpenRead { .. } | Below::CancelFile { .. } | Below::Process(_)) => {
+                other @ (Below::File { .. }
+                | Below::OpenRead { .. }
+                | Below::OpenDirectory { .. }
+                | Below::CancelFile { .. }
+                | Below::Process(_)) => {
                     panic!("expected process spawn: {other:?}");
                 }
             }
@@ -718,4 +682,259 @@ fn a_cancel_before_spawn_reaches_group_close_and_waits_for_every_terminal() {
     );
     assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
     assert!(to_domain.is_empty());
+}
+
+#[expect(
+    clippy::manual_map,
+    clippy::too_many_lines,
+    reason = "entry-point fixture orders directory, spawn, pipes and child terminals"
+)]
+fn listed(output: &[u8], depth: tools::Depth, maximum: u32, bytes: u64, glob: Option<&[u8]>) -> tools::Done {
+    let mut component = component();
+    let mut terminals = Queue::with_capacity(4);
+    let mut below = Queue::with_capacity(4);
+    let owner = Token::new(50);
+    component.from_domain(
+        &env(),
+        FromDomain::Op {
+            owner,
+            op: tools::Op::List {
+                at: place(b"src"),
+                depth,
+                glob: match glob {
+                    Some(glob) => Some(Box::from(glob)),
+                    None => None,
+                },
+                max: maximum,
+                max_bytes: bytes,
+            },
+            deadline: Time::from_nanos(u64::MAX),
+        },
+        &mut terminals,
+        &mut below,
+    );
+    assert_eq!(
+        below.pop(),
+        Some(Below::OpenDirectory {
+            owner,
+            root: Token::new(10),
+            path: Box::from(b"src".as_slice()),
+            deadline: Time::from_nanos(u64::MAX)
+        })
+    );
+    component.from_below(
+        &env(),
+        BelowEvent::File(file::Event::Opened { owner, file: Token::new(49), len: 0 }),
+        &mut terminals,
+        &mut below,
+    );
+    assert_eq!(
+        below.pop(),
+        Some(Below::File {
+            request: file::Request::Close { owner, file: Token::new(49) },
+            deadline: Time::from_nanos(u64::MAX)
+        })
+    );
+    assert!(terminals.is_empty(), "directory closure is owed before spawning");
+    component.from_below(&env(), BelowEvent::File(file::Event::Closed { owner }), &mut terminals, &mut below);
+    match below.pop().expect("listing starts rg") {
+        Below::Spawn { spawn, root, .. } => {
+            assert_eq!(root, Token::new(10));
+            assert_eq!(spawn.dir.as_ref(), b"src");
+            assert_eq!(spawn.program.as_ref(), b"/usr/bin/rg");
+            assert!(spawn.env.is_empty());
+            assert!(has_argument(&spawn.args, b"--files"));
+            assert!(has_argument(&spawn.args, b"--null"));
+            assert!(has_argument(&spawn.args, b"--sort=path"));
+            if let Some(glob) = glob {
+                let mut found = false;
+                for word in &spawn.args {
+                    if word.strip_prefix(b"--glob=") == Some(glob) {
+                        found = true;
+                    }
+                }
+                assert!(found);
+            }
+        }
+        Below::File { .. }
+        | Below::CancelFile { .. }
+        | Below::OpenRead { .. }
+        | Below::OpenDirectory { .. }
+        | Below::Process(_) => {
+            panic!("listing is a process")
+        }
+    }
+    let child = Token::new(51);
+    let stdout = Token::new(52);
+    let stderr = Token::new(53);
+    component.from_below(
+        &env(),
+        BelowEvent::Process(skein_io::Event::Spawned { owner, child, pipes: Box::new([stdout, stderr]) }),
+        &mut terminals,
+        &mut below,
+    );
+    while below.pop().is_some() {}
+    for byte in output {
+        let chunk = Box::new([*byte]);
+        component.from_below(
+            &env(),
+            BelowEvent::Process(skein_io::Event::Stream { owner: stdout, up: skein_lib::stream::Up::Bytes(chunk) }),
+            &mut terminals,
+            &mut below,
+        );
+        while below.pop().is_some() {}
+    }
+    component.from_below(
+        &env(),
+        BelowEvent::Process(skein_io::Event::Exited { owner, exit: kernel::Exit::Code(0) }),
+        &mut terminals,
+        &mut below,
+    );
+    while below.pop().is_some() {}
+    for entity in [owner, stdout, stderr] {
+        component.from_below(
+            &env(),
+            BelowEvent::Process(skein_io::Event::Closed { owner: entity }),
+            &mut terminals,
+            &mut below,
+        );
+    }
+    match terminals.pop().expect("one listing terminal") {
+        ToDomain::Done { done, .. } => done,
+        ToDomain::Read { .. } | ToDomain::Probed { .. } | ToDomain::Checked { .. } | ToDomain::Aborted { .. } => {
+            panic!("listing terminal")
+        }
+    }
+}
+
+fn listed_entry(path: &[u8], kind: tools::Kind) -> tools::Entry {
+    tools::Entry { name: Box::from(path), kind }
+}
+
+#[test]
+fn selected_files_derive_a_sorted_tree_and_count_distinct_entries_at_the_cap() {
+    // a.b sorts before a/x among files, but directory a must sort before a.b.
+    assert_eq!(
+        listed(b"./a.b\0./a/x\0./a/y\0./b\0", tools::Depth::Whole, 2, 512, None),
+        tools::Done::Listed {
+            entries: Box::new([listed_entry(b"a", tools::Kind::Directory), listed_entry(b"a.b", tools::Kind::File)]),
+            more: 3
+        }
+    );
+    assert_eq!(
+        listed(b"./a.b\0./a/x\0./a/y\0./b\0", tools::Depth::Whole, 1, 512, None),
+        tools::Done::Listed { entries: Box::new([listed_entry(b"a", tools::Kind::Directory)]), more: 4 }
+    );
+}
+
+#[test]
+fn a_matching_file_below_depth_keeps_its_directory_and_git_is_always_omitted() {
+    assert_eq!(
+        listed(b"./.Git/config\0./a/deep/only.rs\0", tools::Depth::Levels(1), 2, 512, Some(b"*.rs")),
+        tools::Done::Listed { entries: Box::new([listed_entry(b"a", tools::Kind::Directory)]), more: 0 }
+    );
+    // rg selected no files from empty, ignored-only or unmatched directories.
+    assert_eq!(listed(b"", tools::Depth::Whole, 2, 512, None), tools::Done::Listed { entries: Box::new([]), more: 0 });
+}
+
+#[test]
+fn listing_byte_cap_keeps_an_exact_prefix_and_malformed_records_fail() {
+    assert_eq!(
+        listed(b"./a/x\0./b\0", tools::Depth::Whole, 2, 0, None),
+        tools::Done::Listed { entries: Box::new([]), more: 3 }
+    );
+    let long = [b'a'; 513];
+    for output in [b"./b\0./a\0".as_slice(), b"../a\0", b"./a", b"./a\0./a\0", &long] {
+        assert_eq!(
+            listed(output, tools::Depth::Whole, 2, 512, None),
+            tools::Done::Failed { fault: tools::Fault::Other }
+        );
+    }
+}
+
+fn has_argument(arguments: &[Box<[u8]>], expected: &[u8]) -> bool {
+    for argument in arguments {
+        if argument.as_ref() == expected {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+#[expect(clippy::wildcard_enum_match_arm, reason = "fixture restricts foreign kernel errors to three cases")]
+fn a_listing_directory_failure_or_cancel_never_launches_rg() {
+    for error in [kernel::Error::NotFound, kernel::Error::NotADirectory, kernel::Error::Permission] {
+        let mut component = component();
+        let mut up = Queue::with_capacity(2);
+        let mut down = Queue::with_capacity(2);
+        let owner = Token::new(71);
+        component.from_domain(
+            &env(),
+            FromDomain::Op {
+                owner,
+                op: tools::Op::List {
+                    at: place(b"missing"),
+                    depth: tools::Depth::Whole,
+                    glob: None,
+                    max: 2,
+                    max_bytes: 512,
+                },
+                deadline: Time::from_nanos(100),
+            },
+            &mut up,
+            &mut down,
+        );
+        assert_eq!(
+            down.pop(),
+            Some(Below::OpenDirectory {
+                owner,
+                root: Token::new(10),
+                path: Box::from(b"missing".as_slice()),
+                deadline: Time::from_nanos(100)
+            })
+        );
+        component.from_below(
+            &env(),
+            BelowEvent::File(file::Event::Failed { owner, error, committed: false, residue: None }),
+            &mut up,
+            &mut down,
+        );
+        let expected = match error {
+            kernel::Error::NotFound => tools::Done::Missing,
+            kernel::Error::NotADirectory => tools::Done::NotDirectory,
+            kernel::Error::Permission => tools::Done::Failed { fault: tools::Fault::Denied },
+            _ => unreachable!("three path errors"),
+        };
+        assert_eq!(up.pop(), Some(ToDomain::Done { owner, done: expected }));
+        assert!(down.is_empty());
+    }
+    let mut component = component();
+    let mut up = Queue::with_capacity(2);
+    let mut down = Queue::with_capacity(2);
+    let owner = Token::new(72);
+    component.from_domain(
+        &env(),
+        FromDomain::Op {
+            owner,
+            op: tools::Op::List { at: place(b"src"), depth: tools::Depth::Whole, glob: None, max: 2, max_bytes: 512 },
+            deadline: Time::from_nanos(100),
+        },
+        &mut up,
+        &mut down,
+    );
+    drop(down.pop());
+    component.from_domain(&env(), FromDomain::Cancel { owner }, &mut up, &mut down);
+    assert_eq!(down.pop(), Some(Below::CancelFile { owner }));
+    component.from_below(
+        &env(),
+        BelowEvent::File(file::Event::Opened { owner, file: Token::new(73), len: 0 }),
+        &mut up,
+        &mut down,
+    );
+    assert!(down.pop().is_some());
+    assert!(up.is_empty());
+    component.from_below(&env(), BelowEvent::File(file::Event::Closed { owner }), &mut up, &mut down);
+    assert_eq!(up.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
+    assert!(down.is_empty());
 }

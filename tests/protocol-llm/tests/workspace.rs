@@ -461,12 +461,16 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
                 calls(vec![call(b"finish", br#"{"report":"Edited the copied text.","source":"utf8.txt"}"#)], 1),
             ]),
         }]);
-        let bounds = Limits {
+        let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
             rendered_result: skein_llm_world::limits().dialect.string_bytes,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
+        // The native request includes the complete depth/glob schema inventory.
+        bounds.client.http.request = 16384;
+        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.dialect.document_bytes = 16384;
         let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1013) };
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
@@ -576,7 +580,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         let offered = &world.prompts()[0].tools;
         for (name, parameters, detail) in [
             (b"read".as_slice(), 3, b"max 73 bytes".as_slice()),
-            (b"list", 1, b"max 37 bytes"),
+            (b"list", 3, b"max 37 bytes"),
             (b"search", 3, b"Search pattern"),
             (b"write", 2, b"max 257 bytes"),
             (b"edit", 5, b"max 257 bytes"),

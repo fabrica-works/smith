@@ -8,13 +8,14 @@ publish.workspace = true
 
 [dependencies]
 skein-lib.workspace = true
+skein-io.workspace = true
 smith-domain-tools.workspace = true
+smith-protocol-machine.workspace = true
 skein-fake-checkout.workspace = true
 skein-world.workspace = true
 
 [dev-dependencies]
 smith-machine-world = { path = "../machine" }
-smith-protocol-machine.workspace = true
 
 # Ordinary Rust (programming-model.md, section 10.2), so not the step crates' lints.
 # tests/clippy.toml bans what would make a run unrepeatable.

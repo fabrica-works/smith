@@ -473,6 +473,8 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
+        // The actual expanded listing schema belongs to the native document too.
+        bounds.client.dialect.document_bytes = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),

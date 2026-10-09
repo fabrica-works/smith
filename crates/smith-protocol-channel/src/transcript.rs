@@ -245,7 +245,11 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
         wire::Outcome::Listed(listed) => {
             let mut entries = List::with_capacity(listed.entries().len());
             for entry in listed.entries() {
-                let name = tools::Name::new(Box::from(entry.name())).ok_or(record::Refusal::Malformed)?;
+                normalized(entry.name())?;
+                if entry.name().is_empty() {
+                    return Err(record::Refusal::Malformed);
+                }
+                let name = Box::from(entry.name());
                 let kind = match entry.kind() {
                     wire::Kind::File => tools::Kind::File,
                     wire::Kind::Directory => tools::Kind::Directory,

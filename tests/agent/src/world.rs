@@ -1263,7 +1263,7 @@ impl World {
                         }
                     }
                     op @ (tools::Op::Load { .. }
-                    | tools::Op::Scan { .. }
+                    | tools::Op::List { .. }
                     | tools::Op::Store { .. }
                     | tools::Op::Search { .. }) => Delivery::Io { owner, op, deadline },
                 };

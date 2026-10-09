@@ -26,8 +26,6 @@ pub(crate) struct Root {
 pub(crate) enum Kind {
     /// A bounded whole-file load.
     Load,
-    /// A bounded name-ordered directory scan.
-    Scan,
     /// A conditional synced file replacement.
     Store,
 }
@@ -166,7 +164,7 @@ impl Component {
             return;
         }
         match op {
-            tools::Op::Load { .. } | tools::Op::Scan { .. } | tools::Op::Store { .. } => {
+            tools::Op::Load { .. } | tools::Op::Store { .. } => {
                 match crate::files::request(&self.roots, &env.limits, owner, op) {
                     Ok((kind, request)) => match self.pending.insert(owner, Pending { kind }) {
                         Ok(None) => below.push(Below::File { request, deadline }),
@@ -175,6 +173,30 @@ impl Component {
                     },
                     Err(done) => to_domain.push(ToDomain::Done { owner, done }),
                 }
+            }
+            tools::Op::List { at, depth, glob, max, max_bytes } => {
+                if self.processes.len() == self.processes.capacity() {
+                    to_domain.push(ToDomain::Done { owner, done: other() });
+                    return;
+                }
+                let admissible = crate::files::check(&self.roots, &env.limits, at.root, &at.path, false);
+                self.start_tool(
+                    owner,
+                    admissible,
+                    crate::process::list(
+                        owner,
+                        at,
+                        depth,
+                        glob,
+                        max,
+                        max_bytes,
+                        deadline,
+                        &self.environment,
+                        &env.limits,
+                    ),
+                    to_domain,
+                    below,
+                );
             }
             tools::Op::Spawn { cwd, command, head, tail } => {
                 let admissible = crate::files::check(&self.roots, &env.limits, cwd.root, &cwd.path, false);
@@ -238,19 +260,34 @@ impl Component {
     fn start_process(
         &mut self,
         owner: Token,
-        process: Process,
+        mut process: Process,
         request: Below,
         below: &mut Queue<Below>,
         to_domain: &mut Queue<ToDomain>,
     ) {
         let purpose = process.purpose;
+        let request = match purpose {
+            crate::process::Purpose::List => match request {
+                Below::Spawn { owner, root, spawn } => process.open_directory(owner, root, spawn),
+                Below::File { .. }
+                | Below::OpenRead { .. }
+                | Below::OpenDirectory { .. }
+                | Below::CancelFile { .. }
+                | Below::Process(_) => unreachable!("listing prepares one spawn"),
+            },
+            crate::process::Purpose::Shell | crate::process::Purpose::Check | crate::process::Purpose::Search => {
+                request
+            }
+        };
         match self.processes.insert(owner, process) {
             Ok(None) => below.push(request),
             Ok(Some(_)) => unreachable!("owner checked"),
             Err(_) => match request {
-                Below::Spawn { .. } => match purpose {
+                Below::Spawn { .. } | Below::OpenDirectory { .. } => match purpose {
                     crate::process::Purpose::Check => failed_check(owner, to_domain),
-                    crate::process::Purpose::Shell | crate::process::Purpose::Search => {
+                    crate::process::Purpose::Shell
+                    | crate::process::Purpose::Search
+                    | crate::process::Purpose::List => {
                         to_domain.push(ToDomain::Done { owner, done: other() });
                     }
                 },
@@ -278,6 +315,12 @@ impl Component {
                             self.guides.insert(owner, guide).expect("guide slot returned");
                         }
                         Step::Done(terminal) => to_domain.push(terminal),
+                    }
+                } else if let Some(process) = self.processes.get_mut(&owner) {
+                    process.directory_event(owner, event, below);
+                    if process.ready() {
+                        let process = self.processes.remove(&owner).expect("listing directory settled");
+                        to_domain.push(process.answer(owner));
                     }
                 } else {
                     let pending = self.pending.remove(&owner).expect("file terminal has admitted owner");
@@ -314,8 +357,8 @@ impl Component {
             }
             io::Event::Exited { exit, .. } => process.exited(exit, below),
             io::Event::Stream { owner: pipe, up } => crate::process::stream(process, pipe, up, below),
-            io::Event::Failed { owner: failed, .. } => {
-                process.failed();
+            io::Event::Failed { owner: failed, error } => {
+                process.failed(error);
                 if self.routes.contains_key(&failed) {
                     below.push(Below::Process(io::Request::Abort { entity: failed }));
                 }

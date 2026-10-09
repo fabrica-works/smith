@@ -1,4 +1,4 @@
-//! Whole files, conditional stores, and bounded scans over skein's file io
+//! Whole files and conditional stores over skein's file io
 //! (protocol/agent.md, section 2; domain/tools.md, sections 4 and 6).
 
 use alloc::boxed::Box;
@@ -34,16 +34,6 @@ pub(crate) fn request(
                 file::Request::Load { owner, root: at.root, path: io_path(at.path), max, no_follow: false },
             ))
         }
-        tools::Op::Scan { at, max, max_bytes } => {
-            check(roots, limits, at.root, &at.path, false)?;
-            if max > limits.entries || max_bytes > limits.entry_bytes {
-                return Err(other());
-            }
-            Ok((
-                Kind::Scan,
-                file::Request::Scan { owner, root: at.root, path: io_path(at.path), max, max_bytes, no_follow: false },
-            ))
-        }
         tools::Op::Store { at, content, expect } => {
             check(roots, limits, at.root, &at.path, true)?;
             if content.len() > usize::try_from(limits.file_bytes).expect("u32 fits usize") {
@@ -65,7 +55,7 @@ pub(crate) fn request(
                 },
             ))
         }
-        tools::Op::Spawn { .. } | tools::Op::Search { .. } => Err(other()),
+        tools::Op::Spawn { .. } | tools::Op::Search { .. } | tools::Op::List { .. } => Err(other()),
     }
 }
 
@@ -118,22 +108,6 @@ pub(crate) fn terminal(kind: Kind, event: file::Event) -> tools::Done {
             assert_eq!(kind, Kind::Load, "only a load returns file bytes");
             tools::Done::Loaded { version: tools::Version::new(digest::digest(&bytes).0), content: bytes }
         }
-        file::Event::Scanned { entries, more, .. } => {
-            assert_eq!(kind, Kind::Scan, "only a scan returns entries");
-            let capacity = u32::try_from(entries.len()).expect("bounded scan count");
-            let mut translated = List::with_capacity(capacity);
-            for entry in entries {
-                let name = tools::Name::new(entry.name).expect("kernel entries have safe names");
-                let kind = match entry.kind {
-                    kernel::Kind::File => tools::Kind::File,
-                    kernel::Kind::Directory => tools::Kind::Directory,
-                    kernel::Kind::Symlink => tools::Kind::Link,
-                    kernel::Kind::Other => tools::Kind::Other,
-                };
-                translated.push(tools::Entry { name, kind }).expect("one result per entry");
-            }
-            tools::Done::Scanned { entries: translated.into_boxed(), more }
-        }
         file::Event::Stored { digest, .. } => {
             assert_eq!(kind, Kind::Store, "only a store returns a digest");
             tools::Done::Stored { version: tools::Version::new(digest.0) }
@@ -152,7 +126,8 @@ pub(crate) fn terminal(kind: Kind, event: file::Event) -> tools::Done {
         }
         file::Event::Cancelled { .. } => tools::Done::Cancelled,
         file::Event::Failed { error, .. } => failure(kind, error),
-        file::Event::Opened { .. }
+        file::Event::Scanned { .. }
+        | file::Event::Opened { .. }
         | file::Event::Stated { .. }
         | file::Event::Written { .. }
         | file::Event::Read { .. }
@@ -170,11 +145,10 @@ fn failure(kind: Kind, error: kernel::Error) -> tools::Done {
         kernel::Error::NotADirectory => tools::Done::NotDirectory,
         kernel::Error::IsADirectory | kernel::Error::NotAFile => match kind {
             Kind::Load | Kind::Store => tools::Done::NotFile,
-            Kind::Scan => tools::Done::NotDirectory,
         },
         kernel::Error::TooManyLinks => match kind {
             Kind::Store => tools::Done::Linked,
-            Kind::Load | Kind::Scan => other(),
+            Kind::Load => other(),
         },
         kernel::Error::Escape => tools::Done::Escapes,
         kernel::Error::Permission | kernel::Error::ReadOnly => tools::Done::Failed { fault: tools::Fault::Denied },

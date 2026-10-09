@@ -112,7 +112,18 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
             },
         },
         Kind::List => {
-            llm::Decoded::Owned { call: tools::Call::List { path: path(&required_string(tokens, b"path")?)? } }
+            let depth = match optional_u32(tokens, b"depth")? {
+                Some(0) => return Err(bad_value(b"depth")),
+                Some(levels) => tools::Depth::Levels(levels),
+                None => tools::Depth::Whole,
+            };
+            llm::Decoded::Owned {
+                call: tools::Call::List {
+                    path: path(&required_string(tokens, b"path")?)?,
+                    depth,
+                    glob: optional_string(tokens, b"glob")?,
+                },
+            }
         }
         Kind::Search => {
             let spelling = match optional_string(tokens, b"path")? {

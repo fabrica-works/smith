@@ -249,11 +249,17 @@ fn listing_and_searching_the_directory_itself_reach_io_as_dot() {
     let root = world.root();
     let listed = world.request(FromDomain::Op {
         owner: Token::new(50),
-        op: tools::Op::Scan { at: place(root, b""), max: 16, max_bytes: 2048 },
+        op: tools::Op::List {
+            at: place(root, b""),
+            depth: smith_domain::tools::Depth::Whole,
+            glob: None,
+            max: 16,
+            max_bytes: 2048,
+        },
         deadline: far(),
     });
-    assert!(matches!(listed, ToDomain::Done { done: tools::Done::Scanned { ref entries, more: 0 }, .. }
-        if entries.len() == 1 && entries[0].name.as_bytes() == b"a"));
+    assert!(matches!(listed, ToDomain::Done { done: tools::Done::Listed { ref entries, more: 0 }, .. }
+        if entries.is_empty()));
     let searched = world.request(FromDomain::Op {
         owner: Token::new(51),
         op: tools::Op::Search { at: place(root, b""), pattern: Box::from(&b"x"[..]), glob: None, hits: 8, bytes: 128 },
@@ -372,4 +378,40 @@ fn a_naturally_exited_leader_closes_the_group_while_its_child_still_holds_the_pi
     ));
     assert!(world.now() < far(), "group cleanup does not wait for the command deadline");
     world.settle();
+}
+
+#[test]
+fn selected_paths_form_a_tree_over_the_shared_fake_machine_and_settle_once() {
+    let mut world = World::new(
+        9211,
+        &[
+            Item::directory(b"src"),
+            Item::directory(b"src/deep"),
+            Item::file(b"src/deep/a.rs", b""),
+            Item::directory(b"empty"),
+            Item::directory(b"ignored"),
+            Item::file(b"ignored/drop.rs", b""),
+        ],
+    );
+    let selected = b"./src/deep/a.rs\0./src/z.rs\0";
+    for depth in [tools::Depth::Whole, tools::Depth::Levels(1)] {
+        let answer = world.listing(Token::new(91), selected, depth, 2, 2048);
+        let (entries, more) = match answer {
+            ToDomain::Done { done: tools::Done::Listed { entries, more }, .. } => (entries, more),
+            other @ (ToDomain::Done { .. }
+            | ToDomain::Read { .. }
+            | ToDomain::Probed { .. }
+            | ToDomain::Checked { .. }
+            | ToDomain::Aborted { .. }) => panic!("selected listing: {other:?}"),
+        };
+        assert_eq!(entries[0].name.as_ref(), b"src");
+        if depth == tools::Depth::Whole {
+            assert_eq!(entries[1].name.as_ref(), b"src/deep");
+            assert_eq!(more, 2);
+        } else {
+            assert_eq!(entries.len(), 1);
+            assert_eq!(more, 0);
+        }
+        world.settle();
+    }
 }

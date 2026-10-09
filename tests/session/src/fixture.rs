@@ -104,7 +104,7 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
     }
     let path = match call {
         Call::Read { path, .. }
-        | Call::List { path }
+        | Call::List { path, .. }
         | Call::Search { path, .. }
         | Call::Write { path, .. }
         | Call::Edit { path, .. } => path,
@@ -126,7 +126,7 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
     match (call, outcome) {
         (Call::Read { .. }, Outcome::Read { content, .. }) => content.starts_with(&[&place[..], b":"].concat()),
         (Call::List { .. }, Outcome::Listed { entries, .. }) => {
-            is_directory && entries.iter().any(|listed| listed.name.as_bytes() == entry)
+            is_directory && entries.iter().any(|listed| listed.name.as_ref() == entry)
         }
         // Each search on the menu has a pattern of its own.
         (Call::Search { pattern, .. }, Outcome::Found { hits, .. }) => {

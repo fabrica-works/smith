@@ -17,7 +17,7 @@ record Call {
 # These records mirror smith-domain-tools::call::Outcome, its nested Kind,
 # Exit and Fault, with each payload bounded above the tools' default tests.
 enum Kind { file, directory, link, other }
-record Entry { name: bytes 1024 kind: Kind }
+record Entry { name: bytes 4096 kind: Kind }
 record Hit { path: bytes 4096 line: u32 text: bytes 4096 }
 record Read { content: bytes 1048576 skipped: u32 lines: u32 total: u32 cut: bool }
 record Listed { entries: list 256 Entry more: u64 }

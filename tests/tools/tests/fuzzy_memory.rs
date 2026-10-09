@@ -97,7 +97,7 @@ fn drain(out: &mut Queue<Request>, kits: &mut Vec<Token>, ops: &mut Vec<(Token, 
             Request::Io { owner, op, .. } => {
                 let (asked, kind) = match op {
                     Op::Load { .. } => (Asked::Load, 0),
-                    Op::Scan { .. } => (Asked::Scan, 1),
+                    Op::List { .. } => (Asked::Scan, 1),
                     Op::Store { expect: Expect::Absent, .. } => (Asked::Store { creating: true }, 2),
                     Op::Store { expect: Expect::Is { .. }, .. } => (Asked::Store { creating: false }, 3),
                     Op::Spawn { .. } => (Asked::Spawn, 4),
@@ -118,7 +118,7 @@ fn random_call(limits: &Limits, rng: &mut Rng) -> Call {
     match rng.below(6) {
         4 => Call::Search { path: path(limits, file), pattern: b"fn"[..].into(), glob: None },
         0 => read(limits, file),
-        1 => Call::List { path: path(limits, file) },
+        1 => Call::List { path: path(limits, file), depth: smith_domain_tools::Depth::Whole, glob: None },
         2 => write(limits, file),
         3 => Call::Shell { command: b"cargo test"[..].into(), timeout: None },
         _ => {
@@ -162,9 +162,9 @@ fn random_done(limits: &Limits, rng: &mut Rng, asked: Asked) -> Done {
             },
             Asked::Scan => {
                 let entries: Vec<Entry> = (0..rng.below(u64::from(limits.list_entries) + 1))
-                    .map(|entry| Entry { name: name(format!("entry{entry}").as_bytes()), kind: Kind::File })
+                    .map(|entry| Entry { name: format!("entry{entry}").into_bytes().into(), kind: Kind::File })
                     .collect();
-                Done::Scanned { entries: entries.into(), more: rng.below(3) }
+                Done::Listed { entries: entries.into(), more: rng.below(3) }
             }
             Asked::Spawn => {
                 let exit = [Exit::Code { code: 1 }, Exit::Signal { signal: 9 }, Exit::TimedOut];

@@ -29,7 +29,7 @@ use alloc::boxed::Box;
 use skein_lib::{ReplyTo, Time, Token};
 
 use crate::authority::Authority;
-use crate::call::{Call, Entry, Exit, Fault, Hit, Outcome};
+use crate::call::{Call, Depth, Entry, Exit, Fault, Hit, Outcome};
 use crate::path::Place;
 
 /// session -> tools
@@ -122,16 +122,19 @@ pub enum Op {
         max: u32,
     },
     /// List the directory at `at`, following symbolic links: at most `max`
-    /// entries within `max_bytes`, the first in name order, without `.` and `..`. Ends in
-    /// `Scanned`, `Missing`, `NotDirectory` or a common terminal.
-    Scan {
+    /// matching files and their ancestors within `depth` and `max_bytes`,
+    /// the first in relative path order. Glob filters files, never ancestors. Ends in
+    /// `Listed`, `Missing`, `NotDirectory` or a common terminal.
+    List {
         at: Place,
+        depth: Depth,
+        glob: Option<Box<[u8]>>,
         /// Inclusive maximum count allowed by this contract.
         max: u32,
 
         /// Maximum owned listing bytes: entry array cells plus every name's bytes.
         /// The terminal obeys this cap even when it wins cancellation.
-        /// An unfit first entry returns an empty prefix; `Scanned.more` counts
+        /// An unfit first entry returns an empty prefix; `Listed.more` counts
         /// all omitted entries, including those excluded by the byte cap.
         max_bytes: u64,
     },
@@ -240,9 +243,9 @@ pub enum Done {
         /// IO-issued file version or record encoding version, as named by the enclosing type.
         version: Version,
     },
-    /// Scan: the directory's first `entries` in name order, and how many
+    /// List: the selected tree's first `entries` in name order, and how many
     /// `more` it has.
-    Scanned {
+    Listed {
         /// First bounded directory entries in name order.
         entries: Box<[Entry]>,
         /// Problems or matches omitted after the retained bound.
@@ -280,14 +283,14 @@ pub enum Done {
         /// Whether IO ended the process or search at its deadline.
         timed_out: bool,
     },
-    /// Load, Scan: nothing is at the place.
+    /// Load, List: nothing is at the place.
     Missing,
     /// Load, Store: what is at the place is not a regular file.
     NotFile,
     /// Store: a part of the place is a symbolic link, which a store does not
     /// follow.
     Linked,
-    /// Scan: what is at the place is not a directory. Any operation: a
+    /// List: what is at the place is not a directory. Any operation: a
     /// directory on the way to the place is not one.
     NotDirectory,
     /// Load: the file is `size` bytes, more than asked for.

@@ -212,7 +212,7 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
                     tools::Kind::Other => wire::Kind::Other,
                 };
                 if output
-                    .push(wire::Entry::new(limits, wire::EntryParts { name: Box::from(entry.name.as_bytes()), kind })?)
+                    .push(wire::Entry::new(limits, wire::EntryParts { name: Box::from(entry.name.as_ref()), kind })?)
                     .is_err()
                 {
                     return Err(Error::ResultCapacity);

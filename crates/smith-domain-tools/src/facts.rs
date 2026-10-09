@@ -149,7 +149,7 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKin
         Outcome::Listed { entries, .. } => {
             let mut bytes: u64 = 0;
             for entry in entries {
-                bytes = bytes.saturating_add(len(entry.name.as_bytes()));
+                bytes = bytes.saturating_add(len(entry.name.as_ref()));
             }
             (Verdict::Listed, bytes)
         }

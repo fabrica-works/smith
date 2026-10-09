@@ -265,3 +265,30 @@ fn edit_replacements_decode_in_order_and_nested_unknown_members_do_not_become_fi
         );
     }
 }
+
+#[test]
+fn list_depth_and_glob_decode_to_one_typed_call_and_invalid_depth_is_refused() {
+    let limits = limits();
+    for (input, depth, glob) in [
+        (br#"{"path":"src"}"#.as_slice(), tools::Depth::Whole, None),
+        (br#"{"path":"src","depth":1,"glob":"*.rs"}"#.as_slice(), tools::Depth::Levels(1), Some(b"*.rs".as_slice())),
+        (br#"{"path":"src","depth":4294967295,"future":{"depth":0}}"#.as_slice(), tools::Depth::Levels(u32::MAX), None),
+    ] {
+        let decoded = adapter::decode(b"list", input, grants(), &[], llm::Asker::Main, &limits);
+        let llm::Decoded::Owned { call: tools::Call::List { depth: actual, glob: actual_glob, .. } } = decoded else {
+            panic!("typed list: {decoded:?}");
+        };
+        assert_eq!(actual, depth);
+        assert_eq!(actual_glob.as_deref(), glob);
+    }
+    for input in [
+        br#"{"path":"src","depth":0}"#.as_slice(),
+        br#"{"path":"src","depth":-1}"#,
+        br#"{"path":"src","depth":4294967296}"#,
+    ] {
+        assert_eq!(
+            adapter::decode(b"list", input, grants(), &[], llm::Asker::Main, &limits),
+            llm::Decoded::Invalid { problem: llm::Problem::BadValue { field: b"depth".as_slice().into() } }
+        );
+    }
+}

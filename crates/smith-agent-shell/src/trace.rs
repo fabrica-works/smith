@@ -181,9 +181,9 @@ fn hex(bytes: &[u8]) -> String {
 fn done_bytes(done: &tools::Done) -> u64 {
     match done {
         tools::Done::Loaded { content, .. } => u64::try_from(content.len()).expect("content length fits u64"),
-        tools::Done::Scanned { entries, .. } => entries
+        tools::Done::Listed { entries, .. } => entries
             .iter()
-            .map(|entry| u64::try_from(entry.name.as_bytes().len()).expect("entry length fits u64"))
+            .map(|entry| u64::try_from(entry.name.as_ref().len()).expect("entry length fits u64"))
             .fold(0, u64::saturating_add),
         tools::Done::Exited { head, tail, .. } => u64::try_from(head.len())
             .expect("head length fits u64")

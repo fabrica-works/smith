@@ -49,9 +49,9 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
     match tool {
         Tool::Read => output.put(b"Read lines; cuts are marked. "),
         Tool::List => {
-            output.put(b"List a directory; max ");
+            output.put(b"List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max ");
             output.number(u64::from(stated.list_entries));
-            output.put(b" entries; omissions counted. List / for directory names. ");
+            output.put(b" entries; omitted files and directories counted once. List / for directory names. ");
         }
         Tool::Search => {
             output.put(b"Search files; max ");
@@ -114,7 +114,9 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         }
         Tool::List => {
             path(stated, namespace, output);
-            output.put(br#"},"required":["path"]}"#);
+            output.put(br#", "depth":{"type":"integer","minimum":1,"maximum":4294967295,"description":"Optional depth; absent lists the whole tree. Direct children are at depth 1."},"glob":{"type":"string","description":"Optional rg file glob; directories holding a matching file remain even when that file is below depth."#);
+            input(stated, output);
+            output.put(br#""}},"required":["path"]}"#);
         }
         Tool::Search => {
             path(stated, namespace, output);

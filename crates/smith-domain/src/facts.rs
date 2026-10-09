@@ -36,10 +36,10 @@ pub(crate) fn done_bytes(done: &crate::tools::Done) -> u64 {
     use crate::tools::Done;
     match done {
         Done::Loaded { content, .. } => bytes(content),
-        Done::Scanned { entries, .. } => {
+        Done::Listed { entries, .. } => {
             let mut held = fixed(entries.len(), size_of::<crate::tools::Entry>());
             for entry in entries {
-                held = held.saturating_add(bytes(entry.name.as_bytes()));
+                held = held.saturating_add(bytes(entry.name.as_ref()));
             }
             held
         }

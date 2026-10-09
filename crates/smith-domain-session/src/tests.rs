@@ -360,7 +360,11 @@ fn outside() -> Path {
 
 /// Lists the working directory.
 fn list() -> Call {
-    Call::List { path: Path { absolute: false, parts: Box::new([Part::Current]) } }
+    Call::List {
+        path: Path { absolute: false, parts: Box::new([Part::Current]) },
+        depth: smith_domain_tools::Depth::Whole,
+        glob: None,
+    }
 }
 
 /// Reads `name`.

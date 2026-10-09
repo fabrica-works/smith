@@ -1471,7 +1471,7 @@ impl World {
                 let store_root = match &op {
                     tools::Op::Store { at, .. } => Some(at.root.raw()),
                     tools::Op::Load { .. }
-                    | tools::Op::Scan { .. }
+                    | tools::Op::List { .. }
                     | tools::Op::Spawn { .. }
                     | tools::Op::Search { .. } => None,
                 };

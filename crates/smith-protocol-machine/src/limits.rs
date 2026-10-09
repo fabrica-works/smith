@@ -21,7 +21,7 @@ pub struct Limits {
     pub path_bytes: u32,
     /// Maximum content bytes for load or store.
     pub file_bytes: u32,
-    /// Maximum entries retained from a scan.
+    /// Maximum entries retained from a tree listing.
     pub entries: u32,
     /// Maximum retained entry cells and names.
     pub entry_bytes: u64,
@@ -33,7 +33,7 @@ pub struct Limits {
     pub search_hits: u32,
     /// Upper bound for retained search path and text bytes.
     pub search_bytes: u32,
-    /// Maximum one rg JSON line accepted for parsing.
+    /// Maximum one rg JSON or NUL-delimited path record accepted for parsing.
     pub search_line_bytes: u32,
     /// Maximum configured command environment bytes.
     pub env_bytes: u32,
@@ -67,6 +67,14 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let scan = u64::from(limits.entries).checked_mul(u64::try_from(size_of::<smith_domain::tools::Entry>()).ok()?)?;
     let guides = Map::<Token, crate::guide::Guide>::worst_case(limits.operations)?
         .checked_add(u64::from(limits.file_bytes).checked_mul(u64::from(limits.operations))?)?;
+    let listing = List::<Option<smith_domain::tools::Entry>>::worst_case(limits.entries)?
+        .checked_mul(2)?
+        .checked_add(limits.entry_bytes)?
+        .checked_add(u64::from(limits.file_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?
+        .checked_add(512)?
+        .checked_add(u64::from(limits.search_line_bytes).checked_mul(5)?)?
+        .checked_mul(u64::from(limits.processes))?;
     let processes = Map::<Token, Process>::worst_case(limits.processes)?;
     let pipes = Map::<Token, Token>::worst_case(limits.processes.checked_mul(2)?)?;
     let window = limits.output_bytes.max(limits.search_bytes);
@@ -107,6 +115,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(pipes)?
         .checked_add(output)?
         .checked_add(search)?
+        .checked_add(listing)?
         .checked_add(environment)?
         .checked_add(scratch)
 }

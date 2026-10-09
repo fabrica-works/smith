@@ -159,7 +159,7 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
         }
         Outcome::Listed { entries, more } => {
             for entry in entries {
-                output.text(entry.name.as_bytes())?;
+                output.text(entry.name.as_ref())?;
                 output.put(b"\t")?;
                 let kind = match entry.kind {
                     tools::Kind::File => b"file".as_slice(),

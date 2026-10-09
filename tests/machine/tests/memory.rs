@@ -216,8 +216,11 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
                     assert_eq!(spawn.env.iter().map(|entry| entry.len()).sum::<usize>(), 128);
                     drop(spawn);
                 }
-                other
-                @ (Below::File { .. } | Below::CancelFile { .. } | Below::OpenRead { .. } | Below::Process(_)) => {
+                other @ (Below::File { .. }
+                | Below::CancelFile { .. }
+                | Below::OpenRead { .. }
+                | Below::OpenDirectory { .. }
+                | Below::Process(_)) => {
                     panic!("configured process spawn: {other:?}")
                 }
             }
@@ -226,4 +229,24 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
         }
         assert!(up.is_empty());
     }
+}
+
+#[test]
+fn a_selected_listing_at_both_caps_stays_within_the_machine_bound() {
+    let mut world = smith_machine_world::World::new(9212, &[]);
+    world.check_memory();
+    let selected: Vec<u8> = (0..16)
+        .flat_map(|index| {
+            let mut path = format!("./a{index:02}/").into_bytes();
+            path.extend([b'x'; 100]);
+            path.push(0);
+            path
+        })
+        .collect();
+    let terminal = world.listing(Token::new(91), &selected, tools::Depth::Whole, 16, 2048);
+    assert!(
+        matches!(terminal, ToDomain::Done { done: tools::Done::Listed { ref entries, more }, .. } if entries.len() == 16 && more == 16)
+    );
+    world.settle();
+    assert!(world.heap().iter().all(|(peak, bound)| *peak > 0 && peak <= bound));
 }

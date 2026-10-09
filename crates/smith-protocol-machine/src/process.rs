@@ -4,19 +4,21 @@
 
 use alloc::boxed::Box;
 
-use skein_io::{self as io, kernel};
+use skein_io::{self as io, file, kernel};
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Duration, List, Map, Queue, Time, Token, Writer};
 use smith_domain::{run, tools};
 
 use crate::boundary::{Below, Spawn, ToDomain};
 use crate::limits::Limits;
+use crate::listing::Listing;
 use crate::search::Search;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Purpose {
     Shell,
     Search,
+    List,
     Check,
 }
 
@@ -32,7 +34,7 @@ pub(crate) enum Sees {
 pub(crate) fn sees(purpose: Purpose) -> Sees {
     match purpose {
         Purpose::Shell | Purpose::Check => Sees::Configured,
-        Purpose::Search => Sees::Nothing,
+        Purpose::Search | Purpose::List => Sees::Nothing,
     }
 }
 
@@ -115,6 +117,14 @@ impl Capture {
     }
 }
 
+/// A listing checks its directory and closes that descriptor before spawning.
+#[derive(Debug)]
+enum Directory {
+    None,
+    Opening { root: Token, spawn: Spawn },
+    Closing { root: Token, spawn: Spawn },
+}
+
 /// One child and its output pipes, retained until io proves them closed.
 #[derive(Debug)]
 pub(crate) struct Process {
@@ -126,6 +136,11 @@ pub(crate) struct Process {
     pub(crate) child_closed: bool,
     exit: Option<kernel::Exit>,
     failed: bool,
+    failure: Option<io::Error>,
+    listing: Option<Listing>,
+    directory: Directory,
+    directory_done: Option<tools::Done>,
+    directory_owner: Option<Token>,
     stop: Stop,
     output: Capture,
     search: Option<Search>,
@@ -142,9 +157,57 @@ impl Process {
             child_closed: false,
             exit: None,
             failed: false,
+            failure: None,
+            listing: None,
+            directory: Directory::None,
+            directory_done: None,
+            directory_owner: None,
             stop: Stop::Running,
             output: Capture::new(head, tail),
             search,
+        }
+    }
+
+    pub(crate) fn open_directory(&mut self, owner: Token, root: Token, spawn: Spawn) -> Below {
+        self.directory_owner = Some(owner);
+        let path = spawn.dir.clone();
+        self.directory = Directory::Opening { root, spawn };
+        Below::OpenDirectory { owner, root, path, deadline: self.deadline }
+    }
+
+    #[expect(clippy::wildcard_enum_match_arm, reason = "file events and kernel errors are foreign vocabularies")]
+    pub(crate) fn directory_event(&mut self, owner: Token, event: file::Event, below: &mut Queue<Below>) {
+        match core::mem::replace(&mut self.directory, Directory::None) {
+            Directory::Opening { root, spawn } => match event {
+                file::Event::Opened { file, .. } => {
+                    below.push(Below::File {
+                        request: file::Request::Close { owner, file },
+                        deadline: Time::from_nanos(u64::MAX),
+                    });
+                    self.directory = Directory::Closing { root, spawn };
+                }
+                file::Event::Failed { error, .. } => {
+                    self.directory_done = Some(directory_failure(error));
+                    self.child_closed = true;
+                }
+                file::Event::Cancelled { .. } => {
+                    self.directory_done = Some(tools::Done::TimedOut);
+                    self.child_closed = true;
+                }
+                _ => unreachable!("directory-open terminal"),
+            },
+            Directory::Closing { root, spawn } => match event {
+                file::Event::Closed { .. } => match self.stop {
+                    Stop::Running => below.push(Below::Spawn { owner, root, spawn }),
+                    Stop::Terminating { .. } | Stop::Killing { .. } | Stop::Closing { .. } => self.child_closed = true,
+                },
+                file::Event::Failed { .. } | file::Event::Cancelled { .. } => {
+                    self.directory_done = Some(tools::Done::Failed { fault: tools::Fault::Other });
+                    self.child_closed = true;
+                }
+                _ => unreachable!("directory-close terminal"),
+            },
+            Directory::None => unreachable!("file event belongs to a pending listing directory"),
         }
     }
 
@@ -194,7 +257,8 @@ impl Process {
         assert_eq!(self.pipes.get(index).copied().expect("pipe slot"), Some(pipe), "byte belongs to child");
         match self.purpose {
             Purpose::Search if index == 0 => self.search.as_mut().expect("search state").push(byte),
-            Purpose::Shell | Purpose::Check | Purpose::Search => self.output.push(byte),
+            Purpose::List if index == 0 => self.listing.as_mut().expect("listing state").push(byte),
+            Purpose::Shell | Purpose::Check | Purpose::Search | Purpose::List => self.output.push(byte),
         }
     }
 
@@ -204,8 +268,11 @@ impl Process {
         *self.pipe_closed.get_mut(index).expect("pipe slot") = true;
     }
 
-    pub(crate) fn failed(&mut self) {
+    pub(crate) fn failed(&mut self, error: io::Error) {
         self.failed = true;
+        if self.failure.is_none() {
+            self.failure = Some(error);
+        }
     }
 
     pub(crate) fn exited(&mut self, exit: kernel::Exit, below: &mut Queue<Below>) {
@@ -233,6 +300,12 @@ impl Process {
             Stop::Running => {
                 if self.exit.is_some() || self.child_closed {
                     return;
+                }
+                match &self.directory {
+                    Directory::Opening { .. } => {
+                        below.push(Below::CancelFile { owner: self.directory_owner.expect("pending directory owner") });
+                    }
+                    Directory::Closing { .. } | Directory::None => {}
                 }
                 self.stop = Stop::Terminating { next: now.saturating_add(grace), why };
                 if let Some(child) = self.child {
@@ -325,6 +398,22 @@ impl Process {
                     tools::Done::Failed { fault: tools::Fault::Other }
                 } else {
                     self.search.expect("search state").finish(self.exit, timed_out, head, tail, dropped)
+                };
+                ToDomain::Done { owner, done }
+            }
+            Purpose::List => {
+                let done = if cancelled {
+                    tools::Done::Cancelled
+                } else if timed_out {
+                    tools::Done::TimedOut
+                } else {
+                    match self.directory_done {
+                        Some(done) => done,
+                        None => match self.failure {
+                            Some(error) => listing_failure(error),
+                            None => self.listing.expect("listing state").finish(self.exit, timed_out),
+                        },
+                    }
                 };
                 ToDomain::Done { owner, done }
             }
@@ -484,9 +573,91 @@ pub(crate) fn stream(process: &mut Process, pipe: Token, up: Up, below: &mut Que
         }
         Up::End => below.push(Below::Process(io::Request::Close { entity: pipe })),
         Up::Failed(_) => {
-            process.failed();
+            process.failed(io::Error::Other);
             below.push(Below::Process(io::Request::Abort { entity: pipe }));
         }
         Up::Room => unreachable!("read-only output pipes grant no write room"),
+    }
+}
+
+/// Start a selected-file listing; rg owns ignore and glob rules, the parser owns the tree.
+#[expect(
+    clippy::too_many_arguments,
+    clippy::single_match,
+    reason = "owned request fields cross the machine boundary with exhaustive options"
+)]
+pub(crate) fn list(
+    owner: Token,
+    at: tools::Place,
+    depth: tools::Depth,
+    glob: Option<Box<[u8]>>,
+    maximum: u32,
+    bytes: u64,
+    deadline: Time,
+    environment: &crate::Environment,
+    limits: &Limits,
+) -> Option<(Process, Below)> {
+    if maximum > limits.entries || bytes > limits.entry_bytes {
+        return None;
+    }
+    match depth {
+        tools::Depth::Levels(0) => return None,
+        tools::Depth::Levels(_) | tools::Depth::Whole => {}
+    }
+    match &glob {
+        Some(filter) if filter.contains(&0) || filter.len() > usize::try_from(limits.file_bytes).ok()? => return None,
+        Some(_) | None => {}
+    }
+    let mut args = List::with_capacity(9);
+    for word in
+        [b"--no-config".as_slice(), b"--files", b"--null", b"--sort=path", b"--glob=!**/.git/**", b"--glob=!**/.git"]
+    {
+        args.push(Box::from(word)).ok()?;
+    }
+    match glob {
+        Some(glob) => {
+            let mut filter = Writer::new(b"--glob=".len().checked_add(glob.len())?);
+            filter.put(b"--glob=").ok()?;
+            filter.put(&glob).ok()?;
+            args.push(filter.finish()).ok()?;
+        }
+        None => {}
+    }
+    args.push(Box::from(b"--".as_slice())).ok()?;
+    args.push(Box::from(b".".as_slice())).ok()?;
+    let spawn = Spawn {
+        program: Box::from(b"/usr/bin/rg".as_slice()),
+        args: args.into_boxed(),
+        env: environment.for_process(Purpose::List),
+        dir: crate::files::io_path(at.path),
+        pipes: pipes(),
+    };
+    let mut process = Process::new(Purpose::List, deadline, 0, 0, None);
+    process.listing = Some(Listing::new(maximum, bytes, depth, limits.search_line_bytes));
+    Some((process, Below::Spawn { owner, root: at.root, spawn }))
+}
+
+fn listing_failure(error: io::Error) -> tools::Done {
+    match error {
+        io::Error::TimedOut => tools::Done::TimedOut,
+        io::Error::Refused | io::Error::Unreachable | io::Error::Reset | io::Error::Busy | io::Error::Other => {
+            tools::Done::Failed { fault: tools::Fault::Other }
+        }
+    }
+}
+
+#[expect(clippy::wildcard_enum_match_arm, reason = "kernel errors are a foreign vocabulary")]
+fn directory_failure(error: kernel::Error) -> tools::Done {
+    match error {
+        kernel::Error::NotFound => tools::Done::Missing,
+        kernel::Error::NotADirectory | kernel::Error::IsADirectory | kernel::Error::NotAFile => {
+            tools::Done::NotDirectory
+        }
+        kernel::Error::Escape => tools::Done::Escapes,
+        kernel::Error::Permission | kernel::Error::ReadOnly => tools::Done::Failed { fault: tools::Fault::Denied },
+        kernel::Error::NoSpace => tools::Done::Failed { fault: tools::Fault::NoSpace },
+        kernel::Error::TimedOut => tools::Done::TimedOut,
+        kernel::Error::Cancelled => tools::Done::Cancelled,
+        _ => tools::Done::Failed { fault: tools::Fault::Other },
     }
 }

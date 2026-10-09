@@ -13,7 +13,7 @@ use alloc::boxed::Box;
 
 use skein_lib::Duration;
 
-use crate::path::{Name, Part, Path, Resolved};
+use crate::path::{Part, Path, Resolved};
 
 /// A call the LLM made to one of the tools.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -30,8 +30,8 @@ pub enum Call {
         /// Maximum number of lines to return when present.
         lines: Option<u32>,
     },
-    /// List the directory at `path`.
-    List { path: Path },
+    /// List matching files and their directories beneath `path`, within the requested depth.
+    List { path: Path, depth: Depth, glob: Option<Box<[u8]>> },
     /// Search the files at and beneath `path` for `pattern`, a regular
     /// expression as rg reads it, in those whose names match `glob` if given.
     Search {
@@ -75,6 +75,15 @@ pub enum Occurrences {
     Once,
     /// Every non-overlapping match is replaced; at least one must exist.
     All,
+}
+
+/// The depth a listing caller asks for, counting direct children as one.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Depth {
+    /// List the whole matching tree.
+    Whole,
+    /// List at most this many levels; the caller supplies at least one.
+    Levels(u32),
 }
 
 /// Why the tools refused one replacement without storing any part of the edit.
@@ -157,7 +166,7 @@ pub enum Outcome {
         /// Bytes omitted outside the retained output window.
         cut: bool,
     },
-    /// A listing: the directory's first entries in name order, and how many
+    /// A listing: the selected tree's first entries in path order, and how many
     /// `more` it has.
     Listed {
         /// First bounded directory entries in name order.
@@ -268,10 +277,11 @@ pub struct Hit {
     pub text: Box<[u8]>,
 }
 
-/// An entry of a listed directory.
+/// A selected file or its ancestor, relative to the directory listed.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Entry {
-    pub name: Name,
+    /// A nonempty relative path beneath the listed directory, joined by `/`.
+    pub name: Box<[u8]>,
     /// Typed entry classification or byte label required by the enclosing contract.
     pub kind: Kind,
 }
@@ -322,7 +332,14 @@ impl Call {
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
         let payload = match self {
-            Call::Read { path, skip: _, lines: _ } | Call::List { path } => owned_path(path),
+            Call::Read { path, skip: _, lines: _ } => owned_path(path),
+            Call::List { path, depth: _, glob } => {
+                let filter = match glob {
+                    Some(filter) => owned_len(filter)?,
+                    None => 0,
+                };
+                owned_path(path)?.checked_add(filter)
+            }
             Call::Search { path, pattern, glob } => {
                 let glob = match glob {
                     Some(glob) => owned_len(glob)?,

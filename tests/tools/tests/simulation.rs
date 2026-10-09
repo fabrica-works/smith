@@ -22,7 +22,7 @@ fn read_of(content: &[u8], skipped: u32, lines: u32, total: u32) -> Outcome {
 }
 
 fn entry(name: &[u8], kind: Kind) -> Entry {
-    Entry { name: Name::new(name.into()).expect("a name"), kind }
+    Entry { name: name.into(), kind }
 }
 
 /// Runs one session with `grants` and `script` in a world with `settings`,
@@ -64,19 +64,15 @@ fn a_kit_reads_and_lists_its_checkout() {
     let script = vec![Step::Calls(vec![list(b".")]), Step::Calls(vec![read(b"link")])];
     let (answers, _) = run(Settings::calm(2), INSPECT, script);
     let entries = [
-        entry(b".git", Kind::Directory),
         entry(b"Cargo.toml", Kind::File),
-        entry(b"absolute", Kind::Link),
         entry(b"big.txt", Kind::File),
-        entry(b"dev", Kind::Other),
-        entry(b"escape", Kind::Link),
-        entry(b"link", Kind::Link),
         entry(b"long.txt", Kind::File),
-        entry(b"loop", Kind::Link),
         entry(b"src", Kind::Directory),
-        entry(b"srclink", Kind::Link),
-        entry(b"third_party", Kind::Link),
+        entry(b"src/lib.rs", Kind::File),
+        entry(b"src/main.rs", Kind::File),
         entry(b"vendor", Kind::Directory),
+        entry(b"vendor/lib", Kind::Directory),
+        entry(b"vendor/lib/lib.rs", Kind::File),
     ];
     assert_eq!(answers, vec![Outcome::Listed { entries: entries.into(), more: 0 }, read_of(LIB, 0, 3, 3)]);
 }
@@ -137,17 +133,17 @@ fn reads_and_listings_are_bounded() {
     let (answers, _) = run(settings, INSPECT, script);
     let long = long();
     let first = [
-        entry(b".git", Kind::Directory),
         entry(b"Cargo.toml", Kind::File),
-        entry(b"absolute", Kind::Link),
         entry(b"big.txt", Kind::File),
+        entry(b"long.txt", Kind::File),
+        entry(b"src", Kind::Directory),
     ];
     let expected = vec![
         Outcome::TooLarge { size: 5000 },
         // As many whole lines as fit the 1024 bytes a read answers with.
         read_of(&long[..1020], 0, 51, 100),
         read_of(&long[1900..], 95, 5, 100),
-        Outcome::Listed { entries: first.into(), more: 9 },
+        Outcome::Listed { entries: first.into(), more: 5 },
     ];
     assert_eq!(answers, expected);
 }
@@ -205,6 +201,22 @@ fn listing_credit_counts_tiny_entry_wrappers_and_does_not_skip_a_long_first_name
         fixture.checkout.write(&path, b"long first name");
         let calm = Settings::calm(702);
         let settings = Settings { tools: Limits { list_bytes: cap, ..calm.tools }, ..calm };
+        let root = fixture.repos[0].root;
+        smith_tools_world::translate::listing_fixture(
+            &mut fixture.checkout,
+            root,
+            b"tiny",
+            None,
+            &[b"a", b"b", b"c", b"d", b"e", b"f"],
+        );
+        let long = [b'a'; 200];
+        smith_tools_world::translate::listing_fixture(
+            &mut fixture.checkout,
+            root,
+            b"src",
+            None,
+            &[&long, b"lib.rs", b"main.rs"],
+        );
         let mut world = World::new(settings, fixture.checkout);
         let session = world.session(Time::ZERO, authority, vec![Step::Calls(vec![list(directory)])]);
         world.run(ITERATIONS);
@@ -1287,4 +1299,47 @@ fn an_ordered_edit_batch_needs_no_read_and_stores_once_or_not_at_all() {
         world.checkout().content(b"work/temper/src/lib.rs"),
         Some(b"known from the successful edit\n".as_slice())
     );
+}
+
+#[test]
+fn a_tree_cut_at_its_cap_leaves_ignored_entries_out() {
+    use smith_domain_tools::{Call, Depth};
+    use smith_tools_world::translate::{listing_fixture, path};
+    for (depth, expected) in [
+        (
+            Depth::Whole,
+            Outcome::Listed {
+                entries: Box::new([entry(b"src", Kind::Directory), entry(b"src/deep", Kind::Directory)]),
+                more: 2,
+            },
+        ),
+        (Depth::Levels(1), Outcome::Listed { entries: Box::new([entry(b"src", Kind::Directory)]), more: 0 }),
+    ] {
+        let mut fixture = Fixture::new();
+        let authority = fixture.authority(INSPECT);
+        fixture.checkout.mkdir(b"work/temper/empty");
+        fixture.checkout.write(b"work/temper/.ignore", b"ignored/\n");
+        fixture.checkout.write(b"work/temper/ignored/drop.rs", b"");
+        fixture.checkout.write(b"work/temper/unmatched/not.txt", b"");
+        fixture.checkout.write(b"work/temper/src/empty.rs", b"");
+        fixture.checkout.write(b"work/temper/src/deep/only.rs", b"");
+        listing_fixture(
+            &mut fixture.checkout,
+            fixture.repos[0].root,
+            b"",
+            Some(b"*.rs"),
+            &[b"src/deep/only.rs", b"src/empty.rs"],
+        );
+        let calm = Settings::calm(9210);
+        let mut world =
+            World::new(Settings { tools: Limits { list_entries: 2, ..calm.tools }, ..calm }, fixture.checkout);
+        let session = world.session(
+            Time::ZERO,
+            authority,
+            vec![Step::Calls(vec![Call::List { path: path(b"."), depth, glob: Some(Box::from(b"*.rs".as_slice())) }])],
+        );
+        world.run(ITERATIONS);
+        assert_eq!(world.answers(session), [&expected]);
+        assert_eq!(world.stats().ops, 1);
+    }
 }

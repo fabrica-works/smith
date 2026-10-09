@@ -1501,7 +1501,7 @@ impl World {
         // A call's operations, one after another, carry its token.
         self.owners.insert(owner);
         let at = match &op {
-            Op::Load { at, .. } | Op::Scan { at, .. } | Op::Store { at, .. } | Op::Search { at, .. } => at.root,
+            Op::Load { at, .. } | Op::List { at, .. } | Op::Store { at, .. } | Op::Search { at, .. } => at.root,
             Op::Spawn { cwd, .. } => cwd.root,
         };
         let opener = *self.roots.get(&at.raw()).expect("an operation is in a session's repository");
@@ -1526,7 +1526,7 @@ impl World {
                         Err(done) => Work::Ending(done),
                     }
                 }
-                op @ (Op::Load { .. } | Op::Scan { .. } | Op::Store { .. } | Op::Search { .. }) => Work::File(op),
+                op @ (Op::Load { .. } | Op::List { .. } | Op::Store { .. } | Op::Search { .. }) => Work::File(op),
             }
         };
         // io runs the race with the deadline, and says it lost a moment

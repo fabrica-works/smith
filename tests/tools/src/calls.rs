@@ -26,7 +26,7 @@ pub fn read_lines(at: &[u8], skip: u32, lines: u32) -> Call {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn list(at: &[u8]) -> Call {
-    Call::List { path: path(at) }
+    Call::List { path: path(at), depth: smith_domain_tools::Depth::Whole, glob: None }
 }
 
 /// Makes the file at `at` hold `content`.

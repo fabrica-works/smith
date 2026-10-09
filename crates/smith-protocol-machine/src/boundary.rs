@@ -50,6 +50,8 @@ pub enum Below {
     /// Open a path through its root token; the service resolves the root
     /// with `FileIo::descriptor` before calling `file_layer::down_until`.
     OpenRead { owner: Token, root: Token, path: Box<[u8]>, deadline: Time },
+    /// Open a listing directory through the installed root, closed before rg starts.
+    OpenDirectory { owner: Token, root: Token, path: Box<[u8]>, deadline: Time },
     /// Spawn below io with its root resolved by the service.
     Spawn { owner: Token, root: Token, spawn: Spawn },
     /// One request to the child or its pipes.

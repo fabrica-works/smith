@@ -31,7 +31,7 @@
 //! Reading    loaded                      Done      the window; the version is known
 //!            missing                     Done      not found; nothing is known there
 //!            any other                   Done      what it says
-//! Listing    scanned                     Done      the entries
+//! Listing    listed                     Done      the entries
 //!            any other                   Done      what it says
 //! Searching  found                       Done      the lines found
 //!            exited                      Done      how rg failed
@@ -103,7 +103,7 @@ enum Next {
 enum State {
     /// Loading the file at `place`, to answer with a window of it.
     Reading { reply_to: ReplyTo, place: Place, span: Span },
-    /// Scanning a directory.
+    /// Waiting for a selected tree listing.
     Listing { reply_to: ReplyTo, place: Place },
     /// Loading the file to edit.
     Editing { reply_to: ReplyTo, editing: Editing },
@@ -146,6 +146,8 @@ pub(crate) enum Work {
     },
     List {
         place: Place,
+        depth: crate::Depth,
+        glob: Option<Box<[u8]>>,
     },
     Write {
         place: Place,
@@ -205,9 +207,9 @@ pub(crate) fn start(
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
             (State::Reading { reply_to, place, span }, op)
         }
-        Work::List { place } => (
+        Work::List { place, depth, glob } => (
             State::Listing { reply_to, place: place.clone() },
-            Op::Scan { at: place, max: limits.list_entries, max_bytes: limits.list_bytes },
+            Op::List { at: place, depth, glob, max: limits.list_entries, max_bytes: limits.list_bytes },
         ),
         Work::Write { place, content, expect } => {
             let change = match expect {
@@ -339,7 +341,7 @@ fn loaded(
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
-        Done::Scanned { .. }
+        Done::Listed { .. }
         | Done::Stored { .. }
         | Done::Conflict { .. }
         | Done::Linked
@@ -352,7 +354,7 @@ fn loaded(
 /// Listing, ended: answer with the entries.
 fn scanned(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
     let outcome = match done {
-        Done::Scanned { entries, more } => Outcome::Listed { entries, more },
+        Done::Listed { entries, more } => Outcome::Listed { entries, more },
         Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
         Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
@@ -383,7 +385,7 @@ fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Ne
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
-        | Done::Scanned { .. }
+        | Done::Listed { .. }
         | Done::Stored { .. }
         | Done::Conflict { .. }
         | Done::NotFile
@@ -434,7 +436,7 @@ fn to_edit(
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
-        Done::Scanned { .. }
+        Done::Listed { .. }
         | Done::Stored { .. }
         | Done::Conflict { .. }
         | Done::Linked
@@ -479,7 +481,7 @@ fn stored(
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
-        | Done::Scanned { .. }
+        | Done::Listed { .. }
         | Done::Missing
         | Done::TooLarge { .. }
         | Done::Exited { .. }
@@ -500,7 +502,7 @@ fn exited(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> N
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
         Done::Loaded { .. }
-        | Done::Scanned { .. }
+        | Done::Listed { .. }
         | Done::Stored { .. }
         | Done::Conflict { .. }
         | Done::NotFile

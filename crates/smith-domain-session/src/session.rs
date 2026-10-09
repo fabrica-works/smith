@@ -2245,7 +2245,7 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
         Outcome::Listed { entries, more: _ } => {
             let mut cost = u64::try_from(size_of::<Entry>()).ok()?.checked_mul(u64::try_from(entries.len()).ok()?)?;
             for entry in entries {
-                cost = cost.checked_add(len(entry.name.as_bytes())?)?;
+                cost = cost.checked_add(len(entry.name.as_ref())?)?;
             }
             Some(cost)
         }

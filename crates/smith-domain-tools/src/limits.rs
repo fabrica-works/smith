@@ -40,7 +40,7 @@ pub struct Limits {
     pub list_entries: u32,
 
     /// Maximum listing ownership: each entry's fixed size plus its name bytes.
-    /// The lower scan returns a name-order prefix within this and `list_entries`,
+    /// The lower listing returns a path-order prefix within this and `list_entries`,
     /// preserving the count of omitted entries. This also bounds late results.
     pub list_bytes: u64,
 

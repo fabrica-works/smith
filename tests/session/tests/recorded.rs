@@ -65,6 +65,8 @@ fn transcript_refusals_precede_tools_and_completions() {
                 *call = llm::Decoded::Owned {
                     call: smith_domain_tools::Call::List {
                         path: smith_domain_tools::Path { absolute: true, parts: Box::default() },
+                        depth: smith_domain_tools::Depth::Whole,
+                        glob: None,
                     },
                 };
             }),
@@ -756,16 +758,12 @@ fn maximum_owned_result(
         ),
         1 => {
             let each = (4096 - 8 * core::mem::size_of::<Entry>()) / 8;
-            let entries: Box<[Entry]> = (0..8)
-                .map(|index| Entry {
-                    name: Name::new(vec![b'a' + index; each].into()).expect("nonempty bounded name"),
-                    kind: Kind::File,
-                })
-                .collect();
+            let entries: Box<[Entry]> =
+                (0..8).map(|index| Entry { name: vec![b'a' + index; each].into(), kind: Kind::File }).collect();
             assert_eq!(8 * core::mem::size_of::<Entry>() + 8 * each, 4096);
             (
-                Call::List { path: path() },
-                Done::Scanned { entries: entries.clone(), more: 17 },
+                Call::List { path: path(), depth: smith_domain_tools::Depth::Whole, glob: None },
+                Done::Listed { entries: entries.clone(), more: 17 },
                 Outcome::Listed { entries, more: 17 },
             )
         }

@@ -40,7 +40,7 @@ use crate::facts::{self, FactKind, Facts};
 use crate::job::{self, Job, Work};
 use crate::knowledge::Knowledge;
 use crate::limits::Limits;
-use crate::path::{self, Name, Path};
+use crate::path::{self, Path};
 use crate::window::Span;
 
 #[derive(Debug)]
@@ -227,10 +227,7 @@ fn directories(checkout: &Checkout, limits: &Limits) -> Outcome {
         }
         bytes = next;
         entries
-            .push(Entry {
-                name: Name::new(skein_lib::bytes::copy_of(name)).expect("mount's first name"),
-                kind: Kind::Directory,
-            })
+            .push(Entry { name: skein_lib::bytes::copy_of(name), kind: Kind::Directory })
             .expect("checked entry cap");
     }
     let more = u64::try_from(
@@ -261,13 +258,25 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             file(&located.place)?;
             Work::Read { place: located.place, span: Span { skip, lines } }
         }
-        Call::List { path } => match authority::locate(&kit.checkout, &path, limits.path_bytes)? {
-            Target::Place(located) => Work::List { place: located.place },
-            Target::Directories => {
-                ready(kit, deadline, env)?;
-                return Ok(Admitted::Directories);
+        Call::List { path, depth, glob } => {
+            match depth {
+                crate::Depth::Levels(0) => return Err(Outcome::Failed { fault: crate::Fault::Other }),
+                crate::Depth::Levels(_) | crate::Depth::Whole => {}
             }
-        },
+            if let Some(filter) = &glob {
+                passable(filter)?;
+                if filter.len() > usize::try_from(limits.file_bytes).expect("u32 fits usize") {
+                    return Err(Outcome::TooLarge { size: u64::try_from(filter.len()).unwrap_or(u64::MAX) });
+                }
+            }
+            match authority::locate(&kit.checkout, &path, limits.path_bytes)? {
+                Target::Place(located) => Work::List { place: located.place, depth, glob },
+                Target::Directories => {
+                    ready(kit, deadline, env)?;
+                    return Ok(Admitted::Directories);
+                }
+            }
+        }
         Call::Search { path, pattern, glob } => {
             passable(&pattern)?;
             if let Some(glob) = &glob {
