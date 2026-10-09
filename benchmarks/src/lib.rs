@@ -21,6 +21,8 @@ pub mod arm;
 
 pub mod guard;
 
+pub mod isolate;
+
 pub use agent::{Agent, Configuration, PinnedConfiguration, Provider, read_configuration};
 pub use models::{ModelChoice, ModelTiers, read_model_tiers};
 pub use result::{
