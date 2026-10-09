@@ -3,6 +3,9 @@
 //! transcript is known. `room` checks every declared model before returning
 //! one set of receiving bounds. Contract: protocol/limits.md, sections 3.9 and 4.
 
+#[cfg(test)]
+mod tests;
+
 use super::{Check, Configuration, Layer, LimitName, Per, Profile, Refusal, Value};
 
 /// A window's receiving parts, sent by startup to the run and local host.
