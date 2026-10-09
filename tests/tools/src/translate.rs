@@ -5,9 +5,7 @@
 
 use skein_fake_checkout as fake;
 use skein_lib::Token;
-use smith_domain_tools::{
-    Done, Entry, Exit, Expect, Fault, Hit, Kind, Name, Op, Part, Path, Place, Root, Var, Version,
-};
+use smith_domain_tools::{Done, Entry, Exit, Expect, Fault, Hit, Kind, Name, Op, Part, Path, Place, Root, Version};
 
 /// The path the LLM wrote, split at its slashes, as the protocol layer does.
 ///
@@ -97,13 +95,12 @@ pub fn spawn(
     checkout: &fake::Checkout,
     cwd: &Place,
     command: &[u8],
-    env: &[Var],
+    env: &[(Vec<u8>, Vec<u8>)],
     roots: &[Root],
     (head, tail): (u32, u32),
 ) -> Result<Started, Done> {
-    let env: Vec<(Vec<u8>, Vec<u8>)> = env.iter().map(|var| (var.name.to_vec(), var.value.to_vec())).collect();
     let roots: Vec<(u64, bool)> = roots.iter().map(|seen| (seen.root.raw(), seen.writable)).collect();
-    match checkout.spawn(root(cwd.root), &cwd.path, command, &env, &roots) {
+    match checkout.spawn(root(cwd.root), &cwd.path, command, env, &roots) {
         Ok(process) => Ok(Started { process, head, tail }),
         Err(failure) => Err(done(failure)),
     }

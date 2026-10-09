@@ -4,7 +4,7 @@ use skein_fake_checkout::Checkout;
 use skein_lib::{Duration, ReplyTo, Rng, Time, Token};
 use skein_world::domain::{Key, Ledger, Schedule, Span, Stage, Trace};
 use smith_domain_tools as tools;
-use smith_domain_tools::{Authority, Call, Done, Expect, Fault, Grants, Op, Outcome, Refusal, Repo, Var};
+use smith_domain_tools::{Authority, Call, Done, Expect, Fault, Grants, Op, Outcome, Refusal, Repo};
 
 use crate::translate;
 
@@ -71,7 +71,6 @@ impl Settings {
                 list_bytes: 4096,
                 match_lines: 4,
                 file_timeout: Duration::from_secs(10),
-                env_bytes: 256,
                 shell_timeout: Duration::from_secs(60),
                 shell_timeout_max: Duration::from_secs(600),
                 shell_head: 64,
@@ -656,13 +655,20 @@ impl World {
     fn start(&mut self, owner: Token, op: Op) -> (Work, Time) {
         let latency = self.now.saturating_add(self.settings.io.draw(&mut self.rng));
         match op {
-            Op::Spawn { cwd, command, env, roots, head, tail } => {
+            Op::Spawn { cwd, command, roots, head, tail } => {
                 self.stats.commands += 1;
                 let started = if self.rng.chance(self.settings.faults) {
                     self.stats.faults += 1;
                     Err(Done::Failed { fault: self.fault() })
                 } else {
-                    translate::spawn(&self.checkout, &cwd, &command, &env, &roots, (head, tail))
+                    translate::spawn(
+                        &self.checkout,
+                        &cwd,
+                        &command,
+                        &[(b"PATH".to_vec(), b"/usr/bin:/bin".to_vec()), (b"HOME".to_vec(), b"/home/agent".to_vec())],
+                        &roots,
+                        (head, tail),
+                    )
                 };
                 match started {
                     Ok(started) => {
@@ -961,13 +967,11 @@ pub fn repo(checkout: &mut Checkout, mount: &[u8], writable: bool) -> Repo {
     Repo { mount: translate::names(mount), root: translate::token(root), writable }
 }
 
-/// An authority whose relative paths start at `cwd`, and whose commands run
-/// with a plain environment.
+/// An authority whose relative paths start at `cwd`; the fake machine owns
+/// the commands' configured environment.
 ///
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn authority(cwd: &[u8], repos: Vec<Repo>, grants: Grants) -> Authority {
-    let var = |name: &[u8], value: &[u8]| Var { name: name.into(), value: value.into() };
-    let env = Box::new([var(b"PATH", b"/usr/bin:/bin"), var(b"HOME", b"/home/agent")]);
-    Authority { cwd: translate::names(cwd), repos: repos.into(), grants, env }
+    Authority { cwd: translate::names(cwd), repos: repos.into(), grants }
 }

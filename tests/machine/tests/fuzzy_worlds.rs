@@ -76,7 +76,6 @@ fn run(seed: u64) -> (usize, ToDomain, Vec<String>) {
                 op: tools::Op::Spawn {
                     cwd: place(root, b""),
                     command: Box::from(command),
-                    env: Box::new([]),
                     roots: Box::new([]),
                     head: 8,
                     tail: 8,
@@ -127,4 +126,63 @@ fn seeded_file_changes_child_failures_and_deadlines_replay_and_settle() {
         *slot = slot.checked_add(1).expect("seed count fits");
     }
     assert!(covered.iter().all(|count| *count > 0), "every fault class appeared: {covered:?}");
+}
+
+#[test]
+fn configured_environment_spawns_replay_and_searches_keep_none() {
+    for seed in 0..64 {
+        let mut rng = Rng::new(seed);
+        let value: Vec<u8> =
+            (0..rng.below(64)).map(|_| b'a' + u8::try_from(rng.below(26)).expect("alphabet")).collect();
+        let variables = [smith_protocol_machine::Variable {
+            name: b"BUILD_FLAG".as_slice().into(),
+            value: value.into_boxed_slice(),
+        }];
+        let run = || {
+            let mut world = World::configured(seed, &[], &variables);
+            for owner in 0..3 {
+                let root = world.root();
+                let request = match owner {
+                    0 => FromDomain::Op {
+                        owner: Token::new(1),
+                        op: tools::Op::Spawn {
+                            cwd: place(root, b""),
+                            command: b"true".as_slice().into(),
+                            roots: Box::new([]),
+                            head: 8,
+                            tail: 8,
+                        },
+                        deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+                    },
+                    1 => FromDomain::Check {
+                        owner: Token::new(2),
+                        program: run::Place { root, path: b"check-ok".as_slice().into() },
+                        deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+                        tail: 8,
+                    },
+                    2 => FromDomain::Op {
+                        owner: Token::new(3),
+                        op: tools::Op::Search {
+                            at: place(root, b""),
+                            pattern: b"x".as_slice().into(),
+                            glob: None,
+                            hits: 1,
+                            bytes: 8,
+                        },
+                        deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+                    },
+                    _ => unreachable!("three process purposes"),
+                };
+                let _terminal = world.request(request);
+            }
+            let seen = world.spawns();
+            assert_eq!(seen.len(), 3);
+            assert!(!seen[0].environment.is_empty());
+            assert_eq!(seen[0].environment, seen[1].environment);
+            assert!(seen[2].environment.is_empty());
+            world.settle();
+            (seen, world.trace().to_vec())
+        };
+        assert_eq!(run(), run(), "environment and complete kernel trace replay for seed {seed}");
+    }
 }

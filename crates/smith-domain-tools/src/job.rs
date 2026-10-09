@@ -64,7 +64,6 @@ use core::mem;
 
 use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
 
-use crate::authority::Var;
 use crate::boundary::{Done, Expect, Op, Request, Root};
 use crate::call::{Outcome, Tool};
 use crate::domain::Domain;
@@ -149,13 +148,11 @@ pub(crate) enum Work {
         place: Place,
         edit: Edit,
     },
-    /// Runs `command` in `cwd` for at most `timeout`, with the kit's `env`,
-    /// seeing its `roots`: copies of the kit's, made for the request.
+    /// Runs `command` in `cwd` for at most `timeout`, seeing its `roots`: copies of the kit's, made for the request.
     Shell {
         cwd: Place,
         command: Box<[u8]>,
         timeout: Duration,
-        env: Box<[Var]>,
         roots: Box<[Root]>,
     },
     Search {
@@ -217,8 +214,8 @@ pub(crate) fn start(
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
             (State::Editing { reply_to, editing: Editing { place, edit, deadline: call_deadline } }, op)
         }
-        Work::Shell { cwd, command, timeout: _, env, roots } => {
-            let op = Op::Spawn { cwd, command, env, roots, head: limits.shell_head, tail: limits.shell_tail };
+        Work::Shell { cwd, command, timeout: _, roots } => {
+            let op = Op::Spawn { cwd, command, roots, head: limits.shell_head, tail: limits.shell_tail };
             (State::Running { reply_to }, op)
         }
         Work::Search { place, pattern, glob } => {

@@ -46,22 +46,21 @@ pub struct Component {
     guides: Map<Token, Guide>,
     processes: Map<Token, Process>,
     routes: Map<Token, Token>,
-    environment: Box<[tools::Var]>,
-    environment_bytes: u32,
+    environment: crate::Environment,
 }
 
 impl Component {
     /// Construct with fixed capacity before any request is admitted.
     #[must_use]
-    pub fn new(limits: &Limits) -> Component {
+    pub fn new(limits: &Limits, environment: crate::Environment) -> Component {
+        assert!(environment.fits(limits), "configured environment fits its machine byte cap");
         Component {
             roots: List::with_capacity(limits.roots),
             pending: Map::with_capacity(limits.operations),
             guides: Map::with_capacity(limits.operations),
             processes: Map::with_capacity(limits.processes),
             routes: Map::with_capacity(limits.processes.checked_mul(2).expect("pipe route count fits")),
-            environment: Box::new([]),
-            environment_bytes: limits.env_bytes,
+            environment,
         }
     }
 
@@ -78,23 +77,6 @@ impl Component {
         }
     }
 
-    /// Install the check process environment for this run.
-    pub fn configure_environment(&mut self, environment: Box<[tools::Var]>) {
-        assert!(self.processes.is_empty(), "configure only between runs");
-        let mut bytes = 0_u64;
-        for var in &environment {
-            bytes = bytes
-                .checked_add(u64::try_from(var.name.len()).expect("name length fits"))
-                .expect("environment size fits");
-            bytes = bytes
-                .checked_add(u64::try_from(var.value.len()).expect("value length fits"))
-                .expect("environment size fits");
-            bytes = bytes.checked_add(1).expect("environment size fits");
-        }
-        assert!(bytes <= u64::from(self.environment_bytes), "configured environment fits its byte cap");
-        self.environment = environment;
-    }
-
     /// Translate one domain request; the caller reserves one cell per output.
     pub fn from_domain(
         &mut self,
@@ -105,43 +87,7 @@ impl Component {
     ) {
         match request {
             FromDomain::Op { owner, op, deadline } => {
-                self.vacant(owner);
-                if env.now >= deadline {
-                    to_domain.push(ToDomain::Done { owner, done: tools::Done::TimedOut });
-                    return;
-                }
-                match op {
-                    tools::Op::Load { .. } | tools::Op::Scan { .. } | tools::Op::Store { .. } => {
-                        match crate::files::request(&self.roots, &env.limits, owner, op) {
-                            Ok((kind, request)) => match self.pending.insert(owner, Pending { kind }) {
-                                Ok(None) => below.push(Below::File { request, deadline }),
-                                Ok(Some(_)) => unreachable!("owner checked"),
-                                Err(_) => to_domain.push(ToDomain::Done { owner, done: other() }),
-                            },
-                            Err(done) => to_domain.push(ToDomain::Done { owner, done }),
-                        }
-                    }
-                    tools::Op::Spawn { cwd, command, env: vars, roots: _, head, tail } => {
-                        let admissible = crate::files::check(&self.roots, &env.limits, cwd.root, &cwd.path, false);
-                        self.start_tool(
-                            owner,
-                            admissible,
-                            crate::process::shell(owner, cwd, command, vars, head, tail, deadline, &env.limits),
-                            to_domain,
-                            below,
-                        );
-                    }
-                    tools::Op::Search { at, pattern, glob, hits, bytes } => {
-                        let admissible = crate::files::check(&self.roots, &env.limits, at.root, &at.path, false);
-                        self.start_tool(
-                            owner,
-                            admissible,
-                            crate::process::search(owner, at, pattern, glob, hits, bytes, deadline, &env.limits),
-                            to_domain,
-                            below,
-                        );
-                    }
-                }
+                self.admit_tool(env, owner, op, deadline, to_domain, below);
             }
             FromDomain::Cancel { owner } => {
                 if self.pending.contains_key(&owner) {
@@ -201,6 +147,64 @@ impl Component {
                 if let Some(process) = self.processes.get_mut(&owner) {
                     process.stop(env.now, env.limits.stop_grace, true, below);
                 }
+            }
+        }
+    }
+
+    fn admit_tool(
+        &mut self,
+        env: &Env<Limits>,
+        owner: Token,
+        op: tools::Op,
+        deadline: Time,
+        to_domain: &mut Queue<ToDomain>,
+        below: &mut Queue<Below>,
+    ) {
+        self.vacant(owner);
+        if env.now >= deadline {
+            to_domain.push(ToDomain::Done { owner, done: tools::Done::TimedOut });
+            return;
+        }
+        match op {
+            tools::Op::Load { .. } | tools::Op::Scan { .. } | tools::Op::Store { .. } => {
+                match crate::files::request(&self.roots, &env.limits, owner, op) {
+                    Ok((kind, request)) => match self.pending.insert(owner, Pending { kind }) {
+                        Ok(None) => below.push(Below::File { request, deadline }),
+                        Ok(Some(_)) => unreachable!("owner checked"),
+                        Err(_) => to_domain.push(ToDomain::Done { owner, done: other() }),
+                    },
+                    Err(done) => to_domain.push(ToDomain::Done { owner, done }),
+                }
+            }
+            tools::Op::Spawn { cwd, command, roots: _, head, tail } => {
+                let admissible = crate::files::check(&self.roots, &env.limits, cwd.root, &cwd.path, false);
+                self.start_tool(
+                    owner,
+                    admissible,
+                    crate::process::shell(owner, cwd, command, &self.environment, head, tail, deadline, &env.limits),
+                    to_domain,
+                    below,
+                );
+            }
+            tools::Op::Search { at, pattern, glob, hits, bytes } => {
+                let admissible = crate::files::check(&self.roots, &env.limits, at.root, &at.path, false);
+                self.start_tool(
+                    owner,
+                    admissible,
+                    crate::process::search(
+                        owner,
+                        at,
+                        pattern,
+                        glob,
+                        hits,
+                        bytes,
+                        deadline,
+                        &self.environment,
+                        &env.limits,
+                    ),
+                    to_domain,
+                    below,
+                );
             }
         }
     }

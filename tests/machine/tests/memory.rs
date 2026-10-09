@@ -24,7 +24,7 @@ fn saturated_searches_and_pipe_routes_stay_within_the_machine_bound() {
         search_hits: 0,
         search_bytes: 256,
         search_line_bytes: 256,
-        env_bytes: 0,
+        env_bytes: 128,
         stop_grace: Duration::from_millis(1),
     };
     let bound = machine::worst_case(&limits).expect("representable machine bound");
@@ -40,9 +40,12 @@ fn saturated_searches_and_pipe_routes_stay_within_the_machine_bound() {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut to_domain = Queue::<ToDomain>::with_capacity(4);
     let mut below = Queue::<Below>::with_capacity(8);
+    let variables: Vec<_> =
+        (0_u8..64).map(|index| machine::Variable { name: Box::new([b'A' + index]), value: Box::new([]) }).collect();
     let meter = Meter::new();
     meter.start();
-    let mut component = Component::new(&limits);
+    let mut component =
+        Component::new(&limits, machine::Environment::encode(&variables, &limits).expect("empty environment fits"));
     component.workspace(&workspace);
     meter.check(meter.end(), bound, &"new and workspace");
 
@@ -136,4 +139,90 @@ fn shared_harness_meters_file_child_and_flood_runs_through_drop() {
     assert_eq!(world.heap().len(), 4, "every independent run was metered");
     assert!(world.heap().iter().all(|(peak, bound)| *peak > 0 && peak <= bound));
     assert!(!world.trace().is_empty(), "actual kernel operations ran");
+}
+
+#[test]
+fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bound() {
+    for many in [false, true] {
+        let limits = Limits {
+            operations: 0,
+            roots: 1,
+            path_bytes: 16,
+            file_bytes: 0,
+            entries: 0,
+            entry_bytes: 0,
+            processes: 2,
+            output_bytes: 0,
+            search_hits: 0,
+            search_bytes: 0,
+            search_line_bytes: 0,
+            env_bytes: 128,
+            stop_grace: Duration::from_millis(1),
+        };
+        let variables = if many {
+            (0_u8..64)
+                .map(|index| machine::Variable { name: Box::new([b'A' + index]), value: Box::new([]) })
+                .collect::<Vec<_>>()
+        } else {
+            vec![machine::Variable { name: Box::new([b'A']), value: Box::new([b'x'; 126]) }]
+        };
+        let bound = machine::worst_case(&limits).expect("bounded saturated environment");
+        let workspace = run::Workspace {
+            directories: Box::new([run::Directory {
+                name: b"repo".as_slice().into(),
+                root: Token::new(1),
+                writable: false,
+                git: false,
+                conflicts: Box::new([]),
+            }]),
+        };
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        let mut up = Queue::with_capacity(2);
+        let mut down = Queue::with_capacity(2);
+        let meter = Meter::new();
+        meter.start();
+        let mut component =
+            Component::new(&limits, machine::Environment::encode(&variables, &limits).expect("exact byte ceiling"));
+        component.workspace(&workspace);
+        meter.check(meter.end(), bound, &"maximum environment encoding and retained configuration");
+        for check in [false, true] {
+            let owner = Token::new(if check { 12 } else { 11 });
+            let request = if check {
+                FromDomain::Check {
+                    owner,
+                    program: run::Place { root: Token::new(1), path: b"check".as_slice().into() },
+                    deadline: Time::from_nanos(100),
+                    tail: 0,
+                }
+            } else {
+                FromDomain::Op {
+                    owner,
+                    op: tools::Op::Spawn {
+                        cwd: tools::Place { root: Token::new(1), path: Box::new([]) },
+                        command: b"true".as_slice().into(),
+                        roots: Box::new([]),
+                        head: 0,
+                        tail: 0,
+                    },
+                    deadline: Time::from_nanos(100),
+                }
+            };
+            meter.start();
+            component.from_domain(&env, request, &mut up, &mut down);
+            match down.pop().expect("admitted configured process") {
+                Below::Spawn { spawn, .. } => {
+                    assert_eq!(spawn.env.len(), variables.len());
+                    assert_eq!(spawn.env.iter().map(|entry| entry.len()).sum::<usize>(), 128);
+                    drop(spawn);
+                }
+                other
+                @ (Below::File { .. } | Below::CancelFile { .. } | Below::OpenRead { .. } | Below::Process(_)) => {
+                    panic!("configured process spawn: {other:?}")
+                }
+            }
+            let peak = meter.check(meter.end(), bound, &"retained environment plus command/check translation");
+            assert!(peak > 0);
+        }
+        assert!(up.is_empty());
+    }
 }

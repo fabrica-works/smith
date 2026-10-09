@@ -30,7 +30,14 @@ fn env() -> Env<Limits> {
 }
 
 fn component() -> Component {
-    let mut component = Component::new(&limits());
+    configured_component(&[])
+}
+
+fn configured_component(variables: &[crate::Variable]) -> Component {
+    let mut component = Component::new(
+        &limits(),
+        crate::Environment::encode(variables, &limits()).expect("configured environment fits"),
+    );
     component.workspace(&run::Workspace {
         directories: Box::new([run::Directory {
             name: Box::from(&b"code"[..]),
@@ -337,7 +344,6 @@ fn command_output_waits_for_both_pipes_and_child_close() {
             op: tools::Op::Spawn {
                 cwd: place(b"."),
                 command: Box::from(&b"printf abcdef"[..]),
-                env: Box::new([]),
                 roots: Box::new([]),
                 head: 2,
                 tail: 2,
@@ -492,7 +498,6 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     op: tools::Op::Spawn {
                         cwd: place(path),
                         command: Box::from(&b"true"[..]),
-                        env: Box::new([]),
                         roots: Box::new([]),
                         head: 4,
                         tail: 4,
@@ -561,4 +566,93 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
             assert!(below.is_empty());
         }
     }
+}
+
+#[test]
+fn configured_variables_are_encoded_once_for_commands_and_checks_and_absent_for_searches() {
+    let variables = [
+        crate::Variable { name: Box::from(&b"PATH"[..]), value: Box::from(&b"/configured"[..]) },
+        crate::Variable { name: Box::from(&b"HOME"[..]), value: Box::from(&b"/readonly"[..]) },
+    ];
+    let expected = Box::new([Box::from(&b"PATH=/configured"[..]), Box::from(&b"HOME=/readonly"[..])]);
+    for operation in 0_u32..3 {
+        for _ in 0_u32..2 {
+            let mut component = configured_component(&variables);
+            let owner = Token::new(1);
+            let deadline = Time::from_nanos(u64::MAX);
+            let request = match operation {
+                0 => FromDomain::Op {
+                    owner,
+                    deadline,
+                    op: tools::Op::Spawn {
+                        cwd: place(b""),
+                        command: Box::from(&b"true"[..]),
+                        roots: Box::new([]),
+                        head: 4,
+                        tail: 4,
+                    },
+                },
+                1 => FromDomain::Check {
+                    owner,
+                    deadline,
+                    program: run::Place { root: Token::new(10), path: Box::from(&b"check"[..]) },
+                    tail: 4,
+                },
+                2 => FromDomain::Op {
+                    owner,
+                    deadline,
+                    op: tools::Op::Search {
+                        at: place(b""),
+                        pattern: Box::from(&b"x"[..]),
+                        glob: None,
+                        hits: 1,
+                        bytes: 16,
+                    },
+                },
+                _ => unreachable!(),
+            };
+            let mut up = Queue::with_capacity(2);
+            let mut down = Queue::with_capacity(2);
+            component.from_domain(&env(), request, &mut up, &mut down);
+            assert!(up.is_empty());
+            match down.pop().expect("spawn") {
+                Below::Spawn { spawn, .. } => {
+                    if operation == 2 {
+                        assert!(spawn.env.is_empty());
+                    } else {
+                        assert_eq!(spawn.env.as_ref(), expected.as_ref());
+                    }
+                }
+                other
+                @ (Below::File { .. } | Below::OpenRead { .. } | Below::CancelFile { .. } | Below::Process(_)) => {
+                    panic!("expected process spawn: {other:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn environment_encoding_refuses_invalid_names_duplicates_and_excess_bytes() {
+    for (name, value) in [(&b""[..], &b"x"[..]), (b"A=B", b"x"), (b"A\0", b"x"), (b"A", b"x\0")] {
+        let variables = [crate::Variable { name: name.into(), value: value.into() }];
+        assert_eq!(
+            crate::Environment::encode(&variables, &limits()).unwrap_err(),
+            crate::Unencodable::Variable { index: 0 }
+        );
+    }
+    let variables = [
+        crate::Variable { name: Box::from(&b"A"[..]), value: Box::from(&b"x"[..]) },
+        crate::Variable { name: Box::from(&b"A"[..]), value: Box::from(&b"y"[..]) },
+    ];
+    assert_eq!(
+        crate::Environment::encode(&variables, &limits()).unwrap_err(),
+        crate::Unencodable::Repeated { index: 1 }
+    );
+    let limits = Limits { env_bytes: 3, ..limits() };
+    assert!(crate::Environment::encode(&variables[..1], &limits).is_ok(), "name, equals and value exactly fit");
+    assert_eq!(
+        crate::Environment::encode(&variables, &limits).unwrap_err(),
+        crate::Unencodable::TooLarge { bytes: 6, bound: 3 }
+    );
 }

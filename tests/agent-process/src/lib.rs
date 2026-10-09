@@ -64,13 +64,14 @@ pub fn configured(
     inherited: &skein_world::Inherited,
     errors: AgentErrors,
 ) -> smith_agent_shell::Agent {
+    let environment_bytes = configuration.limits.machine.env_bytes;
     smith_agent_shell::Agent::new(
         smith_agent_shell::config::Configuration {
             service: configuration,
             memory: u64::MAX,
             trace: None,
             profile: agent::profile::standard(),
-            declarations: agent::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) },
+            declarations: agent::profile::Configuration { environment_bytes, endpoints: Box::new([]) },
         },
         smith_agent_shell::Resources {
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
@@ -185,7 +186,8 @@ pub fn configuration() -> agent::Config {
         },
         channel_endpoints: channel::Endpoints::new(endpoints),
         llm_endpoints,
-        environment: Box::new([]),
+        environment: smith_protocol_machine::Environment::encode(&[], &limits().machine)
+            .expect("empty environment fits"),
         stream_mode: StreamMode::Two,
         capture_prompts: false,
     }
@@ -206,6 +208,10 @@ pub fn start(charter: &[u8]) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
+    start_workspace(charter, turns, false)
+}
+
+pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
     let limits = smith_channel::CEILINGS;
     let window = smith_channel::Window::new(&limits, smith_channel::WindowParts { turns, bytes: 1_000_000_000 })
         .expect("window");
@@ -234,7 +240,34 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
             messages: skein_lib::List::with_capacity(0),
             activation: 1,
             charter: Box::from(charter),
-            workspace: None,
+            workspace: if workspace {
+                let mut directories = List::with_capacity(2);
+                for (name, path) in
+                    [(b"repo".as_slice(), b"unused-a".as_slice()), (b"other".as_slice(), b"unused-b".as_slice())]
+                {
+                    directories
+                        .push(
+                            smith_channel::Directory::new(
+                                &limits,
+                                smith_channel::DirectoryParts {
+                                    name: name.into(),
+                                    path: path.into(),
+                                    writable: false,
+                                    git: false,
+                                    conflicts: List::with_capacity(0),
+                                },
+                            )
+                            .expect("configured test directory"),
+                        )
+                        .expect("two directories");
+                }
+                Some(
+                    smith_channel::Workspace::new(&limits, smith_channel::WorkspaceParts { directories })
+                        .expect("two roots"),
+                )
+            } else {
+                None
+            },
             transcript: List::with_capacity(0),
             answered: List::with_capacity(0),
             grants,

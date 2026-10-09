@@ -149,7 +149,6 @@ fn bounds(messages: u32) -> Limits {
                 list_entries: 1,
                 list_bytes: 4096,
                 match_lines: 1,
-                env_bytes: 0,
                 shell_head: 0,
                 shell_tail: 0,
                 search_hits: 1,

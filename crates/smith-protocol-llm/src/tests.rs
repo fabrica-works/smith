@@ -24,7 +24,6 @@ fn tools() -> tools::Limits {
         list_bytes: 512,
         match_lines: 8,
         file_timeout: Duration::from_secs(30),
-        env_bytes: 32,
         shell_timeout: Duration::from_secs(30),
         shell_timeout_max: Duration::from_secs(120),
         shell_head: 64,

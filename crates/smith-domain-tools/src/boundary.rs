@@ -28,7 +28,7 @@ use alloc::boxed::Box;
 
 use skein_lib::{ReplyTo, Time, Token};
 
-use crate::authority::{Authority, Var};
+use crate::authority::Authority;
 use crate::call::{Call, Entry, Exit, Fault, Hit, Outcome};
 use crate::path::Place;
 
@@ -38,7 +38,7 @@ pub enum Event {
     /// Open a kit for the session `session`, with `authority`.
     Open {
         session: Token,
-        /// Explicit roots, grants, working directory and environment admitted by the kit.
+        /// Explicit roots, grants and working directory admitted by the kit.
         authority: Authority,
     },
     /// Run `call` with the kit `kit`, and answer it by `deadline`.
@@ -175,7 +175,7 @@ pub enum Op {
     ///   ASCII case) is read-only: the worker commits the tree the checks
     ///   passed on, so the LLM never needs to write it.
     ///
-    /// Its environment is `env` and nothing else. Its output, standard output
+    /// The machine supplies the configured environment. Its output, standard output
     /// and standard error together, is captured: the first `head` bytes, the
     /// last `tail`, and a count of those dropped between.
     /// At the deadline io kills the whole tree and ends it as `Exited`, timed
@@ -187,8 +187,6 @@ pub enum Op {
         cwd: Place,
         /// Owned shell command interpreted only by the contained process layer.
         command: Box<[u8]>,
-        /// Only environment variables the contained command may see.
-        env: Box<[Var]>,
         /// Explicit repository roots and effective write permissions for the process.
         roots: Box<[Root]>,
         /// First output bytes retained under the caller's cap.

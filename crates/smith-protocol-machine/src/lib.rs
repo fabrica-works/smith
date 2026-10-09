@@ -21,6 +21,7 @@ extern crate alloc;
 
 mod boundary;
 mod component;
+mod environment;
 mod files;
 mod guide;
 mod limits;
@@ -31,4 +32,5 @@ mod tests;
 
 pub use boundary::{Below, BelowEvent, FromDomain, Spawn, ToDomain};
 pub use component::Component;
+pub use environment::{Environment, Unencodable, Variable};
 pub use limits::{Derivation, Limits, MaxOut, derive, max_out, worst_case};

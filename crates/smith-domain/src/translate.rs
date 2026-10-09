@@ -115,8 +115,8 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
 ///
 /// Each repository is mounted at the root, under its name, which is how the
 /// run names it to the LLM; relative paths start in the first repository, the
-/// one the work is about, or at the root if there is none. Commands run with
-/// an empty environment: a charter carries none yet.
+/// one the work is about, or at the root if there is none. The machine supplies
+/// commands with the configured environment; the charter carries none.
 fn authority(workspace: Option<Workspace>, tools: Tools) -> Option<Authority> {
     let mounted = match workspace {
         Some(workspace) => workspace.directories,
@@ -135,7 +135,7 @@ fn authority(workspace: Option<Workspace>, tools: Tools) -> Option<Authority> {
         None => Box::default(),
     };
     let Tools { inspect, modify, shell } = tools;
-    Some(Authority { cwd, repos, grants: Grants { inspect, modify, shell }, env: Box::default() })
+    Some(Authority { cwd, repos, grants: Grants { inspect, modify, shell } })
 }
 
 /// The effect of a call that opens a sub-agent with `families`: a write if it

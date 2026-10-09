@@ -20,6 +20,22 @@ pub(crate) enum Purpose {
     Check,
 }
 
+/// Which environment one machine process sees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sees {
+    /// Commands and checks see the whole configured environment.
+    Configured,
+    /// Searches see no environment.
+    Nothing,
+}
+
+pub(crate) fn sees(purpose: Purpose) -> Sees {
+    match purpose {
+        Purpose::Shell | Purpose::Check => Sees::Configured,
+        Purpose::Search => Sees::Nothing,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stop {
     None,
@@ -330,33 +346,12 @@ fn pipes() -> Box<[kernel::Pipe]> {
     ])
 }
 
-fn environment(vars: &[tools::Var], max_bytes: u32) -> Option<Box<[Box<[u8]>]>> {
-    let mut used = 0_usize;
-    let mut entries = List::with_capacity(u32::try_from(vars.len()).ok()?);
-    for var in vars {
-        if var.name.is_empty() || var.name.contains(&b'=') || var.name.contains(&0) || var.value.contains(&0) {
-            return None;
-        }
-        let len = var.name.len().checked_add(1)?.checked_add(var.value.len())?;
-        used = used.checked_add(len)?;
-        if used > usize::try_from(max_bytes).ok()? {
-            return None;
-        }
-        let mut writer = Writer::new(len);
-        writer.put(&var.name).ok()?;
-        writer.put(b"=").ok()?;
-        writer.put(&var.value).ok()?;
-        entries.push(writer.finish()).ok()?;
-    }
-    Some(entries.into_boxed())
-}
-
 #[expect(clippy::too_many_arguments, reason = "owned request fields cross the machine boundary")]
 pub(crate) fn shell(
     owner: Token,
     cwd: tools::Place,
     command: Box<[u8]>,
-    vars: Box<[tools::Var]>,
+    environment: &crate::Environment,
     head: u32,
     tail: u32,
     deadline: Time,
@@ -365,7 +360,7 @@ pub(crate) fn shell(
     if head > limits.output_bytes || tail > limits.output_bytes || command.contains(&0) {
         return None;
     }
-    let env = environment(&vars, limits.env_bytes)?;
+    let env = environment.for_process(Purpose::Shell);
     let args = Box::new([Box::from(&b"-c"[..]), command]);
     let dir = crate::files::io_path(cwd.path);
     let spawn = Spawn { program: Box::from(&b"/bin/sh"[..]), args, env, dir, pipes: pipes() };
@@ -381,6 +376,7 @@ pub(crate) fn search(
     hits: u32,
     bytes: u32,
     deadline: Time,
+    environment: &crate::Environment,
     limits: &Limits,
 ) -> Option<(Process, Below)> {
     if hits > limits.search_hits || bytes > limits.search_bytes || pattern.contains(&0) {
@@ -412,7 +408,7 @@ pub(crate) fn search(
     let spawn = Spawn {
         program: Box::from(&b"/usr/bin/rg"[..]),
         args: args.into_boxed(),
-        env: Box::new([]),
+        env: environment.for_process(Purpose::Search),
         dir: crate::files::io_path(Box::new([])),
         pipes: pipes(),
     };
@@ -426,7 +422,7 @@ pub(crate) fn search(
 pub(crate) fn check(
     owner: Token,
     program: run::Place,
-    vars: &[tools::Var],
+    environment: &crate::Environment,
     tail: u32,
     deadline: Time,
     limits: &Limits,
@@ -434,7 +430,7 @@ pub(crate) fn check(
     if tail > limits.output_bytes || program.path.is_empty() || program.path.contains(&0) {
         return None;
     }
-    let env = environment(vars, limits.env_bytes)?;
+    let env = environment.for_process(Purpose::Check);
     let spawn = Spawn {
         program: program.path,
         args: Box::new([]),

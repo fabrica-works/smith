@@ -40,7 +40,6 @@ const TOOLS: tools::Limits = tools::Limits {
     list_bytes: 4096,
     match_lines: 4,
     file_timeout: Duration::from_secs(60),
-    env_bytes: 64,
     shell_timeout: Duration::from_secs(60),
     shell_timeout_max: Duration::from_secs(600),
     shell_head: 64,
@@ -319,7 +318,6 @@ fn authority(repos: u8) -> Authority {
         cwd: Box::new([named(b"work")]),
         repos: mounted.into_boxed(),
         grants: Grants { inspect: true, modify: true, shell: false },
-        env: Box::new([]),
     }
 }
 

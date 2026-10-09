@@ -64,9 +64,31 @@ pub struct World {
     memory: Memory,
     trace: Vec<String>,
     heap: Vec<(u64, u64)>,
+    environment: Vec<smith_protocol_machine::Variable>,
+    spawns: Rc<RefCell<Vec<Spawned>>>,
+}
+
+/// Independent machine-seam observation of the complete child environment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Spawned {
+    pub program: Box<[u8]>,
+    pub environment: Box<[Box<[u8]>]>,
 }
 
 impl World {
+    /// Configure the machine's immutable command variables for each settled run.
+    #[must_use]
+    pub fn configured(seed: u64, items: &[Item], variables: &[smith_protocol_machine::Variable]) -> Self {
+        let mut world = Self::new(seed, items);
+        world.environment = variables.to_vec();
+        world
+    }
+
+    /// Observe kernel spawns without looking inside the machine component.
+    #[must_use]
+    pub fn spawns(&self) -> Vec<Spawned> {
+        self.spawns.borrow().clone()
+    }
     /// Lay one writable workspace, outside the application's heap.
     #[must_use]
     pub fn new(seed: u64, items: &[Item]) -> Self {
@@ -101,6 +123,8 @@ impl World {
             memory: Memory::Unchecked,
             trace: Vec::new(),
             heap: Vec::new(),
+            environment: Vec::new(),
+            spawns: Rc::default(),
         }
     }
 
@@ -168,9 +192,9 @@ impl World {
         config.wall = Wall::from_nanos(self.now.as_nanos());
         let referee = Expectations::new(self.seed, vec![Terminal { owner: job.owner() }]);
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
-            .with_machine(Adapter(Rc::clone(&self.machine)));
+            .with_machine(Adapter { files: Rc::clone(&self.machine), spawns: Rc::clone(&self.spawns) });
         world.spawn_root(Handle::new(root.raw()), |root| {
-            Application::new(self.seed, self.writable, self.now, root, job.copy(), self.limits)
+            Application::new(self.seed, self.writable, self.now, root, job.copy(), self.limits, &self.environment)
         });
         let outcome = world.run();
         let terminal = copy_terminal(outcome.procs[0].terminals.first().expect("one terminal"));
@@ -301,10 +325,16 @@ impl Referee<Application> for Expectations<Application, Terminal> {
     }
 }
 
-struct Adapter(Rc<RefCell<Machine>>);
+struct Adapter {
+    files: Rc<RefCell<Machine>>,
+    spawns: Rc<RefCell<Vec<Spawned>>>,
+}
 
 impl skein_world::Machine for Adapter {
     fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<Answer>) {
+        if let Ask::Spawn { program, env, .. } = &call.ask {
+            self.spawns.borrow_mut().push(Spawned { program: program.clone(), environment: env.clone() });
+        }
         match &call.ask {
             Ask::Spawn { program, args, .. } if program.as_ref() == b"/bin/sh" => {
                 let command = args.get(1).expect("shell -c command");
@@ -341,7 +371,7 @@ impl skein_world::Machine for Adapter {
             | Ask::MakeDirectory { .. }
             | Ask::List { .. }
             | Ask::Close { .. } => {
-                machine_step(&mut self.0.borrow_mut(), call, answers);
+                machine_step(&mut self.files.borrow_mut(), call, answers);
             }
         }
     }
@@ -371,12 +401,23 @@ struct Application {
 }
 
 impl Application {
-    fn new(seed: u64, writable: bool, offset: Time, root_fd: Fd, job: Job, limits: Limits) -> Self {
+    fn new(
+        seed: u64,
+        writable: bool,
+        offset: Time,
+        root_fd: Fd,
+        job: Job,
+        limits: Limits,
+        variables: &[smith_protocol_machine::Variable],
+    ) -> Self {
         let mut file_io = FileIo::with_whole_limit(16, 128, 32, 128, Duration::from_secs(1));
         file_io.seed_randomness(seed);
         let root = file_io.adopt_root(root_fd).expect("one root slot");
         assert_eq!(root, Token::new(1));
-        let mut component = Component::new(&limits);
+        let mut component = Component::new(
+            &limits,
+            smith_protocol_machine::Environment::encode(variables, &limits).expect("configured environment fits"),
+        );
         component.workspace(&run::Workspace {
             directories: Box::new([run::Directory {
                 name: b"repo".as_slice().into(),
@@ -419,7 +460,6 @@ impl Application {
                 op: tools::Op::Spawn {
                     cwd: tools::Place { root: self.root, path: Box::new([]) },
                     command: Box::from(&b"flood"[..]),
-                    env: Box::new([]),
                     roots: Box::new([]),
                     head,
                     tail,

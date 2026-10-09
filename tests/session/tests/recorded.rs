@@ -348,7 +348,6 @@ fn owned_io_cancellation_keeps_terminal_results_in_the_turn() {
             cwd: Box::new([name()]),
             repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(7), writable: false }]),
             grants: Grants { inspect: true, modify: false, shell: false },
-            env: Box::default(),
         };
         world.open(spec);
         world.complete(
@@ -686,7 +685,6 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
                 cwd: Box::new([mount()]),
                 repos: Box::new([Repo { mount: Box::new([mount()]), root: Token::new(7), writable: true }]),
                 grants: Grants { inspect: true, modify: true, shell: true },
-                env: Box::new([]),
             };
             fill_initial(&mut spec, world.env.limits.session_bytes - skeleton - credit + u64::from(short));
             world.open(spec);
@@ -899,7 +897,6 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
         cwd: Box::new([name()]),
         repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(7), writable: true }]),
         grants: Grants { inspect: true, modify: true, shell: false },
-        env: Box::new([]),
     };
     world.open(spec);
     world.complete(

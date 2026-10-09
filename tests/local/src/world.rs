@@ -1428,8 +1428,8 @@ impl World {
                     | tools::Op::Search { .. } => None,
                 };
                 let done = match op {
-                    tools::Op::Spawn { cwd, command, env, roots, head, tail } => {
-                        match checkout_io::spawn(&self.disk, &cwd, &command, &env, &roots, (head, tail)) {
+                    tools::Op::Spawn { cwd, command, roots, head, tail } => {
+                        match checkout_io::spawn(&self.disk, &cwd, &command, &[], &roots, (head, tail)) {
                             Ok(started) => {
                                 self.disk.finish(&started.process);
                                 checkout_io::exited(

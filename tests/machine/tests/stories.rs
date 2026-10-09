@@ -110,7 +110,6 @@ fn a_command_that_hangs_is_stopped_at_its_deadline_and_answered_once_gone() {
         op: tools::Op::Spawn {
             cwd: place(root, b""),
             command: Box::from(&b"hang"[..]),
-            env: Box::new([]),
             roots: Box::new([]),
             head: 4,
             tail: 4,
@@ -255,5 +254,60 @@ fn listing_and_searching_the_directory_itself_reach_io_as_dot() {
         deadline: far(),
     });
     assert!(matches!(searched, ToDomain::Done { done: tools::Done::Found { .. }, .. }), "{searched:?}");
+    world.settle();
+}
+
+#[test]
+fn the_configured_environment_is_seen_by_commands_and_checks_and_none_by_searches() {
+    use smith_protocol_machine::Variable;
+    let variables = [
+        Variable { name: b"BUILD_FLAG".as_slice().into(), value: b"whole=value".as_slice().into() },
+        Variable { name: b"EMPTY".as_slice().into(), value: Box::new([]) },
+    ];
+    let mut world = World::configured(42, &[], &variables);
+    for owner in 50..52 {
+        let done = world.request(FromDomain::Op {
+            owner: Token::new(owner),
+            op: tools::Op::Spawn {
+                cwd: place(world.root(), b""),
+                command: b"true".as_slice().into(),
+                roots: Box::new([]),
+                head: 8,
+                tail: 8,
+            },
+            deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+        });
+        assert!(matches!(
+            done,
+            ToDomain::Done { done: tools::Done::Exited { exit: tools::Exit::Code { code: 0 }, .. }, .. }
+        ));
+    }
+    let checked = world.request(FromDomain::Check {
+        owner: Token::new(52),
+        program: run::Place { root: world.root(), path: b"check-ok".as_slice().into() },
+        deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+        tail: 8,
+    });
+    assert!(matches!(checked, ToDomain::Checked { ran: run::Ran { exit: run::Exit::Code { code: 0 }, .. }, .. }));
+    let searched = world.request(FromDomain::Op {
+        owner: Token::new(53),
+        op: tools::Op::Search {
+            at: place(world.root(), b""),
+            pattern: b"needle".as_slice().into(),
+            glob: None,
+            hits: 8,
+            bytes: 64,
+        },
+        deadline: world.now().saturating_add(skein_lib::Duration::from_secs(1)),
+    });
+    assert!(matches!(searched, ToDomain::Done { done: tools::Done::Found { .. }, .. }));
+    let observed = world.spawns();
+    assert_eq!(observed.len(), 4);
+    let expected: &[Box<[u8]>] = &[Box::from(b"BUILD_FLAG=whole=value".as_slice()), Box::from(b"EMPTY=".as_slice())];
+    for spawn in &observed[..3] {
+        assert_eq!(spawn.environment.as_ref(), expected);
+    }
+    assert_eq!(observed[3].program.as_ref(), b"/usr/bin/rg");
+    assert!(observed[3].environment.is_empty());
     world.settle();
 }

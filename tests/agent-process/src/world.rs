@@ -32,10 +32,17 @@ struct Parent {
 }
 
 impl Parent {
-    fn new(root: Fd, charter: &[u8], hang_up: bool, tracing: Option<(TraceCase, u32)>, window: u32) -> Self {
+    fn new(
+        root: Fd,
+        charter: &[u8],
+        hang_up: bool,
+        tracing: Option<(TraceCase, u32)>,
+        window: u32,
+        environment: bool,
+    ) -> Self {
         let mut peer = crate::host();
         if !hang_up {
-            peer.play(crate::start_window(charter, window));
+            peer.play(crate::start_workspace(charter, window, environment));
         }
         let mut parent = Self {
             peer,
@@ -60,15 +67,19 @@ impl Parent {
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
                 program: b"smith".as_slice().into(),
-                args: tracing.map_or_else(
-                    || Box::new([]) as Box<[Box<[u8]>]>,
-                    |(case, frames)| {
-                        Box::new([
-                            Box::new([b'0' + case.number()]) as Box<[u8]>,
-                            frames.to_string().into_bytes().into_boxed_slice(),
-                        ])
-                    },
-                ),
+                args: if environment {
+                    Box::new([Box::from(b"environment".as_slice())])
+                } else {
+                    tracing.map_or_else(
+                        || Box::new([]) as Box<[Box<[u8]>]>,
+                        |(case, frames)| {
+                            Box::new([
+                                Box::new([b'0' + case.number()]) as Box<[u8]>,
+                                frames.to_string().into_bytes().into_boxed_slice(),
+                            ])
+                        },
+                    )
+                },
                 env: Box::new([]),
                 root,
                 dir: Box::new([]),
@@ -326,10 +337,25 @@ impl Host for Proc {
         self.host().operations()
     }
 }
-fn make(_spawn: &Spawn, inherited: &Inherited) -> Proc {
+fn make(spawn: &Spawn, inherited: &Inherited) -> Proc {
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (errors, capture) = crate::AgentErrors::pipe(fd);
-    let agent = crate::configured(crate::configuration(), 7, inherited, errors.clone());
+    let mut configuration = crate::configuration();
+    if spawn.args.first().is_some_and(|arg| arg.as_ref() == b"environment") {
+        configuration.limits.machine.env_bytes = 128;
+        configuration.environment = smith_protocol_machine::Environment::encode(
+            &[
+                smith_protocol_machine::Variable {
+                    name: b"BUILD_FLAG".as_slice().into(),
+                    value: b"configured=value".as_slice().into(),
+                },
+                smith_protocol_machine::Variable { name: b"EMPTY".as_slice().into(), value: Box::new([]) },
+            ],
+            &configuration.limits.machine,
+        )
+        .expect("configured command environment");
+    }
+    let agent = crate::configured(configuration, 7, inherited, errors.clone());
     Proc::Agent(Box::new(capture.host(agent)), errors)
 }
 
@@ -347,19 +373,37 @@ fn unused_roots(_spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
         .collect()
 }
 
-struct Machine(skein_fake_machine::Machine);
+struct Spawned {
+    program: Box<[u8]>,
+    environment: Box<[Box<[u8]>]>,
+}
+
+struct Machine {
+    files: skein_fake_machine::Machine,
+    spawns: Vec<Spawned>,
+}
 impl skein_world::Machine for Machine {
     fn open_root(&mut self, path: &[u8]) -> Result<skein_sim::Handle, kernel::Error> {
         assert!(matches!(path, b"unused-a" | b"unused-b"), "scenario's unused startup roots");
-        Ok(skein_sim::Handle::new(self.0.lay(&[]).raw()))
+        Ok(skein_sim::Handle::new(self.files.lay(&[]).raw()))
     }
 
     fn close_root(&mut self, root: skein_sim::Handle) {
-        self.0.close(skein_fake_machine::Opened::new(root.raw()));
+        self.files.close(skein_fake_machine::Opened::new(root.raw()));
     }
 
     fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
-        skein_fake_machine::step(&mut self.0, call, answers);
+        if let skein_sim::Ask::Spawn { program, env, .. } = &call.ask {
+            self.spawns.push(Spawned { program: program.clone(), environment: env.clone() });
+            if program.as_ref() == b"/bin/sh" {
+                answers.push(skein_sim::Answer {
+                    ticket: call.ticket,
+                    result: Ok(skein_sim::Reply::Program(skein_sim::Program::Exit(0))),
+                });
+                return;
+            }
+        }
+        skein_fake_machine::step(&mut self.files, call, answers);
     }
 }
 
@@ -556,6 +600,36 @@ impl TraceCase {
     }
 }
 
+fn environment_peer() -> skein_fake_peers::llm::Peer {
+    use skein_fake_llm_domain::api;
+    fake::configured(
+        Box::new([api::Script {
+            cue: Box::new([]),
+            turns: Box::new([
+                api::Turn {
+                    lines: Box::new([api::Line::Call {
+                        name: b"shell".as_slice().into(),
+                        arguments: br#"{"command":"true"}"#.as_slice().into(),
+                    }]),
+                    finish: api::Finish::ToolCalls,
+                    tokens: 1,
+                },
+                api::Turn {
+                    lines: Box::new([api::Line::Text { text: b"done".as_slice().into() }]),
+                    finish: api::Finish::Stop,
+                    tokens: 1,
+                },
+            ]),
+        }]),
+        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        Duration::ZERO,
+    )
+}
+
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent cancellation, hangup, completion and environment scenarios"
+)]
 pub struct World {
     seed: u64,
     charter: Box<[u8]>,
@@ -566,6 +640,7 @@ pub struct World {
     outcome: Option<Outcome<Proc, Machine>>,
     window: u32,
     tracing: Option<(TraceCase, u32)>,
+    environment: bool,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -581,8 +656,47 @@ impl World {
             outcome: None,
             window: 8,
             tracing: None,
+            environment: false,
         }
     }
+
+    /// Grant a shell over startup roots and ask the peer to call it once.
+    pub fn configured_environment(&mut self) {
+        self.environment = true;
+        let source =
+            smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(&self.charter))
+                .expect("charter");
+        let mut parts = source.into_parts();
+        let mut budget = parts.budget.into_parts();
+        budget.turns = 2;
+        parts.budget = smith_charter::Budget::new(&smith_charter::CEILINGS, budget).expect("two turns");
+        let mut tools = parts.tools.into_parts();
+        tools.families = smith_charter::Families::new(
+            &smith_charter::CEILINGS,
+            smith_charter::FamiliesParts { skein_bools: [true, false, true, false] },
+        )
+        .expect("shell family");
+        parts.tools = smith_charter::Tools::new(&smith_charter::CEILINGS, tools).expect("tools");
+        let record = smith_charter::Charter::new(&smith_charter::CEILINGS, parts).expect("configured charter");
+        let mut writer = skein_lib::Writer::new(usize::try_from(record.measure()).expect("charter bytes"));
+        record.encode(&mut writer).expect("charter encoding");
+        self.charter = writer.finish();
+    }
+
+    /// Machine-seam observations of commands spawned by the actual agent.
+    #[must_use]
+    pub fn command_environments(&self) -> Vec<Box<[Box<[u8]>]>> {
+        self.outcome
+            .as_ref()
+            .expect("settled world")
+            .machine
+            .spawns
+            .iter()
+            .filter(|spawn| spawn.program.as_ref() == b"/bin/sh")
+            .map(|spawn| spawn.environment.clone())
+            .collect()
+    }
+
     /// Bound outstanding turns while the independent host withholds acknowledgements.
     pub fn acknowledgement_window(&mut self, turns: u32) {
         self.window = turns;
@@ -678,7 +792,8 @@ impl World {
             tracing: self.tracing,
             expected: skein_world::Expectations::new(self.seed, vec![Terminal { hang_up: self.hang_up }]),
         };
-        let mut world = skein_world::World::new(self.seed, config, referee, self.memory).with_machine(Machine(machine));
+        let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
+            .with_machine(Machine { files: machine, spawns: Vec::new() });
         world.host_roots(
             HostedProgram {
                 program: b"smith".as_slice().into(),
@@ -689,10 +804,19 @@ impl World {
             unused_roots,
         );
         world.spawn_root(skein_sim::Handle::new(root.raw()), |root| {
-            Proc::Parent(Box::new(Parent::new(root, &self.charter, self.hang_up, self.tracing, self.window)))
+            Proc::Parent(Box::new(Parent::new(
+                root,
+                &self.charter,
+                self.hang_up,
+                self.tracing,
+                self.window,
+                self.environment,
+            )))
         });
         world.spawn(|| {
-            Proc::Peer(Box::new(if self.full_completion {
+            Proc::Peer(Box::new(if self.environment {
+                environment_peer()
+            } else if self.full_completion {
                 fake::configured(
                     Box::new([skein_fake_llm_domain::api::Script {
                         cue: Box::new([]),

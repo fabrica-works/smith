@@ -17,9 +17,10 @@ use skein_llm as shared;
 use skein_llm_connection as connection;
 use skein_tls as tls;
 use smith_agent_service as service;
-use smith_domain::{self as domain, run, tools};
+use smith_domain::{self as domain, run};
 use smith_protocol_channel as channel;
 use smith_protocol_llm as llm;
+use smith_protocol_machine as machine;
 
 use crate::trace::{Capture, TraceConfig};
 use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, ProfileError};
@@ -230,8 +231,10 @@ fn build(document: Document) -> Result<Configuration, String> {
         environment_bytes = environment_bytes
             .checked_add(u64::try_from(entry_bytes).map_err(|_| "environment is too large")?)
             .ok_or("environment is too large")?;
-        environment
-            .push(tools::Var { name: variable.name.into_bytes().into(), value: variable.value.into_bytes().into() });
+        environment.push(machine::Variable {
+            name: variable.name.into_bytes().into(),
+            value: variable.value.into_bytes().into(),
+        });
     }
     let mut declarations = Vec::with_capacity(document.endpoints.len());
     for endpoint in &document.endpoints {
@@ -242,6 +245,8 @@ fn build(document: Document) -> Result<Configuration, String> {
         endpoints: declarations.into_boxed_slice(),
     };
     let limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
+    let environment = machine::Environment::encode(&environment, &limits.machine)
+        .map_err(|error| format!("environment: {error:?}"))?;
     let endpoints = build_endpoints(document.endpoints, &limits.llm)?;
     let llm_endpoints =
         llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
@@ -263,7 +268,7 @@ fn build(document: Document) -> Result<Configuration, String> {
         domain: domain::Config { endpoints: endpoints.domain, models: models.into_boxed_slice() },
         channel_endpoints: endpoints.channel,
         llm_endpoints,
-        environment: environment.into_boxed_slice(),
+        environment,
         stream_mode: StreamMode::Two,
         capture_prompts: match &trace {
             Some(trace) => trace.capture == Capture::Everything,

@@ -125,7 +125,6 @@ const LIMITS: Limits = Limits {
             list_bytes: 4096,
             match_lines: 4,
             file_timeout: Duration::from_secs(60),
-            env_bytes: 64,
             shell_timeout: Duration::from_secs(60),
             shell_timeout_max: Duration::from_secs(600),
             shell_head: 64,

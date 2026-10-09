@@ -101,7 +101,7 @@ fn standard_profile_builds_a_complete_bounded_service() {
             crate::profile::ACCOUNTS,
         )
         .expect("empty endpoints"),
-        environment: Box::new([]),
+        environment: smith_protocol_machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
         stream_mode: skein_channel::StreamMode::Two,
         capture_prompts: false,
     };

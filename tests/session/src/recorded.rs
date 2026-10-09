@@ -42,7 +42,6 @@ pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::O
                 cwd: Box::default(),
                 repos: Box::default(),
                 grants: Grants { inspect: false, modify: false, shell: false },
-                env: Box::default(),
             },
             delegated: Box::new([llm::Descriptor { ticket: Token::new(19), effect: Effect::Write }]),
             prompt: b"wake".as_slice().into(),

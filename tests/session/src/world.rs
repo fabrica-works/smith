@@ -53,7 +53,6 @@ pub const TOOLS: tools::Limits = tools::Limits {
     list_bytes: 4096,
     match_lines: 8,
     file_timeout: Duration::from_secs(30),
-    env_bytes: 256,
     shell_timeout: Duration::from_secs(30),
     shell_timeout_max: Duration::from_secs(120),
     shell_head: 256,
@@ -260,7 +259,7 @@ impl Settings {
 pub fn spec(prompt: &[u8]) -> agent::Spec {
     let repo = Repo { mount: io::names(b"/work"), root: Token::new(0), writable: true };
     let grants = Grants { inspect: true, modify: true, shell: true };
-    let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants, env: Box::new([]) };
+    let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
@@ -1494,8 +1493,8 @@ impl World {
             Work::Ending(Done::Failed { fault: Fault::Other })
         } else {
             match op {
-                Op::Spawn { cwd, command, env, roots, head, tail } => {
-                    match io::spawn(&self.checkout, &cwd, &command, &env, &roots, (head, tail)) {
+                Op::Spawn { cwd, command, roots, head, tail } => {
+                    match io::spawn(&self.checkout, &cwd, &command, &[], &roots, (head, tail)) {
                         Ok(started) => Work::Command(started),
                         Err(done) => Work::Ending(done),
                     }

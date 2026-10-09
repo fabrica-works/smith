@@ -240,9 +240,8 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Wor
             let here = Path { absolute: false, parts: Box::new([]) };
             let located = authority::locate(&kit.checkout, &here, limits.path_bytes)?;
             let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
-            let env = kit.checkout.env.clone();
             let roots = kit.checkout.roots.clone();
-            Work::Shell { cwd: located.place, command, timeout, env, roots }
+            Work::Shell { cwd: located.place, command, timeout, roots }
         }
     };
     if deadline <= env.now {

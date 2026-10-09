@@ -1141,8 +1141,8 @@ impl World {
                     Flight { key: None, cancelled: false, completion_message: None, completion_index: None },
                 );
                 let delivery = match op {
-                    tools::Op::Spawn { cwd, command, env, roots, head, tail } => {
-                        match io::spawn(&self.disk, &cwd, &command, &env, &roots, (head, tail)) {
+                    tools::Op::Spawn { cwd, command, roots, head, tail } => {
+                        match io::spawn(&self.disk, &cwd, &command, &[], &roots, (head, tail)) {
                             Ok(started) => {
                                 let duration = Duration::from_nanos(
                                     u64::try_from(started.process.program.duration.as_nanos())

@@ -35,6 +35,33 @@ use support::live_run::{Expectation, run};
 
 const CHANGE: &str = "In repository repo, read original.txt, replace its content with exactly edited followed by one newline, create result.txt containing exactly new followed by one newline, and use the command tool to create command.txt containing exactly ran followed by one newline. Run the configured .smith-test/check checks without modifying that script. Finish with a change result, a short title and body, so the host delivers the checked commit. Do not run git commit or push yourself.";
 
+/// The spike's configured-variable story remains opt-in and uses the shipped binary.
+#[test]
+fn a_command_reads_the_whole_configured_environment() {
+    if !live::enabled() {
+        return;
+    }
+    for backend in live::Environment::load(false).backends {
+        let scratch = Scratch::new();
+        let mut settings = backend.settings(scratch.path(), false);
+        settings["directories"] = serde_json::json!([{
+            "name":"repo","path":scratch.path().join("repo"),"writable":true,"git":false
+        }]);
+        settings["agent"]["environment"] = serde_json::json!([
+            {"name":"PATH","value":"/usr/bin:/bin"},
+            {"name":"SMITH_TEST_ENVIRONMENT","value":"configured"}
+        ]);
+        std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&settings).expect("settings JSON"))
+            .expect("configured environment settings");
+        run(
+            &scratch,
+            "Use shell to run `printf '%s\\n' \"$SMITH_TEST_ENVIRONMENT\" > configured.txt`. Do not use a file-writing tool or substitute a literal value. Finish with a report.",
+            false,
+            Expectation { before: None, files: vec![(b"configured.txt".to_vec(), b"configured\n".to_vec())] },
+        );
+    }
+}
+
 fn changed_files() -> Vec<(Vec<u8>, Vec<u8>)> {
     [("original.txt", "edited\n"), ("result.txt", "new\n"), ("command.txt", "ran\n"), ("checks-ran.txt", "checked\n")]
         .into_iter()

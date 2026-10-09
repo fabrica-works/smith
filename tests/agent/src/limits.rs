@@ -97,7 +97,6 @@ pub const LIMITS: Limits = Limits {
             list_bytes: 4096,
             match_lines: 8,
             file_timeout: Duration::from_secs(30),
-            env_bytes: 256,
             shell_timeout: Duration::from_secs(30),
             shell_timeout_max: Duration::from_secs(120),
             shell_head: 256,

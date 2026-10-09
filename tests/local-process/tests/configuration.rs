@@ -30,7 +30,6 @@ fn declared_read_search_shell_and_check_bounds_reach_the_machine() {
             op: tools::Op::Spawn {
                 cwd: tools::Place { root, path: b".".as_slice().into() },
                 command: b"printf ran".as_slice().into(),
-                env: Box::new([]),
                 roots: Box::new([]),
                 head: tool_limits.shell_head,
                 tail: tool_limits.shell_tail,
@@ -45,7 +44,7 @@ fn declared_read_search_shell_and_check_bounds_reach_the_machine() {
         },
     ];
     for request in requests {
-        let mut machine = Component::new(&config.limits.machine);
+        let mut machine = Component::new(&config.limits.machine, config.environment.clone());
         machine.workspace(&run::Workspace {
             directories: Box::new([run::Directory {
                 name: b"repo".as_slice().into(),

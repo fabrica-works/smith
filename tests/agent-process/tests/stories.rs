@@ -87,3 +87,17 @@ fn a_refused_configuration_writes_one_line_and_exits_1_without_a_channel() {
     assert!(text.starts_with("smith: configuration metadata:"));
     assert_eq!(text.lines().count(), 1);
 }
+
+#[test]
+fn the_configured_environment_reaches_the_actual_agents_command_spawn() {
+    let mut world = World::new(42, &charter());
+    world.configured_environment();
+    assert!(world.settle());
+    let observed = world.command_environments();
+    assert_eq!(observed.len(), 1, "the granted model call started one actual command");
+    let expected: &[Box<[u8]>] =
+        &[Box::from(b"BUILD_FLAG=configured=value".as_slice()), Box::from(b"EMPTY=".as_slice())];
+    assert_eq!(observed[0].as_ref(), expected);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    world.assert_agent_clean();
+}

@@ -13,7 +13,7 @@ use crate::path;
 use crate::window::{self, Span};
 use crate::{
     Authority, Call, Domain, Done, Effect, Entry, Event, Exit, Expect, Fault, Grants, Hit, Kind, Limits, Name, Op,
-    Outcome, Part, Path, Place, Refusal, Repo, Request, Root, Var, Version, effect, max_out, step, worst_case,
+    Outcome, Part, Path, Place, Refusal, Repo, Request, Root, Version, effect, max_out, step, worst_case,
 };
 use crate::{FactKind as Fact, Tool, Verdict};
 
@@ -29,7 +29,7 @@ const LIMITS: Limits = Limits {
     list_bytes: 4096,
     match_lines: 4,
     file_timeout: Duration::from_secs(10),
-    env_bytes: 256,
+
     shell_timeout: Duration::from_secs(60),
     shell_timeout_max: Duration::from_secs(600),
     shell_head: 64,
@@ -215,12 +215,7 @@ fn authority(grants: Grants) -> Authority {
             Repo { mount: names(b"/work/docs"), root: Token::new(3), writable: false },
         ]),
         grants,
-        env: Box::new([var(b"PATH", b"/usr/bin"), var(b"HOME", b"/home/agent")]),
     }
-}
-
-fn var(name: &[u8], value: &[u8]) -> Var {
-    Var { name: Box::from(name), value: Box::from(value) }
 }
 
 fn bytes(text: &[u8]) -> Box<[u8]> {
@@ -984,7 +979,7 @@ fn at(secs: u64) -> Time {
 }
 
 #[test]
-fn a_command_runs_in_the_working_directory_with_the_kits_environment_and_roots() {
+fn a_command_runs_in_the_working_directory_with_the_kits_roots() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
     let (owner, op, deadline) = spawned(&mut h, kit, None);
@@ -996,7 +991,6 @@ fn a_command_runs_in_the_working_directory_with_the_kits_environment_and_roots()
     let expected = Op::Spawn {
         cwd: place(1, b""),
         command: bytes(b"cargo test"),
-        env: authority(ALL).env,
         roots,
         head: LIMITS.shell_head,
         tail: LIMITS.shell_tail,
@@ -1058,21 +1052,6 @@ fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
     outside.cwd = names(b"/work");
     let outside = h.open(2, outside);
     assert_eq!(h.call(outside, Call::Shell { command: bytes(b"ls"), timeout: None }), Outcome::Outside);
-}
-
-#[test]
-fn an_environment_that_cannot_be_one_or_is_too_large_is_refused() {
-    let table = [var(b"", b"x"), var(b"A=B", b"x"), var(b"A\0", b"x"), var(b"A", b"x\0"), var(b"BIG", &[b'x'; 256])];
-    for var in table {
-        let mut authority = authority(ALL);
-        authority.env = Box::new([var.clone()]);
-        invalid(LIMITS, authority);
-    }
-    // Exactly at the limit is within it: a name, its `=` and its value.
-    let mut fits = authority(ALL);
-    fits.env = Box::new([var(b"A", &[b'x'; 254])]);
-    let mut h = Harness::new(LIMITS);
-    let _: Token = h.open(1, fits);
 }
 
 #[test]
@@ -1169,7 +1148,7 @@ fn a_kit_tells_what_happens_as_facts() {
     ];
     assert_eq!(told(&mut h).as_slice(), &expected);
     let mut bad = authority(ALL);
-    bad.env = Box::new([var(b"A=B", b"")]);
+    bad.repos[1].root = bad.repos[0].root;
     drop(h.step(Event::Open { session: Token::new(6), authority: bad }));
     let refused = Fact::Refused { session: Token::new(6), refusal: Refusal::Invalid };
     assert_eq!(told(&mut h).as_slice(), &[refused]);
@@ -1269,7 +1248,7 @@ fn fact_emission_times_and_call_context_survive_a_delayed_drain() {
         Fact::Answered { session: Token::new(5), tool: Tool::Read, verdict: Verdict::Cancelled, bytes: 0 }
     );
     let mut invalid = authority(ALL);
-    invalid.env = Box::new([var(b"A=B", b"")]);
+    invalid.repos[1].root = invalid.repos[0].root;
     drop(h.step(Event::Open { session: Token::new(6), authority: invalid }));
     assert_eq!(h.pop_fact().expect("refused fact").at, h.env.now);
 }

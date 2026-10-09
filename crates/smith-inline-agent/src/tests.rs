@@ -421,7 +421,6 @@ fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
         op: smith::tools::Op::Spawn {
             cwd: smith::tools::Place { root: Token::new(9), path: b".".as_slice().into() },
             command: b"sleep".as_slice().into(),
-            env: Box::default(),
             roots: Box::default(),
             head: 1,
             tail: 1,

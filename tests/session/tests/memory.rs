@@ -30,7 +30,6 @@ fn authority() -> Authority {
         cwd: Box::new([name()]),
         repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(1), writable: false }]),
         grants: Grants { inspect: true, modify: false, shell: false },
-        env: Box::new([]),
     }
 }
 
@@ -720,7 +719,6 @@ fn restore_tail_tools() -> smith_domain_tools::Limits {
         list_entries: 1,
         list_bytes: 4096,
         match_lines: 1,
-        env_bytes: 0,
         shell_head: 0,
         shell_tail: 0,
         search_hits: 1,

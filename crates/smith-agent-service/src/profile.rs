@@ -199,7 +199,6 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         search_hits: declared.search_hits,
         search_bytes: declared.search_bytes,
         list_entries: declared.list_entries,
-        environment_bytes: configuration.environment_bytes,
         tool_deadline: policy.tool_deadline,
         shell_timeout: policy.shell_timeout,
     })

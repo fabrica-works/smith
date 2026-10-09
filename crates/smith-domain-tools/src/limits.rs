@@ -5,7 +5,7 @@
 
 use skein_lib::{Duration, Id, List, Map, Queue, Set, Slab};
 
-use crate::authority::{Mount, Var};
+use crate::authority::Mount;
 use crate::boundary::Root;
 use crate::call::{Call, Entry, Hit};
 use crate::facts::Fact;
@@ -47,9 +47,6 @@ pub struct Limits {
     pub match_lines: u32,
     /// How long a file operation may take, within its call's deadline.
     pub file_timeout: Duration,
-    /// The most an authority's environment may hold: its names and values,
-    /// with a byte for each `=`.
-    pub env_bytes: u32,
     /// How long a command may run if its call does not say, and the longest
     /// it may ask for; both within the call's deadline.
     pub shell_timeout: Duration,
@@ -143,10 +140,7 @@ fn authority(limits: &Limits) -> Option<u64> {
     let mount_bytes = u64::from(limits.repos).checked_mul(path_bytes)?;
     let mounts = List::<Mount>::worst_case(limits.repos)?.checked_add(mount_bytes)?;
     let roots = List::<Root>::worst_case(limits.repos)?;
-    // A variable costs at least two bytes: a name and its `=`.
-    let vars = limits.env_bytes / 2;
-    let env = List::<Var>::worst_case(vars)?.checked_add(u64::from(limits.env_bytes))?;
-    cwd.checked_add(mounts)?.checked_add(roots)?.checked_add(env)
+    cwd.checked_add(mounts)?.checked_add(roots)
 }
 
 /// Numeric declarations needed by this layer's transitional derivation.
@@ -162,7 +156,6 @@ pub struct Derivation {
     pub search_hits: u32,
     pub search_bytes: u32,
     pub list_entries: u32,
-    pub environment_bytes: u32,
     pub tool_deadline: Duration,
     pub shell_timeout: Duration,
 }
@@ -188,7 +181,6 @@ pub fn derive(inputs: &Derivation) -> Option<Limits> {
         list_bytes: u64::from(inputs.read_window).max(u64::try_from(size_of::<Entry>()).ok()?.checked_add(1)?),
         match_lines: 8,
         file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
-        env_bytes: inputs.environment_bytes,
         shell_timeout: inputs.shell_timeout,
         shell_timeout_max: inputs.tool_deadline,
         shell_head: inputs.shell_head,

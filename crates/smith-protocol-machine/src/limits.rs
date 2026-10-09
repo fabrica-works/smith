@@ -1,6 +1,7 @@
 //! Bounded machine ownership (programming-model.md, section 6.3;
 //! protocol/agent.md, section 2).
 
+use alloc::boxed::Box;
 use core::mem::size_of;
 use skein_json::tokenizer;
 use skein_lib::stream::Down;
@@ -76,9 +77,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
             u64::from(limits.search_hits).checked_mul(u64::try_from(size_of::<smith_domain::tools::Hit>()).ok()?)?,
         )?
         .checked_mul(u64::from(limits.processes))?;
-    let variables =
-        u64::from(limits.env_bytes / 2).checked_mul(u64::try_from(size_of::<smith_domain::tools::Var>()).ok()?)?;
-    let environment = variables.checked_add(u64::from(limits.env_bytes))?;
+    let variables = u64::from(limits.env_bytes / 2).checked_mul(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?;
+    let encoded_environment = variables.checked_add(u64::from(limits.env_bytes))?;
+    // Startup name validation and one spawn copy are disjoint transients.
+    let environment = encoded_environment
+        .checked_add(encoded_environment.max(skein_lib::Set::<&[u8]>::worst_case(limits.env_bytes / 2)?))?;
     let tokenizer_limits = tokenizer::Limits {
         depth: 8,
         string: limits.search_line_bytes.max(1),

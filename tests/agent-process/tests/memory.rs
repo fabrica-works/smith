@@ -70,3 +70,13 @@ fn maximum_run_context_and_provider_completion_fit_each_process_at_every_iterati
     );
     drop(completion);
 }
+
+#[test]
+fn configured_environment_commands_fit_the_composed_agent_bound() {
+    let mut world = World::new(42, &charter());
+    world.configured_environment();
+    world.check_memory();
+    assert!(world.settle());
+    assert_eq!(world.command_environments().len(), 1);
+    world.assert_agent_clean();
+}
