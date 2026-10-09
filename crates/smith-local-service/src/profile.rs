@@ -7,7 +7,11 @@ use smith_host_domain as host;
 
 /// Build the standard host bounds around the largest turn its agent can emit.
 #[must_use]
-pub fn host_limits(profile: &smith_agent_service::profile::Profile, largest_turn: u64) -> host::Limits {
+pub fn host_limits(
+    profile: &smith_agent_service::profile::Profile,
+    largest_turn: u64,
+    message_bytes: u32,
+) -> host::Limits {
     host::Limits {
         agents: 1,
         directories: 2,
@@ -18,7 +22,7 @@ pub fn host_limits(profile: &smith_agent_service::profile::Profile, largest_turn
         charter_bytes: 262_144,
         transcript_bytes: 33_554_432,
         answered_bytes: 65_536,
-        message_bytes: 4096,
+        message_bytes,
         messages: profile.policy.inbox,
         calls: profile.declared.calls_per_response,
         call_bytes: 65_536,

@@ -126,12 +126,15 @@ fn process_memory_refusal_retains_the_measured_and_declared_bytes() {
 }
 
 #[test]
-fn overflow_names_the_first_run_field_being_derived() {
+fn a_larger_inbox_does_not_raise_the_rooms_offer_bound() {
     let mut profile = profile();
+    let original = super::derive(&profile, &declarations()).expect("bounded room").domain.run;
     profile.policy.inbox = u32::MAX;
-    let refusal = super::derive(&profile, &declarations()).expect_err("offer multiplication");
-    assert_eq!(refusal, Refusal::Derived { limit: LimitName::deployment(Layer::Run, "offer_bytes") });
-    assert_eq!(words(&refusal).as_ref(), b"derived: run.offer_bytes does not fit its type");
+    let larger = super::derive(&profile, &declarations()).expect("bounded offer").domain.run;
+    assert_eq!(larger.messages, u32::MAX);
+    assert_eq!(larger.offer_messages, u32::MAX);
+    assert_eq!(larger.offer_bytes, original.offer_bytes);
+    assert_eq!(larger.message_bytes, original.message_bytes);
 }
 
 #[test]

@@ -24,14 +24,10 @@ fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
     }
 }
 
-#[test]
-fn standard_profile_admits_the_priced_shell_run_defaults() {
-    use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
+fn priced_charter() -> smith_domain::run::Charter {
+    use skein_lib::Duration;
     use smith_domain::run;
-    let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
-    let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain;
-    let charter = run::Charter {
+    run::Charter {
         reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::default(),
         brief: run::Brief {
@@ -70,7 +66,17 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
             dialect: 1,
         },
         models: Box::default(),
-    };
+    }
+}
+
+#[test]
+fn standard_profile_admits_the_priced_shell_run_defaults() {
+    use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::run;
+    let mut profile = crate::profile::standard();
+    profile.declared.memory = Some(u64::MAX);
+    let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain;
+    let charter = priced_charter();
     let mut domain = run::Domain::new(&limits.run, 0);
     let mut out = Queue::with_capacity(run::MAX_OUT);
     run::step(
@@ -257,4 +263,144 @@ fn actual_root_budget_facts_encode_without_content_under_every_capture() {
         }
     }
     assert!(budget_count > 0, "real root/session completions produce charges");
+}
+
+#[test]
+fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte_later() {
+    use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::run;
+    let mut profile = crate::profile::standard();
+    profile.declared.memory = Some(u64::MAX);
+    let receiving = crate::profile::derive(&profile, &declarations(0)).expect("declared model").domain.run;
+    let enter = |bound, instructions: &[u8]| {
+        let limits = run::Limits { host_part: bound, ..receiving };
+        let mut charter = priced_charter();
+        charter.instructions = instructions.into();
+        charter.outcome.report = Some(run::outcome::TextSpec {
+            max: 32,
+            fields: (0..20)
+                .map(|index| run::outcome::FieldRule {
+                    name: format!("long_contract_field_{index:02}").into_bytes().into(),
+                    max: 32,
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        });
+        let mut domain = run::Domain::new(&limits, 0);
+        let mut out = Queue::with_capacity(run::MAX_OUT);
+        run::step(
+            &mut domain,
+            &Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
+            run::Event::Start {
+                messages: Box::default(),
+                reply_to: ReplyTo::new(Token::new(1)),
+                host_run: Token::new(1),
+                identity: None,
+                activation: 1,
+                window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+                charter,
+                workspace: None,
+                transcript: None,
+                resumed: false,
+            },
+            &mut out,
+        );
+        out.pop().expect("one entrance terminal")
+    };
+    let mut lower = 0;
+    let mut upper = receiving.host_part;
+    assert!(matches!(enter(upper, b"base"), run::Request::Admitted { .. }));
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        match enter(middle, b"base") {
+            run::Request::Admitted { .. } => upper = middle,
+            run::Request::Answer {
+                answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::HostPart { .. })),
+                ..
+            } => lower = middle + 1,
+            other => panic!("unexpected entrance: {other:?}"),
+        }
+    }
+    assert!(lower > 2000, "the contract carries substantial rendered schemas and text");
+    assert!(matches!(enter(lower, b"base"), run::Request::Admitted { .. }));
+    assert!(matches!(enter(lower, b"basex"), run::Request::Answer {
+        answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::HostPart { bound })), ..
+    } if bound == lower));
+}
+
+#[test]
+fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
+    use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::{llm, run};
+    let mut profile = crate::profile::standard();
+    profile.declared.memory = Some(u64::MAX);
+    let limits = crate::profile::derive(&profile, &declarations(0)).expect("real model");
+    let mut selected = priced_charter();
+    selected.llm.output = 4096;
+    selected.llm.window = 65_536;
+    selected.outcome.report = Some(run::outcome::TextSpec { max: 32, fields: Box::default() });
+    let mut domain = run::Domain::new(&limits.domain.run, 0);
+    let mut out = Queue::with_capacity(run::MAX_OUT);
+    selected.instructions = vec![1; 3500].into();
+    run::step(
+        &mut domain,
+        &Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.domain.run },
+        run::Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            identity: None,
+            activation: 1,
+            window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter: selected,
+            workspace: None,
+            transcript: None,
+            resumed: false,
+        },
+        &mut out,
+    );
+    assert!(matches!(out.pop(), Some(run::Request::Admitted { .. })));
+    let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
+    let prompt = llm::Prompt {
+        asker: llm::Asker::Main,
+        endpoint: llm::Endpoint(opening.llm.endpoint.0),
+        model: opening.llm.model,
+        system: opening.system,
+        tools: smith_domain::tools::Grants { inspect: false, modify: false, shell: false },
+        served: Box::new([llm::Served::Wait, llm::Served::Finish]),
+        messages: Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::Text { text: opening.prompt, replay: None }]),
+        }]),
+        max_tokens: opening.llm.output,
+    };
+    let application = smith_protocol_llm::schemas_for_contract(
+        &prompt,
+        &limits.llm.adapter.stated,
+        &run::outcome::OutcomeSpec {
+            change: None,
+            verdicts: Box::default(),
+            failure: None,
+            report: Some(run::outcome::TextSpec { max: 32, fields: Box::default() }),
+        },
+        None,
+        limits.llm.adapter.client.dialect.document_bytes,
+    )
+    .expect("schemas");
+    let mut translated =
+        smith_protocol_llm::prompt(prompt, &application, &limits.llm.adapter).expect("translated opening");
+    translated.output_ceiling(skein_llm::Provider::OpenAiCodex, 4096).expect("configured model output");
+    let prepared = skein_llm::client::Client::prepare(
+        skein_llm::Call {
+            owner: Token::new(1),
+            prompt: translated,
+            endpoint: skein_llm::Endpoint::codex(),
+            credential: skein_llm::Credential {
+                access_token: b"fake".as_slice().into(),
+                account_id: b"fake".as_slice().into(),
+            },
+        },
+        &limits.llm.adapter.client,
+    );
+    assert!(prepared.is_ok(), "admitted host bytes must fit the derived request: {:?}", prepared.err());
 }

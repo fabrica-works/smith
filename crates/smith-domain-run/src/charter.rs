@@ -283,6 +283,14 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
     if grants.deliver.is_some() && !writable {
         return Err(Invalid::Grants);
     }
+    check_window_parts(charter, workspace, limits)
+}
+
+fn check_window_parts(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<(), Invalid> {
+    let outcome = &charter.outcome;
+    let grants = &charter.grants;
+    let llm = &charter.llm;
+    let models = &charter.models;
     let mut host = crate::prompt::host_bytes(charter, workspace, limits.guide_bytes);
     host = match host {
         Some(bytes) => match limits.schema_costs.finish(outcome) {
@@ -294,20 +302,17 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
         },
         None => None,
     };
-    match &grants.deliver {
-        Some(change) => {
-            host = match host {
-                Some(bytes) => match limits.schema_costs.deliver(change) {
-                    Some(schema) => match bytes.checked_add(schema) {
-                        Some(total) => total.checked_add(limits.schema_costs.deliver_text),
-                        None => None,
-                    },
+    if let Some(change) = &grants.deliver {
+        host = match host {
+            Some(bytes) => match limits.schema_costs.deliver(change) {
+                Some(schema) => match bytes.checked_add(schema) {
+                    Some(total) => total.checked_add(limits.schema_costs.deliver_text),
                     None => None,
                 },
                 None => None,
-            };
-        }
-        None => {}
+            },
+            None => None,
+        };
     }
     for tool in &grants.host_tools {
         for text in [&tool.name, &tool.description, &tool.schema] {

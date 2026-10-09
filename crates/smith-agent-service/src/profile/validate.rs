@@ -76,6 +76,7 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         duration("max_waiting", policy.max_waiting),
         duration("connection_keep", policy.connection_keep),
         duration("tool_deadline", policy.tool_deadline),
+        duration("check_timeout", policy.check_timeout),
         duration("shell_timeout", policy.shell_timeout),
         duration("wrap_up", policy.wrap_up),
         duration("group_stop", policy.group_stop),

@@ -15,28 +15,28 @@ use smith_domain::run::{
 /// Numeric digits and escaped host text are summed separately by the run.
 pub fn schema_costs() -> Result<SchemaCosts, Error> {
     let empty = OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None };
-    let finish = length(finish_schema(&empty, u32::MAX)?)?;
+    let finish = length(&finish_schema(&empty, u32::MAX)?)?;
     let change = ChangeSpec { checks_must_pass: false, fields: Box::new([]) };
-    let deliver = length(deliver_schema(&change, u32::MAX)?)?;
+    let deliver = length(&deliver_schema(&change, u32::MAX)?)?;
     let mut one = empty.clone();
     one.change = Some(change.clone());
-    let changed = length(finish_schema(&one, u32::MAX)?)?.checked_sub(finish).ok_or(Error::Limit)?;
+    let changed = length(&finish_schema(&one, u32::MAX)?)?.checked_sub(finish).ok_or(Error::Limit)?;
     let text = TextSpec { max: 0, fields: Box::new([]) };
     one = empty.clone();
     one.report = Some(text.clone());
-    let reported = length(finish_schema(&one, u32::MAX)?)?.checked_sub(finish).ok_or(Error::Limit)?;
+    let reported = length(&finish_schema(&one, u32::MAX)?)?.checked_sub(finish).ok_or(Error::Limit)?;
     one.change = Some(change.clone());
     let form_join =
-        difference(difference(difference(length(finish_schema(&one, u32::MAX)?)?, finish)?, changed)?, reported)?;
+        difference(difference(difference(length(&finish_schema(&one, u32::MAX)?)?, finish)?, changed)?, reported)?;
     one = empty.clone();
     one.failure = Some(text);
-    let failure = difference(difference(length(finish_schema(&one, u32::MAX)?)?, finish)?, 1)?;
+    let failure = difference(difference(length(&finish_schema(&one, u32::MAX)?)?, finish)?, 1)?;
     let field = FieldRule { name: Box::new([]), max: 0 };
     let mut fields = change.clone();
     fields.fields = Box::new([field.clone()]);
-    let first_field = length(deliver_schema(&fields, u32::MAX)?)?;
+    let first_field = length(&deliver_schema(&fields, u32::MAX)?)?;
     fields.fields = Box::new([field.clone(), field]);
-    let next_field = length(deliver_schema(&fields, u32::MAX)?)?;
+    let next_field = length(&deliver_schema(&fields, u32::MAX)?)?;
     let verdict = VerdictRule {
         name: Box::new([]),
         text_max: 0,
@@ -45,17 +45,17 @@ pub fn schema_costs() -> Result<SchemaCosts, Error> {
     };
     one = empty.clone();
     one.verdicts = Box::new([verdict.clone()]);
-    let first_verdict = length(finish_schema(&one, u32::MAX)?)?;
+    let first_verdict = length(&finish_schema(&one, u32::MAX)?)?;
     one.verdicts = Box::new([verdict.clone(), verdict.clone()]);
-    let next_verdict = length(finish_schema(&one, u32::MAX)?)?;
+    let next_verdict = length(&finish_schema(&one, u32::MAX)?)?;
     let kind = ItemRule { kind: Box::new([]), fields: Box::new([]) };
     let mut with_kind = verdict;
     with_kind.items.kinds = Box::new([kind.clone()]);
     one.verdicts = Box::new([with_kind.clone()]);
-    let first_kind = length(finish_schema(&one, u32::MAX)?)?;
+    let first_kind = length(&finish_schema(&one, u32::MAX)?)?;
     with_kind.items.kinds = Box::new([kind.clone(), kind]);
     one.verdicts = Box::new([with_kind]);
-    let next_kind = length(finish_schema(&one, u32::MAX)?)?;
+    let next_kind = length(&finish_schema(&one, u32::MAX)?)?;
     let [finish_text, deliver_text] = crate::tools::contract_text_bytes().ok_or(Error::Limit)?;
     Ok(SchemaCosts {
         finish_text,
@@ -76,7 +76,7 @@ pub fn schema_costs() -> Result<SchemaCosts, Error> {
     })
 }
 
-fn length(bytes: Box<[u8]>) -> Result<u64, Error> {
+fn length(bytes: &[u8]) -> Result<u64, Error> {
     u64::try_from(bytes.len()).or(Err(Error::Limit))
 }
 
@@ -85,21 +85,23 @@ fn escaped() -> Result<[u8; 256], Error> {
     let mut measure = Encoder::measure(&limits);
     measure.string("\u{10ffff}".as_bytes());
     // Non-ASCII bytes are from protocol-attested UTF-8 and remain literal.
-    let literal = measure
-        .measured()
-        .map_err(schema_error)?
-        .checked_sub(2)
-        .ok_or(Error::Limit)?
-        .checked_div(4)
-        .ok_or(Error::Limit)?;
+    let literal = measured(measure)?.checked_sub(2).ok_or(Error::Limit)?.checked_div(4).ok_or(Error::Limit)?;
     let mut widths = [u8::try_from(literal).or(Err(Error::Limit))?; 256];
     for byte in 0_u8..=127 {
         let mut measure = Encoder::measure(&limits);
         measure.string(&[byte]);
-        let width = measure.measured().map_err(schema_error)?.checked_sub(2).ok_or(Error::Limit)?;
-        widths[usize::from(byte)] = u8::try_from(width).or(Err(Error::Limit))?;
+        let width = measured(measure)?.checked_sub(2).ok_or(Error::Limit)?;
+        *widths.get_mut(usize::from(byte)).expect("ASCII byte indexes the 256-entry width table") =
+            u8::try_from(width).or(Err(Error::Limit))?;
     }
     Ok(widths)
+}
+
+fn measured(measure: Encoder) -> Result<u32, Error> {
+    match measure.measured() {
+        Ok(length) => Ok(length),
+        Err(refusal) => Err(schema_error(refusal)),
+    }
 }
 
 fn schema_error(refusal: skein_json::writer::Refusal) -> Error {

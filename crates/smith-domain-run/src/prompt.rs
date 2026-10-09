@@ -41,20 +41,53 @@ const WAIT: &[u8] = b"Call `wait` when you need another message; its result is w
 #[must_use]
 pub fn fixed_prompt_bytes() -> Option<u64> {
     let mut measured = Text::measuring();
-    render_tools(&mut measured, Tools { inspect: true, modify: true, shell: true });
-    measured.put(b"\n");
-    measured.put(b"## Checkout\n\nThere is no checkout.\n\n");
-    render_agents(&mut measured, &[]);
-    measured.put(b"\n");
-    measured.put(WAIT);
-    render_finishing(
-        &mut measured,
-        &OutcomeSpec { change: None, verdicts: Box::new([]), failure: None, report: None },
-        false,
-    );
-    render_answering(&mut measured);
-    let opening = opening(false, None).len().max(BEGIN.len()).checked_add(2)?;
-    u64::try_from(measured.len).ok()?.checked_add(u64::try_from(opening).ok()?)?.checked_add(budget_prompt_bytes()?)
+    render_fixed(&mut measured);
+    u64::try_from(measured.len).ok()
+}
+
+/// Render the largest fixed text for startup's provider framing measurement.
+/// No charter text is received or retained by this pass.
+#[must_use]
+pub fn fixed_prompt() -> Box<[u8]> {
+    let mut measured = Text::measuring();
+    render_fixed(&mut measured);
+    let mut written = measured.writing();
+    render_fixed(&mut written);
+    written.finish()
+}
+
+fn render_fixed(text: &mut Text) {
+    render_tools(text, Tools { inspect: true, modify: true, shell: true });
+    text.put(b"\n");
+    render_checkout(text, &[], &[], b"");
+    text.put(b"\n");
+    render_agents(text, &[]);
+    text.put(b"\n");
+    text.put(WAIT);
+    render_finishing(text, &OutcomeSpec { change: None, verdicts: Box::new([]), failure: None, report: None }, false);
+    render_answering(text);
+    text.put(&opening(false, None));
+    text.put(b"\n\n");
+    render_fixed_budget(text);
+}
+
+fn render_fixed_budget(text: &mut Text) {
+    let time = Duration::from_nanos(u64::MAX);
+    let budget = Budget { turns: u32::MAX, spend: u64::MAX, time };
+    let reserve = Reserve { turns: u32::MAX, time };
+    let granted = Granted {
+        turns: u32::MAX, time, spend: u64::MAX,
+        turns_set: crate::Set::Pool, time_set: crate::Set::Pool,
+    };
+    let mut main = Text::measuring();
+    render_budget(&mut main, budget, reserve, true);
+    let mut child = Text::measuring();
+    render_share(&mut child, granted, u32::MAX);
+    if main.len >= child.len {
+        render_budget(text, budget, reserve, true);
+    } else {
+        render_share(text, granted, u32::MAX);
+    }
 }
 
 fn render_answering(text: &mut Text) {

@@ -52,12 +52,9 @@ impl SchemaCosts {
     pub fn finish(&self, outcome: &OutcomeSpec) -> Option<u64> {
         let mut bytes = self.finish;
         let mut groups = 0_u64;
-        match &outcome.change {
-            Some(change) => {
-                bytes = bytes.checked_add(self.change)?.checked_add(self.fields(&change.fields)?)?;
-                groups = groups.checked_add(1)?;
-            }
-            None => {}
+        if let Some(change) = &outcome.change {
+            bytes = bytes.checked_add(self.change)?.checked_add(self.fields(&change.fields)?)?;
+            groups = groups.checked_add(1)?;
         }
         let mut first = true;
         for verdict in &outcome.verdicts {
@@ -83,25 +80,19 @@ impl SchemaCosts {
         if !first {
             groups = groups.checked_add(1)?;
         }
-        match &outcome.report {
-            Some(report) => {
-                bytes = bytes
-                    .checked_add(self.report)?
-                    .checked_add(number(report.max))?
-                    .checked_add(self.fields(&report.fields)?)?;
-                groups = groups.checked_add(1)?;
-            }
-            None => {}
+        if let Some(report) = &outcome.report {
+            bytes = bytes
+                .checked_add(self.report)?
+                .checked_add(number(report.max))?
+                .checked_add(self.fields(&report.fields)?)?;
+            groups = groups.checked_add(1)?;
         }
-        match &outcome.failure {
-            Some(failure) => {
-                bytes = bytes
-                    .checked_add(self.failure)?
-                    .checked_add(number(failure.max))?
-                    .checked_add(self.fields(&failure.fields)?)?;
-                groups = groups.checked_add(1)?;
-            }
-            None => {}
+        if let Some(failure) = &outcome.failure {
+            bytes = bytes
+                .checked_add(self.failure)?
+                .checked_add(number(failure.max))?
+                .checked_add(self.fields(&failure.fields)?)?;
+            groups = groups.checked_add(1)?;
         }
         match groups.checked_sub(1) {
             Some(joins) => bytes.checked_add(joins.checked_mul(self.form_join)?),
@@ -132,7 +123,9 @@ impl SchemaCosts {
     fn text(&self, text: &[u8]) -> Option<u64> {
         let mut bytes = 0_u64;
         for byte in text {
-            bytes = bytes.checked_add(u64::from(self.escaped[usize::from(*byte)]))?;
+            bytes = bytes.checked_add(u64::from(
+                *self.escaped.get(usize::from(*byte)).expect("byte indexes the 256-entry width table"),
+            ))?;
         }
         Some(bytes)
     }
@@ -140,7 +133,7 @@ impl SchemaCosts {
 
 fn number(mut value: u32) -> u64 {
     let mut digits = 1_u64;
-    for _ in 0..9 {
+    for _ in 0_u32..9 {
         value = value.checked_div(10).expect("nonzero fixed divisor");
         if value > 0 {
             digits = digits.checked_add(1).expect("a u32 has at most ten digits");

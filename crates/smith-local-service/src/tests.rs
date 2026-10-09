@@ -451,9 +451,11 @@ fn the_local_start_window_admits_the_standard_agents_largest_turn() {
     )
     .expect("standard agent");
     let largest = smith_domain::max_turn_bytes(&agent.domain).expect("bounded turn");
-    let host = crate::profile::host_limits(&smith_agent_service::profile::standard(), largest);
+    let host =
+        crate::profile::host_limits(&smith_agent_service::profile::standard(), largest, agent.domain.run.message_bytes);
     assert!(host.unacknowledged_bytes >= largest, "agent accepts only a window holding its largest turn");
     assert!(host.turn_bytes >= largest, "host can receive the turn it grants");
+    assert_eq!(host.message_bytes, agent.domain.run.message_bytes);
 }
 
 #[test]

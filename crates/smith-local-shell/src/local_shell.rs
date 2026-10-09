@@ -61,7 +61,11 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let executable = std::env::current_exe().map_err(|error| format!("agent program path: {error}"))?;
     let largest_turn =
         smith_domain::max_turn_bytes(&agent_config.service.limits.domain).ok_or("agent turn bound overflows")?;
-    let host_limits = service::profile::host_limits(&agent_config.profile, largest_turn);
+    let host_limits = service::profile::host_limits(
+        &agent_config.profile,
+        largest_turn,
+        agent_config.service.limits.domain.run.message_bytes,
+    );
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }

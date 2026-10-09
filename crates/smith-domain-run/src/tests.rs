@@ -99,6 +99,10 @@ impl Harness {
         }
     }
 
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "programming-model.md, section 10.2: the harness receives a copied immutable profile"
+    )]
     fn new(limits: Limits) -> Harness {
         Harness {
             observed: Queue::with_capacity(4096),
@@ -3191,6 +3195,10 @@ fn a_run_with_only_finish_does_not_offer_or_accept_wait() {
     );
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "programming-model.md, section 10.2: the harness receives a copied immutable profile"
+)]
 fn refuse_workspace(mounted: Option<Workspace>, limits: Limits, expected: Invalid) {
     let mut harness = Harness::new(limits);
     assert_eq!(
@@ -4146,7 +4154,6 @@ fn workspace_host_paths_fit_their_receiving_bound_and_normalized_absolute_shape(
     mounted.directories[0].host = bytes(b"/");
     assert_eq!(crate::workspace::check(Some(&mounted), &LIMITS), Ok(()));
 }
-
 #[test]
 fn final_turns_ignore_ordinary_nudges_and_fail_once_only_after_the_last() {
     let mut harness = Harness::new(Limits { nudges: 0, ..LIMITS });
@@ -4314,48 +4321,95 @@ fn a_capped_child_answer_keeps_its_budget_stop_until_the_actual_end_and_returns_
     );
 }
 
-#[test]
-fn charter_rendering_at_the_host_edge_is_admitted_and_one_byte_more_refuses() {
-    let mut selected = charter();
-    selected.instructions = bytes(b"base");
-    selected.outcome.change = None;
-    selected.grants.deliver = None;
-    selected.outcome.report = Some(crate::outcome::TextSpec {
-        max: 32,
-        fields: (0..20)
-            .map(|index| FieldRule { name: format!("long_contract_field_{index:02}").into_bytes().into(), max: 32 })
-            .collect::<Vec<_>>()
-            .into_boxed_slice(),
-    });
-    let receiving = Limits { run_bytes: 16_384, outcome_bytes: 8192, ..LIMITS };
-    let edge = crate::prompt::host_bytes(&selected, None, receiving.guide_bytes).expect("rendered host")
-        + receiving.schema_costs.finish(&selected.outcome).expect("schema")
-        + receiving.schema_costs.finish_text;
-    let receiving = Limits { host_part: edge, ..receiving };
-    let mut admitted = Harness::new(receiving);
-    let requests = admitted.start_workspace(1, selected.clone(), None);
-    assert!(
-        matches!(requests.first(), Some(Request::Admitted { .. })),
-        "large contract exactly at the edge: {requests:?}"
-    );
-    selected.instructions = bytes(b"basex");
-    let mut refused = Harness::new(receiving);
-    let requests = refused.start_workspace(1, selected, None);
-    assert!(
-        matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::HostPart { bound })), .. }] if *bound == edge)
-    );
-}
+mod room_controls {
+    #![allow(
+        clippy::disallowed_macros,
+        clippy::disallowed_methods,
+        clippy::disallowed_types,
+        reason = "programming-model.md, section 10.2: deterministic test harnesses are ordinary Rust"
+    )]
+    use super::{
+        Answer, Ask, AskRefusal, Charter, EXPIRY, Event, FieldRule, Harness, Invalid, LIMITS, Limits, Refusal, Request,
+        Returned, Token, agents, bytes, charter, families,
+    };
+    use alloc::boxed::Box;
+    fn large_host_charter(instructions: &[u8]) -> Charter {
+        let mut selected = charter();
+        selected.grants.host_tools = Box::default();
+        selected.instructions = bytes(instructions);
+        selected.outcome.change = None;
+        selected.grants.deliver = None;
+        selected.outcome.report = Some(crate::outcome::TextSpec {
+            max: 32,
+            fields: (0_u32..20)
+                .map(|index| FieldRule { name: format!("long_contract_field_{index:02}").into_bytes().into(), max: 32 })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        });
+        selected
+    }
 
-#[test]
-fn a_charter_model_below_the_derived_room_is_refused_before_preparation() {
-    let selected = charter();
-    let [numerator, denominator] = LIMITS.compaction_threshold;
-    let room = u64::from(selected.llm.window) * u64::from(numerator) / u64::from(denominator)
-        - 2 * u64::from(selected.llm.output);
-    let receiving = Limits { room: room + 1, ..LIMITS };
-    let mut refused = Harness::new(receiving);
-    let requests = refused.start(1, selected);
-    assert!(
-        matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::Room { bound })), .. }] if *bound == room + 1)
-    );
+    #[test]
+    fn charter_rendering_at_the_host_edge_is_admitted_and_one_byte_more_refuses() {
+        let selected = large_host_charter(b"base");
+        let receiving = Limits { run_bytes: 16_384, outcome_bytes: 8192, ..LIMITS };
+        let edge = crate::prompt::host_bytes(&selected, None, receiving.guide_bytes).expect("rendered host")
+            + receiving.schema_costs.finish(&selected.outcome).expect("schema")
+            + receiving.schema_costs.finish_text;
+        let receiving = Limits { host_part: edge, ..receiving };
+        let mut admitted = Harness::new(receiving);
+        let requests = admitted.start_workspace(1, selected, None);
+        assert!(
+            matches!(requests.first(), Some(Request::Admitted { .. })),
+            "large contract exactly at the edge: {requests:?}"
+        );
+        let selected = large_host_charter(b"basex");
+        let mut refused = Harness::new(receiving);
+        let requests = refused.start_workspace(1, selected, None);
+        assert!(
+            matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::HostPart { bound })), .. }] if *bound == edge)
+        );
+    }
+
+    #[test]
+    fn a_charter_model_below_the_derived_room_is_refused_before_preparation() {
+        let selected = charter();
+        let [numerator, denominator] = LIMITS.compaction_threshold;
+        let room = u64::from(selected.llm.window) * u64::from(numerator) / u64::from(denominator)
+            - 2 * u64::from(selected.llm.output);
+        let receiving = Limits { room: room + 1, ..LIMITS };
+        let mut refused = Harness::new(receiving);
+        let requests = refused.start(1, selected);
+        assert!(
+            matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::Room { bound })), .. }] if *bound == room + 1)
+        );
+    }
+
+    #[test]
+    fn a_sub_agent_brief_and_its_inherited_context_must_fit_the_host_part_before_any_open() {
+        for extra in [0, 1] {
+            let bound = 10_000_u64;
+            let receiving = Limits { host_part: bound, ..LIMITS };
+            let mut harness = Harness::new(receiving);
+            let (_, main) = harness.running_on(1, 100, agents());
+            let requests = harness.step(Event::Delegated {
+                name: crate::CallName { activation: 1, completion: 1, position: 0 },
+                conversation: main,
+                call: Token::new(7),
+                ask: Ask::SubAgent {
+                    brief: vec![b'x'; usize::try_from(bound + extra).expect("small test bound")].into(),
+                    families: families(true, false, false),
+                    llm: None,
+                    share: None,
+                },
+                deadline: EXPIRY,
+            });
+            assert!(
+                matches!(&requests[..], [Request::Return {
+            call, result: Returned::Refused { refusal: AskRefusal::TooLarge { bound: actual } }, spent: 0,
+        }] if *call == Token::new(7) && *actual == bound),
+                "no child opens: {requests:?}"
+            );
+        }
+    }
 }
