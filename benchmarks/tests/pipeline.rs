@@ -44,7 +44,7 @@ fn fixture(story: &str) -> (Guard, Machine, PathBuf, Prepared) {
 
 #[test]
 fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer() {
-    let (_guard, _machine, root, prepared) = fixture("archives");
+    let (guard, machine, root, prepared) = fixture("archives");
     let request = root.join("prepared.json");
     fs::write(&request, serde_json::to_vec(&prepared).expect("prepared JSON")).expect("request");
     let clock = skein_shell::Clock::new();
@@ -96,6 +96,33 @@ fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer
         recorded.result
     );
     assert!(!scratch_root(&root.join("state/smith-bench"), &prepared).expect("scratch").exists());
+    // A rejecting grader is an ordinary grade failure; a crashed grader
+    // preserves its bounded output and remains a harness fault.
+    let private = smith_bench::isolate::empty(&guard, &root.join("crash-grader")).expect("private grader");
+    let judgment = smith_bench::grade::command(
+        &clock,
+        &machine,
+        &private,
+        &private.workspace,
+        &smith_bench::Grade {
+            command: vec!["sh".into(), "-c".into(), "printf crash-evidence; kill -KILL $$".into()],
+            deadline_seconds: 1,
+            max_output_bytes: 4096,
+        },
+        smith_bench::process::Bounds {
+            hard: skein_lib::Duration::ZERO,
+            teardown: skein_lib::Duration::ZERO,
+            grace: skein_lib::Duration::from_millis(30),
+            settlement: skein_lib::Duration::from_millis(200),
+            stdout: 4096,
+            stderr: 4096,
+            force_walk: true,
+        },
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("settled crashed grader");
+    assert!(matches!(judgment.end, smith_bench::grade::GradeEnd::Fault { .. }));
+    assert_eq!(judgment.stdout, b"crash-evidence");
     fs::remove_dir_all(root).expect("remove synthetic story");
 }
 

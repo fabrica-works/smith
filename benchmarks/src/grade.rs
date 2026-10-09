@@ -153,10 +153,21 @@ pub fn checks(workspace: &Path, before: &Snapshot, after: &Snapshot, checks: &[O
 /// The author-command evidence retained beside the attempt, outside its timer.
 #[derive(Debug)]
 pub struct GradeResult {
-    pub passed: bool,
+    pub end: GradeEnd,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub forced: Forced,
+}
+
+/// The grader's terminal, supplied after its tree has settled.
+#[derive(Debug, PartialEq, Eq)]
+pub enum GradeEnd {
+    /// The author's command exited successfully.
+    Passed,
+    /// The author's command rejected the candidate with an exit code.
+    Failed,
+    /// The grader crashed, exceeded its deadline or lost bounded output.
+    Fault { reason: String },
 }
 
 /// Grade a separate copy with the author's deadline and bounded logs.
@@ -192,12 +203,18 @@ pub fn command(
             force_walk: bounds.force_walk,
         },
     )?;
-    Ok(GradeResult {
-        passed: result.exit == Exit::Code(0) && result.forced == Forced::No && result.error.is_none(),
-        stdout: result.stdout,
-        stderr: result.stderr,
-        forced: result.forced,
-    })
+    let end = match (result.error, result.forced, result.exit) {
+        (Some(reason), _, _) => GradeEnd::Fault { reason },
+        (None, Forced::Terminated | Forced::Killed, _) => {
+            GradeEnd::Fault { reason: "grader exceeded its deadline".into() }
+        }
+        (None, Forced::No, Exit::Signal(signal)) => {
+            GradeEnd::Fault { reason: format!("grader crashed with signal {signal}") }
+        }
+        (None, Forced::No, Exit::Code(0)) => GradeEnd::Passed,
+        (None, Forced::No, Exit::Code(_)) => GradeEnd::Failed,
+    };
+    Ok(GradeResult { end, stdout: result.stdout, stderr: result.stderr, forced: result.forced })
 }
 
 /// Archive exactly these bytes as a new private file, retaining its digest.

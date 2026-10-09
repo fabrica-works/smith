@@ -36,7 +36,11 @@ fn requests(directory: &Path) -> Result<Vec<Prepared>, String> {
 fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prepared>, String> {
     let mut groups: BTreeMap<String, BTreeMap<String, Vec<Prepared>>> = BTreeMap::new();
     let mut ids = BTreeSet::new();
+    let run = requests.first().map(|request| request.identity.run.clone());
     for request in requests {
+        if Some(&request.identity.run) != run.as_ref() {
+            return Err("prepared attempts must belong to one run".into());
+        }
         if !ids.insert((request.identity.run.clone(), request.identity.attempt.clone())) {
             return Err("prepared attempts must have unique run/attempt ids".into());
         }
@@ -186,7 +190,8 @@ fn dispatch(
     crate::run::private_parent(guard, &root)?;
     let name = format!("{}-{}.request", request.identity.run, request.identity.attempt);
     // scratch_root validates ids before either the request or agent can write.
-    crate::run::scratch_root(state, request)?;
+    let scratch = crate::run::scratch_root(state, request)?;
+    let existed = scratch.exists();
     let document = serde_json::to_vec_pretty(&request).map_err(|error| error.to_string())?;
     crate::grade::archive(guard, &root, &name, &document)?;
     let home = std::env::var_os("HOME").ok_or("suite requires the user's directory choices")?;
@@ -222,7 +227,7 @@ fn dispatch(
     )?;
     let result_file =
         state.join("runs").join(&request.identity.run).join(&request.identity.attempt).join("result.json");
-    let result = match crate::read_result(&result_file) {
+    let mut result = match crate::read_result(&result_file) {
         Ok(result) => result,
         Err(error) if !result_file.exists() => crate::run::recover(
             guard,
@@ -233,6 +238,15 @@ fn dispatch(
         )?,
         Err(error) => return Err(format!("attempt's existing result is invalid: {error}")),
     };
+    if !existed && scratch.exists() {
+        let deletion =
+            guard.write_path(&scratch).and_then(|path| fs::remove_dir_all(path).map_err(|error| error.to_string()));
+        if let Err(error) = deletion {
+            result.outcome.end = End::HarnessError { what: format!("dispatcher workspace deletion failed: {error}") };
+            let path = guard.write_path(&result_file)?;
+            fs::write(path, crate::render_result(&result)?).map_err(|error| error.to_string())?;
+        }
+    }
     Ok(result)
 }
 
@@ -318,4 +332,67 @@ pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Ba
         }
     }
     Ok(Batch { results, incomplete, probes })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn prepared_blocks_preserve_seeded_order_unique_ids_and_token_gaps() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut suite = crate::read_suite(&root.join("tests/recorded/suites/sample.toml")).expect("suite");
+        suite.design = Design::Interleaved;
+        suite.repetitions = 2;
+        let mut result = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("result");
+        let mut requests = Vec::new();
+        for arm in ["a", "b"] {
+            for repetition in 0..2 {
+                let mut identity = result.identity.clone();
+                identity.arm = arm.into();
+                identity.attempt = format!("{arm}-{repetition}");
+                requests.push(Prepared {
+                    task: root.join("tests/recorded/tasks/valid/task.toml"),
+                    identity,
+                    program: "/bin/sh".into(),
+                    arguments: Vec::new(),
+                    codex_home: None,
+                    teardown_ms: 50,
+                    grace_ms: 20,
+                    settlement_ms: 200,
+                    setup_deadline_seconds: 1,
+                    max_stdout_bytes: 4096,
+                    max_stderr_bytes: 4096,
+                    disk_estimate_bytes: 4096,
+                    force_walk: true,
+                });
+            }
+        }
+        let first = ordered(&suite, requests.clone(), 71).expect("interleaving");
+        let second = ordered(&suite, requests.clone(), 71).expect("same seed");
+        assert_eq!(
+            first.iter().map(|request| &request.identity.attempt).collect::<Vec<_>>(),
+            second.iter().map(|request| &request.identity.attempt).collect::<Vec<_>>()
+        );
+        for block in first.chunks_exact(2) {
+            assert_ne!(block[0].identity.arm, block[1].identity.arm);
+        }
+        let mut duplicate = requests.clone();
+        duplicate.push(requests[0].clone());
+        assert!(ordered(&suite, duplicate, 71).expect_err("duplicate").contains("unique"));
+        let mut mixed = requests.clone();
+        mixed[0].identity.run = "another-run".into();
+        assert!(ordered(&suite, mixed, 71).expect_err("mixed runs").contains("one run"));
+        requests.pop();
+        assert!(ordered(&suite, requests, 71).expect_err("missing repetition").contains("repetition"));
+        let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
+        total.usage.fresh = Measure::Observed { value: 10 };
+        total.usage.cache_read = Measure::Observed { value: 20 };
+        total.usage.output = Measure::Observed { value: 30 };
+        assert_eq!(known_tokens(&result), Some(60));
+        let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
+        total.usage.fresh = Measure::unavailable("missing child");
+        assert_eq!(known_tokens(&result), None);
+    }
 }

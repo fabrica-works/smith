@@ -233,7 +233,15 @@ fn resources(process: &ProcessResult) -> Result<Resources, String> {
         PeakScope::Tree => (ResourceScope::Cgroup, Measure::Observed { value: process.counts.peak_rss_bytes }),
         PeakScope::LargestProcess { baseline_bytes } => {
             if process.counts.peak_rss_bytes > baseline_bytes {
-                (ResourceScope::LargestProcess, Measure::Observed { value: process.counts.peak_rss_bytes })
+                (
+                    ResourceScope::LargestProcess,
+                    Measure::LowerBound {
+                        value: process.counts.peak_rss_bytes,
+                        missing: vec![
+                            "pidfd walk retains the largest process peak, not simultaneous tree memory".into(),
+                        ],
+                    },
+                )
             } else {
                 (
                     ResourceScope::Unavailable,
@@ -654,9 +662,17 @@ fn afterwards(
                 },
                 &task.environment,
             )?;
-            passed &= judgment.passed;
             archive(guard, directory, result, &format!("grade-{index}-stdout.log"), &judgment.stdout)?;
             archive(guard, directory, result, &format!("grade-{index}-stderr.log"), &judgment.stderr)?;
+            match judgment.end {
+                crate::grade::GradeEnd::Passed => {}
+                crate::grade::GradeEnd::Failed => passed = false,
+                crate::grade::GradeEnd::Fault { reason } => {
+                    result.outcome.grade = Some(Measure::unavailable(reason.clone()));
+                    result.timing.grading_wall_ms = Measure::Observed { value: elapsed(grade_start, clock.now().now) };
+                    return Err(reason);
+                }
+            }
         }
         result.outcome.grade = Some(Measure::Observed { value: passed });
         result.timing.grading_wall_ms = Measure::Observed { value: elapsed(grade_start, clock.now().now) };
@@ -710,7 +726,6 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             directory: private.workspace.clone(),
         };
         let prompt = task.prompt.as_bytes().to_vec();
-        inference = true;
         let process = execute(
             &clock,
             command,
@@ -726,6 +741,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
                 force_walk: prepared.force_walk,
             },
         )?;
+        inference = true;
         observe(guard, &directory, &private.workspace, &mut result, &process)?;
         afterwards(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
