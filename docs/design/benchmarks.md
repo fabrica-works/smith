@@ -287,7 +287,7 @@ files.
 
 | Step | Smith | Codex | Claude Code |
 |---|---|---|---|
-| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts); `XDG_STATE_HOME` the state; the account borrows the user's `~/.codex` login, read-only and access-token-only (shell.md, section 7). Before an arm's first attempt, `smith check --json` records the effective limits, schema versions and credentials; a nonzero exit refuses the arm as setup | the user's own `CODEX_HOME`, so its login and its refresh stay where they are; every key that shapes behaviour pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort; the user configuration's digest recorded with the attempt; its background service disabled where it can be, or ended with the tree | the user's own Claude login, the same way as Codex's; pinned settings and an empty MCP configuration passed on the command line, edits and commands allowed without asking |
+| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts); `XDG_STATE_HOME` the state; the account borrows the user's `~/.codex` login, read-only and access-token-only (shell.md, section 7). Before an arm's first attempt, `smith check --json` records the effective limits, schema versions and credentials; a nonzero exit refuses the arm as setup | a `CODEX_HOME` of the attempt's own, holding only an access-only `auth.json` the harness writes from the user's `~/.codex` login (section 10), so none of the user's instructions, skills, plugins, memories or configuration reach it and its rollouts are the attempt's; every key that shapes behaviour pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort; its background service disabled where it can be, or ended with the tree | the user's own Claude login, the same way as Codex's; pinned settings and an empty MCP configuration passed on the command line, edits and commands allowed without asking |
 | command | `smith exec --json -C <workspace> -m <endpoint>/<model> --effort <effort> -`, overrides as `-c KEY=VALUE` (shell.md, section 4.2); interactive, `smith --trace <file>` at a pseudo-terminal | `codex exec --json -m <model> -c model_reasoning_effort=<effort> -C <workspace> -o <final> -` | `claude -p --output-format stream-json --verbose --model <model> --effort <effort> --max-budget-usd <ceiling> --settings <pinned> --mcp-config <empty>`; `--input-format stream-json` for later messages |
 | observe | the event stream, through `smith-events`; standard error is never parsed | JSON lines: thread, turns, items, and each turn's usage, of the root thread only, cached input within input | the opening record, assistant messages with usage, sub-agent messages with their parent's call, the result with durations, turns, cost and per-model usage, in the pinned version's recorded shapes |
 | collect | nothing beyond the stream | the rollouts of the thread named: per-response usage and child threads; where a child is not linked to its parent, child scopes are unavailable and totals lower bounds | nothing; transcripts are archived |
@@ -308,7 +308,9 @@ files.
   same text through the file it reads: Claude Code's `CLAUDE.md` is made
   at preparation and left out of the diff. smith's pinned settings add
   nothing. No home or directory above the attempt's root holds
-  instructions.
+  instructions: each agent's home is the attempt's (section 10), since
+  an agent may read its home's instructions whatever its command line
+  says (codex-cli 0.160.0 reads `CODEX_HOME/AGENTS.md` unconditionally).
 - **The environment.** `HOME`, `TMPDIR` and the build caches are the
   attempt's; `PATH` and the toolchain's home are the machine's,
   read-only; then the locale and the agent's home. A task's variables
@@ -449,17 +451,29 @@ answer is a warning on a completed attempt.
 
 - **Credentials are the user's existing logins,** never a copy of a
   refresh token: issuers rotate them, and a copy logs the other holder
-  out. smith borrows `~/.codex` read-only and takes its access token only
-  (domain/host.md, section 7). Codex runs in the user's own `CODEX_HOME`,
-  so its login and refresh stay in one place, and Claude Code later
-  likewise with its own. A login that has lapsed is a setup refusal
-  naming the CLI to run once. Nothing in the harness writes to a user's
-  tool directories.
-- **Configuration is pinned, not inherited.** An agent sharing the user's
-  home gets every key that shapes its behaviour from the command line
-  (MCP servers, trust, approvals, model, effort), and the digest of the
-  user's own configuration is recorded with each attempt, so a change
-  there is visible. smith's settings come only from the harness's layer
+  out. Every agent borrows the login access-only, and none runs in a
+  user's tool directory:
+  - smith borrows `~/.codex` read-only and takes its access token only
+    (domain/host.md, section 7);
+  - Codex gets a `CODEX_HOME` of the attempt's own. Its `auth.json` is
+    written by the harness from the user's login: the access and
+    identity tokens and the account, with the refresh token left empty.
+    It is `0o600` in a `0o700` directory and removed when the tree has
+    ended. Codex cannot refresh it, so it never rotates the user's
+    token;
+  - Claude Code, later, gets the same with its own configuration
+    directory.
+
+  An access token that expires before the attempt's hard deadline (its
+  expiry read from its claims) is a setup refusal, like a lapsed login.
+  The refusal names the CLI to run once, whose own use refreshes the
+  login where it lives. Nothing in the harness writes to a user's tool
+  directories.
+- **Configuration is pinned, not inherited.** An agent's home is the
+  attempt's, so nothing of the user's configuration, instructions,
+  skills, plugins or memories reaches it. Every key that shapes its
+  behaviour comes from the command line (MCP servers, trust, approvals,
+  model, effort). smith's settings come only from the harness's layer
   (shell.md, section 5).
 - **Out of sight, nothing shared.** Attempts run under the harness's
   scratch root, outside every repository and the benchmark tree, each
