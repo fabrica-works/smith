@@ -10,6 +10,7 @@ use skein_lib::{Env, List, Map, Queue, Time, Token, Wall};
 use smith_agent_service as agent_service;
 use smith_domain as agent;
 use smith_host_domain as host;
+use smith_inline_agent as inline;
 use smith_local_domain as local;
 use smith_local_protocol as protocol;
 use smith_protocol_channel as channel;
@@ -20,7 +21,9 @@ use crate::process::{Launch, ProcessAdapter, ProcessLimits};
 #[derive(Clone, Debug)]
 pub struct Limits {
     pub local: local::Limits,
-    pub host: host::Limits,
+    pub inline: Option<InlineLimits>,
+    /// Maximum credential envelope bytes retained by the owner.
+    pub envelope_bytes: u64,
     pub process: ProcessLimits,
     pub queue: u32,
 }
@@ -33,6 +36,72 @@ pub struct Config {
     pub endpoints: channel::Endpoints,
     pub paths: Box<[Box<[u8]>]>,
     pub launch: Launch,
+    pub agent: AgentConfig,
+}
+
+/// Receiving bounds of the LLM and machine components for the inline kind.
+#[derive(Clone, Debug)]
+pub struct InlineLimits {
+    /// Complete checked lower-component ownership, including endpoint inventory.
+    pub memory: u64,
+}
+
+impl InlineLimits {
+    /// Price the exact LLM and machine configuration before moving its endpoint inventory.
+    #[must_use]
+    pub fn new(configuration: &agent_service::Config) -> Option<Self> {
+        Some(Self { memory: agent_service::effects_worst_case(&configuration.limits, &configuration.llm_endpoints)? })
+    }
+}
+
+/// Lower configuration chosen with the local agent kind at construction.
+#[derive(Debug)]
+#[expect(clippy::large_enum_variant, reason = "caller-owned startup configuration moves once without an extra heap allocation") ]
+pub enum AgentConfig {
+    /// LLM and machine components with separately owned workspace descriptors.
+    Inline { configuration: agent_service::Config, roots: Box<[kernel::Fd]> },
+    /// The process adapter uses the common launch configuration.
+    Spawned,
+}
+
+/// Components below the chosen child, plus common terminal and delivery IO.
+#[derive(Debug)]
+#[expect(clippy::large_enum_variant, reason = "bounded component ownership is priced directly")]
+enum Effects {
+    /// The process adapter here owns only common terminal, git and plain-directory IO.
+    Inline { agent: agent_service::Effects, local: ProcessAdapter },
+    /// Common IO and the spawned child's process and pipes.
+    Spawned(ProcessAdapter),
+}
+
+impl Effects {
+    fn process(&self) -> &ProcessAdapter {
+        match self {
+            Self::Inline { local, .. } => local,
+            Self::Spawned(process) => process,
+        }
+    }
+
+    fn process_mut(&mut self) -> &mut ProcessAdapter {
+        match self {
+            Self::Inline { local, .. } => local,
+            Self::Spawned(process) => process,
+        }
+    }
+
+    fn inline(&self) -> Option<&agent_service::Effects> {
+        match self {
+            Self::Inline { agent, .. } => Some(agent),
+            Self::Spawned(_) => None,
+        }
+    }
+
+    fn inline_mut(&mut self) -> Option<&mut agent_service::Effects> {
+        match self {
+            Self::Inline { agent, .. } => Some(agent),
+            Self::Spawned(_) => None,
+        }
+    }
 }
 
 /// Startup cannot allocate or represent the requested local composition.
@@ -51,7 +120,19 @@ pub enum Error {
 /// Checked memory bound for both domains and their routing queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    local::spawned_worst_case(&limits.local, &limits.host)?
+    local::worst_case(&limits.local)?
+        .checked_add(match limits.local.agent {
+            local::AgentLimits::Inline(_) => {
+                let bounds = limits.inline.as_ref()?;
+                bounds.memory
+            }
+            local::AgentLimits::Spawned(_) => {
+                if limits.inline.is_some() {
+                    return None;
+                }
+                0
+            }
+        })?
         .checked_add(protocol::terminal_worst_case(&protocol::TerminalLimits {
             line_bytes: limits.local.line_bytes,
             show_bytes: limits.local.show_bytes,
@@ -60,25 +141,18 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<local::Event>::worst_case(limits.queue)?)?
         .checked_add(Queue::<local::Request>::worst_case(limits.queue)?.checked_mul(2)?)?
         .checked_add(Queue::<host::Input>::worst_case(limits.queue)?)?
-        .checked_add(Queue::<host::Output>::worst_case(limits.queue)?)?
         .checked_add(Queue::<host::process::Request>::worst_case(limits.queue)?)?
         .checked_add(Queue::<protocol::TerminalEvent>::worst_case(limits.queue)?)?
         .checked_add(Queue::<Box<[u8]>>::worst_case(limits.queue)?)?
-        .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.local.agent.accounts)?)?
-        .checked_add(u64::from(limits.local.agent.accounts).checked_mul(limits.host.answer_bytes)?)?
+        .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.local.smith.accounts)?)?
+        .checked_add(u64::from(limits.local.smith.accounts).checked_mul(limits.envelope_bytes)?)?
         .checked_add(
-            u64::from(limits.local.agent.run.directories).checked_mul(u64::try_from(size_of::<kernel::Fd>()).ok()?)?,
+            u64::from(limits.local.smith.run.directories).checked_mul(u64::try_from(size_of::<kernel::Fd>()).ok()?)?,
         )?
         .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)?
         .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
         .checked_add(List::<u32>::worst_case(64)?)?
         .checked_add(u64::try_from(size_of::<Service>()).ok()?)
-}
-
-/// Bound for local policy, its terminal/delivery IO and the colocated agent effects.
-#[must_use]
-pub fn in_process_worst_case(limits: &Limits, effects: &agent_service::Config) -> Option<u64> {
-    worst_case(limits)?.checked_add(agent_service::effects_worst_case(&effects.limits, &effects.llm_endpoints)?)
 }
 
 #[derive(Debug)]
@@ -93,7 +167,9 @@ enum SnapshotState {
 pub struct Service {
     limits: Limits,
     local: local::Domain,
-    effects: Option<agent_service::Effects>,
+    below: Effects,
+    lower_agent: Option<Token>,
+    capture_time: skein_lib::Duration,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     now: Time,
@@ -101,7 +177,6 @@ pub struct Service {
     capture_activation: Option<u64>,
     snapshot_state: SnapshotState,
     pending_exit: Option<local::ExitStatus>,
-    process: ProcessAdapter,
     terminal: protocol::Terminal,
     terminal_events: Queue<protocol::TerminalEvent>,
     output: Queue<Box<[u8]>>,
@@ -124,48 +199,29 @@ pub struct StartValues {
 }
 
 impl Service {
-    /// Construct one spawned-agent local chat without touching files or processes.
-    pub fn new(config: Config, seed: u64) -> Result<Self, Error> {
-        Self::with_effects(config, seed, None)
-    }
-
-    /// Build a local chat whose agent contract crosses as typed entities in this process.
-    pub fn new_in_process(
-        mut config: Config,
-        lower: agent_service::Config,
-        roots: Box<[kernel::Fd]>,
-        seed: u64,
-    ) -> Result<Self, Error> {
-        if lower.limits.domain != config.limits.local.agent {
-            return Err(Error::Process);
-        }
-        for endpoint in &config.limits.local.endpoints {
-            if !lower.domain.endpoints.contains(endpoint) {
-                return Err(Error::Process);
-            }
-        }
-        in_process_worst_case(&config.limits, &lower).ok_or(Error::Memory)?;
-        let Ok(mut effects) = agent_service::Effects::new(lower, seed) else { return Err(Error::Process) };
-        effects.contract(local::charter(&config.local).outcome);
-        config.local.workspace = match config.local.workspace.take() {
-            Some(workspace) => match effects.workspace(workspace, roots) {
-                Ok(workspace) => Some(workspace),
-                Err(_) => return Err(Error::Process),
-            },
-            None if roots.is_empty() => None,
-            None => return Err(Error::Memory),
-        };
-        Self::with_effects(config, seed, Some(effects))
-    }
-
-    fn with_effects(config: Config, seed: u64, effects: Option<agent_service::Effects>) -> Result<Self, Error> {
-        let required = local::max_out(&config.limits.local).max(host::max_out(&config.limits.host)).max(64);
+    /// Construct the child kind selected by the local limits, without performing IO.
+    pub fn new(mut config: Config, seed: u64) -> Result<Self, Error> {
+        let required = local::max_out(&config.limits.local).max(64);
         if config.limits.queue < required {
             return Err(Error::Queue);
         }
-        if worst_case(&config.limits).is_none() {
-            return Err(Error::Memory);
-        }
+        worst_case(&config.limits).ok_or(Error::Memory)?;
+        let native = match config.agent {
+            AgentConfig::Inline { configuration, roots } => {
+                match config.limits.local.agent {
+                    local::AgentLimits::Inline(_) => {}
+                    local::AgentLimits::Spawned(_) => return Err(Error::Process),
+                }
+                Some(inline_effects(configuration, roots, &mut config.local, &config.limits, seed)?)
+            }
+            AgentConfig::Spawned => {
+                match config.limits.local.agent {
+                    local::AgentLimits::Inline(_) => return Err(Error::Process),
+                    local::AgentLimits::Spawned(_) => {}
+                }
+                None
+            }
+        };
         let mut plain_directories = List::with_capacity(64);
         if let Some(workspace) = &config.local.workspace {
             for (position, directory) in workspace.directories.iter().enumerate() {
@@ -177,14 +233,9 @@ impl Service {
                 }
             }
         }
-        let local_result = if effects.is_some() {
-            local::Domain::new(config.local, &config.limits.local, seed)
-        } else {
-            local::Domain::new_external(config.local, &config.limits.local, config.limits.host, seed)
-        };
-        let local = match local_result {
-            Ok(local) => local,
-            Err(error) => return Err(Error::Local(error)),
+        let capture_time = config.local.budget.time;
+        let local = match local::Domain::new(config.local, &config.limits.local, seed) {
+            Ok(local) => local, Err(error) => return Err(Error::Local(error)),
         };
         let process =
             ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).ok_or(Error::Process)?;
@@ -194,11 +245,16 @@ impl Service {
         })
         .ok_or(Error::Memory)?;
         let queue = config.limits.queue;
-        let accounts = config.limits.local.agent.accounts;
+        let accounts = config.limits.local.smith.accounts;
         Ok(Self {
             limits: config.limits,
             local,
-            effects,
+            below: match native {
+                Some(agent) => Effects::Inline { agent, local: process },
+                None => Effects::Spawned(process),
+            },
+            lower_agent: None,
+            capture_time,
             completions: Queue::with_capacity(queue),
             submissions: Queue::with_capacity(queue),
             now: Time::ZERO,
@@ -206,7 +262,6 @@ impl Service {
             capture_activation: None,
             snapshot_state: SnapshotState::Idle,
             pending_exit: None,
-            process,
             terminal,
             terminal_events: Queue::with_capacity(queue),
             output: Queue::with_capacity(queue),
@@ -249,7 +304,11 @@ impl Service {
 
     /// Lend a credential value only beside the domain's grant name.
     pub fn credential(&mut self, grant: agent::Grant, envelope: Box<[u8]>) {
-        if let Some(effects) = &mut self.effects
+        if u64::try_from(envelope.len()).expect("envelope bytes fit u64") > self.limits.envelope_bytes {
+            self.local_events.push(local::Event::NoCredential { account: grant.name.account, reason: local::CredentialFailure::Missing });
+            return;
+        }
+        if let Some(effects) = self.below.inline_mut()
             && effects.grant(grant, &envelope, self.now).is_err()
         {
             self.local_events.push(local::Event::NoCredential {
@@ -267,23 +326,13 @@ impl Service {
         &mut self.shell
     }
 
-    /// Requests for the lower process adapter; it returns host events.
-    pub fn lower_requests(&mut self) -> &mut Queue<host::process::Request> {
-        &mut self.lower
-    }
-
-    /// Parallel workspace paths and grant envelopes for the first Start send.
-    pub fn take_start_values(&mut self) -> Option<StartValues> {
-        self.start_values.take()
-    }
-
     #[must_use]
     pub fn next_deadline(&self) -> Option<Time> {
         let mut next: Option<Time> = None;
         for deadline in [
             self.local.next_deadline(),
-            self.process.next_deadline(),
-            match &self.effects {
+            self.below.process().next_deadline(),
+            match self.below.inline() {
                 Some(effects) => effects.next_deadline(),
                 None => None,
             },
@@ -305,7 +354,7 @@ impl Service {
             || !self.submissions.is_empty()
             || self.local.is_ready()
             || self.local.is_due(now)
-            || match &self.effects {
+            || match self.below.inline() {
                 Some(effects) => effects.work_pending(now),
                 None => false,
             }
@@ -313,12 +362,12 @@ impl Service {
             || !self.local_requests.is_empty()
             || !self.host_events.is_empty()
             || !self.terminal_events.is_empty()
-            || self.process.work_pending(now)
+            || self.below.process().work_pending(now)
     }
 
     #[must_use]
     pub fn failed(&self) -> bool {
-        self.failed || self.process.failed()
+        self.failed || self.below.process().failed()
     }
 
     /// Kernel completions for the child process and its three pipes.
@@ -328,7 +377,7 @@ impl Service {
 
     /// Adopt terminal input and blocked termination signals into the IO pass.
     pub fn adopt_terminal(&mut self, input: kernel::Fd, signals: kernel::Fd) -> Result<(), kernel::Fd> {
-        self.process.adopt_terminal(input, signals)
+        self.below.process_mut().adopt_terminal(input, signals)
     }
 
     /// Adopt separate workspace descriptors for delivery IO and its explicit child environment.
@@ -339,7 +388,7 @@ impl Service {
         environment: Box<[Box<[u8]>]>,
     ) -> Result<(), Error> {
         if roots.len() > 64
-            || roots.len() > usize::try_from(self.limits.local.agent.run.directories).expect("directory bound fits")
+            || roots.len() > usize::try_from(self.limits.local.smith.run.directories).expect("directory bound fits")
             || environment.len() > 64
         {
             return Err(Error::Memory);
@@ -351,7 +400,7 @@ impl Service {
                 return Err(Error::Memory);
             }
         }
-        self.process.adopt_delivery_roots(roots, environment);
+        self.below.process_mut().adopt_delivery_roots(roots, environment);
         Ok(())
     }
 
@@ -369,9 +418,9 @@ impl Service {
         for _ in 0..self.completions.capacity() {
             let Some(complete) = self.completions.pop() else { break };
             if complete.op.raw() & EFFECT_OPERATION_BIT == 0 {
-                self.process.completions().push(complete);
+                self.below.process_mut().completions().push(complete);
             } else {
-                self.effects.as_mut().expect("effect namespace belongs to colocated mode").completions().push(
+                self.below.inline_mut().expect("effect namespace belongs to colocated mode").completions().push(
                     kernel::Complete {
                         op: Token::new(complete.op.raw() & !EFFECT_OPERATION_BIT),
                         kind: complete.kind,
@@ -387,10 +436,10 @@ impl Service {
             if self.submissions.room() == 0 {
                 break;
             }
-            let Some(submit) = self.process.submissions().pop() else { break };
+            let Some(submit) = self.below.process_mut().submissions().pop() else { break };
             self.submissions.push(namespace_submit(submit, false));
         }
-        if let Some(effects) = &mut self.effects {
+        if let Some(effects) = self.below.inline_mut() {
             for _ in 0..self.limits.queue {
                 if self.submissions.room() == 0 {
                     break;
@@ -413,12 +462,12 @@ impl Service {
     }
 
     fn finish_exit(&mut self) {
-        let lower_closed = match &self.effects {
+        let lower_closed = match self.below.inline() {
             Some(effects) => effects.closed(),
             None => true,
         };
         if self.shell.room() > 0
-            && self.process.closed()
+            && self.below.process().closed()
             && lower_closed
             && let Some(status) = self.pending_exit.take()
         {
@@ -434,40 +483,46 @@ impl Service {
             }
             local::Request::Git { owner, directory, op, deadline } => match op {
                 local::GitOp::Markers { paths } => {
-                    self.process.start_markers(owner, directory, paths, deadline, &mut self.local_events);
+                    self.below.process_mut().start_markers(owner, directory, paths, deadline, &mut self.local_events);
                 }
                 op @ (local::GitOp::Head
                 | local::GitOp::Status
                 | local::GitOp::Inspect { .. }
                 | local::GitOp::Commit { .. }
                 | local::GitOp::Push { .. }) => {
-                    self.process.start_git(owner, directory, op, deadline, &mut self.local_events);
+                    self.below.process_mut().start_git(owner, directory, op, deadline, &mut self.local_events);
                 }
             },
-            local::Request::Agent(request) => {
-                self.effects.as_mut().expect("typed IO belongs to colocated mode").request(request);
+            local::Request::Lower { agent, request } => {
+                match self.lower_agent {
+                    Some(current) => assert_eq!(current, agent, "one inline slot owns every outstanding lower right"),
+                    None => self.lower_agent = Some(agent),
+                }
+                self.below.inline_mut().expect("native IO belongs to inline mode").request(to_root_request(request));
             }
             local::Request::Show { text } => self.terminal.show(text, &mut self.terminal_events),
             local::Request::Load => {
+                self.lower_agent = None;
                 self.terminal.answer_finished();
                 self.shell.push(local::Request::Load);
             }
             local::Request::PlainStatus { owner, directory, deadline } => {
-                self.process.plain_status(owner, directory, deadline, &mut self.local_events);
+                self.below.process_mut().plain_status(owner, directory, deadline, &mut self.local_events);
             }
             local::Request::SaveState { state, fresh } => {
                 if self.capture_activation != Some(state.activation) {
                     self.capture_activation = Some(state.activation);
                     self.snapshot_state = SnapshotState::Capturing { saved: false };
-                    self.process
-                        .capture_plain(self.plain_directories.clone(), now.saturating_add(self.limits.host.wall_time));
+                    self.below
+                        .process_mut()
+                        .capture_plain(self.plain_directories.clone(), now.saturating_add(self.capture_time));
                 }
                 self.shell.push(local::Request::SaveState { state, fresh });
             }
             local::Request::Exit { status } => {
                 self.pending_exit = Some(status);
-                self.process.close();
-                if let Some(effects) = &mut self.effects {
+                self.below.process_mut().close();
+                if let Some(effects) = self.below.inline_mut() {
                     effects.close();
                 }
             }
@@ -479,17 +534,17 @@ impl Service {
 
     fn drain_terminal(&mut self) {
         for _ in 0..self.terminal_events.capacity() {
-            if self.local_events.room() == 0 || self.output.room() == 0 || !self.process.output_room() {
+            if self.local_events.room() == 0 || self.output.room() == 0 || !self.below.process_mut().output_room() {
                 break;
             }
             let Some(event) = self.terminal_events.pop() else { break };
             match event {
                 protocol::TerminalEvent::Domain(event) => self.local_events.push(event),
                 protocol::TerminalEvent::StopProcess => {
-                    if self.effects.is_some() {
+                    if self.below.inline().is_some() {
                         self.local_events.push(local::Event::Interrupt);
                     } else {
-                        self.process.force_stop();
+                        self.below.process_mut().force_stop();
                     }
                 }
                 protocol::TerminalEvent::Write(text) => self.output.push(text),
@@ -498,7 +553,7 @@ impl Service {
     }
 
     fn start_captured(&mut self) {
-        match self.process.take_capture_done() {
+        match self.below.process_mut().take_capture_done() {
             Some(true) => {
                 let state = core::mem::replace(&mut self.snapshot_state, SnapshotState::Idle);
                 match state {
@@ -562,21 +617,43 @@ impl Service {
     }
 }
 
+/// Build the selected inline components and adopt exactly the configured roots.
+fn inline_effects(configuration: agent_service::Config, roots: Box<[kernel::Fd]>, local: &mut local::Config, limits: &Limits, seed: u64) -> Result<agent_service::Effects, Error> {
+    if configuration.limits.domain != limits.local.smith { return Err(Error::Process); }
+    for endpoint in &limits.local.endpoints {
+        if !configuration.domain.endpoints.contains(endpoint) { return Err(Error::Process); }
+    }
+    let actual = InlineLimits::new(&configuration).ok_or(Error::Memory)?;
+    let advertised = limits.inline.as_ref().ok_or(Error::Memory)?;
+    if actual.memory > advertised.memory { return Err(Error::Memory); }
+    let mut effects = match agent_service::Effects::new(configuration, seed) { Ok(effects) => effects, Err(_) => return Err(Error::Process) };
+    effects.contract(local::charter(local).outcome);
+    local.workspace = match local.workspace.take() {
+        Some(workspace) => match effects.workspace(workspace, roots) { Ok(workspace) => Some(workspace), Err(_) => return Err(Error::Process) },
+        None if roots.is_empty() => None,
+        None => return Err(Error::Memory),
+    };
+    Ok(effects)
+}
+
 /// One bounded up pass followed by one bounded down pass.
 pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.now = now;
     service.route_completions();
-    if let Some(effects) = &mut service.effects {
+    if let Some(effects) = service.below.inline_mut() {
         effects.up(now, wall);
         for _ in 0..service.limits.queue {
             if service.local_events.room() == 0 {
                 break;
             }
             let Some(event) = effects.event() else { break };
-            service.local_events.push(local::Event::Agent(to_agent_io(event)));
+            service.local_events.push(local::Event::Below {
+                agent: service.lower_agent.expect("terminal belongs to an inline lower request"),
+                terminal: to_below(event),
+            });
         }
     }
-    service.process.up(
+    service.below.process_mut().up(
         now,
         wall,
         &mut service.host_events,
@@ -588,7 +665,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.start_captured();
     service.process_terminals();
     local_pass(service, now, wall);
-    service.process.down(
+    service.below.process_mut().down(
         now,
         wall,
         &mut service.lower,
@@ -596,7 +673,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
         &service.values,
         &mut service.host_events,
     );
-    if let Some(effects) = &mut service.effects {
+    if let Some(effects) = service.below.inline_mut() {
         effects.down();
     }
     service.flush_submissions();
@@ -630,7 +707,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             | local::Event::StoreFailed { .. }
             | local::Event::Credential { .. }
             | local::Event::NoCredential { .. }
-            | local::Event::Agent(_)
+            | local::Event::Below { .. }
             | local::Event::Process(_)) => {
                 local::step(&mut service.local, &local_env, other, &mut service.local_requests);
                 continue;
@@ -649,8 +726,8 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             || service.host_events.room() == 0
             || service.local_events.room() == 0
             || service.terminal_events.room() < protocol::terminal_max_out()
-            || !service.process.output_room()
-            || match &service.effects {
+            || !service.below.process().output_room()
+            || match service.below.inline() {
                 Some(effects) => effects.request_room() == 0,
                 None => false,
             }
@@ -681,18 +758,18 @@ fn namespace_submit(submit: kernel::Submit, effects: bool) -> kernel::Submit {
     kernel::Submit { op: Token::new(submit.op.raw() | bit), kind }
 }
 
-fn to_agent_io(event: agent::Event) -> local::AgentIo {
+fn to_below(event: agent::Event) -> inline::Below {
     match event {
-        agent::Event::Completed { owner, completion } => local::AgentIo::Completed { owner, completion },
+        agent::Event::Completed { owner, completion } => inline::Below::Completed { owner, completion },
         agent::Event::Failed { owner, failure, evidence, detail } => {
-            local::AgentIo::Failed { owner, failure, evidence, detail }
+            inline::Below::Failed { owner, failure, evidence, detail }
         }
-        agent::Event::Cancelled { owner } => local::AgentIo::Cancelled { owner },
-        agent::Event::Done { owner, done } => local::AgentIo::Done { owner, done },
-        agent::Event::Read { owner, read } => local::AgentIo::Read { owner, read },
-        agent::Event::Probed { owner, executable } => local::AgentIo::Probed { owner, executable },
-        agent::Event::Checked { owner, ran } => local::AgentIo::Checked { owner, ran },
-        agent::Event::Aborted { owner } => local::AgentIo::Aborted { owner },
+        agent::Event::Cancelled { owner } => inline::Below::Cancelled { owner },
+        agent::Event::Done { owner, done } => inline::Below::Done { owner, done },
+        agent::Event::Read { owner, read } => inline::Below::Read { owner, read },
+        agent::Event::Probed { owner, executable } => inline::Below::Probed { owner, executable },
+        agent::Event::Checked { owner, ran } => inline::Below::Checked { owner, ran },
+        agent::Event::Aborted { owner } => inline::Below::Aborted { owner },
         agent::Event::Start { .. }
         | agent::Event::Message { .. }
         | agent::Event::Cancel { .. }
@@ -700,5 +777,39 @@ fn to_agent_io(event: agent::Event) -> local::AgentIo {
         | agent::Event::Grant { .. }
         | agent::Event::HostReturned { .. }
         | agent::Event::Delivered { .. } => unreachable!("effects emit only typed IO terminals"),
+    }
+}
+
+/// Convert only the closed lower face into the shared component owner's request vocabulary.
+fn to_root_request(request: inline::Lower) -> agent::Request {
+    match request {
+        inline::Lower::Complete {
+            owner,
+            grant,
+            prompt,
+            deadlines,
+            max_completion_bytes,
+            max_completion_blocks,
+            max_failure_bytes,
+            decoded_call_bytes,
+        } => agent::Request::Complete {
+            owner,
+            grant,
+            prompt,
+            deadlines,
+            max_completion_bytes,
+            max_completion_blocks,
+            max_failure_bytes,
+            decoded_call_bytes,
+        },
+        inline::Lower::Cancel { owner } => agent::Request::Cancel { owner },
+        inline::Lower::Io { owner, op, deadline } => agent::Request::Io { owner, op, deadline },
+        inline::Lower::CancelIo { owner } => agent::Request::CancelIo { owner },
+        inline::Lower::Read { owner, at, max, deadline } => agent::Request::Read { owner, at, max, deadline },
+        inline::Lower::Probe { owner, at, deadline } => agent::Request::Probe { owner, at, deadline },
+        inline::Lower::Check { owner, program, deadline, tail } => {
+            agent::Request::Check { owner, program, deadline, tail }
+        }
+        inline::Lower::Abort { owner } => agent::Request::Abort { owner },
     }
 }

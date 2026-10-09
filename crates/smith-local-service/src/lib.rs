@@ -21,4 +21,4 @@ pub mod profile;
 mod tests;
 
 pub use process::{Launch, ProcessLimits};
-pub use service::{Config, Error, Limits, Service, StartValues, in_process_worst_case, iterate, worst_case};
+pub use service::{AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, worst_case};

@@ -116,7 +116,7 @@ pub fn configuration_with_tools(
     }
     let settings: local_settings::Settings = serde_json::from_value(source).expect("host settings");
     let endpoints = lower.channel_endpoints.clone();
-    let policy = local_settings::policy(&settings, &endpoints, lower.limits.domain).expect("host charter policy");
+    let mut policy = local_settings::policy(&settings, &endpoints, lower.limits.domain).expect("host charter policy");
     let mut host = smith_host_world::limits();
     host.accounts = 1;
     host.charter_bytes = 65_536;
@@ -130,7 +130,9 @@ pub fn configuration_with_tools(
     host.unacknowledged_bytes = 1_000_000_000;
     host.fact_bytes = 512;
     host.outcome_bytes = 4096;
-    let queue = local::max_out(&policy.limits).max(smith_host_domain::max_out(&host)).max(256);
+    let inline_out = local::max_out(&policy.limits);
+    policy.limits.agent = local::AgentLimits::Spawned(host);
+    let queue = local::max_out(&policy.limits).max(inline_out).max(smith_host_domain::max_out(&host)).max(256);
     let process = service::ProcessLimits {
         io: lower.limits.io,
         channel: smith_host_protocol::Limits {
@@ -146,8 +148,15 @@ pub fn configuration_with_tools(
     };
     (
         service::Config {
+            agent: service::AgentConfig::Spawned,
             local: policy.config,
-            limits: service::Limits { local: policy.limits, host, process, queue },
+            limits: service::Limits {
+                local: policy.limits,
+                inline: None,
+                envelope_bytes: host.answer_bytes,
+                process,
+                queue,
+            },
             endpoints,
             paths: policy.paths,
             launch: service::Launch {

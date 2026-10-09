@@ -86,17 +86,29 @@ impl Local {
     /// Compose either placement with the same file and terminal shell pass.
     #[expect(clippy::too_many_lines, reason = "03-inline-agent removes the two-placement startup composition")]
     pub fn new(
-        config: service::Config,
+        mut config: service::Config,
         lower: Option<agent::Config>,
         resources: Resources,
         errors: Box<dyn Write>,
     ) -> Result<Self, String> {
-        let mut worst = match &lower {
-            Some(lower) => service::in_process_worst_case(&config.limits, lower),
-            None => service::worst_case(&config.limits),
-        }
-        .ok_or("local memory calculation overflowed")?;
-        if resources.accounts.len() > usize::try_from(config.limits.local.agent.accounts).expect("account bound fits")
+        let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
+        config.agent = match lower {
+            Some(configuration) => {
+                config.limits.local.agent = domain::AgentLimits::inline(
+                    config.limits.local.smith,
+                    config.limits.local.unsaved,
+                    config.local.budget.time,
+                )
+                .ok_or("inline capacities overflow")?;
+                config.limits.inline =
+                    Some(service::InlineLimits::new(&configuration).ok_or("inline memory calculation overflowed")?);
+                service::AgentConfig::Inline { configuration, roots: resources.effect_roots }
+            }
+            None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
+            None => return Err("spawned mode cannot adopt inline roots".into()),
+        };
+        let mut worst = service::worst_case(&config.limits).ok_or("local memory calculation overflowed")?;
+        if resources.accounts.len() > usize::try_from(config.limits.local.smith.accounts).expect("account bound fits")
             || resources.accounts.iter().any(|account| account.account_id.len() > 1024)
         {
             return Err("local accounts exceed their configured bounds".into());
@@ -131,14 +143,10 @@ impl Local {
         let operations = io::operations(&io_limits)
             .and_then(|count| count.checked_mul(2))
             .and_then(|count| count.checked_add(64))
-            .and_then(|count| count.checked_add(lower.as_ref().map_or(0, |lower| lower.limits.routes)))
+            .and_then(|count| count.checked_add(lower_routes))
             .ok_or("local IO operation count overflowed")?;
-        let service = match lower {
-            Some(lower) => service::Service::new_in_process(config, lower, resources.effect_roots, resources.seed),
-            None if resources.effect_roots.is_empty() => service::Service::new(config, resources.seed),
-            None => return Err("spawned mode cannot adopt colocated roots".into()),
-        }
-        .map_err(|error| format!("local service: {error:?}"))?;
+        let service =
+            service::Service::new(config, resources.seed).map_err(|error| format!("local service: {error:?}"))?;
         let store = Store::new(resources.state_directory, endpoints, 1 << 20)
             .map_err(|error| format!("chat store: {error}"))?;
         let tokens = Tokens::new(&resources.token_directory, token_limits())?;
@@ -243,7 +251,7 @@ impl Local {
                 domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
-                | domain::Request::Agent(_)
+                | domain::Request::Lower { .. }
                 | domain::Request::Process(_) => unreachable!("service owns lower effects"),
             };
             self.service.local_event(match event {

@@ -311,7 +311,8 @@ pub fn policy(
     }
     let limits = local::Limits {
         endpoints: configured_endpoints.into(),
-        agent: agent_limits,
+        smith: agent_limits,
+        agent: local::AgentLimits::inline(agent_limits, 2, policy.budget.time).ok_or("local inline bounds overflow")?,
         chat_bytes: 256,
         text_bytes: 1 << 16,
         models: 3,

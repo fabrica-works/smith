@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 skein-lib.workspace = true
 smith-domain.workspace = true
+smith-inline-agent.workspace = true
 smith-host-domain.workspace = true
 
 [dev-dependencies]

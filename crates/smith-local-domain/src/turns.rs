@@ -3,19 +3,11 @@
 //! save terminal; a slow store therefore cannot let the person see it early.
 
 use skein_lib::Queue;
-use smith_domain::run;
-
-#[derive(Debug)]
-pub(crate) enum Final {
-    InProcess(run::Answer),
-    Spawned(smith_host_domain::Answer),
-}
-
 /// Bounded unsaved activation numbers and conversation positions, and a held child answer.
 #[derive(Debug)]
 pub(crate) struct Turns {
     pub(crate) unsaved: Queue<(u32, u32)>,
-    pub(crate) answer: Option<Final>,
+    pub(crate) answer: Option<smith_host_domain::Answer>,
 }
 
 impl Turns {

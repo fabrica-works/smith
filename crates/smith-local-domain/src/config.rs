@@ -104,7 +104,7 @@ impl Config {
         {
             return Err(Invalid::Text);
         }
-        match crate::max_line_bytes(limits.agent.run.message_bytes) {
+        match crate::max_line_bytes(limits.smith.run.message_bytes) {
             Some(max) if limits.line_bytes <= max => {}
             Some(_) | None => return Err(Invalid::Limits),
         }
@@ -138,11 +138,11 @@ impl Config {
         if self.progress.len() != self.models.len()
             || self.models.is_empty()
             || self.models.len() > usize::try_from(limits.models).expect("u32 fits usize")
-            || self.models.len() > usize::try_from(limits.agent.run.models.saturating_add(1)).expect("u32 fits usize")
+            || self.models.len() > usize::try_from(limits.smith.run.models.saturating_add(1)).expect("u32 fits usize")
         {
             return Err(Invalid::Models);
         }
-        if limits.endpoints.len() > usize::try_from(limits.agent.endpoints).expect("u32 fits usize") {
+        if limits.endpoints.len() > usize::try_from(limits.smith.endpoints).expect("u32 fits usize") {
             return Err(Invalid::Endpoint);
         }
         for (index, endpoint) in limits.endpoints.iter().enumerate() {
@@ -150,12 +150,12 @@ impl Config {
                 return Err(Invalid::Endpoint);
             }
         }
-        if self.accounts.len() > usize::try_from(limits.agent.accounts).expect("u32 fits usize") {
+        if self.accounts.len() > usize::try_from(limits.smith.accounts).expect("u32 fits usize") {
             return Err(Invalid::Accounts);
         }
         if let Some(workspace) = &self.workspace
             && (workspace.directories.is_empty()
-                || workspace.directories.len() > usize::try_from(limits.agent.run.directories).expect("u32 fits usize"))
+                || workspace.directories.len() > usize::try_from(limits.smith.run.directories).expect("u32 fits usize"))
         {
             return Err(Invalid::Limits);
         }
@@ -224,7 +224,7 @@ impl Config {
                 Some(bytes) => bytes,
                 None => return Err(Invalid::Limits),
             };
-            if model_bytes > limits.agent.configured_model_bytes {
+            if model_bytes > limits.smith.configured_model_bytes {
                 return Err(Invalid::Limits);
             }
             if !self.accounts.contains(&model.account) {

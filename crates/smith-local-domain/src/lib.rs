@@ -1,5 +1,5 @@
 //! Local host for one person and one chat (domain/host.md, sections 8–10).
-//! It owns its root or spawned host child, typed chat metadata, queued person lines,
+//! It owns its inline or spawned host child, typed chat metadata, queued person lines,
 //! credential names and turns awaiting a durable store terminal. It never
 //! knows terminal IO, file encoding, provider secrets or provider syntax.
 //! Uncertain writes retain their intent and inspect their stable delivery
@@ -53,10 +53,10 @@ mod tests;
 mod agent_tests;
 
 pub use boundary::{
-    AgentIo, ChatState, CredentialFailure, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp,
-    GitResult, IntentDirectory, Request, StoreFailure,
+    ChatState, CredentialFailure, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp, GitResult,
+    IntentDirectory, Request, StoreFailure,
 };
 pub use config::{Config, Contract, Invalid, PushTarget, charter};
 pub use domain::{Domain, fire, max_out, resume, step};
 pub use facts::Fact;
-pub use limits::{Limits, max_line_bytes, spawned_worst_case, worst_case};
+pub use limits::{AgentLimits, Limits, max_line_bytes, worst_case};

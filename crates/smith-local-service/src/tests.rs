@@ -9,8 +9,10 @@ use smith_local_domain as local;
 use crate::{Config, Launch, Limits, ProcessLimits, Service, iterate};
 
 fn config() -> Config {
-    let local_limits = local::Limits {
-        agent: smith_agent_world::LIMITS,
+    let mut local_limits = local::Limits {
+        smith: smith_agent_world::LIMITS,
+        agent: local::AgentLimits::inline(smith_agent_world::LIMITS, 2, Duration::from_secs(60))
+            .expect("bounded inline child"),
         endpoints: Box::new([Endpoint(4)]),
         chat_bytes: 64,
         text_bytes: 1024,
@@ -24,6 +26,7 @@ fn config() -> Config {
     let mut host_limits = smith_host_world::limits();
     host_limits.agents = 1;
     host_limits.accounts = 1;
+    local_limits.agent = local::AgentLimits::Spawned(host_limits);
     let queue = local::max_out(&local_limits).max(smith_host_domain::max_out(&host_limits));
     let agent_limits = smith_agent_process_world::limits();
     let process = ProcessLimits {
@@ -51,6 +54,7 @@ fn config() -> Config {
         queue,
     };
     Config {
+        agent: crate::AgentConfig::Spawned,
         local: local::Config {
             progress: Box::new([smith_domain::session::Progress {
                 head: Duration::from_secs(60),
@@ -80,7 +84,7 @@ fn config() -> Config {
             workspace: None,
             push: None,
         },
-        limits: Limits { local: local_limits, host: host_limits, process, queue },
+        limits: Limits { local: local_limits, inline: None, envelope_bytes: host_limits.answer_bytes, process, queue },
         endpoints: smith_protocol_channel::Endpoints::new(List::with_capacity(0)),
         paths: Box::new([]),
         launch: Launch {
@@ -254,14 +258,14 @@ fn plain_status_uses_the_runs_snapshot_and_refreshes_it_before_the_next_run() {
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story names unexpected shell requests")]
 fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_spawning() {
     use skein_lib::Queue;
-    let (config, lower) = colocated_config();
+    let config = colocated_config();
     let mut sim_config = skein_sim::Config::calm();
     sim_config.wall = skein_tls_world::pki::VALID;
     let mut sim = skein_sim::Sim::new(8, sim_config);
     let pid = sim.spawn_process();
     let peer_pid = sim.spawn_process();
     let mut peer = smith_agent_process_world::fake::peer();
-    let mut service = Service::new_in_process(config, lower, Box::new([]), 8).expect("colocated service");
+    let mut service = Service::new(config, 8).expect("colocated service");
     let mut machine = skein_fake_machine::Machine::new();
     let mut saved_turn = false;
     let mut shown = false;
@@ -305,7 +309,6 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
         while let Some(text) = service.output().pop() {
             shown |= !text.is_empty();
         }
-        assert!(service.lower_requests().is_empty(), "colocated mode never spawns an agent");
         sim.submit(pid, service.submissions());
         let mut calls = Queue::with_capacity(256);
         let mut answers = Queue::with_capacity(256);
@@ -379,10 +382,10 @@ fn settle_colocated_exit(
     assert!(!service.work_pending(sim.now()));
 }
 
-fn colocated_config() -> (Config, smith_agent_service::Config) {
+fn colocated_config() -> Config {
     let lower = smith_agent_process_world::configuration();
     let mut config = config();
-    config.limits.local.agent = lower.limits.domain;
+    config.limits.local.smith = lower.limits.domain;
     config.limits.local.endpoints = lower.domain.endpoints.clone();
     config.local.accounts = Box::new([0]);
     config.local.models[0].account = 0;
@@ -391,7 +394,13 @@ fn colocated_config() -> (Config, smith_agent_service::Config) {
     config.local.models[0].output = 1024;
     config.local.budget.turns = 1;
     config.local.models[0].model = Box::from(b"fake".as_slice());
-    (config, lower)
+    config.limits.local.agent =
+        local::AgentLimits::inline(config.limits.local.smith, config.limits.local.unsaved, config.local.budget.time)
+            .expect("bounded inline child");
+    config.limits.inline = Some(crate::InlineLimits::new(&lower).expect("bounded lower configuration"));
+    config.limits.queue = config.limits.queue.max(local::max_out(&config.limits.local));
+    config.agent = crate::AgentConfig::Inline { configuration: lower, roots: Box::new([]) };
+    config
 }
 
 #[test]

@@ -10,9 +10,10 @@ use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
 use skein_world::domain::{Referee, Trace};
 use smith_agent_world::{self as agent_world, checkout_io, translate};
 use smith_domain::{self as agent, run, tools};
+use smith_inline_agent::{Below, Lower};
 use smith_local_domain::{
-    self as local, AgentIo, ChatState, Contract, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp, GitResult,
-    Request, StoreFailure,
+    self as local, ChatState, Contract, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp, GitResult, Request,
+    StoreFailure,
 };
 
 use crate::git::History;
@@ -199,6 +200,7 @@ pub struct World {
     git_head: Option<u64>,
     git_expected: Option<u64>,
     commits: Vec<(run::CallName, u32)>,
+    lower_agent: Option<Token>,
     pending: BTreeMap<Token, (tools::Grants, Box<[agent::llm::Served]>, agent::llm::Asker)>,
     cancelled: BTreeSet<Token>,
     events: VecDeque<Event>,
@@ -436,7 +438,9 @@ impl World {
         };
         let referee = Referee::new(meeting);
         let limits = local::Limits {
-            agent: agent_world::LIMITS,
+            smith: agent_world::LIMITS,
+            agent: local::AgentLimits::inline(agent_world::LIMITS, 2, Duration::from_secs(60))
+                .expect("bounded inline child"),
             endpoints: Box::new([run::charter::Endpoint(0)]),
             chat_bytes: 64,
             text_bytes: 4096,
@@ -658,6 +662,7 @@ impl World {
             git_head,
             git_expected,
             commits: store.commits.clone(),
+            lower_agent: None,
             pending: BTreeMap::new(),
             cancelled: BTreeSet::new(),
             events: VecDeque::new(),
@@ -903,9 +908,11 @@ impl World {
                         self.observe(Seen::DeliverySaved { name: *name, intent });
                         None
                     }
-                    Event::Agent(
-                        AgentIo::Completed { owner, .. } | AgentIo::Failed { owner, .. } | AgentIo::Cancelled { owner },
-                    ) => {
+                    Event::Below {
+                        terminal:
+                            Below::Completed { owner, .. } | Below::Failed { owner, .. } | Below::Cancelled { owner },
+                        ..
+                    } => {
                         self.observe(Seen::Completed { owner: *owner });
                         None
                     }
@@ -919,7 +926,7 @@ impl World {
                     | Event::StoreFailed { .. }
                     | Event::Credential { .. }
                     | Event::NoCredential { .. }
-                    | Event::Agent(_)
+                    | Event::Below { .. }
                     | Event::Process(_) => None,
                 };
                 local::step(&mut self.domain, &self.env, event, &mut self.out);
@@ -952,11 +959,11 @@ impl World {
                     continue;
                 }
                 let event = match result {
-                    Ok(answer) => Event::Agent(AgentIo::Completed {
+                    Ok(answer) => self.below(Below::Completed {
                         owner,
                         completion: translate::completion(answer, grants, &served, asker),
                     }),
-                    Err(error) => Event::Agent(AgentIo::Failed {
+                    Err(error) => self.below(Below::Failed {
                         owner,
                         failure: translate::failure(error),
                         evidence: agent::llm::Evidence::Unknown,
@@ -1234,7 +1241,10 @@ impl World {
                     self.events.push_back(Event::Git { owner, result });
                 }
             }
-            Request::Agent(request) => self.agent_request(request),
+            Request::Lower { agent, request } => {
+                self.lower_agent = Some(agent);
+                self.agent_request(request);
+            }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
             Request::Exit { status } => self.exit = Some(status),
         }
@@ -1347,13 +1357,17 @@ impl World {
         self.referee.observe(self.env.now, seen, &mut Vec::new());
     }
 
+    fn below(&self, terminal: Below) -> Event {
+        Event::Below { agent: self.lower_agent.expect("inline lower callback"), terminal }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one exhaustive typed adapter keeps each agent request beside its terminal"
     )]
-    fn agent_request(&mut self, request: agent::Request) {
+    fn agent_request(&mut self, request: Lower) {
         match request {
-            agent::Request::Complete { owner, prompt, .. } => {
+            Lower::Complete { owner, prompt, .. } => {
                 self.observe(Seen::Complete { owner });
                 self.completions += 1;
                 self.prompt_assistants
@@ -1389,7 +1403,7 @@ impl World {
                 let served = prompt.served.clone();
                 if matches!(self.first_failure, FirstFailure::Exhaust) {
                     self.first_failure = FirstFailure::Used;
-                    self.events.push_back(Event::Agent(AgentIo::Failed {
+                    self.events.push_back(self.below(Below::Failed {
                         owner,
                         failure: agent::llm::Failure::Exhausted { retry_after: Duration::from_secs(60) },
                         evidence: agent::llm::Evidence::Response,
@@ -1399,7 +1413,7 @@ impl World {
                 }
                 if matches!(self.first_failure, FirstFailure::Reject) {
                     self.first_failure = FirstFailure::Used;
-                    self.events.push_back(Event::Agent(AgentIo::Failed {
+                    self.events.push_back(self.below(Below::Failed {
                         owner,
                         failure: agent::llm::Failure::Unauthorized,
                         evidence: agent::llm::Evidence::Response,
@@ -1416,11 +1430,11 @@ impl World {
                     &mut self.provider_out,
                 );
             }
-            agent::Request::Cancel { owner } => {
+            Lower::Cancel { owner } => {
                 self.cancelled.insert(owner);
-                self.events.push_back(Event::Agent(AgentIo::Cancelled { owner }));
+                self.events.push_back(self.below(Below::Cancelled { owner }));
             }
-            agent::Request::Io { owner, op, deadline: _ } => {
+            Lower::Io { owner, op, deadline: _ } => {
                 let store_root = match &op {
                     tools::Op::Store { at, .. } => Some(at.root.raw()),
                     tools::Op::Load { .. }
@@ -1448,24 +1462,24 @@ impl World {
                 if matches!(done, tools::Done::Stored { .. }) {
                     self.observe(Seen::Wrote { root: store_root.expect("stored operation names a root") });
                 }
-                self.events.push_back(Event::Agent(AgentIo::Done { owner, done }));
+                self.events.push_back(self.below(Below::Done { owner, done }));
             }
-            agent::Request::CancelIo { owner } => {
-                self.events.push_back(Event::Agent(AgentIo::Done { owner, done: tools::Done::Cancelled }));
+            Lower::CancelIo { owner } => {
+                self.events.push_back(self.below(Below::Done { owner, done: tools::Done::Cancelled }));
             }
-            agent::Request::Read { owner, at, max, deadline: _ } => {
+            Lower::Read { owner, at, max, deadline: _ } => {
                 let read = match self.disk.load(at.root.raw(), &at.path, u64::from(max)) {
                     Ok((text, _)) => run::Read::Text { text: text.into(), whole: true },
                     Err(_) => run::Read::Missing,
                 };
-                self.events.push_back(Event::Agent(AgentIo::Read { owner, read }));
+                self.events.push_back(self.below(Below::Read { owner, read }));
             }
-            agent::Request::Probe { owner, at, deadline: _ } => {
+            Lower::Probe { owner, at, deadline: _ } => {
                 let executable =
                     self.disk.load(at.root.raw(), &at.path, 4096).is_ok_and(|(text, _)| text.starts_with(b"#!"));
-                self.events.push_back(Event::Agent(AgentIo::Probed { owner, executable }));
+                self.events.push_back(self.below(Below::Probed { owner, executable }));
             }
-            agent::Request::Check { owner, program, deadline: _, tail } => {
+            Lower::Check { owner, program, deadline: _, tail } => {
                 let passed = self
                     .disk
                     .load(program.root.raw(), b"src/lib.rs", 4096)
@@ -1485,23 +1499,11 @@ impl World {
                     output: output[output.len() - keep..].into(),
                     cut: u64::try_from(output.len() - keep).expect("small output"),
                 };
-                self.events.push_back(Event::Agent(AgentIo::Checked { owner, ran }));
+                self.events.push_back(self.below(Below::Checked { owner, ran }));
             }
-            agent::Request::Abort { owner } => {
-                self.events.push_back(Event::Agent(AgentIo::Aborted { owner }));
+            Lower::Abort { owner } => {
+                self.events.push_back(self.below(Below::Aborted { owner }));
             }
-            agent::Request::MessageRefused { .. }
-            | agent::Request::Waiting { .. }
-            | agent::Request::Turn { .. }
-            | agent::Request::Admitted { .. }
-            | agent::Request::Answer { .. }
-            | agent::Request::Checking { .. }
-            | agent::Request::ChecksEnded { .. }
-            | agent::Request::Rejected { .. }
-            | agent::Request::Exhausted { .. }
-            | agent::Request::HostCall { .. }
-            | agent::Request::WithdrawHost { .. }
-            | agent::Request::Deliver { .. } => unreachable!("host-only requests are consumed by the local domain"),
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Local policy consumes each typed parent variant; process ownership is
 //! exercised separately by the spawned lifecycle unit and composed worlds.
-use super::{Domain, ExternalLife, Final, Phase, parent_request};
+use super::{AgentLife, Domain, Phase, parent_request};
 use crate::{Config, Contract, Event, Limits, Request};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
@@ -8,10 +8,10 @@ use smith_domain::{run, session};
 use smith_host_domain::{self as host, parent, process};
 
 fn running(config: Config) -> (Domain, Env<Limits>, Queue<Request>) {
-    let limits = crate::tests::limits();
+    let mut limits = crate::tests::limits();
+    limits.agent = crate::AgentLimits::Spawned(crate::tests::host_limits());
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
-    let mut domain =
-        Domain::new_external(config, &limits, crate::tests::host_limits(), 71).expect("bounded local parent");
+    let mut domain = Domain::new(config, &limits, 71).expect("bounded local parent");
     domain.chat.phase = Phase::Running;
     domain.run = Some(Token::new(1));
     let out = Queue::with_capacity(crate::max_out(&limits));
@@ -132,7 +132,7 @@ fn the_parent_answer_keeps_its_host_spend_until_gone() {
         &mut out,
     );
     assert!(out.is_empty());
-    let Some(Final::Spawned(answer)) = &domain.turns.answer else { panic!("typed host answer retained") };
+    let Some(answer) = &domain.turns.answer else { panic!("typed host answer retained") };
     assert_eq!(answer.spent, 29);
     assert_eq!(answer.turns, 3);
     parent_request(
@@ -143,7 +143,7 @@ fn the_parent_answer_keeps_its_host_spend_until_gone() {
     );
     let Some(Request::Show { text }) = out.pop() else { panic!("answer shown after Gone") };
     assert_eq!(text.as_ref(), b"Chat parked");
-    assert_eq!(domain.external_life, ExternalLife::Gone);
+    assert_eq!(domain.agent_life, AgentLife::Gone);
 }
 
 #[test]

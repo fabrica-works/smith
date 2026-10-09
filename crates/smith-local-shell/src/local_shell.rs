@@ -40,7 +40,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let agent_bytes = local_settings::agent_document(&settings)?;
     let agent_config = config::parse(&agent_bytes)?;
     let endpoints = agent_config.service.channel_endpoints.clone();
-    let prepared = local_settings::policy(&settings, &endpoints, agent_config.service.limits.domain)?;
+    let mut prepared = local_settings::policy(&settings, &endpoints, agent_config.service.limits.domain)?;
     fs::create_dir_all(state_root).map_err(|error| format!("state directory: {error}"))?;
     let agent_path = state_root.join("agent.json");
     save_agent_config(&agent_path, &agent_bytes)?;
@@ -62,6 +62,9 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let largest_turn =
         smith_domain::max_turn_bytes(&agent_config.service.limits.domain).ok_or("agent turn bound overflows")?;
     let host_limits = service::profile::host_limits(&agent_config.profile, largest_turn);
+    if !settings.in_process {
+        prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
+    }
     let queue = local::max_out(&prepared.limits).max(host::max_out(&host_limits)).max(256);
     let process_limits = service::ProcessLimits {
         io: agent_config.service.limits.io,
@@ -76,9 +79,16 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         detail_bytes: host_limits.detail_bytes,
         queue,
     };
-    let limits = service::Limits { local: prepared.limits, host: host_limits, process: process_limits, queue };
+    let limits = service::Limits {
+        local: prepared.limits,
+        inline: None,
+        envelope_bytes: host_limits.answer_bytes,
+        process: process_limits,
+        queue,
+    };
     let seed = skein_shell::seed().map_err(|error| format!("local seed failed (errno {error})"))?;
     let local_config = service::Config {
+        agent: service::AgentConfig::Spawned,
         local: prepared.config,
         limits,
         endpoints,

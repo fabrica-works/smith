@@ -11,7 +11,9 @@ static HEAP: Counting = Counting;
 #[test]
 fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
     let limits = local::Limits {
-        agent: smith_agent_world::LIMITS,
+        smith: smith_agent_world::LIMITS,
+        agent: local::AgentLimits::inline(smith_agent_world::LIMITS, 2, Duration::from_secs(60))
+            .expect("bounded inline child"),
         endpoints: Box::new([Endpoint(0)]),
         chat_bytes: 64,
         text_bytes: 4096,

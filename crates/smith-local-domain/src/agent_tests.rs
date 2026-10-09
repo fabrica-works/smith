@@ -34,7 +34,9 @@ fn a_local_start_keeps_its_concrete_charter_and_run_identity() {
         answered: Box::default(),
         grants: Box::default(),
     };
-    let prepared = prepare_start(source, &crate::tests::host_limits()).expect("bounded concrete start");
+    let prepared =
+        prepare_start(source, crate::tests::host_limits().charter_bytes, crate::tests::host_limits().transcript_bytes)
+            .expect("bounded concrete start");
     assert_eq!(prepared.activation, 7);
     assert_eq!(prepared.logical_run, skein_lib::Token::new(1));
     assert_eq!(prepared.charter.into_value(), charter);

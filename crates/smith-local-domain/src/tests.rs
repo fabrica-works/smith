@@ -12,7 +12,9 @@ use crate::{Config, Contract, Domain, Event, Invalid, Limits, Request, charter};
 
 pub(super) fn limits() -> Limits {
     Limits {
-        agent: smith_agent_world::LIMITS,
+        smith: smith_agent_world::LIMITS,
+        agent: crate::AgentLimits::inline(smith_agent_world::LIMITS, 2, Duration::from_secs(60))
+            .expect("bounded inline child"),
         endpoints: Box::new([Endpoint(4)]),
         chat_bytes: 64,
         text_bytes: 1024,
@@ -257,11 +259,12 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
 )]
 pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Request>, Token) {
     use smith_host_domain::{self as host, process};
-    let limits = limits();
-    let env = Env { now: Time::ZERO, wall: Wall::from_nanos(0), limits: limits.clone() };
+    let mut limits = limits();
     let mut child_limits = host_limits();
     child_limits.turns = 9;
-    let mut domain = Domain::new_external(config(), &limits, child_limits, 11).expect("spawned local domain");
+    limits.agent = crate::AgentLimits::Spawned(child_limits);
+    let env = Env { now: Time::ZERO, wall: Wall::from_nanos(0), limits: limits.clone() };
+    let mut domain = Domain::new(config(), &limits, 11).expect("spawned local domain");
     let mut out = Queue::with_capacity(crate::max_out(&limits));
     crate::resume(&mut domain, &env, &mut out);
     assert!(match out.pop() {
@@ -393,6 +396,6 @@ fn invalid_or_unowned_model_declarations_refuse_local_startup() {
         assert_eq!(invalid.validate(&limits), Err(Invalid::Models));
     }
     let config = config();
-    let limits = Limits { agent: smith_domain::Limits { configured_model_bytes: 0, ..limits.agent }, ..limits };
+    let limits = Limits { smith: smith_domain::Limits { configured_model_bytes: 0, ..limits.smith }, ..limits };
     assert_eq!(config.validate(&limits), Err(Invalid::Limits));
 }

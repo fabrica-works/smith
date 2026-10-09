@@ -1,16 +1,17 @@
 //! Agent composition and typed parent commands (domain/host.md, sections 8
 //! and 9.4). This module retains the child and its receiving bounds; it knows
 //! no process descriptors, credentials, wire bytes or durable store format.
-//! Commands and terminals enter the spawned child; its outputs remain ordered
-//! for the local policy to consume. The existing root child stays until 3.6.
+//! Commands and terminals enter either child; its outputs remain ordered
+//! for the local policy to consume.
 
-use crate::Invalid;
+use crate::{AgentLimits, Invalid};
 use alloc::boxed::Box;
 use skein_lib::List;
 use skein_lib::{Env, Queue, Time};
 use smith_domain as root;
 use smith_domain::{Answered, run};
 use smith_host_domain::{self as host, channel};
+use smith_inline_agent as inline;
 
 /// A sealed local terminal did not fit the host's matching sealed vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -26,7 +27,11 @@ pub(crate) enum BridgeError {
 }
 
 /// Bound the typed local policy and history while moving them into the host Start.
-pub(crate) fn prepare_start(source: RunStart, limits: &host::Limits) -> Result<host::Start, BridgeError> {
+pub(crate) fn prepare_start(
+    source: RunStart,
+    charter_bytes: u64,
+    transcript_bytes: u64,
+) -> Result<host::Start, BridgeError> {
     let (workspace, directories) = match source.workspace {
         Some(workspace) => {
             let Ok(count) = u32::try_from(workspace.directories.len()) else {
@@ -49,9 +54,9 @@ pub(crate) fn prepare_start(source: RunStart, limits: &host::Limits) -> Result<h
         }
         None => (None, Box::<[channel::Directory]>::default()),
     };
-    let charter = host::Charter::new(source.charter, limits.charter_bytes).ok_or(BridgeError::Charter)?;
+    let charter = host::Charter::new(source.charter, charter_bytes).ok_or(BridgeError::Charter)?;
     let transcript = match source.transcript {
-        Some(history) => Some(host::Transcript::new(history, limits.transcript_bytes).ok_or(BridgeError::Transcript)?),
+        Some(history) => Some(host::Transcript::new(history, transcript_bytes).ok_or(BridgeError::Transcript)?),
         None => None,
     };
     let Ok(count) = u32::try_from(source.answered.len()) else {
@@ -163,82 +168,137 @@ pub(crate) fn delivery_to_host(delivery: run::Delivery) -> Result<host::Delivery
     }
 }
 
-/// Local-owned agent, keeping the existing root until the inline adoption.
+/// Local-owned child behind the common parent face (domain/host.md, sections 8–9).
 #[derive(Debug)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "bounded child state stays inline and is included in the ownership bound"
-)]
+#[expect(clippy::large_enum_variant, reason = "bounded child state is priced inline in the ownership bound")]
 pub(crate) enum Agent {
-    /// Smith's existing root, receiving direct typed events in this increment.
-    InProcess(root::Domain),
-    /// The host kit, whose ordered process outputs leave through the parent.
+    /// Native Smith roots with LLM and machine effects delegated to the owner.
+    Inline { domain: inline::Domain, limits: inline::Limits, out: Queue<inline::Output> },
+    /// The host kit supervising an agent process.
     Spawned { domain: host::Domain, limits: host::Limits, out: Queue<host::Output> },
 }
 
+/// One child notice or an operation whose terminal belongs to that child.
+#[expect(clippy::large_enum_variant, reason = "typed lower payloads move once through the bounded child output")]
+pub(crate) enum Output {
+    Parent(host::parent::Request),
+    Lower { agent: skein_lib::Token, request: inline::Lower },
+    Process(host::process::Request),
+}
+
 impl Agent {
-    pub(crate) fn spawned(limits: host::Limits, output_cap: u32) -> Result<Self, Invalid> {
-        let required = host::max_out(&limits).checked_mul(2).ok_or(Invalid::Limits)?;
-        if host::worst_case(&limits).is_none() || required > output_cap {
-            return Err(Invalid::Limits);
+    pub(crate) fn new(
+        limits: &AgentLimits,
+        configuration: root::Config,
+        seed: u64,
+        output_cap: u32,
+    ) -> Result<Self, Invalid> {
+        match limits {
+            AgentLimits::Inline(limits) => {
+                if inline::worst_case(limits).is_none()
+                    || inline::max_out(limits).checked_mul(2).ok_or(Invalid::Limits)? > output_cap
+                {
+                    return Err(Invalid::Limits);
+                }
+                Ok(Self::Inline {
+                    domain: inline::Domain::new(limits, configuration, seed),
+                    limits: *limits,
+                    out: Queue::with_capacity(output_cap),
+                })
+            }
+            AgentLimits::Spawned(limits) => {
+                if host::worst_case(limits).is_none()
+                    || host::max_out(limits).checked_mul(2).ok_or(Invalid::Limits)? > output_cap
+                {
+                    return Err(Invalid::Limits);
+                }
+                Ok(Self::Spawned {
+                    domain: host::Domain::new(limits),
+                    limits: *limits,
+                    out: Queue::with_capacity(output_cap),
+                })
+            }
         }
-        Ok(Self::Spawned { domain: host::Domain::new(&limits), limits, out: Queue::with_capacity(output_cap) })
     }
 
-    pub(crate) fn root(&self) -> &root::Domain {
+    pub(crate) fn prepare(&self, source: RunStart) -> Result<host::Start, BridgeError> {
         match self {
-            Self::InProcess(domain) => domain,
-            Self::Spawned { .. } => unreachable!("root work belongs to the in-process kind"),
+            Self::Inline { limits, .. } => {
+                prepare_start(source, limits.smith.run.run_bytes, limits.smith.session.session_bytes)
+            }
+            Self::Spawned { limits, .. } => prepare_start(source, limits.charter_bytes, limits.transcript_bytes),
         }
     }
 
-    pub(crate) fn root_mut(&mut self) -> &mut root::Domain {
+    pub(crate) fn ready(&self) -> bool {
         match self {
-            Self::InProcess(domain) => domain,
-            Self::Spawned { .. } => unreachable!("root work belongs to the in-process kind"),
-        }
-    }
-
-    pub(crate) fn bounds(&self) -> &host::Limits {
-        match self {
-            Self::InProcess(_) => unreachable!("host bounds belong to the spawned kind"),
-            Self::Spawned { limits, .. } => limits,
+            Self::Inline { domain, .. } => domain.is_ready(),
+            Self::Spawned { .. } => false,
         }
     }
 
     pub(crate) fn deadline(&self) -> Option<Time> {
         match self {
-            Self::InProcess(domain) => domain.next_deadline(),
+            Self::Inline { domain, .. } => domain.next_deadline(),
             Self::Spawned { domain, .. } => domain.next_deadline(),
         }
     }
 
     pub(crate) fn process(&mut self, now: Time, wall: skein_lib::Wall, event: host::process::Event) {
         match self {
-            Self::InProcess(_) => unreachable!("process terminals belong to spawned kind"),
+            Self::Inline { .. } => unreachable!("process terminals belong to the spawned kind"),
             Self::Spawned { domain, limits, out } => {
                 host::step(domain, &Env { now, wall, limits: *limits }, host::Input::Process(event), out);
             }
         }
     }
 
+    pub(crate) fn below(&mut self, now: Time, wall: skein_lib::Wall, agent: skein_lib::Token, terminal: inline::Below) {
+        match self {
+            Self::Inline { domain, limits, out } => {
+                inline::step(
+                    domain,
+                    &Env { now, wall, limits: *limits },
+                    inline::Input::Below { agent, terminal },
+                    out,
+                );
+            }
+            Self::Spawned { .. } => unreachable!("native terminals belong to the inline kind"),
+        }
+    }
+
     pub(crate) fn fire(&mut self, now: Time, wall: skein_lib::Wall) {
         match self {
-            Self::InProcess(_) => unreachable!("direct root fire has its own typed queue"),
+            Self::Inline { domain, limits, out } => inline::fire(domain, &Env { now, wall, limits: *limits }, out),
             Self::Spawned { domain, limits, out } => host::fire(domain, &Env { now, wall, limits: *limits }, out),
         }
     }
 
-    pub(crate) fn pop(&mut self) -> Option<host::Output> {
+    pub(crate) fn resume(&mut self, now: Time, wall: skein_lib::Wall) {
         match self {
-            Self::InProcess(_) => None,
-            Self::Spawned { out, .. } => out.pop(),
+            Self::Inline { domain, limits, out } => inline::resume(domain, &Env { now, wall, limits: *limits }, out),
+            Self::Spawned { .. } => {}
+        }
+    }
+
+    pub(crate) fn pop(&mut self) -> Option<Output> {
+        match self {
+            Self::Inline { out, .. } => match out.pop() {
+                Some(inline::Output::Parent(request)) => Some(Output::Parent(request)),
+                Some(inline::Output::Lower { agent, request }) => Some(Output::Lower { agent, request }),
+                None => None,
+            },
+            Self::Spawned { out, .. } => match out.pop() {
+                Some(host::Output::Parent(request)) => Some(Output::Parent(request)),
+                Some(host::Output::Process(request)) => Some(Output::Process(request)),
+                None => None,
+            },
         }
     }
 
     pub(crate) fn reclaim(&mut self) {
         match self {
-            Self::InProcess(domain) => domain.reclaim(),
+            Self::Inline { domain, .. } => domain.reclaim(),
             Self::Spawned { domain, .. } => domain.reclaim(),
         }
     }
@@ -246,7 +306,9 @@ impl Agent {
 
 pub(crate) fn command(agent: &mut Agent, now: Time, wall: skein_lib::Wall, event: host::parent::Event) {
     match agent {
-        Agent::InProcess(_) => unreachable!("direct root commands remain unchanged until 3.6"),
+        Agent::Inline { domain, limits, out } => {
+            inline::step(domain, &Env { now, wall, limits: *limits }, inline::Input::Parent(event), out);
+        }
         Agent::Spawned { domain, limits, out } => {
             host::step(domain, &Env { now, wall, limits: *limits }, host::Input::Parent(event), out);
         }

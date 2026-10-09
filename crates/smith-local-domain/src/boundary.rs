@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 use skein_lib::Token;
-use smith_domain::{self as agent, run, tools};
+use smith_domain::{self as agent, run};
 
 /// One writable directory recorded before a delivery can commit.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -142,45 +142,6 @@ pub enum ExitStatus {
     Failed,
 }
 
-/// IO and LLM terminals for requests forwarded from the agent unchanged.
-#[derive(Debug)]
-pub enum AgentIo {
-    /// Terminal for an LLM completion.
-    Completed { owner: Token, completion: agent::llm::Completion },
-    /// Failed LLM completion, including provider evidence.
-    Failed { owner: Token, failure: agent::llm::Failure, evidence: agent::llm::Evidence, detail: Box<[u8]> },
-    /// Cancelled LLM completion.
-    Cancelled { owner: Token },
-    /// Terminal for an agent tool operation.
-    Done { owner: Token, done: tools::Done },
-    /// Terminal for a guide read.
-    Read { owner: Token, read: run::Read },
-    /// Terminal for check discovery.
-    Probed { owner: Token, executable: bool },
-    /// Terminal for a check process.
-    Checked { owner: Token, ran: run::Ran },
-    /// Terminal for an aborted check.
-    Aborted { owner: Token },
-}
-
-impl AgentIo {
-    /// Restore the child's typed terminal without interpreting it.
-    pub(crate) fn into_event(self) -> agent::Event {
-        match self {
-            AgentIo::Completed { owner, completion } => agent::Event::Completed { owner, completion },
-            AgentIo::Failed { owner, failure, evidence, detail } => {
-                agent::Event::Failed { owner, failure, evidence, detail }
-            }
-            AgentIo::Cancelled { owner } => agent::Event::Cancelled { owner },
-            AgentIo::Done { owner, done } => agent::Event::Done { owner, done },
-            AgentIo::Read { owner, read } => agent::Event::Read { owner, read },
-            AgentIo::Probed { owner, executable } => agent::Event::Probed { owner, executable },
-            AgentIo::Checked { owner, ran } => agent::Event::Checked { owner, ran },
-            AgentIo::Aborted { owner } => agent::Event::Aborted { owner },
-        }
-    }
-}
-
 /// One event from the person or a typed lower boundary.
 #[derive(Debug)]
 pub enum Event {
@@ -208,8 +169,8 @@ pub enum Event {
     Credential { grant: agent::Grant },
     /// Terminal for one Credential request that could not be served.
     NoCredential { account: u32, reason: CredentialFailure },
-    /// Terminal for a forwarded agent IO or LLM request.
-    Agent(AgentIo),
+    /// One terminal below an inline run, routed under its agent handle.
+    Below { agent: Token, terminal: smith_inline_agent::Below },
     /// One process terminal from the adapter, consumed by the local host child.
     Process(smith_host_domain::process::Event),
 }
@@ -238,8 +199,8 @@ pub enum Request {
     PlainStatus { owner: Token, directory: u32, deadline: skein_lib::Time },
     /// Fetch or refresh one account; answered by `Credential` or `NoCredential`.
     Credential { account: u32 },
-    /// Forward one agent IO or LLM request unchanged.
-    Agent(agent::Request),
+    /// One operation below an inline run; its terminal returns as Below.
+    Lower { agent: Token, request: smith_inline_agent::Lower },
     /// One process effect for the adapter; its terminal returns as Process.
     Process(smith_host_domain::process::Request),
     /// The caller may terminate this invocation.
