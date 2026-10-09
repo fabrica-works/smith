@@ -8,6 +8,7 @@
 use std::io::Write;
 use std::path::Path;
 
+use service::profile::{Layer, LimitName, Refusal};
 use skein_io::kernel::{Complete, Exit, Fd, Op, Submit};
 use skein_lib::{Queue, Time, Token, Wall};
 use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
@@ -130,17 +131,17 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         return Err("inherited agent roots exceed the directory limit".into());
     }
     let extra_operations = u32::try_from(root_count)
-        .map_err(|_| "inherited root count overflowed")?
+        .map_err(|_| derivation_refusal("inherited_roots"))?
         .checked_add(u32::from(resources.error.is_some()))
-        .ok_or("inherited operations overflowed")?;
+        .ok_or_else(|| derivation_refusal("routes"))?;
     let queue =
-        configuration.service.limits.queue.checked_add(extra_operations).ok_or("agent queue calculation overflowed")?;
+        configuration.service.limits.queue.checked_add(extra_operations).ok_or_else(|| derivation_refusal("queue"))?;
     let operations = configuration
         .service
         .limits
         .routes
         .checked_add(extra_operations)
-        .ok_or("agent operations calculation overflowed")?;
+        .ok_or_else(|| derivation_refusal("routes"))?;
     let reserve = if configuration.trace.is_some() { trace::MEMORY_RESERVE } else { 0 };
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
         .and_then(|bytes| bytes.checked_add(reserve))
@@ -148,10 +149,8 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .and_then(|bytes| bytes.checked_add(Queue::<Submit>::worst_case(queue)?))
         .and_then(|bytes| bytes.checked_add(u64::try_from(size_of::<Agent>()).ok()?))
         .and_then(|bytes| bytes.checked_add(u64::try_from(root_count.checked_mul(size_of::<Fd>())?).ok()?))
-        .ok_or("agent memory calculation overflowed")?;
-    if worst > configuration.memory {
-        return Err("agent shell exceeds profile.declared.memory".into());
-    }
+        .ok_or_else(|| derivation_refusal("worst_case"))?;
+    service::profile::validate::memory(worst, configuration.memory).map_err(config::profile_refusal)?;
     let trace = match configuration.trace {
         Some(config) => Some(trace::Trace::open(config)?),
         None => None,
@@ -306,4 +305,8 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
         .map_err(|error| format!("agent kernel cannot open: {error}"))
         .inspect_err(|why| diagnostic(agent.errors.as_mut(), why))?;
     Ok(drive(&mut kernel, &Clock::new(), &mut agent))
+}
+
+fn derivation_refusal(field: &'static str) -> String {
+    config::profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, field) })
 }

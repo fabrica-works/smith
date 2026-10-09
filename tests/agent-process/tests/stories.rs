@@ -128,3 +128,35 @@ fn a_broken_declared_relationship_is_named_before_channel_adoption() {
     let text = String::from_utf8(errors.bytes()).expect("diagnostic UTF-8");
     assert_eq!(text, "smith: read-in-payload: declared.read_window=1025 bytes; declared.tool_payload=1024 bytes\n");
 }
+
+#[test]
+fn the_complete_shell_memory_refusal_precedes_channel_adoption() {
+    use smith_agent_shell::{Agent, Resources, config};
+    let errors = smith_agent_process_world::AgentErrors::default();
+    let mut configuration = config::parse(
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776}},"endpoints":[],"environment":[]}"#,
+    )
+    .expect("valid startup declaration");
+    let available =
+        smith_agent_service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
+            .expect("bounded service");
+    configuration.memory = available;
+    let startup = Agent::new(
+        configuration,
+        Resources {
+            input: skein_io::kernel::Fd::new(100),
+            output: skein_io::kernel::Fd::new(101),
+            signals: skein_io::kernel::Fd::new(102),
+            error: None,
+            seed: 1,
+            roots: Some(Box::new([])),
+        },
+        Box::new(errors.clone()),
+    );
+    let Err(refusal) = startup else {
+        panic!("outer shell memory must refuse before adopting nonexistent channel handles");
+    };
+    assert!(refusal.starts_with("memory: service.worst_case="));
+    assert!(refusal.ends_with(&format!("; declared.memory={available} bytes")));
+    assert_eq!(String::from_utf8(errors.bytes()).expect("UTF-8 refusal"), format!("smith: {refusal}\n"));
+}

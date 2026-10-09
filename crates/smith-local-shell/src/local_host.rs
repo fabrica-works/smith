@@ -84,15 +84,27 @@ pub struct Local {
 
 impl Local {
     /// Compose either agent kind with the same file and terminal shell pass.
+    pub fn new(
+        config: service::Config,
+        lower: Option<agent::Config>,
+        resources: Resources,
+        errors: Box<dyn Write>,
+    ) -> Result<Self, String> {
+        Self::within_memory(config, lower, resources, errors, u64::MAX)
+    }
+
+    /// Refuse the complete shell footprint above the caller's memory before stream adoption.
+    /// Contract: protocol/limits.md, section 4.
     #[expect(
         clippy::too_many_lines,
         reason = "startup validates the shared store, terminal, credential and selected lower owners"
     )]
-    pub fn new(
+    pub fn within_memory(
         mut config: service::Config,
         lower: Option<agent::Config>,
         resources: Resources,
         errors: Box<dyn Write>,
+        available_bytes: u64,
     ) -> Result<Self, String> {
         let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
         config.agent = match lower {
@@ -102,15 +114,16 @@ impl Local {
                     config.limits.local.unsaved,
                     config.local.budget.time,
                 )
-                .ok_or("inline capacities overflow")?;
-                config.limits.inline =
-                    Some(service::InlineLimits::new(&configuration).ok_or("inline memory calculation overflowed")?);
+                .ok_or_else(|| derivation_refusal("local_worst_case"))?;
+                config.limits.inline = Some(
+                    service::InlineLimits::new(&configuration).ok_or_else(|| derivation_refusal("local_worst_case"))?,
+                );
                 service::AgentConfig::Inline { configuration, roots: resources.effect_roots }
             }
             None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
             None => return Err("spawned mode cannot adopt inline roots".into()),
         };
-        let mut worst = service::worst_case(&config.limits).ok_or("local memory calculation overflowed")?;
+        let mut worst = service::worst_case(&config.limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
         if resources.accounts.len() > usize::try_from(config.limits.local.smith.accounts).expect("account bound fits")
             || resources.accounts.iter().any(|account| account.account_id.len() > 1024)
         {
@@ -130,7 +143,7 @@ impl Local {
         let endpoints = config.endpoints.clone();
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
-        let outer_queue = queue.checked_mul(2).ok_or("shell queue count overflowed")?;
+        let outer_queue = queue.checked_mul(2).ok_or_else(|| derivation_refusal("local_queue"))?;
         let show_bytes = config.limits.local.show_bytes;
         let io_limits = config.limits.process.io;
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
@@ -140,24 +153,16 @@ impl Local {
             .checked_add(
                 local_auth::worst_case()
                     .and_then(|bound| bound.checked_mul(u64::try_from(resources.accounts.len()).ok()?))
-                    .ok_or("account memory calculation overflowed")?,
+                    .ok_or_else(|| derivation_refusal("account_worst_case"))?,
             )
-            .ok_or("account memory calculation overflowed")?;
+            .ok_or_else(|| derivation_refusal("account_worst_case"))?;
         let operations = io::operations(&io_limits)
             .and_then(|count| count.checked_mul(2))
             .and_then(|count| count.checked_add(64))
             .and_then(|count| count.checked_add(lower_routes))
-            .ok_or("local IO operation count overflowed")?;
-        let service =
-            service::Service::new(config, resources.seed).map_err(|error| format!("local service: {error:?}"))?;
-        let store = Store::new(resources.state_directory, endpoints, 1 << 20)
-            .map_err(|error| format!("chat store: {error}"))?;
-        let tokens = Tokens::new(&resources.token_directory, token_limits())?;
-        let mut writer = io::Io::new(&io_limits);
-        let output = writer.adopt_write_pipe(resources.output).map_err(|_| "terminal output cannot be adopted")?;
-        let requests = Queue::with_capacity(queue);
+            .ok_or_else(|| derivation_refusal("local_routes"))?;
         worst = worst
-            .checked_add(Store::worst_case().ok_or("chat store memory overflowed")?)
+            .checked_add(Store::worst_case().ok_or_else(|| derivation_refusal("store_worst_case"))?)
             .and_then(|count| count.checked_add(io::worst_case(&io_limits)?))
             .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
             .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
@@ -166,7 +171,16 @@ impl Local {
             .and_then(|count| count.checked_add(Queue::<io::Request>::worst_case(queue)?))
             .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
             .and_then(|count| count.checked_add(u64::try_from(size_of::<Self>()).ok()?))
-            .ok_or("shell memory calculation overflowed")?;
+            .ok_or_else(|| derivation_refusal("local_worst_case"))?;
+        smith_agent_service::profile::validate::memory(worst, available_bytes).map_err(profile_refusal)?;
+        let service =
+            service::Service::new(config, resources.seed).map_err(|error| format!("local service: {error:?}"))?;
+        let store = Store::new(resources.state_directory, endpoints, 1 << 20)
+            .map_err(|error| format!("chat store: {error}"))?;
+        let tokens = Tokens::new(&resources.token_directory, token_limits())?;
+        let mut writer = io::Io::new(&io_limits);
+        let output = writer.adopt_write_pipe(resources.output).map_err(|_| "terminal output cannot be adopted")?;
+        let requests = Queue::with_capacity(queue);
         let accounts = resources
             .accounts
             .into_vec()
@@ -594,4 +608,14 @@ pub fn token_limits() -> skein_oauth::Limits {
         depth: 16,
         tokens: 1024,
     }
+}
+
+fn profile_refusal(error: smith_agent_service::profile::Refusal) -> String {
+    String::from_utf8(smith_agent_service::profile::words(&error).into_vec()).expect("refusal words are UTF-8")
+}
+
+fn derivation_refusal(field: &'static str) -> String {
+    profile_refusal(smith_agent_service::profile::Refusal::Derived {
+        limit: smith_agent_service::profile::LimitName::deployment(smith_agent_service::profile::Layer::Service, field),
+    })
 }

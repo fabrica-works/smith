@@ -100,7 +100,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         part.copy_from_slice(&seed.to_be_bytes());
     }
     let lower = settings.in_process.then_some(agent_config.service);
-    let mut local_service = Local::new(
+    let mut local_service = Local::within_memory(
         local_config,
         lower,
         Resources {
@@ -117,6 +117,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
             oauth_entropy,
         },
         Box::new(std::io::stderr()),
+        agent_config.memory,
     )?;
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
         .map_err(|error| format!("local kernel: {error}"))?;

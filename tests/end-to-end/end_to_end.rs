@@ -117,3 +117,18 @@ fn smith_agent_names_a_broken_relationship_and_exits_1_before_its_channel_opens(
         "smith: read-in-payload: declared.read_window=1025 bytes; declared.tool_payload=1024 bytes\n"
     );
 }
+
+#[test]
+fn smith_agent_names_a_repeated_environment_entry_before_its_channel_opens() {
+    let scratch = Scratch::new();
+    let path = scratch.path().join("repeated-environment.json");
+    std::fs::write(&path,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776}},"endpoints":[],"environment":[{"name":"A","value":"one"},{"name":"A","value":"two"}]}"#,
+    ).expect("repeated environment fixture");
+    let errors =
+        support::refusal_program(std::path::Path::new(env!("CARGO_BIN_EXE_smith-agent")), &scratch, vec![path.into()]);
+    assert_eq!(
+        std::str::from_utf8(&errors).expect("UTF-8 refusal"),
+        "smith: environment: entry 1 has an invalid or repeated name\n"
+    );
+}

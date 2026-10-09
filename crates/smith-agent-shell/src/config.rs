@@ -195,6 +195,23 @@ pub fn parse(bytes: &[u8]) -> Result<Configuration, String> {
     build(document)
 }
 
+// The exact encoded count supplies machine.env_bytes before the shared encoder
+// validates names. Contract: protocol/limits.md, sections 3.5 and 4.
+fn environment_size_refusal() -> String {
+    profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Machine, "env_bytes") })
+}
+
+fn environment_refusal(error: machine::Unencodable) -> String {
+    match error {
+        machine::Unencodable::Variable { index } | machine::Unencodable::Repeated { index } => {
+            profile_refusal(Refusal::Environment { index })
+        }
+        // This configuration's exact count derives the receiving bound; a
+        // smaller bound would mean the derived field cannot hold that count.
+        machine::Unencodable::TooLarge { .. } => environment_size_refusal(),
+    }
+}
+
 fn build(document: Document) -> Result<Configuration, String> {
     let profile = build_profile(&document.profile)?;
     let memory = profile.declared.memory.ok_or("profile.declared.memory is required")?;
@@ -219,18 +236,15 @@ fn build(document: Document) -> Result<Configuration, String> {
     let mut environment = Vec::with_capacity(document.environment.len());
     let mut environment_bytes = 0_u64;
     for variable in document.environment {
-        if variable.name.is_empty() || variable.name.contains(['=', '\0']) || variable.value.contains('\0') {
-            return Err("invalid command environment variable".into());
-        }
         let entry_bytes = variable
             .name
             .len()
             .checked_add(variable.value.len())
             .and_then(|bytes| bytes.checked_add(1))
-            .ok_or("environment is too large")?;
+            .ok_or_else(environment_size_refusal)?;
         environment_bytes = environment_bytes
-            .checked_add(u64::try_from(entry_bytes).map_err(|_| "environment is too large")?)
-            .ok_or("environment is too large")?;
+            .checked_add(u64::try_from(entry_bytes).map_err(|_| environment_size_refusal())?)
+            .ok_or_else(environment_size_refusal)?;
         environment.push(machine::Variable {
             name: variable.name.into_bytes().into(),
             value: variable.value.into_bytes().into(),
@@ -241,12 +255,11 @@ fn build(document: Document) -> Result<Configuration, String> {
         declarations.push(build_models(endpoint.number, endpoint.connect, endpoint.handshake, &endpoint.models)?);
     }
     let declarations = service::profile::Configuration {
-        environment_bytes: u32::try_from(environment_bytes).map_err(|_| "command environment is too large")?,
+        environment_bytes: u32::try_from(environment_bytes).map_err(|_| environment_size_refusal())?,
         endpoints: declarations.into_boxed_slice(),
     };
     let limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
-    let environment = machine::Environment::encode(&environment, &limits.machine)
-        .map_err(|error| format!("environment: {error:?}"))?;
+    let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
     let endpoints = build_endpoints(document.endpoints, &limits.llm)?;
     let llm_endpoints =
         llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
@@ -712,7 +725,7 @@ pub fn trust(der: Option<&str>) -> Result<tls::Config, String> {
     tls::Config::new(roots, &[]).map_err(|error| format!("TLS trust: {error:?}"))
 }
 
-fn profile_refusal(error: Refusal) -> String {
+pub(crate) fn profile_refusal(error: Refusal) -> String {
     String::from_utf8(service::profile::words(&error).into_vec()).expect("refusal words are UTF-8")
 }
 
@@ -731,6 +744,33 @@ mod tests {
             environment: vec![],
             trace: None,
         }
+    }
+
+    #[test]
+    fn shared_environment_validation_names_the_invalid_or_repeated_position() {
+        for (name, value) in [("", "v"), ("A=B", "v"), ("A\0B", "v"), ("A", "v\0")] {
+            let mut document = document();
+            document.environment = vec![Variable { name: name.into(), value: value.into() }];
+            assert_eq!(build(document).err().as_deref(), Some("environment: entry 0 has an invalid or repeated name"));
+        }
+        let mut document = document();
+        document.environment = vec![
+            Variable { name: "A".into(), value: "first".into() },
+            Variable { name: "A".into(), value: "second".into() },
+        ];
+        assert_eq!(build(document).err().as_deref(), Some("environment: entry 1 has an invalid or repeated name"));
+    }
+
+    #[test]
+    fn empty_and_equals_values_reach_the_shared_environment_encoder() {
+        let mut document = document();
+        document.environment = vec![
+            Variable { name: "EMPTY".into(), value: String::new() },
+            Variable { name: "MULTI".into(), value: "a=b".into() },
+        ];
+        let configuration = build(document).expect("valid environment");
+        assert_eq!(configuration.declarations.environment_bytes, 15);
+        assert_eq!(configuration.service.limits.machine.env_bytes, 15);
     }
 
     #[test]
