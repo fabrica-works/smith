@@ -825,6 +825,8 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
+        // The native document retains the complete piecewise-write advice too.
+        bounds.client.dialect.document_bytes = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),

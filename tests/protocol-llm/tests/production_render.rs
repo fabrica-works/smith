@@ -217,7 +217,9 @@ fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
                 },
             ]),
         };
-        let translated = adapter::prompt(history, &[], &limits()).expect("corrective prompt");
+        let bounds = limits();
+        let offered = adapter::schemas(&history, &bounds.stated);
+        let translated = adapter::prompt(history, &offered, &bounds).expect("corrective prompt");
         let [skein_llm::Block::ToolCall { name: actual, arguments, .. }] = translated.messages[0].content.as_ref()
         else {
             panic!("replayable call")
