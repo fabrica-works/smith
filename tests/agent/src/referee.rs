@@ -1,7 +1,7 @@
 //! Expectations for the copied agent on its scripted host (domain/run.md,
 //! sections 13 and 14; testing-strategy.md, section 7). This module retains
-//! only observed starts, provider usage, check results, push snapshots and
-//! answers. It cannot inspect agent state, private conversations or fixtures.
+//! observed starts, provider queries and usage, check results, push snapshots
+//! and answers. It cannot inspect agent state or source fixtures.
 //! The shared referee owns deadlines and reports the first broken expectation.
 
 use std::collections::BTreeSet;
@@ -222,7 +222,10 @@ impl Expectations for Meeting {
                 if let Some(previous) = self.prompts.get(&owner) {
                     judge.check(previous.system == query.system, "a session keeps its system text");
                     judge.check(previous.tools == query.tools, "a session keeps its offered tools");
-                    judge.check(query.messages.starts_with(&previous.messages), "a session extends its history within a window");
+                    judge.check(
+                        query.messages.starts_with(&previous.messages),
+                        "a session extends its history within a window",
+                    );
                 }
                 self.prompts.insert(owner, query);
             }

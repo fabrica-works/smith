@@ -334,15 +334,25 @@ fn changed_bytes_between_check_and_submission_are_rejected_after_positive_check(
 
 fn prefix_query() -> skein_fake_llm_domain::api::Query {
     use skein_fake_llm_domain::api::{Message, Part, Query, Role, ToolChoice};
-    Query { model: b"model".as_slice().into(), system: b"system".as_slice().into(), tools: Box::new([]), choice: ToolChoice::Auto,
-        messages: Box::new([Message { role: Role::User, parts: Box::new([Part::Text { text: b"first".as_slice().into() }]) }]), max_tokens: 1 }
+    Query {
+        model: b"model".as_slice().into(),
+        system: b"system".as_slice().into(),
+        tools: Box::new([]),
+        choice: ToolChoice::Auto,
+        messages: Box::new([Message {
+            role: Role::User,
+            parts: Box::new([Part::Text { text: b"first".as_slice().into() }]),
+        }]),
+        max_tokens: 1,
+    }
 }
 
 #[test]
 fn changed_conversation_system_is_rejected() {
     let mut referee = started();
     referee.observe(Time::ZERO, Seen::Prompt { owner: Token::new(1), query: prefix_query() }, &mut Vec::new());
-    let mut changed = prefix_query(); changed.system = b"different".as_slice().into();
+    let mut changed = prefix_query();
+    changed.system = b"different".as_slice().into();
     broken(referee, Seen::Prompt { owner: Token::new(1), query: changed }, "a session keeps its system text");
 }
 
@@ -350,14 +360,24 @@ fn changed_conversation_system_is_rejected() {
 fn edited_conversation_history_is_rejected() {
     let mut referee = started();
     referee.observe(Time::ZERO, Seen::Prompt { owner: Token::new(1), query: prefix_query() }, &mut Vec::new());
-    let mut changed = prefix_query(); changed.messages[0].parts = Box::new([]);
-    broken(referee, Seen::Prompt { owner: Token::new(1), query: changed }, "a session extends its history within a window");
+    let mut changed = prefix_query();
+    changed.messages[0].parts = Box::new([]);
+    broken(
+        referee,
+        Seen::Prompt { owner: Token::new(1), query: changed },
+        "a session extends its history within a window",
+    );
 }
 
 #[test]
 fn changed_conversation_tools_are_rejected() {
     let mut referee = started();
     referee.observe(Time::ZERO, Seen::Prompt { owner: Token::new(1), query: prefix_query() }, &mut Vec::new());
-    let mut changed = prefix_query(); changed.tools = Box::new([skein_fake_llm_domain::api::ToolSpec { name: b"new".as_slice().into(), description: Box::new([]), parameters: b"{}".as_slice().into() }]);
+    let mut changed = prefix_query();
+    changed.tools = Box::new([skein_fake_llm_domain::api::ToolSpec {
+        name: b"new".as_slice().into(),
+        description: Box::new([]),
+        parameters: b"{}".as_slice().into(),
+    }]);
     broken(referee, Seen::Prompt { owner: Token::new(1), query: changed }, "a session keeps its offered tools");
 }

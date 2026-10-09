@@ -105,8 +105,8 @@ pub enum Observed {
 }
 
 /// One actual physical binding's outside lifecycle, retained after retirement.
-/// It keeps receiving metadata and content-free lower observations, not a second
-/// completion or a credential. Contract: scratch/client.md, sections 1, 5 and 6;
+/// It keeps receiving metadata, the fixture's HTTP request tape and lower
+/// observations, never a second completion. Contract: scratch/client.md, sections 1, 5 and 6;
 /// domain/run.md, sections 3 and 14; testing-strategy.md, sections 2.3 and 6.
 #[derive(Debug)]
 pub struct Binding {
@@ -235,7 +235,8 @@ impl Composition {
     /// this is a selected lower settlement schedule, not application policy.
     /// Contract: scratch/client.md, sections 4 and 5; programming-model.md, sections 5.2 and 9.
     pub(crate) fn advance(&mut self, now: Time, wall: Wall, ending: bool) -> Progress {
-        let mut progress = Progress { immediate: false, terminals: Vec::new(), queries: Vec::new(), requests: Vec::new() };
+        let mut progress =
+            Progress { immediate: false, terminals: Vec::new(), queries: Vec::new(), requests: Vec::new() };
         for (index, binding) in self.bindings.iter_mut().enumerate() {
             let Some(wire) = binding.wire.as_mut() else { continue };
             wire.peer.at(now, wall);

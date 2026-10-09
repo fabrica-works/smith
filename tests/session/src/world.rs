@@ -7,19 +7,20 @@ use skein_world::domain::{Key, Ledger, Schedule, Span, Stage, Trace};
 use smith_domain_session as agent;
 use smith_domain_session::llm::{Block, Decoded, Descriptor, Endpoint, Failure, Prompt, Returned, Usage};
 
-/// Check two actual requests of one window against the append-only session contract.
-pub fn assert_prompt_extends(previous: &Prompt, current: &Prompt) {
-    assert_eq!(current.system, previous.system, "a window keeps its system text");
-    assert_eq!(current.tools, previous.tools, "a window keeps its tool grants");
-    assert_eq!(current.delegated, previous.delegated, "a window keeps its tool descriptors");
-    assert!(current.messages.starts_with(&previous.messages), "a window extends its history");
-}
 use smith_domain_tools::{self as tools, Authority, Done, Effect, Fault, Grants, Op, Repo};
 use smith_tools_world::translate as io;
 
 use crate::fixture;
 use crate::tickets::{SERVED, Ticketed, Tickets};
 use crate::translate;
+
+/// Check two actual requests of one window (domain/session.md, sections 3 and 10).
+pub fn assert_prompt_extends(previous: &Prompt, current: &Prompt) {
+    assert_eq!(current.system, previous.system, "a window keeps its system text");
+    assert_eq!(current.tools, previous.tools, "a window keeps its tool grants");
+    assert_eq!(current.delegated, previous.delegated, "a window keeps its tool descriptors");
+    assert!(current.messages.starts_with(&previous.messages), "a window extends its history");
+}
 
 /// Room in each domain's output queue beyond what one step may emit. Small, so
 /// the loop's flow control (take an event only while there is room for what

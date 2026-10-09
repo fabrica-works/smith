@@ -26,7 +26,7 @@ skein-fake-llm-protocol.workspace = true
 skein-tls.workspace = true
 skein-llm-world.workspace = true
 skein-world.workspace = true
-serde_json = { workspace = true, features = ["raw_value"] }
+serde_json = { version = "1", features = ["raw_value"] }
 
 # Ordinary Rust (programming-model.md, section 10.2), so not the step crates' lints.
 # tests/clippy.toml bans what would make a run unrepeatable.

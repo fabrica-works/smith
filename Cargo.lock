@@ -1243,6 +1243,7 @@ dependencies = [
 name = "smith-protocol-llm-world"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "skein-fake-checkout",
  "skein-fake-llm-domain",
  "skein-fake-llm-protocol",

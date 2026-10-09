@@ -1,7 +1,7 @@
 //! Expectations for the copied agent on its scripted host (domain/run.md,
 //! sections 13 and 14; testing-strategy.md, section 7). This module retains
-//! only observed starts, provider usage, check results, push snapshots and
-//! answers. It cannot inspect agent state, private conversations or fixtures.
+//! observed starts, native request bytes, provider usage, check results, push
+//! snapshots and answers. It cannot inspect agent state or source fixtures.
 //! The shared referee owns deadlines and reports the first broken expectation.
 
 use std::collections::BTreeSet;
@@ -32,10 +32,23 @@ impl NativeRequest {
         let history = fields.get("input").or_else(|| fields.get("messages")).expect("native history");
         let items: Vec<Box<serde_json::value::RawValue>> =
             serde_json::from_str(history.get()).expect("native history array");
+        let mut history = items.into_iter().map(|item| String::from(item.get())).collect::<Vec<_>>();
+        if fields.contains_key("messages") {
+            const MARKER: &str = ",\"cache_control\":{\"type\":\"ephemeral\"}";
+            let mut markers = 0;
+            for item in &mut history {
+                let positions = item.match_indices(MARKER).map(|(position, _)| position).collect::<Vec<_>>();
+                markers += positions.len();
+                assert!(markers <= 1, "at most one moving Anthropic tail marker");
+                if let Some(position) = positions.first() {
+                    item.replace_range(*position..*position + MARKER.len(), "");
+                }
+            }
+        }
         Self {
             system: system.get().into(),
             tools: fields.get("tools").expect("native tool definitions").get().into(),
-            history: items.into_iter().map(|item| item.get().into()).collect(),
+            history,
         }
     }
 }
@@ -249,7 +262,10 @@ impl Expectations for Meeting {
                 if let Some(previous) = self.requests.get(&owner) {
                     judge.check(previous.system == request.system, "native system bytes stay fixed within a window");
                     judge.check(previous.tools == request.tools, "native tool bytes stay fixed within a window");
-                    judge.check(request.history.starts_with(&previous.history), "native history bytes extend within a window");
+                    judge.check(
+                        request.history.starts_with(&previous.history),
+                        "native history bytes extend within a window",
+                    );
                 }
                 self.requests.insert(owner, request);
             }
