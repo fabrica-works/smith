@@ -173,22 +173,54 @@ fn the_parent_answer_keeps_its_host_spend_until_gone() {
 }
 
 #[test]
-fn faults_and_message_refusals_keep_the_current_failure_class() {
-    let notices = [
+fn an_agent_fault_keeps_the_current_failure_class() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    parent_request(
+        &mut domain,
+        &env,
         parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Rules },
-        parent::Request::MessageRefused {
-            client: Token::new(1),
-            name: Token::new(3),
-            reason: host::MessageRefusal::Full,
-        },
-    ];
-    for notice in notices {
+        &mut out,
+    );
+    assert!(domain.agent_failed);
+    let Some(Request::Show { text }) = out.pop() else { panic!("failure notice") };
+    assert_eq!(text.as_ref(), b"Agent process failed");
+}
+
+#[test]
+fn every_message_refusal_ends_the_message_without_failing_the_agent() {
+    for reason in [
+        host::MessageRefusal::Full,
+        host::MessageRefusal::TooLarge,
+        host::MessageRefusal::NameInUse,
+        host::MessageRefusal::Ending,
+    ] {
         let (mut domain, env, mut out) = running(crate::tests::config());
-        parent_request(&mut domain, &env, notice, &mut out);
-        assert!(domain.agent_failed);
-        let Some(Request::Show { text }) = out.pop() else { panic!("failure notice") };
-        assert_eq!(text.as_ref(), b"Agent process failed");
+        parent_request(
+            &mut domain,
+            &env,
+            parent::Request::MessageRefused { client: Token::new(1), name: Token::new(3), reason },
+            &mut out,
+        );
+        assert!(!domain.agent_failed);
+        assert_eq!(domain.chat.phase, Phase::Running);
+        let Some(Request::Show { text }) = out.pop() else { panic!("message terminal notice") };
+        assert_eq!(text.as_ref(), b"Message not delivered");
+        assert!(out.is_empty());
     }
+}
+
+#[test]
+fn unread_names_reach_the_parent_without_an_agent_failure_or_another_activation() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Unread { client: Token::new(1), names: Box::from([Token::new(3)]) },
+        &mut out,
+    );
+    assert!(!domain.agent_failed);
+    assert_eq!(domain.chat.phase, Phase::Running);
+    assert!(out.is_empty());
 }
 
 #[test]
@@ -229,6 +261,8 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
     let Some(Request::Show { text }) = out.pop() else { panic!("actual transcript refusal") };
     assert_eq!(text.as_ref(), b"Saved transcript was refused");
     let Some(Request::Load) = out.pop() else { panic!("one transcript reload") };
+    let Some(Request::Show { text }) = out.pop() else { panic!("late message terminal") };
+    assert_eq!(text.as_ref(), b"Message not delivered");
     assert!(out.is_empty());
     assert_eq!(domain.chat.phase, Phase::Loading);
     assert!(!domain.agent_failed);
