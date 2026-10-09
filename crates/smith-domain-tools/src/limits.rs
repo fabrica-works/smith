@@ -30,7 +30,7 @@ pub struct Limits {
     /// Longest joined absolute host alias, independent of a tool call spelling.
     pub host_path_bytes: u32,
     /// Files a kit remembers the LLM read. Past them, the one read longest
-    /// ago is forgotten, and must be read again before it is changed.
+    /// ago is forgotten, and must be read again before a write.
     pub known_files: u32,
     /// The largest file the tools load or store.
     pub file_bytes: u32,

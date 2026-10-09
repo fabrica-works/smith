@@ -236,7 +236,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         ),
         (
             "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Batch writes, edits and commands; run serially in call order.",
-            4,
+            5,
         ),
         (
             "Run a command; files may change. Max 151 output bytes; cuts are marked. Batch writes, edits and commands; run serially in call order.",

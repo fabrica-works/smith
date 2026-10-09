@@ -234,10 +234,9 @@ pub enum Outcome {
         /// Observed file size which exceeds the receiving byte cap.
         size: u64,
     },
-    /// The file exists and the LLM has not read it, so it may not be changed.
+    /// A write names an existing file whose version the LLM has not read.
     NotRead,
-    /// The file changed since the LLM read it, so it may not be changed
-    /// until the LLM reads it again.
+    /// A write or edit lost the version it read or matched before its store.
     Stale,
     /// The first failed replacement, counting from one; no edit was stored.
     EditFailed { edit: u32, why: Mismatch },

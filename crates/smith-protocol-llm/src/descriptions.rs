@@ -138,7 +138,7 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
             payload(stated, output);
             output.put(br#""},"new":{"type":"string","description":"Replacement text; aggregate new snippets max "#);
             payload(stated, output);
-            output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}},"required":["path","edits"]}"#);
+            output.put(br#""},"all":{"type":"boolean","description":"False requires one unique match; true replaces every match."}},"required":["old","new"]}}},"required":["path","edits"]}"#);
         }
         Tool::Shell => {
             output.put(br#""command":{"type":"string","description":"Shell command text."#);

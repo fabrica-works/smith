@@ -483,7 +483,7 @@ pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
     if prompt.tools.modify {
         descriptors.extend([
             descriptor(ToolKind::Owned(tools::Tool::Write), b"write", br#"{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}"#),
-            descriptor(ToolKind::Owned(tools::Tool::Edit), b"edit", br#"{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"}},"required":["path","old","new"],"additionalProperties":false}"#),
+            descriptor(ToolKind::Owned(tools::Tool::Edit), b"edit", br#"{"type":"object","properties":{"path":{"type":"string"},"edits":{"type":"array","minItems":1,"items":{"type":"object","properties":{"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["old","new"]}}},"required":["path","edits"],"additionalProperties":false}"#),
         ]);
     }
     if prompt.tools.shell {

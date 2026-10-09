@@ -183,7 +183,7 @@ fn read(path: &str) -> Line {
 }
 
 fn edit(old: &str, new: &str) -> Line {
-    call("edit", &format!(r#"{{"path":"src/lib.rs","old":"{old}","new":"{new}"}}"#))
+    call("edit", &format!(r#"{{"path":"src/lib.rs","edits":[{{"old":"{old}","new":"{new}"}}]}}"#))
 }
 
 fn change(body: &str) -> Line {

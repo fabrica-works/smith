@@ -511,7 +511,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
                 Part::Opaque { .. } | Part::Text { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. } => None,
             })
             .expect("native peer's actual edit call");
-        let expected = format!(r#"{{"path":"utf8.txt","old":"{copied}","new":"sections 4-6"}}"#);
+        let expected = format!(r#"{{"path":"utf8.txt","edits":[{{"old":"{copied}","new":"sections 4-6"}}]}}"#);
         assert_eq!(edit.as_ref(), expected.as_bytes(), "old text equals what the read rendered");
         assert!(world.prompts()[2].messages.iter().flat_map(|message| &message.parts).any(|part|
             matches!(part, Part::ToolOutput { output, is_error: false, .. } if contains(output, b"replaced 1 occurrence(s)"))
@@ -579,7 +579,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
             (b"list", 1, b"max 37 bytes"),
             (b"search", 3, b"Search pattern"),
             (b"write", 2, b"max 257 bytes"),
-            (b"edit", 4, b"max 257 bytes"),
+            (b"edit", 5, b"max 257 bytes"),
             (b"shell", 2, b"43000 ms"),
         ] {
             let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("actual offered tool");
