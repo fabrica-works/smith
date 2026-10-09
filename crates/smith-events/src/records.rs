@@ -313,6 +313,10 @@ pub enum AnswerClass {
     Policy,
     /// The `cancelled` classification.
     Cancelled,
+    /// A spawned agent ended without an answer.
+    Agent,
+    /// The host failed while the run went on.
+    Host,
     /// The `stale` classification.
     Stale,
     /// The `transcript` classification.
@@ -459,6 +463,21 @@ pub struct AnswerFailure {
     pub account: Option<u64>,
     pub which: Option<Box<[u8]>>,
     pub reason: Option<Box<[u8]>>,
+    /// Whether cancellation dropped an unanswering run, rather than receiving its answer.
+    pub dropped: Option<bool>,
+    /// Actual spawned-process terminal when the kit supplies its evidence.
+    pub ended: Option<AgentExit>,
+    /// Durable turn sequence the store could not keep.
+    pub turn: Option<u64>,
+}
+
+/// The process terminal supplied by the host kit for an unanswering agent.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum AgentExit {
+    /// The process ended with this exit code.
+    Code(i64),
+    /// This signal ended the process.
+    Signal(u64),
 }
 
 /// One named result field the service records under full content capture.

@@ -327,6 +327,18 @@ impl World {
         )
     }
 
+    /// Deliver two actual terminal signals while the provider has no response ready.
+    #[must_use]
+    pub fn dropped(seed: u64, files: &Files, placement: Placement) -> Self {
+        let mut world = Self::interrupted(seed, files, placement);
+        world.scenario.ending = Ending::Dropped;
+        world.scenario.commands = vec![
+            Action::Send(b"hello\n".as_slice().into()),
+            Action::Wait(b"Run dropped".as_slice().into()), Action::Eof,
+        ];
+        world
+    }
+
     /// Fail the second durable turn rename after the provider receives its first request.
     #[must_use]
     pub fn failed_store(seed: u64, files: &Files, placement: Placement) -> Self {
@@ -505,6 +517,9 @@ impl World {
         );
         if matches!(self.scenario.ending, Ending::HostFailure) {
             referee.fail_turn_at_query(launch.state_directory.clone(), 2);
+        }
+        if matches!(self.scenario.ending, Ending::Dropped) {
+            referee.drop_after_cancel();
         }
         let mut world = skein_world::World::new(launch.seed, config, referee, self.memory).with_machine(machine);
         world.host_roots(

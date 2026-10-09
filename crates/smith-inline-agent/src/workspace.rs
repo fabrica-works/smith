@@ -28,9 +28,9 @@ pub(crate) enum Call {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Machine {
     /// A guide read; only Read consumes it.
-    Read,
+    Read { cancelled: bool },
     /// An executable probe; only Probed consumes it.
-    Probe,
+    Probe { cancelled: bool },
     /// A contained check; Checked or Aborted consumes it after optional Abort.
     Check { cancelled: bool },
 }
@@ -120,32 +120,32 @@ pub(crate) fn terminal(slot: &mut Slot, terminal: Below) -> Option<smith::Event>
             Some(smith::Event::Done { owner, done })
         }
         Below::Read { owner, read } => match slot.machine.get(&owner)? {
-            Machine::Read => {
+            Machine::Read { .. } => {
                 slot.machine.remove(&owner);
                 Some(smith::Event::Read { owner, read })
             }
-            Machine::Probe | Machine::Check { .. } => None,
+            Machine::Probe { .. } | Machine::Check { .. } => None,
         },
         Below::Probed { owner, executable } => match slot.machine.get(&owner)? {
-            Machine::Probe => {
+            Machine::Probe { .. } => {
                 slot.machine.remove(&owner);
                 Some(smith::Event::Probed { owner, executable })
             }
-            Machine::Read | Machine::Check { .. } => None,
+            Machine::Read { .. } | Machine::Check { .. } => None,
         },
         Below::Checked { owner, ran } => match slot.machine.get(&owner)? {
             Machine::Check { .. } => {
                 slot.machine.remove(&owner);
                 Some(smith::Event::Checked { owner, ran })
             }
-            Machine::Read | Machine::Probe => None,
+            Machine::Read { .. } | Machine::Probe { .. } => None,
         },
         Below::Aborted { owner } => match slot.machine.get(&owner)? {
             Machine::Check { .. } => {
                 slot.machine.remove(&owner);
                 Some(smith::Event::Aborted { owner })
             }
-            Machine::Read | Machine::Probe => None,
+            Machine::Read { .. } | Machine::Probe { .. } => None,
         },
     }
 }
@@ -184,7 +184,7 @@ pub(crate) fn read(
     out: &mut Queue<Output>,
 ) {
     assert!(
-        slot.machine.insert(owner, Machine::Read).expect("bounded run discovery rights").is_none(),
+        slot.machine.insert(owner, Machine::Read { cancelled: false }).expect("bounded run discovery rights").is_none(),
         "root machine requests own one callback right"
     );
     out.push(Output::Lower { agent, request: Lower::Read { owner, at, max, deadline } });
@@ -199,7 +199,10 @@ pub(crate) fn probe(
     out: &mut Queue<Output>,
 ) {
     assert!(
-        slot.machine.insert(owner, Machine::Probe).expect("bounded run discovery rights").is_none(),
+        slot.machine
+            .insert(owner, Machine::Probe { cancelled: false })
+            .expect("bounded run discovery rights")
+            .is_none(),
         "root machine requests own one callback right"
     );
     out.push(Output::Lower { agent, request: Lower::Probe { owner, at, deadline } });
@@ -230,7 +233,12 @@ pub(crate) fn abort(slot: &mut Slot, agent: Token, owner: Token, out: &mut Queue
                     out.push(Output::Lower { agent, request: Lower::Abort { owner } });
                 }
             }
-            Machine::Read | Machine::Probe => {}
+            Machine::Read { cancelled } | Machine::Probe { cancelled } => {
+                if !*cancelled {
+                    *cancelled = true;
+                    out.push(Output::Lower { agent, request: Lower::CancelIo { owner } });
+                }
+            }
         }
     }
 }

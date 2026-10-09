@@ -54,6 +54,19 @@ fn an_interrupt_in_the_middle_of_a_turn_cancels_the_run() {
 }
 
 #[test]
+fn an_interrupt_mid_turn_and_a_second_drop_the_run() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::dropped(405, &files, placement);
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(130)));
+        assert_eq!(world.queries().len(), 1, "no provider response before the drop");
+        assert_eq!(world.turns(), 0);
+        assert!(world.shown().windows(11).any(|bytes| bytes == b"Run dropped"));
+    }
+}
+
+#[test]
 fn a_store_failure_stops_the_chat_and_tells_the_person() {
     for placement in [Placement::Spawned, Placement::InProcess] {
         let files = Files::new();

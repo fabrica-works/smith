@@ -602,10 +602,10 @@ impl ProcessAdapter {
         if git_done {
             self.git = None;
         }
-        if self.output_room() {
-            if let Some(process) = &mut self.process {
-                process.fire(now, &mut self.process_events, &mut self.io_requests);
-            }
+        if self.output_room()
+            && let Some(process) = &mut self.process
+        {
+            process.fire(now, &mut self.process_events, &mut self.io_requests);
         }
         for _ in 0..self.process_events.capacity() {
             if host_events.room() == 0 {

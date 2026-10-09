@@ -358,6 +358,9 @@ fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
 
 fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
     AnswerFailure {
+        dropped: if name == "AnswerClass" && spelling == "cancelled" { Some(false) } else { None },
+        ended: None,
+        turn: None,
         class: value_answer_class(name, spelling),
         completion: Some(value_completion_failure(name, spelling)),
         account: Some(u64::MAX),

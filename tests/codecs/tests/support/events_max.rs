@@ -71,6 +71,9 @@ fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
 
 fn max_answer_failure(limits: &smith_events::Limits) -> AnswerFailure {
     AnswerFailure {
+        dropped: Some(false),
+        ended: Some(smith_events::AgentExit::Code(i64::MIN)),
+        turn: Some(u64::MAX),
         class: AnswerClass::Unknown(payload(limits.string)),
         completion: Some(max_completion_failure(limits)),
         account: Some(u64::MAX),

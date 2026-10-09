@@ -2,7 +2,7 @@
 //! Contract: protocol/events.md, section 6. No stream state is retained.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
     CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
     Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
     Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
@@ -581,6 +581,8 @@ fn read_answer_class(tokens: &[Token], limits: &Limits) -> Result<AnswerClass, E
         b"budget" => AnswerClass::Budget,
         b"policy" => AnswerClass::Policy,
         b"cancelled" => AnswerClass::Cancelled,
+        b"agent" => AnswerClass::Agent,
+        b"host" => AnswerClass::Host,
         b"stale" => AnswerClass::Stale,
         b"transcript" => AnswerClass::Transcript,
         b"busy" => AnswerClass::Busy,
@@ -755,9 +757,34 @@ fn read_completion_failure(tokens: &[Token], limits: &Limits) -> Result<Completi
     })
 }
 
+fn read_agent_exit(tokens: &[Token]) -> Result<AgentExit, Error> {
+    object(tokens)?;
+    match field(tokens, b"code")? {
+        Some(code) => {
+            if field(tokens, b"signal")?.is_some() {
+                return Err(Error::Shape);
+            }
+            Ok(AgentExit::Code(signed(code)?))
+        }
+        None => Ok(AgentExit::Signal(unsigned(required(tokens, b"signal")?)?)),
+    }
+}
+
 fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailure, Error> {
     object(tokens)?;
     Ok(AnswerFailure {
+        dropped: match field(tokens, b"dropped")? {
+            Some(item) => Some(boolean(item)?),
+            None => None,
+        },
+        ended: match field(tokens, b"ended")? {
+            Some(item) => Some(read_agent_exit(item)?),
+            None => None,
+        },
+        turn: match field(tokens, b"turn")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
         class: read_answer_class(required(tokens, b"class")?, limits)?,
         completion: match field(tokens, b"completion")? {
             Some(item) => Some(read_completion_failure(item, limits)?),

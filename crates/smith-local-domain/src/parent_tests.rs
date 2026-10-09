@@ -33,6 +33,44 @@ fn started_binds_the_handle_and_admission_keeps_an_empty_person_queue() {
 }
 
 #[test]
+fn the_first_drop_cause_survives_store_failure_and_the_childs_later_fault() {
+    for store_first in [false, true] {
+        let (mut domain, env, mut out) = running(crate::tests::config());
+        let failed_store = Event::StoreFailed { turn: Some(2), reason: crate::StoreFailure::Write };
+        if store_first {
+            crate::step(&mut domain, &env, failed_store, &mut out);
+            crate::step(&mut domain, &env, Event::Drop, &mut out);
+        } else {
+            crate::step(&mut domain, &env, Event::Drop, &mut out);
+            crate::step(&mut domain, &env, failed_store, &mut out);
+        }
+        let cause = if store_first {
+            crate::EndCause::Host { turn: Some(2), reason: crate::StoreFailure::Write }
+        } else {
+            crate::EndCause::Cancelled
+        };
+        assert_eq!(domain.end_cause(), Some(cause));
+        parent_request(
+            &mut domain, &env,
+            parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Exited }, &mut out,
+        );
+        parent_request(
+            &mut domain, &env,
+            parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() }, &mut out,
+        );
+        assert_eq!(domain.end_cause(), Some(cause), "later child terminals cannot replace the cause");
+        let mut status = None;
+        for _ in 0..crate::max_out(&env.limits) {
+            let Some(request) = out.pop() else { break };
+            if let Request::Exit { status: value } = request {
+                status = Some(value);
+            }
+        }
+        assert_eq!(status, Some(if store_first { crate::ExitStatus::Failed } else { crate::ExitStatus::Interrupted }));
+    }
+}
+
+#[test]
 fn waiting_and_both_long_notices_reach_the_person() {
     let notices = [
         (parent::Request::Waiting { client: Token::new(1), read: None }, b"Waiting for a message".as_slice()),

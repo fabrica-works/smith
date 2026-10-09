@@ -113,7 +113,14 @@ fn an_inline_run_that_ignores_its_cancel_is_dropped_at_its_grace_with_everything
     world.run();
     world.settled();
     assert!(world.seen[&Token::new(1)].answer.is_none(), "dropped root hears no terminal");
-    assert_eq!(world.observations.iter().filter(|fact| matches!(fact.kind, smith_inline_agent::FactKind::Dropped { .. })).count(), 1);
+    assert_eq!(
+        world
+            .observations
+            .iter()
+            .filter(|fact| matches!(fact.kind, smith_inline_agent::FactKind::Dropped { .. }))
+            .count(),
+        1
+    );
 }
 
 #[test]

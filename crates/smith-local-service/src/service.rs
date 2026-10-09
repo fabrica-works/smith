@@ -286,6 +286,18 @@ impl Service {
         self.local_events.push(event);
     }
 
+    /// First local cause of an unanswering run, kept through effects settlement.
+    #[must_use]
+    pub const fn end_cause(&self) -> Option<local::EndCause> {
+        self.local.end_cause()
+    }
+
+    /// Bounded chat name for the final operator line.
+    #[must_use]
+    pub fn chat_name(&self) -> &[u8] {
+        self.local.chat_name()
+    }
+
     /// Feed one standard-input byte to the bounded line translator.
     pub fn feed(&mut self, byte: u8) {
         self.terminal.feed(byte, &mut self.terminal_events);

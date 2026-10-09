@@ -140,6 +140,8 @@ pub enum ExitStatus {
     Success,
     /// A required store or account operation failed.
     Failed,
+    /// The run was dropped before answering at the person's ask or after cancellation grace.
+    Interrupted,
 }
 
 /// One event from the person or a typed lower boundary.

@@ -45,6 +45,7 @@ pub enum Ending {
     Change { before: Vec<u8> },
     Unavailable,
     HostFailure,
+    Dropped,
 }
 
 /// Evidence handed to the shared judgment kit, never internal process cells.
@@ -112,6 +113,7 @@ impl Expectations for Meeting {
                     Ending::Change { .. } => b"Change delivered",
                     Ending::Unavailable => b"account is unavailable",
                     Ending::HostFailure => b"could not be kept: write failed",
+                    Ending::Dropped => b"Run dropped",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
                     judge.check(
@@ -120,10 +122,16 @@ impl Expectations for Meeting {
                     );
                 } else if matches!(self.ending, Ending::HostFailure) {
                     judge.check(self.activation.is_some() && !self.shown, "failed store owns the terminal failure");
+                } else if matches!(self.ending, Ending::Dropped) {
+                    judge.check(self.activation.is_some() && !self.answered && !self.shown, "dropped run never answered");
                 } else if self.require_facts {
                     judge.check(self.shown && self.answered, "the invocation actually answered and showed it");
                 }
-                let code = if matches!(self.ending, Ending::HostFailure) { 1 } else { 0 };
+                let code = match self.ending {
+                    Ending::HostFailure => 1,
+                    Ending::Dropped => 130,
+                    Ending::Report(_) | Ending::Cancelled | Ending::Change { .. } | Ending::Unavailable => 0,
+                };
                 judge.check(exit == Some(kernel::Exit::Code(code)), "shell exit matches the host terminal");
                 judge.check(
                     if matches!(self.ending, Ending::Unavailable) { queries == 0 } else { queries > 0 },
@@ -131,7 +139,9 @@ impl Expectations for Meeting {
                 );
                 let start = b"smith: local host started; worst case ";
                 let diagnostic = if matches!(self.ending, Ending::HostFailure) {
-                    errors.strip_suffix(b"smith: local chat ended with a failure\n")
+                    errors.strip_suffix(b"smith: run failed: chat main: turn 2 could not be kept: write failed\n")
+                } else if matches!(self.ending, Ending::Dropped) {
+                    errors.strip_suffix(b"smith: interrupted: the run was dropped before it answered\n")
                 } else {
                     Some(errors.as_slice())
                 };
@@ -289,6 +299,8 @@ pub struct Run {
     token_directory: std::path::PathBuf,
     interrupt_on_query: bool,
     interrupted: bool,
+    drop_after_cancel: bool,
+    drop_at: Option<Time>,
     facts: usize,
     saved_before_query: bool,
     reviewed: bool,
@@ -322,6 +334,8 @@ impl Run {
             token_directory,
             interrupt_on_query,
             interrupted: false,
+            drop_after_cancel: false,
+            drop_at: None,
             facts: 0,
             saved_before_query: false,
             reviewed: false,
@@ -337,6 +351,13 @@ impl Run {
         self.failed_turn = Some(directory.join(format!("{number:010}.turn")));
     }
 }
+impl Run {
+    /// Ask for a second signal after the first signal reaches the shared schedule.
+    pub fn drop_after_cancel(&mut self) {
+        self.drop_after_cancel = true;
+    }
+}
+
 impl skein_world::Referee<crate::process::Proc> for Run {
     fn act(&mut self, now: Time, procs: &mut [crate::process::Proc]) {
         use crate::process::Proc;
@@ -371,9 +392,16 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         for proc in procs {
             match proc {
                 Proc::Terminal(t) => {
+                    if self.drop_at.is_some_and(|at| at <= now) {
+                        self.drop_at = None;
+                        t.interrupt();
+                    }
                     if self.interrupt_on_query && query && !self.interrupted {
                         t.interrupt();
                         self.interrupted = true;
+                        if self.drop_after_cancel {
+                            self.drop_at = Some(now.saturating_add(Duration::from_nanos(1)));
+                        }
                     }
                 }
                 Proc::Peer(peer) => {
@@ -480,7 +508,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         }
     }
     fn next_deadline(&self) -> Option<Time> {
-        [self.next_act, self.meeting.next_deadline(), self.end.filter(|_| !self.reviewed)].into_iter().flatten().min()
+        [self.next_act, self.drop_at, self.meeting.next_deadline(), self.end.filter(|_| !self.reviewed)].into_iter().flatten().min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         (self.end.is_some_and(|end| now >= end) && !self.reviewed)
