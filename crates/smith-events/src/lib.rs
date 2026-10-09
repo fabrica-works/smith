@@ -23,7 +23,7 @@ pub use records::{
     MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
     Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
     RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
-    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 pub use write::write;
 

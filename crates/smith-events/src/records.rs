@@ -129,6 +129,19 @@ pub enum ConversationEnd {
     Unknown(Box<[u8]>),
 }
 
+/// Provider tool-selection metadata the stream producer sends (protocol/events.md, section 3.5).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ToolChoice {
+    /// The provider may select tools automatically.
+    Auto,
+    /// The provider is asked to answer without tools.
+    None,
+    /// The provider may choose only among the specified tools.
+    Only,
+    /// A value this reader does not know, retained as UTF-8.
+    Unknown(Box<[u8]>),
+}
+
 /// `Outcome` classification sent by a stream producer.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Outcome {
@@ -713,6 +726,7 @@ pub struct ResponseStarted {
     pub model: Model,
     pub messages: u64,
     pub output_tokens: u64,
+    pub tool_choice: ToolChoice,
     pub prompt: Option<Prompt>,
 }
 

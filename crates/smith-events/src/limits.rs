@@ -274,6 +274,7 @@ fn heap_conversation_closed(limits: &Limits) -> Option<u64> {
 
 fn heap_response_started(limits: &Limits) -> Option<u64> {
     let mut length = 0_u64;
+    length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(heap_model(limits)?)?;
     length = length.checked_add(heap_prompt(limits)?)?;
     Some(length)
@@ -722,6 +723,7 @@ fn size_response_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(size_model(capture, limits)?)?;
     length = length.checked_add(12)?.checked_add(20_u64)?;
     length = length.checked_add(17)?.checked_add(20_u64)?;
+    length = length.checked_add(15)?.checked_add(u64::from(limits.string.max(4)).checked_mul(6)?.checked_add(2)?)?;
     if *capture == Capture::Everything {
         length = length.checked_add(10)?.checked_add(size_prompt(capture, limits)?)?;
     }

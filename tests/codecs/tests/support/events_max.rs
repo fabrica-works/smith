@@ -7,8 +7,8 @@ use smith_events::{
     ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass,
     Family, Field, Form, Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity,
     Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult, RunStarted,
-    SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta, ToolCompleted,
-    ToolStarted, Tools, Usage, Verdict, Versions,
+    SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta, ToolChoice,
+    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn payload(length: u32) -> Box<[u8]> {
@@ -230,6 +230,7 @@ fn max_response_started(limits: &smith_events::Limits) -> ResponseStarted {
         model: max_model(limits),
         messages: u64::MAX,
         output_tokens: u64::MAX,
+        tool_choice: ToolChoice::Unknown(payload(limits.string)),
         prompt: Some(max_prompt(limits)),
     }
 }

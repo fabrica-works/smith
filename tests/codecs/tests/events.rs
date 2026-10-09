@@ -28,6 +28,48 @@ fn every_record_and_listed_value_reads_back_to_its_written_values() {
 }
 
 #[test]
+fn response_tool_choice_is_metadata_with_bounded_unknown_values_and_a_required_string() {
+    let base = r#"{"v":1,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
+    for (spelling, expected) in [
+        ("auto", smith_events::ToolChoice::Auto),
+        ("none", smith_events::ToolChoice::None),
+        ("only", smith_events::ToolChoice::Only),
+        ("future🌍", smith_events::ToolChoice::Unknown("future🌍".as_bytes().into())),
+    ] {
+        let line = base.replace("\"tool_choice\":\"auto\"", &format!("\"tool_choice\":\"{spelling}\""));
+        let record = read(line.as_bytes(), &limits()).expect("independent wire").expect("response");
+        let Event::ResponseStarted(response) = &record.event else { panic!("response") };
+        assert_eq!(response.tool_choice, expected);
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let encoded = write(&record, &capture, &limits()).expect("bounded metadata").expect("response");
+            assert_eq!(core::str::from_utf8(&encoded).expect("UTF-8").trim_end(), line);
+            assert_eq!(read(&encoded, &limits()).expect("read"), Some(record.clone()));
+        }
+    }
+    for replacement in ["", ",\"tool_choice\":null", ",\"tool_choice\":0", ",\"tool_choice\":[]"] {
+        let malformed = base.replace(",\"tool_choice\":\"auto\"", replacement);
+        assert_eq!(read(malformed.as_bytes(), &limits()), Err(Error::Shape));
+    }
+    let tiny = Limits { string: 1, ..limits() };
+    let known = read(base.as_bytes(), &limits()).expect("known metadata").expect("response");
+    assert!(write(&known, &Capture::None, &tiny).expect("known spelling is not payload").is_some());
+    // The reader's string cap also admits the existing response.started kind.
+    let bounded = Limits { string: 16, ..limits() };
+    let exact = base.replace("\"tool_choice\":\"auto\"", "\"tool_choice\":\"xxxxxxxxxxxxxxxx\"");
+    let record = read(exact.as_bytes(), &bounded).expect("exact unknown cap").expect("response");
+    assert!(write(&record, &Capture::None, &bounded).expect("exact unknown cap").is_some());
+    let too_large = exact.replace("xxxxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxxx");
+    assert_eq!(read(too_large.as_bytes(), &bounded), Err(Error::Limits));
+    let mut record = record;
+    let Event::ResponseStarted(response) = &mut record.event else { panic!("response") };
+    response.tool_choice = smith_events::ToolChoice::Unknown(b"xxxxxxxxxxxxxxxxx".as_slice().into());
+    assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Limits));
+    let Event::ResponseStarted(response) = &mut record.event else { panic!("response") };
+    response.tool_choice = smith_events::ToolChoice::Unknown([255].as_slice().into());
+    assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Text));
+}
+
+#[test]
 fn capture_filters_only_content_fields_and_live_text() {
     let records = fixtures::samples();
     for (_, record, _) in records {

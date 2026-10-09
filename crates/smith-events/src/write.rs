@@ -9,7 +9,7 @@ use crate::records::{
     MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
     Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
     RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
-    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -198,6 +198,15 @@ fn write_conversation_end(json: &mut Encoder, value: &ConversationEnd, _capture:
         ConversationEnd::Transcript => json.string(b"transcript"),
         ConversationEnd::Overflow => json.string(b"overflow"),
         ConversationEnd::Unknown(text) => json.string(text),
+    }
+}
+
+fn write_tool_choice(json: &mut Encoder, value: &ToolChoice) {
+    match value {
+        ToolChoice::Auto => json.string(b"auto"),
+        ToolChoice::None => json.string(b"none"),
+        ToolChoice::Only => json.string(b"only"),
+        ToolChoice::Unknown(text) => json.string(text),
     }
 }
 
@@ -1139,6 +1148,10 @@ fn validate_conversation_closed(value: &ConversationClosed, limits: &Limits) -> 
 
 fn validate_response_started(value: &ResponseStarted, limits: &Limits) -> Result<(), Error> {
     validate_model(&value.model, limits)?;
+    match &value.tool_choice {
+        ToolChoice::Auto | ToolChoice::None | ToolChoice::Only => {}
+        ToolChoice::Unknown(text) => check_text(text, limits.string)?,
+    }
 
     if let Some(item) = &value.prompt {
         validate_prompt(item, limits)?;
@@ -1528,6 +1541,8 @@ fn encode_response_started(json: &mut Encoder, value: &ResponseStarted, capture:
     json.unsigned(value.messages);
     json.key(b"output_tokens");
     json.unsigned(value.output_tokens);
+    json.key(b"tool_choice");
+    write_tool_choice(json, &value.tool_choice);
     if *capture == Capture::Everything
         && let Some(item) = &value.prompt
     {

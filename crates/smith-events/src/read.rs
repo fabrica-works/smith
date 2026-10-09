@@ -9,7 +9,7 @@ use crate::records::{
     MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
     Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
     RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
-    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -430,6 +430,21 @@ fn read_conversation_end(tokens: &[Token], limits: &Limits) -> Result<Conversati
                 return Err(Error::Limits);
             }
             ConversationEnd::Unknown(value)
+        }
+    })
+}
+
+fn read_tool_choice(tokens: &[Token], limits: &Limits) -> Result<ToolChoice, Error> {
+    let value = text(tokens, limits.string.max(64))?;
+    Ok(match value.as_ref() {
+        b"auto" => ToolChoice::Auto,
+        b"none" => ToolChoice::None,
+        b"only" => ToolChoice::Only,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            ToolChoice::Unknown(value)
         }
     })
 }
@@ -1061,6 +1076,7 @@ fn read_response_started(tokens: &[Token], limits: &Limits) -> Result<ResponseSt
         model: read_model(required(tokens, b"model")?, limits)?,
         messages: unsigned(required(tokens, b"messages")?)?,
         output_tokens: unsigned(required(tokens, b"output_tokens")?)?,
+        tool_choice: read_tool_choice(required(tokens, b"tool_choice")?, limits)?,
         prompt: match field(tokens, b"prompt")? {
             Some(item) => Some(read_prompt(item, limits)?),
             None => None,

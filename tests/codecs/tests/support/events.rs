@@ -6,8 +6,8 @@ use smith_events::{
     CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
     Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
     Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted,
+    ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn value_capture(name: &str, spelling: &str) -> Capture {
@@ -499,6 +499,7 @@ fn value_response_started(name: &str, spelling: &str) -> ResponseStarted {
         model: value_model(name, spelling),
         messages: u64::MAX,
         output_tokens: u64::MAX,
+        tool_choice: ToolChoice::Auto,
         prompt: Some(value_prompt(name, spelling)),
     }
 }
@@ -1526,6 +1527,15 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         Record { t_ms: 0, event: Event::CheckCompleted(check) },
         Capture::Everything,
     ));
+    for (name, choice) in [
+        ("tool_choice_none", ToolChoice::None),
+        ("tool_choice_only", ToolChoice::Only),
+        ("tool_choice_unknown", ToolChoice::Unknown("future🌍".as_bytes().into())),
+    ] {
+        let mut response = value_response_started("Capture", "everything");
+        response.tool_choice = choice;
+        samples.push((name, Record { t_ms: u64::MAX, event: Event::ResponseStarted(response) }, Capture::Everything));
+    }
     samples.extend(budget_samples());
     samples.extend(message_samples());
     samples.extend(samples_0());
