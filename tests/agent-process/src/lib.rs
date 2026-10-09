@@ -284,7 +284,7 @@ pub fn charter() -> Box<[u8]> {
     llm.output = 1024;
     llm.prices = smith_charter::Prices::new(
         &smith_charter::CEILINGS,
-        smith_charter::PricesParts { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+        smith_charter::PricesParts { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
     )
     .expect("prices");
     parts.main = smith_charter::Llm::new(&smith_charter::CEILINGS, llm).expect("model");

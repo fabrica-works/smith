@@ -38,7 +38,13 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
         },
         budget: run::Budget { turns: 512, spend: 25_000_000, time: Duration::from_secs(3600) },
         llm: run::charter::Llm {
-            prices: run::Prices { input: 1_250_000, cached: 125_000, output: 10_000_000, unit: 1_000_000 },
+            prices: run::Prices {
+                input: 1_250_000,
+                cached: 125_000,
+                cache_write: None,
+                output: 10_000_000,
+                unit: 1_000_000,
+            },
             account: 0,
             endpoint: run::charter::Endpoint(1),
             model: b"gpt-5".as_slice().into(),

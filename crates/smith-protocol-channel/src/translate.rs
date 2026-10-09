@@ -360,6 +360,7 @@ fn llm(value: &wire::Llm, endpoints: &Endpoints) -> Result<run::charter::Llm, ru
         prices: run::Prices {
             input: prices.input(),
             cached: prices.cached(),
+            cache_write: *prices.cache_write(),
             output: prices.output(),
             unit: prices.unit(),
         },

@@ -23,21 +23,22 @@ struct Rate {
     model: &'static [u8],
     input: u64,
     cached: u64,
+    cache_write: Option<u64>,
     output: u64,
     unit: u32,
 }
 
 const MODEL_RATES: [Rate; 3] = [
-    Rate { model: b"fake-1", input: 2, cached: 3, output: 5, unit: 7 },
-    Rate { model: b"fake-2", input: 7, cached: 11, output: 13, unit: 10 },
-    Rate { model: b"fake-3", input: 17, cached: 19, output: 23, unit: 29 },
+    Rate { model: b"fake-1", input: 2, cached: 3, cache_write: Some(29), output: 5, unit: 7 },
+    Rate { model: b"fake-2", input: 7, cached: 11, cache_write: Some(31), output: 13, unit: 10 },
+    Rate { model: b"fake-3", input: 17, cached: 19, cache_write: None, output: 23, unit: 29 },
 ];
 fn charge(usage: llm::Usage, rate: Rate) -> u64 {
     // One combined numerator is rounded once. This oracle uses no domain
     // price method, accumulated spend, child bill or saved Turn value.
-    let numerator = (u128::from(usage.input_tokens.expect("scripted peer supplies count"))
-        + u128::from(usage.cache_write_tokens.expect("scripted peer supplies count")))
-        * u128::from(rate.input)
+    let numerator = u128::from(usage.input_tokens.expect("scripted peer supplies count")) * u128::from(rate.input)
+        + u128::from(usage.cache_write_tokens.expect("scripted peer supplies count"))
+            * u128::from(rate.cache_write.unwrap_or(rate.input))
         + u128::from(usage.cache_read_tokens.expect("scripted peer supplies count")) * u128::from(rate.cached)
         + u128::from(usage.output_tokens.expect("scripted peer supplies count")) * u128::from(rate.output);
     let denominator = u128::from(rate.unit);
@@ -108,7 +109,13 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
 
     let model = |rate: Rate| Llm {
-        prices: run::Prices { input: rate.input, cached: rate.cached, output: rate.output, unit: rate.unit },
+        prices: run::Prices {
+            input: rate.input,
+            cached: rate.cached,
+            cache_write: rate.cache_write,
+            output: rate.output,
+            unit: rate.unit,
+        },
         account: 0,
         endpoint: Endpoint(0),
         model: rate.model.into(),

@@ -382,7 +382,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
     Box::new(smith_domain_session::record::Opening {
         spec,
         dialect: 2,
-        prices: smith_domain_session::record::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: smith_domain_session::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
         budget: 1,
         transcript: None,
         answered: Box::default(),
@@ -490,7 +490,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         opening: Box::new(record::Opening {
             spec,
             dialect: 2,
-            prices: record::Prices { input: 1, cached: 1, output: 1, unit: 1 },
+            prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
             budget: 1,
             transcript: None,
             answered: Box::default(),
@@ -594,7 +594,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
             opening: Box::new(record::Opening {
                 spec,
                 dialect: 2,
-                prices: record::Prices { input: 1, cached: 1, output: 1, unit: 1 },
+                prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
                 budget: 1,
                 transcript: Some(history),
                 answered: Box::default(),
@@ -682,7 +682,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
             opening: Box::new(record::Opening {
                 spec,
                 dialect: 2,
-                prices: record::Prices { input: 1, cached: 1, output: 1, unit: 1 },
+                prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
                 budget: 1,
                 transcript: Some(history),
                 answered: Box::default(),

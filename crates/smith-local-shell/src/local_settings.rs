@@ -35,6 +35,9 @@ pub struct Model {
     pub idle: u64,
     pub input_price: u64,
     pub cached_price: u64,
+    /// Separate positive cache-write rate; omitted writes use `input_price`.
+    #[serde(default)]
+    pub cache_write_price: Option<u64>,
     pub output_price: u64,
     pub price_unit: u32,
 }
@@ -205,6 +208,7 @@ pub fn policy(
             prices: run::Prices {
                 input: model.input_price,
                 cached: model.cached_price,
+                cache_write: model.cache_write_price,
                 output: model.output_price,
                 unit: model.price_unit,
             },
@@ -327,6 +331,7 @@ fn check_prices(settings: &Settings) -> Result<(), String> {
         for (key, value) in [
             ("input_price", model.input_price),
             ("cached_price", model.cached_price),
+            ("cache_write_price", model.cache_write_price.unwrap_or(model.input_price)),
             ("output_price", model.output_price),
         ] {
             if value == 0 {
@@ -510,7 +515,7 @@ mod tests {
 
     #[test]
     fn a_zero_model_rate_names_its_settings_key_before_agent_preparation() {
-        for key in ["input_price", "cached_price", "output_price"] {
+        for key in ["input_price", "cached_price", "cache_write_price", "output_price"] {
             let path = std::env::temp_dir().join(format!("smith-zero-price-{}-{key}", std::process::id()));
             let mut document = serde_json::json!({"agent":{},"chat":"one","instructions":"Assist",
                 "models":[{"endpoint":"main","name":"gpt-5","window":8192,"output":32,"reasoning_item":2048,
@@ -594,6 +599,7 @@ mod tests {
                 idle: 30_000,
                 input_price: 1_250_000,
                 cached_price: 125_000,
+                cache_write_price: Some(2_500_000),
                 output_price: 10_000_000,
                 price_unit: 1_000_000,
             }],
@@ -628,11 +634,12 @@ mod tests {
             let refused = policy(&exceeded, &endpoints, agent_limits).err().expect("past ceiling");
             assert!(refused.contains(&format!("budget.{key}")) && refused.contains(&most.to_string()), "{refused}");
         }
-        for key in ["input_price", "cached_price", "output_price"] {
+        for key in ["input_price", "cached_price", "cache_write_price", "output_price"] {
             let mut unpriced = settings.clone();
             match key {
                 "input_price" => unpriced.models[0].input_price = 0,
                 "cached_price" => unpriced.models[0].cached_price = 0,
+                "cache_write_price" => unpriced.models[0].cache_write_price = Some(0),
                 "output_price" => unpriced.models[0].output_price = 0,
                 _ => unreachable!("test keys"),
             }
@@ -647,6 +654,7 @@ mod tests {
         assert!(!encoded.is_empty());
         let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, &endpoints).expect("version two charter");
         assert_eq!((decoded.llm.window, decoded.llm.output), (8192, 32));
+        assert_eq!(decoded.llm.prices.cache_write, settings.models[0].cache_write_price);
         assert!(!decoded.grants.agents);
         settings.sub_agents = true;
         assert_sub_agent_grant(&settings, &endpoints, &agent_limits, &decoded);

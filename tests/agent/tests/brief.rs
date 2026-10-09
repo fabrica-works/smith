@@ -53,7 +53,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
     use run::charter::{Brief, Endpoint, Grants, Llm, Section, Tools};
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
     let llm = Llm {
-        prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+        prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         dialect: 1,
         account: 0,
         endpoint: Endpoint(0),

@@ -162,7 +162,7 @@ fn charter(context_bytes: u64) -> Charter {
         },
         budget: run::Budget { turns: 12, ..TIGHT.run.budget },
         llm: Llm {
-            prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
             model: (*b"m").into(),

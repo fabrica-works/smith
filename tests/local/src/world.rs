@@ -602,7 +602,7 @@ impl World {
                 idle: Duration::from_secs(30),
             }]),
             models: Box::new([run::charter::Llm {
-                prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+                prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                 dialect: 1,
                 account: 0,
                 endpoint: run::charter::Endpoint(0),

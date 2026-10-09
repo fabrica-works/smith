@@ -60,7 +60,7 @@ fn config() -> Config {
             instructions: Box::from(&b"Assist"[..]),
             brief: run::charter::Brief { sections: Box::new([]) },
             models: Box::new([run::charter::Llm {
-                prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1 },
+                prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
                 dialect: 1,
                 account: 7,
                 endpoint: Endpoint(4),
@@ -387,7 +387,7 @@ fn colocated_config() -> (Config, smith_agent_service::Config) {
     config.local.accounts = Box::new([0]);
     config.local.models[0].account = 0;
     config.local.models[0].endpoint = Endpoint(0);
-    config.local.models[0].prices = run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 };
+    config.local.models[0].prices = run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 };
     config.local.models[0].output = 1024;
     config.local.budget.turns = 1;
     config.local.models[0].model = Box::from(b"fake".as_slice());

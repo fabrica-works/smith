@@ -455,7 +455,7 @@ fn charter() -> Charter {
         outcome: OutcomeSpec { change: None, verdicts: Box::new([rule(b"approve")]), report: None, failure: None },
         budget: BUDGET,
         llm: Llm {
-            prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
@@ -1805,7 +1805,7 @@ fn scalar_charter() -> Charter {
     let selected = charter();
     Charter {
         budget: run::Budget { spend: 100, ..selected.budget },
-        llm: Llm { prices: run::Prices { input: 1, cached: 2, output: 3, unit: 1 }, ..selected.llm },
+        llm: Llm { prices: run::Prices { input: 1, cached: 2, cache_write: None, output: 3, unit: 1 }, ..selected.llm },
         ..selected
     }
 }
@@ -1904,7 +1904,10 @@ fn a_provider_charge_above_its_reserved_maximum_fails_without_recording_it() {
 #[test]
 fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
     let selected = Charter {
-        llm: Llm { prices: run::Prices { input: u64::MAX, cached: 1, output: 1, unit: 1 }, ..scalar_charter().llm },
+        llm: Llm {
+            prices: run::Prices { input: u64::MAX, cached: 1, cache_write: None, output: 1, unit: 1 },
+            ..scalar_charter().llm
+        },
         ..scalar_charter()
     };
     let (harness, emitted) = scalar_prepared(selected);
@@ -2136,7 +2139,7 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
             budget: run::Budget { spend: 100_000, ..selected.budget },
             llm: Llm {
                 output: 10,
-                prices: run::Prices { input: 1, cached: 1, output: 3_000_000, unit: 1_000_000 },
+                prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 3_000_000, unit: 1_000_000 },
                 ..selected.llm
             },
             ..selected

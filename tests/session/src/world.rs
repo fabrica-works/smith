@@ -1813,7 +1813,7 @@ impl World {
             opening: Box::new(agent::record::Opening {
                 spec,
                 dialect: 2,
-                prices: agent::record::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+                prices: agent::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
                 budget: 1,
                 transcript: None,
                 answered: Box::default(),

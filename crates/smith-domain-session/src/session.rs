@@ -549,7 +549,9 @@ pub fn reserve_completion(
 
 fn reservation(conversation: &Conversation, input_bytes: u64, allowance: u64, max_tokens: u32) -> Option<u64> {
     let input_tokens = input_bytes.checked_add(allowance)?;
-    let most = conversation.recording.prices.price(Usage {
+    let prices = conversation.recording.prices;
+    let prices = crate::record::Prices { input: prices.reserved_input(), ..prices };
+    let most = prices.price(Usage {
         input_tokens: Some(input_tokens),
         output_tokens: Some(u64::from(max_tokens)),
         ..Usage::ZERO

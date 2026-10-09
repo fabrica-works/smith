@@ -756,6 +756,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
             prices: session::record::Prices {
                 input: prices.input,
                 cached: prices.cached,
+                cache_write: prices.cache_write,
                 output: prices.output,
                 unit: prices.unit,
             },

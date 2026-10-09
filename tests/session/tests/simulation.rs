@@ -456,7 +456,8 @@ fn the_token_budgets_end_a_session_after_the_turn_that_uses_them_up() {
     let mut world = recorded::World::new(16, 256);
     let mut opening = recorded::opening(None, 100);
     opening.spec.budget.input = 30;
-    opening.prices = smith_domain_session::record::Prices { input: 0, cached: 0, output: 0, unit: 1 };
+    opening.prices =
+        smith_domain_session::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 };
     world.open(opening);
     for _ in 0..3 {
         world.complete(

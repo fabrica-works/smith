@@ -301,7 +301,7 @@ pub(crate) fn charter() -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
-            prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+            prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
@@ -536,10 +536,11 @@ fn drawn_budget_ceilings_admit_the_boundary_and_refuse_each_part_before_effects(
 
 #[test]
 fn every_main_and_child_model_rate_is_positive_before_any_effect() {
-    let positive = crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 };
+    let positive = crate::Prices { input: 1, cached: 1000, cache_write: Some(3), output: 1, unit: 1_000_000 };
     for (prices, rate) in [
         (crate::Prices { input: 0, ..positive }, crate::Rate::Input),
         (crate::Prices { cached: 0, ..positive }, crate::Rate::Cached),
+        (crate::Prices { cache_write: Some(0), ..positive }, crate::Rate::CacheWrite),
         (crate::Prices { output: 0, ..positive }, crate::Rate::Output),
     ] {
         for main in [true, false] {
@@ -587,7 +588,7 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
         },
     ]);
     let llm = Llm {
-        prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+        prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),
@@ -1450,7 +1451,7 @@ fn families(inspect: bool, modify: bool, agents: bool) -> crate::charter::Famili
 fn agents() -> Charter {
     let grants = Grants { agents: true, ..charter().grants };
     let models = Box::new([Llm {
-        prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+        prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),

@@ -35,3 +35,14 @@ fn llm_goldens_keep_the_window_and_output_as_separate_quantities() {
     let value = Llm::decode(&CEILINGS, &mut Reader::new(smallest)).expect("smallest LLM entry");
     assert_eq!((value.window(), value.output()), (0, 0));
 }
+
+#[test]
+fn prices_goldens_keep_an_optional_separate_cache_write_rate() {
+    use smith_charter::v2::Prices;
+    let full = include_bytes!("../../../crates/smith-charter/golden/v2/record_prices_full.bin");
+    let decoded = Prices::decode(&CEILINGS, &mut Reader::new(full)).expect("full prices");
+    assert_eq!(*decoded.cache_write(), Some(u64::MAX));
+    let smallest = include_bytes!("../../../crates/smith-charter/golden/v2/record_prices_smallest.bin");
+    let decoded = Prices::decode(&CEILINGS, &mut Reader::new(smallest)).expect("smallest prices");
+    assert_eq!(*decoded.cache_write(), None, "absent write rate inherits input in the domain");
+}

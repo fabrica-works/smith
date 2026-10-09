@@ -9,7 +9,7 @@ use smith_domain_tools::{Authority, Effect, Grants};
 /// Integer prices used by the concrete transcript scenarios; pricing performs no live account lookup.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-pub const PRICES: record::Prices = record::Prices { input: 7, cached: 3, output: 11, unit: 10 };
+pub const PRICES: record::Prices = record::Prices { input: 7, cached: 3, cache_write: None, output: 11, unit: 10 };
 
 /// Fixed provider usage supplied by concrete transcript scenarios.
 ///

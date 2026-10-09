@@ -46,7 +46,7 @@ fn child_bill_that_does_not_fit_ends_without_a_turn() {
 fn price_overflow_rejects_the_completion_before_its_turn() {
     let mut world = World::new(43, 256);
     let mut spec = opening(None, u64::MAX);
-    spec.prices = record::Prices { input: u64::MAX, cached: 0, output: 0, unit: 1 };
+    spec.prices = record::Prices { input: u64::MAX, cached: 0, cache_write: None, output: 0, unit: 1 };
     world.open(spec);
     world.complete(text(), llm::Stop::EndTurn, llm::Usage { input_tokens: Some(2), ..llm::Usage::ZERO });
     assert_eq!(world.end, Some(End::PriceOverflow));
@@ -59,7 +59,7 @@ fn price_overflow_rejects_the_completion_before_its_turn() {
 fn raw_overflow_keeps_only_the_charged_completion() {
     let mut world = World::new(44, 256);
     let mut spec = opening(None, u64::MAX);
-    spec.prices = record::Prices { input: 0, cached: 0, output: 0, unit: 1 };
+    spec.prices = record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 };
     spec.spec.budget.input = u64::MAX;
     world.env.limits.budget = spec.spec.budget;
     world.open(spec);
@@ -97,7 +97,7 @@ fn unsent_budget_denial_settles_current_reservation() {
 fn zero_price_unit_is_rejected_before_a_request() {
     let mut world = World::new(46, 256);
     let mut spec = opening(None, 100);
-    spec.prices = record::Prices { input: 0, cached: 0, output: 0, unit: 0 };
+    spec.prices = record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 0 };
     world.open(spec);
     assert_eq!(world.end, Some(End::Invalid));
     assert!(world.prompts.is_empty() && world.spend.is_empty() && world.turns.is_empty());
@@ -126,7 +126,9 @@ fn a_completion_that_costs_less_than_its_maximum_returns_the_rest() {
     let owner = probe.delegated[0];
     probe.step(session::Event::Answered { owner, text: b"child".as_slice().into(), error: false, spent: 0 });
     let second_maximum = maximum(&probe);
-    let actual = record::Prices { input: 7, cached: 3, output: 11, unit: 10 }.price(usage).expect("priced usage");
+    let actual = record::Prices { input: 7, cached: 3, cache_write: None, output: 11, unit: 10 }
+        .price(usage)
+        .expect("priced usage");
     let budget = second_maximum.checked_add(actual).expect("small fixture budget");
     assert!(first_maximum <= budget);
     assert!(first_maximum.checked_add(second_maximum).expect("small fixture maximums") > budget);
@@ -218,4 +220,66 @@ fn reported_counts_after_an_unreported_turn_still_exhaust_the_token_budget() {
     assert_eq!(world.spend, [13, 15]);
     assert_eq!(world.terminal_usage, Some((2, llm::Usage::NONE)));
     world.close();
+}
+
+#[test]
+fn cache_writes_are_priced_at_their_own_rate() {
+    let mut world = World::new(703, 256);
+    let mut spec = opening(None, 1000);
+    spec.prices.cache_write = Some(31);
+    world.open(spec);
+    world.complete(text(), llm::Stop::EndTurn, USAGE);
+    assert_eq!(world.own_spend, [23], "(11*7 + 5*3 + 3*31 + 4*11)/10 rounded once");
+    world.step(session::Event::Continue {
+        session: world.session.expect("yielded session"),
+        content: b"again".as_slice().into(),
+    });
+    world.complete(text(), llm::Stop::EndTurn, USAGE);
+    assert_eq!(world.own_spend, [23, 46], "own spend is cumulative across completions");
+    assert_eq!(world.spend, [23, 46]);
+    assert_eq!(world.turns.last().expect("second turn").spent, 46);
+    assert_eq!(world.used, [USAGE, USAGE]);
+    world.close();
+}
+
+#[test]
+fn cache_write_charge_overflow_is_a_typed_end_without_a_turn() {
+    let mut world = World::new(704, 256);
+    let mut spec = opening(None, u64::MAX);
+    spec.prices = record::Prices { input: 0, cached: 0, cache_write: Some(u64::MAX), output: 0, unit: 1 };
+    world.open(spec);
+    world.complete(text(), llm::Stop::EndTurn, llm::Usage { cache_write_tokens: Some(2), ..llm::Usage::ZERO });
+    assert_eq!(world.end, Some(End::PriceOverflow));
+    assert!(world.spend.is_empty() && world.used.is_empty() && world.turns.is_empty());
+    assert_eq!(world.terminal_usage, Some((0, llm::Usage::ZERO)));
+    world.close();
+}
+
+#[test]
+fn a_fully_cached_completion_with_the_highest_cached_rate_fits_its_reservation() {
+    for cache_write in [None, Some(3)] {
+        let mut world = World::new(705, 256);
+        let mut spec = opening(None, u64::MAX);
+        spec.prices = record::Prices { input: 1, cached: 1000, cache_write, output: 1, unit: 1 };
+        world.open(spec);
+        let prompt = world.prompts.last().expect("actual pending completion");
+        let input = prompt.input_bytes().expect("bounded actual prompt") + world.env.limits.protocol_allowance;
+        let output = u64::from(prompt.max_tokens);
+        let owner = world.completing.expect("provider right owns the reservation");
+        let reserved = session::reserve_completion(&mut world.domain, owner, input, 0, prompt.max_tokens)
+            .expect("maximum fits the opening");
+        assert_eq!(reserved, input * 1000 + output, "each input byte can become a cached token");
+        let usage = llm::Usage {
+            input_tokens: Some(0),
+            output_tokens: Some(output),
+            cache_read_tokens: Some(input),
+            cache_write_tokens: Some(0),
+            reasoning_tokens: None,
+        };
+        world.complete(text(), llm::Stop::EndTurn, usage);
+        assert_eq!(world.own_spend, [input * 1000 + output]);
+        assert!(world.own_spend[0] <= reserved, "actual fully cached charge never exceeds the maximum");
+        assert_eq!(world.turns[0].usage, usage);
+        world.close();
+    }
 }

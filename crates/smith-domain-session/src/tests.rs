@@ -424,7 +424,7 @@ fn opening(spec: Spec) -> Box<crate::record::Opening> {
     Box::new(crate::record::Opening {
         spec,
         dialect: 1,
-        prices: crate::record::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: crate::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
         budget: 100,
         transcript: None,
         answered: Box::default(),
@@ -1820,7 +1820,7 @@ fn reserved_recorded_call(harness: &mut Harness) -> Token {
             opening: Box::new(crate::record::Opening {
                 spec: spec(),
                 dialect: 1,
-                prices: crate::record::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+                prices: crate::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
                 budget: 100,
                 transcript: None,
                 answered: Box::default(),
@@ -1841,7 +1841,7 @@ fn reserved_recorded_call(harness: &mut Harness) -> Token {
 fn reservation_prices_input_bytes_allowance_and_maximum_output_once() {
     let mut harness = Harness::new(LIMITS);
     let mut opening = opening(spec());
-    opening.prices = crate::record::Prices { input: 2, cached: 1, output: 3, unit: 10 };
+    opening.prices = crate::record::Prices { input: 2, cached: 1, cache_write: None, output: 3, unit: 10 };
     opening.budget = 4;
     step(&mut harness.domain, &harness.env, Event::Open { opener: Token::new(1), opening }, &mut harness.out);
     let Some(Request::Opened { session, .. }) = harness.out.pop() else { panic!("recorded opening") };
@@ -2101,7 +2101,7 @@ fn failed_retried_and_cancelled_facts_keep_one_response_number_and_step_times() 
 fn usage_fact_carries_the_exact_accepted_host_unit_charge() {
     let mut h = Harness::new(LIMITS);
     let mut opened = opening(spec());
-    opened.prices = crate::record::Prices { input: 7, cached: 3, output: 11, unit: 5 };
+    opened.prices = crate::record::Prices { input: 7, cached: 3, cache_write: None, output: 11, unit: 5 };
     let expected = opened.prices.price(USAGE).expect("price fits");
     step(&mut h.domain, &h.env, Event::Open { opener: Token::new(1), opening: opened }, &mut h.out);
     let Some(Request::Opened { session: owner, .. }) = h.next() else { panic!("session opens") };
@@ -2174,4 +2174,55 @@ fn the_openers_output_cap_replaces_the_old_fixed_token_ceiling() {
     let mut harness = Harness::new(LIMITS);
     let (_, prompt) = harness.open_with(1, Spec { output: 4097, ..spec() });
     assert_eq!(prompt.max_tokens, 4097);
+}
+
+#[test]
+fn cache_write_pricing_combines_all_four_rates_and_rounds_once_at_u64() {
+    use crate::record::Prices;
+    let rates = Prices { input: 1, cached: 2, cache_write: Some(3), output: 5, unit: 7 };
+    let usage = Usage {
+        input_tokens: Some(1),
+        output_tokens: Some(1),
+        cache_read_tokens: Some(1),
+        cache_write_tokens: Some(1),
+        reasoning_tokens: Some(1),
+    };
+    assert_eq!(rates.price(usage), Some(2), "11/7 rounds once; reasoning is already output");
+    assert_eq!(Prices { cache_write: None, ..rates }.price(usage), Some(2));
+    let rates = Prices { input: 0, cached: 0, cache_write: Some(u64::MAX), output: 0, unit: 1 };
+    assert_eq!(rates.price(Usage { cache_write_tokens: Some(1), ..Usage::ZERO }), Some(u64::MAX));
+    assert_eq!(rates.price(Usage { cache_write_tokens: Some(2), ..Usage::ZERO }), None);
+    let rates = Prices { input: u64::MAX, ..rates };
+    assert_eq!(
+        rates.price(Usage { input_tokens: Some(u64::MAX), cache_write_tokens: Some(u64::MAX), ..Usage::ZERO }),
+        None
+    );
+    assert_eq!(Prices { cache_write: Some(0), input: 0, ..rates }.price(Usage::ZERO), Some(0));
+}
+
+#[test]
+fn absent_cache_write_rate_charges_writes_at_input_once() {
+    let rates = crate::record::Prices { input: 7, cached: 3, cache_write: None, output: 11, unit: 10 };
+    let usage = Usage { input_tokens: Some(1), output_tokens: Some(1), cache_write_tokens: Some(3), ..Usage::ZERO };
+    assert_eq!(rates.price(usage), Some(4), "(7 + 21 + 11)/10");
+    assert_eq!(crate::record::Prices { cache_write: Some(7), ..rates }.price(usage), Some(4));
+    assert_eq!(crate::record::Prices { cache_write: Some(13), ..rates }.price(usage), Some(6));
+}
+
+#[test]
+fn completion_reservation_uses_the_highest_rate_for_every_input_kind() {
+    for (cached, cache_write, expected) in
+        [(1, None, 4), (1, Some(1), 4), (1, Some(11), 15), (11, Some(1), 15), (11, None, 15)]
+    {
+        let mut harness = Harness::new(LIMITS);
+        let mut opening = opening(spec());
+        opening.prices = crate::record::Prices { input: 2, cached, cache_write, output: 3, unit: 10 };
+        opening.budget = 15;
+        step(&mut harness.domain, &harness.env, Event::Open { opener: Token::new(1), opening }, &mut harness.out);
+        let Some(Request::Opened { session, .. }) = harness.out.pop() else { panic!("recorded opening") };
+        let (owner, _) = calling(harness.one());
+        assert_eq!(owner, session);
+        assert_eq!(crate::preview_reservation(&harness.domain, owner, 7, 5, 4), Some(expected));
+        assert_eq!(crate::reserve_completion(&mut harness.domain, owner, 7, 5, 4), Some(expected));
+    }
 }

@@ -2070,10 +2070,13 @@ impl World {
 // Independent outside scalar oracle from caller data and actual provider counts.
 fn observed_price(prices: run::Prices, usage: llm::Usage) -> Option<u64> {
     let denominator = u128::from(prices.unit);
-    let fresh = u128::from(usage.input_tokens.expect("scripted peer supplies count"))
-        .checked_add(u128::from(usage.cache_write_tokens.expect("scripted peer supplies count")))?;
+    let fresh = u128::from(usage.input_tokens.expect("scripted peer supplies count"));
     let numerator = fresh
         .checked_mul(u128::from(prices.input))?
+        .checked_add(
+            u128::from(usage.cache_write_tokens.expect("scripted peer supplies count"))
+                .checked_mul(u128::from(prices.cache_write.unwrap_or(prices.input)))?,
+        )?
         .checked_add(
             u128::from(usage.cache_read_tokens.expect("scripted peer supplies count"))
                 .checked_mul(u128::from(prices.cached))?,
@@ -2131,7 +2134,7 @@ fn configuration() -> agent::Config {
 fn main_model() -> run::charter::Llm {
     use run::charter::{Endpoint, Llm};
     Llm {
-        prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
+        prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),

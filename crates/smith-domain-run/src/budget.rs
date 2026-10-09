@@ -82,11 +82,14 @@ pub struct Share {
 /// rates or a zero unit before discovery; Session keeps its own charging policy.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Prices {
-    /// Fresh input and cache-write rate.
+    /// Fresh input rate.
     pub input: u64,
 
     /// Cache-read rate.
     pub cached: u64,
+
+    /// Separate cache-write rate; absent writes use `input`.
+    pub cache_write: Option<u64>,
 
     /// Output rate.
     pub output: u64,
@@ -193,6 +196,22 @@ impl Spend {
 }
 
 impl Prices {
+    /// The highest input, cached and cache-write rate, reserved before provider work.
+    #[must_use]
+    pub const fn reserved_input(self) -> u64 {
+        let highest = if self.cached > self.input { self.cached } else { self.input };
+        match self.cache_write {
+            Some(write) => {
+                if write > highest {
+                    write
+                } else {
+                    highest
+                }
+            }
+            None => highest,
+        }
+    }
+
     /// Refuse the first unpriced rate at the run's entrance; sessions remain generic.
     pub const fn check(self) -> Result<(), Rate> {
         if self.input == 0 {
@@ -200,6 +219,9 @@ impl Prices {
         }
         if self.cached == 0 {
             return Err(Rate::Cached);
+        }
+        if let Some(0) = self.cache_write {
+            return Err(Rate::CacheWrite);
         }
         if self.output == 0 {
             return Err(Rate::Output);

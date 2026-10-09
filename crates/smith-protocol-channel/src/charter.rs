@@ -208,6 +208,7 @@ fn llm(source: &run::charter::Llm, limits: &wire::v2::Limits, endpoints: &Endpoi
                 wire::PricesParts {
                     input: source.prices.input,
                     cached: source.prices.cached,
+                    cache_write: source.prices.cache_write,
                     output: source.prices.output,
                     unit: source.prices.unit,
                 },

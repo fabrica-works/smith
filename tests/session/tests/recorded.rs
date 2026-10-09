@@ -136,7 +136,7 @@ fn unit_budget_stops_after_the_crossing_turn_settles_and_child_counts_once() {
 fn pricing_rounds_the_combined_completion_and_rejects_overflow() {
     assert_eq!(recorded::PRICES.price(recorded::USAGE), Some(16));
     assert_eq!(
-        record::Prices { input: 1, cached: 1, output: 1, unit: 3 }.price(llm::Usage {
+        record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 3 }.price(llm::Usage {
             input_tokens: Some(1),
             output_tokens: Some(1),
             ..llm::Usage::ZERO
@@ -144,13 +144,13 @@ fn pricing_rounds_the_combined_completion_and_rejects_overflow() {
         Some(1)
     );
     assert_eq!(
-        record::Prices { input: u64::MAX, cached: 0, output: 0, unit: 1 }
+        record::Prices { input: u64::MAX, cached: 0, cache_write: None, output: 0, unit: 1 }
             .price(llm::Usage { input_tokens: Some(2), ..llm::Usage::ZERO }),
         None
     );
     let mut world = World::new(5, 256);
     let mut spec = opening(None, u64::MAX);
-    spec.prices = record::Prices { input: u64::MAX, cached: 0, output: 0, unit: 1 };
+    spec.prices = record::Prices { input: u64::MAX, cached: 0, cache_write: None, output: 0, unit: 1 };
     world.open(spec);
     world.complete(
         Box::new([llm::Block::Text { text: b"done".as_slice().into(), replay: None }]),

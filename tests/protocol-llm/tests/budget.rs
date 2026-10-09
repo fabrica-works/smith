@@ -127,7 +127,13 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
 
     let model = |rate: Rate| Llm {
-        prices: run::Prices { input: rate.input, cached: rate.cached, output: rate.output, unit: rate.unit },
+        prices: run::Prices {
+            input: rate.input,
+            cached: rate.cached,
+            cache_write: None,
+            output: rate.output,
+            unit: rate.unit,
+        },
         account: 0,
         endpoint: Endpoint(0),
         model: rate.model.into(),

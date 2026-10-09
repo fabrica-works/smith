@@ -40,7 +40,7 @@ pub(super) fn config() -> Config {
             idle: Duration::from_secs(30),
         }]),
         models: Box::new([run::charter::Llm {
-            prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1 },
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
             dialect: 1,
             account: 7,
             endpoint: Endpoint(4),
@@ -148,13 +148,13 @@ fn budget_and_rate_refusals_precede_agent_construction() {
         invalid.budget = budget;
         assert_eq!(Domain::new(invalid, &limits, 1).err(), Some(Invalid::Budget(run::BudgetRefusal::Ceiling(reason))));
     }
-    for rate in [run::Rate::Input, run::Rate::Cached, run::Rate::Output] {
+    for rate in [run::Rate::Input, run::Rate::Cached, run::Rate::CacheWrite, run::Rate::Output] {
         let mut invalid = config();
         match rate {
             run::Rate::Input => invalid.models[0].prices.input = 0,
             run::Rate::Cached => invalid.models[0].prices.cached = 0,
             run::Rate::Output => invalid.models[0].prices.output = 0,
-            run::Rate::CacheWrite => unreachable!("separate rate joins the charter in 07.3"),
+            run::Rate::CacheWrite => invalid.models[0].prices.cache_write = Some(0),
         }
         assert_eq!(Domain::new(invalid, &limits, 1).err(), Some(Invalid::Price(rate)));
     }

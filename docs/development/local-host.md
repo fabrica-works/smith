@@ -118,6 +118,11 @@ required while memory-pool derivation is being introduced. Policy durations,
 including `group_stop`, are milliseconds. Raw derived limits and the former
 `memory_bytes` and `grace_ms` keys are refused.
 
+`cache_write_price` is optional in each model and must be positive when given.
+Cache writes use it, or `input_price` when it is omitted. Each completion rounds
+the combined input, cache-read, cache-write and output charge upwards once.
+Reservations price prompt input at the highest input, cached-input and cache-write rate.
+
 With `sub_agents` enabled, an unnamed child uses the main model and endpoint.
 Models after the first are the choices a child may name explicitly; repeat the
 main model there to allow selecting it by name. A child's workspace tools stay

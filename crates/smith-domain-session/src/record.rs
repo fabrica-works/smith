@@ -23,14 +23,16 @@ pub struct Origin {
     pub position: u32,
 }
 
-/// Charter prices per `unit` tokens. Cache writes are new input, cache reads
-/// use `cached`. Each completion rounds its exact combined charge upwards.
+/// Charter rates per `unit` tokens; a completion rounds its combined charge once
+/// (domain/session.md, section 6). The opener sends them; overflow ends pricing.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Prices {
-    /// Integer price for fresh input and cache-write tokens per unit.
+    /// Integer price for fresh input tokens per unit.
     pub input: u64,
     /// Price for cache-read input tokens in the configured unit.
     pub cached: u64,
+    /// Separate cache-write rate; absent writes use `input`.
+    pub cache_write: Option<u64>,
     /// Integer price for output tokens per unit.
     pub output: u64,
     /// Token denominator for checked, upward-rounded integer pricing; zero is refused.
@@ -38,6 +40,22 @@ pub struct Prices {
 }
 
 impl Prices {
+    /// The highest input, cached and cache-write rate, reserved before provider work.
+    #[must_use]
+    pub const fn reserved_input(self) -> u64 {
+        let highest = if self.cached > self.input { self.cached } else { self.input };
+        match self.cache_write {
+            Some(write) => {
+                if write > highest {
+                    write
+                } else {
+                    highest
+                }
+            }
+            None => highest,
+        }
+    }
+
     /// Charge reported usage once; missing input/output requires the caller's
     /// recorded reservation instead. Missing cache counts add no reported charge.
     #[must_use]
@@ -45,11 +63,12 @@ impl Prices {
         if self.unit == 0 {
             return None;
         }
-        let input = u128::from(usage.input_tokens?).checked_add(u128::from(usage.cache_write_tokens.unwrap_or(0)))?;
-        let input = input.checked_mul(u128::from(self.input))?;
+        let input = u128::from(usage.input_tokens?).checked_mul(u128::from(self.input))?;
+        let written = u128::from(usage.cache_write_tokens.unwrap_or(0))
+            .checked_mul(u128::from(self.cache_write.unwrap_or(self.input)))?;
         let cached = u128::from(usage.cache_read_tokens.unwrap_or(0)).checked_mul(u128::from(self.cached))?;
         let output = u128::from(usage.output_tokens?).checked_mul(u128::from(self.output))?;
-        let sum = input.checked_add(cached)?.checked_add(output)?;
+        let sum = input.checked_add(cached)?.checked_add(written)?.checked_add(output)?;
         let unit = u128::from(self.unit);
         let rounded = sum.checked_div(unit)?.checked_add(u128::from(sum.checked_rem(unit)? != 0))?;
         u64::try_from(rounded).ok()
