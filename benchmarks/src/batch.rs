@@ -358,6 +358,7 @@ mod tests {
                     program: "/bin/sh".into(),
                     arguments: Vec::new(),
                     codex_home: None,
+                    configuration: None,
                     teardown_ms: 50,
                     grace_ms: 20,
                     settlement_ms: 200,

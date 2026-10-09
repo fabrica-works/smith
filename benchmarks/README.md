@@ -153,3 +153,34 @@ the dispatcher's bounded logs and settlement evidence; parent resources are
 never labelled as agent-only measurements. Invocation preparation belongs to
 the upcoming Codex and Smith adapter increments; the current pipe face consumes
 Codex JSON lines. Recorded replay programs provide offline runner controls.
+
+The Codex adapter checkpoint adds a `configuration` path to a prepared request.
+It verifies the installed executable digest and version before inference,
+renders the pinned command itself, records the user's `config.toml` digest,
+and archives its rendered overrides. Authentication stays in the user's
+existing `CODEX_HOME`; the harness writes nothing there. Requests carrying a
+Codex home require this configuration path and cannot supply arbitrary arguments.
+Unpinned pipe replays remain an offline control and cannot name a login directory.
+
+Named-thread collection opens `state_5.sqlite` read-only, queries only the root
+and its descendants, and reads their ordinary session files. It bounds the
+attempt at 4,096 named threads and 64 MiB of raw rollouts. Immutable response ids
+replace root turn aggregates; identical repeats count once. A child without
+native parent evidence has an unavailable `unlinked-child` scope, making totals
+lower bounds. Missing response fields remain unavailable rather than zero.
+
+Verification on installed codex-cli 0.160.0 remains incomplete: arbitrary-root
+trust and native child links require the first credentialed attempts. The
+command renders `projects."<workspace>".trust_level="trusted"`; its spelling and
+the default `agents.max_threads = 6` follow the [pinned configuration source](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/config/mod.rs).
+These source checks and offline controls do not establish live acceptance.
+The first child, repeated-usage and unknown-model failure recordings are pending;
+the previous explicitly synthetic fixtures remain until they can be replaced.
+
+Instruction parity is awaiting clarification before any credentialed attempt.
+`--ignore-user-config` excludes configuration, but the pinned [app-server host](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/message_processor.rs)
+unconditionally installs a [global instruction provider](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-home/src/instructions/mod.rs)
+which reads `CODEX_HOME/AGENTS.override.md` or `AGENTS.md` independently of
+configuration overrides. The existing user directory contains `AGENTS.md`.
+The harness preserves it and does not copy a login or alter user files to
+resolve this difference from the instruction-parity contract.

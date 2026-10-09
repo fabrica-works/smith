@@ -8,6 +8,14 @@ use std::fmt;
 
 use serde::Deserialize;
 
+mod prepare;
+
+mod rollouts;
+
+pub use prepare::{Observing, Prepared, prepare};
+
+pub use rollouts::{ChildThread, Link, ResponseUsage, RolloutFile, Rollouts, collect_rollouts, parse_rollout};
+
 use crate::{
     Classification, Convention, Counts, End, Exit, FailureReason, Forced, Measure, ScopeKind, TokenCounts, TokenRecord,
     Usage,

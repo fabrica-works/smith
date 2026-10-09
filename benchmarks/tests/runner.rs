@@ -48,6 +48,33 @@ fn a_recorded_answer_is_observed_before_the_tree_settles() {
 }
 
 #[test]
+fn a_prepared_adapter_observes_the_answer_through_the_common_supervisor() {
+    let prepared = smith_bench::agent::Prepared::Codex(smith_bench::agent::codex::Prepared {
+        overrides: Vec::new(),
+        user_configuration: smith_bench::Measure::unavailable("offline replay has no user configuration"),
+        home: "/tmp/smith-codex-capture-no-login".into(),
+        final_message: "/tmp/smith-codex-capture-final.txt".into(),
+        model: smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) },
+        program: "/bin/sh".into(),
+        workspace: "/tmp".into(),
+        teardown: bounds().teardown,
+    });
+    let result = execute(
+        &Clock::new(),
+        replay("exit 0"),
+        Box::from(&b"offline replay\n"[..]),
+        Capture::Agent(Box::new(prepared.observe())),
+        bounds(),
+    )
+    .expect("paired replay settles");
+    assert!(result.error.is_none(), "{:?}", result.error);
+    let observing = result.observing.expect("prepared observer retained");
+    assert_eq!(observing.classify(result.exit, result.forced).end, End::Completed);
+    assert!(result.answered.is_some_and(|answer| answer >= result.start && answer <= result.end));
+    assert!(result.tree.live_pids.is_empty());
+}
+
+#[test]
 fn an_answer_with_a_lingering_grandchild_keeps_its_forced_teardown() {
     let clock = Clock::new();
     // The leader stays long enough for the generic keeper to see the child.

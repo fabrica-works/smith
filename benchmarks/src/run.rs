@@ -32,6 +32,9 @@ pub struct Prepared {
     pub arguments: Vec<String>,
     /// Only Codex may name its existing read-only borrowed login directory.
     pub codex_home: Option<PathBuf>,
+    /// The committed adapter pin; absent only for offline stream replays.
+    #[serde(default)]
+    pub configuration: Option<PathBuf>,
     pub teardown_ms: u64,
     pub grace_ms: u64,
     pub settlement_ms: u64,
@@ -534,7 +537,7 @@ fn observe(
     directory: &Path,
     workspace: &Path,
     result: &mut AttemptResult,
-    process: &ProcessResult,
+    process: &mut ProcessResult,
 ) -> Result<(), String> {
     result.identity.started_utc =
         time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(process.start_wall.as_nanos()))
@@ -554,12 +557,31 @@ fn observe(
         result.timing.task_wall_ms = Measure::Observed { value: elapsed(process.start, answered) };
         result.timing.teardown_ms = Measure::Observed { value: elapsed(answered, process.end) };
     }
+    archive(guard, directory, result, "stdout.log", &process.stdout)?;
+    archive(guard, directory, result, "stderr.log", &process.stderr)?;
     result.resources = resources(process)?;
     result.counts = process.observer.counts();
     result.tokens = match process.observer.thread() {
         Some(_) => process.observer.token_records()?,
         None => Vec::new(),
     };
+    if let Some(observing) = process.observing.as_mut() {
+        match observing.as_mut() {
+            crate::agent::Observing::Codex(observing) => {
+                if let Some(thread) = observing.observer.thread().map(str::to_owned) {
+                    let rollouts = observing.collect().map_err(|error| error.what)?;
+                    result.tokens = rollouts.token_records(&thread)?;
+                    result.counts.responses = rollouts.response_count();
+                    for file in &rollouts.files {
+                        if !valid_name(&file.thread) {
+                            return Err("rollout thread id cannot name an archive file".into());
+                        }
+                        archive(guard, directory, result, &format!("rollout-{}.jsonl", file.thread), &file.bytes)?;
+                    }
+                }
+            }
+        }
+    }
     result.outcome.writes_outside_workspace = scope(process, workspace);
     if let Measure::LowerBound { value, missing: _ } = &result.outcome.writes_outside_workspace {
         result.health.passive_checks.push(crate::CheckVerdict {
@@ -579,8 +601,6 @@ fn observe(
         passed: Measure::Observed { value: ended_cleanly },
         evidence: vec![format!("{:?}", process.tree)],
     });
-    archive(guard, directory, result, "stdout.log", &process.stdout)?;
-    archive(guard, directory, result, "stderr.log", &process.stderr)?;
     Ok(())
 }
 
@@ -593,6 +613,103 @@ struct Work<'a> {
     task: &'a Task,
     prepared: &'a Prepared,
     directory: &'a Path,
+}
+
+fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Capture, Duration), Setup> {
+    let attempt = (|| {
+        let mut environment = crate::isolate::environment(work.machine, work.private, &work.task.environment)?;
+        let Some(pin_file) = &work.prepared.configuration else {
+            if work.prepared.codex_home.is_some() {
+                return Err("credentialed attempts require a committed adapter configuration".into());
+            }
+            return Ok((
+                Command {
+                    program: work.prepared.program.clone(),
+                    arguments: work.prepared.arguments.iter().map(Into::into).collect(),
+                    environment,
+                    directory: work.private.workspace.clone(),
+                },
+                Capture::Codex,
+                Duration::from_millis(work.prepared.teardown_ms),
+            ));
+        };
+        if !work.prepared.arguments.is_empty() {
+            return Err("pinned adapters render their own arguments".into());
+        }
+        if crate::arm::binary_digest(&work.prepared.program)? != result.identity.binary_sha256 {
+            return Err("installed executable changed since the attempt was planned".into());
+        }
+        let pin = crate::read_configuration(pin_file).map_err(|error| error.to_string())?;
+        if pin.sha256 != result.identity.configuration_sha256 || pin.pin.agent != result.identity.agent {
+            return Err("adapter configuration differs from the planned identity".into());
+        }
+        let version = raw(
+            work.clock,
+            work.machine,
+            work.private,
+            &[work.prepared.program.to_str().ok_or("program path must be UTF-8")?.into(), "--version".into()],
+            work.prepared.setup_deadline_seconds,
+            work.prepared,
+        )?;
+        if !succeeded(&version) {
+            return Err("cannot verify the installed agent version".into());
+        }
+        let version = std::str::from_utf8(&version.stdout).map_err(|error| error.to_string())?;
+        if version.trim().strip_prefix("codex-cli ").unwrap_or(version.trim()) != result.identity.agent_version {
+            return Err("installed version differs from the planned identity".into());
+        }
+        let home = work.prepared.codex_home.as_deref().ok_or("Codex requires its existing CODEX_HOME")?;
+        let model = crate::ModelChoice {
+            model: Some(result.identity.model.requested_model.clone()),
+            effort: Some(result.identity.model.requested_effort.clone()),
+        };
+        let arm = crate::arm::ArmRef::Installed { program: work.prepared.program.clone() };
+        let prepared = result
+            .identity
+            .agent
+            .prepare(&crate::agent::Context {
+                guard: work.guard,
+                private: work.private,
+                pin: &pin,
+                pin_file,
+                task: work.task,
+                variant: None,
+                model: &model,
+                arm: &arm,
+                installed_version: version,
+                home,
+            })
+            .map_err(|error| error.reason)?;
+        match &prepared {
+            crate::agent::Prepared::Codex(prepared) => {
+                result.identity.user_configuration_sha256.clone_from(&prepared.user_configuration);
+                archive(
+                    work.guard,
+                    work.directory,
+                    result,
+                    "overrides.json",
+                    &serde_json::to_vec_pretty(&prepared.overrides).map_err(|error| error.to_string())?,
+                )?;
+            }
+        }
+        let invocation = prepared.command();
+        environment.extend(invocation.environment);
+        match invocation.mode {
+            skein_world::end_to_end::Mode::Pipes => {}
+            skein_world::end_to_end::Mode::Terminal => return Err("this adapter requires the pipe face".into()),
+        }
+        Ok((
+            Command {
+                program: invocation.program,
+                arguments: invocation.arguments,
+                environment,
+                directory: work.private.workspace.clone(),
+            },
+            Capture::Agent(Box::new(prepared.observe())),
+            invocation.teardown,
+        ))
+    })();
+    attempt.map_err(|reason| Setup { step: SetupStep::Configuration, reason })
 }
 
 fn afterwards(
@@ -744,25 +861,23 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             })?;
         setup_step = SetupStep::Configuration;
         let seed = crate::grade::snapshot(&task_directory.join("seed"))?;
-        let mut environment = crate::isolate::environment(machine, &private, &task.environment)?;
-        if let Some(home) = &prepared.codex_home {
-            environment.push(("CODEX_HOME".into(), home.as_os_str().into()));
-        }
-        let command = Command {
-            program: prepared.program.clone(),
-            arguments: prepared.arguments.iter().map(Into::into).collect(),
-            environment,
-            directory: private.workspace.clone(),
-        };
+        let (command, capture, teardown) = invocation(
+            Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
+            &mut result,
+        )
+        .map_err(|error| {
+            setup_step = error.step;
+            error.reason
+        })?;
         let prompt = task.prompt.as_bytes().to_vec();
-        let process = execute(
+        let mut process = execute(
             &clock,
             command,
             prompt.into_boxed_slice(),
-            Capture::Codex,
+            capture,
             Bounds {
                 hard: Duration::from_secs(task.deadline_seconds),
-                teardown: Duration::from_millis(prepared.teardown_ms),
+                teardown,
                 grace: Duration::from_millis(prepared.grace_ms),
                 settlement: Duration::from_millis(prepared.settlement_ms),
                 stdout: prepared.max_stdout_bytes,
@@ -771,7 +886,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             },
         )?;
         inference = true;
-        observe(guard, &directory, &private.workspace, &mut result, &process)?;
+        observe(guard, &directory, &private.workspace, &mut result, &mut process)?;
         afterwards(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
             &seed,

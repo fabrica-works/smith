@@ -46,6 +46,15 @@ pub struct Build {
     pub arm: BuiltArm,
 }
 
+/// The executable source selected for an adapter, without rebuilding an attempt.
+#[derive(Clone, Debug)]
+pub enum ArmRef {
+    /// An installed Codex executable at its pinned CLI version.
+    Installed { program: PathBuf },
+    /// A frozen smith build and its immutable arm directory.
+    Built(Build),
+}
+
 fn hexadecimal(value: &str, length: usize) -> bool {
     value.len() == length && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }

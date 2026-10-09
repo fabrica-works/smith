@@ -29,6 +29,8 @@ pub enum ScopeKind {
     Root,
     /// A child conversation linked to its parent's scope id.
     Child { parent: String },
+    /// A known child without native parent evidence, whose usage is unavailable.
+    UnlinkedChild,
     /// A compaction of its parent's conversation.
     Compaction { parent: String },
     /// A helper model operating for its parent's conversation.

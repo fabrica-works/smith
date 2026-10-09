@@ -1,0 +1,306 @@
+//! Named-thread collection retains immutable response ids and bounded raw files.
+//! It opens Codex's state database read-only and follows only this root's edges;
+//! unrelated sessions and credentials are never read. A missing parent remains
+//! an unavailable child scope (benchmarks.md, sections 6, 8.2, 10 and 14).
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use serde::Deserialize;
+
+use crate::{Convention, ScopeKind, TokenLedger, TokenRecord, Usage};
+
+use super::ParseError;
+
+const MAX_THREADS: usize = 4096;
+const MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// One immutable provider response supplied by a named thread's rollout.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResponseUsage {
+    pub response: String,
+    pub usage: Usage,
+}
+
+/// A child named by this attempt and its own persisted parent evidence.
+#[derive(Debug)]
+pub struct ChildThread {
+    pub thread: String,
+    pub link: Link,
+    pub responses: Vec<ResponseUsage>,
+}
+
+/// Whether the child's native metadata identifies its parent.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Link {
+    /// Native metadata links this child to a named parent in the attempt.
+    Linked { parent: String },
+    /// The child is known, but no trustworthy parent is persisted.
+    Unlinked,
+}
+
+/// The bounded raw copy of one selected thread, for the guarded archive.
+#[derive(Debug)]
+pub struct RolloutFile {
+    pub thread: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Root and child response evidence, never cumulative turn totals.
+#[derive(Debug)]
+pub struct Rollouts {
+    pub responses: Vec<ResponseUsage>,
+    pub children: Vec<ChildThread>,
+    pub files: Vec<RolloutFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(clippy::struct_field_names)] // These are the pinned persisted field names.
+struct NativeUsage {
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    cache_write_input_tokens: Option<u64>,
+    output_tokens: u64,
+    reasoning_output_tokens: Option<u64>,
+    total_tokens: u64,
+}
+
+impl NativeUsage {
+    fn usage(self) -> Result<Usage, String> {
+        if self.input_tokens.checked_add(self.output_tokens) != Some(self.total_tokens) {
+            return Err("total_tokens differs from input plus output".into());
+        }
+        let usage = Usage::Codex {
+            input: self.input_tokens,
+            cached_input: self.cached_input_tokens,
+            cache_write: self.cache_write_input_tokens,
+            output: self.output_tokens,
+            reasoning: self.reasoning_output_tokens,
+        };
+        usage.normalise()?;
+        Ok(usage)
+    }
+}
+
+fn bad(record: &str, path: &str, reason: impl Into<String>) -> ParseError {
+    ParseError { record: record.into(), path: path.into(), reason: reason.into() }
+}
+
+fn required_string<'a>(value: &'a serde_json::Value, name: &str) -> Result<&'a str, ParseError> {
+    value
+        .get(name)
+        .and_then(serde_json::Value::as_str)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| bad("rollout", name, "expected a nonempty string"))
+}
+
+/// Decode the pinned rollout's relevant fields; unknown kinds are skipped.
+/// Known usage shapes are strict and conflicting duplicate response ids refuse.
+pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUsage>), ParseError> {
+    let text = std::str::from_utf8(bytes).map_err(|error| bad("rollout", "UTF-8", error.to_string()))?;
+    let mut parent = None;
+    let mut metadata = false;
+    let mut responses = BTreeMap::new();
+    for (offset, line) in text.lines().enumerate() {
+        let value: serde_json::Value = serde_json::from_str(line)
+            .map_err(|error| bad("rollout", &format!("line {}", offset + 1), error.to_string()))?;
+        let kind = required_string(&value, "type")?;
+        match kind {
+            "session_meta" => {
+                if metadata {
+                    return Err(bad(kind, "payload", "metadata repeated"));
+                }
+                let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing metadata"))?;
+                if required_string(payload, "id")? != thread {
+                    return Err(bad(kind, "payload.id", "rollout belongs to a different thread"));
+                }
+                metadata = true;
+                match payload.get("parent_thread_id") {
+                    Some(serde_json::Value::String(id)) if !id.is_empty() => parent = Some(id.clone()),
+                    Some(serde_json::Value::Null) | None => {}
+                    Some(_) => return Err(bad(kind, "payload.parent_thread_id", "invalid parent id")),
+                }
+            }
+            "token_usage_record" => {
+                let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing usage"))?;
+                if required_string(payload, "thread_id")? != thread {
+                    return Err(bad(kind, "payload.thread_id", "response belongs to another thread"));
+                }
+                let response = required_string(payload, "response_id")?.to_owned();
+                let native: NativeUsage = serde_json::from_value(
+                    payload.get("usage").cloned().ok_or_else(|| bad(kind, "payload.usage", "missing usage"))?,
+                )
+                .map_err(|error| bad(kind, "payload.usage", error.to_string()))?;
+                let usage = native.usage().map_err(|reason| bad(kind, "payload.usage", reason))?;
+                if let Some(previous) = responses.insert(response.clone(), usage.clone())
+                    && previous != usage
+                {
+                    return Err(bad(kind, "payload.response_id", "conflicting repeated usage"));
+                }
+            }
+            _ => {}
+        }
+    }
+    if !metadata {
+        return Err(bad("session_meta", "payload", "named rollout has no metadata"));
+    }
+    Ok((
+        parent.map_or(Link::Unlinked, |parent| Link::Linked { parent }),
+        responses.into_iter().map(|(response, usage)| ResponseUsage { response, usage }).collect(),
+    ))
+}
+
+fn read_file(home: &Path, file: &Path, remaining: &mut usize) -> Result<Vec<u8>, ParseError> {
+    let resolved = file.canonicalize().map_err(|error| bad("rollout", "file", error.to_string()))?;
+    let home = home.canonicalize().map_err(|error| bad("rollout", "home", error.to_string()))?;
+    if !resolved.starts_with(home.join("sessions")) && !resolved.starts_with(home.join("archived_sessions")) {
+        return Err(bad("rollout", "file", "named rollout is outside Codex's session directories"));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(resolved)
+        .map_err(|error| bad("rollout", "file", error.to_string()))?
+        .take(u64::try_from(*remaining).expect("bounded bytes") + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| bad("rollout", "file", error.to_string()))?;
+    *remaining =
+        remaining.checked_sub(bytes.len()).ok_or_else(|| bad("rollout", "bytes", "attempt rollout bound exceeded"))?;
+    Ok(bytes)
+}
+
+/// Read only the named root and descendants from the pinned Codex state store.
+pub fn collect_rollouts(home: &Path, thread: &str) -> Result<Rollouts, ParseError> {
+    collect_named(home, thread, &[])
+}
+
+pub(super) fn collect_named(home: &Path, thread: &str, known_children: &[String]) -> Result<Rollouts, ParseError> {
+    if thread.is_empty() {
+        return Err(bad("rollout", "thread", "root id is empty"));
+    }
+    let database = home.join("state_5.sqlite");
+    let mut result = Rollouts { responses: Vec::new(), children: Vec::new(), files: Vec::new() };
+    let mut ids = BTreeSet::from([thread.to_owned()]);
+    ids.extend(known_children.iter().cloned());
+    if ids.len() > MAX_THREADS {
+        return Err(bad("rollout", "children", "thread bound exceeded"));
+    }
+    if !database.exists() {
+        for child in ids.iter().filter(|id| id.as_str() != thread) {
+            result.children.push(ChildThread { thread: child.clone(), link: Link::Unlinked, responses: Vec::new() });
+        }
+        return Ok(result);
+    }
+    let connection =
+        Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|error| bad("state", "open", error.to_string()))?;
+    let mut edges = connection
+        .prepare("SELECT child_thread_id FROM thread_spawn_edges WHERE parent_thread_id=?1 ORDER BY child_thread_id")
+        .map_err(|error| bad("state", "thread_spawn_edges", error.to_string()))?;
+    let mut pending: Vec<_> = ids.iter().cloned().collect();
+    let mut offset = 0;
+    while offset < pending.len() {
+        let rows = edges
+            .query_map([&pending[offset]], |row| row.get::<_, String>(0))
+            .map_err(|error| bad("state", "children", error.to_string()))?;
+        for child in rows {
+            let child = child.map_err(|error| bad("state", "child_thread_id", error.to_string()))?;
+            if child.is_empty() {
+                return Err(bad("state", "child_thread_id", "empty child id"));
+            }
+            if ids.insert(child.clone()) {
+                if ids.len() > MAX_THREADS {
+                    return Err(bad("state", "children", "thread bound exceeded"));
+                }
+                pending.push(child);
+            }
+        }
+        offset += 1;
+    }
+    let mut remaining = MAX_BYTES;
+    for id in &ids {
+        let file: Option<Option<String>> = connection
+            .query_row("SELECT rollout_path FROM threads WHERE id=?1", [id], |row| row.get(0))
+            .optional()
+            .map_err(|error| bad("state", "threads.rollout_path", error.to_string()))?;
+        let (mut link, responses) = match file.flatten() {
+            Some(file) => {
+                let bytes = read_file(home, &PathBuf::from(file), &mut remaining)?;
+                let parsed = parse_rollout(&bytes, id)?;
+                result.files.push(RolloutFile { thread: id.clone(), bytes });
+                parsed
+            }
+            None => (Link::Unlinked, Vec::new()),
+        };
+        if let Link::Linked { parent } = &link
+            && (!ids.contains(parent) || parent == id)
+        {
+            link = Link::Unlinked;
+        }
+        if id == thread {
+            result.responses = responses;
+        } else {
+            result.children.push(ChildThread { thread: id.clone(), link, responses });
+        }
+    }
+    Ok(result)
+}
+
+impl Rollouts {
+    /// Count only immutable linked responses, retaining gaps in every scope.
+    #[must_use]
+    pub fn response_count(&self) -> crate::Measure<u64> {
+        let mut ids = BTreeSet::new();
+        let mut missing = Vec::new();
+        if self.responses.is_empty() {
+            return crate::Measure::unavailable("named root has no per-response records");
+        }
+        ids.extend(self.responses.iter().map(|response| &response.response));
+        for child in &self.children {
+            match &child.link {
+                Link::Linked { .. } if !child.responses.is_empty() => {
+                    ids.extend(child.responses.iter().map(|response| &response.response));
+                }
+                Link::Linked { .. } | Link::Unlinked => {
+                    missing.push(format!("child {} has no linked per-response usage", child.thread));
+                }
+            }
+        }
+        let value = u64::try_from(ids.len()).expect("bounded response count");
+        if missing.is_empty() {
+            crate::Measure::Observed { value }
+        } else {
+            crate::Measure::LowerBound { value, missing }
+        }
+    }
+
+    /// Replace root turn aggregates with immutable per-response scope evidence.
+    pub fn token_records(&self, root: &str) -> Result<Vec<TokenRecord>, String> {
+        let mut ledger = TokenLedger::default();
+        ledger.declare(root, ScopeKind::Root, Convention::Codex, "named root has no per-response usage")?;
+        for response in &self.responses {
+            ledger.record(root, &response.response, response.usage.clone())?;
+        }
+        for child in &self.children {
+            match &child.link {
+                Link::Linked { parent } => {
+                    ledger.declare(
+                        &child.thread,
+                        ScopeKind::Child { parent: parent.clone() },
+                        Convention::Codex,
+                        "named child has no per-response usage",
+                    )?;
+                    for response in &child.responses {
+                        ledger.record(&child.thread, &response.response, response.usage.clone())?;
+                    }
+                }
+                Link::Unlinked => {
+                    let missing = format!("child {} has no persisted parent link", child.thread);
+                    ledger.declare(&child.thread, ScopeKind::UnlinkedChild, Convention::Codex, &missing)?;
+                }
+            }
+        }
+        ledger.records()
+    }
+}

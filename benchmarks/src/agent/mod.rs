@@ -13,6 +13,120 @@ pub mod codex;
 
 pub mod smith;
 
+/// The frozen inputs an adapter prepares inside one private attempt.
+#[derive(Debug)]
+pub struct Context<'a> {
+    pub guard: &'a crate::guard::Guard,
+    pub private: &'a crate::isolate::Private,
+    pub pin: &'a PinnedConfiguration,
+    /// The pin's file, resolving its relative configuration document.
+    pub pin_file: &'a Path,
+    pub task: &'a crate::Task,
+    pub variant: Option<&'a crate::Variant>,
+    pub model: &'a crate::ModelChoice,
+    pub arm: &'a crate::arm::ArmRef,
+    /// Observed outside the attempt timer from the selected executable.
+    pub installed_version: &'a str,
+    pub home: &'a Path,
+}
+
+/// The adapter's prepared invocation; unsupported agents refuse before this value.
+#[derive(Debug)]
+pub enum Prepared {
+    /// Codex's pinned standalone command, in its existing login directory.
+    Codex(codex::Prepared),
+}
+
+/// The invocation supplied to the common process supervisor.
+#[derive(Debug)]
+pub struct Invocation {
+    pub program: PathBuf,
+    pub arguments: Vec<std::ffi::OsString>,
+    pub environment: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    pub mode: skein_world::end_to_end::Mode,
+    pub teardown: skein_lib::Duration,
+}
+
+/// A neutral stream observation for the runner's clock and scripted person.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Seen {
+    /// A provider response or reported turn ended.
+    Response,
+    /// A named tool call started.
+    ToolCall { tool: String },
+    /// A child thread was opened.
+    Child,
+    /// The accepted answer ends task wall time and begins teardown.
+    Answer,
+}
+
+/// An observer stays paired with the preparation that selected its format.
+#[derive(Debug)]
+pub enum Observing {
+    /// Codex's root JSON stream and subsequent read-only collection.
+    Codex(codex::Observing),
+}
+
+/// A stream or collection fault, naming its persisted field or file.
+#[derive(Debug)]
+pub struct HarnessFault {
+    pub what: String,
+}
+
+impl Agent {
+    /// Prepare a supported adapter; missing faces or versions refuse as setup.
+    pub fn prepare(self, context: &Context<'_>) -> Result<Prepared, crate::isolate::Setup> {
+        match self {
+            Self::Codex => codex::prepare(context).map(Prepared::Codex),
+            Self::Smith => Err(crate::isolate::Setup {
+                step: crate::isolate::SetupStep::Configuration,
+                reason: "smith driving requires the legacy face increment".into(),
+            }),
+            Self::ClaudeCode => Err(crate::isolate::Setup {
+                step: crate::isolate::SetupStep::Configuration,
+                reason: "Claude Code belongs to the next comparison pass".into(),
+            }),
+        }
+    }
+}
+
+impl Prepared {
+    /// Build the command with its pinned configuration overrides.
+    #[must_use]
+    pub fn command(&self) -> Invocation {
+        match self {
+            Self::Codex(prepared) => prepared.command(),
+        }
+    }
+
+    /// Move preparation into its matching observer before execution.
+    #[must_use]
+    pub fn observe(self) -> Observing {
+        match self {
+            Self::Codex(prepared) => {
+                Observing::Codex(codex::Observing { prepared, observer: codex::Observer::default(), collected: None })
+            }
+        }
+    }
+}
+
+impl Observing {
+    /// Feed one complete line; known malformed records fault before classification.
+    pub fn feed_line(&mut self, line: &str) -> Result<Vec<Seen>, HarnessFault> {
+        match self {
+            Self::Codex(observing) => observing.feed_line(line),
+        }
+    }
+
+    /// Classify from the selected face, its accepted answer and genuine tree exit.
+    #[must_use]
+    pub fn classify(&self, exit: crate::Exit, forced: crate::Forced) -> crate::Classification {
+        match self {
+            Self::Codex(observing) => observing.observer.classify(exit, forced),
+        }
+    }
+}
+
 /// The adapter selected by a suite author for each attempt.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]

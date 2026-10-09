@@ -12,12 +12,14 @@ use skein_world::{Host, Referee, real};
 use crate::agent::codex;
 
 /// Application output interpretation selected by the prepared invocation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum Capture {
     /// Codex's JSON-lines stream, including the final turn's answer.
     Codex,
     /// Setup or grading output with no agent terminal vocabulary.
     Raw,
+    /// The observer paired with an adapter's pinned preparation.
+    Agent(Box<crate::agent::Observing>),
 }
 
 /// The caller's complete deadline and retained-log bounds.
@@ -44,6 +46,7 @@ pub struct ProcessResult {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub observer: codex::Observer,
+    pub observing: Option<Box<crate::agent::Observing>>,
     pub error: Option<String>,
     pub counts: skein_world::end_to_end::Counts,
     pub tree: skein_world::end_to_end::TreeStatus,
@@ -105,7 +108,7 @@ impl Output {
 
     fn line(&mut self, now: Time) {
         if self.error.is_none() {
-            match self.capture {
+            match &mut self.capture {
                 Capture::Raw => {}
                 Capture::Codex => match std::str::from_utf8(&self.line) {
                     Ok(line) => {
@@ -116,6 +119,17 @@ impl Output {
                             self.answered = Some(now);
                         }
                     }
+                    Err(error) => self.error = Some(format!("stdout UTF-8: {error}")),
+                },
+                Capture::Agent(observing) => match std::str::from_utf8(&self.line) {
+                    Ok(line) => match observing.feed_line(line) {
+                        Ok(seen) => {
+                            if self.answered.is_none() && seen.contains(&crate::agent::Seen::Answer) {
+                                self.answered = Some(now);
+                            }
+                        }
+                        Err(error) => self.error = Some(error.what),
+                    },
                     Err(error) => self.error = Some(format!("stdout UTF-8: {error}")),
                 },
             }
@@ -428,6 +442,15 @@ pub fn execute(
         skein_io::kernel::Exit::Code(code) => crate::Exit::Code(i32::from(code)),
         skein_io::kernel::Exit::Signal(signal) => crate::Exit::Signal(i32::try_from(signal).expect("kernel signal")),
     };
+    let (observer, observing) = match output.capture {
+        Capture::Agent(observing) => {
+            let observer = match observing.as_ref() {
+                crate::agent::Observing::Codex(observing) => observing.observer.clone(),
+            };
+            (observer, Some(observing))
+        }
+        Capture::Codex | Capture::Raw => (output.observer, None),
+    };
     Ok(ProcessResult {
         exit,
         forced,
@@ -437,7 +460,8 @@ pub fn execute(
         answered: output.answered,
         stdout: output.bytes,
         stderr: binary.stderr().to_vec(),
-        observer: output.observer,
+        observer,
+        observing,
         error,
         counts: binary.counts().expect("genuine tree settlement"),
         tree: {
