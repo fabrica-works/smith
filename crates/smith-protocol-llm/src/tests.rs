@@ -374,7 +374,7 @@ fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap
     let golden = b"input too large: 1024 bytes, bound 256 bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound";
     let exact = u32::try_from(golden.len()).expect("fixed feedback length");
     assert_eq!(
-        crate::failure::problem(Problem::Oversize { bytes: 1024, bound: 256 }, exact).expect("exact room"),
+        crate::failure::problem(Problem::Oversize { bytes: 1024, bound: 256 }, exact).expect("exact room").as_ref(),
         golden.as_slice()
     );
     assert_eq!(
@@ -382,7 +382,7 @@ fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap
         Err(crate::Error::Limit)
     );
     assert_eq!(
-        crate::failure::problem(Problem::CutOff { bytes: 17 }, 4096).expect("cut note"),
+        crate::failure::problem(Problem::CutOff { bytes: 17 }, 4096).expect("cut note").as_ref(),
         b"input cut off after 17 bytes; make a smaller call and try again".as_slice()
     );
 }
