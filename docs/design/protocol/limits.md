@@ -392,7 +392,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `resume-holds-window` | the resume limit holds the most a session holds in one window |
 | `turn-in-transcript` | the largest turn fits the transcript schema's ceilings |
 | `turn-in-channel` | the largest turn, start and message fit the channel's frame ceilings |
-| `render-in-result` | every tool's outcome at its caps, a host's answer, a message and a sub-agent's result render within one rendered result's bound |
+| `render-in-result` | every tool's outcome at its caps, a host's answer, a message and a sub-agent's result render uncut within one rendered result's bound: the cut is a safeguard, never what a cap relies on (llm.md, section 5). A bound held below its derived worst case by any other limit breaks it |
 | `read-in-payload` | `read_window` is at most `tool_payload` |
 | `machine-holds-tools` | the machine's output, file, scan, search and path limits hold the tools' (3.5) |
 | `environment` | the configured environment's names are valid and distinct |
