@@ -45,13 +45,36 @@
       "replace_in_increment": 10
     },
     {
-      "file": "repeated.jsonl",
-      "provenance": "synthetic",
-      "source": "completed.jsonl",
-      "archive_source": "runs/baseline-01_backoff-codex-1/agent/events.jsonl",
-      "change": "Repeat the final turn.completed line verbatim to exercise duplicate aggregate usage; no repeated usage was archived.",
-      "sha256": "f8e2ed360f220456b7f696bf5a879390cd73411d4851e018e544344e17dcb759",
-      "replace_in_increment": 10
+      "file": "repeated-rollout.jsonl",
+      "provenance": "archived",
+      "source": "/home/free/.local/state/smith-bench/runs/smith00-codex-isolation-20261009-1733/isolation-02/rollout-01a121bc-04a8-75c2-8fba-d2694fa1ad22.jsonl",
+      "source_sha256": "444bd13ca67f039d024acc359c0899b6c1a2b97917752d9744683f5ba4172b90",
+      "sha256": "b2f5147014e79bdfe634e4fef136842c4e0fb298a2261d635a3318eb5b1c525a",
+      "change": "Only native session_meta and token_usage_record retained. Metadata projected to identity/parent/version/path/source; user/account identifiers and base instructions omitted. Usage records unchanged."
+    },
+    {
+      "file": "live-root-rollout.jsonl",
+      "provenance": "archived",
+      "source": "/home/free/.local/state/smith-bench/runs/smith00-codex-child-20261009-1740/child-02/rollout-01a121c7-2504-79f3-8b18-d5138543b056.jsonl",
+      "source_sha256": "13fafe0957321ccf01b5fcc7be9650c0c635e2918415090d3c0dc4742e511b62",
+      "sha256": "fb3d16480a637c3bc4a5151df70ef2a1355bc1df1df767b4b4bac2d13bcf18f5",
+      "change": "Only native session_meta and token_usage_record retained. Metadata projected to identity/parent/version/path/source; user/account identifiers and base instructions omitted. Usage records unchanged."
+    },
+    {
+      "file": "live-child-rollout.jsonl",
+      "provenance": "archived",
+      "source": "/home/free/.local/state/smith-bench/runs/smith00-codex-child-20261009-1740/child-02/rollout-01a121c7-3931-7cd1-a1e8-b2a0fd214b88.jsonl",
+      "source_sha256": "b70462f7c423442819d814e6c4815843022d0bb988d3923fba7ca91cec8977af",
+      "sha256": "ba62dbcefcbaf4b896af9ae5677f7c45d285b832c7c420998409ce55953404c0",
+      "change": "Only native session_meta and token_usage_record retained. Metadata projected to identity/parent/version/path/source; user/account identifiers and base instructions omitted. Usage records unchanged."
+    },
+    {
+      "file": "live-children.jsonl",
+      "provenance": "archived",
+      "source": "/home/free/.local/state/smith-bench/runs/smith00-codex-child-20261009-1740/child-02/stdout.log",
+      "source_sha256": "22c3d8fe6bcaa3c3d2df3e7ac53c54bd9e453d63f7a2d700282081e2c41f400f",
+      "sha256": "22c3d8fe6bcaa3c3d2df3e7ac53c54bd9e453d63f7a2d700282081e2c41f400f",
+      "change": "Complete native stdout, unchanged."
     }
   ],
   "credential_scan": {

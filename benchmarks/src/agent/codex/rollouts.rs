@@ -97,12 +97,45 @@ fn required_string<'a>(value: &'a serde_json::Value, name: &str) -> Result<&'a s
         .ok_or_else(|| bad("rollout", name, "expected a nonempty string"))
 }
 
+fn metadata(
+    payload: &serde_json::Value,
+    thread: &str,
+    parents: &mut BTreeMap<String, Option<String>>,
+    ancestors: &mut BTreeSet<String>,
+) -> Result<(), ParseError> {
+    let id = required_string(payload, "id")?;
+    if id != thread && !ancestors.contains(id) {
+        return Err(bad("session_meta", "payload.id", "rollout metadata is neither its owner nor a declared ancestor"));
+    }
+    let parent = match payload.get("parent_thread_id") {
+        Some(serde_json::Value::String(id)) if !id.is_empty() => Some(id.clone()),
+        Some(serde_json::Value::Null) | None => None,
+        Some(_) => return Err(bad("session_meta", "payload.parent_thread_id", "invalid parent id")),
+    };
+    if parent.as_deref() == Some(id) || (id != thread && parent.as_deref() == Some(thread)) {
+        return Err(bad("session_meta", "payload.parent_thread_id", "cyclic parent metadata"));
+    }
+    if let Some(previous) = parents.get(id)
+        && previous != &parent
+    {
+        return Err(bad("session_meta", "payload.parent_thread_id", "conflicting repeated metadata"));
+    }
+    if let Some(parent) = &parent {
+        ancestors.insert(parent.clone());
+    }
+    parents.insert(id.to_owned(), parent);
+    if parents.len() > MAX_THREADS || ancestors.len() > MAX_THREADS {
+        return Err(bad("session_meta", "payload", "metadata lineage exceeds the thread bound"));
+    }
+    Ok(())
+}
+
 /// Decode the pinned rollout's relevant fields; unknown kinds are skipped.
 /// Known usage shapes are strict and conflicting duplicate response ids refuse.
 pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUsage>), ParseError> {
     let text = std::str::from_utf8(bytes).map_err(|error| bad("rollout", "UTF-8", error.to_string()))?;
-    let mut parent = None;
-    let mut metadata = false;
+    let mut parents = BTreeMap::new();
+    let mut ancestors = BTreeSet::new();
     let mut responses = BTreeMap::new();
     for (offset, line) in text.lines().enumerate() {
         let value: serde_json::Value = serde_json::from_str(line)
@@ -111,19 +144,7 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
         match kind {
             "session_meta" => {
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing metadata"))?;
-                if required_string(payload, "id")? != thread {
-                    return Err(bad(kind, "payload.id", "rollout belongs to a different thread"));
-                }
-                let candidate = match payload.get("parent_thread_id") {
-                    Some(serde_json::Value::String(id)) if !id.is_empty() => Some(id.clone()),
-                    Some(serde_json::Value::Null) | None => None,
-                    Some(_) => return Err(bad(kind, "payload.parent_thread_id", "invalid parent id")),
-                };
-                if metadata && candidate != parent {
-                    return Err(bad(kind, "payload.parent_thread_id", "conflicting repeated metadata"));
-                }
-                metadata = true;
-                parent = candidate;
+                metadata(payload, thread, &mut parents, &mut ancestors)?;
             }
             "token_usage_record" => {
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing usage"))?;
@@ -145,11 +166,15 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
             _ => {}
         }
     }
-    if !metadata {
+    if !parents.contains_key(thread) {
         return Err(bad("session_meta", "payload", "named rollout has no metadata"));
     }
     Ok((
-        parent.map_or(Link::Unlinked, |parent| Link::Linked { parent }),
+        parents
+            .get(thread)
+            .expect("owner metadata checked")
+            .clone()
+            .map_or(Link::Unlinked, |parent| Link::Linked { parent }),
         responses.into_iter().map(|(response, usage)| ResponseUsage { response, usage }).collect(),
     ))
 }

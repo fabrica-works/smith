@@ -326,3 +326,39 @@ fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fau
     assert_eq!(observing.collect().expect_err("cached fault").what, first);
     std::fs::remove_dir_all(home).expect("fixture cleanup");
 }
+
+#[test]
+fn a_childs_inherited_parent_header_never_replaces_the_childs_ownership() {
+    let child = String::from_utf8(rollout("child", Some("root"))).expect("child");
+    let inherited = r#"{"type":"session_meta","payload":{"id":"root","parent_thread_id":null}}"#;
+    let stream = format!("{child}{inherited}\n");
+    let (link, usage) = parse_rollout(stream.as_bytes(), "child").expect("native inherited context");
+    assert_eq!(link, Link::Linked { parent: "root".into() });
+    assert_eq!(usage.len(), 1);
+    assert_eq!(usage[0].response, "response-child");
+    assert!(parse_rollout(stream.replace("\"id\":\"root\"", "\"id\":\"foreign\"").as_bytes(), "child").is_err());
+}
+
+#[test]
+fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope() {
+    let root = "01a121c7-2504-79f3-8b18-d5138543b056";
+    let child = "01a121c7-3931-7cd1-a1e8-b2a0fd214b88";
+    let (_, responses) =
+        parse_rollout(include_bytes!("recorded/codex/live-root-rollout.jsonl"), root).expect("actual root");
+    let (link, child_responses) = parse_rollout(include_bytes!("recorded/codex/live-child-rollout.jsonl"), child)
+        .expect("actual inherited context");
+    assert_eq!(link, Link::Linked { parent: root.into() });
+    assert_eq!(responses.len(), 4);
+    assert_eq!(child_responses.len(), 2);
+    let collected = Rollouts {
+        responses,
+        children: vec![ChildThread { thread: child.into(), link, responses: child_responses }],
+        files: Vec::new(),
+    };
+    let tokens = collected.token_records(root).expect("actual scope totals");
+    assert!(matches!(
+        tokens.iter().find(|r| r.role == ScopeKind::Total).expect("total").usage.output,
+        Measure::Observed { .. }
+    ));
+    assert_eq!(collected.response_count(), Measure::Observed { value: 6 });
+}

@@ -8,7 +8,7 @@ fn codex_lines_survive_seeded_truncations_corruptions_and_repetition() {
         include_str!("recorded/codex/completed.jsonl"),
         include_str!("recorded/codex/children.jsonl"),
         include_str!("recorded/codex/failed.jsonl"),
-        include_str!("recorded/codex/repeated.jsonl"),
+        include_str!("recorded/codex/live-children.jsonl"),
     ] {
         for line in stream.lines() {
             for end in 0..line.len() {

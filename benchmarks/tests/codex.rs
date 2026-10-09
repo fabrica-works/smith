@@ -4,7 +4,7 @@ use smith_bench::{End, Exit, Forced, Measure};
 const COMPLETED: &str = include_str!("recorded/codex/completed.jsonl");
 const CHILDREN: &str = include_str!("recorded/codex/children.jsonl");
 const FAILED: &str = include_str!("recorded/codex/failed.jsonl");
-const REPEATED: &str = include_str!("recorded/codex/repeated.jsonl");
+const REPEATED: &str = include_str!("recorded/codex/repeated-rollout.jsonl");
 
 fn observed(stream: &str) -> Observer {
     let mut observer = Observer::default();
@@ -17,7 +17,9 @@ fn observed(stream: &str) -> Observer {
 fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
     let completed = observed(COMPLETED);
     assert_eq!(completed.classify(Exit::Code(0), Forced::No).end, End::Completed);
-    assert_eq!(completed.token_records().expect("usage"), observed(REPEATED).token_records().expect("repeat usage"));
+    let native = smith_bench::agent::codex::parse_rollout(REPEATED.as_bytes(), "01a121bc-04a8-75c2-8fba-d2694fa1ad22")
+        .expect("actual repeated usage fields");
+    assert_eq!(native.1.len(), 2);
     let tokens = completed.token_records().expect("root-only usage");
     assert_eq!(tokens[0].usage.fresh, Measure::Observed { value: 18_802 });
     assert_eq!(tokens[0].usage.cache_write, Measure::Observed { value: 0 });
@@ -36,10 +38,7 @@ fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
         serde_json::from_str(include_str!("recorded/codex/manifest.json")).expect("manifest");
     for record in manifest["records"].as_array().expect("records") {
         let file = record["file"].as_str().expect("file");
-        assert_eq!(
-            record["provenance"],
-            if file == "failed.jsonl" || file == "repeated.jsonl" { "synthetic" } else { "archived" }
-        );
+        assert_eq!(record["provenance"], if file == "failed.jsonl" { "synthetic" } else { "archived" });
     }
 }
 
