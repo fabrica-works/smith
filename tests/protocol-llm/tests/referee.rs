@@ -99,7 +99,7 @@ fn a_marker_on_an_earlier_eligible_block_is_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "last eligible block of the last message")]
+#[should_panic(expected = "thinking never carries a marker")]
 fn a_marker_on_thinking_is_rejected() {
     let _request = NativeRequest::from_http(&http(
         r#"{"system":[],"tools":[],"messages":[{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"private","cache_control":{"type":"ephemeral"}}]}]}"#,
@@ -133,4 +133,28 @@ fn the_last_eligible_block_can_precede_a_literal_thinking_block() {
         request.history[0],
         r#"{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"private","signature":"sig"}]}"#
     );
+}
+
+#[test]
+#[should_panic(expected = "one marker for nonempty system text")]
+fn an_absent_anthropic_system_marker_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[{"type":"text","text":"fixed"}],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"task","cache_control":{"type":"ephemeral"}}]}]}"#,
+    ));
+}
+
+#[test]
+#[should_panic(expected = "fixed marker is on the last system block")]
+fn an_anthropic_system_marker_on_an_earlier_block_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[{"type":"text","text":"earlier","cache_control":{"type":"ephemeral"}},{"type":"text","text":"last"}],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"task","cache_control":{"type":"ephemeral"}}]}]}"#,
+    ));
+}
+
+#[test]
+#[should_panic(expected = "Anthropic breakpoint allowance")]
+fn a_fifth_anthropic_breakpoint_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[{"type":"text","text":"fixed","cache_control":{"type":"ephemeral"}}],"tools":[{"cache_control":{"type":"ephemeral"}},{"cache_control":{"type":"ephemeral"}},{"cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":[{"type":"text","text":"task","cache_control":{"type":"ephemeral"}}]}]}"#,
+    ));
 }
