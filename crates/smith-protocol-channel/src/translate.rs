@@ -89,10 +89,7 @@ pub fn start_context(
         }
     }
     Ok(DecodedStart {
-        identity: match parts.identity {
-            Some(bytes) => Some(run::Identity::new(bytes)),
-            None => None,
-        },
+        identity: parts.identity.map(run::Identity::new),
         messages: messages.into_boxed(),
         activation: parts.activation,
         charter,
