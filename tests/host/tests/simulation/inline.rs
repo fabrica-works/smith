@@ -95,6 +95,40 @@ fn a_drop_before_the_answer_waits_for_actual_lower_settlement() {
 }
 
 #[test]
+fn a_drop_asked_at_once_settles_completions_file_operations_and_command_trees() {
+    let mut provider = World::new(322, inline::limits());
+    provider.provider_latency(skein_lib::Duration::from_secs(20));
+    spawn(&mut provider, 1, Job::HostTools);
+    provider.event(parent::Event::Drop { agent: provider.handle(Token::new(1)) });
+    assert!(provider.seen[&Token::new(1)].gone.is_none());
+    provider.run();
+    provider.settled();
+
+    let mut guide = World::new(323, inline::limits());
+    guide.auto_machine = false;
+    guide.event(parent::Event::Spawn { client: Token::new(1), start: workspace_start(323) });
+    assert!(
+        guide.pending_machine.iter().any(|(_, _, terminal)| matches!(terminal, smith_inline_agent::Below::Read { .. }))
+    );
+    guide.event(parent::Event::Drop { agent: guide.handle(Token::new(1)) });
+    assert!(guide.seen[&Token::new(1)].gone.is_none());
+    assert_eq!(guide.machine_trace.iter().filter(|request| request.starts_with("cancel")).count(), 1);
+    guide.machine_replies();
+    guide.settled();
+    assert!(guide.seen[&Token::new(1)].answer.is_none());
+
+    let mut command = child_command_world(324);
+    command.event(parent::Event::Drop { agent: command.handle(Token::new(1)) });
+    assert_eq!(command.seen[&Token::new(1)].fault, Some(host::Fault::Exited));
+    assert!(command.seen[&Token::new(1)].gone.is_none());
+    command.tool_terminals = inline::ToolTerminals::Forward;
+    command.machine_replies();
+    command.run();
+    command.settled();
+    assert!(command.seen[&Token::new(1)].answer.is_none());
+}
+
+#[test]
 fn an_inline_run_that_ignores_its_cancel_is_dropped_at_its_grace_with_everything_below_settled() {
     use skein_lib::{Duration, Time};
     let mut bounds = inline::limits();
@@ -335,12 +369,11 @@ fn an_inline_cancel_waits_for_its_pending_machine_terminal() {
     world.settled();
 }
 
-#[test]
-fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
+fn child_command_world(seed: u64) -> World {
     use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
-    let mut world = World::new(85, inline::limits());
+    let mut world = World::new(seed, inline::limits());
     world.tool_terminals = inline::ToolTerminals::Hold;
-    let mut source = inline::workspace_start(85, Job::Reporting);
+    let mut source = inline::workspace_start(seed, Job::Reporting);
     let mut charter = source.charter.into_value();
     charter.grants.agents = true;
     charter.brief.sections[0].text = b"inline-parent-command".as_slice().into();
@@ -381,6 +414,12 @@ fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
         world.at(world.next_deadline().expect("native provider alarm"));
     }
     assert!(world.machine_trace.iter().any(|request| request.contains("Spawn")), "actual child command requested");
+    world
+}
+
+#[test]
+fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
+    let mut world = child_command_world(85);
     let handle = world.handle(Token::new(1));
     world.event(parent::Event::Stop { agent: handle });
     assert!(world.seen[&Token::new(1)].answer.is_none(), "the native root also waits for its command terminal");
