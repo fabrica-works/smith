@@ -532,6 +532,36 @@ fn scope(process: &ProcessResult, workspace: &Path) -> Measure<Vec<PathBuf>> {
     }
 }
 
+fn collect_observation(
+    guard: &Guard,
+    directory: &Path,
+    result: &mut AttemptResult,
+    process: &mut ProcessResult,
+) -> Result<(), String> {
+    if let Some(observing) = process.observing.as_mut() {
+        match observing.as_mut() {
+            crate::agent::Observing::Codex(observing) => {
+                if let Some(thread) = observing.observer.thread().map(str::to_owned) {
+                    let collection = observing.collect().map(|_| ()).map_err(|error| error.what);
+                    if let Some(rollouts) = &observing.collected {
+                        for file in &rollouts.files {
+                            if !valid_name(&file.thread) {
+                                return Err("rollout thread id cannot name an archive file".into());
+                            }
+                            archive(guard, directory, result, &format!("rollout-{}.jsonl", file.thread), &file.bytes)?;
+                        }
+                    }
+                    collection?;
+                    let rollouts = observing.collected.as_ref().expect("completed collection");
+                    result.tokens = rollouts.token_records(&thread)?;
+                    result.counts.responses = rollouts.response_count();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn observe(
     guard: &Guard,
     directory: &Path,
@@ -581,23 +611,7 @@ fn observe(
         Some(_) => process.observer.token_records()?,
         None => Vec::new(),
     };
-    if let Some(observing) = process.observing.as_mut() {
-        match observing.as_mut() {
-            crate::agent::Observing::Codex(observing) => {
-                if let Some(thread) = observing.observer.thread().map(str::to_owned) {
-                    let rollouts = observing.collect().map_err(|error| error.what)?;
-                    result.tokens = rollouts.token_records(&thread)?;
-                    result.counts.responses = rollouts.response_count();
-                    for file in &rollouts.files {
-                        if !valid_name(&file.thread) {
-                            return Err("rollout thread id cannot name an archive file".into());
-                        }
-                        archive(guard, directory, result, &format!("rollout-{}.jsonl", file.thread), &file.bytes)?;
-                    }
-                }
-            }
-        }
-    }
+    collect_observation(guard, directory, result, process)?;
     result.outcome.writes_outside_workspace = scope(process, workspace);
     if let Measure::LowerBound { value, missing: _ } = &result.outcome.writes_outside_workspace {
         result.health.passive_checks.push(crate::CheckVerdict {

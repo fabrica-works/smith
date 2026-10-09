@@ -107,9 +107,12 @@ impl Prepared {
     #[must_use]
     pub fn observe(self) -> Observing {
         match self {
-            Self::Codex(prepared) => {
-                Observing::Codex(codex::Observing { prepared, observer: codex::Observer::default(), collected: None })
-            }
+            Self::Codex(prepared) => Observing::Codex(codex::Observing {
+                prepared,
+                observer: codex::Observer::default(),
+                collected: None,
+                collection_error: None,
+            }),
         }
     }
 }

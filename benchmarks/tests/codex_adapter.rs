@@ -271,3 +271,58 @@ fn changed_user_auth_is_reported_after_private_credentials_are_removed() {
     assert!(!borrowed.credential.exists());
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }
+
+#[test]
+fn repeated_session_metadata_keeps_its_parent_and_refuses_conflicts() {
+    let stream = rollout("root", Some("parent"));
+    let text = String::from_utf8(stream).expect("UTF-8");
+    let metadata = text.lines().next().expect("metadata");
+    let repeated = format!("{text}{metadata}\n");
+    assert_eq!(
+        parse_rollout(repeated.as_bytes(), "root").expect("same identity"),
+        parse_rollout(text.as_bytes(), "root").expect("original")
+    );
+    let conflicting = format!("{text}{}\n", metadata.replace("\"parent\"", "\"foreign\""));
+    assert!(
+        parse_rollout(conflicting.as_bytes(), "root")
+            .expect_err("parent changed")
+            .to_string()
+            .contains("conflicting repeated metadata")
+    );
+}
+
+#[test]
+fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fault() {
+    let home = private("raw-fault");
+    std::fs::create_dir_all(home.join("sessions")).expect("private fixture");
+    let file = home.join("sessions/root.jsonl");
+    let raw = b"{\"type\":\"session_meta\",\"payload\":{\"id\":\"root\"}}\n{invalid JSON}\n";
+    std::fs::write(&file, raw).expect("known malformed rollout");
+    let connection = Connection::open(home.join("state_5.sqlite")).expect("fixture database");
+    connection.execute_batch("CREATE TABLE threads(id TEXT PRIMARY KEY, rollout_path TEXT); CREATE TABLE thread_spawn_edges(parent_thread_id TEXT, child_thread_id TEXT);").expect("schema");
+    connection
+        .execute("INSERT INTO threads VALUES(?1,?2)", ["root", file.to_str().expect("path")])
+        .expect("named path");
+    drop(connection);
+    let prepared = smith_bench::agent::Prepared::Codex(smith_bench::agent::codex::Prepared {
+        overrides: Vec::new(),
+        credential: home.join("auth.json"),
+        expires: skein_lib::Wall::EPOCH,
+        borrowed: None,
+        home: home.clone(),
+        final_message: home.join("final.txt"),
+        model: smith_bench::ModelChoice { model: Some("offline".into()), effort: Some("low".into()) },
+        program: "/bin/false".into(),
+        workspace: home.clone(),
+        teardown: skein_lib::Duration::ZERO,
+    });
+    let smith_bench::agent::Observing::Codex(mut observing) = prepared.observe();
+    observing.observer.observe_line(r#"{"type":"thread.started","thread_id":"root"}"#).expect("named root");
+    let first = observing.collect().expect_err("known shape fault").what;
+    assert!(first.contains("thread root"));
+    let retained = observing.collected.as_ref().expect("raw retained");
+    assert_eq!(retained.files.len(), 1);
+    assert_eq!(retained.files[0].bytes, raw);
+    assert_eq!(observing.collect().expect_err("cached fault").what, first);
+    std::fs::remove_dir_all(home).expect("fixture cleanup");
+}

@@ -33,6 +33,7 @@ pub struct Observing {
     pub prepared: Prepared,
     pub observer: Observer,
     pub collected: Option<super::Rollouts>,
+    pub collection_error: Option<String>,
 }
 
 /// Prepare a version-matched Codex command without touching its existing login.
@@ -195,6 +196,9 @@ impl Observing {
 
     /// Read only this completed attempt's native root and child records.
     pub fn collect(&mut self) -> Result<&super::Rollouts, HarnessFault> {
+        if let Some(what) = &self.collection_error {
+            return Err(HarnessFault { what: what.clone() });
+        }
         if self.collected.is_none() {
             let thread =
                 self.observer.thread().ok_or_else(|| HarnessFault { what: "Codex stream has no named root".into() })?;
@@ -208,10 +212,17 @@ impl Observing {
             }
             children.sort();
             children.dedup();
-            self.collected = Some(
-                super::rollouts::collect_named(&self.prepared.home, thread, &children)
-                    .map_err(|error| HarnessFault { what: error.to_string() })?,
-            );
+            self.collected = Some(super::Rollouts { responses: Vec::new(), children: Vec::new(), files: Vec::new() });
+            if let Err(error) = super::rollouts::collect_named(
+                &self.prepared.home,
+                thread,
+                &children,
+                self.collected.as_mut().expect("raw collection retained"),
+            ) {
+                let what = error.to_string();
+                self.collection_error = Some(what.clone());
+                return Err(HarnessFault { what });
+            }
         }
         Ok(self.collected.as_ref().expect("collected above"))
     }

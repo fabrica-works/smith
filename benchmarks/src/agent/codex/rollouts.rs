@@ -110,19 +110,20 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
         let kind = required_string(&value, "type")?;
         match kind {
             "session_meta" => {
-                if metadata {
-                    return Err(bad(kind, "payload", "metadata repeated"));
-                }
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing metadata"))?;
                 if required_string(payload, "id")? != thread {
                     return Err(bad(kind, "payload.id", "rollout belongs to a different thread"));
                 }
-                metadata = true;
-                match payload.get("parent_thread_id") {
-                    Some(serde_json::Value::String(id)) if !id.is_empty() => parent = Some(id.clone()),
-                    Some(serde_json::Value::Null) | None => {}
+                let candidate = match payload.get("parent_thread_id") {
+                    Some(serde_json::Value::String(id)) if !id.is_empty() => Some(id.clone()),
+                    Some(serde_json::Value::Null) | None => None,
                     Some(_) => return Err(bad(kind, "payload.parent_thread_id", "invalid parent id")),
+                };
+                if metadata && candidate != parent {
+                    return Err(bad(kind, "payload.parent_thread_id", "conflicting repeated metadata"));
                 }
+                metadata = true;
+                parent = candidate;
             }
             "token_usage_record" => {
                 let payload = value.get("payload").ok_or_else(|| bad(kind, "payload", "missing usage"))?;
@@ -172,15 +173,21 @@ fn read_file(home: &Path, file: &Path, remaining: &mut usize) -> Result<Vec<u8>,
 
 /// Read only the named root and descendants from the pinned Codex state store.
 pub fn collect_rollouts(home: &Path, thread: &str) -> Result<Rollouts, ParseError> {
-    collect_named(home, thread, &[])
+    let mut result = Rollouts { responses: Vec::new(), children: Vec::new(), files: Vec::new() };
+    collect_named(home, thread, &[], &mut result)?;
+    Ok(result)
 }
 
-pub(super) fn collect_named(home: &Path, thread: &str, known_children: &[String]) -> Result<Rollouts, ParseError> {
+pub(super) fn collect_named(
+    home: &Path,
+    thread: &str,
+    known_children: &[String],
+    result: &mut Rollouts,
+) -> Result<(), ParseError> {
     if thread.is_empty() {
         return Err(bad("rollout", "thread", "root id is empty"));
     }
     let database = home.join("state_5.sqlite");
-    let mut result = Rollouts { responses: Vec::new(), children: Vec::new(), files: Vec::new() };
     let mut ids = BTreeSet::from([thread.to_owned()]);
     ids.extend(known_children.iter().cloned());
     if ids.len() > MAX_THREADS {
@@ -190,7 +197,7 @@ pub(super) fn collect_named(home: &Path, thread: &str, known_children: &[String]
         for child in ids.iter().filter(|id| id.as_str() != thread) {
             result.children.push(ChildThread { thread: child.clone(), link: Link::Unlinked, responses: Vec::new() });
         }
-        return Ok(result);
+        return Ok(());
     }
     let connection =
         Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
@@ -227,9 +234,9 @@ pub(super) fn collect_named(home: &Path, thread: &str, known_children: &[String]
         let (mut link, responses) = match file.flatten() {
             Some(file) => {
                 let bytes = read_file(home, &PathBuf::from(file), &mut remaining)?;
-                let parsed = parse_rollout(&bytes, id)?;
                 result.files.push(RolloutFile { thread: id.clone(), bytes });
-                parsed
+                parse_rollout(&result.files.last().expect("raw file retained").bytes, id)
+                    .map_err(|error| bad("rollout", "file", format!("thread {id}: {error}")))?
             }
             None => (Link::Unlinked, Vec::new()),
         };
@@ -244,7 +251,7 @@ pub(super) fn collect_named(home: &Path, thread: &str, known_children: &[String]
             result.children.push(ChildThread { thread: id.clone(), link, responses });
         }
     }
-    Ok(result)
+    Ok(())
 }
 
 impl Rollouts {
