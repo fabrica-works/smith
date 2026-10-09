@@ -186,9 +186,9 @@ its host writes `run.completed` from the turns it was told:
 | `call` | string, optional | the `sub_agent` call that opened a child |
 | `thread` | integer | the affinity ordinal its requests carry (llm.md, 2.1) |
 | `model` | model | its LLM (3.10) |
-| `requested` | object, optional | a child's ask: `turns` and `seconds`, each optional |
-| `share` | object, optional | a child's effective share: `turns`, `seconds` and its derived `spend` (domain/run.md, 5.3) |
-| `clamped` | list, optional | each part of a child's share that was lowered: `part`, `turns` or `seconds`; `by`, what bound it, such as `reserve` |
+| `requested` | object, optional | a child's ask as the call made it: `turns` and `seconds`, whole seconds, each optional |
+| `share` | object, optional | a child's effective share, exact: `turns`, `time_ms` and its `spend` (domain/run.md, 5.3) |
+| `clamped` | list, optional | each part of a child's share that was lowered: `part`, `turns` or `time`; `by`, what bound it, such as `reserve` |
 
 **`conversation.closed`:**
 
@@ -283,7 +283,7 @@ and the host's:
 | `omitted_bytes` | integer | what its render bound cut (limits.md, section 6) |
 | `clamped` | bool | the call's requested budget or deadline was lowered to its ceiling |
 | `duration_ms` | integer | from `tool.started` |
-| `child` | object, optional | for `sub_agent`, under every policy: `conversation`; `stop`, how the child ended: `end`, an answer it chose to give, `budget`, an answer its share ended (domain/run.md, 5.3), or, unanswered, `failed` or `closed`; `turns`, `seconds`, `spent` and `usage` |
+| `child` | object, optional | for `sub_agent`, under every policy: `conversation`; `stop`, how the child ended: `end`, an answer it chose to give, `budget`, an answer its share ended (domain/run.md, 5.3), or, unanswered, `failed` or `closed`; `turns`, `time_ms`, `spent` and `usage` |
 | `delivery` | string, optional | for `deliver`, or a `finish` that delivered: `delivered`, `nothing`, `refused`, `failed` or `stale` (domain/run.md, 8.2) |
 | `result` | string | under `everything`: the result as the model read it |
 

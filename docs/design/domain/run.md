@@ -666,7 +666,10 @@ answers as it was ending; the host has the delivery's own answer.
 ### 9.2 What the model is told
 
 All of it is text the run writes, kept in the transcript, and computed
-from the domain's clock, so a world sees it exactly.
+from the domain's clock, so a world sees it exactly. Durations are told in whole
+seconds, rounded down, so a share or what is left is never overstated. A
+time under a second that is not zero is told as less than a second. The
+exact values are the facts', in milliseconds (protocol/events.md).
 
 - **`## Budget`,** in main's system text: its wall time and turns as they
   stand when it opens; that spend is bounded too; the reserve and the
