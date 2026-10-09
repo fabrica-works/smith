@@ -85,7 +85,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Aborted { owner } => run::Event::Aborted { owner },
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
         Event::Failed { owner, failure, evidence, detail } => {
-            let grant = completion_done(domain, owner);
+            let grant = crate::operation::completion_done(domain, owner);
             let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
             let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
             assert!(
@@ -117,7 +117,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
             return session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail });
         }
         Event::Cancelled { owner } => {
-            completion_done(domain, owner);
+            crate::operation::completion_done(domain, owner);
             let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
             let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
             assert!(
@@ -142,7 +142,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
 /// may record usage or run decoded calls.
 fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: crate::llm::Completion) {
     capture(domain, env, owner, &completion);
-    completion_done(domain, owner);
+    crate::operation::completion_done(domain, owner);
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     let preview = session::preview_completion(&domain.session, owner, completion.usage);
@@ -168,16 +168,6 @@ fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: c
     let completion = peer.completion(completion, env.limits.decoded_call_bytes.min(env.limits.session.session_bytes));
     domain.tickets = domain.tickets.saturating_add(peer.tickets()).saturating_sub(before);
     session_step(domain, env, session::Event::Completed { owner, completion });
-}
-
-/// A provider terminal ends the actual issued span before session work proceeds.
-fn completion_done(domain: &mut Domain, owner: Token) -> crate::GrantName {
-    let grant = domain.completions.remove(&owner).expect("provider terminal belongs to an emitted call");
-    let id = *domain.sessions.get(&owner).expect("session lives through its provider terminal");
-    let conversation = domain.peers.get(id).expect("peer lives through its provider terminal").conversation;
-    let host_run = run::host_name(&domain.run, conversation).expect("run lives through its session's terminal");
-    domain.notices.push(Request::LongDone { host_run });
-    grant
 }
 
 fn acknowledge(domain: &mut Domain, env: &Env<Limits>, run: Token, turn: u32) {
@@ -711,10 +701,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             );
         }
     };
-    let inserted = domain.completions.insert(owner, grant).expect("one completion per session");
-    assert!(inserted.is_none(), "the previous completion ended");
-    let host_run = run::host_name(&domain.run, conversation).expect("issued completion retains its run");
-    out.push(Request::Long { host_run, operation: Operation::Completion, until: deadlines.whole });
+    crate::operation::begin_completion(domain, owner, grant, conversation, deadlines.whole, out);
     out.push(Request::Complete {
         owner,
         grant,
