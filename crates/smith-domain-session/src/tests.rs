@@ -65,7 +65,7 @@ const LIMITS: Limits = Limits {
     retries: 2,
     backoff_base: Duration::from_millis(100),
     backoff_max: Duration::from_secs(1),
-    call_timeout: Duration::from_secs(30),
+
     tool_timeout: Duration::from_secs(20),
     facts: 64,
     parallel_tools: 2,
@@ -288,6 +288,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 
 fn spec() -> Spec {
     Spec {
+        progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(b"model"),
         system: bytes(b"be brief"),
@@ -518,10 +519,9 @@ fn reading() -> Completion {
 }
 
 fn calling(request: Option<Request>) -> (Token, Prompt) {
-    let Some(Request::Complete { owner, prompt, timeout, .. }) = request else {
+    let Some(Request::Complete { owner, prompt, .. }) = request else {
         panic!("expected a call, not {request:?}");
     };
-    assert_eq!(timeout, LIMITS.call_timeout);
     (owner, prompt)
 }
 
@@ -1182,6 +1182,67 @@ fn closing_a_calling_session_cancels_its_call_and_ends_once_the_call_has_ended()
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     assert_eq!(h.domain.next_deadline(), None, "a closing session waits for nothing but its call");
     assert_eq!(h.step(Event::Cancelled { owner }), Some(ended(End::Closed, 0)));
+}
+
+#[test]
+fn each_attempt_keeps_model_progress_and_the_same_session_expiry() {
+    let mut h = Harness::new(LIMITS);
+    h.after(Duration::from_secs(7));
+    let progress = crate::Progress { head: Duration::from_secs(11), idle: Duration::from_secs(13) };
+    let request = Spec { progress, budget: Budget { time: Duration::from_secs(90), ..BUDGET }, ..spec() };
+    step(&mut h.domain, &h.env, Event::Open { opener: Token::new(1), opening: opening(request) }, &mut h.out);
+    assert!(matches!(h.next(), Some(Request::Opened { .. })));
+    let Some(Request::Complete { owner, deadlines, .. }) = h.one() else {
+        panic!("first completion");
+    };
+    assert_eq!(
+        deadlines,
+        crate::Deadlines {
+            head: progress.head,
+            idle: progress.idle,
+            whole: Time::ZERO.saturating_add(Duration::from_secs(97)),
+        }
+    );
+    assert_eq!(
+        h.step(Event::Failed {
+            owner,
+            failure: Failure::Overloaded,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default(),
+        }),
+        None
+    );
+    h.env.now = h.domain.next_deadline().expect("retry before expiry");
+    let Some(Request::Complete { deadlines: retried, .. }) = h.fire() else {
+        panic!("retry completion");
+    };
+    assert_eq!(retried, deadlines, "progress repeats but whole never restarts per attempt");
+}
+
+#[test]
+fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    h.after(BUDGET.time);
+    assert_eq!(
+        h.step(Event::Failed {
+            owner,
+            failure: Failure::TimedOut,
+            evidence: crate::llm::Evidence::Response,
+            detail: Box::default(),
+        }),
+        Some(ended(OUT_OF_TIME, 0))
+    );
+    assert_eq!(h.domain.next_deadline(), None, "no retry or expiry remains");
+    assert_eq!(
+        h.step(Event::Failed {
+            owner,
+            failure: Failure::TimedOut,
+            evidence: crate::llm::Evidence::Response,
+            detail: Box::default(),
+        }),
+        None
+    );
 }
 
 #[test]

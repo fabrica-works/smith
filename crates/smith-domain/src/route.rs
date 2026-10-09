@@ -389,7 +389,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         session::Request::Complete {
             owner,
             prompt,
-            timeout,
+            deadlines,
             max_completion_bytes,
             max_completion_blocks,
             max_failure_bytes,
@@ -397,7 +397,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             let pending = PendingCompletion {
                 owner,
                 prompt,
-                timeout,
+                deadlines,
                 max_completion_bytes,
                 max_completion_blocks,
                 max_failure_bytes,
@@ -589,7 +589,7 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
 pub(crate) struct PendingCompletion {
     owner: Token,
     prompt: session::llm::Prompt,
-    timeout: Duration,
+    deadlines: smith_domain_session::Deadlines,
     max_completion_bytes: u64,
     max_completion_blocks: u32,
     max_failure_bytes: u32,
@@ -624,7 +624,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             return session_step(domain, env, session::Event::UnsentClosed { owner });
         }
     }
-    let PendingCompletion { owner, prompt, timeout, max_completion_bytes, max_completion_blocks, max_failure_bytes } =
+    let PendingCompletion { owner, prompt, deadlines, max_completion_bytes, max_completion_blocks, max_failure_bytes } =
         pending;
     let peer = domain.peers.get_mut(id).expect("a peer lives as its session");
     // What the last completion asked and the session did not dispatch,
@@ -681,7 +681,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
         owner,
         grant,
         prompt,
-        timeout,
+        deadlines,
         max_completion_bytes,
         max_completion_blocks,
         max_failure_bytes,
@@ -692,6 +692,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
 /// Host rate/share translation and concrete restore admission precede effects.
 /// Session alone prices, while token ceilings remain receiving limits.
 fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: run::Opening) {
+    let progress = domain.config.progress(&opening.llm);
     let activation = opening.activation;
     let account = opening.llm.account;
     let dialect = opening.llm.dialect;
@@ -717,7 +718,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         }
         None => (None, Box::default()),
     };
-    let Some((mut spec, offered)) = translate::spec(opening, env.limits.session.budget) else {
+    let Some((mut spec, offered)) = translate::spec(opening, env.limits.session.budget, progress) else {
         // Refused at the conversations' entrance, in the run's terms.
         let ended = run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO };
         return run_step(domain, env, ended);

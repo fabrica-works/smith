@@ -117,7 +117,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
             fact_reserve_bytes: 128,
             grants: 8,
         },
-        llm: component_limits(profile, configuration, client, io, &domain, rendered_result),
+        llm: component_limits(profile, client, io, &domain, rendered_result),
         machine: machine::derive(&machine::Derivation {
             operations: domain.run.calls,
             roots: domain.session.tools.repos,
@@ -186,22 +186,6 @@ fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, ProfileError> {
     largest.checked_add(8).ok_or(ProfileError::ChannelFrame)
 }
 
-fn max_connect(configuration: &Configuration) -> Duration {
-    let mut longest = Duration::ZERO;
-    for endpoint in &configuration.endpoints {
-        longest = longest.max(endpoint.connect);
-    }
-    longest.max(Duration::from_millis(1))
-}
-
-fn max_handshake(configuration: &Configuration) -> Duration {
-    let mut longest = Duration::ZERO;
-    for endpoint in &configuration.endpoints {
-        longest = longest.max(endpoint.handshake);
-    }
-    longest.max(Duration::from_millis(1))
-}
-
 fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<domain::Limits, ProfileError> {
     let declared = profile.declared;
     let policy = profile.policy;
@@ -267,7 +251,6 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
 
 fn component_limits(
     profile: &Profile,
-    configuration: &Configuration,
     client: shared::client::Limits,
     io: io::Limits,
     domain: &domain::Limits,
@@ -299,9 +282,5 @@ fn component_limits(
         contract_bytes: 4096,
         accounts: ACCOUNTS,
         grant_value_bytes: 2048,
-        connect: Some(max_connect(configuration)),
-        handshake: Some(max_handshake(configuration)),
-        head: Some(Duration::from_secs(60)),
-        idle: Some(Duration::from_secs(30)),
     }
 }

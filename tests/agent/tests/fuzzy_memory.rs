@@ -176,7 +176,7 @@ fn charter(context_bytes: u64) -> Charter {
             checks: b".temper/pre-pr".as_slice().into(),
         }),
         resume: false,
-        waiting: skein_lib::Duration::from_secs(30),
+        waiting: Duration::from_secs(30),
     }
 }
 
@@ -729,6 +729,8 @@ fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
                 model: Box::from(&b"m"[..]),
                 window: 8192,
                 output: 4096,
+                head: Duration::from_secs(60),
+                idle: Duration::from_secs(30),
             }]),
         },
         seed,

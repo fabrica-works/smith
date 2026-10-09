@@ -109,7 +109,7 @@ const LIMITS: Limits = Limits {
         retries: 1,
         backoff_base: Duration::from_millis(100),
         backoff_max: Duration::from_secs(1),
-        call_timeout: Duration::from_secs(30),
+
         tool_timeout: Duration::from_secs(20),
         facts: 64,
         parallel_tools: 2,
@@ -254,24 +254,32 @@ impl Harness {
                             model: Box::from(&b"model-a"[..]),
                             window: 8192,
                             output: 1024,
+                            head: Duration::from_secs(60),
+                            idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
                             endpoint: Endpoint(1),
                             model: Box::from(&b"model-b"[..]),
                             window: 8192,
                             output: 1024,
+                            head: Duration::from_secs(60),
+                            idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-a"[..]),
                             window: 8192,
                             output: 1024,
+                            head: Duration::from_secs(60),
+                            idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-b"[..]),
                             window: 8192,
                             output: 1024,
+                            head: Duration::from_secs(60),
+                            idle: Duration::from_secs(30),
                         },
                     ]),
                 },
@@ -673,10 +681,11 @@ fn completing(emitted: Box<[Request]>) -> (Token, Prompt) {
     let Ok(one) = Box::<[Request; 1]>::try_from(emitted) else {
         panic!("expected one request");
     };
-    let [Request::Complete { owner, prompt, timeout, grant: _, .. }] = *one else {
+    let [Request::Complete { owner, prompt, deadlines, grant: _, .. }] = *one else {
         panic!("expected a call to an LLM");
     };
-    assert_eq!(timeout, LIMITS.session.call_timeout);
+    assert_eq!(deadlines.head, Duration::from_secs(60));
+    assert_eq!(deadlines.idle, Duration::from_secs(30));
     (owner, prompt)
 }
 

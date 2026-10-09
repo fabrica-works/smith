@@ -81,7 +81,7 @@ pub const LIMITS: Limits = Limits {
         retries: 3,
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
-        call_timeout: Duration::from_secs(60),
+
         tool_timeout: Duration::from_secs(60),
         facts: 1024,
         parallel_tools: 4,
@@ -140,7 +140,7 @@ pub const TIGHT: Limits = Limits {
         failure_bytes: 512,
         delegated_result_bytes: 4_194_304,
         retries: 2,
-        call_timeout: Duration::from_secs(20),
+
         tool_timeout: Duration::from_secs(30),
         parallel_tools: 3,
         tools: tools::Limits { kits: 4, calls: 3, ..LIMITS.session.tools },

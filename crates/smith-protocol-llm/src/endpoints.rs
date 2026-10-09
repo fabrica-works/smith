@@ -6,7 +6,7 @@
 use alloc::boxed::Box;
 use core::mem::size_of;
 
-use skein_lib::{List, Map};
+use skein_lib::{Duration, List, Map};
 use skein_llm::{Prompt, Provider};
 use skein_llm_connection as connection;
 use smith_domain::llm;
@@ -46,6 +46,8 @@ pub struct ConfiguredEndpoint {
     pub destination: connection::Endpoint,
     /// Credential account selected for calls to this endpoint.
     pub account: u32,
+    pub connect: Duration,
+    pub handshake: Duration,
     /// Dialect-supported reasoning option supplied by startup configuration.
     pub reasoning_effort: Option<Box<[u8]>>,
     /// Dialect-supported cache affinity supplied by startup configuration.
@@ -63,6 +65,8 @@ pub struct EndpointOptions {
     pub index: u32,
     /// Credential account selected for this endpoint.
     pub account: u32,
+    pub connect: Duration,
+    pub handshake: Duration,
     /// Dialect that owns replay and provider-specific request rules.
     pub provider: Provider,
     /// Configured reasoning option, when supported.
@@ -141,6 +145,8 @@ impl Endpoints {
             let option = EndpointOptions {
                 index,
                 account: configured.account,
+                connect: configured.connect,
+                handshake: configured.handshake,
                 provider,
                 reasoning_effort: configured.reasoning_effort,
                 cache_key: configured.cache_key,

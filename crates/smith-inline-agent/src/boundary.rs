@@ -3,7 +3,7 @@
 //! no operation is answered here and each provider request owes one terminal.
 
 use alloc::boxed::Box;
-use skein_lib::{Duration, Time, Token};
+use skein_lib::{Time, Token};
 use smith_domain as smith;
 use smith_host_domain::parent;
 
@@ -45,7 +45,7 @@ pub enum Lower {
         owner: Token,
         grant: smith::GrantName,
         prompt: smith::llm::Prompt,
-        timeout: Duration,
+        deadlines: smith::session::Deadlines,
         max_completion_bytes: u64,
         max_completion_blocks: u32,
         max_failure_bytes: u32,

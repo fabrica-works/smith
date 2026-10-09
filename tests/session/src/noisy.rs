@@ -19,7 +19,7 @@ pub fn noisy(seed: u64) -> Settings {
     let mut rng = Rng::new(seed);
     let calm = Settings::calm(seed);
     let mut millis = |low: u64, high: u64| Duration::from_millis(rng.between(low, high));
-    let call_timeout = millis(500, 5_000);
+    let call_head = millis(500, 5_000);
     let tool_timeout = millis(500, 5_000);
     let session_timeout = millis(2_000, 120_000);
     let latency_max = millis(10, 4_000);
@@ -28,6 +28,7 @@ pub fn noisy(seed: u64) -> Settings {
     let mut pick = |low: u64, high: u64| u32::try_from(rng.between(low, high)).expect("small numbers");
     let (sessions, parallel_tools) = (pick(1, 4), pick(1, 4));
     let mut settings = Settings {
+        progress: smith_domain_session::Progress { head: call_head, idle: call_head },
         agent: Limits {
             sessions,
             messages: pick(4, 16),
@@ -40,7 +41,6 @@ pub fn noisy(seed: u64) -> Settings {
             retries: pick(0, 4),
             backoff_base: Duration::from_millis(50),
             backoff_max: Duration::from_secs(2),
-            call_timeout,
             tool_timeout,
             facts: pick(0, 24),
             parallel_tools,
@@ -131,6 +131,9 @@ pub fn submit_noisily(world: &mut World, settings: &Settings, seed: u64) {
         }
         // Answers short enough that some are cut, a tool call included.
         let max_tokens = u32::try_from(rng.between(4, 64)).expect("a small number");
-        world.submit(at, Spec { budget, output: max_tokens, ..spec(b"make the tests pass") });
+        world.submit(
+            at,
+            Spec { progress: settings.progress, budget, output: max_tokens, ..spec(b"make the tests pass") },
+        );
     }
 }

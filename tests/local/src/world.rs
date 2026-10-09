@@ -586,6 +586,10 @@ impl World {
                     text: b"Greet the person, then wait for their questions.".as_slice().into(),
                 }]),
             },
+            progress: Box::new([smith_domain::session::Progress {
+                head: Duration::from_secs(60),
+                idle: Duration::from_secs(30),
+            }]),
             models: Box::new([run::charter::Llm {
                 prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
                 dialect: 1,

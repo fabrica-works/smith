@@ -52,6 +52,10 @@ fn config() -> Config {
     };
     Config {
         local: local::Config {
+            progress: Box::new([smith_domain::session::Progress {
+                head: Duration::from_secs(60),
+                idle: Duration::from_secs(30),
+            }]),
             chat: Box::from(&b"main"[..]),
             instructions: Box::from(&b"Assist"[..]),
             brief: run::charter::Brief { sections: Box::new([]) },

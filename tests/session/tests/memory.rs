@@ -62,7 +62,7 @@ const LIMITS: Limits = Limits {
     retries: 1,
     backoff_base: Duration::from_secs(60),
     backoff_max: Duration::from_secs(60),
-    call_timeout: Duration::from_secs(30),
+
     tool_timeout: Duration::from_secs(20),
     facts: 64,
     parallel_tools: 1,
@@ -392,6 +392,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 /// Caller-owned input with the same exact byte charge in every fill route.
 fn fill_spec(limits: Limits) -> Spec {
     Spec {
+        progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(1),
         system: bytes(1),
@@ -474,6 +475,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         (completion, delegate)
     };
     let spec = Spec {
+        progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
         system: bytes(1),
@@ -549,6 +551,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
     let opaque = limits.session_bytes - charge - 2 * block - 1 - reserve;
     let spec = Spec {
+        progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
         system: bytes(1),
@@ -659,6 +662,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         }]),
     };
     let spec = Spec {
+        progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
         system: bytes(1),

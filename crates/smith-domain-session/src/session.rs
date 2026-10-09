@@ -137,7 +137,9 @@ use core::mem::{self, size_of};
 use skein_lib::{Deadlines, Duration, Env, Id, List, Queue, ReplyTo, Rng, Set, Slab, Time, Token, Writer};
 use smith_domain_tools::{self as tools, Call, Effect, Entry, Grants, Outcome};
 
-use crate::boundary::{Budget, BudgetDenial, Dimension, End, Request, Spec, Yield};
+use crate::boundary::{
+    Budget, BudgetDenial, Deadlines as CallDeadlines, Dimension, End, Progress, Request, Spec, Yield,
+};
 use crate::domain::Domain;
 use crate::facts::{FactKind, Facts};
 use crate::limits::Limits;
@@ -157,6 +159,7 @@ struct Conversation {
     /// The opener's token, echoed on every record back to it.
     opener: Token,
     endpoint: Endpoint,
+    progress: Progress,
     model: Box<[u8]>,
     system: Box<[u8]>,
     /// The families of its own tools it offers the LLM, as its kit has them.
@@ -671,7 +674,13 @@ pub(crate) fn failed(
     );
     let state = mem::replace(&mut session.state, State::Closed);
     session.state = match state {
-        State::Calling { attempt } => call_failed(attempt, failure, evidence, &mut domain.rng, env),
+        State::Calling { attempt } => {
+            if failure == Failure::TimedOut && env.now >= session.conversation.expires {
+                finish(OUT_OF_TIME)
+            } else {
+                call_failed(attempt, failure, evidence, &mut domain.rng, env)
+            }
+        }
         State::Closing { end, waiting: waiting @ Waiting { call: true, .. } } => {
             State::Closing { end, waiting: Waiting { call: false, ..waiting } }
         }
@@ -1071,7 +1080,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
             Request::Complete {
                 owner: _,
                 prompt,
-                timeout: _,
+                deadlines: _,
                 max_completion_bytes: _,
                 max_completion_blocks: _,
                 max_failure_bytes: _,
@@ -1721,7 +1730,11 @@ fn admit(
     limits: &Limits,
     now: Time,
 ) -> Option<(Conversation, tools::Authority)> {
-    if spec.output == 0 || !affordable(&spec.budget, &limits.budget) {
+    if spec.output == 0
+        || spec.progress.head == Duration::ZERO
+        || spec.progress.idle == Duration::ZERO
+        || !affordable(&spec.budget, &limits.budget)
+    {
         return None;
     }
     let content: Box<[Block]> = Box::new([Block::Text { text: spec.prompt, replay: None }]);
@@ -1734,6 +1747,7 @@ fn admit(
     let conversation = Conversation {
         opener,
         endpoint: spec.endpoint,
+        progress: spec.progress,
         model: spec.model,
         system: spec.system,
         tools: spec.authority.grants,
@@ -1822,7 +1836,11 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
     Request::Complete {
         owner: id.token(),
         prompt,
-        timeout: limits.call_timeout,
+        deadlines: CallDeadlines {
+            head: conversation.progress.head,
+            idle: conversation.progress.idle,
+            whole: conversation.expires,
+        },
         max_completion_bytes: limits.completion_bytes,
         max_completion_blocks: limits.completion_blocks,
         max_failure_bytes: limits.failure_bytes,

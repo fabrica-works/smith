@@ -320,15 +320,15 @@ pub enum Request {
         change: run::outcome::Change,
     },
 
-    /// Ask an LLM for the next assistant message, giving up after `timeout`.
+    /// Ask an LLM for its next message, ended by one completion or call terminal.
     Complete {
         owner: Token,
         /// Credential name or refresh notice; its secret value stays below the domain.
         grant: GrantName,
         /// Complete provider-neutral conversation snapshot from the root, bounded by session ownership limits.
         prompt: Prompt,
-        /// Maximum time allowed for this completion or contained command.
-        timeout: Duration,
+        /// Model progress deadlines and the enclosing session's expiry.
+        deadlines: crate::session::Deadlines,
 
         /// Maximum owned translated completion bytes, including block cells,
         /// replay envelopes and decoded calls. The adapter verifies its configured

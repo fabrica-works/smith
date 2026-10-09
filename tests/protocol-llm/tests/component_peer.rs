@@ -57,10 +57,6 @@ fn limits() -> ComponentLimits {
         contract_bytes: 4096,
         accounts: 1,
         grant_value_bytes: 128,
-        connect: None,
-        handshake: None,
-        head: None,
-        idle: None,
     }
 }
 
@@ -118,6 +114,8 @@ fn run(dialect: Provider, calls: bool) {
     let mut domain = fake::Domain::try_scripted(&fake_limits, 3, scripts).expect("scripted domain");
     let endpoints = Endpoints::new(
         Box::new([ConfiguredEndpoint {
+            connect: skein_lib::Duration::from_secs(1),
+            handshake: skein_lib::Duration::from_secs(1),
             name: llm::Endpoint(1),
             destination: skein_llm_connection::Endpoint {
                 limits: limits().adapter.client,
@@ -179,7 +177,11 @@ fn run(dialect: Provider, calls: bool) {
                 }]),
                 max_tokens: 4096,
             },
-            timeout: Duration::from_secs(10),
+            deadlines: smith_domain::session::Deadlines {
+                head: Duration::from_secs(2),
+                idle: Duration::from_secs(3),
+                whole: Time::from_nanos(10_000_000_000),
+            },
             bounds: limits().receiving,
             outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
             deliver: None,

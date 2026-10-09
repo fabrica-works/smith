@@ -185,13 +185,13 @@ pub enum Request {
         /// every field is present. This is never a raw provider observation.
         reported: Usage,
     },
-    /// Ask an LLM for the next assistant message, giving up after `timeout`.
+    /// Ask an LLM for its next message, ended by one completion or call terminal.
     Complete {
         owner: Token,
         /// First user message supplied by the opener.
         prompt: Prompt,
-        /// Maximum time allowed for this completion or contained command.
-        timeout: Duration,
+        /// Model progress deadlines and the enclosing session's expiry.
+        deadlines: Deadlines,
 
         /// Maximum owned translated completion bytes, including block cells,
         /// replay envelopes and decoded calls. The adapter verifies its configured
@@ -244,6 +244,7 @@ pub enum Request {
 #[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
     pub endpoint: Endpoint,
+    pub progress: Progress,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
@@ -261,6 +262,24 @@ pub struct Spec {
     pub output: u32,
     /// Allowance supplied at admission, checked before starting more work.
     pub budget: Budget,
+}
+
+/// A model's progress deadlines, supplied by the root on session admission.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Progress {
+    /// From request sent to the first response byte.
+    pub head: Duration,
+    /// Largest gap between response events.
+    pub idle: Duration,
+}
+
+/// One call's progress bounds and the session's absolute expiry.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Deadlines {
+    pub head: Duration,
+    pub idle: Duration,
+    /// Earlier of the session's own and its run's expiry.
+    pub whole: Time,
 }
 
 /// What a session may spend, from the moment it opens. Every dimension is

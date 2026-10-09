@@ -49,6 +49,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let agent = agent::worst_case(&limits.agent)?;
     let endpoints = u64::from(limits.models)
         .checked_mul(u64::try_from(size_of::<run::charter::Llm>()).ok()?)?
+        .checked_add(u64::from(limits.models).checked_mul(u64::try_from(size_of::<agent::session::Progress>()).ok()?)?)?
         .checked_add(u64::from(limits.models).checked_mul(u64::from(limits.text_bytes))?)?;
     let accounts = u64::from(limits.agent.accounts).checked_mul(u64::try_from(size_of::<u32>()).ok()?)?;
     let targets = u64::from(limits.agent.run.directories).checked_mul(u64::from(limits.text_bytes))?.checked_mul(2)?;

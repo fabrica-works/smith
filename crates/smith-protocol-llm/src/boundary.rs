@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Duration, Token};
+use skein_lib::Token;
 use smith_domain::{llm, run};
 
 /// A request routed from the root domain by its owning service.
@@ -20,7 +20,7 @@ pub enum FromDomain {
         owner: Token,
         grant: smith_domain::GrantName,
         prompt: llm::Prompt,
-        timeout: Duration,
+        deadlines: smith_domain::session::Deadlines,
         bounds: crate::Receiving,
         outcome: run::outcome::OutcomeSpec,
         deliver: Option<run::outcome::ChangeSpec>,

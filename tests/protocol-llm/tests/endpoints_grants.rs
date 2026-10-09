@@ -17,6 +17,8 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
         shared::Provider::Anthropic => shared::Endpoint::anthropic(),
     };
     ConfiguredEndpoint {
+        connect: skein_lib::Duration::from_secs(1),
+        handshake: skein_lib::Duration::from_secs(1),
         name: llm::Endpoint(name),
         destination: skein_llm_connection::Endpoint {
             limits: skein_llm_world::limits(),

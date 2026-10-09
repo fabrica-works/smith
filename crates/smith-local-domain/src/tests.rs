@@ -31,6 +31,10 @@ fn config() -> Config {
                 text: Box::from(&b"Work carefully"[..]),
             }]),
         },
+        progress: Box::new([smith_domain::session::Progress {
+            head: Duration::from_secs(60),
+            idle: Duration::from_secs(30),
+        }]),
         models: Box::new([run::charter::Llm {
             prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1 },
             dialect: 1,

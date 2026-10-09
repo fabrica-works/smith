@@ -126,13 +126,16 @@ impl Domain {
     fn with_placement(config: Config, limits: &Limits, seed: u64, placement: Placement) -> Result<Domain, Invalid> {
         config.validate(limits)?;
         let mut models = List::with_capacity(u32::try_from(config.models.len()).expect("validated models count"));
-        for model in &config.models {
+        for (index, model) in config.models.iter().enumerate() {
+            let progress = config.progress.get(index).expect("validated per-model progress inventory");
             models
                 .push(agent::ConfiguredModel {
                     endpoint: model.endpoint,
                     model: model.model.clone(),
                     window: model.window,
                     output: model.output,
+                    head: progress.head,
+                    idle: progress.idle,
                 })
                 .expect("one cell per configured model");
         }

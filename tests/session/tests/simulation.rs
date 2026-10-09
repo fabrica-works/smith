@@ -183,7 +183,7 @@ fn a_session_fails_once_its_retries_run_out() {
 fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped() {
     let calm = Settings::calm(6);
     let settings = Settings {
-        agent: Limits { call_timeout: Duration::from_secs(1), retries: 2, ..calm.agent },
+        agent: Limits { retries: 2, ..calm.agent },
         provider: Config {
             latency_min: Duration::from_secs(10),
             latency_max: Duration::from_secs(10),
@@ -192,7 +192,13 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
         ..calm
     };
     let mut world = World::new(settings);
-    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    let opener = world.submit(
+        Time::ZERO,
+        Spec {
+            progress: smith_domain_session::Progress { head: Duration::from_secs(1), idle: Duration::from_secs(1) },
+            ..spec(b"fix the build")
+        },
+    );
     world.run(ITERATIONS);
 
     assert_eq!(

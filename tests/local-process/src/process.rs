@@ -52,7 +52,9 @@ impl Launch {
 /// The bounded agent settings shared by both local placements.
 pub fn lower_configuration() -> agent::Config {
     let mut lower = smith_agent_process_world::configuration();
-    lower.limits.llm.head = Some(Duration::from_secs(10));
+    for model in &mut lower.domain.models {
+        model.head = Duration::from_secs(10);
+    }
     lower.limits.io.close_timeout = Duration::from_millis(50);
     lower.limits.llm.connection.idle_keep = Duration::from_millis(5);
     lower.limits.llm.connection.io.close_timeout = Duration::from_millis(50);
@@ -167,6 +169,8 @@ pub fn lower_configuration_with(tls: bool) -> agent::Config {
     if tls {
         lower.llm_endpoints = smith_protocol_llm::Endpoints::new(
             Box::new([smith_protocol_llm::ConfiguredEndpoint {
+                connect: skein_lib::Duration::from_secs(1),
+                handshake: skein_lib::Duration::from_secs(1),
                 name: smith_domain::llm::Endpoint(0),
                 destination: skein_llm_connection::Endpoint {
                     limits: lower.limits.llm.adapter.client,

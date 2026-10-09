@@ -243,6 +243,14 @@ pub fn policy(
         instructions: settings.instructions.as_bytes().into(),
         brief: run::charter::Brief { sections: brief.into() },
         models: models.into(),
+        progress: settings
+            .models
+            .iter()
+            .map(|model| smith_domain::session::Progress {
+                head: Duration::from_millis(model.head),
+                idle: Duration::from_millis(model.idle),
+            })
+            .collect(),
         budget: run::Budget {
             turns: settings.budget.turns,
             spend: settings.budget.spend,

@@ -622,7 +622,7 @@ impl Host {
                 checks: b".temper/pre-pr".as_slice().into(),
             }),
             resume: false,
-            waiting: skein_lib::Duration::from_secs(30),
+            waiting: Duration::from_secs(30),
         };
         (charter, workspace)
     }

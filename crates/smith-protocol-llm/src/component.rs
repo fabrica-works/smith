@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use core::fmt;
 
 use skein_io::{Event as IoEvent, Request as IoRequest};
-use skein_lib::{Duration, Env, List, Map, Queue, Set, Time, Token, bytes};
+use skein_lib::{Env, List, Map, Queue, Set, Time, Token, bytes};
 use skein_llm::{self as shared, Credential};
 use skein_llm_connection as connection;
 use smith_domain::{Event as DomainEvent, GrantName, llm, run};
@@ -20,7 +20,7 @@ use crate::IdentityProfile;
 use crate::boundary::{FromDomain, ToDomain};
 use crate::{Context, EndpointOptions, Endpoints, Error, GrantError, Grants, Receiving};
 
-/// Startup bounds and phase deadlines for the LLM component.
+/// Startup receiving and capacity bounds for the LLM component.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ComponentLimits {
     /// Translation and receiving bounds.
@@ -35,14 +35,6 @@ pub struct ComponentLimits {
     pub accounts: u32,
     /// Maximum bearer and provider account-id bytes in one grant.
     pub grant_value_bytes: u32,
-    /// Connecting deadline before a socket exists.
-    pub connect: Option<Duration>,
-    /// TLS handshake deadline.
-    pub handshake: Option<Duration>,
-    /// Response-head deadline.
-    pub head: Option<Duration>,
-    /// Inactivity deadline between response events.
-    pub idle: Option<Duration>,
 }
 
 /// A startup configuration problem.
@@ -160,8 +152,8 @@ impl Component {
         io: &mut Queue<IoRequest>,
     ) {
         match request {
-            FromDomain::Complete { owner, grant, prompt, timeout, bounds, outcome, deliver } => {
-                self.start(env, owner, grant, prompt, timeout, bounds, outcome, deliver, to_domain, io);
+            FromDomain::Complete { owner, grant, prompt, deadlines, bounds, outcome, deliver } => {
+                self.start(env, owner, grant, prompt, deadlines, bounds, outcome, deliver, to_domain, io);
             }
             FromDomain::Cancel { owner } => {
                 self.next.remove(&owner);
@@ -224,7 +216,7 @@ impl Component {
         owner: Token,
         grant: GrantName,
         prompt: llm::Prompt,
-        timeout: Duration,
+        deadlines: smith_domain::session::Deadlines,
         bounds: Receiving,
         outcome: run::outcome::OutcomeSpec,
         deliver: Option<run::outcome::ChangeSpec>,
@@ -301,11 +293,11 @@ impl Component {
             }
         }
         let deadlines = connection::Deadlines {
-            connect: self.limits.connect,
-            handshake: self.limits.handshake,
-            head: self.limits.head,
-            idle: self.limits.idle,
-            whole: Some(timeout),
+            connect: Some(options.connect),
+            handshake: Some(options.handshake),
+            head: Some(deadlines.head),
+            idle: Some(deadlines.idle),
+            whole: Some(deadlines.whole.saturating_since(env.now)),
         };
         let child_env = self.child_env(env);
         self.connection.down(

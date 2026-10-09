@@ -6,6 +6,8 @@
 use alloc::boxed::Box;
 use core::mem::size_of;
 
+use skein_lib::Duration;
+
 use smith_domain_run::{
     Invalid,
     charter::{Endpoint, Llm},
@@ -22,6 +24,10 @@ pub struct ConfiguredModel {
     pub window: u32,
     /// Declared maximum completion tokens, thinking included.
     pub output: u32,
+    /// First response byte deadline for each call.
+    pub head: Duration,
+    /// Maximum gap between response events for each call.
+    pub idle: Duration,
 }
 
 impl ConfiguredModel {
@@ -62,7 +68,13 @@ impl Config {
         }
         let mut bytes = 0_u64;
         for (index, model) in self.models.iter().enumerate() {
-            if model.model.is_empty() || model.window == 0 || model.output == 0 || !self.contains(model.endpoint) {
+            if model.model.is_empty()
+                || model.window == 0
+                || model.output == 0
+                || model.head == Duration::ZERO
+                || model.idle == Duration::ZERO
+                || !self.contains(model.endpoint)
+            {
                 return false;
             }
             let owned = match ConfiguredModel::worst_case(model.model.len()) {
@@ -88,6 +100,16 @@ impl Config {
     /// Whether this endpoint name was configured.
     pub(crate) fn contains(&self, endpoint: Endpoint) -> bool {
         self.endpoints.contains(&endpoint)
+    }
+
+    /// Progress deadlines for an admitted model, retained only by the root.
+    pub(crate) fn progress(&self, llm: &Llm) -> crate::session::Progress {
+        for model in &self.models {
+            if llm.endpoint == model.endpoint && llm.model == model.model {
+                return crate::session::Progress { head: model.head, idle: model.idle };
+            }
+        }
+        unreachable!("admission checked the declared model")
     }
 
     /// Check a charter's effective quantities against its served model.

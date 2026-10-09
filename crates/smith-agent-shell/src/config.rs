@@ -253,6 +253,8 @@ fn build(document: Document) -> Result<Configuration, String> {
                 model: model.name.clone(),
                 window: model.window,
                 output: model.output,
+                head: model.head,
+                idle: model.idle,
             });
         }
     }
@@ -373,6 +375,8 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
                 credential: credential_limits(limits),
             },
             account: endpoint.account,
+            connect: duration(endpoint.connect, "endpoint.connect")?,
+            handshake: duration(endpoint.handshake, "endpoint.handshake")?,
             reasoning_effort: endpoint.reasoning_effort.map(|value| value.into_bytes().into()),
             cache_key: endpoint.cache_key.map(|value| value.into_bytes().into()),
             identity,

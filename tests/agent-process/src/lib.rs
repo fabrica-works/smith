@@ -126,10 +126,6 @@ pub fn limits() -> agent::Limits {
     limits.llm.receiving.max_completion_blocks = client.dialect.parts;
     limits.llm.accounts = 1;
     limits.llm.grant_value_bytes = 128;
-    limits.llm.connect = Some(Duration::from_secs(1));
-    limits.llm.handshake = Some(Duration::from_secs(1));
-    limits.llm.head = Some(Duration::from_secs(2));
-    limits.llm.idle = Some(Duration::from_secs(3));
     limits.machine.file_bytes = 16;
     limits.file_timeout = Duration::from_secs(1);
     limits.queue = smith_domain::max_out(&limits.domain).max(256);
@@ -151,6 +147,8 @@ pub fn configuration() -> agent::Config {
         .expect("one endpoint");
     let llm_endpoints = llm::Endpoints::new(
         Box::new([llm::ConfiguredEndpoint {
+            connect: skein_lib::Duration::from_secs(1),
+            handshake: skein_lib::Duration::from_secs(1),
             name: smith_domain::llm::Endpoint(0),
             destination: skein_llm_connection::Endpoint {
                 limits: limits().llm.adapter.client,
@@ -181,6 +179,8 @@ pub fn configuration() -> agent::Config {
                 model: Box::from(&b"fake"[..]),
                 window: 8192,
                 output: 4096,
+                head: Duration::from_secs(2),
+                idle: Duration::from_secs(3),
             }]),
         },
         channel_endpoints: channel::Endpoints::new(endpoints),

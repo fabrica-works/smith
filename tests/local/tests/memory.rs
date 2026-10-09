@@ -26,6 +26,10 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
         chat: b"main".as_slice().into(),
         instructions: b"Assist the person".as_slice().into(),
         brief: run::charter::Brief { sections: Box::new([]) },
+        progress: Box::new([smith_domain::session::Progress {
+            head: Duration::from_secs(60),
+            idle: Duration::from_secs(30),
+        }]),
         models: Box::new([run::charter::Llm {
             prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
             dialect: 1,

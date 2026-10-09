@@ -38,6 +38,8 @@ pub struct Config {
     pub brief: charter::Brief,
     /// Main model first, followed by models available to sub-agents.
     pub models: Box<[charter::Llm]>,
+    /// Declared deadlines in the same order as `models`, kept outside charters.
+    pub progress: Box<[smith_domain::session::Progress]>,
     /// Activation budget in the host's unit.
     pub budget: run::Budget,
     /// Optional guide and check paths.
@@ -126,7 +128,8 @@ impl Config {
         if brief_bytes > u64::from(limits.text_bytes) {
             return Err(Invalid::Text);
         }
-        if self.models.is_empty()
+        if self.progress.len() != self.models.len()
+            || self.models.is_empty()
             || self.models.len() > usize::try_from(limits.models).expect("u32 fits usize")
             || self.models.len() > usize::try_from(limits.agent.run.models.saturating_add(1)).expect("u32 fits usize")
         {

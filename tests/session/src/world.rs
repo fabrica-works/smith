@@ -116,6 +116,8 @@ pub struct Settings {
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     pub agent: agent::Limits,
+    /// Model deadlines supplied by the scripted opener in randomized worlds.
+    pub progress: agent::Progress,
     /// Neutral fake-provider behavior for this world.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -188,6 +190,7 @@ impl Settings {
     #[must_use]
     pub const fn calm(seed: u64) -> Settings {
         Settings {
+            progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
             seed,
             agent: agent::Limits {
                 sessions: 4,
@@ -204,7 +207,7 @@ impl Settings {
                 retries: 3,
                 backoff_base: Duration::from_millis(200),
                 backoff_max: Duration::from_secs(5),
-                call_timeout: Duration::from_secs(60),
+
                 tool_timeout: Duration::from_secs(60),
                 facts: 256,
                 parallel_tools: 4,
@@ -259,6 +262,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants, env: Box::new([]) };
     agent::Spec {
+        progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: b"fake-1"[..].into(),
         system: b"You are a coding agent."[..].into(),
@@ -1118,13 +1122,16 @@ impl World {
             agent::Request::Ended { opener, end, turns, usage, .. } => {
                 self.ended(opener.raw(), Ended { end, turns, usage });
             }
-            agent::Request::Complete { owner, prompt, timeout, .. } => {
+            agent::Request::Complete { owner, prompt, deadlines, .. } => {
                 self.affordable(owner, &prompt);
                 in_call_order(&prompt);
                 self.check_results(owner, &prompt);
                 self.stats.not_run += not_run(&prompt);
                 let call = self.wire.name();
-                let deadline = self.schedule(self.now.saturating_add(timeout), Delivery::Deadline { call });
+                let deadline = self.schedule(
+                    deadlines.whole.min(self.now.saturating_add(deadlines.head)),
+                    Delivery::Deadline { call },
+                );
                 let opener = *self.openers.get(&owner).expect("a session calls the LLM while it lives");
                 let served = prompt.delegated.clone();
                 self.calls.open(call, Call { owner, deadline, opener, served });
@@ -2027,9 +2034,9 @@ fn describe_agent_request(request: &agent::Request) -> String {
         agent::Request::Ended { opener, end, turns, usage, .. } => {
             format!("ended {} {end:?} after {turns} turns, {usage:?}", opener.raw())
         }
-        agent::Request::Complete { owner, prompt, timeout, .. } => {
+        agent::Request::Complete { owner, prompt, deadlines, .. } => {
             let (messages, most) = (prompt.messages.len(), prompt.max_tokens);
-            format!("complete {} with {messages} messages, at most {most} tokens, within {timeout:?}", owner.raw())
+            format!("complete {} with {messages} messages, at most {most} tokens, deadlines {deadlines:?}", owner.raw())
         }
         agent::Request::Cancel { owner } => format!("cancel {}", owner.raw()),
         agent::Request::Io { owner, op, deadline } => format!("io {} {op:?} by {}", owner.raw(), deadline.as_nanos()),

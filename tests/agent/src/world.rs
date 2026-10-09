@@ -2118,6 +2118,8 @@ fn configuration() -> agent::Config {
                 model: (*name).into(),
                 window: 8192,
                 output: 4096,
+                head: Duration::from_secs(60),
+                idle: Duration::from_secs(30),
             })
             .collect(),
     }

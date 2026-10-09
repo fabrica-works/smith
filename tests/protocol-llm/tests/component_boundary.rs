@@ -55,18 +55,20 @@ fn limits() -> ComponentLimits {
         contract_bytes: 4096,
         accounts: 1,
         grant_value_bytes: 128,
-        connect: Some(Duration::from_secs(1)),
-        handshake: Some(Duration::from_secs(1)),
-        head: Some(Duration::from_secs(2)),
-        idle: Some(Duration::from_secs(3)),
     }
 }
 
 fn endpoints() -> Endpoints {
+    endpoints_with_connect(Duration::from_secs(1))
+}
+
+fn endpoints_with_connect(connect: Duration) -> Endpoints {
     let mut roots = skein_tls::RootCertStore::empty();
     roots.add(skein_tls::CertificateDer::from(include_bytes!("../fixtures/root.der").to_vec())).expect("fixture root");
     Endpoints::new(
         Box::new([ConfiguredEndpoint {
+            connect,
+            handshake: skein_lib::Duration::from_secs(1),
             name: llm::Endpoint(42),
             destination: skein_llm_connection::Endpoint {
                 limits: limits().adapter.client,
@@ -113,7 +115,11 @@ fn complete(owner: u64, generation: u64, bounds: Receiving) -> FromDomain {
         owner: Token::new(owner),
         grant: GrantName { account: 0, generation },
         prompt: prompt(),
-        timeout: Duration::from_secs(10),
+        deadlines: smith_domain::session::Deadlines {
+            head: Duration::from_secs(2),
+            idle: Duration::from_secs(3),
+            whole: Time::from_nanos(10_000_000_000),
+        },
         bounds,
         outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
         deliver: None,
@@ -311,13 +317,9 @@ fn a_tls_handshake_deadline_stops_the_unsent_call() {
 }
 
 #[test]
-fn the_whole_deadline_is_armed_even_without_phase_deadlines() {
-    let mut limits = limits();
-    limits.connect = None;
-    limits.handshake = None;
-    limits.head = None;
-    limits.idle = None;
-    let mut component = Component::new(&limits, endpoints()).expect("component");
+fn the_whole_deadline_precedes_a_later_endpoint_connect_deadline() {
+    let limits = limits();
+    let mut component = Component::new(&limits, endpoints_with_connect(Duration::from_secs(60))).expect("component");
     let mut up = Queue::with_capacity(adapter::MAX_OUT.above);
     let mut io = Queue::with_capacity(adapter::MAX_OUT.below);
     component

@@ -56,7 +56,7 @@ pub(crate) struct Offered {
 /// offered as descriptors: `finish` if the opening says so, a write, run
 /// alone; sub-agents if its families have them, a write when the families
 /// asked for may write, which the widest the asker may give them do.
-pub(crate) fn spec(opening: Opening, receiving: Budget) -> Option<(Spec, Offered)> {
+pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progress) -> Option<(Spec, Offered)> {
     let Opening {
         host_tools,
         llm,
@@ -98,6 +98,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget) -> Option<(Spec, Offered
     let run::Budget { turns, spend: _, time } = budget;
     let spec = Spec {
         endpoint: llm::Endpoint(llm.endpoint.0),
+        progress,
         model: llm.model,
         system,
         authority,

@@ -55,7 +55,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-pub use boundary::{Budget, BudgetDenial, Dimension, End, Event, Request, Spec, Yield};
+pub use boundary::{Budget, BudgetDenial, Deadlines, Dimension, End, Event, Progress, Request, Spec, Yield};
 pub use domain::{Domain, fire, max_facts, max_out, max_to_opener, resume, step};
 pub use facts::{Fact, FactKind, ResponseInfo, ToolCall, ToolSource};
 pub use limits::{Derivation, Limits, MAX_PARALLEL, completion_reserve, derive, worst_case};

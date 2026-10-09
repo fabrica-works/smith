@@ -1532,7 +1532,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             owner,
             grant,
             prompt,
-            timeout,
+            deadlines,
             max_completion_bytes,
             max_completion_blocks,
             max_failure_bytes,
@@ -1556,7 +1556,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 owner,
                 grant,
                 prompt,
-                timeout,
+                deadlines,
                 bounds: llm::Receiving {
                     max_completion_bytes,
                     max_completion_blocks,
@@ -1998,10 +1998,6 @@ mod tests {
                 contract_bytes: 4096,
                 accounts: 1,
                 grant_value_bytes: 128,
-                connect: Some(Duration::from_secs(1)),
-                handshake: Some(Duration::from_secs(1)),
-                head: Some(Duration::from_secs(2)),
-                idle: Some(Duration::from_secs(3)),
             },
             machine: machine::Limits {
                 operations: 2,

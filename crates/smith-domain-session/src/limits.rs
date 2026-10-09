@@ -68,8 +68,6 @@ pub struct Limits {
     pub backoff_base: Duration,
     /// The longest wait before a retry, unless the provider asks for longer.
     pub backoff_max: Duration,
-    /// How long the protocol layer gives each call.
-    pub call_timeout: Duration,
     /// How long a tool call may run, and no later than the session's time
     /// runs out. Its deadline goes with it, and a call that runs out of time
     /// is answered as such, to the LLM. A delegated call has no timeout here:
@@ -215,7 +213,6 @@ pub fn derive(inputs: &Derivation) -> Option<Limits> {
         retries: 3,
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
-        call_timeout: Duration::from_secs(60),
         tool_timeout: inputs.tool_deadline,
         facts: 1024,
         parallel_tools: inputs.calls_per_response.min(4),
