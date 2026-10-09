@@ -177,6 +177,20 @@ pub fn policy(
     endpoints: &channel::Endpoints,
     agent_limits: domain::Limits,
 ) -> Result<Prepared, String> {
+    run::Budget {
+        turns: settings.budget.turns,
+        spend: settings.budget.spend,
+        time: Duration::from_secs(settings.budget.seconds),
+    }
+    .check(&agent_limits.run.budget)
+    .map_err(budget_refusal)?;
+    if Duration::from_secs(settings.waiting_seconds) > agent_limits.run.waiting {
+        return Err(format!(
+            "waiting_seconds exceeds the agent's ceiling of {} seconds",
+            agent_limits.run.waiting.as_nanos() / 1_000_000_000
+        ));
+    }
+    check_prices(settings)?;
     let mut models = Vec::with_capacity(settings.models.len());
     let mut accounts = Vec::new();
     for model in &settings.models {
@@ -304,6 +318,46 @@ pub fn policy(
     Ok(Prepared { config: policy, limits, paths: paths.into() })
 }
 
+fn check_prices(settings: &Settings) -> Result<(), String> {
+    for (index, model) in settings.models.iter().enumerate() {
+        for (key, value) in [
+            ("input_price", model.input_price),
+            ("cached_price", model.cached_price),
+            ("output_price", model.output_price),
+        ] {
+            if value == 0 {
+                return Err(format!("models[{index}].{key} must be positive"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn budget_refusal(reason: run::BudgetRefusal) -> String {
+    match reason {
+        run::BudgetRefusal::Ceiling(ceiling) => match ceiling {
+            run::Ceiling::Turns(most) => format!("budget.turns exceeds the agent's ceiling of {most}"),
+            run::Ceiling::Spend(most) => format!("budget.spend exceeds the agent's ceiling of {most} micro-dollars"),
+            run::Ceiling::Time(most) => {
+                format!("budget.seconds exceeds the agent's ceiling of {} seconds", most.as_nanos() / 1_000_000_000)
+            }
+        },
+        run::BudgetRefusal::Empty(part) => format!("budget.{} must be positive", budget_key(part)),
+        run::BudgetRefusal::Reserve(part) => format!("budget.{} cannot hold the finishing reserve", budget_key(part)),
+        run::BudgetRefusal::Completion { most } => {
+            format!("budget.spend cannot pay for a completion costing {most} micro-dollars")
+        }
+    }
+}
+
+fn budget_key(part: run::Part) -> &'static str {
+    match part {
+        run::Part::Turns => "turns",
+        run::Part::Spend => "spend",
+        run::Part::Time => "seconds",
+    }
+}
+
 fn fields_of(source: &[Field]) -> Box<[run::outcome::FieldRule]> {
     source.iter().map(|field| run::outcome::FieldRule { name: field.name.as_bytes().into(), max: field.max }).collect()
 }
@@ -321,6 +375,7 @@ pub fn read(global: &Path, workspace: Option<&Path>) -> Result<Settings, String>
         merge(&mut document, override_document);
     }
     let settings: Settings = serde_json::from_value(document).map_err(|error| format!("local settings: {error}"))?;
+    check_prices(&settings)?;
     if settings.chat.is_empty()
         || settings.chat == "."
         || settings.chat == ".."
@@ -446,6 +501,55 @@ mod tests {
     }
 
     #[test]
+    fn a_zero_model_rate_names_its_settings_key_before_agent_preparation() {
+        for key in ["input_price", "cached_price", "output_price"] {
+            let path = std::env::temp_dir().join(format!("smith-zero-price-{}-{key}", std::process::id()));
+            let mut document = serde_json::json!({"agent":{},"chat":"one","instructions":"Assist",
+                "models":[{"endpoint":"main","name":"gpt-5","window":8192,"output":32,"reasoning_item":2048,
+                    "head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,
+                    "output_price":10_000_000,"price_unit":1_000_000}],
+                "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30});
+            document["models"][0][key] = serde_json::json!(0);
+            fs::write(&path, serde_json::to_vec(&document).expect("JSON")).expect("settings file");
+            assert_eq!(read(&path, None).expect_err("zero rate"), format!("models[0].{key} must be positive"));
+            fs::remove_file(path).expect("remove settings file");
+        }
+    }
+
+    fn admission_limits(settings: &Settings) -> domain::Limits {
+        smith_agent_service::profile::derive(
+            &{
+                let mut profile = smith_agent_service::profile::standard();
+                profile.declared.memory = Some(u64::MAX);
+                profile
+            },
+            &smith_agent_service::profile::Configuration {
+                environment_bytes: 0,
+                endpoints: Box::new([smith_agent_service::profile::Endpoint {
+                    number: 7,
+                    connect: Duration::from_secs(10),
+                    handshake: Duration::from_secs(10),
+                    models: settings
+                        .models
+                        .iter()
+                        .map(|model| smith_agent_service::profile::Model {
+                            name: model.name.as_bytes().into(),
+                            window: model.window,
+                            output: model.output,
+                            reasoning_item: model.reasoning_item,
+                            oversized_reasoning: smith_agent_service::profile::OversizedReasoning::Fail,
+                            head: Duration::from_millis(model.head),
+                            idle: Duration::from_millis(model.idle),
+                        })
+                        .collect(),
+                }]),
+            },
+        )
+        .expect("profile derives")
+        .domain
+    }
+
+    #[test]
     fn priced_local_policy_round_trips_through_the_child_charter() {
         let mut entries = List::with_capacity(1);
         entries
@@ -465,12 +569,12 @@ mod tests {
                 oversized_reasoning: None,
                 head: 60_000,
                 idle: 30_000,
-                input_price: 1,
-                cached_price: 1,
-                output_price: 1,
-                price_unit: 1,
+                input_price: 1_250_000,
+                cached_price: 125_000,
+                output_price: 10_000_000,
+                price_unit: 1_000_000,
             }],
-            budget: Budget { turns: 8, spend: 1, seconds: 60 },
+            budget: Budget { turns: 512, spend: 25_000_000, seconds: 3600 },
             waiting_seconds: 30,
             brief: vec![],
             directories: vec![],
@@ -484,41 +588,34 @@ mod tests {
             accounts: vec![],
             push: None,
         };
-        let prepared = policy(
-            &settings,
-            &endpoints,
-            smith_agent_service::profile::derive(
-                &{
-                    let mut profile = smith_agent_service::profile::standard();
-                    profile.declared.memory = Some(u64::MAX);
-                    profile
-                },
-                &smith_agent_service::profile::Configuration {
-                    environment_bytes: 0,
-                    endpoints: Box::new([smith_agent_service::profile::Endpoint {
-                        number: 7,
-                        connect: Duration::from_secs(10),
-                        handshake: Duration::from_secs(10),
-                        models: settings
-                            .models
-                            .iter()
-                            .map(|model| smith_agent_service::profile::Model {
-                                name: model.name.as_bytes().into(),
-                                window: model.window,
-                                output: model.output,
-                                reasoning_item: model.reasoning_item,
-                                oversized_reasoning: smith_agent_service::profile::OversizedReasoning::Fail,
-                                head: Duration::from_millis(model.head),
-                                idle: Duration::from_millis(model.idle),
-                            })
-                            .collect(),
-                    }]),
-                },
-            )
-            .expect("profile derives")
-            .domain,
-        )
-        .expect("bounded policy");
+        let agent_limits = admission_limits(&settings);
+        for (key, most) in [
+            ("turns", u64::from(agent_limits.run.budget.turns)),
+            ("spend", agent_limits.run.budget.spend),
+            ("seconds", agent_limits.run.budget.time.as_nanos() / 1_000_000_000),
+        ] {
+            let mut exceeded = settings.clone();
+            match key {
+                "turns" => exceeded.budget.turns = u32::try_from(most + 1).expect("bounded turns"),
+                "spend" => exceeded.budget.spend = most + 1,
+                "seconds" => exceeded.budget.seconds = most + 1,
+                _ => unreachable!("test keys"),
+            }
+            let refused = policy(&exceeded, &endpoints, agent_limits).err().expect("past ceiling");
+            assert!(refused.contains(&format!("budget.{key}")) && refused.contains(&most.to_string()), "{refused}");
+        }
+        for key in ["input_price", "cached_price", "output_price"] {
+            let mut unpriced = settings.clone();
+            match key {
+                "input_price" => unpriced.models[0].input_price = 0,
+                "cached_price" => unpriced.models[0].cached_price = 0,
+                "output_price" => unpriced.models[0].output_price = 0,
+                _ => unreachable!("test keys"),
+            }
+            let refused = policy(&unpriced, &endpoints, agent_limits).err().expect("zero rate");
+            assert_eq!(refused, format!("models[0].{key} must be positive"));
+        }
+        let prepared = policy(&settings, &endpoints, agent_limits).expect("bounded policy");
         assert!(prepared.paths.is_empty());
         assert_eq!(prepared.limits.endpoints.as_ref(), &[run::charter::Endpoint(7)]);
         let encoded = channel::encode_charter(&local::charter(&prepared.config), &wire::CEILINGS, &endpoints)

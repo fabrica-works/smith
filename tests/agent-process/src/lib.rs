@@ -100,8 +100,8 @@ pub fn limits() -> agent::Limits {
     profile.declared.list_entries = 2;
     profile.declared.guide = 128;
     profile.declared.memory = Some(1_u64 << 40_u32);
-    profile.policy.max_turns = 8;
-    profile.policy.max_time = Duration::from_secs(60);
+    profile.policy.max_turns = 512;
+    profile.policy.max_time = Duration::from_secs(3600);
     profile.policy.inbox = 8;
     profile.policy.unacknowledged = 8;
     profile.policy.group_stop = Duration::from_millis(10);
@@ -284,7 +284,7 @@ pub fn charter() -> Box<[u8]> {
     llm.output = 1024;
     llm.prices = smith_charter::Prices::new(
         &smith_charter::CEILINGS,
-        smith_charter::PricesParts { input: 0, cached: 0, output: 0, unit: 1 },
+        smith_charter::PricesParts { input: 1, cached: 1, output: 1, unit: 1_000_000 },
     )
     .expect("prices");
     parts.main = smith_charter::Llm::new(&smith_charter::CEILINGS, llm).expect("model");

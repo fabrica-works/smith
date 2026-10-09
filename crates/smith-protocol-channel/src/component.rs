@@ -799,7 +799,10 @@ impl Component {
                                             Err(reason) => self.transcript_refused(reason, to_service, below),
                                         }
                                     }
-                                    Err(invalid) => self.invalid_start(invalid_start(invalid), below),
+                                    Err(invalid) => match invalid_start(invalid, &self.bodies) {
+                                        Ok(reason) => self.invalid_start(reason, below),
+                                        Err(_) => self.refuse_rules(below),
+                                    },
                                 }
                             }
                             Err(_) => self.refuse_rules(below),

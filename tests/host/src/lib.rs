@@ -398,7 +398,7 @@ pub fn charter_value(bytes: u64) -> host::Charter {
         outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
         budget: run::Budget { turns: 0, spend: 0, time: Duration::ZERO },
         llm: run::charter::Llm {
-            prices: run::Prices { input: 0, cached: 0, output: 0, unit: 0 },
+            prices: run::Prices { input: 1, cached: 1, output: 1, unit: 0 },
             dialect: 0,
             account: 0,
             endpoint: run::charter::Endpoint(0),

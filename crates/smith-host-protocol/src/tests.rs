@@ -332,3 +332,73 @@ fn a_delivery_ask_decodes_into_its_named_values_before_domain_ingress() {
     };
     assert_eq!(fields.into_value(), source);
 }
+
+#[test]
+fn invalid_start_round_trip_keeps_every_budget_reason_and_price_rate() {
+    use skein_lib::{Duration, Reader};
+    use smith_domain::run;
+    use smith_host_domain::channel as host;
+    let reasons = [
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Turns(4096))),
+            host::RunInvalid::Budget(host::BudgetRefusal::Ceiling(host::Ceiling::Turns(4096))),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Spend(1_000_000_000))),
+            host::RunInvalid::Budget(host::BudgetRefusal::Ceiling(host::Ceiling::Spend(1_000_000_000))),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(Duration::from_secs(86_400)))),
+            host::RunInvalid::Budget(host::BudgetRefusal::Ceiling(host::Ceiling::Time(Duration::from_secs(86_400)))),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Empty(run::Part::Turns)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Empty(host::Part::Turns)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Empty(run::Part::Spend)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Empty(host::Part::Spend)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Empty(run::Part::Time)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Empty(host::Part::Time)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Reserve(run::Part::Turns)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Reserve(host::Part::Turns)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Reserve(run::Part::Spend)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Reserve(host::Part::Spend)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Reserve(run::Part::Time)),
+            host::RunInvalid::Budget(host::BudgetRefusal::Reserve(host::Part::Time)),
+        ),
+        (
+            run::Invalid::Budget(run::BudgetRefusal::Completion { most: 123 }),
+            host::RunInvalid::Budget(host::BudgetRefusal::Completion { most: 123 }),
+        ),
+        (run::Invalid::Price(run::Rate::Input), host::RunInvalid::Price(host::Rate::Input)),
+        (run::Invalid::Price(run::Rate::Cached), host::RunInvalid::Price(host::Rate::Cached)),
+        (run::Invalid::Price(run::Rate::CacheWrite), host::RunInvalid::Price(host::Rate::CacheWrite)),
+        (run::Invalid::Price(run::Rate::Output), host::RunInvalid::Price(host::Rate::Output)),
+    ];
+    for (reason, expected) in reasons {
+        let record = smith_protocol_channel::answer_record(
+            run::Answer::Refused(run::Refusal::Invalid(reason)),
+            None,
+            &smith_channel::CEILINGS,
+            &smith_charter::CEILINGS,
+        )
+        .expect("bounded refusal");
+        let mut writer = skein_lib::Writer::new(usize::try_from(record.measure()).expect("measured"));
+        record.encode(&mut writer).expect("measured encoding");
+        let encoded = writer.finish();
+        let record =
+            smith_channel::Answer::decode(&smith_channel::CEILINGS, &mut Reader::new(&encoded)).expect("wire refusal");
+        let decoded = crate::answer::decode_answer(&record, &smith_charter::CEILINGS).expect("host refusal");
+        assert_eq!(decoded.result, host::RunResult::Refused { refusal: host::Refusal::Invalid(expected) });
+        assert_eq!((decoded.spent, decoded.turns), (0, 0));
+    }
+}

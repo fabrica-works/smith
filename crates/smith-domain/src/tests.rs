@@ -40,7 +40,7 @@ fn oversized_saved_answer_says_the_call_was_decided() {
     assert!(decided && oversized);
 }
 
-const BUDGET: run::Budget = run::Budget { turns: 10, spend: 1, time: Duration::from_secs(600) };
+const BUDGET: run::Budget = run::Budget { turns: 10, spend: 10_000, time: Duration::from_secs(600) };
 
 const CEILING: session::Budget = session::Budget {
     turns: 100,
@@ -76,7 +76,7 @@ const LIMITS: Limits = Limits {
         host_backoff: Duration::from_millis(50),
         verdicts: 2,
         calls: 4,
-        budget: run::Budget { turns: CEILING.turns, spend: 1, time: CEILING.time },
+        budget: run::Budget { turns: CEILING.turns, spend: 10_000, time: CEILING.time },
 
         models: 1,
         run_conversations: 3,
@@ -97,7 +97,7 @@ const LIMITS: Limits = Limits {
     },
     session: session::Limits {
         sessions: 4,
-        spend: 1,
+        spend: 10_000,
         protocol_allowance: 0,
         messages: 16,
         session_bytes: 2_097_152,
@@ -455,7 +455,7 @@ fn charter() -> Charter {
         outcome: OutcomeSpec { change: None, verdicts: Box::new([rule(b"approve")]), report: None, failure: None },
         budget: BUDGET,
         llm: Llm {
-            prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+            prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
@@ -1904,7 +1904,7 @@ fn a_provider_charge_above_its_reserved_maximum_fails_without_recording_it() {
 #[test]
 fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
     let selected = Charter {
-        llm: Llm { prices: run::Prices { input: u64::MAX, cached: 0, output: 0, unit: 1 }, ..scalar_charter().llm },
+        llm: Llm { prices: run::Prices { input: u64::MAX, cached: 1, output: 1, unit: 1 }, ..scalar_charter().llm },
         ..scalar_charter()
     };
     let (harness, emitted) = scalar_prepared(selected);
@@ -2134,10 +2134,16 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         let selected = scalar_charter();
         let selected = Charter {
             budget: run::Budget { spend: 100_000, ..selected.budget },
-            llm: Llm { output: 10, prices: run::Prices { input: 0, cached: 0, output: 3, unit: 1 }, ..selected.llm },
+            llm: Llm {
+                output: 10,
+                prices: run::Prices { input: 1, cached: 1, output: 3_000_000, unit: 1_000_000 },
+                ..selected.llm
+            },
             ..selected
         };
         let (_, main, _) = harness.admit(1, selected);
+        // Ten output tokens cost 30; this positive input fraction rounds the
+        // full reservation to 31, independent of this fixture's prompt size.
         assert!(
             harness
                 .step(Event::Completed {
@@ -2157,10 +2163,10 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         };
         assert_eq!(
             (spent.units, spent.turns, spent.input, spent.output, *turns),
-            (30, 1, 0, raw.output_tokens.unwrap_or(0), 1)
+            (31, 1, 0, raw.output_tokens.unwrap_or(0), 1)
         );
         let turn = harness.turns.iter().next().expect("one saved turn");
-        assert_eq!((turn.usage, turn.spent), (raw, 30));
+        assert_eq!((turn.usage, turn.spent), (raw, 31));
         let mut observed = false;
         for _ in 0..harness.env.limits.session.facts {
             match harness.pop_fact() {
@@ -2168,7 +2174,7 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
                     session::FactKind::Used { usage, .. } => {
                         assert_eq!(usage, raw);
                         let info = fact.response.expect("Used carries its accepted charge");
-                        assert_eq!((info.number, info.spent), (1, Some(30)));
+                        assert_eq!((info.number, info.spent), (1, Some(31)));
                         observed = true;
                     }
                     _ => {}

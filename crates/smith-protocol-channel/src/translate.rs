@@ -488,7 +488,7 @@ pub fn answer_record(
                 run::Refusal::Invalid(invalid) => {
                     let value = channel::InvalidStartValue::new(
                         bodies,
-                        channel::InvalidStartValueParts { value: invalid_start(invalid) },
+                        channel::InvalidStartValueParts { value: invalid_start(invalid, bodies)? },
                     )?;
                     channel::StartRefusal::Invalid(value)
                 }
@@ -515,8 +515,8 @@ pub fn answer_record(
     Ok(channel::Answer::new(bodies, channel::AnswerParts { turns, spent, last_read, result })?)
 }
 
-pub(crate) fn invalid_start(invalid: run::Invalid) -> channel::InvalidStart {
-    match invalid {
+pub(crate) fn invalid_start(invalid: run::Invalid, limits: &channel::Limits) -> Result<channel::InvalidStart, Error> {
+    Ok(match invalid {
         run::Invalid::CharterVersion => channel::InvalidStart::CharterVersion,
         run::Invalid::MalformedCharter => channel::InvalidStart::MalformedCharter,
         run::Invalid::Endpoint => channel::InvalidStart::Endpoint,
@@ -528,10 +528,17 @@ pub(crate) fn invalid_start(invalid: run::Invalid) -> channel::InvalidStart {
         run::Invalid::Workspace => channel::InvalidStart::Workspace,
         run::Invalid::Grants => channel::InvalidStart::Grants,
         run::Invalid::Outcome => channel::InvalidStart::Outcome,
-        run::Invalid::Budget => channel::InvalidStart::Budget,
+        run::Invalid::Budget(refusal) => channel::InvalidStart::Budget(channel::BudgetRefusalValue::new(
+            limits,
+            channel::BudgetRefusalValueParts { value: budget_refusal(refusal, limits)? },
+        )?),
+        run::Invalid::Price(rate) => channel::InvalidStart::Price(channel::PriceRateValue::new(
+            limits,
+            channel::PriceRateValueParts { value: price_rate(rate) },
+        )?),
         run::Invalid::Llm => channel::InvalidStart::Llm,
         run::Invalid::Conversation => channel::InvalidStart::Conversation,
-    }
+    })
 }
 
 fn failure_record(failure: run::Failure, limits: &channel::Limits) -> Result<channel::RunFailure, Error> {
@@ -639,4 +646,57 @@ fn budget_failure(exhausted: run::Exhausted, limits: &channel::Limits) -> Result
         }
     };
     Ok(value)
+}
+
+fn price_rate(rate: run::Rate) -> channel::PriceRate {
+    match rate {
+        run::Rate::Input => channel::PriceRate::Input,
+        run::Rate::Cached => channel::PriceRate::Cached,
+        run::Rate::CacheWrite => channel::PriceRate::CacheWrite,
+        run::Rate::Output => channel::PriceRate::Output,
+    }
+}
+
+fn budget_part(part: run::Part) -> channel::BudgetPart {
+    match part {
+        run::Part::Turns => channel::BudgetPart::Turns,
+        run::Part::Spend => channel::BudgetPart::Spend,
+        run::Part::Time => channel::BudgetPart::Time,
+    }
+}
+
+fn budget_refusal(refusal: run::BudgetRefusal, limits: &channel::Limits) -> Result<channel::BudgetRefusal, Error> {
+    Ok(match refusal {
+        run::BudgetRefusal::Ceiling(ceiling) => {
+            let value = match ceiling {
+                run::Ceiling::Turns(value) => channel::BudgetCeiling::Turns(channel::BudgetTurns::new(
+                    limits,
+                    channel::BudgetTurnsParts { value },
+                )?),
+                run::Ceiling::Spend(value) => channel::BudgetCeiling::Spend(channel::BudgetSpend::new(
+                    limits,
+                    channel::BudgetSpendParts { value },
+                )?),
+                run::Ceiling::Time(value) => {
+                    channel::BudgetCeiling::Time(channel::BudgetTime::new(limits, channel::BudgetTimeParts { value })?)
+                }
+            };
+            channel::BudgetRefusal::Ceiling(channel::BudgetCeilingValue::new(
+                limits,
+                channel::BudgetCeilingValueParts { value },
+            )?)
+        }
+        run::BudgetRefusal::Empty(part) => channel::BudgetRefusal::Empty(channel::BudgetPartValue::new(
+            limits,
+            channel::BudgetPartValueParts { value: budget_part(part) },
+        )?),
+        run::BudgetRefusal::Reserve(part) => channel::BudgetRefusal::Reserve(channel::BudgetPartValue::new(
+            limits,
+            channel::BudgetPartValueParts { value: budget_part(part) },
+        )?),
+        run::BudgetRefusal::Completion { most } => channel::BudgetRefusal::Completion(channel::BudgetCompletion::new(
+            limits,
+            channel::BudgetCompletionParts { most },
+        )?),
+    })
 }

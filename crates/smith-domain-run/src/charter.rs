@@ -193,13 +193,25 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
         Ok(sections) if sections <= limits.brief_sections => {}
         Ok(_) | Err(_) => return Err(Invalid::TooLarge),
     }
-    if !budget.is_workable() || !budget.within(&limits.budget) || *waiting > limits.waiting {
-        return Err(Invalid::Budget);
+    match budget.check(&limits.budget) {
+        Ok(()) => {}
+        Err(reason) => return Err(Invalid::Budget(reason)),
+    }
+    if *waiting > limits.waiting {
+        return Err(Invalid::Budget(crate::BudgetRefusal::Ceiling(crate::Ceiling::Time(limits.waiting))));
+    }
+    match llm.prices.check() {
+        Ok(()) => {}
+        Err(rate) => return Err(Invalid::Price(rate)),
     }
     if !valid_llm(llm) || count(models.len()) > limits.models || repeated_model(models) {
         return Err(Invalid::Llm);
     }
     for model in models {
+        match model.prices.check() {
+            Ok(()) => {}
+            Err(rate) => return Err(Invalid::Price(rate)),
+        }
         if !valid_llm(model) {
             return Err(Invalid::Llm);
         }

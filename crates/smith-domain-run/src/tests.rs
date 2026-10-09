@@ -301,7 +301,7 @@ pub(crate) fn charter() -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
-            prices: crate::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+            prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
@@ -479,7 +479,91 @@ fn starts_beyond_the_run_or_conversation_slots_are_refused_as_busy() {
 
     // A charter that can never fit is invalid, room or not.
     let never = Charter { budget: Budget { turns: 0, ..BUDGET }, ..charter() };
-    assert_eq!(answered(h.start(3, never)), (3, Answer::Refused(Refusal::Invalid(Invalid::Budget))));
+    assert_eq!(
+        answered(h.start(3, never)),
+        (3, Answer::Refused(Refusal::Invalid(Invalid::Budget(crate::BudgetRefusal::Empty(crate::Part::Turns)))))
+    );
+}
+
+#[test]
+fn drawn_budget_ceilings_admit_the_boundary_and_refuse_each_part_before_effects() {
+    let mut random = skein_lib::Rng::new(701);
+    for _ in 0_u32..128 {
+        let ceiling = Budget {
+            turns: u32::try_from(random.between(1, 4096)).expect("bounded turns"),
+            spend: random.between(1, 1_000_000_000),
+            time: Duration::from_secs(random.between(1, 86_400)),
+        };
+        let limits = Limits { budget: ceiling, ..LIMITS };
+        let policy = Charter { budget: ceiling, ..charter() };
+        let emitted = Harness::new(limits).start_workspace(7, policy, None);
+        let [Request::Admitted { .. }, Request::Open { .. }] = &*emitted else {
+            panic!("at ceiling is admitted: {emitted:?}")
+        };
+        for (budget, reason) in [
+            (
+                Budget { turns: ceiling.turns.checked_add(1).expect("bounded"), ..ceiling },
+                crate::Ceiling::Turns(ceiling.turns),
+            ),
+            (
+                Budget { spend: ceiling.spend.checked_add(1).expect("bounded"), ..ceiling },
+                crate::Ceiling::Spend(ceiling.spend),
+            ),
+            (
+                Budget { time: ceiling.time.checked_add(Duration::from_secs(1)).expect("bounded"), ..ceiling },
+                crate::Ceiling::Time(ceiling.time),
+            ),
+        ] {
+            let mut harness = Harness::new(limits);
+            assert_eq!(
+                answered(harness.start(7, Charter { budget, ..charter() })),
+                (7, Answer::Refused(Refusal::Invalid(Invalid::Budget(crate::BudgetRefusal::Ceiling(reason)))))
+            );
+            assert_eq!(harness.domain.runs(), 0);
+        }
+    }
+    for (budget, part) in [
+        (Budget { turns: 0, ..BUDGET }, crate::Part::Turns),
+        (Budget { spend: 0, ..BUDGET }, crate::Part::Spend),
+        (Budget { time: Duration::ZERO, ..BUDGET }, crate::Part::Time),
+    ] {
+        assert_eq!(
+            answered(Harness::new(LIMITS).start(7, Charter { budget, ..charter() })),
+            (7, Answer::Refused(Refusal::Invalid(Invalid::Budget(crate::BudgetRefusal::Empty(part)))))
+        );
+    }
+}
+
+#[test]
+fn every_main_and_child_model_rate_is_positive_before_any_effect() {
+    let positive = crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 };
+    for (prices, rate) in [
+        (crate::Prices { input: 0, ..positive }, crate::Rate::Input),
+        (crate::Prices { cached: 0, ..positive }, crate::Rate::Cached),
+        (crate::Prices { output: 0, ..positive }, crate::Rate::Output),
+    ] {
+        for main in [true, false] {
+            let mut policy = agents();
+            if main {
+                policy.llm.prices = prices;
+            } else {
+                policy.models[0].prices = prices;
+            }
+            let mut harness = Harness::new(LIMITS);
+            assert_eq!(
+                answered(harness.start(7, policy)),
+                (7, Answer::Refused(Refusal::Invalid(Invalid::Price(rate))))
+            );
+            assert_eq!(harness.domain.runs(), 0);
+        }
+    }
+    let mut policy = agents();
+    policy.llm.prices = positive;
+    policy.models[0].prices = positive;
+    let emitted = Harness::new(LIMITS).start_workspace(7, policy, None);
+    let [Request::Admitted { .. }, Request::Open { .. }] = &*emitted else {
+        panic!("positive model rates are admitted: {emitted:?}")
+    };
 }
 
 #[test]
@@ -503,7 +587,7 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
         },
     ]);
     let llm = Llm {
-        prices: crate::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),
@@ -520,10 +604,6 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
         );
     }
     let cases = [
-        (Charter { budget: Budget { turns: 101, ..BUDGET }, ..charter() }, Invalid::Budget),
-        (Charter { budget: Budget { time: Duration::from_secs(3601), ..BUDGET }, ..charter() }, Invalid::Budget),
-        (Charter { budget: Budget { turns: 0, ..BUDGET }, ..charter() }, Invalid::Budget),
-        (Charter { budget: Budget { spend: 0, ..BUDGET }, ..charter() }, Invalid::Budget),
         (Charter { llm: Llm { window: 8192, output: 0, ..charter().llm }, ..charter() }, Invalid::Llm),
         (
             Charter {
@@ -1370,7 +1450,7 @@ fn families(inspect: bool, modify: bool, agents: bool) -> crate::charter::Famili
 fn agents() -> Charter {
     let grants = Grants { agents: true, ..charter().grants };
     let models = Box::new([Llm {
-        prices: crate::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: crate::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),
         model: bytes(b"model-b"),

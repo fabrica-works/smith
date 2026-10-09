@@ -4,6 +4,77 @@ use alloc::boxed::Box;
 use skein_lib::List;
 
 #[test]
+fn standard_profile_admits_the_priced_shell_run_defaults() {
+    use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::run;
+    let mut profile = crate::profile::standard();
+    profile.declared.memory = Some(u64::MAX);
+    let limits = crate::profile::derive(
+        &profile,
+        &crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) },
+    )
+    .expect("standard profile")
+    .domain;
+    let charter = run::Charter {
+        instructions: Box::default(),
+        brief: run::Brief {
+            sections: Box::new([run::Section { title: Box::default(), text: b"Review the change.".as_slice().into() }]),
+        },
+        conventions: None,
+        resume: false,
+        waiting: Duration::from_secs(300),
+        grants: run::charter::Grants {
+            wait: true,
+            deliver: None,
+            agents: false,
+            host_tools: Box::default(),
+            tools: run::charter::Tools { inspect: false, modify: false, shell: false },
+        },
+        outcome: run::outcome::OutcomeSpec {
+            change: None,
+            verdicts: Box::default(),
+            failure: None,
+            report: Some(run::outcome::TextSpec { max: 4096, fields: Box::default() }),
+        },
+        budget: run::Budget { turns: 512, spend: 25_000_000, time: Duration::from_secs(3600) },
+        llm: run::charter::Llm {
+            prices: run::Prices { input: 1_250_000, cached: 125_000, output: 10_000_000, unit: 1_000_000 },
+            account: 0,
+            endpoint: run::charter::Endpoint(1),
+            model: b"gpt-5".as_slice().into(),
+            window: 131_072,
+            output: 8192,
+            dialect: 1,
+        },
+        models: Box::default(),
+    };
+    let mut domain = run::Domain::new(&limits.run);
+    let mut out = Queue::with_capacity(run::MAX_OUT);
+    run::step(
+        &mut domain,
+        &Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.run },
+        run::Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            activation: 1,
+            window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter,
+            workspace: None,
+            transcript: None,
+            resumed: false,
+        },
+        &mut out,
+    );
+    let Some(run::Request::Admitted { .. }) = out.pop() else { panic!("priced defaults are admitted") };
+    let Some(run::Request::Open { .. }) = out.pop() else { panic!("priced main opens") };
+    assert!(out.is_empty());
+    assert!(limits.session.spend >= 25_000_000);
+    assert!(limits.session.budget.turns >= 512);
+    assert!(limits.session.budget.time >= Duration::from_secs(3600));
+}
+
+#[test]
 fn standard_profile_builds_a_complete_bounded_service() {
     let limits = crate::profile::derive(
         &{

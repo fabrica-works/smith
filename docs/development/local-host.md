@@ -64,7 +64,7 @@ while inheriting the global agent, model, budget and account settings:
 | `chat` | Required nonempty directory name beneath `STATE_DIR`; no slash, backslash, NUL, `.` or `..`. |
 | `instructions` | Required instruction text for each activation. |
 | `models` | Required nonempty array of priced models, described below. |
-| `budget` | Required `{ "turns", "spend", "seconds" }`; turns and seconds are positive. Spend is an integer in the pricing currency's chosen unit. |
+| `budget` | Required positive `{ "turns", "spend", "seconds" }`. The usual run uses 512 turns, 25,000,000 micro-dollars ($25) and 3,600 seconds. Each part must fit the agent's ceiling; standard admits 4,096 turns, 1,000,000,000 micro-dollars and 86,400 seconds. |
 | `waiting_seconds` | Required positive waiting interval, in seconds. |
 | `brief` | Ordered `{ "title", "text" }` context sections; default `[]`. |
 | `directories` | Ordered `{ "name", "path", "writable", "git" }` workspace roots; default `[]`. The binary's host profile allows two directories. |
@@ -83,15 +83,15 @@ Each model has this shape:
 ```json
 {
   "endpoint": "codex",
-  "name": "registered-model",
+  "name": "gpt-5",
   "window": 131072,
   "output": 8192,
   "reasoning_item": 65536,
   "head": 60000,
   "idle": 120000,
-  "input_price": 10,
-  "cached_price": 2,
-  "output_price": 30,
+  "input_price": 1250000,
+  "cached_price": 125000,
+  "output_price": 10000000,
   "price_unit": 1000000
 }
 ```
@@ -102,9 +102,14 @@ model name. `window` and `output` are tokens, `reasoning_item` is bytes, and
 puts these declarations in each endpoint's `models`. Each endpoint also needs
 positive `connect` and `handshake` milliseconds. Local settings leave endpoint
 `models` out of `agent`; the local host generates them from this list. The three prices are integer currency units per `price_unit`
-tokens, which must be positive. These example names and prices are placeholders
-for the operator's model registration and prices. The settings do not discover
-models or prices from the provider.
+tokens, which must be positive. The endpoint name is the operator's
+registration; model names and prices are supplied explicitly. The settings do not discover
+models or prices from the provider. Every rate is positive, including notional
+rates for a subscription or free model. A zero rate is refused with its settings
+key before the agent starts. These example rates are the
+[GPT-5 list prices](https://developers.openai.com/api/docs/models/gpt-5), checked
+on 2026-10-09, in micro-dollars per million tokens; they also bound subscription
+usage notionally.
 
 The agent profile is `{"name":"standard","declared":{"memory":N},"policy":{}}`;
 each declared quantity or policy can be overridden by name. `memory` remains

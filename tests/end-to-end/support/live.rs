@@ -159,8 +159,8 @@ impl Backend {
                 "endpoints":[{"name":self.name,"number":0,"dialect":0,"account":0,"provider":self.name,"connect":10000,"handshake":10000,"address":format!("{host}:443"),"server_name":host,"transport":"tls","identity":identity,"headers":headers,"reasoning_effort":if self.name == "codex" { Some("low") } else { None }}],
                 "environment":[],"trace":{"path":directory.join("agent-trace.jsonl"),"capture":"calls"}},
             "chat":"chat","instructions":"@local-shell Follow the user's requested outcome exactly. Use the tools and call finish when done.",
-            "models":[{"endpoint":self.name,"name":self.model,"window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":0,"cached_price":0,"output_price":0,"price_unit":1}],
-            "budget":{"turns":12,"spend":1,"seconds":120},"waiting_seconds":30,
+            "models":[{"endpoint":self.name,"name":self.model,"window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
+            "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30,
             "contract":{"form":"report","max":4096},"token_directory":self.tokens,"accounts":[self.account]
         });
         if change {

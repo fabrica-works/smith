@@ -127,6 +127,37 @@ fn invalid_local_configuration_is_refused_before_agent_construction() {
 }
 
 #[test]
+fn budget_and_rate_refusals_precede_agent_construction() {
+    let limits = limits();
+    let ceiling = limits.agent.run.budget;
+    for (budget, reason) in [
+        (run::Budget { turns: ceiling.turns + 1, ..config().budget }, run::Ceiling::Turns(ceiling.turns)),
+        (run::Budget { spend: ceiling.spend + 1, ..config().budget }, run::Ceiling::Spend(ceiling.spend)),
+        (
+            run::Budget {
+                time: ceiling.time.checked_add(Duration::from_secs(1)).expect("bounded time"),
+                ..config().budget
+            },
+            run::Ceiling::Time(ceiling.time),
+        ),
+    ] {
+        let mut invalid = config();
+        invalid.budget = budget;
+        assert_eq!(Domain::new(invalid, &limits, 1).err(), Some(Invalid::Budget(run::BudgetRefusal::Ceiling(reason))));
+    }
+    for rate in [run::Rate::Input, run::Rate::Cached, run::Rate::Output] {
+        let mut invalid = config();
+        match rate {
+            run::Rate::Input => invalid.models[0].prices.input = 0,
+            run::Rate::Cached => invalid.models[0].prices.cached = 0,
+            run::Rate::Output => invalid.models[0].prices.output = 0,
+            run::Rate::CacheWrite => unreachable!("separate rate joins the charter in 07.3"),
+        }
+        assert_eq!(Domain::new(invalid, &limits, 1).err(), Some(Invalid::Price(rate)));
+    }
+}
+
+#[test]
 #[expect(
     clippy::wildcard_enum_match_arm,
     clippy::match_like_matches_macro,

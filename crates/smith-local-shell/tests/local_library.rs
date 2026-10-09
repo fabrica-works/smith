@@ -12,8 +12,8 @@ fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_se
     let settings: local_settings::Settings = serde_json::from_value(serde_json::json!({
         "agent": {}, "chat": "main", "instructions": "Assist",
         "models": [{"endpoint": "", "name": "fake", "window":8192,"output":1024,"reasoning_item":2048,"head":60000,"idle":30000,
-            "input_price": 0, "cached_price": 0, "output_price": 0, "price_unit": 1}],
-        "budget": {"turns": 1, "spend": 1, "seconds": 60}, "waiting_seconds": 30,
+            "input_price": 1_250_000, "cached_price": 125_000, "output_price": 10_000_000, "price_unit": 1_000_000}],
+        "budget": {"turns": 512, "spend": 25_000_000, "seconds": 3600}, "waiting_seconds": 30,
         "contract": {"form": "report", "max": 128}
     }))
     .expect("local settings");

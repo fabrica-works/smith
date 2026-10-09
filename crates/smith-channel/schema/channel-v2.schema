@@ -120,9 +120,24 @@ enum RunFailure {
     transcript: TranscriptRefusalValue, model: ModelFaultValue,
     budget: BudgetFailureValue, policy: PolicyFailure, cancelled, stale
 }
+enum PriceRate { input, cached, cache_write, output }
+record PriceRateValue { value: PriceRate }
+enum BudgetPart { turns, spend, time }
+record BudgetPartValue { value: BudgetPart }
+record BudgetTurns { value: u32 }
+record BudgetSpend { value: u64 }
+record BudgetTime { value: duration }
+enum BudgetCeiling { turns: BudgetTurns, spend: BudgetSpend, time: BudgetTime }
+record BudgetCeilingValue { value: BudgetCeiling }
+record BudgetCompletion { most: u64 }
+enum BudgetRefusal {
+    ceiling: BudgetCeilingValue, empty: BudgetPartValue,
+    reserve: BudgetPartValue, completion: BudgetCompletion
+}
+record BudgetRefusalValue { value: BudgetRefusal }
 enum InvalidStart {
     charter_version, malformed_charter, activation, window, conventions, too_large,
-    workspace, grants, outcome, budget, llm, conversation, endpoint, messages
+    workspace, grants, outcome, budget: BudgetRefusalValue, price: PriceRateValue, llm, conversation, endpoint, messages
 }
 record InvalidStartValue { value: InvalidStart }
 enum StartRefusal { busy, invalid: InvalidStartValue }

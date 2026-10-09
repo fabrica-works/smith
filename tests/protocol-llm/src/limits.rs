@@ -8,7 +8,7 @@ use smith_domain::{Limits, run, session, tools};
 /// take.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
-pub const BUDGET: run::Budget = run::Budget { turns: 64, spend: 1, time: Duration::from_secs(3600) };
+pub const BUDGET: run::Budget = run::Budget { turns: 64, spend: 10_000, time: Duration::from_secs(3600) };
 
 const CEILING: session::Budget = session::Budget {
     turns: BUDGET.turns,
@@ -69,7 +69,7 @@ pub const LIMITS: Limits = Limits {
     },
     session: session::Limits {
         sessions: 6,
-        spend: 1,
+        spend: 10_000,
         protocol_allowance: 0,
         messages: 64,
         session_bytes: 33_554_432,
@@ -131,7 +131,7 @@ pub const TIGHT: Limits = Limits {
     },
     session: session::Limits {
         sessions: 4,
-        spend: 1,
+        spend: 10_000,
         protocol_allowance: 0,
         messages: 32,
         session_bytes: 33_554_432,

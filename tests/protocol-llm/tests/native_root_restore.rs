@@ -349,6 +349,7 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
             assert_ne!(changed, wanted, "usage field {field} participates in the oracle");
         }
         total.turns += 1;
+        total.units += 1;
         total.input += wanted[0];
         total.output += wanted[1];
         total.cache_read += wanted[2];
@@ -358,7 +359,7 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         assert_eq!(turn.endpoint, llm::Endpoint(0));
         assert_eq!(turn.dialect, 1);
         assert_eq!(turn.sequence, sequence + total.turns);
-        assert_eq!(turn.spent, 0, "the root's current zero record prices retain separate typed token accounting");
+        assert_eq!(turn.spent, total.units, "each short completion adds one notional unit");
     }
     assert!(matches!(world.answer(), run::Answer::Parked { spent, turns } if *spent == total && *turns == total.turns));
 }

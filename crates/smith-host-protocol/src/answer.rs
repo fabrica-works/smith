@@ -53,7 +53,8 @@ fn invalid_start(invalid: &wire::InvalidStart) -> host::RunInvalid {
         wire::InvalidStart::Workspace => host::RunInvalid::Workspace,
         wire::InvalidStart::Grants => host::RunInvalid::Grants,
         wire::InvalidStart::Outcome => host::RunInvalid::Outcome,
-        wire::InvalidStart::Budget => host::RunInvalid::Budget,
+        wire::InvalidStart::Budget(record) => host::RunInvalid::Budget(budget_refusal(record.value())),
+        wire::InvalidStart::Price(record) => host::RunInvalid::Price(price_rate(record.value())),
         wire::InvalidStart::Llm => host::RunInvalid::Llm,
         wire::InvalidStart::Conversation => host::RunInvalid::Conversation,
         wire::InvalidStart::Endpoint => host::RunInvalid::Endpoint,
@@ -143,5 +144,35 @@ fn budget(source: &wire::BudgetFailure) -> host::Exhausted {
             };
             host::Exhausted::Overflow(overflow)
         }
+    }
+}
+
+fn price_rate(rate: &wire::PriceRate) -> host::Rate {
+    match rate {
+        wire::PriceRate::Input => host::Rate::Input,
+        wire::PriceRate::Cached => host::Rate::Cached,
+        wire::PriceRate::CacheWrite => host::Rate::CacheWrite,
+        wire::PriceRate::Output => host::Rate::Output,
+    }
+}
+
+fn budget_part(part: &wire::BudgetPart) -> host::Part {
+    match part {
+        wire::BudgetPart::Turns => host::Part::Turns,
+        wire::BudgetPart::Spend => host::Part::Spend,
+        wire::BudgetPart::Time => host::Part::Time,
+    }
+}
+
+fn budget_refusal(refusal: &wire::BudgetRefusal) -> host::BudgetRefusal {
+    match refusal {
+        wire::BudgetRefusal::Ceiling(record) => host::BudgetRefusal::Ceiling(match record.value() {
+            wire::BudgetCeiling::Turns(record) => host::Ceiling::Turns(record.value()),
+            wire::BudgetCeiling::Spend(record) => host::Ceiling::Spend(record.value()),
+            wire::BudgetCeiling::Time(record) => host::Ceiling::Time(record.value()),
+        }),
+        wire::BudgetRefusal::Empty(record) => host::BudgetRefusal::Empty(budget_part(record.value())),
+        wire::BudgetRefusal::Reserve(record) => host::BudgetRefusal::Reserve(budget_part(record.value())),
+        wire::BudgetRefusal::Completion(record) => host::BudgetRefusal::Completion { most: record.most() },
     }
 }

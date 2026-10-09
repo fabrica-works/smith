@@ -385,6 +385,54 @@ pub enum Refusal {
     Invalid(RunInvalid),
 }
 
+/// A part of a run's budget supplied by its host (domain/host.md, section 8).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Part {
+    /// Its completions.
+    Turns,
+    /// Its spend in the host's unit.
+    Spend,
+    /// Its monotonic wall time.
+    Time,
+}
+
+/// The most of a part the agent admits, returned with an entrance refusal.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Ceiling {
+    /// The most completions.
+    Turns(u32),
+    /// The most spend in the host's unit.
+    Spend(u64),
+    /// The most monotonic wall time.
+    Time(Duration),
+}
+
+/// Why the agent refuses a budget before effects (domain/host.md, section 8).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum BudgetRefusal {
+    /// A part asks for more than the agent admits.
+    Ceiling(Ceiling),
+    /// A part asks for nothing.
+    Empty(Part),
+    /// The budget cannot hold its finishing reserve.
+    Reserve(Part),
+    /// The spend cannot pay for one of main's most costly completions.
+    Completion { most: u64 },
+}
+
+/// A model rate that the host must price above zero (domain/host.md, section 9).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Rate {
+    /// New input.
+    Input,
+    /// Input read from the cache.
+    Cached,
+    /// Input written to the cache when priced apart.
+    CacheWrite,
+    /// Output, including reasoning.
+    Output,
+}
+
 /// The agent's reason for rejecting a start before admission.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum RunInvalid {
@@ -408,8 +456,10 @@ pub enum RunInvalid {
     Grants,
     /// The result contract is invalid.
     Outcome,
-    /// The budget is invalid.
-    Budget,
+    /// The budget is refused before admission, naming its part and bound.
+    Budget(BudgetRefusal),
+    /// A model is unpriced at this rate, refused before admission.
+    Price(Rate),
     /// A model declaration is invalid.
     Llm,
     /// The main conversation cannot fit.

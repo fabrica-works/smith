@@ -63,7 +63,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
     use run::charter::{Brief, Endpoint, Grants, Llm, Section, Tools};
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
     let llm = Llm {
-        prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
         dialect: 1,
         account: 0,
         endpoint: Endpoint(0),
@@ -408,6 +408,7 @@ fn native_accounting(
             "all four usage fields independently priced from literal system and native query"
         );
         spent.turns += 1;
+        spent.units += 1;
         spent.input += input;
         spent.output += outputs[index];
         spent.cache_read += read;
@@ -417,7 +418,7 @@ fn native_accounting(
         assert_eq!(turn.version, smith_domain::session::record::VERSION);
         assert_eq!(turn.endpoint, llm::Endpoint(0));
         assert_eq!(turn.dialect, 1);
-        assert_eq!(turn.spent, 0);
+        assert_eq!(turn.spent, spent.units);
     }
     assert!(matches!(world.answer(), run::Answer::Parked { turns, spent: actual }
         if *turns == spent.turns && *actual == spent));

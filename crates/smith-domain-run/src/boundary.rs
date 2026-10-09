@@ -869,9 +869,10 @@ pub enum Invalid {
     /// declares invalid or duplicate names/caps/ranges, or its smallest
     /// accepted value for an allowed form cannot fit aggregate ownership.
     Outcome,
-    /// The budget asks for more than the limits allow, or for no turns, input,
-    /// output or time.
-    Budget,
+    /// The host's budget was refused before effects, naming its part and bound.
+    Budget(crate::BudgetRefusal),
+    /// A model is unpriced at this rate, refused before effects (domain/run.md, section 9).
+    Price(crate::Rate),
     /// A model is undeclared, its effective window/output are zero or above its
     /// declaration, or the charter repeats a model or exceeds its model count.
     Llm,

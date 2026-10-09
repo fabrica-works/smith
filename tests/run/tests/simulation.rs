@@ -481,7 +481,12 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
     let run = Limits { budget: Budget { turns: 10, ..calm.run.budget }, ..calm.run };
     let world = settled(&Settings { run, ..calm });
     for answer in answers(&world) {
-        assert_eq!(answer, &Answer::Refused(Refusal::Invalid(Invalid::Budget)));
+        assert_eq!(
+            answer,
+            &Answer::Refused(Refusal::Invalid(Invalid::Budget(smith_domain_run::BudgetRefusal::Ceiling(
+                smith_domain_run::Ceiling::Turns(10)
+            ))))
+        );
     }
     assert_eq!(world.stats().opens, 0);
 }

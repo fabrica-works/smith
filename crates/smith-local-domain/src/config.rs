@@ -65,6 +65,10 @@ pub struct Config {
 /// Why configuration cannot be built within its receiving limits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Invalid {
+    /// The chat budget was refused before the agent starts, naming its part and bound.
+    Budget(run::BudgetRefusal),
+    /// A local model is unpriced at this rate, refused before agent startup.
+    Price(run::Rate),
     /// Chat name is empty or too large.
     Chat,
     /// Instructions or brief exceed their receiving bound.
@@ -86,6 +90,7 @@ pub enum Invalid {
 impl Config {
     /// Validate owned local policy before constructing the agent.
     pub fn validate(&self, limits: &Limits) -> Result<(), Invalid> {
+        self.check_budget(limits)?;
         if self.chat.is_empty() || self.chat.len() > usize::try_from(limits.chat_bytes).expect("u32 fits usize") {
             return Err(Invalid::Chat);
         }
@@ -182,10 +187,25 @@ impl Config {
         Ok(())
     }
 
+    fn check_budget(&self, limits: &Limits) -> Result<(), Invalid> {
+        match self.budget.check(&limits.agent.run.budget) {
+            Ok(()) => {}
+            Err(reason) => return Err(Invalid::Budget(reason)),
+        }
+        if self.waiting > limits.agent.run.waiting {
+            return Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(limits.agent.run.waiting))));
+        }
+        Ok(())
+    }
+
     #[expect(clippy::manual_let_else, reason = "strict subset keeps checked construction exhaustive")]
     fn check_models(&self, limits: &Limits) -> Result<(), Invalid> {
         let mut model_bytes = 0_u64;
         for (index, model) in self.models.iter().enumerate() {
+            match model.prices.check() {
+                Ok(()) => {}
+                Err(rate) => return Err(Invalid::Price(rate)),
+            }
             if model.model.is_empty() || model.window == 0 || model.output == 0 {
                 return Err(Invalid::Models);
             }

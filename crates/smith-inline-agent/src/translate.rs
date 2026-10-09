@@ -175,7 +175,8 @@ const fn invalid(value: run::Invalid) -> host::RunInvalid {
         run::Invalid::Workspace => host::RunInvalid::Workspace,
         run::Invalid::Grants => host::RunInvalid::Grants,
         run::Invalid::Outcome => host::RunInvalid::Outcome,
-        run::Invalid::Budget => host::RunInvalid::Budget,
+        run::Invalid::Budget(refusal) => host::RunInvalid::Budget(budget_refusal(refusal)),
+        run::Invalid::Price(rate) => host::RunInvalid::Price(price_rate(rate)),
         run::Invalid::Llm => host::RunInvalid::Llm,
         run::Invalid::Conversation => host::RunInvalid::Conversation,
     }
@@ -485,5 +486,35 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             }
             smith::Request::Abort { owner } => crate::workspace::abort(slot, id.token(), owner, out),
         }
+    }
+}
+
+const fn price_rate(rate: run::Rate) -> host::Rate {
+    match rate {
+        run::Rate::Input => host::Rate::Input,
+        run::Rate::Cached => host::Rate::Cached,
+        run::Rate::CacheWrite => host::Rate::CacheWrite,
+        run::Rate::Output => host::Rate::Output,
+    }
+}
+
+const fn budget_part(part: run::Part) -> host::Part {
+    match part {
+        run::Part::Turns => host::Part::Turns,
+        run::Part::Spend => host::Part::Spend,
+        run::Part::Time => host::Part::Time,
+    }
+}
+
+const fn budget_refusal(refusal: run::BudgetRefusal) -> host::BudgetRefusal {
+    match refusal {
+        run::BudgetRefusal::Ceiling(ceiling) => host::BudgetRefusal::Ceiling(match ceiling {
+            run::Ceiling::Turns(turns) => host::Ceiling::Turns(turns),
+            run::Ceiling::Spend(spend) => host::Ceiling::Spend(spend),
+            run::Ceiling::Time(time) => host::Ceiling::Time(time),
+        }),
+        run::BudgetRefusal::Empty(part) => host::BudgetRefusal::Empty(budget_part(part)),
+        run::BudgetRefusal::Reserve(part) => host::BudgetRefusal::Reserve(budget_part(part)),
+        run::BudgetRefusal::Completion { most } => host::BudgetRefusal::Completion { most },
     }
 }

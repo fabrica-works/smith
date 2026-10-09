@@ -43,11 +43,11 @@ const MODEL_RATES: [Rate; 3] = [
     Rate { model: b"fake-2", input: 7, cached: 11, output: 13, unit: 10 },
     Rate { model: b"fake-3", input: 17, cached: 19, output: 23, unit: 29 },
 ];
-const CROSSING_RATES: [Rate; 1] = [Rate { model: b"fake-1", input: 0, cached: 0, output: 1, unit: 1 }];
+const CROSSING_RATES: [Rate; 1] = [Rate { model: b"fake-1", input: 1, cached: 1, output: 1_000_000, unit: 1_000_000 }];
 const PARALLEL_RATES: [Rate; 3] = [
     CROSSING_RATES[0],
-    Rate { model: b"fake-2", input: 0, cached: 0, output: 100, unit: 1 },
-    Rate { model: b"fake-3", input: 0, cached: 0, output: 1, unit: 1 },
+    Rate { model: b"fake-2", input: 1, cached: 1, output: 100_000_000, unit: 1_000_000 },
+    Rate { model: b"fake-3", input: 1, cached: 1, output: 1_000_000, unit: 1_000_000 },
 ];
 const RESUMED_RATES: [Rate; 2] =
     [Rate { model: b"fake-1", input: 31, cached: 37, output: 41, unit: 13 }, MODEL_RATES[1]];
@@ -416,7 +416,7 @@ fn an_affordable_completion_edits_and_finishes_within_the_budget() {
     let mut world = typed_world(&settings, b"@budget-crossing", &CROSSING_RATES, scripts);
     world.run(20_000);
     let expected = conservation(&world, &CROSSING_RATES);
-    assert_eq!((expected.turns, expected.units, expected.output), (2, 10, 10));
+    assert_eq!((expected.turns, expected.units, expected.output), (2, 12, 10));
     assert!(expected.units <= settings.budget.spend);
     assert_eq!(world.disk().content(b"work/data.txt"), Some(b"after\n".as_slice()));
     assert_eq!(world.turns().len(), 2);

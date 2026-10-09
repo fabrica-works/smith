@@ -101,6 +101,7 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
             "all four independently calculated SDK usage fields"
         );
         spent.turns += 1;
+        spent.units += 1;
         spent.input += input;
         spent.output += outputs[index];
         spent.cache_read += read;
@@ -108,7 +109,7 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
         assert_eq!(world.turn_metadata()[index], (spent.turns, None, spent));
         assert_eq!(turn.sequence, prior + spent.turns);
         assert_eq!(turn.version, smith_domain::session::record::VERSION);
-        assert_eq!(turn.spent, 0);
+        assert_eq!(turn.spent, spent.units);
         assert!(
             turn.messages.iter().flat_map(|message| &message.content).all(|block| {
                 !matches!(block, smith_domain::session::llm::Block::ToolCall { call, .. }

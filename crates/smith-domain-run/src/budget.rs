@@ -3,6 +3,54 @@
 
 use skein_lib::Duration;
 
+/// A part of a run's budget supplied by its host (domain/run.md, section 9).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Part {
+    /// Its completions.
+    Turns,
+    /// Its spend in the host's unit.
+    Spend,
+    /// Its monotonic wall time.
+    Time,
+}
+
+/// The most of a part the agent admits, returned with an entrance refusal.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Ceiling {
+    /// The most completions.
+    Turns(u32),
+    /// The most spend in the host's unit.
+    Spend(u64),
+    /// The most monotonic wall time.
+    Time(Duration),
+}
+
+/// Why the agent refuses a budget before effects (domain/run.md, sections 4 and 9).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum BudgetRefusal {
+    /// A part asks for more than the agent admits.
+    Ceiling(Ceiling),
+    /// A part asks for nothing.
+    Empty(Part),
+    /// The budget cannot hold its finishing reserve.
+    Reserve(Part),
+    /// The spend cannot pay for one of main's most costly completions.
+    Completion { most: u64 },
+}
+
+/// A model rate that the host must price above zero (domain/run.md, section 9).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Rate {
+    /// New input.
+    Input,
+    /// Input read from the cache.
+    Cached,
+    /// Input written to the cache when priced apart.
+    CacheWrite,
+    /// Output, including reasoning.
+    Output,
+}
+
 /// Host-supplied activation ceiling shared by every conversation. Zero turns,
 /// spend or time refuses admission before effects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -30,8 +78,8 @@ pub struct Share {
 
 /// Host-supplied model rates, interpreted only by Session. The price is the
 /// ceiling of ((fresh input + cache writes)*input + cache reads*cached +
-/// output*output)/unit, checked before conversion to u64. Zero rates are valid;
-/// unit zero refuses the model before discovery.
+/// output*output)/unit, checked before conversion to u64. The run refuses zero
+/// rates or a zero unit before discovery; Session keeps its own charging policy.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Prices {
     /// Fresh input and cache-write rate.
@@ -144,9 +192,44 @@ impl Spend {
     }
 }
 
+impl Prices {
+    /// Refuse the first unpriced rate at the run's entrance; sessions remain generic.
+    pub const fn check(self) -> Result<(), Rate> {
+        if self.input == 0 {
+            return Err(Rate::Input);
+        }
+        if self.cached == 0 {
+            return Err(Rate::Cached);
+        }
+        if self.output == 0 {
+            return Err(Rate::Output);
+        }
+        Ok(())
+    }
+}
+
 impl Budget {
-    pub(crate) fn within(&self, limit: &Budget) -> bool {
-        self.turns <= limit.turns && self.spend <= limit.spend && self.time <= limit.time
+    /// Check scalar parts against the agent's ceilings before any effects.
+    pub fn check(&self, limit: &Budget) -> Result<(), BudgetRefusal> {
+        if self.turns == 0 {
+            return Err(BudgetRefusal::Empty(Part::Turns));
+        }
+        if self.spend == 0 {
+            return Err(BudgetRefusal::Empty(Part::Spend));
+        }
+        if self.time == Duration::ZERO {
+            return Err(BudgetRefusal::Empty(Part::Time));
+        }
+        if self.turns > limit.turns {
+            return Err(BudgetRefusal::Ceiling(Ceiling::Turns(limit.turns)));
+        }
+        if self.spend > limit.spend {
+            return Err(BudgetRefusal::Ceiling(Ceiling::Spend(limit.spend)));
+        }
+        if self.time > limit.time {
+            return Err(BudgetRefusal::Ceiling(Ceiling::Time(limit.time)));
+        }
+        Ok(())
     }
 
     pub(crate) fn is_workable(&self) -> bool {

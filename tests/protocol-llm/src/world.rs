@@ -1995,7 +1995,7 @@ fn configuration() -> agent::Config {
 fn main_model() -> run::charter::Llm {
     use run::charter::{Endpoint, Llm};
     Llm {
-        prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        prices: run::Prices { input: 1, cached: 1, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
