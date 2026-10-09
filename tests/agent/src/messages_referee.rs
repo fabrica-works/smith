@@ -224,7 +224,7 @@ impl Meeting {
                                     || (result.is_none() && self.waiting.is_some())
                                     || (self.cancelled && matches!(result, Some(session::llm::Returned::NotRun | session::llm::Returned::Withdrawn)))
                                     || (self.cancelled && matches!(result, Some(session::llm::Returned::Text { text, error: true, .. }) if text.as_ref() == b"cancelled")),
-                                "wait either settles with admitted work or remains withheld through parking",
+                                format!("wait either settles with admitted work or remains withheld through parking: {result:?}, cancelled={}", self.cancelled),
                             );
                         } else {
                             judge.check(

@@ -222,3 +222,63 @@ fn awaiting_before_the_first_turn_is_valid_and_a_provider_request_before_work_is
     bad.insert(waiting + 1, (good[waiting].0, good[prompt].1.clone()));
     assert!(matches!(judge(&bad), Verdict::Failed(_)));
 }
+
+#[test]
+fn a_late_wait_after_actual_parent_cancel_has_not_run_and_requires_that_observation() {
+    let calm = Settings::calm(33178);
+    let mut world = World::new(Settings {
+        job: Job::Waiting,
+        waiting: Duration::from_secs(1),
+        cancel_at: Some(Duration::from_millis(1150)),
+        network: Span::millis(100, 100),
+        races: 1000,
+        provider: skein_fake_llm_domain::Config {
+            latency_min: Duration::from_millis(100),
+            latency_max: Duration::from_millis(100),
+            ..calm.provider
+        },
+        ..calm
+    });
+    world.message_at(
+        Time::from_nanos(50_000_000),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"first".as_slice().into(),
+    );
+    world.message_at(
+        Time::from_nanos(1_000_000_000),
+        Token::new(99),
+        b"person".as_slice().into(),
+        b"second".as_slice().into(),
+    );
+    world.run(2000);
+    let good = world.messages_seen();
+    assert!(good.iter().any(|(_, seen)| matches!(seen, Seen::ParentCancelled)));
+    assert!(
+        good.iter().any(|(_, seen)| match seen {
+            Seen::Turn { turn, .. } => turn.messages.iter().flat_map(|message| &message.content).any(|block| {
+                matches!(
+                    block,
+                    smith_domain::session::llm::Block::ToolResult {
+                        result: smith_domain::session::llm::Returned::NotRun,
+                        ..
+                    }
+                )
+            }),
+            Seen::Started { .. }
+            | Seen::Admitted
+            | Seen::Input { .. }
+            | Seen::Prompt { .. }
+            | Seen::Completed { .. }
+            | Seen::CompletionEnded
+            | Seen::ParentCancelled
+            | Seen::Waiting { .. }
+            | Seen::Answer { .. } => false,
+        }),
+        "an actual late completion contains the unstarted wait terminal"
+    );
+    assert_eq!(judge(good), Verdict::Passed);
+    let mut bad = good.to_vec();
+    bad.retain(|(_, seen)| !matches!(seen, Seen::ParentCancelled));
+    assert!(matches!(judge(&bad), Verdict::Failed(_)), "the cancellation right cannot be invented by the oracle");
+}

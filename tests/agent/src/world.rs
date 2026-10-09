@@ -982,6 +982,9 @@ impl World {
                 && let Some(event) = self.stage.next_event()
             {
                 self.trace.log(self.now, format!("agent <- {event:?}"));
+                if matches!(&event, Event::Cancel { .. }) {
+                    self.messages_seen.push((self.now, crate::messages_referee::Seen::ParentCancelled));
+                }
                 agent::step(&mut self.agent, &self.stage.env, event, &mut self.stage.out);
                 self.gather();
             }
@@ -1672,8 +1675,8 @@ impl World {
             Event::Failed { .. } | Event::Cancelled { .. } => {
                 self.messages_seen.push((self.now, crate::messages_referee::Seen::CompletionEnded));
             }
-            Event::Cancel { .. } => self.messages_seen.push((self.now, crate::messages_referee::Seen::ParentCancelled)),
-            Event::Start { .. }
+            Event::Cancel { .. }
+            | Event::Start { .. }
             | Event::Message { .. }
             | Event::Acknowledge { .. }
             | Event::Grant { .. }
