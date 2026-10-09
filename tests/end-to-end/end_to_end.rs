@@ -102,3 +102,18 @@ fn smith_agent_refuses_a_malformed_configuration_before_its_channel_opens() {
     assert!(line.starts_with("smith: configuration JSON:"));
     assert_eq!(line.lines().count(), 1, "startup writes one refusal");
 }
+
+#[test]
+fn smith_agent_names_a_broken_relationship_and_exits_1_before_its_channel_opens() {
+    let scratch = Scratch::new();
+    let path = scratch.path().join("read-past-payload.json");
+    std::fs::write(&path,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"read_window":1025,"tool_payload":1024}},"endpoints":[],"environment":[]}"#,
+    ).expect("broken relationship fixture");
+    let errors =
+        support::refusal_program(std::path::Path::new(env!("CARGO_BIN_EXE_smith-agent")), &scratch, vec![path.into()]);
+    assert_eq!(
+        std::str::from_utf8(&errors).expect("UTF-8 refusal"),
+        "smith: read-in-payload: declared.read_window=1025 bytes; declared.tool_payload=1024 bytes\n"
+    );
+}

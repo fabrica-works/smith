@@ -38,3 +38,22 @@ pub fn host_limits(profile: &smith_agent_service::profile::Profile, largest_turn
         facts: 1024,
     }
 }
+
+/// Refuse the local placement's complete footprint above the declared memory.
+/// The inline placement includes its native agent effects; spawned agents own
+/// those effects in their child process. Contract: protocol/limits.md, section 4.
+pub fn memory(
+    limits: &crate::Limits,
+    available: u64,
+) -> Result<(), smith_agent_service::profile::Refusal> {
+    use smith_agent_service::profile::{Check, Layer, LimitName, Refusal, Value};
+    let required = crate::worst_case(limits).ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "local_worst_case") })?;
+    if required > available {
+        return Err(Refusal::Broken {
+            check: Check::Memory,
+            left: LimitName::deployment(Layer::Service, "local_worst_case").value(Value::Bytes(required)),
+            right: LimitName::deployment(Layer::Declared, "memory").value(Value::Bytes(available)),
+        });
+    }
+    Ok(())
+}

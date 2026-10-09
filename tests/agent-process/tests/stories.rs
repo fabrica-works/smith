@@ -101,3 +101,30 @@ fn the_configured_environment_reaches_the_actual_agents_command_spawn() {
     assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
     world.assert_agent_clean();
 }
+
+#[test]
+fn a_broken_declared_relationship_is_named_before_channel_adoption() {
+    use smith_agent_shell::{Agent, Resources};
+    let errors = smith_agent_process_world::AgentErrors::default();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/read-past-payload.json");
+    let startup = Agent::read(
+        &path,
+        Resources {
+            input: skein_io::kernel::Fd::new(100),
+            output: skein_io::kernel::Fd::new(101),
+            signals: skein_io::kernel::Fd::new(102),
+            error: None,
+            seed: 1,
+            roots: Some(Box::new([])),
+        },
+        Box::new(errors.clone()),
+    );
+    match startup {
+        Ok(_) => panic!("broken read/payload relationship must refuse before adopting nonexistent channel handles"),
+        Err(refusal) => {
+            assert_eq!(refusal, "read-in-payload: declared.read_window=1025 bytes; declared.tool_payload=1024 bytes");
+        }
+    }
+    let text = String::from_utf8(errors.bytes()).expect("diagnostic UTF-8");
+    assert_eq!(text, "smith: read-in-payload: declared.read_window=1025 bytes; declared.tool_payload=1024 bytes\n");
+}

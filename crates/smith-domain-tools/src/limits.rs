@@ -160,14 +160,41 @@ pub struct Derivation {
     pub shell_timeout: Duration,
 }
 
+/// The first field this layer cannot derive, returned to its parent before effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// Concurrent kits, derived from conversations.
+    Kits,
+    /// Concurrent calls, derived from calls per response.
+    Calls,
+    /// Listing ownership, derived from a read window and entry cells.
+    ListBytes,
+}
+
+impl Field {
+    /// The field name in the effective limits, without its layer.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Kits => "kits",
+            Self::Calls => "calls",
+            Self::ListBytes => "list_bytes",
+        }
+    }
+}
+
 /// Derive this layer from declarations, refusing checked arithmetic overflow.
 /// Contract: protocol/limits.md, sections 2 and 3.
-#[must_use]
-pub fn derive(inputs: &Derivation) -> Option<Limits> {
-    if inputs.conversations == 0 || inputs.calls_per_response == 0 {
-        return None;
+pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
+    if inputs.conversations == 0 {
+        return Err(Field::Kits);
     }
-    Some(Limits {
+    if inputs.calls_per_response == 0 {
+        return Err(Field::Calls);
+    }
+    let entry_bytes = u64::try_from(size_of::<Entry>()).or(Err(Field::ListBytes))?;
+    let smallest_entry = entry_bytes.checked_add(1).ok_or(Field::ListBytes)?;
+    Ok(Limits {
         kits: inputs.conversations,
         calls: inputs.calls_per_response.min(4),
         repos: 2,
@@ -178,7 +205,7 @@ pub fn derive(inputs: &Derivation) -> Option<Limits> {
         list_entries: inputs.list_entries,
         // A listing uses one default read window of ownership, with room for
         // at least one entry cell and a nonempty name.
-        list_bytes: u64::from(inputs.read_window).max(u64::try_from(size_of::<Entry>()).ok()?.checked_add(1)?),
+        list_bytes: u64::from(inputs.read_window).max(smallest_entry),
         match_lines: 8,
         file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
         shell_timeout: inputs.shell_timeout,

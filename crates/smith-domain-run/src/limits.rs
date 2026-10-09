@@ -184,14 +184,35 @@ pub struct Derivation {
     pub tool_deadline: Duration,
 }
 
+/// The first field this layer cannot derive, returned to its parent before effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// One offer, derived from the inbox and message bound.
+    OfferBytes,
+}
+
+impl Field {
+    /// The field name in the effective limits, without its layer.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::OfferBytes => "offer_bytes",
+        }
+    }
+}
+
 /// Derive this layer from declarations, refusing checked arithmetic overflow.
 /// Contract: protocol/limits.md, sections 2 and 3.
-#[must_use]
-pub fn derive(inputs: &Derivation) -> Option<Limits> {
+pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     let message_bytes = 4096_u32;
-    let separators = inputs.inbox.checked_sub(1)?.checked_mul(2)?;
-    let offer_bytes = inputs.inbox.checked_mul(message_bytes)?.checked_add(separators)?;
-    Some(Limits {
+    let separators = inputs.inbox.checked_sub(1).ok_or(Field::OfferBytes)?.checked_mul(2).ok_or(Field::OfferBytes)?;
+    let offer_bytes = inputs
+        .inbox
+        .checked_mul(message_bytes)
+        .ok_or(Field::OfferBytes)?
+        .checked_add(separators)
+        .ok_or(Field::OfferBytes)?;
+    Ok(Limits {
         runs: 1,
         conversations: inputs.conversations,
         run_bytes: 1 << 16,

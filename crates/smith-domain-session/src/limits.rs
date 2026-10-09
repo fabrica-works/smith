@@ -185,14 +185,36 @@ pub struct Derivation {
     pub tools: tools::Limits,
 }
 
+/// The first field this layer cannot derive, returned to its parent before effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// Open sessions, derived from conversations.
+    Sessions,
+    /// Concurrent tools, derived from calls per response.
+    ParallelTools,
+}
+
+impl Field {
+    /// The field name in the effective limits, without its layer.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sessions => "sessions",
+            Self::ParallelTools => "parallel_tools",
+        }
+    }
+}
+
 /// Derive this layer from declarations, refusing checked arithmetic overflow.
 /// Contract: protocol/limits.md, sections 2 and 3.
-#[must_use]
-pub fn derive(inputs: &Derivation) -> Option<Limits> {
-    if inputs.conversations == 0 || inputs.calls_per_response == 0 {
-        return None;
+pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
+    if inputs.conversations == 0 {
+        return Err(Field::Sessions);
     }
-    Some(Limits {
+    if inputs.calls_per_response == 0 {
+        return Err(Field::ParallelTools);
+    }
+    Ok(Limits {
         sessions: inputs.conversations,
         spend: inputs.max_spend,
         protocol_allowance: 0,

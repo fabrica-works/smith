@@ -75,7 +75,7 @@ pub use domain::{
 };
 pub use identity::Identity;
 pub use inbox::rendered_bytes;
-pub use limits::{Derivation, Limits, derive, worst_case};
+pub use limits::{Derivation, Field, Limits, derive, worst_case};
 pub use workspace::{Directory, Workspace};
 
 pub use delivery::{

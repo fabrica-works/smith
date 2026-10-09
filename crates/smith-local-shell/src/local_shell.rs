@@ -65,7 +65,18 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }
-    let limits = service_limits(prepared.limits, host_limits, &agent_config.service);
+    let mut limits = service_limits(prepared.limits, host_limits, &agent_config.service);
+    if settings.in_process {
+        limits.inline = Some(service::InlineLimits::new(&agent_config.service).ok_or_else(|| {
+            profile_refusal(smith_agent_service::profile::Refusal::Derived {
+                limit: smith_agent_service::profile::LimitName::deployment(
+                    smith_agent_service::profile::Layer::Service,
+                    "local_worst_case",
+                ),
+            })
+        })?);
+    }
+    service::profile::memory(&limits, agent_config.memory).map_err(profile_refusal)?;
     let seed = skein_shell::seed().map_err(|error| format!("local seed failed (errno {error})"))?;
     let local_config = service::Config {
         agent: service::AgentConfig::Spawned,
@@ -162,4 +173,8 @@ fn token_directory(configured: Option<&str>) -> Result<std::path::PathBuf, Strin
             .join(".config"),
     };
     Ok(base.join("smith/tokens"))
+}
+
+fn profile_refusal(refusal: smith_agent_service::profile::Refusal) -> String {
+    String::from_utf8(smith_agent_service::profile::words(&refusal).into_vec()).expect("refusal words are UTF-8")
 }

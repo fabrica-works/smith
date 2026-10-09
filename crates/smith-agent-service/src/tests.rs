@@ -149,7 +149,9 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
             &crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) }
         )
         .err(),
-        Some(crate::profile::ProfileError::Receiving)
+        Some(crate::profile::Refusal::Derived {
+            limit: crate::profile::LimitName::deployment(crate::profile::Layer::Render, "result"),
+        })
     );
 }
 

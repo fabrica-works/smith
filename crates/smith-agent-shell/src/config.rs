@@ -23,7 +23,7 @@ use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
 use crate::trace::{Capture, TraceConfig};
-use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, ProfileError};
+use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Refusal};
 
 const CONFIG_BYTES: u64 = 1 << 20;
 
@@ -278,10 +278,12 @@ fn build(document: Document) -> Result<Configuration, String> {
     let reserve = if trace.is_some() { crate::trace::MEMORY_RESERVE } else { 0 };
     let complete = service::worst_case(&config.limits, &config.llm_endpoints)
         .and_then(|bytes| bytes.checked_add(reserve))
-        .ok_or("agent plus trace memory calculation overflowed")?;
-    if complete > memory {
-        return Err("agent plus trace exceeds profile.declared.memory".into());
-    }
+        .ok_or_else(|| {
+            profile_refusal(Refusal::Derived {
+                limit: service::profile::LimitName::deployment(service::profile::Layer::Service, "worst_case"),
+            })
+        })?;
+    service::profile::validate::memory(complete, memory).map_err(profile_refusal)?;
     Ok(Configuration { service: config, memory, trace, profile, declarations })
 }
 
@@ -515,15 +517,9 @@ fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverr
         profile.policy.max_spend = value;
     }
     if let Some(value) = overrides.max_time {
-        if value == 0 {
-            return Err("profile.policy.max_time must be positive".into());
-        }
         profile.policy.max_time = duration(value, "profile.policy.max_time")?;
     }
     if let Some(value) = overrides.max_waiting {
-        if value == 0 {
-            return Err("profile.policy.max_waiting must be positive".into());
-        }
         profile.policy.max_waiting = duration(value, "profile.policy.max_waiting")?;
     }
     if let Some(value) = overrides.sections {
@@ -580,51 +576,27 @@ fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverr
 
 fn apply_durations(profile: &mut service::profile::Profile, overrides: &PolicyOverrides) -> Result<(), String> {
     if let Some(value) = overrides.connection_keep {
-        if value == 0 {
-            return Err("profile.policy.connection_keep must be positive".into());
-        }
         profile.policy.connection_keep = duration(value, "profile.policy.connection_keep")?;
     }
     if let Some(value) = overrides.tool_deadline {
-        if value == 0 {
-            return Err("profile.policy.tool_deadline must be positive".into());
-        }
         profile.policy.tool_deadline = duration(value, "profile.policy.tool_deadline")?;
     }
     if let Some(value) = overrides.shell_timeout {
-        if value == 0 {
-            return Err("profile.policy.shell_timeout must be positive".into());
-        }
         profile.policy.shell_timeout = duration(value, "profile.policy.shell_timeout")?;
     }
     if let Some(value) = overrides.group_stop {
-        if value == 0 {
-            return Err("profile.policy.group_stop must be positive".into());
-        }
         profile.policy.group_stop = duration(value, "profile.policy.group_stop")?;
     }
     if let Some(value) = overrides.close {
-        if value == 0 {
-            return Err("profile.policy.close must be positive".into());
-        }
         profile.policy.close = duration(value, "profile.policy.close")?;
     }
     if let Some(value) = overrides.write_deadline {
-        if value == 0 {
-            return Err("profile.policy.write_deadline must be positive".into());
-        }
         profile.policy.write_deadline = duration(value, "profile.policy.write_deadline")?;
     }
     if let Some(value) = overrides.cancel_grace {
-        if value == 0 {
-            return Err("profile.policy.cancel_grace must be positive".into());
-        }
         profile.policy.cancel_grace = duration(value, "profile.policy.cancel_grace")?;
     }
     if let Some(value) = overrides.exit_grace {
-        if value == 0 {
-            return Err("profile.policy.exit_grace must be positive".into());
-        }
         profile.policy.exit_grace = duration(value, "profile.policy.exit_grace")?;
     }
     Ok(())
@@ -649,8 +621,8 @@ fn build_models(
     handshake: u64,
     models: &[ModelDocument],
 ) -> Result<service::profile::Endpoint, String> {
-    if connect == 0 || handshake == 0 || models.is_empty() {
-        return Err("endpoint deadlines and model list must be positive".into());
+    if models.is_empty() {
+        return Err("endpoint model list must be nonempty".into());
     }
     let mut names = std::collections::BTreeSet::new();
     let mut prepared = Vec::with_capacity(models.len());
@@ -661,8 +633,6 @@ fn build_models(
             || model.window == 0
             || model.output == 0
             || model.reasoning_item == 0
-            || model.head == 0
-            || model.idle == 0
         {
             return Err("model declaration contains an empty or zero quantity".into());
         }
@@ -736,17 +706,8 @@ pub fn trust(der: Option<&str>) -> Result<tls::Config, String> {
     tls::Config::new(roots, &[]).map_err(|error| format!("TLS trust: {error:?}"))
 }
 
-fn profile_refusal(error: ProfileError) -> String {
-    match error {
-        ProfileError::Receiving => "LLM receiving bound overflows".into(),
-        ProfileError::ChannelSchema(error) => format!("channel schema: {error:?}"),
-        ProfileError::ChannelVersion => "channel version 2 is absent".into(),
-        ProfileError::ChannelFrame => "channel frame size overflows".into(),
-        ProfileError::IoRoutes => "IO route count overflows".into(),
-        ProfileError::Memory => "profile.declared.memory is required".into(),
-        ProfileError::Domain => "domain limit derivation overflows".into(),
-        ProfileError::Machine => "machine limit derivation overflows".into(),
-    }
+fn profile_refusal(error: Refusal) -> String {
+    String::from_utf8(service::profile::words(&error).into_vec()).expect("refusal words are UTF-8")
 }
 
 #[cfg(test)]

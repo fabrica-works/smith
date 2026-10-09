@@ -454,3 +454,21 @@ fn the_local_start_window_admits_the_standard_agents_largest_turn() {
     assert!(host.unacknowledged_bytes >= largest, "agent accepts only a window holding its largest turn");
     assert!(host.turn_bytes >= largest, "host can receive the turn it grants");
 }
+
+#[test]
+fn local_memory_refusal_names_the_actual_placement_footprint() {
+    use smith_agent_service::profile::{Check, Layer, LimitName, Refusal, Value};
+    let limits = config().limits;
+    let required = crate::worst_case(&limits).expect("bounded placement");
+    let available = required.checked_sub(1).expect("nonempty placement");
+    let refusal = crate::profile::memory(&limits, available).expect_err("local memory target");
+    assert_eq!(
+        refusal,
+        Refusal::Broken {
+            check: Check::Memory,
+            left: LimitName::deployment(Layer::Service, "local_worst_case").value(Value::Bytes(required)),
+            right: LimitName::deployment(Layer::Declared, "memory").value(Value::Bytes(available)),
+        }
+    );
+    crate::profile::memory(&limits, required).expect("exact local fit");
+}

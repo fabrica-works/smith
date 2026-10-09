@@ -18,6 +18,21 @@ use crate as service;
 
 mod quantities;
 
+mod checks;
+
+mod effective;
+
+mod words;
+
+#[cfg(test)]
+mod tests;
+
+pub mod validate;
+
+pub use checks::{Check, Refusal};
+pub use effective::{Layer, Limit, LimitName, Per, Value};
+pub use words::words;
+
 pub use smith_protocol_llm::OversizedReasoning;
 
 pub use quantities::{Configuration, Declared, Endpoint, Fraction, Model, Name, Policy, Profile, standard};
@@ -28,35 +43,16 @@ pub const ENDPOINTS: u32 = 3;
 /// The number of credential accounts the standard profile admits.
 pub const ACCOUNTS: u32 = 4;
 
-/// A standard profile construction refusal, returned to the shell for wording.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProfileError {
-    /// The LLM receiving footprint cannot be represented.
-    Receiving,
-    /// The channel body or frame footprint cannot be represented.
-    ChannelSchema(smith_channel::Overflow),
-    /// The standard profile's channel version is absent.
-    ChannelVersion,
-    /// The channel frame footprint cannot be represented.
-    ChannelFrame,
-    /// The IO route count cannot be represented.
-    IoRoutes,
-    /// Process memory was not declared.
-    Memory,
-    /// A domain declaration cannot be represented.
-    Domain,
-    /// A machine declaration cannot be represented.
-    Machine,
-}
-
 /// Compose layer limits from the selected profile and endpoint declarations.
-pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<service::Limits, ProfileError> {
+pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<service::Limits, Refusal> {
+    validate::declarations(profile, configuration)?;
     let declared = profile.declared;
     let policy = profile.policy;
-    let memory = declared.memory.ok_or(ProfileError::Memory)?;
+    let memory = declared.memory.ok_or(derived(Layer::Declared, "memory"))?;
     let client = client_limits();
     let decoded_call_bytes = 4096;
-    let completion = llm::completion_worst_case(&client, decoded_call_bytes).ok_or(ProfileError::Receiving)?;
+    let completion =
+        llm::completion_worst_case(&client, decoded_call_bytes).ok_or(derived(Layer::Session, "completion_bytes"))?;
     let bodies = smith_channel::CEILINGS;
     let output_bytes = channel_output(&bodies)?;
     let io = io::Limits {
@@ -80,7 +76,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         domain.run.host_reply_bytes.max(domain.run.message_bytes),
         domain.session.delegated_result_bytes,
     )
-    .ok_or(ProfileError::Receiving)?
+    .ok_or(derived(Layer::Render, "result"))?
     .min(client.dialect.string_bytes);
     let mut charter = smith_charter::CEILINGS;
     charter.charter_brief = policy.sections;
@@ -94,9 +90,9 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     charter.verdict_rule_fields = policy.fields;
     charter.change_rule_fields = policy.fields;
     let queue = domain::max_out(&domain).max(256);
-    let operations = io::operations(&io).ok_or(ProfileError::IoRoutes)?;
-    let routes = operations.checked_add(64).ok_or(ProfileError::IoRoutes)?;
-    Ok(service::Limits {
+    let operations = io::operations(&io).ok_or(derived(Layer::Service, "routes"))?;
+    let routes = operations.checked_add(64).ok_or(derived(Layer::Service, "routes"))?;
+    let limits = service::Limits {
         domain,
         channel: channel::Limits {
             bodies,
@@ -118,21 +114,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
             grants: 8,
         },
         llm: component_limits(profile, client, io, &domain, rendered_result),
-        machine: machine::derive(&machine::Derivation {
-            operations: domain.run.calls,
-            roots: domain.session.tools.repos,
-            path_bytes: domain.run.conflict_path_bytes.max(domain.session.tools.path_bytes),
-            file_bytes: domain.session.tools.file_bytes,
-            entries: domain.session.tools.list_entries,
-            entry_bytes: domain.session.tools.list_bytes,
-            shell_head: domain.session.tools.shell_head,
-            shell_tail: domain.session.tools.shell_tail,
-            search_hits: domain.session.tools.search_hits,
-            search_bytes: domain.session.tools.search_bytes,
-            environment_bytes: configuration.environment_bytes,
-            group_stop: policy.group_stop,
-        })
-        .ok_or(ProfileError::Machine)?,
+        machine: derive_machine(profile, configuration, &domain)?,
         io,
         file_slots: 32,
         file_read: 65_536,
@@ -142,7 +124,9 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         queue,
         routes,
         memory,
-    })
+    };
+    validate::machine(&limits.machine, &limits.domain.session.tools)?;
+    Ok(limits)
 }
 
 // Endpoint-derived request heads include both credential ceilings and fit one
@@ -173,23 +157,20 @@ fn client_limits() -> shared::client::Limits {
     }
 }
 
-fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, ProfileError> {
-    let schema = match smith_channel::schema(bodies) {
-        Ok(schema) => schema,
-        Err(error) => return Err(ProfileError::ChannelSchema(error)),
-    };
-    let version = schema.version(2).ok_or(ProfileError::ChannelVersion)?;
+fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
+    let schema = smith_channel::schema(bodies).or(Err(derived(Layer::Channel, "output_bytes")))?;
+    let version = schema.version(2).ok_or(derived(Layer::Channel, "version"))?;
     let mut largest = 0;
     for kind in &version.kinds {
         largest = largest.max(kind.largest);
     }
-    largest.checked_add(8).ok_or(ProfileError::ChannelFrame)
+    largest.checked_add(8).ok_or(derived(Layer::Channel, "frame_bytes"))
 }
 
-fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<domain::Limits, ProfileError> {
+fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<domain::Limits, Refusal> {
     let declared = profile.declared;
     let policy = profile.policy;
-    let tools = tools::derive(&tools::Derivation {
+    let tools = match tools::derive(&tools::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         tool_payload: declared.tool_payload,
@@ -201,9 +182,11 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         list_entries: declared.list_entries,
         tool_deadline: policy.tool_deadline,
         shell_timeout: policy.shell_timeout,
-    })
-    .ok_or(ProfileError::Domain)?;
-    let run = run::derive(&run::Derivation {
+    }) {
+        Ok(limits) => limits,
+        Err(field) => return Err(derived(Layer::Tools, field.name())),
+    };
+    let run = match run::derive(&run::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         inbox: policy.inbox,
@@ -218,9 +201,11 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         shell_tail: declared.shell_tail,
         tool_payload: declared.tool_payload,
         tool_deadline: policy.tool_deadline,
-    })
-    .ok_or(ProfileError::Domain)?;
-    let session = session::derive(&session::Derivation {
+    }) {
+        Ok(limits) => limits,
+        Err(field) => return Err(derived(Layer::Run, field.name())),
+    };
+    let session = match session::derive(&session::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         max_turns: policy.max_turns,
@@ -228,13 +213,17 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         max_time: policy.max_time,
         tool_deadline: policy.tool_deadline,
         tools,
-    })
-    .ok_or(ProfileError::Domain)?;
+    }) {
+        Ok(limits) => limits,
+        Err(field) => return Err(derived(Layer::Session, field.name())),
+    };
     let mut configured_model_bytes = 0_u64;
     for endpoint in &configuration.endpoints {
         for model in &endpoint.models {
-            let owned = domain::ConfiguredModel::worst_case(model.name.len()).ok_or(ProfileError::Domain)?;
-            configured_model_bytes = configured_model_bytes.checked_add(owned).ok_or(ProfileError::Domain)?;
+            let owned = domain::ConfiguredModel::worst_case(model.name.len())
+                .ok_or(derived(Layer::Service, "configured_model_bytes"))?;
+            configured_model_bytes =
+                configured_model_bytes.checked_add(owned).ok_or(derived(Layer::Service, "configured_model_bytes"))?;
         }
     }
     Ok(domain::Limits {
@@ -281,5 +270,34 @@ fn component_limits(
         contract_bytes: 4096,
         accounts: ACCOUNTS,
         grant_value_bytes: 2048,
+    }
+}
+
+fn derived(layer: Layer, field: &'static str) -> Refusal {
+    Refusal::Derived { limit: LimitName::deployment(layer, field) }
+}
+
+fn derive_machine(
+    profile: &Profile,
+    configuration: &Configuration,
+    domain: &domain::Limits,
+) -> Result<machine::Limits, Refusal> {
+    let policy = profile.policy;
+    match machine::derive(&machine::Derivation {
+        operations: domain.run.calls,
+        roots: domain.session.tools.repos,
+        path_bytes: domain.run.conflict_path_bytes.max(domain.session.tools.path_bytes),
+        file_bytes: domain.session.tools.file_bytes,
+        entries: domain.session.tools.list_entries,
+        entry_bytes: domain.session.tools.list_bytes,
+        shell_head: domain.session.tools.shell_head,
+        shell_tail: domain.session.tools.shell_tail,
+        search_hits: domain.session.tools.search_hits,
+        search_bytes: domain.session.tools.search_bytes,
+        environment_bytes: configuration.environment_bytes,
+        group_stop: policy.group_stop,
+    }) {
+        Ok(limits) => Ok(limits),
+        Err(field) => Err(derived(Layer::Machine, field.name())),
     }
 }

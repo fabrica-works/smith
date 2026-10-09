@@ -129,11 +129,27 @@ pub struct Derivation {
     pub group_stop: Duration,
 }
 
+/// The first field this layer cannot derive, returned to its parent before effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// A JSON search line, derived from retained bytes and escaping.
+    SearchLineBytes,
+}
+
+impl Field {
+    /// The field name in the effective limits, without its layer.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::SearchLineBytes => "search_line_bytes",
+        }
+    }
+}
+
 /// Derive this layer from declarations, refusing checked arithmetic overflow.
 /// Contract: protocol/limits.md, sections 2 and 3.
-#[must_use]
-pub fn derive(inputs: &Derivation) -> Option<Limits> {
-    Some(Limits {
+pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
+    Ok(Limits {
         operations: inputs.operations,
         roots: inputs.roots,
         path_bytes: inputs.path_bytes,
@@ -146,7 +162,14 @@ pub fn derive(inputs: &Derivation) -> Option<Limits> {
         search_bytes: inputs.search_bytes,
         // JSON escapes one text/path byte into at most six bytes. The fixed
         // envelope includes match offsets, line number and routing keys.
-        search_line_bytes: inputs.search_bytes.checked_add(inputs.path_bytes)?.checked_mul(6)?.checked_add(256)?,
+        search_line_bytes: inputs
+            .search_bytes
+            .checked_add(inputs.path_bytes)
+            .ok_or(Field::SearchLineBytes)?
+            .checked_mul(6)
+            .ok_or(Field::SearchLineBytes)?
+            .checked_add(256)
+            .ok_or(Field::SearchLineBytes)?,
         env_bytes: inputs.environment_bytes,
         stop_grace: inputs.group_stop,
     })
