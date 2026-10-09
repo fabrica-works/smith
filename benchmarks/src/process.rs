@@ -26,6 +26,7 @@ pub struct Bounds {
     pub hard: Duration,
     pub teardown: Duration,
     pub grace: Duration,
+    pub settlement: Duration,
     pub stdout: usize,
     pub stderr: usize,
     pub force_walk: bool,
@@ -37,6 +38,7 @@ pub struct ProcessResult {
     pub exit: crate::Exit,
     pub forced: crate::Forced,
     pub start: Time,
+    pub start_wall: Wall,
     pub end: Time,
     pub answered: Option<Time>,
     pub stdout: Vec<u8>,
@@ -377,14 +379,15 @@ pub fn execute(
     if prompt.len() > 4088 || bounds.stdout == 0 || bounds.stderr == 0 || bounds.hard == Duration::ZERO {
         return Err("invalid attempt prompt, log bound or hard deadline".into());
     }
-    let start = clock.now().now;
+    let started = clock.now();
+    let start = started.now;
     let deadline = start.checked_add(bounds.hard).ok_or("hard deadline overflow")?;
     deadline.checked_add(bounds.teardown).and_then(|at| at.checked_add(bounds.grace)).ok_or("teardown overflow")?;
     let patience = bounds
         .hard
         .checked_add(bounds.teardown)
         .and_then(|span| span.checked_add(bounds.grace))
-        .and_then(|span| span.checked_add(Duration::from_secs(5)))
+        .and_then(|span| span.checked_add(bounds.settlement))
         .ok_or("settlement patience overflow")?;
     let mut binary =
         Binary::start_with_tree(command, Mode::Pipes, bounds.stderr, Expectation::Supervise, bounds.force_walk)
@@ -421,6 +424,7 @@ pub fn execute(
         exit,
         forced,
         start,
+        start_wall: started.wall,
         end: outcome.end,
         answered: output.answered,
         stdout: output.bytes,

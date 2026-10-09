@@ -13,7 +13,6 @@ prompt = "Read the README and finish.\n"
 seed_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 "#;
 
-#[test]
 fn a_task_retains_all_of_its_typed_parts() {
     let document = format!(
         r#"{DOCUMENT}
@@ -76,7 +75,6 @@ failed_before = "before"
     assert_eq!(task.environment["BENCH_MARKER"], "nonce");
 }
 
-#[test]
 fn unknown_top_level_keys_name_the_document_and_key() {
     let error = parse_task(Path::new("sample/task.toml"), &format!("{DOCUMENT}\nmisspelled = true"))
         .expect_err("unknown key is refused");
@@ -84,7 +82,6 @@ fn unknown_top_level_keys_name_the_document_and_key() {
     assert_eq!(error.file, Path::new("sample/task.toml"));
 }
 
-#[test]
 fn unknown_nested_keys_name_their_full_path() {
     for (suffix, path) in [
         ("[budget]\nturnz = 3", "budget.turnz"),
@@ -97,7 +94,6 @@ fn unknown_nested_keys_name_their_full_path() {
     }
 }
 
-#[test]
 fn kinds_and_checks_are_closed() {
     for document in [
         DOCUMENT.replace("kind = \"probe\"", "kind = \"chat\""),
@@ -108,7 +104,6 @@ fn kinds_and_checks_are_closed() {
     }
 }
 
-#[test]
 fn seed_digest_matches_the_committed_known_bytes() {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/tasks/valid/seed");
     assert_eq!(
@@ -117,7 +112,6 @@ fn seed_digest_matches_the_committed_known_bytes() {
     );
 }
 
-#[test]
 fn a_calibration_requires_ten_distinct_passes() {
     let task_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/tasks/bad-calibration/task.toml");
     let design = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/design");
@@ -125,7 +119,6 @@ fn a_calibration_requires_ten_distinct_passes() {
     assert_eq!(error.key, "calibration");
 }
 
-#[test]
 fn a_seed_digest_freezes_names_content_and_executable_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -147,7 +140,6 @@ fn a_seed_digest_freezes_names_content_and_executable_permissions() {
     std::fs::remove_dir_all(&root).expect("test directory removed");
 }
 
-#[test]
 fn a_seed_symlink_cannot_reach_hidden_inputs() {
     let root = std::env::temp_dir().join(format!("smith-bench-link-{}", std::process::id()));
     std::fs::create_dir(&root).expect("fresh test directory");
@@ -180,7 +172,6 @@ fn sample_catalogue() -> Vec<crate::CatalogueTask> {
     vec![crate::CatalogueTask { name: "probes/recorded".into(), manifest, task }]
 }
 
-#[test]
 fn a_suite_resolves_task_variants_selectors_and_configuration_pins() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
@@ -193,7 +184,6 @@ fn a_suite_resolves_task_variants_selectors_and_configuration_pins() {
     assert_eq!(selected, ["probes/recorded", "probes/recorded/short"]);
 }
 
-#[test]
 fn a_suite_refuses_unknown_tasks_agents_tiers_and_empty_selectors() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
@@ -223,7 +213,6 @@ fn a_suite_refuses_unknown_tasks_agents_tiers_and_empty_selectors() {
     );
 }
 
-#[test]
 fn suite_keys_and_arms_are_strict() {
     let document =
         std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/suites/sample.toml"))
@@ -243,7 +232,6 @@ fn suite_keys_and_arms_are_strict() {
     );
 }
 
-#[test]
 fn the_small_tier_resolves_and_the_working_tier_never_guesses() {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("agents/models.toml");
     let models = crate::read_model_tiers(&file).expect("committed model tiers");
@@ -267,7 +255,6 @@ fn the_small_tier_resolves_and_the_working_tier_never_guesses() {
     );
 }
 
-#[test]
 fn guards_are_cheapest_first_and_report_budget_and_unknown_costs() {
     let mut tasks = sample_catalogue();
     let mut fast = tasks[0].clone();
@@ -300,7 +287,6 @@ fn ledger() -> crate::TokenLedger {
     ledger
 }
 
-#[test]
 fn token_conventions_preserve_cache_and_reasoning_boundaries() {
     use crate::{Measure, Usage};
 
@@ -352,7 +338,6 @@ fn token_conventions_preserve_cache_and_reasoning_boundaries() {
     assert!(matches!(partial.output, Measure::Unavailable { .. }));
 }
 
-#[test]
 fn impossible_and_overflowing_token_records_are_errors() {
     assert!(
         crate::Usage::Codex { input: 1, cached_input: 2, cache_write: None, output: 0, reasoning: None }
@@ -368,7 +353,6 @@ fn impossible_and_overflowing_token_records_are_errors() {
     assert!(ledger.records().expect_err("sum must not wrap").contains("overflow"));
 }
 
-#[test]
 fn usage_counts_once_per_response_even_when_repeated_in_another_scope() {
     let mut ledger = ledger();
     ledger
@@ -395,7 +379,6 @@ fn usage_counts_once_per_response_even_when_repeated_in_another_scope() {
     assert_eq!(records.last().expect("total").usage.output, crate::Measure::Observed { value: 20 });
 }
 
-#[test]
 fn token_totals_name_missing_children_and_never_substitute_for_a_missing_root() {
     let mut ledger = ledger();
     ledger
@@ -430,7 +413,6 @@ fn token_totals_name_missing_children_and_never_substitute_for_a_missing_root() 
     );
 }
 
-#[test]
 fn observed_totals_include_children_compactions_and_helpers_in_their_own_scopes() {
     use crate::{Convention, Measure, ScopeKind, TokenLedger, Usage};
 
@@ -467,7 +449,6 @@ fn observed_totals_include_children_compactions_and_helpers_in_their_own_scopes(
     assert_eq!(total.reasoning, Measure::Observed { value: 0 });
 }
 
-#[test]
 fn a_null_usage_field_keeps_its_response_gap_when_later_responses_report_it() {
     use crate::{Convention, Measure, ScopeKind, TokenLedger, Usage};
 
@@ -494,7 +475,6 @@ fn a_null_usage_field_keeps_its_response_gap_when_later_responses_report_it() {
     );
 }
 
-#[test]
 fn measurements_require_reasons_and_the_ledger_requires_a_root_and_one_convention() {
     use crate::{Convention, Measure, ScopeKind, TokenLedger};
 
@@ -510,7 +490,6 @@ fn measurements_require_reasons_and_the_ledger_requires_a_root_and_one_conventio
     assert!(ledger.records().expect_err("mixed conventions").contains("mix"));
 }
 
-#[test]
 fn result_readers_refuse_versions_unknown_shapes_and_trailing_documents() {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let text = std::fs::read_to_string(&file).expect("recorded result");
@@ -526,7 +505,6 @@ fn result_readers_refuse_versions_unknown_shapes_and_trailing_documents() {
     assert!(crate::render_result(&result).is_err());
 }
 
-#[test]
 fn smith_exit_codes_reconcile_answers_deadlines_and_own_budgets() {
     use crate::{BudgetLimit, End, Exit, FailureReason, Forced, classify_smith_exit};
 
@@ -572,7 +550,6 @@ fn recorded_result() -> crate::AttemptResult {
         .expect("recorded result")
 }
 
-#[test]
 fn the_probe_rerun_rule_reports_regressions_and_quarantines_disagreement() {
     use crate::{ProbeVerdict, probe_verdict};
     assert_eq!(probe_verdict(true, None), ProbeVerdict::Passed);
@@ -582,7 +559,6 @@ fn the_probe_rerun_rule_reports_regressions_and_quarantines_disagreement() {
     assert_eq!(probe_verdict(true, Some(false)), ProbeVerdict::Quarantined);
 }
 
-#[test]
 fn seeded_blocks_and_audit_samples_reproduce_and_keep_every_disagreement() {
     let blocks = crate::interleave(4, 5, 123);
     assert_eq!(blocks, crate::interleave(4, 5, 123));
@@ -597,7 +573,6 @@ fn seeded_blocks_and_audit_samples_reproduce_and_keep_every_disagreement() {
     assert!(crate::audit_sample(2, 3, &[2], 1).is_err());
 }
 
-#[test]
 fn bootstrap_intervals_and_effects_reproduce_from_the_seed() {
     let left = [10.0, 11.0, 12.0, 13.0, 14.0];
     let right = [20.0, 21.0, 22.0, 23.0, 24.0];
@@ -614,7 +589,6 @@ fn bootstrap_intervals_and_effects_reproduce_from_the_seed() {
     assert!(crate::coefficient_of_variation(&[f64::MAX; 5]).expect("scaled CV") < f64::EPSILON);
 }
 
-#[test]
 fn exact_pass_intervals_hold_at_empty_and_extreme_counts() {
     assert!(crate::pass_interval(0, 0).is_err());
     assert!(crate::pass_interval(2, 1).is_err());
@@ -630,7 +604,6 @@ fn exact_pass_intervals_hold_at_empty_and_extreme_counts() {
     assert!((zero.upper + all.lower - 1.0).abs() < 1e-10);
 }
 
-#[test]
 fn summaries_include_failed_attempt_metrics_and_report_budget_and_setup_apart() {
     let template = recorded_result();
     let ends = [
@@ -666,7 +639,6 @@ fn summaries_include_failed_attempt_metrics_and_report_budget_and_setup_apart() 
     assert!(summary.comparisons.is_empty());
 }
 
-#[test]
 fn summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates() {
     let mut results: Vec<_> = (0..10)
         .map(|index| {
@@ -692,7 +664,6 @@ fn summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates()
     assert!(crate::summarise(&duplicate, "sample", "small", crate::Design::Single, 3, None).is_err());
 }
 
-#[test]
 fn baselines_raise_drift_notices_and_refuse_mixed_configurations() {
     let results: Vec<_> = (0..5)
         .map(|index| {
@@ -725,7 +696,6 @@ fn baselines_raise_drift_notices_and_refuse_mixed_configurations() {
     assert!(crate::baseline(&mixed).is_err());
 }
 
-#[test]
 fn matching_committed_medians_replace_estimates_and_stale_pins_do_not() {
     use sha2::{Digest, Sha256};
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -749,7 +719,6 @@ fn matching_committed_medians_replace_estimates_and_stale_pins_do_not() {
     assert!(crate::committed_costs(&suite, &tasks, &[stale], &agents, &models).expect("stale ignored").is_empty());
 }
 
-#[test]
 fn summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart() {
     let mut results = Vec::new();
     for arm in ["a-reference", "b-candidate"] {
@@ -786,4 +755,58 @@ fn summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart() {
             .result,
         crate::Measure::Unavailable { .. }
     ));
+}
+
+// Related offline assertions share a test process to keep startup overhead
+// inside the one-second harness budget; each named story keeps its assertions.
+
+#[test]
+fn task_documents_and_frozen_seed_contracts() {
+    a_task_retains_all_of_its_typed_parts();
+    unknown_top_level_keys_name_the_document_and_key();
+    unknown_nested_keys_name_their_full_path();
+    kinds_and_checks_are_closed();
+    seed_digest_matches_the_committed_known_bytes();
+    a_calibration_requires_ten_distinct_passes();
+    a_seed_digest_freezes_names_content_and_executable_permissions();
+    a_seed_symlink_cannot_reach_hidden_inputs();
+}
+
+#[test]
+fn suite_resolution_and_guard_budget_contracts() {
+    a_suite_resolves_task_variants_selectors_and_configuration_pins();
+    a_suite_refuses_unknown_tasks_agents_tiers_and_empty_selectors();
+    suite_keys_and_arms_are_strict();
+    the_small_tier_resolves_and_the_working_tier_never_guesses();
+    guards_are_cheapest_first_and_report_budget_and_unknown_costs();
+}
+
+#[test]
+fn token_ledger_and_result_shape_contracts() {
+    token_conventions_preserve_cache_and_reasoning_boundaries();
+    impossible_and_overflowing_token_records_are_errors();
+    usage_counts_once_per_response_even_when_repeated_in_another_scope();
+    token_totals_name_missing_children_and_never_substitute_for_a_missing_root();
+    observed_totals_include_children_compactions_and_helpers_in_their_own_scopes();
+    a_null_usage_field_keeps_its_response_gap_when_later_responses_report_it();
+    measurements_require_reasons_and_the_ledger_requires_a_root_and_one_convention();
+    result_readers_refuse_versions_unknown_shapes_and_trailing_documents();
+    smith_exit_codes_reconcile_answers_deadlines_and_own_budgets();
+}
+
+#[test]
+fn seeded_statistics_and_probe_verdict_contracts() {
+    the_probe_rerun_rule_reports_regressions_and_quarantines_disagreement();
+    seeded_blocks_and_audit_samples_reproduce_and_keep_every_disagreement();
+    bootstrap_intervals_and_effects_reproduce_from_the_seed();
+    exact_pass_intervals_hold_at_empty_and_extreme_counts();
+}
+
+#[test]
+fn summary_baseline_and_comparison_contracts() {
+    summaries_include_failed_attempt_metrics_and_report_budget_and_setup_apart();
+    summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates();
+    baselines_raise_drift_notices_and_refuse_mixed_configurations();
+    matching_committed_medians_replace_estimates_and_stale_pins_do_not();
+    summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart();
 }

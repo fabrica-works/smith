@@ -1,4 +1,4 @@
-//! Offline checks, summaries and frozen arm builds; no agent starts yet.
+//! Offline checks, frozen arm builds and prepared attempts under shared supervision.
 
 #![forbid(unsafe_code)]
 
@@ -8,6 +8,10 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.as_slice() {
+        [command, suite, flag, prepared, seed] if command == "run" && flag == "--prepared" => {
+            run_command(Path::new(suite), Path::new(prepared), seed)
+        }
+        [command, request] if command == "attempt" => attempt_command(Path::new(request)),
         [command, commit] if command == "build" => build_command(commit, None),
         [command, commit, flag, repository] if command == "build" && flag == "--repository" => {
             build_command(commit, Some(Path::new(repository)))
@@ -30,7 +34,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench run SUITE --prepared REQUEST_DIRECTORY SEED"
             );
             ExitCode::from(2)
         }
@@ -173,6 +177,66 @@ fn check(directory: &Path) -> ExitCode {
         Ok(count) => {
             println!("checked {count} tasks");
             ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn attempt_command(request: &Path) -> ExitCode {
+    match smith_bench::run::attempt_file(request) {
+        Ok(recorded) => {
+            println!("{}", recorded.directory.join("result.json").display());
+            if recorded.incomplete {
+                ExitCode::from(2)
+            } else if matches!(recorded.result.outcome.end, smith_bench::End::Completed)
+                && recorded
+                    .result
+                    .outcome
+                    .checks
+                    .iter()
+                    .all(|check| check.passed == smith_bench::Measure::Observed { value: true })
+                && recorded
+                    .result
+                    .outcome
+                    .grade
+                    .as_ref()
+                    .is_none_or(|grade| *grade == smith_bench::Measure::Observed { value: true })
+            {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn run_command(suite: &Path, prepared: &Path, seed: &str) -> ExitCode {
+    match seed
+        .parse::<u64>()
+        .map_err(|error| error.to_string())
+        .and_then(|seed| smith_bench::batch::run(suite, prepared, seed))
+    {
+        Ok(batch) => {
+            println!("{} attempts; incomplete={}", batch.results.len(), batch.incomplete);
+            for (probe, verdict) in &batch.probes {
+                println!("{probe}: {verdict:?}");
+            }
+            if batch.incomplete {
+                ExitCode::from(2)
+            } else if batch.probes.values().any(|verdict| {
+                matches!(verdict, smith_bench::ProbeVerdict::Regression | smith_bench::ProbeVerdict::Rerun)
+            }) {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         Err(error) => {
             eprintln!("{error}");

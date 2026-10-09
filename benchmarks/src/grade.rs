@@ -20,6 +20,8 @@ use crate::{CheckVerdict, Exit, Forced, Grade, Measure, OutcomeCheck};
 /// Safe materialised file observations, supplied to outcome and scope checks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
+    /// An ordinary directory, retained so an empty directory is still present.
+    Directory,
     /// A regular file's bytes and executable permission, supplied by the walk.
     File { sha256: String, executable: bool },
     /// An unfollowed link target, supplied to the scope gate.
@@ -34,11 +36,18 @@ pub type Snapshot = BTreeMap<PathBuf, Entry>;
 /// Inspect a settled directory without following links or opening special nodes.
 pub fn snapshot(root: &Path) -> Result<Snapshot, String> {
     let mut entries = BTreeMap::new();
-    walk(root, root, &mut entries)?;
+    walk(root, root, &mut entries, true)?;
     Ok(entries)
 }
 
-fn walk(root: &Path, directory: &Path, entries: &mut Snapshot) -> Result<(), String> {
+/// Inspect every node, including cache and git metadata, without following links.
+pub fn snapshot_all(root: &Path) -> Result<Snapshot, String> {
+    let mut entries = BTreeMap::new();
+    walk(root, root, &mut entries, false)?;
+    Ok(entries)
+}
+
+fn walk(root: &Path, directory: &Path, entries: &mut Snapshot, skip_git: bool) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     let mut children = fs::read_dir(directory)
         .map_err(|error| error.to_string())?
@@ -46,13 +55,14 @@ fn walk(root: &Path, directory: &Path, entries: &mut Snapshot) -> Result<(), Str
         .map_err(|error| error.to_string())?;
     children.sort_by_key(fs::DirEntry::file_name);
     for child in children {
-        if child.file_name() == ".git" {
+        if skip_git && child.file_name() == ".git" {
             continue;
         }
         let path = child.path();
         let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
         if metadata.is_dir() {
-            walk(root, &path, entries)?;
+            entries.insert(path.strip_prefix(root).expect("walk stays under root").into(), Entry::Directory);
+            walk(root, &path, entries, skip_git)?;
         } else {
             let entry = if metadata.is_symlink() {
                 Entry::Link { target: fs::read_link(&path).map_err(|error| error.to_string())? }
@@ -88,6 +98,12 @@ fn file(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Compare a protected path and every descendant with the frozen seed.
+#[must_use]
+pub fn changed(before: &Snapshot, after: &Snapshot, path: &Path) -> bool {
+    before.iter().filter(|(name, _)| name.starts_with(path)).ne(after.iter().filter(|(name, _)| name.starts_with(path)))
+}
+
 /// Judge outcome bytes and protected files after the agent's tree has ended.
 /// A pattern is a Rust regular expression, supplied by the task author.
 #[must_use]
@@ -119,9 +135,7 @@ pub fn checks(workspace: &Path, before: &Snapshot, after: &Snapshot, checks: &[O
                             .map(|text| pattern.is_match(&text))
                     })
                 }
-                OutcomeCheck::Protected { path } => {
-                    Ok(before.get(path).is_some() && before.get(path) == after.get(path))
-                }
+                OutcomeCheck::Protected { path } => Ok(before.contains_key(path) && !changed(before, after, path)),
             };
             let (passed, detail) = match value {
                 Ok(passed) => (passed, Vec::new()),
@@ -152,14 +166,15 @@ pub fn command(
     private: &Private,
     directory: &Path,
     grade: &Grade,
-    stop_grace: Duration,
+    bounds: Bounds,
+    environment: &BTreeMap<String, String>,
 ) -> Result<GradeResult, String> {
     let (program, arguments) = grade.command.split_first().ok_or("empty grading command")?;
     let maximum = usize::try_from(grade.max_output_bytes).map_err(|error| error.to_string())?;
     let command = Command {
-        program: program.into(),
+        program: crate::isolate::program(machine, directory, Path::new(program))?,
         arguments: arguments.iter().map(Into::into).collect(),
-        environment: crate::isolate::environment(machine, private, &BTreeMap::new())?,
+        environment: crate::isolate::environment(machine, private, environment)?,
         directory: directory.into(),
     };
     let result = execute(
@@ -170,10 +185,11 @@ pub fn command(
         Bounds {
             hard: Duration::from_secs(grade.deadline_seconds),
             teardown: Duration::ZERO,
-            grace: stop_grace,
+            grace: bounds.grace,
+            settlement: bounds.settlement,
             stdout: maximum,
             stderr: maximum,
-            force_walk: false,
+            force_walk: bounds.force_walk,
         },
     )?;
     Ok(GradeResult {

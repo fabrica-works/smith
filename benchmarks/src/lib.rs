@@ -57,3 +57,5 @@ pub use task::{
 mod tests;
 
 pub mod run;
+
+pub mod batch;

@@ -18,6 +18,8 @@ Commands available so far:
 ```sh
 cargo run -p smith-bench -- build COMMIT [--repository REPOSITORY]
 cargo run -p smith-bench -- check [TASKS_DIRECTORY]
+cargo run -p smith-bench -- attempt PREPARED_REQUEST
+cargo run -p smith-bench -- run SUITE --prepared REQUEST_DIRECTORY SEED
 cargo run -p smith-bench -- guards --suite benchmarks/tests/recorded/suites/sample.toml --tasks benchmarks/tests/recorded/tasks/valid 'benchmarks.md, section 5.2'
 cargo run -p smith-bench -- summarise RESULTS_DIRECTORY SUITE TIER single 123
 cargo run -p smith-bench -- baseline benchmarks/summaries/RUN.json NAME
@@ -130,3 +132,24 @@ are under `tests/recorded/smith-legacy/`; usage and loss stay unavailable there.
 Legacy exit zero alone proves no accepted answer. Forced teardown after an
 observed acceptance remains completed with a warning. The legacy parser joins
 the same offline and fuzzy suites as Codex's reader.
+
+`attempt` consumes one strict JSON `Prepared` request (`src/run.rs`) in a fresh
+harness process. A request freezes the task, binary and attempt identities,
+arguments and deadlines. Setup uses private homes and warmed caches outside
+the inference timer. The shared kit supervises the entire process tree;
+the runner records actual pipe observations, bounded logs and scoped resource
+counts. Outcome checks, protected paths, seed diffs and the external grader
+run after tree settlement. Grading uses a separate home and pre-agent cache
+copy. Raw archives include the request, task and prompt, and writable workspaces
+are deleted after their evidence is retained. A setup refusal remains a result.
+
+`run --prepared` validates adapter-produced requests against the suite's task
+catalogue, configuration pins and model tier, then starts one fresh harness
+process per attempt. It uses the seeded interleaving already shared with the
+summariser, respects aggregate wall and token budgets, and retains the probe
+rerun verdict. Missing whole-run token observations stop further dispatch and
+mark the suite incomplete. Missing child results become harness errors with
+the dispatcher's bounded logs and settlement evidence; parent resources are
+never labelled as agent-only measurements. Invocation preparation belongs to
+the upcoming Codex and Smith adapter increments; the current pipe face consumes
+Codex JSON lines. Recorded replay programs provide offline runner controls.

@@ -233,7 +233,7 @@ fn checks_passed(result: &AttemptResult) -> Option<bool> {
     if unknown { None } else { Some(true) }
 }
 
-fn passed(result: &AttemptResult) -> Option<bool> {
+pub(crate) fn passed(result: &AttemptResult) -> Option<bool> {
     match result.outcome.end {
         End::Completed => {
             let checks = checks_passed(result);

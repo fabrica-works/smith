@@ -24,9 +24,10 @@ fn replay(tail: &str) -> Command {
 
 fn bounds() -> Bounds {
     Bounds {
-        hard: Duration::from_millis(300),
-        teardown: Duration::from_millis(100),
-        grace: Duration::from_millis(50),
+        hard: Duration::from_millis(180),
+        teardown: Duration::from_millis(50),
+        grace: Duration::from_millis(20),
+        settlement: Duration::from_millis(200),
         stdout: 16384,
         stderr: 4096,
         force_walk: true,

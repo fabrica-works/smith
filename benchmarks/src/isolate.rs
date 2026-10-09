@@ -9,7 +9,6 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::guard::Guard;
 
@@ -31,6 +30,22 @@ impl Machine {
     }
 }
 
+/// Resolve an author's command through the exact machine PATH before spawn.
+/// Skein executes the supplied path directly; no inherited PATH is consulted.
+pub fn program(machine: &Machine, working_directory: &Path, name: &Path) -> Result<PathBuf, String> {
+    let candidates = if name.components().count() > 1 || name.is_absolute() {
+        vec![working_directory.join(name)]
+    } else {
+        std::env::split_paths(&machine.path).map(|directory| working_directory.join(directory).join(name)).collect()
+    };
+    for path in candidates {
+        if path.is_file() {
+            return path.canonicalize().map_err(|error| error.to_string());
+        }
+    }
+    Err(format!("command not found in the exact PATH: {}", name.display()))
+}
+
 /// The writable paths supplied to one agent and its commands.
 #[derive(Clone, Debug)]
 pub struct Private {
@@ -40,12 +55,14 @@ pub struct Private {
     pub temporary: PathBuf,
     pub cargo_home: PathBuf,
     pub target: PathBuf,
+    pub warm_cargo: PathBuf,
+    pub warm_target: PathBuf,
     pub config: PathBuf,
     pub state: PathBuf,
 }
 
 impl Private {
-    fn paths(root: &Path) -> Self {
+    pub(crate) fn paths(root: &Path) -> Self {
         Self {
             root: root.into(),
             workspace: root.join("workspace"),
@@ -53,6 +70,8 @@ impl Private {
             temporary: root.join("tmp"),
             cargo_home: root.join("cargo"),
             target: root.join("target"),
+            warm_cargo: root.join("warm-cargo"),
+            warm_target: root.join("warm-target"),
             config: root.join("config"),
             state: root.join("state"),
         }
@@ -71,6 +90,9 @@ fn copy_seed(guard: &Guard, source: &Path, destination: &Path) -> Result<(), Str
         .map_err(|error| error.to_string())?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
         let destination = guard.write_path(&destination.join(entry.file_name()))?;
         if metadata.is_dir() {
@@ -93,13 +115,7 @@ pub fn prepare(guard: &Guard, seed: &Path, sha256: &str, root: &Path) -> Result<
     if crate::seed_digest(seed).map_err(|error| error.to_string())? != sha256 {
         return Err("seed digest differs; setup refused before materialisation".into());
     }
-    let paths = Private::paths(&guard.write_path(root)?);
-    directory(guard, &paths.root)?;
-    for path in
-        [&paths.workspace, &paths.home, &paths.temporary, &paths.cargo_home, &paths.target, &paths.config, &paths.state]
-    {
-        directory(guard, path)?;
-    }
+    let paths = empty(guard, root)?;
     copy_seed(guard, seed, &paths.workspace)?;
     if crate::seed_digest(&paths.workspace).map_err(|error| error.to_string())? != sha256 {
         return Err("materialised seed digest differs; setup refused".into());
@@ -107,51 +123,33 @@ pub fn prepare(guard: &Guard, seed: &Path, sha256: &str, root: &Path) -> Result<
     Ok(paths)
 }
 
-/// Commit the materialised seed in its own repository, without user git policy.
-/// The seed digest must already have been verified before git metadata exists.
-pub fn commit_seed(guard: &Guard, machine: &Machine, private: &Private) -> Result<(), String> {
-    guard.write_path(&private.workspace)?;
-    guard.write_path(&private.workspace.join(".git"))?;
-    if private.workspace.join(".git").exists() {
-        return Err("attempt repository already exists".into());
-    }
-    let variables = environment(machine, private, &BTreeMap::new())?;
-    for arguments in [
-        vec!["init", "--quiet"],
-        vec!["add", "--", "."],
-        vec!["commit", "--quiet", "--allow-empty", "-m", "Frozen task seed"],
+/// Create fresh private command paths with an initially empty workspace.
+pub fn empty(guard: &Guard, root: &Path) -> Result<Private, String> {
+    let paths = Private::paths(&guard.write_path(root)?);
+    directory(guard, &paths.root)?;
+    for path in [
+        &paths.workspace,
+        &paths.home,
+        &paths.temporary,
+        &paths.cargo_home,
+        &paths.target,
+        &paths.warm_cargo,
+        &paths.warm_target,
+        &paths.config,
+        &paths.state,
     ] {
-        let status = Command::new("git")
-            .current_dir(&private.workspace)
-            .env_clear()
-            .envs(variables.clone())
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .args([
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "core.autocrlf=false",
-                "-c",
-                "gc.auto=0",
-                "-c",
-                "maintenance.auto=false",
-                "-c",
-                "user.name=Smith benchmark",
-                "-c",
-                "user.email=smith-bench@example.invalid",
-            ])
-            .args(arguments)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map_err(|error| format!("seed git setup: {error}"))?;
-        if !status.success() {
-            return Err(format!("seed git setup failed: {status}"));
-        }
+        directory(guard, path)?;
     }
-    Ok(())
+    Ok(paths)
+}
+
+/// Populate a caller-created private workspace without following links.
+pub fn copy_into(guard: &Guard, source: &Path, destination: &Path) -> Result<(), String> {
+    guard.write_path(destination)?;
+    if fs::read_dir(destination).map_err(|error| error.to_string())?.next().is_some() {
+        return Err("copy destination must be empty".into());
+    }
+    copy_seed(guard, source, destination)
 }
 
 /// Construct an exact allow-listed environment, refusing private-path overrides.
@@ -192,6 +190,42 @@ pub fn environment(
     Ok(values.into_iter().collect())
 }
 
+/// Copy a settled directory into a fresh guarded destination, without links.
+/// Grading and cache copies are private writable files, never hard links.
+pub fn copy_directory(guard: &Guard, source: &Path, destination: &Path) -> Result<(), String> {
+    directory(guard, destination)?;
+    copy_seed(guard, source, destination)
+}
+
+/// Create a new private archive or scratch parent behind the common guard.
+pub fn create_directory(guard: &Guard, path: &Path) -> Result<PathBuf, String> {
+    let path = guard.write_path(path)?;
+    directory(guard, &path)?;
+    Ok(path)
+}
+
+/// Make a settled writable copy private, rejecting links before changing modes.
+pub fn restrict_tree(guard: &Guard, path: &Path) -> Result<(), String> {
+    let path = guard.write_path(path)?;
+    let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+    let mode = if metadata.is_symlink() {
+        return Err("private copy contains a link".into());
+    } else if metadata.is_dir() {
+        0o700
+    } else if metadata.is_file() {
+        if metadata.permissions().mode() & 0o111 == 0 { 0o600 } else { 0o700 }
+    } else {
+        return Err("private copy contains a special node".into());
+    };
+    fs::set_permissions(&path, fs::Permissions::from_mode(mode)).map_err(|error| error.to_string())?;
+    if metadata.is_dir() {
+        for child in fs::read_dir(&path).map_err(|error| error.to_string())? {
+            restrict_tree(guard, &child.map_err(|error| error.to_string())?.path())?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,18 +254,4 @@ mod tests {
         assert!(prepare(&guard, &seed, &"0".repeat(64), &attempt).expect_err("digest").contains("digest"));
         assert!(!fake_home.exists());
     }
-}
-
-/// Copy a settled directory into a fresh guarded destination, without links.
-/// Grading and cache copies are private writable files, never hard links.
-pub fn copy_directory(guard: &Guard, source: &Path, destination: &Path) -> Result<(), String> {
-    directory(guard, destination)?;
-    copy_seed(guard, source, destination)
-}
-
-/// Create a new private archive or scratch parent behind the common guard.
-pub fn create_directory(guard: &Guard, path: &Path) -> Result<PathBuf, String> {
-    let path = guard.write_path(path)?;
-    directory(guard, &path)?;
-    Ok(path)
 }

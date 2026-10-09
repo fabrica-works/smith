@@ -15,7 +15,6 @@ fn fact(text: &str) -> String {
     serde_json::json!({"type":"fact","at_ns":17,"fact":text}).to_string()
 }
 
-#[test]
 fn debug_notation_preserves_nested_named_fields_tuple_variants_bytes_and_unicode() {
     let tree = parse_debug(
         r#"Wrapper { token: Token(5), result: Some((Accepted, [1, 2])), data: b"\0\xff\n", label: "a\u{2764}\"\\" }"#,
@@ -44,7 +43,6 @@ fn debug_notation_preserves_nested_named_fields_tuple_variants_bytes_and_unicode
     assert!(parse_debug(&format!("{}0{}", "Some(".repeat(80), ")".repeat(80))).is_err());
 }
 
-#[test]
 fn baseline_recordings_map_calls_completion_attempts_tools_and_main_terminals() {
     for stream in [COMPLETED, TOOLS] {
         let (observer, records) = observed(stream);
@@ -71,7 +69,6 @@ fn baseline_recordings_map_calls_completion_attempts_tools_and_main_terminals() 
     }
 }
 
-#[test]
 fn child_finish_is_never_main_and_authoritative_run_answers_survive_missing_call_facts() {
     let mut child = Observer::default();
     for text in [
@@ -99,7 +96,6 @@ fn child_finish_is_never_main_and_authoritative_run_answers_survive_missing_call
     }
 }
 
-#[test]
 fn emission_metadata_shapes_preserve_legacy_run_and_child_observations() {
     let mut observer = Observer::default();
     for text in [
@@ -117,7 +113,6 @@ fn emission_metadata_shapes_preserve_legacy_run_and_child_observations() {
     assert_eq!(observer.classify(Exit::Code(0), Forced::No).end, End::Completed);
 }
 
-#[test]
 fn emission_metadata_shapes_reject_partial_fields_wrong_types_and_unknown_fields() {
     for text in [
         "Run { fact: Admitted { run: Token(1), resumed: 1 } }",
@@ -134,7 +129,6 @@ fn emission_metadata_shapes_reject_partial_fields_wrong_types_and_unknown_fields
     }
 }
 
-#[test]
 fn known_shape_changes_poison_classification_and_unknown_record_types_are_skipped() {
     assert!(parse_line(r#"{"type":"future","unexpected":2}"#).expect("unknown").is_none());
     for (text, field) in [
@@ -160,7 +154,6 @@ fn known_shape_changes_poison_classification_and_unknown_record_types_are_skippe
     }
 }
 
-#[test]
 fn everything_content_preserves_bytes_and_legacy_exit_uses_observed_terminals() {
     assert!(
         matches!(parse_line(r#"{"type":"prompt","at_ns":2,"owner":0,"encoding":"hex","bytes":"00ff"}"#).expect("prompt"), Some(Observation::Prompt { bytes, .. }) if bytes == [0, 255])
@@ -177,7 +170,6 @@ fn everything_content_preserves_bytes_and_legacy_exit_uses_observed_terminals() 
     assert!(matches!(Observer::default().classify(Exit::Code(1), Forced::No).end, End::Failed { .. }));
 }
 
-#[test]
 fn message_facts_keep_opaque_names_and_fences_without_changing_run_classification() {
     // Explicit synthetic renderings of the current run fact variants; the frozen
     // baseline recordings remain untouched.
@@ -201,7 +193,6 @@ fn message_facts_keep_opaque_names_and_fences_without_changing_run_classificatio
     }
 }
 
-#[test]
 fn malformed_message_facts_poison_the_legacy_observer() {
     for text in [
         "MessageReceived { run: Token(1), name: 0, bytes: 16 }",
@@ -222,7 +213,6 @@ fn malformed_message_facts_poison_the_legacy_observer() {
     }
 }
 
-#[test]
 fn optional_usage_preserves_absence_and_zero_alongside_numeric_baseline_records() {
     // Synthetic renderings of both supported binary faces; frozen recordings
     // remain the evidence for the baseline face.
@@ -243,7 +233,6 @@ fn optional_usage_preserves_absence_and_zero_alongside_numeric_baseline_records(
     }
 }
 
-#[test]
 fn optional_usage_rejects_mixed_partial_and_malformed_shapes() {
     for usage in [
         "Usage { input_tokens: Some(1), output_tokens: Some(2), cache_read_tokens: None, cache_write_tokens: None }",
@@ -261,4 +250,26 @@ fn optional_usage_rejects_mixed_partial_and_malformed_shapes() {
         assert!(observer.observe_line(&line).is_err(), "{usage}");
         assert!(matches!(observer.classify(Exit::Code(0), Forced::No).end, End::HarnessError { .. }));
     }
+}
+
+// Related offline assertions share a test process to keep startup overhead
+// inside the one-second harness budget; each named story keeps its assertions.
+
+#[test]
+fn legacy_recordings_terminals_and_emission_metadata() {
+    baseline_recordings_map_calls_completion_attempts_tools_and_main_terminals();
+    child_finish_is_never_main_and_authoritative_run_answers_survive_missing_call_facts();
+    emission_metadata_shapes_preserve_legacy_run_and_child_observations();
+    everything_content_preserves_bytes_and_legacy_exit_uses_observed_terminals();
+    message_facts_keep_opaque_names_and_fences_without_changing_run_classification();
+    optional_usage_preserves_absence_and_zero_alongside_numeric_baseline_records();
+}
+
+#[test]
+fn legacy_debug_and_strict_shape_contracts() {
+    debug_notation_preserves_nested_named_fields_tuple_variants_bytes_and_unicode();
+    emission_metadata_shapes_reject_partial_fields_wrong_types_and_unknown_fields();
+    known_shape_changes_poison_classification_and_unknown_record_types_are_skipped();
+    malformed_message_facts_poison_the_legacy_observer();
+    optional_usage_rejects_mixed_partial_and_malformed_shapes();
 }

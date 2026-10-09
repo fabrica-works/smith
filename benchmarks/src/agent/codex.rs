@@ -400,6 +400,12 @@ impl Observer {
         }
     }
 
+    /// Completed root items shown by the stream, for the runner's scope gate.
+    #[must_use]
+    pub fn completed_items(&self) -> Vec<&Item> {
+        self.items.values().collect()
+    }
+
     /// Root aggregate evidence and a total naming the absent non-root scopes.
     /// An identical repeated terminal does not add its aggregate again.
     pub fn token_records(&self) -> Result<Vec<TokenRecord>, String> {

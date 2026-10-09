@@ -34,6 +34,7 @@ pub struct Prepared {
     pub codex_home: Option<PathBuf>,
     pub teardown_ms: u64,
     pub grace_ms: u64,
+    pub settlement_ms: u64,
     pub setup_deadline_seconds: u64,
     pub max_stdout_bytes: usize,
     pub max_stderr_bytes: usize,
@@ -73,7 +74,18 @@ fn blank(identity: Identity) -> AttemptResult {
             agent_t_ms: Measure::unavailable("not reported by the agent"),
         },
         tokens: Vec::new(),
-        counts: crate::agent::codex::Observer::default().counts(),
+        counts: crate::Counts {
+            responses: Measure::unavailable(missing),
+            provider_attempts: Measure::unavailable(missing),
+            retries: Measure::unavailable(missing),
+            completions: Measure::unavailable(missing),
+            tool_calls: BTreeMap::new(),
+            tool_failures: BTreeMap::new(),
+            children: Measure::unavailable(missing),
+            conversations: Measure::unavailable(missing),
+            compactions: Measure::unavailable(missing),
+            message_terminals: BTreeMap::new(),
+        },
         resources: Resources {
             cpu_scope: ResourceScope::Unavailable,
             cpu_ms: Measure::unavailable(missing),
@@ -99,7 +111,7 @@ fn blank(identity: Identity) -> AttemptResult {
     }
 }
 
-fn private_parent(guard: &Guard, directory: &Path) -> Result<(), String> {
+pub(crate) fn private_parent(guard: &Guard, directory: &Path) -> Result<(), String> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let directory = guard.write_path(directory)?;
     if !directory.exists() {
@@ -137,11 +149,28 @@ fn raw(
     deadline: u64,
     prepared: &Prepared,
 ) -> Result<ProcessResult, String> {
+    raw_environment(clock, machine, private, arguments, prepared, (deadline, &BTreeMap::new()))
+}
+
+fn raw_environment(
+    clock: &Clock,
+    machine: &Machine,
+    private: &Private,
+    arguments: &[String],
+    prepared: &Prepared,
+    policy: (u64, &BTreeMap<String, String>),
+) -> Result<ProcessResult, String> {
+    let (deadline, environment) = policy;
     let (program, arguments) = arguments.split_first().ok_or("empty author command")?;
     let command = Command {
-        program: program.into(),
+        program: crate::isolate::program(machine, &private.workspace, Path::new(program))?,
         arguments: arguments.iter().map(Into::into).collect(),
-        environment: crate::isolate::environment(machine, private, &BTreeMap::new())?,
+        environment: {
+            let mut values = crate::isolate::environment(machine, private, environment)?;
+            values.push(("GIT_CONFIG_NOSYSTEM".into(), "1".into()));
+            values.push(("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()));
+            values
+        },
         directory: private.workspace.clone(),
     };
     execute(
@@ -153,6 +182,7 @@ fn raw(
             hard: Duration::from_secs(deadline),
             teardown: Duration::ZERO,
             grace: Duration::from_millis(prepared.grace_ms),
+            settlement: Duration::from_millis(prepared.settlement_ms),
             stdout: prepared.max_stdout_bytes,
             stderr: prepared.max_stderr_bytes,
             force_walk: prepared.force_walk,
@@ -231,6 +261,112 @@ fn archive(
     Ok(())
 }
 
+fn seed_commit(
+    clock: &Clock,
+    guard: &Guard,
+    machine: &Machine,
+    private: &Private,
+    prepared: &Prepared,
+) -> Result<(), String> {
+    let path = guard.write_path(&private.workspace.join(".git"))?;
+    if path.exists() {
+        return Err("seed must not contain git metadata".into());
+    }
+    for arguments in [
+        vec!["init", "--quiet"],
+        vec!["add", "--", "."],
+        vec!["commit", "--quiet", "--allow-empty", "-m", "Frozen task seed"],
+    ] {
+        let mut command: Vec<String> = [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "gc.auto=0",
+            "-c",
+            "maintenance.auto=false",
+            "-c",
+            "user.name=Smith benchmark",
+            "-c",
+            "user.email=smith-bench@example.invalid",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+        command.extend(arguments.into_iter().map(String::from));
+        let result = raw(clock, machine, private, &command, prepared.setup_deadline_seconds, prepared)?;
+        if !succeeded(&result) {
+            return Err("bounded seed git setup failed".into());
+        }
+    }
+    Ok(())
+}
+
+fn copy_cache(
+    clock: &Clock,
+    guard: &Guard,
+    machine: &Machine,
+    private: &Private,
+    prepared: &Prepared,
+) -> Result<(), String> {
+    for (source, destination) in [(&private.warm_cargo, &private.cargo_home), (&private.warm_target, &private.target)] {
+        // A source has been warmed by this attempt's own setup, never borrowed
+        // from a user's Cargo home. Validate before cp can follow anything.
+        let files = crate::grade::snapshot_all(source)?;
+        if files
+            .values()
+            .any(|entry| !matches!(entry, crate::grade::Entry::File { .. } | crate::grade::Entry::Directory))
+        {
+            return Err("warm caches contain a link or special node".into());
+        }
+        guard.write_path(destination)?;
+        let command = vec![
+            "cp".into(),
+            "--recursive".into(),
+            "--reflink=auto".into(),
+            "--no-preserve=ownership".into(),
+            "--".into(),
+            source.join(".").to_str().ok_or("cache path must be UTF-8")?.into(),
+            destination.to_str().ok_or("cache path must be UTF-8")?.into(),
+        ];
+        let result = raw(clock, machine, private, &command, prepared.setup_deadline_seconds, prepared)?;
+        if !succeeded(&result) {
+            return Err("private writable cache copy failed".into());
+        }
+        crate::isolate::restrict_tree(guard, destination)?;
+    }
+    Ok(())
+}
+
+fn task_for(prepared: &Prepared) -> Result<Task, String> {
+    let mut task = crate::check_task(&prepared.task, &Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/design"))
+        .map_err(|error| error.to_string())?;
+    let kind = match task.kind {
+        crate::Kind::Probe => "probes",
+        crate::Kind::Fixture => "fixtures",
+        crate::Kind::Repository => "repository",
+    };
+    let base = format!("{kind}/{}", task.id);
+    if prepared.identity.task != base {
+        let name = prepared.identity.task.strip_prefix(&format!("{base}/")).ok_or("prepared task identity differs")?;
+        let variant = task.variant.iter().find(|variant| variant.name == name).ok_or("unknown task variant")?.clone();
+        if let Some(prompt) = variant.prompt {
+            task.prompt = prompt;
+        }
+        task.environment.extend(variant.environment);
+        task.outcome.extend(variant.outcome);
+        task.event.extend(variant.event);
+        task.waives.extend(variant.waives);
+        task.smith.extend(variant.smith);
+        if let Some(budget) = variant.budget {
+            task.budget = budget;
+        }
+    }
+    Ok(task)
+}
+
 fn prepare(
     clock: &Clock,
     guard: &Guard,
@@ -239,11 +375,8 @@ fn prepare(
     task_directory: &Path,
     root: &Path,
     prepared: &Prepared,
-) -> Result<Private, String> {
-    if task.id != prepared.identity.task
-        || task.version != prepared.identity.task_version
-        || task.seed_sha256 != prepared.identity.seed_sha256
-    {
+) -> Result<(Private, String), String> {
+    if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
         return Err("prepared identity differs from the frozen task".into());
     }
     let prompt = task.prompt.as_bytes().to_vec();
@@ -265,23 +398,119 @@ fn prepare(
             "this prepared pipe face requires the Codex observer; smith driving is the legacy adapter increment".into(),
         );
     }
-    if prepared.setup_deadline_seconds == 0 {
-        return Err("setup requires an author deadline".into());
+    if prepared.setup_deadline_seconds == 0 || task.deadline_seconds == 0 {
+        return Err("setup and task require positive author deadlines".into());
+    }
+    for seconds in std::iter::once(prepared.setup_deadline_seconds)
+        .chain(std::iter::once(task.deadline_seconds))
+        .chain(task.grade.iter().map(|grade| grade.deadline_seconds))
+    {
+        if seconds == 0 || seconds.checked_mul(1_000_000_000).is_none() {
+            return Err("author deadline is outside the clock's range".into());
+        }
+    }
+    for milliseconds in [prepared.teardown_ms, prepared.grace_ms, prepared.settlement_ms] {
+        if milliseconds.checked_mul(1_000_000).is_none() {
+            return Err("supervision policy is outside the clock's range".into());
+        }
     }
     let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root)?;
     free_space(clock, machine, &private, prepared)?;
     crate::isolate::environment(machine, &private, &task.environment)?;
+    seed_commit(clock, guard, machine, &private, prepared)?;
+    let commit = raw(
+        clock,
+        machine,
+        &private,
+        &["git".into(), "rev-parse".into(), "HEAD".into()],
+        prepared.setup_deadline_seconds,
+        prepared,
+    )?;
+    if !succeeded(&commit) {
+        return Err("cannot retain frozen seed commit".into());
+    }
+    let revision = String::from_utf8(commit.stdout).map_err(|error| error.to_string())?.trim().to_owned();
+    let mut warming = private.clone();
+    warming.cargo_home.clone_from(&private.warm_cargo);
+    warming.target.clone_from(&private.warm_target);
     for command in &task.setup {
-        let result = raw(clock, machine, &private, command, prepared.setup_deadline_seconds, prepared)?;
+        let result = raw_environment(
+            clock,
+            machine,
+            &warming,
+            command,
+            prepared,
+            (prepared.setup_deadline_seconds, &task.environment),
+        )?;
         if !succeeded(&result) {
             return Err(format!("setup command failed: {:?}, {:?}", result.exit, result.error));
         }
     }
-    crate::isolate::commit_seed(guard, machine, &private)?;
-    Ok(private)
+    copy_cache(clock, guard, machine, &private, prepared)?;
+    if !task.grade.is_empty() {
+        let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
+        grading.warm_cargo.clone_from(&private.warm_cargo);
+        grading.warm_target.clone_from(&private.warm_target);
+        copy_cache(clock, guard, machine, &grading, prepared)?;
+    }
+    Ok((private, revision))
 }
 
-fn observe(guard: &Guard, directory: &Path, result: &mut AttemptResult, process: &ProcessResult) -> Result<(), String> {
+fn lexical(base: &Path, path: &Path) -> PathBuf {
+    use std::path::Component;
+    let absolute = base.join(path);
+    let mut normal = PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            Component::ParentDir => {
+                normal.pop();
+            }
+            Component::CurDir => {}
+            Component::RootDir | Component::Normal(_) | Component::Prefix(_) => normal.push(part),
+        }
+    }
+    normal
+}
+
+fn scope(process: &ProcessResult, workspace: &Path) -> Measure<Vec<PathBuf>> {
+    let mut outside = Vec::new();
+    for item in process.observer.completed_items() {
+        match item {
+            crate::agent::codex::Item::FileChange { changes, .. } => {
+                for change in changes {
+                    let path = lexical(workspace, Path::new(&change.path));
+                    if !path.starts_with(workspace.parent().unwrap_or(workspace)) {
+                        outside.push(path);
+                    }
+                }
+            }
+            crate::agent::codex::Item::AgentMessage { .. }
+            | crate::agent::codex::Item::CommandExecution { .. }
+            | crate::agent::codex::Item::CollabToolCall { .. } => {}
+        }
+    }
+    outside.sort();
+    outside.dedup();
+    Measure::LowerBound {
+        value: outside,
+        missing: vec![
+            "JSON lines omit non-root calls and shell filesystem effects; complete adapter collection required".into(),
+        ],
+    }
+}
+
+fn observe(
+    guard: &Guard,
+    directory: &Path,
+    workspace: &Path,
+    result: &mut AttemptResult,
+    process: &ProcessResult,
+) -> Result<(), String> {
+    result.identity.started_utc =
+        time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(process.start_wall.as_nanos()))
+            .map_err(|error| error.to_string())?
+            .format(&time::format_description::well_known::Rfc3339)
+            .map_err(|error| error.to_string())?;
     let classification = process.observer.classify(process.exit, process.forced);
     result.outcome.end = classification.end;
     result.outcome.warnings = classification.warnings;
@@ -301,6 +530,18 @@ fn observe(guard: &Guard, directory: &Path, result: &mut AttemptResult, process:
         Some(_) => process.observer.token_records()?,
         None => Vec::new(),
     };
+    result.outcome.writes_outside_workspace = scope(process, workspace);
+    if let Measure::LowerBound { value, missing: _ } = &result.outcome.writes_outside_workspace {
+        result.health.passive_checks.push(crate::CheckVerdict {
+            check: "scope".into(),
+            passed: if value.is_empty() {
+                Measure::unavailable("the selected stream does not show every filesystem effect")
+            } else {
+                Measure::Observed { value: false }
+            },
+            evidence: value.iter().map(|path| path.display().to_string()).collect(),
+        });
+    }
     let ended_cleanly =
         process.tree.live_at_leader_exit.as_ref().is_some_and(Vec::is_empty) && process.forced == Forced::No;
     result.health.passive_checks.push(crate::CheckVerdict {
@@ -313,26 +554,55 @@ fn observe(guard: &Guard, directory: &Path, result: &mut AttemptResult, process:
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Work<'a> {
+    clock: &'a Clock,
+    guard: &'a Guard,
+    machine: &'a Machine,
+    private: &'a Private,
+    task: &'a Task,
+    prepared: &'a Prepared,
+    directory: &'a Path,
+}
+
 fn afterwards(
-    clock: &Clock,
-    guard: &Guard,
-    machine: &Machine,
-    private: &Private,
-    task: &Task,
+    work: Work<'_>,
     seed: &crate::grade::Snapshot,
     revision: String,
-    prepared: &Prepared,
-    directory: &Path,
     result: &mut AttemptResult,
 ) -> Result<(), String> {
+    let Work { clock, guard, machine, private, task, prepared, directory } = work;
     let after = crate::grade::snapshot(&private.workspace)?;
     result.outcome.checks = crate::grade::checks(&private.workspace, seed, &after, &task.outcome);
-    let changed: Vec<_> = task.protected.iter().filter(|path| seed.get(*path) != after.get(*path)).cloned().collect();
+    let changed: Vec<_> =
+        task.protected.iter().filter(|path| crate::grade::changed(seed, &after, path)).cloned().collect();
     result.outcome.protected_files_changed = Measure::Observed { value: changed };
-    // The adapter's complete call observation must supply outside-write evidence.
-    // A settled filesystem alone cannot establish that no outside write happened.
-    result.outcome.writes_outside_workspace =
-        Measure::unavailable("complete call scope observation awaits the prepared agent adapter");
+    let git_files = crate::grade::snapshot_all(&private.workspace.join(".git"))?;
+    if git_files
+        .values()
+        .any(|entry| !matches!(entry, crate::grade::Entry::File { .. } | crate::grade::Entry::Directory))
+    {
+        return Err("agent replaced git metadata with a link or special file".into());
+    }
+    let include = raw(
+        clock,
+        machine,
+        private,
+        &[
+            "git".into(),
+            "-c".into(),
+            "core.hooksPath=/dev/null".into(),
+            "add".into(),
+            "--intent-to-add".into(),
+            "--".into(),
+            ".".into(),
+        ],
+        prepared.setup_deadline_seconds,
+        prepared,
+    )?;
+    if !succeeded(&include) {
+        return Err("cannot include untracked files in seed diff".into());
+    }
     let diff = raw(
         clock,
         machine,
@@ -356,18 +626,33 @@ fn afterwards(
     }
     archive(guard, directory, result, "diff.patch", &diff.stdout)?;
     if !task.grade.is_empty() {
-        let grading = private.root.join("grading");
-        crate::isolate::copy_directory(guard, &private.workspace, &grading)?;
+        let grading_private = Private::paths(&private.root.join("grading"));
+        let grading_root = &grading_private.root;
+        let grading = &grading_private.workspace;
+        crate::isolate::copy_into(guard, &private.workspace, grading)?;
+        let grader = prepared.task.parent().ok_or("task needs a directory")?.join("grader");
+        if grader.exists() {
+            crate::isolate::copy_directory(guard, &grader, &grading_root.join("grader"))?;
+        }
         let grade_start = clock.now().now;
         let mut passed = true;
         for (index, grade) in task.grade.iter().enumerate() {
             let judgment = crate::grade::command(
                 clock,
                 machine,
-                private,
-                &grading,
+                &grading_private,
+                grading,
                 grade,
-                Duration::from_millis(prepared.grace_ms),
+                Bounds {
+                    hard: Duration::ZERO,
+                    teardown: Duration::ZERO,
+                    grace: Duration::from_millis(prepared.grace_ms),
+                    settlement: Duration::from_millis(prepared.settlement_ms),
+                    stdout: prepared.max_stdout_bytes,
+                    stderr: prepared.max_stderr_bytes,
+                    force_walk: prepared.force_walk,
+                },
+                &task.environment,
             )?;
             passed &= judgment.passed;
             archive(guard, directory, result, &format!("grade-{index}-stdout.log"), &judgment.stdout)?;
@@ -390,26 +675,30 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
     let clock = Clock::new();
     let existed = root.exists();
     let mut result = blank(prepared.identity.clone());
+    let mut inference = false;
     let work = (|| {
         if existed {
             return Err("attempt scratch root already exists; setup refused".into());
         }
-        let task = crate::read_task(&prepared.task).map_err(|error| error.to_string())?;
-        let task_directory = prepared.task.parent().ok_or("task needs a directory")?;
-        let private = prepare(&clock, guard, machine, &task, task_directory, &root, prepared)?;
-        let seed = crate::grade::snapshot(&private.workspace)?;
-        let seed_revision = raw(
-            &clock,
-            machine,
-            &private,
-            &["git".into(), "rev-parse".into(), "HEAD".into()],
-            prepared.setup_deadline_seconds,
-            prepared,
+        let task = task_for(prepared)?;
+        archive(
+            guard,
+            &directory,
+            &mut result,
+            "prepared.json",
+            &serde_json::to_vec_pretty(prepared).map_err(|error| error.to_string())?,
         )?;
-        if !succeeded(&seed_revision) {
-            return Err("cannot retain seed commit".into());
-        }
-        let revision = String::from_utf8(seed_revision.stdout).map_err(|error| error.to_string())?.trim().to_owned();
+        archive(
+            guard,
+            &directory,
+            &mut result,
+            "task.toml",
+            &fs::read(&prepared.task).map_err(|error| error.to_string())?,
+        )?;
+        archive(guard, &directory, &mut result, "prompt.txt", task.prompt.as_bytes())?;
+        let task_directory = prepared.task.parent().ok_or("task needs a directory")?;
+        let (private, revision) = prepare(&clock, guard, machine, &task, task_directory, &root, prepared)?;
+        let seed = crate::grade::snapshot(&task_directory.join("seed"))?;
         let mut environment = crate::isolate::environment(machine, &private, &task.environment)?;
         if let Some(home) = &prepared.codex_home {
             environment.push(("CODEX_HOME".into(), home.as_os_str().into()));
@@ -421,6 +710,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             directory: private.workspace.clone(),
         };
         let prompt = task.prompt.as_bytes().to_vec();
+        inference = true;
         let process = execute(
             &clock,
             command,
@@ -430,28 +720,76 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
                 hard: Duration::from_secs(task.deadline_seconds),
                 teardown: Duration::from_millis(prepared.teardown_ms),
                 grace: Duration::from_millis(prepared.grace_ms),
+                settlement: Duration::from_millis(prepared.settlement_ms),
                 stdout: prepared.max_stdout_bytes,
                 stderr: prepared.max_stderr_bytes,
                 force_walk: prepared.force_walk,
             },
         )?;
-        observe(guard, &directory, &mut result, &process)?;
-        afterwards(&clock, guard, machine, &private, &task, &seed, revision, prepared, &directory, &mut result)?;
+        observe(guard, &directory, &private.workspace, &mut result, &process)?;
+        afterwards(
+            Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
+            &seed,
+            revision,
+            &mut result,
+        )?;
         Ok(())
     })();
     if let Err(error) = work {
-        match result.outcome.exit {
-            Measure::Unavailable { .. } => result.outcome.end = End::Refused { setup: error },
-            Measure::Observed { .. } | Measure::LowerBound { .. } => {
-                result.outcome.end = End::HarnessError { what: error }
-            }
-        }
+        result.outcome.end = if inference { End::HarnessError { what: error } } else { End::Refused { setup: error } };
     }
     if !existed && root.exists() {
-        fs::remove_dir_all(guard.write_path(&root)?).map_err(|error| error.to_string())?;
+        let deletion =
+            guard.write_path(&root).and_then(|root| fs::remove_dir_all(root).map_err(|error| error.to_string()));
+        if let Err(error) = deletion {
+            result.outcome.end = End::HarnessError { what: format!("owned workspace deletion failed: {error}") };
+        }
     }
     let incomplete = matches!(result.outcome.end, End::Refused { .. });
     let bytes = crate::render_result(&result)?;
     let _: Artifact = crate::grade::archive(guard, &directory, "result.json", bytes.as_bytes())?;
     Ok(Recorded { result, directory, incomplete })
+}
+
+/// Archive a dispatcher-observed failure without inventing agent measurements.
+pub(crate) fn recover(
+    guard: &Guard,
+    state: &Path,
+    prepared: &Prepared,
+    process: &ProcessResult,
+    reason: String,
+) -> Result<AttemptResult, String> {
+    let directory = state.join("runs").join(&prepared.identity.run).join(&prepared.identity.attempt);
+    private_parent(guard, &directory)?;
+    let mut result = blank(prepared.identity.clone());
+    result.outcome.end = End::HarnessError { what: reason };
+    result.outcome.forced = process.forced;
+    result.health.passive_checks.push(crate::CheckVerdict {
+        check: "dispatcher-tree-settled".into(),
+        passed: Measure::Observed { value: true },
+        evidence: vec![format!("{:?}", process.tree)],
+    });
+    archive(guard, &directory, &mut result, "dispatcher-stdout.log", &process.stdout)?;
+    archive(guard, &directory, &mut result, "dispatcher-stderr.log", &process.stderr)?;
+    let bytes = crate::render_result(&result)?;
+    crate::grade::archive(guard, &directory, "result.json", bytes.as_bytes())?;
+    Ok(result)
+}
+
+/// Read an adapter-produced request strictly, without reading any login.
+pub fn read_prepared(path: &Path) -> Result<Prepared, String> {
+    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let mut decoder = serde_json::Deserializer::from_str(&text);
+    let request =
+        serde_path_to_error::deserialize(&mut decoder).map_err(|error| format!("{}: {error}", path.display()))?;
+    decoder.end().map_err(|error| error.to_string())?;
+    Ok(request)
+}
+
+/// Execute one already-prepared request in this fresh harness process.
+pub fn attempt_file(path: &Path) -> Result<Recorded, String> {
+    let guard = Guard::from_environment()?;
+    let machine = Machine::from_environment()?;
+    let state = crate::arm::state_root(&guard)?;
+    attempt(&guard, &machine, &state, &read_prepared(path)?)
 }

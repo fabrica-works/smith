@@ -14,7 +14,6 @@ fn observed(stream: &str) -> Observer {
     observer
 }
 
-#[test]
 fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
     let completed = observed(COMPLETED);
     assert_eq!(completed.classify(Exit::Code(0), Forced::No).end, End::Completed);
@@ -44,7 +43,6 @@ fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
     }
 }
 
-#[test]
 fn known_shapes_and_conflicting_usage_fail_with_named_evidence() {
     assert!(parse_line(r#"{"type":"future.record","payload":17}"#).expect("unknown kind").is_none());
     assert!(parse_line(r#"{"type":"item.completed","item":{"type":"future.item"}}"#).expect("unknown item").is_none());
@@ -78,7 +76,6 @@ fn known_shapes_and_conflicting_usage_fail_with_named_evidence() {
     assert!(parse_line("{").is_err());
 }
 
-#[test]
 fn latest_turn_exit_deadline_and_fatal_error_decide_the_end() {
     let completed = observed(COMPLETED);
     assert_eq!(completed.classify(Exit::Signal(9), Forced::Killed).end, End::Completed);
@@ -98,4 +95,12 @@ fn latest_turn_exit_deadline_and_fatal_error_decide_the_end() {
     let no_usage = observed("{\"type\":\"thread.started\",\"thread_id\":\"synthetic\"}\n{\"type\":\"turn.started\"}\n");
     assert!(matches!(no_usage.token_records().expect("missing")[1].usage.output, Measure::Unavailable { .. }));
     assert!(matches!(no_usage.classify(Exit::Code(0), Forced::No).end, End::HarnessError { .. }));
+}
+
+// Recorded parser and classification stories share startup overhead.
+#[test]
+fn codex_recordings_shapes_and_terminals() {
+    archived_and_explicitly_synthetic_streams_preserve_root_only_evidence();
+    known_shapes_and_conflicting_usage_fail_with_named_evidence();
+    latest_turn_exit_deadline_and_fatal_error_decide_the_end();
 }
