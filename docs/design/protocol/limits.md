@@ -127,6 +127,7 @@ name `smith check` and the event stream's header print it under
 | `group_stop` | duration | each of the three steps that stop a command's group (agent.md, section 2) |
 | `close` | duration | io's close deadline (section 7) |
 | `write_deadline` | duration | the most one write of the event stream may stay in flight before its destination is given up (events.md, section 5.2) |
+| `wrap_up` | duration | the most time a sub-agent keeps for its final turn (domain/run.md, 5.3); a child's allowance is the smaller of this and a quarter of its effective time |
 | `cancel_grace` | duration | the inline agent's grace for a cancel, before it drops a run (domain/host.md, 9.2) |
 | `exit_grace` | duration | a host's grace for a spawned agent to exit after its answer, above the agent's teardown bound (section 4) |
 

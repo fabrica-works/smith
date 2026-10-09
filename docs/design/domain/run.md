@@ -330,7 +330,10 @@ section 6).
   last turn has no tools. Like main's `## Budget` (9.2), it says what was
   set at open, never what is left.
 - **A final turn.** The run gives each child, at open, a final-turn note
-  and a wrap-up allowance of time. When the child's own turns are down to
+  and a wrap-up allowance of time: the smaller of the policy value
+  `wrap_up` (protocol/limits.md, 2.3) and a quarter of the child's
+  effective time. A short share then keeps most of its time for
+  ordinary turns. When the child's own turns are down to
   one, or its time to that allowance, the session gives it its final turn
   (session.md, section 7): the note, and no tool to choose, the tools
   offered unchanged. The child answers with what it has, and the run

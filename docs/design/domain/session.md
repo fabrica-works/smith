@@ -273,6 +273,12 @@ that asked for it, whose result is the child's final message.
   its last, its budget spent, and the run gives it to the parent with
   `stop: budget` (run.md, section 5.3), so a capped child answers instead
   of ending unanswered.
+- **A compaction due near the end.** The final-turn trigger counts a
+  compaction that is due:
+  - by turns, a child whose window needs compacting compacts with two
+    turns left and answers with its last;
+  - by time, the final sequence starts at twice the allowance, so the
+    compaction and the final turn both fit what is left.
 - **Its answer is bounded,** and its system text states the bound
   (run.md, section 3.3).
 - **A main session has no final turn of its own.** Its run's wind-down
@@ -443,10 +449,6 @@ budgets.
   the output limit, or a refusal, may open a window. Proposed: a cut
   summary opens it as written; a refusal or an answer with no text fails
   the session.
-- **A compaction due on a final turn:** a child with one turn left whose
-  window is full cannot both compact and answer. Proposed: the final-turn
-  trigger counts a due compaction, so the child compacts with two turns
-  left and answers with its last.
 - **An unreported input or output count:** section 6 charges the
   reservation in its place. To confirm against each dialect's reporting.
 - **Calls past the completion's bound:** failing the completion, as

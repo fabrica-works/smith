@@ -639,6 +639,7 @@ names (section 2.3):
 | `group_stop` | 1 s for each of its three steps | provisional; the process-tree probe |
 | `close` | 5 s | provisional |
 | `write_deadline` | 30 s for one write of the event stream | provisional |
+| `wrap_up` | 60 s, a child's final turn's allowance at most | provisional; the budget probe's `wrap-up` |
 | `cancel_grace` | 10 s | provisional |
 | `exit_grace` | derived: the agent's teardown bound, two `close`s and its cancels' settling, plus one more `close` as a margin (skein's `shell.md`, section 13); a setting below the bound is refused | decided as derived; the margin provisional |
 
