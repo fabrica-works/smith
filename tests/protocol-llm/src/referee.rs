@@ -13,6 +13,33 @@ use smith_domain::run::{
     outcome::{Declared, Field, FieldRule, Item, OutcomeSpec, TextSpec},
 };
 
+/// Exact JSON values from one actual native request, retained by the protocol oracle.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct NativeRequest {
+    pub system: String,
+    pub tools: String,
+    pub history: Vec<String>,
+}
+
+impl NativeRequest {
+    /// Read the captured HTTP body's raw values without re-encoding their bytes.
+    #[must_use]
+    pub fn from_http(bytes: &[u8]) -> Self {
+        let head = bytes.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request head");
+        let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_slice(&bytes[head + 4..]).expect("actual native JSON request");
+        let system = fields.get("instructions").or_else(|| fields.get("system")).expect("native system");
+        let history = fields.get("input").or_else(|| fields.get("messages")).expect("native history");
+        let items: Vec<Box<serde_json::value::RawValue>> =
+            serde_json::from_str(history.get()).expect("native history array");
+        Self {
+            system: system.get().into(),
+            tools: fields.get("tools").expect("native tool definitions").get().into(),
+            history: items.into_iter().map(|item| item.get().into()).collect(),
+        }
+    }
+}
+
 /// A host or provider observation, independent of the agent's private state.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
@@ -22,6 +49,8 @@ use smith_domain::run::{
     reason = "observed push terminals retain the copied fixed diagnostic tail without changing their boundary value"
 )]
 pub enum Seen {
+    /// Actual native request body, observed by the byte peer for its conversation.
+    Request { owner: Token, request: NativeRequest },
     /// Actual root Turn output; final count must match this observed chronology.
     /// Contract: domain/run.md, section 13.
     Turn {
@@ -168,6 +197,7 @@ enum Phase {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
 #[derive(Debug)]
 pub struct Meeting {
+    requests: std::collections::BTreeMap<Token, NativeRequest>,
     turns: u32,
     phase: Phase,
     contract: Option<OutcomeSpec>,
@@ -187,6 +217,7 @@ pub struct Meeting {
 impl Default for Meeting {
     fn default() -> Self {
         Self {
+            requests: std::collections::BTreeMap::new(),
             turns: 0,
             phase: Phase::Waiting,
             contract: None,
@@ -214,6 +245,14 @@ impl Expectations for Meeting {
 
     fn observe(&mut self, seen: Seen, judge: &mut Judge<Self::Name, Self::Stimulus>) {
         match seen {
+            Seen::Request { owner, request } => {
+                if let Some(previous) = self.requests.get(&owner) {
+                    judge.check(previous.system == request.system, "native system bytes stay fixed within a window");
+                    judge.check(previous.tools == request.tools, "native tool bytes stay fixed within a window");
+                    judge.check(request.history.starts_with(&previous.history), "native history bytes extend within a window");
+                }
+                self.requests.insert(owner, request);
+            }
             Seen::Turn { number } => {
                 judge.check(
                     self.turns.checked_add(1) == Some(number),

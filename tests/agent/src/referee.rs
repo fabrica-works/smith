@@ -22,6 +22,8 @@ use smith_domain::run::{
     reason = "observed push terminals retain the copied fixed diagnostic tail without changing their boundary value"
 )]
 pub enum Seen {
+    /// Exact typed fake-provider request observed for one conversation.
+    Prompt { owner: Token, query: skein_fake_llm_domain::api::Query },
     /// Actual root Turn output; final count must match this observed chronology.
     /// Contract: domain/run.md, section 13.
     Turn {
@@ -168,6 +170,7 @@ enum Phase {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
 #[derive(Debug)]
 pub struct Meeting {
+    prompts: std::collections::BTreeMap<Token, skein_fake_llm_domain::api::Query>,
     turns: u32,
     phase: Phase,
     contract: Option<OutcomeSpec>,
@@ -187,6 +190,7 @@ pub struct Meeting {
 impl Default for Meeting {
     fn default() -> Self {
         Self {
+            prompts: std::collections::BTreeMap::new(),
             turns: 0,
             phase: Phase::Waiting,
             contract: None,
@@ -214,6 +218,14 @@ impl Expectations for Meeting {
 
     fn observe(&mut self, seen: Seen, judge: &mut Judge<Self::Name, Self::Stimulus>) {
         match seen {
+            Seen::Prompt { owner, query } => {
+                if let Some(previous) = self.prompts.get(&owner) {
+                    judge.check(previous.system == query.system, "a session keeps its system text");
+                    judge.check(previous.tools == query.tools, "a session keeps its offered tools");
+                    judge.check(query.messages.starts_with(&previous.messages), "a session extends its history within a window");
+                }
+                self.prompts.insert(owner, query);
+            }
             Seen::Turn { number } => {
                 judge.check(
                     self.turns.checked_add(1) == Some(number),

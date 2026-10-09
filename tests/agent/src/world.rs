@@ -1215,6 +1215,7 @@ impl World {
                         stage.push(provider::Event::Call { reply_to: ReplyTo::new(owner), query });
                     }
                 }
+                self.observe(Seen::Prompt { owner, query: self.prompts.last().expect("actual typed request").clone() });
             }
             Request::Cancel { owner } => match &mut self.backend {
                 Backend::Typed { .. } => self.cancel(Family::Completion, owner, Event::Cancelled { owner }),

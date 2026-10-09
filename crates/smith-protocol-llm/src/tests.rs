@@ -80,6 +80,9 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
         ];
         for outcome in cases {
             let (full, _) = render_outcome(&outcome, bound).unwrap();
+            assert_eq!(render_outcome(&outcome, bound).unwrap().0, full, "same outcome renders identical bytes");
+            let cap = CUT_MARKER_BYTES + u32::try_from(rng.next_u64() % 128).unwrap();
+            assert_eq!(render_outcome(&outcome, cap), render_outcome(&outcome, cap), "cut rendering is deterministic too");
             assert!(full.len() <= usize::try_from(bound).unwrap());
             assert!(!full.ends_with(b" bytes omitted]"));
         }

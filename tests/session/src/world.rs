@@ -6,6 +6,14 @@ use skein_lib::{Duration, ReplyTo, Rng, Time, Token};
 use skein_world::domain::{Key, Ledger, Schedule, Span, Stage, Trace};
 use smith_domain_session as agent;
 use smith_domain_session::llm::{Block, Decoded, Descriptor, Endpoint, Failure, Prompt, Returned, Usage};
+
+/// Check two actual requests of one window against the append-only session contract.
+pub fn assert_prompt_extends(previous: &Prompt, current: &Prompt) {
+    assert_eq!(current.system, previous.system, "a window keeps its system text");
+    assert_eq!(current.tools, previous.tools, "a window keeps its tool grants");
+    assert_eq!(current.delegated, previous.delegated, "a window keeps its tool descriptors");
+    assert!(current.messages.starts_with(&previous.messages), "a window extends its history");
+}
 use smith_domain_tools::{self as tools, Authority, Done, Effect, Fault, Grants, Op, Repo};
 use smith_tools_world::translate as io;
 
@@ -499,6 +507,7 @@ pub struct Told {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[derive(Debug)]
 pub struct Session {
+    previous_prompt: Option<Prompt>,
     /// The session's name, once it opened.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -1122,6 +1131,12 @@ impl World {
                 self.ended(opener.raw(), Ended { end, turns, usage });
             }
             agent::Request::Complete { owner, prompt, deadlines, .. } => {
+                let opener = self.openers[&owner];
+                let session = self.sessions.get_mut(&opener).expect("actual request names an open session");
+                if let Some(previous) = &session.previous_prompt {
+                    assert_prompt_extends(previous, &prompt);
+                }
+                session.previous_prompt = Some(prompt.clone());
                 self.affordable(owner, &prompt);
                 in_call_order(&prompt);
                 self.check_results(owner, &prompt);
@@ -1776,6 +1791,7 @@ impl World {
         let nudges = u32::try_from(self.rng.between(min.into(), max.into())).expect("drawn between two u32s");
         let abandon = self.rng.chance(self.settings.abandon);
         let session = Session {
+            previous_prompt: None,
             session: None,
             budget: spec.budget,
             max_tokens: spec.output,

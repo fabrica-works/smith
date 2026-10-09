@@ -110,6 +110,8 @@ pub enum Observed {
 /// domain/run.md, sections 3 and 14; testing-strategy.md, sections 2.3 and 6.
 #[derive(Debug)]
 pub struct Binding {
+    /// Actual client-to-peer HTTP tape, moved out when the physical binding retires.
+    pub request: Vec<u8>,
     /// Root-issued logical callback; later physical calls may reuse it.
     /// Contract: scratch/client.md, sections 1 and 5.
     pub owner: Token,
@@ -167,6 +169,7 @@ impl core::fmt::Debug for Composition {
 /// Owned observations from one bounded shared-world progress round.
 /// Contract: scratch/client.md, sections 4 and 5; testing-strategy.md, section 6.
 pub(crate) struct Progress {
+    pub(crate) requests: Vec<(Token, crate::referee::NativeRequest)>,
     /// Actual protocol/close progress; prevents root timers skipping queued bytes.
     /// Contract: scratch/client.md, section 5; programming-model.md, section 9.
     pub(crate) immediate: bool,
@@ -202,6 +205,7 @@ impl Composition {
         assert!(self.active.insert(owner, index).is_none(), "one active actual Client per logical callback");
         assert!(wire.start().is_empty(), "admitted actual Start waits for lower progress before its terminal");
         self.bindings.push(Binding {
+            request: Vec::new(),
             owner,
             receiving,
             accepted_usage: None,
@@ -231,7 +235,7 @@ impl Composition {
     /// this is a selected lower settlement schedule, not application policy.
     /// Contract: scratch/client.md, sections 4 and 5; programming-model.md, sections 5.2 and 9.
     pub(crate) fn advance(&mut self, now: Time, wall: Wall, ending: bool) -> Progress {
-        let mut progress = Progress { immediate: false, terminals: Vec::new(), queries: Vec::new() };
+        let mut progress = Progress { immediate: false, terminals: Vec::new(), queries: Vec::new(), requests: Vec::new() };
         for (index, binding) in self.bindings.iter_mut().enumerate() {
             let Some(wire) = binding.wire.as_mut() else { continue };
             wire.peer.at(now, wall);
@@ -252,6 +256,9 @@ impl Composition {
                 returned
             };
             binding.accepted_usage = wire.accepted_usage;
+            if !wire.peer.queries.is_empty() {
+                progress.requests.push((binding.owner, crate::referee::NativeRequest::from_http(&wire.peer.requests)));
+            }
             progress.queries.append(&mut wire.peer.queries);
             for event in returned {
                 assert_eq!(
@@ -269,6 +276,7 @@ impl Composition {
                     "retiring a physical binding retains any newer logical owner"
                 );
                 binding.retired = Some((now, wall));
+                binding.request = core::mem::take(&mut wire.peer.requests);
                 binding.wire = None;
             }
         }

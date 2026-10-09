@@ -378,6 +378,14 @@ fn native_accounting(
 ) {
     assert_eq!(world.prompts().len(), prefixes.len());
     assert_eq!(world.turns().len(), prefixes.len());
+    let requests = world.wire_bindings().iter().map(|binding| {
+        smith_protocol_llm_world::referee::NativeRequest::from_http(&binding.request)
+    }).collect::<Vec<_>>();
+    for adjacent in requests.windows(2) {
+        assert_eq!(adjacent[0].system, adjacent[1].system, "exact native system bytes");
+        assert_eq!(adjacent[0].tools, adjacent[1].tools, "exact native tool-schema bytes");
+        assert!(adjacent[1].history.starts_with(&adjacent[0].history), "exact native history items form a byte prefix");
+    }
     let mut spent = run::Spend::ZERO;
     for (index, ((query, turn), prefix)) in world.prompts().iter().zip(world.turns()).zip(prefixes).enumerate() {
         assert_eq!(query.system.as_ref(), system, "whole native structured opening at completion {index}");
@@ -422,6 +430,50 @@ fn native_accounting(
     }
     assert!(matches!(world.answer(), run::Answer::Parked { turns, spent: actual }
         if *turns == spent.turns && *actual == spent));
+}
+
+#[test]
+fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer() {
+    for index in 0..2 {
+        let mut bounds = Limits {
+            client: skein_llm_world::limits(),
+            tool_bytes: 32768,
+            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            shell_default: Duration::from_secs(120),
+            shell_maximum: Duration::from_secs(1200),
+        };
+        bounds.client.http.request = 16384;
+        bounds.client.dialect.request_bytes = 16384;
+        let mut settings = Settings { job: Job::Waiting, waiting: Duration::from_secs(1), network: Span::millis(1, 1), ..Settings::calm(1103) };
+        settings.limits.session.completion_bytes = adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes).expect("actual receiving reservation");
+        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        let scripts = Box::new([Script {
+            cue: b"@brief-native".as_slice().into(),
+            turns: Box::new([
+                calls(vec![call(b"read", br#"{"path":"data.txt"}"#)], 2),
+                calls(vec![call(b"read", br#"{"path":"data.txt"}"#)], 3),
+                calls(vec![call(b"read", br#"{"path":"data.txt"}"#)], 5),
+                calls(vec![call(b"read", br#"{"path":"data.txt"}"#)], 7),
+                calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 11),
+            ]),
+        }]);
+        let (disk, mounted) = workspace();
+        let mut world = World::with_workspace_wire_charter(settings, None, Some(mounted), disk,
+            (wire::configurations().into_iter().nth(index).expect("two native dialects"), bounds), scripts,
+            charter(&settings, NATIVE_INSTRUCTIONS));
+        world.run(100_000);
+        let mut history = vec![message(Role::User, vec![text(BEGIN)])];
+        let mut prefixes = vec![history.clone()];
+        for _turn in 0..4 {
+            history.extend([
+                message(Role::Assistant, vec![Part::ToolCall { id: ID.into(), name: b"read".as_slice().into(), arguments: br#"{"path":"data.txt"}"#.as_slice().into() }]),
+                message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: b"1: old\n(1 of 1 lines; skipped 0)".as_slice().into(), is_error: false }]),
+            ]);
+            prefixes.push(history.clone());
+        }
+        native_accounting(&world, &expected_main("@brief-native PARENT-INSTRUCTIONS: native first activation.\n\n"), &prefixes, &[2, 3, 5, 7, 11], 0, true);
+        assert_eq!(world.wire_bindings().len(), 5, "five actual native Client requests");
+    }
 }
 
 fn native_settled(world: &World, settings: &Settings, roots: &[Token]) {

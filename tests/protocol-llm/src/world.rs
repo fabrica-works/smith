@@ -953,6 +953,9 @@ impl World {
         match &mut self.backend {
             Backend::Wire(wire) => {
                 let progress = wire.advance(self.stage.env.now, self.stage.env.wall, self.answer.is_some());
+                for (owner, request) in progress.requests {
+                    self.observe(Seen::Request { owner, request });
+                }
                 for query in progress.queries {
                     self.messages_seen.push((self.now, crate::messages_referee::Seen::Prompt { query: query.clone() }));
                     self.prompts.push(query);
