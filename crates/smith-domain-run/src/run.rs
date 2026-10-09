@@ -1639,12 +1639,9 @@ fn sub_agent(
         return;
     }
     let ordinal = run.next_ordinal;
-    let next_ordinal = match ordinal.checked_add(1) {
-        Some(next) => next,
-        None => {
-            out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::TooMany } });
-            return;
-        }
+    let Some(next_ordinal) = ordinal.checked_add(1) else {
+        out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::TooMany } });
+        return;
     };
     // A call is stored before its child, which names it, and holds the child
     // once the child has a name too.

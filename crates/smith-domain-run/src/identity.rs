@@ -23,9 +23,8 @@ impl Identity {
     }
 
     pub(crate) fn draw(rng: &mut Rng) -> Identity {
-        let mut bytes = [0; 16];
-        bytes.get_mut(..8).expect("first fixed half").copy_from_slice(&rng.next_u64().to_le_bytes());
-        bytes.get_mut(8..).expect("second fixed half").copy_from_slice(&rng.next_u64().to_le_bytes());
-        Identity(bytes)
+        let low = u128::from(rng.next_u64());
+        let high = u128::from(rng.next_u64()).checked_shl(64).expect("fixed upper half shift");
+        Identity((low | high).to_le_bytes())
     }
 }
