@@ -25,7 +25,7 @@ pub fn max_out(limits: &Limits) -> u32 {
     limits.agent.max_out().saturating_mul(4).saturating_add(limits.lines).saturating_add(8)
 }
 
-/// One local chat and its in-process agent.
+/// One local chat and its inline or spawned agent behind the parent face.
 #[derive(Debug)]
 pub struct Domain {
     config: Config,

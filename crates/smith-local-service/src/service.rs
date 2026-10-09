@@ -56,7 +56,10 @@ impl InlineLimits {
 
 /// Lower configuration chosen with the local agent kind at construction.
 #[derive(Debug)]
-#[expect(clippy::large_enum_variant, reason = "caller-owned startup configuration moves once without an extra heap allocation") ]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "caller-owned startup configuration moves once without an extra heap allocation"
+)]
 pub enum AgentConfig {
     /// LLM and machine components with separately owned workspace descriptors.
     Inline { configuration: agent_service::Config, roots: Box<[kernel::Fd]> },
@@ -235,7 +238,8 @@ impl Service {
         }
         let capture_time = config.local.budget.time;
         let local = match local::Domain::new(config.local, &config.limits.local, seed) {
-            Ok(local) => local, Err(error) => return Err(Error::Local(error)),
+            Ok(local) => local,
+            Err(error) => return Err(Error::Local(error)),
         };
         let process =
             ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).ok_or(Error::Process)?;
@@ -305,7 +309,10 @@ impl Service {
     /// Lend a credential value only beside the domain's grant name.
     pub fn credential(&mut self, grant: agent::Grant, envelope: Box<[u8]>) {
         if u64::try_from(envelope.len()).expect("envelope bytes fit u64") > self.limits.envelope_bytes {
-            self.local_events.push(local::Event::NoCredential { account: grant.name.account, reason: local::CredentialFailure::Missing });
+            self.local_events.push(local::Event::NoCredential {
+                account: grant.name.account,
+                reason: local::CredentialFailure::Missing,
+            });
             return;
         }
         if let Some(effects) = self.below.inline_mut()
@@ -618,18 +625,33 @@ impl Service {
 }
 
 /// Build the selected inline components and adopt exactly the configured roots.
-fn inline_effects(configuration: agent_service::Config, roots: Box<[kernel::Fd]>, local: &mut local::Config, limits: &Limits, seed: u64) -> Result<agent_service::Effects, Error> {
-    if configuration.limits.domain != limits.local.smith { return Err(Error::Process); }
+fn inline_effects(
+    configuration: agent_service::Config,
+    roots: Box<[kernel::Fd]>,
+    local: &mut local::Config,
+    limits: &Limits,
+    seed: u64,
+) -> Result<agent_service::Effects, Error> {
+    if configuration.limits.domain != limits.local.smith {
+        return Err(Error::Process);
+    }
     for endpoint in &limits.local.endpoints {
-        if !configuration.domain.endpoints.contains(endpoint) { return Err(Error::Process); }
+        if !configuration.domain.endpoints.contains(endpoint) {
+            return Err(Error::Process);
+        }
     }
     let actual = InlineLimits::new(&configuration).ok_or(Error::Memory)?;
     let advertised = limits.inline.as_ref().ok_or(Error::Memory)?;
-    if actual.memory > advertised.memory { return Err(Error::Memory); }
-    let mut effects = match agent_service::Effects::new(configuration, seed) { Ok(effects) => effects, Err(_) => return Err(Error::Process) };
+    if actual.memory > advertised.memory {
+        return Err(Error::Memory);
+    }
+    let Ok(mut effects) = agent_service::Effects::new(configuration, seed) else { return Err(Error::Process) };
     effects.contract(local::charter(local).outcome);
     local.workspace = match local.workspace.take() {
-        Some(workspace) => match effects.workspace(workspace, roots) { Ok(workspace) => Some(workspace), Err(_) => return Err(Error::Process) },
+        Some(workspace) => match effects.workspace(workspace, roots) {
+            Ok(workspace) => Some(workspace),
+            Err(_) => return Err(Error::Process),
+        },
         None if roots.is_empty() => None,
         None => return Err(Error::Memory),
     };

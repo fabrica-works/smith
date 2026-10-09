@@ -117,6 +117,36 @@ fn the_local_service_loads_then_routes_durable_start_requests_to_the_shell() {
 }
 
 #[test]
+fn a_local_service_reserves_the_selected_childs_complete_transition() {
+    for mut config in [config(), colocated_config()] {
+        config.limits.queue = local::max_out(&config.limits.local).checked_sub(1).expect("nonzero child output");
+        let Err(crate::Error::Queue) = Service::new(config, 93) else { panic!("one missing output cell refuses startup") };
+    }
+}
+
+#[test]
+fn a_local_service_refuses_lower_configuration_for_the_other_agent_kind() {
+    let mut inline = colocated_config();
+    inline.agent = crate::AgentConfig::Spawned;
+    let Err(crate::Error::Process) = Service::new(inline, 94) else { panic!("inline limits require native effects") };
+
+    let mut spawned = config();
+    spawned.agent = crate::AgentConfig::Inline {
+        configuration: smith_agent_process_world::configuration(),
+        roots: Box::new([]),
+    };
+    let Err(crate::Error::Process) = Service::new(spawned, 95) else { panic!("spawned limits require the process adapter") };
+}
+
+#[test]
+fn an_inline_service_refuses_an_unpriced_part_of_its_lower_inventory() {
+    let mut config = colocated_config();
+    let priced = config.limits.inline.as_mut().expect("inline ownership priced");
+    priced.memory = priced.memory.checked_sub(1).expect("nonzero lower ownership");
+    let Err(crate::Error::Memory) = Service::new(config, 96) else { panic!("the actual inventory exceeds its advertised ownership") };
+}
+
+#[test]
 fn original_conflict_files_are_read_through_the_services_kernel_routes() {
     use skein_lib::{Map, Queue, Token};
     let mut machine = skein_fake_machine::Machine::new();

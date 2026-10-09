@@ -1,6 +1,6 @@
 //! One local chat and its spawned or colocated agent (protocol/hosts.md,
 //! sections 5–6; protocol/README.md, sections 5–6). The service keeps local
-//! policy, either the host kit or typed agent effects, a credential-value
+//! policy and the selected lower components, a credential-value
 //! table, and bounded routing queues. The process adapter owns terminal and
 //! delivery descriptors; each lower layer has its own operation tokens.
 //! It never knows OAuth provider responses or token-file paths. [`iterate`]
