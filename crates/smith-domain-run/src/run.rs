@@ -103,6 +103,7 @@ pub(crate) struct Run {
     identity: crate::Identity,
     /// Next never-reused child ordinal; main is zero.
     next_ordinal: u32,
+    pub(crate) lease: crate::lease::Lease,
     pub(crate) charter: Charter,
     pub(crate) workspace: Option<Workspace>,
     /// What it found in its checkout as it prepared.
@@ -294,6 +295,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
     let run = Run {
         identity,
         next_ordinal: 1,
+        lease: crate::lease::Lease::Free,
         charter,
         workspace,
         found,
@@ -1093,6 +1095,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     // Its turns were counted as they were used; whatever its end counts beyond
     // them is counted now.
     let unaccounted = spend.unreported(conversation.spent);
+    let writing = conversation.families.tools.modify || conversation.families.tools.shell;
     let (run_id, asker) = (conversation.run, conversation.asker);
     let bill = conversation.subtree_spent;
     facts.about(run_id.token());
@@ -1118,6 +1121,9 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     run.conversations = run.conversations.checked_sub(1).expect("a run counts its conversations");
     // A sub-agent's end is its call's return.
     if let Some(asker) = asker {
+        if writing {
+            run.lease.child_returned(asker);
+        }
         let call = calls.get_mut(asker).expect("a sub-agent's call lives until it has ended");
         let result = match &mut call.work {
             Work::Child(child) => agent::ended(child, end),
@@ -1206,6 +1212,7 @@ fn follow(runs: &mut Slab<Run>, alarms: &mut Deadlines<Alarm>, facts: &mut Facts
         State::Closed => (None, true),
     };
     if closed {
+        run.lease.assert_free();
         run.inbox.unread(id.token(), facts);
     }
     let alarm = Alarm::Deadline { run: id };
@@ -1256,6 +1263,7 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
     }
     let run_id = retire_call(calls, alarms, conversations, id);
     let run = runs.get_mut(run_id).expect("a run lives until its calls have returned");
+    run.lease.workspace_returned(id.token());
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match settled {
         Settled::MidDelivered => match state {
@@ -1520,6 +1528,7 @@ fn finish(
             }
             let work = Work::Landing(land::landing(change, name, deadline, true));
             let id = begin_call(calls, alarms, Call { run: run_id, conversation: main, owner: call, work }, deadline);
+            run.lease.workspace(id.token());
             match &mut calls.get_mut(id).expect("inserted above").work {
                 Work::Landing(landing) => land::begin(landing, id, run, env, out),
                 Work::Child(_) | Work::Host(_) => unreachable!("inserted as a landing"),
@@ -1576,6 +1585,7 @@ fn deliver(
     }
     let work = Work::Landing(land::landing(change, name, deadline, false));
     let id = begin_call(calls, alarms, Call { run: run_id, conversation: main, owner: call, work }, deadline);
+    run.lease.workspace(id.token());
     match &mut calls.get_mut(id).expect("inserted above").work {
         Work::Landing(landing) => land::begin(landing, id, run, env, out),
         Work::Child(_) | Work::Host(_) => unreachable!("inserted as delivery"),
@@ -1647,6 +1657,11 @@ fn sub_agent(
     // once the child has a name too.
     let unnamed = Call { run: run_id, conversation: asker, owner: call, work: Work::Child(Child::Closed) };
     let id = begin_call(calls, alarms, unnamed, deadline);
+    if plan.families.tools.modify || plan.families.tools.shell {
+        run.lease.child(id);
+    } else {
+        run.lease.assert_free();
+    }
     let child = Conversation {
         run: run_id,
         asker: Some(id),

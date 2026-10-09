@@ -788,9 +788,17 @@ fn sub_agents_answer_their_askers_and_end_before_their_calls_return() {
 }
 
 #[test]
-fn read_only_sub_agents_asked_in_one_turn_run_side_by_side() {
-    let stats = settled(&asking(34)).stats();
+fn inspect_only_children_run_side_by_side_and_a_writing_child_alone() {
+    let world = settled(&asking(34));
+    let stats = world.stats();
     assert!(stats.peak > 2 && stats.partner.answered > 2, "{stats:?}");
+    assert!(
+        world.lease_seen().iter().any(|(_, _, seen)| matches!(
+            seen,
+            smith_run_world::lease_referee::Seen::ChildOpened { writing: true, .. }
+        )),
+        "the same story also opens a writing child"
+    );
 }
 
 #[test]

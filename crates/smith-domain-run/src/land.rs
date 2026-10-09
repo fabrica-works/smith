@@ -185,6 +185,7 @@ pub(crate) fn withdraw(landing: &mut Landing, id: Id<Call>, why: Withdrawal, out
 }
 
 fn next(landing: &Landing, id: Id<Call>, run: &Run, check: u32, env: &Env<Limits>, out: &mut Queue<Request>) -> Stage {
+    run.lease.assert_workspace(id.token());
     let Some(&index) = run.found.checks.get(check) else {
         let deadline = landing.deadline.min(env.now.saturating_add(env.limits.delivery_timeout));
         assert!(env.now < deadline, "admission and completed checks refuse expired submission");

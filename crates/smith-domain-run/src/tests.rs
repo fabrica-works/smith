@@ -1008,13 +1008,16 @@ fn a_verdict_that_fits_is_accepted_and_the_run_finishes_with_it() {
 #[test]
 fn a_change_runs_each_repositorys_checks_then_is_pushed_and_accepted() {
     let mut h = Harness::new(LIMITS);
-    let (_, conversation) = h.coding(1, 100);
+    let (run, conversation) = h.coding(1, 100);
     let owner = h.land(conversation, 7);
+    let held = crate::lease::Lease::Workspace { owner };
+    assert_eq!(h.domain.runs.get(skein_lib::Id::from_token(run)).unwrap().lease, held);
     let emitted = h.step(Event::Checked { owner, ran: ran(0, b"ok") });
     let [Request::Check { owner: second, program, .. }, Request::Checking { .. }] = &*emitted else {
         panic!("expected the second check, got {emitted:?}");
     };
     assert_eq!((second, program.root), (&owner, Token::new(901)));
+    assert_eq!(h.domain.runs.get(skein_lib::Id::from_token(run)).unwrap().lease, held);
     let emitted = h.step(Event::Checked { owner, ran: ran(0, b"ok") });
     assert_eq!(
         &*emitted,
@@ -1027,7 +1030,9 @@ fn a_change_runs_each_repositorys_checks_then_is_pushed_and_accepted() {
         }]
     );
     assert_eq!(h.domain.calls(), 1);
+    assert_eq!(h.domain.runs.get(skein_lib::Id::from_token(run)).unwrap().lease, held);
     let emitted = h.step(Event::Delivered { owner, delivery: delivered() });
+    assert_eq!(h.domain.runs.get(skein_lib::Id::from_token(run)).unwrap().lease, crate::lease::Lease::Free);
     assert_eq!(&*emitted, &[returned(7, Returned::Delivered(receipts())), Request::Close { peer: Token::new(100) }]);
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
     let accepted = Answer::Accepted { outcome: Declared::Change(change()), spent: Spend::ZERO, turns: 0 };
@@ -1549,6 +1554,63 @@ fn a_sub_agent_answers_with_its_last_message_once_it_has_ended() {
     );
     h.domain.reclaim();
     assert_eq!((h.domain.conversations(), h.domain.calls()), (1, 0));
+}
+
+#[test]
+fn writing_children_hold_the_lease_until_their_actual_end_even_after_withdrawal() {
+    for tools in
+        [Tools { inspect: true, modify: true, shell: false }, Tools { inspect: true, modify: false, shell: true }]
+    {
+        let mut harness = Harness::new(LIMITS);
+        let mut charter = agents();
+        charter.grants.tools.modify = true;
+        let (run, main) = harness.running_on(1, 100, charter);
+        let run = skein_lib::Id::from_token(run);
+        assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
+        let (child, _) = harness.child(main, 7, crate::charter::Families { tools, agents: false }, 101);
+        let call = harness.domain.calls.find(skein_lib::Id::from_token(main), Token::new(7)).unwrap();
+        let held = crate::lease::Lease::Child { call };
+        assert_eq!(harness.domain.runs.get(run).unwrap().lease, held);
+        assert_eq!(
+            harness.step(Event::Withdraw { conversation: main, call: Token::new(7) }).as_ref(),
+            &[Request::Close { peer: Token::new(101) }]
+        );
+        assert_eq!(harness.domain.runs.get(run).unwrap().lease, held);
+        assert_eq!(harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }).len(), 1);
+        assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
+    }
+}
+
+#[test]
+fn inspect_only_children_keep_the_lease_free_while_their_calls_overlap() {
+    let mut harness = Harness::new(LIMITS);
+    let (run, main) = harness.running_on(1, 100, agents());
+    let run = skein_lib::Id::from_token(run);
+    let (first, _) = harness.child(main, 7, families(true, false, false), 101);
+    let (second, _) = harness.child(main, 8, families(true, false, false), 102);
+    assert_eq!(harness.domain.calls(), 2);
+    assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
+    for child in [second, first] {
+        drop(harness.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"found") }));
+        drop(harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }));
+        assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
+    }
+}
+
+#[test]
+#[should_panic(expected = "one write holder over overlapping directories")]
+fn opening_a_second_writing_child_is_a_broken_schedule() {
+    let mut harness = Harness::new(LIMITS);
+    let mut charter = agents();
+    charter.grants.tools.modify = true;
+    let (_, main) = harness.running_on(1, 100, charter);
+    drop(harness.child(main, 7, families(true, true, false), 101));
+    drop(harness.child(
+        main,
+        8,
+        crate::charter::Families { tools: Tools { inspect: true, modify: false, shell: true }, agents: false },
+        102,
+    ));
 }
 
 #[test]

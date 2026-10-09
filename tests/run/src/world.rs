@@ -486,6 +486,7 @@ struct Made {
 struct Call {
     conversation: Token,
     wait: bool,
+    workspace: bool,
     returned: bool,
 }
 
@@ -500,6 +501,8 @@ struct Pushing {
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 pub struct World {
+    lease_seen: Vec<(Time, Token, crate::lease_referee::Seen)>,
+    workspace_of_call: BTreeMap<Token, Token>,
     now: Time,
     rng: Rng,
     settings: Settings,
@@ -619,6 +622,8 @@ impl World {
             now: Time::ZERO,
             rng,
             settings,
+            lease_seen: Vec::new(),
+            workspace_of_call: BTreeMap::new(),
             run: run::Domain::new(&settings.run, settings.seed),
             run_stage: Stage::new(settings.run, run::MAX_OUT, OUT),
             host,
@@ -697,6 +702,12 @@ impl World {
     #[must_use]
     pub fn opening_prompts(&self) -> &[Box<[u8]>] {
         &self.opening_prompts
+    }
+
+    /// Actual child authority, workspace operations and their call terminals.
+    #[must_use]
+    pub fn lease_seen(&self) -> &[(Time, Token, crate::lease_referee::Seen)] {
+        &self.lease_seen
     }
 
     /// Inject named person messages before or after actual callbacks, in per mille.
@@ -963,6 +974,12 @@ impl World {
                 }
                 if let Some(child) = self.child_of_call.remove(&call) {
                     assert!(self.opens[&child].ended, "a sub-agent has ended before its call returns");
+                    let run = self.run_of_conversation[&child];
+                    self.lease_seen.push((self.now, run, crate::lease_referee::Seen::ChildReturned { call }));
+                }
+                if let Some(owner) = self.workspace_of_call.remove(&call) {
+                    let run = self.run_of_call[&owner];
+                    self.lease_seen.push((self.now, run, crate::lease_referee::Seen::WorkspaceReturned { owner }));
                 }
                 self.send(Lane::Conversations, Delivery::Return { call, result, spent });
             }
@@ -972,6 +989,8 @@ impl World {
             run::Request::Check { owner, program, deadline, tail } => {
                 let run = current.expect("a check is made in a step about its run");
                 self.assert_alone(run);
+                self.workspace_lease(run, owner);
+                self.lease_seen.push((self.now, run, crate::lease_referee::Seen::Check { owner }));
                 self.run_of_call.insert(owner, run);
                 self.landing.insert(owner);
                 self.check(owner, &program, deadline, tail);
@@ -981,6 +1000,8 @@ impl World {
             run::Request::Deliver { host_run, owner, change: _, name: _, deadline } => {
                 let run = current.expect("a push is made in a step about its run");
                 self.assert_alone(run);
+                self.workspace_lease(run, owner);
+                self.lease_seen.push((self.now, run, crate::lease_referee::Seen::Delivery { owner }));
                 self.run_of_call.insert(owner, run);
                 self.landing.insert(owner);
                 self.pushes.open(owner, Pushing { job: host_run });
@@ -1322,6 +1343,8 @@ impl World {
                 );
                 assert!(!opening.finish, "a sub-agent may not finish");
                 self.child_of_call.insert(call, conversation);
+                let writing = opening.tools.modify || opening.tools.shell;
+                self.lease_seen.push((self.now, run, crate::lease_referee::Seen::ChildOpened { call, writing }));
                 self.stats.children += 1;
             }
         }
@@ -1336,6 +1359,18 @@ impl World {
     fn assert_alone(&self, run: Token) {
         let view = &self.views[&run];
         assert_eq!(view.live, 1, "main is its run's only conversation while its change is checked and pushed");
+    }
+
+    fn workspace_lease(&mut self, run: Token, owner: Token) {
+        let mut pending = self.calls.iter().filter(|(_, call)| {
+            call.workspace && !call.returned && self.run_of_conversation[&call.conversation] == run
+        });
+        let (&call, _) = pending.next().expect("a workspace operation serves a live main call");
+        assert!(pending.next().is_none(), "one exclusive workspace call");
+        match self.workspace_of_call.insert(call, owner) {
+            Some(first) => assert_eq!(first, owner, "checks and submission keep the same owner"),
+            None => self.lease_seen.push((self.now, run, crate::lease_referee::Seen::WorkspaceOpened { owner })),
+        }
     }
 
     /// The run's answer, checked against its budget and what it did: the
@@ -1366,6 +1401,7 @@ impl World {
             for (conversation, of) in &self.run_of_conversation {
                 assert!(of != run || self.opens[conversation].ended, "no conversation outlives its run");
             }
+            self.lease_seen.push((self.now, *run, crate::lease_referee::Seen::Answer));
         }
         start.answer = Some(answer);
         self.send(Lane::Host, Delivery::Answered { host_run: owner });
@@ -1808,7 +1844,16 @@ impl World {
                     .calls
                     .insert(
                         *call,
-                        Call { conversation: *conversation, wait: matches!(ask, run::Ask::Wait), returned: false },
+                        Call {
+                            conversation: *conversation,
+                            wait: matches!(ask, run::Ask::Wait),
+                            workspace: matches!(
+                                ask,
+                                run::Ask::Deliver { .. }
+                                    | run::Ask::Finish { outcome: run::outcome::Declared::Change(_) }
+                            ),
+                            returned: false,
+                        },
                     )
                     .is_none();
                 assert!(fresh, "calls have distinct names");
@@ -1868,6 +1913,13 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn assert_settled(&self) {
+        assert!(
+            crate::lease_referee::judge(&self.lease_seen)
+                .iter()
+                .all(|verdict| *verdict == skein_world::domain::Verdict::Passed),
+            "lease observations follow the external write-holder contract"
+        );
+        assert!(self.workspace_of_call.is_empty(), "every workspace holder's call returned");
         assert_eq!(self.run.runs(), 0, "every run has answered and been reclaimed");
         assert_eq!(self.run.conversations(), 0, "every conversation has ended and been reclaimed");
         assert_eq!(self.run.calls(), 0, "every call has returned and been reclaimed");

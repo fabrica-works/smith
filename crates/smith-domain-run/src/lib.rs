@@ -20,7 +20,9 @@
 //! outcome against (domain/run.md, sections 7 and 8).
 
 //! The retained state is each admitted charter, conversation binding, shared
-//! usage, preparation/check/delivery phase and its pending terminal rights.
+//! usage, preparation/check/delivery phase, the write lease and its pending terminal rights.
+//! The lease names the existing exclusive call schedule; it adds no waiting
+//! (domain/run.md, sections 5.3 and 8.1).
 //! It also keeps the bounded labelled-message FIFO, current/offered read fence,
 //! settled wait/park state and activation-local turn numbering
 //! (domain/run.md, sections 6 and 13).
@@ -48,6 +50,7 @@ mod host;
 mod identity;
 mod inbox;
 mod land;
+mod lease;
 mod limits;
 mod opening;
 pub mod outcome;
