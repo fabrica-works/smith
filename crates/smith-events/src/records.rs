@@ -695,6 +695,8 @@ pub struct ConversationOpened {
     pub kind: ConversationKind,
     pub parent: Option<u64>,
     pub call: Option<Box<[u8]>>,
+    /// Affinity ordinal carried by this conversation's requests.
+    pub thread: u64,
     pub model: Model,
     pub requested: Option<Requested>,
     pub share: Option<Share>,
@@ -723,6 +725,8 @@ pub struct ResponseStarted {
     pub response: u64,
     pub turn: u64,
     pub attempt: u64,
+    /// Conversation window, from one and incremented after each compaction.
+    pub window: u64,
     pub model: Model,
     pub messages: u64,
     pub output_tokens: u64,

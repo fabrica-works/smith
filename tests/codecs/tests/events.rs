@@ -29,7 +29,7 @@ fn every_record_and_listed_value_reads_back_to_its_written_values() {
 
 #[test]
 fn response_tool_choice_is_metadata_with_bounded_unknown_values_and_a_required_string() {
-    let base = r#"{"v":1,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
+    let base = r#"{"v":1,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
     for (spelling, expected) in [
         ("auto", smith_events::ToolChoice::Auto),
         ("none", smith_events::ToolChoice::None),
@@ -695,4 +695,33 @@ fn model_window_requires_an_unsigned_integer() {
     }
     let missing = text.replace(&format!("{field},"), "");
     assert!(read(missing.as_bytes(), &limits()).is_err());
+}
+
+#[test]
+fn conversation_thread_and_response_window_are_required_exact_metadata_under_every_capture() {
+    let conversation = r#"{"v":1,"type":"conversation.opened","t_ms":0,"run":1,"conversation":2,"kind":"main","thread":0,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null}}"#;
+    let response = r#"{"v":1,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
+    for (base, field, initial) in [(conversation, "thread", 0), (response, "window", 1)] {
+        let initial_field = format!("\"{field}\":{initial}");
+        for value in [0, 1, 9_007_199_254_740_993, u64::MAX] {
+            let line = base.replace(&initial_field, &format!("\"{field}\":{value}"));
+            let record = read(line.as_bytes(), &limits()).expect("independent exact wire").expect("known record");
+            let actual = match &record.event {
+                Event::ConversationOpened(opened) => opened.thread,
+                Event::ResponseStarted(started) => started.window,
+                _ => panic!("independent conversation or response record"),
+            };
+            assert_eq!(actual, value);
+            for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+                let encoded = write(&record, &capture, &limits()).expect("metadata fits").expect("record");
+                assert_eq!(core::str::from_utf8(&encoded).expect("JSON").trim_end(), line);
+                assert_eq!(read(&encoded, &limits()).expect("round trip"), Some(record.clone()));
+            }
+        }
+        assert_eq!(read(base.replace(&format!("{initial_field},"), "").as_bytes(), &limits()), Err(Error::Shape));
+        for invalid in ["null", "-1", "1.5", "18446744073709551616", "\"1\""] {
+            let line = base.replace(&initial_field, &format!("\"{field}\":{invalid}"));
+            assert!(read(line.as_bytes(), &limits()).is_err(), "{field}={invalid}");
+        }
+    }
 }

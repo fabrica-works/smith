@@ -1028,6 +1028,7 @@ fn read_conversation_opened(tokens: &[Token], limits: &Limits) -> Result<Convers
             Some(item) => Some(text(item, limits.string)?),
             None => None,
         },
+        thread: unsigned(required(tokens, b"thread")?)?,
         model: read_model(required(tokens, b"model")?, limits)?,
         requested: match field(tokens, b"requested")? {
             Some(item) => Some(read_requested(item)?),
@@ -1073,6 +1074,7 @@ fn read_response_started(tokens: &[Token], limits: &Limits) -> Result<ResponseSt
         response: unsigned(required(tokens, b"response")?)?,
         turn: unsigned(required(tokens, b"turn")?)?,
         attempt: unsigned(required(tokens, b"attempt")?)?,
+        window: unsigned(required(tokens, b"window")?)?,
         model: read_model(required(tokens, b"model")?, limits)?,
         messages: unsigned(required(tokens, b"messages")?)?,
         output_tokens: unsigned(required(tokens, b"output_tokens")?)?,

@@ -468,6 +468,7 @@ fn value_conversation_opened(name: &str, spelling: &str) -> ConversationOpened {
         kind: value_conversation_kind(name, spelling),
         parent: Some(u64::MAX),
         call: Some(Box::from("sample\n\"🌍".as_bytes())),
+        thread: u64::MAX,
         model: value_model(name, spelling),
         requested: None,
         share: None,
@@ -496,6 +497,7 @@ fn value_response_started(name: &str, spelling: &str) -> ResponseStarted {
         response: u64::MAX,
         turn: u64::MAX,
         attempt: u64::MAX,
+        window: u64::MAX,
         model: value_model(name, spelling),
         messages: u64::MAX,
         output_tokens: u64::MAX,
@@ -1653,6 +1655,7 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
                 kind: ConversationKind::Child,
                 parent: Some(1),
                 call: Some(Box::from(b"c".as_slice())),
+                thread: 2,
                 model: Model {
                     endpoint: Box::from(b"e".as_slice()),
                     model: Box::from(b"m".as_slice()),

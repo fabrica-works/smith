@@ -690,6 +690,7 @@ fn size_conversation_opened(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(8)?.checked_add(size_conversation_kind(capture, limits)?)?;
     length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(8)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
+    length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_model(capture, limits)?)?;
     // Requested and effective parts use three and four structural keys respectively.
     length = length.checked_add(83)?.checked_add(112)?;
@@ -720,6 +721,7 @@ fn size_response_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(12)?.checked_add(20_u64)?;
     length = length.checked_add(8)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;
+    length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_model(capture, limits)?)?;
     length = length.checked_add(12)?.checked_add(20_u64)?;
     length = length.checked_add(17)?.checked_add(20_u64)?;

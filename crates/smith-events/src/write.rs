@@ -1474,6 +1474,8 @@ fn encode_conversation_opened(json: &mut Encoder, value: &ConversationOpened, ca
         json.key(b"call");
         json.string(item);
     }
+    json.key(b"thread");
+    json.unsigned(value.thread);
     json.key(b"model");
     write_model(json, &value.model, capture);
     if let Some(requested) = &value.requested {
@@ -1535,6 +1537,8 @@ fn encode_response_started(json: &mut Encoder, value: &ResponseStarted, capture:
     json.unsigned(value.turn);
     json.key(b"attempt");
     json.unsigned(value.attempt);
+    json.key(b"window");
+    json.unsigned(value.window);
     json.key(b"model");
     write_model(json, &value.model, capture);
     json.key(b"messages");
