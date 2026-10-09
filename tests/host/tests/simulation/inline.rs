@@ -114,6 +114,7 @@ fn a_drop_asked_at_once_settles_completions_file_operations_and_command_trees() 
     assert!(guide.seen[&Token::new(1)].gone.is_none());
     assert_eq!(guide.machine_trace.iter().filter(|request| request.starts_with("cancel")).count(), 1);
     guide.machine_replies();
+    guide.run();
     guide.settled();
     assert!(guide.seen[&Token::new(1)].answer.is_none());
 

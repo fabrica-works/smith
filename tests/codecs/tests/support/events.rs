@@ -2,12 +2,12 @@
 
 use skein_lib::List;
 use smith_events::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit,
+    Completion, CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
+    Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode,
+    Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role,
+    RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted,
+    ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn value_capture(name: &str, spelling: &str) -> Capture {
@@ -1504,6 +1504,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
     samples.extend(samples_13());
     samples.extend(samples_14());
     samples.extend(null_samples());
+    samples.extend(end_samples());
     samples
 }
 
@@ -1528,4 +1529,50 @@ fn null_samples() -> Vec<(&'static str, Record, Capture)> {
         Record { t_ms: u64::MAX, event: Event::ResponseCompleted(response) },
         Capture::Everything,
     )]
+}
+
+fn end_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for (name, class, dropped, ended, turn) in [
+        ("end_cancelled_answer", AnswerClass::Cancelled, Some(false), None, None),
+        ("end_cancelled_drop", AnswerClass::Cancelled, Some(true), None, None),
+        ("end_host_store", AnswerClass::Host, None, None, Some(2)),
+        ("end_agent_code", AnswerClass::Agent, None, Some(AgentExit::Code(7)), None),
+        ("end_agent_signal", AnswerClass::Agent, None, Some(AgentExit::Signal(15)), None),
+    ] {
+        let reason = if class == AnswerClass::Host { Some(Box::from(b"store".as_slice())) } else { None };
+        samples.push((
+            name,
+            Record {
+                t_ms: 10,
+                event: Event::RunCompleted(RunCompleted {
+                    run: 1,
+                    status: Status::Failed,
+                    failure: Some(AnswerFailure {
+                        class,
+                        completion: None,
+                        account: None,
+                        which: None,
+                        reason,
+                        dropped,
+                        ended,
+                        turn,
+                    }),
+                    result: None,
+                    turns: 1,
+                    spent: 2,
+                    usage: Usage {
+                        input_tokens: Some(0),
+                        cache_read_tokens: Some(0),
+                        cache_write_tokens: Some(0),
+                        output_tokens: Some(0),
+                        reasoning_tokens: Some(0),
+                    },
+                    duration_ms: 10,
+                }),
+            },
+            Capture::Everything,
+        ));
+    }
+    samples
 }
