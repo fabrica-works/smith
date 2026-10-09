@@ -48,7 +48,7 @@ pub use limits::{Limits, Receiving, completion_worst_case, render_worst_case, wo
 pub use prompt::{prepare_prompt, prompt};
 pub use render::{CUT_MARKER_BYTES, render_outcome};
 pub use stated::Stated;
-pub use tools::{schemas, schemas_for_contract};
+pub use tools::{fixed_schema_bytes, schemas, schemas_for_contract};
 pub use types::{Context, Error, ResolvedCall, ToolKind, ToolSchema};
 
 #[cfg(test)]

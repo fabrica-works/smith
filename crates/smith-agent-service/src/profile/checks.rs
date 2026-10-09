@@ -101,11 +101,10 @@ impl Refusal {
     #[must_use]
     pub const fn check(&self) -> Option<Check> {
         match self {
-            Self::Field { .. } => None,
             Self::Broken { check, .. } => Some(*check),
             Self::Derived { .. } => Some(Check::Derived),
             Self::Environment { .. } => Some(Check::Environment),
-            Self::Connection(_) => None,
+            Self::Field { .. } | Self::Connection(_) => None,
         }
     }
 }

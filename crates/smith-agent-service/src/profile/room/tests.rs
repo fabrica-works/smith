@@ -1,19 +1,27 @@
 //! Independent arithmetic properties for declared model windows.
 
+use super::room;
+use crate::profile::{
+    Check, Configuration, Endpoint, Fraction, Layer, LimitName, Model, OversizedReasoning, Refusal, standard,
+};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Rng};
-use crate::profile::{Check, Configuration, Endpoint, Fraction, Layer, LimitName, Model, OversizedReasoning, Refusal, standard};
-use super::room;
 
 fn declarations(window: u32, output: u32) -> Configuration {
     Configuration {
         environment_bytes: 0,
         endpoints: Box::new([Endpoint {
-            number: 7, connect: Duration::from_secs(1), handshake: Duration::from_secs(1),
+            number: 7,
+            connect: Duration::from_secs(1),
+            handshake: Duration::from_secs(1),
             models: Box::new([Model {
-                name: Box::from(b"model".as_slice()), window, output, reasoning_item: 64,
+                name: Box::from(b"model".as_slice()),
+                window,
+                output,
+                reasoning_item: 64,
                 oversized_reasoning: OversizedReasoning::Fail,
-                head: Duration::from_secs(1), idle: Duration::from_secs(1),
+                head: Duration::from_secs(1),
+                idle: Duration::from_secs(1),
             }]),
         }]),
     }
@@ -54,11 +62,15 @@ fn compaction_holds_the_summary_instruction_and_one_marker_per_result() {
 
 #[test]
 fn overflow_and_missing_declarations_are_typed_without_a_neutral_window() {
-    assert_eq!(room(&standard(), &declarations(10_000, 1), u64::MAX, 0).expect_err("own sum overflows"),
-        Refusal::Derived { limit: LimitName::deployment(Layer::Service, "fresh_window") });
+    assert_eq!(
+        room(&standard(), &declarations(10_000, 1), u64::MAX, 0).expect_err("own sum overflows"),
+        Refusal::Derived { limit: LimitName::deployment(Layer::Service, "fresh_window") }
+    );
     let empty = Configuration { environment_bytes: 0, endpoints: Box::new([]) };
-    assert_eq!(room(&standard(), &empty, 0, 0).expect_err("model required"),
-        Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") });
+    assert_eq!(
+        room(&standard(), &empty, 0, 0).expect_err("model required"),
+        Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") }
+    );
 }
 
 #[test]
@@ -82,9 +94,28 @@ fn random_declared_rooms_refuse_by_name_or_hold_a_largest_fresh_window() {
                 assert!(parts.message <= profile.declared.tool_payload);
                 assert!(u64::from(parts.message) <= parts.offer);
                 assert!(parts.host + parts.messages + own <= parts.room);
-                assert!(summary + u64::from(output) + u64::from(profile.declared.calls_per_response) * u64::from(smith_protocol_llm::CUT_MARKER_BYTES) <= u64::from(window) - within);
+                assert!(
+                    summary
+                        + u64::from(output)
+                        + u64::from(profile.declared.calls_per_response)
+                            * u64::from(smith_protocol_llm::CUT_MARKER_BYTES)
+                        <= u64::from(window) - within
+                );
             }
             Err(refusal) => assert!(matches!(refusal.check(), Some(Check::FreshWindow | Check::CompactionHeadroom))),
         }
     }
+}
+
+#[test]
+fn fixed_own_measurement_is_checked_and_real_declared_models_leave_room() {
+    let mut profile = standard();
+    profile.declared.memory = Some(u64::MAX);
+    let declarations = declarations(65_536, 32);
+    let limits = crate::profile::derive(&profile, &declarations).expect("declared profile");
+    let tools = limits.domain.session.tools;
+    let own = super::own_part(&tools, limits.llm.adapter.client.dialect.input_bytes, 0).expect("fixed own measurement");
+    assert!(own > smith_domain::run::fixed_prompt_bytes().expect("fixed text"));
+    assert!(room(&profile, &declarations, own, 0).expect("real model fits measured own").host > 0);
+    assert_eq!(super::own_part(&tools, limits.llm.adapter.client.dialect.input_bytes, u64::MAX), None);
 }

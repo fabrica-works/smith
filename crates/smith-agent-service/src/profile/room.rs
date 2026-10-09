@@ -25,15 +25,20 @@ pub struct Room {
     pub message: u32,
 }
 
+/// Measure fixed run text, workspace schemas and the prompt framing allowance.
+/// The summary instruction is added by its owner when compaction is available.
+#[must_use]
+pub fn own_part(tools: &smith_domain::tools::Limits, call_input_bytes: u32, allowance: u64) -> Option<u64> {
+    let stated = smith_protocol_llm::Stated::from_tools(tools, call_input_bytes)?;
+    smith_domain::run::fixed_prompt_bytes()?
+        .checked_add(smith_protocol_llm::fixed_schema_bytes(&stated)?)?
+        .checked_add(allowance)
+}
+
 /// Check all declared models and split their smallest room after Smith's own part.
 /// `summary_bytes` is the measured instruction that compaction adds above the
 /// threshold; it is already included in `own`. A byte counts as a token.
-pub fn room(
-    profile: &Profile,
-    configuration: &Configuration,
-    own: u64,
-    summary_bytes: u64,
-) -> Result<Room, Refusal> {
+pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_bytes: u64) -> Result<Room, Refusal> {
     super::validate::configured_models(configuration)?;
     let threshold = profile.policy.compaction_threshold;
     if threshold.numerator == 0 || threshold.numerator >= threshold.denominator {
@@ -95,8 +100,8 @@ pub fn room(
     let host = remaining.checked_div(2).expect("nonzero fixed divisor");
     let messages = remaining.checked_sub(host).expect("host takes at most half the remainder");
     let offer = messages.checked_div(2).expect("nonzero fixed divisor");
-    let message = u32::try_from(offer.min(u64::from(profile.declared.tool_payload)))
-        .or(Err(derived("message_bytes")))?;
+    let message =
+        u32::try_from(offer.min(u64::from(profile.declared.tool_payload))).or(Err(derived("message_bytes")))?;
     Ok(Room { room, own, host, messages, offer, message })
 }
 

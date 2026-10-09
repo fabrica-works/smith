@@ -393,3 +393,15 @@ fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap
         b"input cut off after 17 bytes; make a smaller call and try again".as_slice()
     );
 }
+
+#[test]
+fn fixed_own_schema_measurement_matches_the_complete_fixed_inventory() {
+    let stated = crate::Stated::from_tools(&tools(), 2048).expect("bounded quantities");
+    let mut prompt = described_prompt();
+    prompt.served = Box::new([smith_domain::llm::Served::Wait, smith_domain::llm::Served::SubAgent]);
+    let inventory = crate::schemas(&prompt, &stated);
+    let rendered =
+        inventory.iter().map(|tool| tool.name.len() + tool.description.len() + tool.schema.len()).sum::<usize>();
+    assert_eq!(crate::fixed_schema_bytes(&stated), u64::try_from(rendered).ok());
+    assert_eq!(inventory.len(), 8);
+}

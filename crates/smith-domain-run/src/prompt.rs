@@ -33,6 +33,34 @@ pub(crate) fn child_final_note() -> Box<[u8]> {
     )
 }
 
+const WAIT: &[u8] = b"Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n";
+
+/// Measure the largest fixed system mechanics and the opening instruction.
+/// Charter forms, names, conventions, guides and their scaffolding are excluded.
+/// Contract: protocol/limits.md, section 3.9.
+#[must_use]
+pub fn fixed_prompt_bytes() -> Option<u64> {
+    let mut measured = Text::measuring();
+    render_tools(&mut measured, Tools { inspect: true, modify: true, shell: true });
+    measured.put(b"\n");
+    measured.put(b"## Checkout\n\nThere is no checkout.\n\n");
+    render_agents(&mut measured, &[]);
+    measured.put(b"\n");
+    measured.put(WAIT);
+    render_finishing(
+        &mut measured,
+        &OutcomeSpec { change: None, verdicts: Box::new([]), failure: None, report: None },
+        false,
+    );
+    render_answering(&mut measured);
+    let opening = opening(false, None).len().max(BEGIN.len()).checked_add(2)?;
+    u64::try_from(measured.len).ok()?.checked_add(u64::try_from(opening).ok()?)?.checked_add(budget_prompt_bytes()?)
+}
+
+fn render_answering(text: &mut Text) {
+    text.put(b"## Answering\n\nWhen you are done, end your turn with your answer. The run adds your usage to the result.\n");
+}
+
 /// The finish result says why the run returns to its queued messages.
 pub(crate) fn crossed() -> Box<[u8]> {
     skein_lib::bytes::copy_of(b"Finish was not accepted because messages arrived. Read them before finishing.")
@@ -249,7 +277,7 @@ fn render_system(
     }
     if main {
         if charter.grants.wait {
-            text.put(b"Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n");
+            text.put(WAIT);
         }
         render_finishing(text, &charter.outcome, !found.checks.is_empty());
         if let Some(spec) = &charter.grants.deliver {
@@ -270,7 +298,7 @@ fn render_system(
             text.put(b" The host supplies receipts, nothing, named refusal, bounded failure or stale.\n");
         }
     } else {
-        text.put(b"## Answering\n\nWhen you are done, end your turn with your answer. The run adds your usage to the result.\n");
+        render_answering(text);
     }
 }
 

@@ -31,18 +31,8 @@ pub fn schemas(prompt: &llm::Prompt, stated: &crate::Stated) -> Box<[ToolSchema]
     for offered in &prompt.served {
         match offered {
             llm::Served::Host(_) => {}
-            llm::Served::Wait => add(&mut descriptors, descriptor(
-                ToolKind::Wait,
-                b"wait",
-                b"Wait for the next message or outstanding result.",
-                br#"{"type":"object","properties":{}}"#,
-            )),
-            llm::Served::SubAgent => add(&mut descriptors, descriptor(
-                ToolKind::SubAgent,
-                b"sub_agent",
-                b"Ask a sub-agent to work under the granted tool families and optional model. Optional max_turns and max_seconds ask for a share, clamped to what is left above the finishing reserve. The child is told its effective share.",
-                br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"},"max_turns":{"type":"integer","minimum":1},"max_seconds":{"type":"integer","minimum":1}},"required":["brief","tools"]}"#,
-            )),
+            llm::Served::Wait => add(&mut descriptors, waiting()),
+            llm::Served::SubAgent => add(&mut descriptors, sub_agent()),
             llm::Served::Deliver => add(&mut descriptors, descriptor(
                 ToolKind::Deliver,
                 b"deliver",
@@ -83,6 +73,43 @@ pub fn schemas_for_contract(
         inventory.push(descriptor).or(Err(Error::Limit))?;
     }
     Ok(inventory.into_boxed())
+}
+
+/// Measure Smith's fixed workspace schemas and fixed wait/sub-agent declarations.
+/// Contract-generated finish and deliver declarations belong to the host's part.
+#[must_use]
+pub fn fixed_schema_bytes(stated: &crate::Stated) -> Option<u64> {
+    let mut bytes = 0_u64;
+    for schema in [
+        owned(tools::Tool::Read, b"read", stated, &tools::Namespace::One),
+        owned(tools::Tool::List, b"list", stated, &tools::Namespace::One),
+        owned(tools::Tool::Search, b"search", stated, &tools::Namespace::One),
+        owned(tools::Tool::Write, b"write", stated, &tools::Namespace::One),
+        owned(tools::Tool::Edit, b"edit", stated, &tools::Namespace::One),
+        owned(tools::Tool::Shell, b"shell", stated, &tools::Namespace::One),
+        waiting(),
+        sub_agent(),
+    ] {
+        for field in [&schema.name, &schema.description, &schema.schema] {
+            bytes = bytes.checked_add(u64::try_from(field.len()).ok()?)?;
+        }
+    }
+    Some(bytes)
+}
+
+fn waiting() -> ToolSchema {
+    descriptor(
+        ToolKind::Wait,
+        b"wait",
+        b"Wait for the next message or outstanding result.",
+        br#"{"type":"object","properties":{}}"#,
+    )
+}
+
+fn sub_agent() -> ToolSchema {
+    descriptor(ToolKind::SubAgent, b"sub_agent",
+        b"Ask a sub-agent to work under the granted tool families and optional model. Optional max_turns and max_seconds ask for a share, clamped to what is left above the finishing reserve. The child is told its effective share.",
+        br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"},"max_turns":{"type":"integer","minimum":1},"max_seconds":{"type":"integer","minimum":1}},"required":["brief","tools"]}"#)
 }
 
 fn add(descriptors: &mut List<ToolSchema>, schema: ToolSchema) {

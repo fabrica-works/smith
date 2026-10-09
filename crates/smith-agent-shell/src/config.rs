@@ -214,6 +214,9 @@ fn environment_refusal(error: machine::Unencodable) -> String {
 fn build(document: Document) -> Result<Configuration, String> {
     let profile = build_profile(&document.profile)?;
     let memory = profile.declared.memory.ok_or("profile.declared.memory is required")?;
+    if document.endpoints.is_empty() {
+        return Err(profile_refusal(Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") }));
+    }
     if document.endpoints.len() > usize::try_from(ENDPOINTS).expect("endpoint count fits usize") {
         return Err("too many endpoints".into());
     }
@@ -750,10 +753,20 @@ mod tests {
                 declared: DeclaredOverrides { memory: Some(u64::MAX), ..DeclaredOverrides::default() },
                 policy: PolicyOverrides::default(),
             },
-            endpoints: vec![],
+            endpoints: serde_json::from_value(shaped_document()["endpoints"].clone()).expect("tiny endpoint"),
             environment: vec![],
             trace: None,
         }
+    }
+
+    #[test]
+    fn empty_endpoint_and_model_lists_name_the_missing_field() {
+        let mut empty = document();
+        empty.endpoints.clear();
+        assert_eq!(build(empty).err().as_deref(), Some("field: declared.endpoints must not be empty"));
+        let mut empty = document();
+        empty.endpoints[0].models.clear();
+        assert_eq!(build(empty).err().as_deref(), Some("field: declared.models[endpoint=0] must not be empty"));
     }
 
     #[test]
@@ -786,13 +799,14 @@ mod tests {
     #[test]
     fn named_endpoint_resolves_and_its_tls_trust_builds_before_start() {
         let mut document = document();
+        document.endpoints.clear();
         document.endpoints.push(Endpoint {
             connect: 10_000,
             handshake: 10_000,
             models: vec![ModelDocument {
                 name: "test".into(),
-                window: 8192,
-                output: 4096,
+                window: 65536,
+                output: 32,
                 reasoning_item: 2048,
                 oversized_reasoning: None,
                 head: 60_000,
@@ -835,7 +849,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             let configuration = parse(json.as_bytes()).expect("loopback plaintext configuration");
             service::Service::new(configuration.service, 1).expect("loopback plaintext service");
@@ -844,7 +858,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("plaintext endpoint address must be loopback"));
         }
@@ -861,7 +875,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
+                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
             );
             assert!(parse(json.as_bytes()).is_err(), "invalid transport {extra}");
         }
@@ -900,7 +914,7 @@ mod tests {
             "profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64}},
             "endpoints":[{"name":"local","number":0,"dialect":0,"account":0,"provider":"codex",
                 "address":"127.0.0.1:8080","transport":"plaintext","connect":10000,"handshake":10000,
-                "models":[{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}]}],
+                "models":[{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}]}],
             "environment":[]
         })
     }
@@ -931,7 +945,7 @@ mod tests {
         assert_eq!(limits.domain.run.host_timeout_max, configured.profile.policy.tool_deadline);
         assert_eq!(limits.llm.adapter.stated.tool_deadline, configured.profile.policy.tool_deadline);
         assert_eq!(configured.profile.declared.shell_head, service::profile::standard().declared.shell_head);
-        assert_eq!(configured.declarations.endpoints[0].models[0].window, 8192);
+        assert_eq!(configured.declarations.endpoints[0].models[0].window, 65536);
     }
 
     #[test]

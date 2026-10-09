@@ -56,6 +56,29 @@ impl std::io::Write for AgentErrors {
     }
 }
 
+/// One real tiny model declaration for startup controls and process worlds.
+#[must_use]
+pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
+    use agent::profile::{Configuration, Endpoint, Model, OversizedReasoning};
+    Configuration {
+        environment_bytes,
+        endpoints: Box::new([Endpoint {
+            number: 0,
+            connect: skein_lib::Duration::from_secs(1),
+            handshake: skein_lib::Duration::from_secs(1),
+            models: Box::new([Model {
+                name: Box::from(b"fake".as_slice()),
+                window: 65_536,
+                output: 32,
+                reasoning_item: 2048,
+                oversized_reasoning: OversizedReasoning::Fail,
+                head: skein_lib::Duration::from_secs(1),
+                idle: skein_lib::Duration::from_secs(1),
+            }]),
+        }]),
+    }
+}
+
 /// Adopt scenario-specific service settings and mounts in Start order.
 #[must_use]
 pub fn configured(
@@ -71,7 +94,7 @@ pub fn configured(
             memory: u64::MAX,
             trace: None,
             profile: agent::profile::standard(),
-            declarations: agent::profile::Configuration { environment_bytes, endpoints: Box::new([]) },
+            declarations: declarations(environment_bytes),
         },
         smith_agent_shell::Resources {
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
@@ -106,7 +129,7 @@ pub fn limits() -> agent::Limits {
     profile.policy.inbox = 8;
     profile.policy.unacknowledged = 8;
     profile.policy.group_stop = Duration::from_millis(10);
-    let configuration = agent::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) };
+    let configuration = declarations(0);
     let mut limits = agent::profile::derive(&profile, &configuration).expect("tiny profile derives");
     // Worlds may lower or specialize a derived limit (protocol/limits.md2.2).
     let mut client = skein_llm_world::limits();

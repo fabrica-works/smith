@@ -447,7 +447,7 @@ fn the_local_start_window_admits_the_standard_agents_largest_turn() {
             profile.declared.memory = Some(u64::MAX);
             profile
         },
-        &smith_agent_service::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) },
+        &smith_agent_process_world::declarations(0),
     )
     .expect("standard agent");
     let largest = smith_domain::max_turn_bytes(&agent.domain).expect("bounded turn");

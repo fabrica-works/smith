@@ -3,18 +3,34 @@
 use alloc::boxed::Box;
 use skein_lib::List;
 
+fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
+    use crate::profile::{Configuration, Endpoint, Model, OversizedReasoning};
+    Configuration {
+        environment_bytes,
+        endpoints: Box::new([Endpoint {
+            number: 0,
+            connect: skein_lib::Duration::from_secs(1),
+            handshake: skein_lib::Duration::from_secs(1),
+            models: Box::new([Model {
+                name: Box::from(b"fake".as_slice()),
+                window: 65_536,
+                output: 32,
+                reasoning_item: 2048,
+                oversized_reasoning: OversizedReasoning::Fail,
+                head: skein_lib::Duration::from_secs(1),
+                idle: skein_lib::Duration::from_secs(1),
+            }]),
+        }]),
+    }
+}
+
 #[test]
 fn standard_profile_admits_the_priced_shell_run_defaults() {
     use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
     use smith_domain::run;
     let mut profile = crate::profile::standard();
     profile.declared.memory = Some(u64::MAX);
-    let limits = crate::profile::derive(
-        &profile,
-        &crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) },
-    )
-    .expect("standard profile")
-    .domain;
+    let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain;
     let charter = run::Charter {
         reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::default(),
@@ -90,7 +106,7 @@ fn standard_profile_builds_a_complete_bounded_service() {
             profile.declared.memory = Some(u64::MAX);
             profile
         },
-        &crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) },
+        &declarations(0),
     )
     .expect("standard profile");
     let configuration = crate::Config {
@@ -127,7 +143,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         profile.declared.search_hits = u32::try_from(rng.next_u64() % 32 + 1).expect("bounded hits");
         profile.declared.search_bytes = u32::try_from(rng.next_u64() % 4096 + 1).expect("bounded search");
         profile.declared.list_entries = u32::try_from(rng.next_u64() % 64 + 1).expect("bounded listing");
-        let configuration = crate::profile::Configuration { environment_bytes: 37, endpoints: Box::new([]) };
+        let configuration = declarations(37);
         let limits = crate::profile::derive(&profile, &configuration).expect("bounded declarations derive");
         let tools = limits.domain.session.tools;
         let machine = limits.machine;
@@ -150,11 +166,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
     profile.declared.memory = Some(u64::MAX);
     profile.declared.search_bytes = u32::MAX;
     assert_eq!(
-        crate::profile::derive(
-            &profile,
-            &crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) }
-        )
-        .err(),
+        crate::profile::derive(&profile, &declarations(0)).err(),
         Some(crate::profile::Refusal::Derived {
             limit: crate::profile::LimitName::deployment(crate::profile::Layer::Render, "result"),
         })
@@ -167,7 +179,7 @@ fn every_declared_conversation_can_use_the_same_endpoint() {
         let mut profile = crate::profile::standard();
         profile.declared.memory = Some(u64::MAX);
         profile.declared.conversations = conversations;
-        let configuration = crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) };
+        let configuration = declarations(0);
         let limits = crate::profile::derive(&profile, &configuration).expect("declared conversations derive");
         assert_eq!(limits.llm.connection.calls, conversations);
         assert_eq!(limits.llm.connection.connections, conversations);
