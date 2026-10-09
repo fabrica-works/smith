@@ -3617,11 +3617,11 @@ fn a_supplied_identity_reaches_main_and_children_with_ordinals_never_reused() {
     let (_, main, opening) = identity_open(&mut harness, Some(identity));
     assert_eq!((opening.identity, opening.ordinal), (identity, 0));
     assert_eq!(identity.bytes(), [0; 16]);
-    let (first, opening) = harness.child(main, 7, families(true, false, false), 101);
+    let (first, opening) = harness.child(main, 7, families(false, false, false), 101);
     assert_eq!((opening.identity, opening.ordinal), (identity, 1));
     drop(harness.step(Event::Ended { conversation: first, end: End::Closed, spend: Spend::ZERO }));
     harness.domain.reclaim();
-    let (_, second) = harness.child(main, 8, families(true, false, false), 102);
+    let (_, second) = harness.child(main, 8, families(false, false, false), 102);
     assert_eq!((second.identity, second.ordinal), (identity, 2), "ended children never free their ordinal");
     assert_eq!(harness.domain.calls(), 1);
 }

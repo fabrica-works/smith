@@ -46,6 +46,7 @@ pub struct DecodedStart {
 }
 
 /// Move decoded channel fields into bounded start context, keeping values below the domain.
+#[expect(clippy::manual_map, reason = "strict subset keeps optional boundary conversion as an explicit match")]
 pub fn start_context(
     start: channel::Start,
     charter: run::Charter,
@@ -89,7 +90,10 @@ pub fn start_context(
         }
     }
     Ok(DecodedStart {
-        identity: parts.identity.map(run::Identity::new),
+        identity: match parts.identity {
+            Some(bytes) => Some(run::Identity::new(bytes)),
+            None => None,
+        },
         messages: messages.into_boxed(),
         activation: parts.activation,
         charter,
