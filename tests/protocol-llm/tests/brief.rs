@@ -668,6 +668,20 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
     }
 }
 
+fn affinity_scripts() -> Box<[Script]> {
+    Box::new([
+        Script {
+            cue: b"@brief-native".as_slice().into(),
+            turns: Box::new([
+                calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 3),
+                calls(vec![call(b"sub_agent", br#"{"brief":"@affinity-child","tools":[]}"#)], 3),
+                calls(vec![Line::Text { text: LAST.into() }, call(b"wait", b"{}")], 3),
+            ]),
+        },
+        Script { cue: b"@affinity-child".as_slice().into(), turns: Box::new([says(b"Child retains the run key.", 3)]) },
+    ])
+}
+
 #[test]
 fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
     for dialect in 0..2 {
@@ -675,8 +689,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
             rendered_result: skein_llm_world::limits().dialect.string_bytes,
-            shell_default: Duration::from_secs(120),
-            shell_maximum: Duration::from_secs(1200),
+            stated: adapter::stated(),
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
@@ -690,22 +703,6 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual receiving reservation");
         settings.limits.session.completion_blocks = bounds.client.dialect.parts;
-        let scripts = || {
-            Box::new([
-                Script {
-                    cue: b"@brief-native".as_slice().into(),
-                    turns: Box::new([
-                        calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 3),
-                        calls(vec![call(b"sub_agent", br#"{"brief":"@affinity-child","tools":[]}"#)], 3),
-                        calls(vec![Line::Text { text: LAST.into() }, call(b"wait", b"{}")], 3),
-                    ]),
-                },
-                Script {
-                    cue: b"@affinity-child".as_slice().into(),
-                    turns: Box::new([says(b"Child retains the run key.", 3)]),
-                },
-            ])
-        };
         let (disk, mounted) = workspace();
         let mut first = World::with_workspace_wire_charter(
             settings,
@@ -713,7 +710,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             Some(mounted),
             disk,
             (wire::configurations().into_iter().nth(dialect).expect("two native forms"), bounds),
-            scripts(),
+            affinity_scripts(),
             charter(&settings, NATIVE_INSTRUCTIONS),
         );
         first.run(100_000);
@@ -721,7 +718,9 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         assert!(matches!(first.answer(), run::Answer::Parked { .. }));
         let affinity = match first.turns()[0].kind {
             smith_domain::session::record::Kind::First { affinity } => affinity,
-            other => panic!("fresh opening: {other:?}"),
+            smith_domain::session::record::Kind::Ordinary | smith_domain::session::record::Kind::Window { .. } => {
+                panic!("fresh opening requires a first turn")
+            }
         };
         assert_eq!(affinity.thread, 0);
         let original = smith_protocol_llm_world::referee::NativeRequest::from_http(&first.wire_bindings()[0].request);
@@ -740,7 +739,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             Some(mounted),
             disk,
             (wire::configurations().into_iter().nth(dialect).expect("same native form"), bounds),
-            scripts(),
+            affinity_scripts(),
             charter(&settings, NATIVE_INSTRUCTIONS),
         );
         resumed.run(100_000);
@@ -754,7 +753,10 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             if original.affinity.is_some() {
                 assert_eq!(query.caching, skein_fake_llm_domain::api::Caching::Scope(affinity.key));
             } else {
-                assert!(matches!(query.caching, skein_fake_llm_domain::api::Caching::Marks(_)), "Anthropic ignores affinity and uses its native breakpoints");
+                assert!(
+                    matches!(query.caching, skein_fake_llm_domain::api::Caching::Marks(_)),
+                    "Anthropic ignores affinity and uses its native breakpoints"
+                );
             }
             let actual = smith_protocol_llm_world::referee::NativeRequest::from_http(&binding.request);
             match (&original.affinity, &actual.affinity) {

@@ -112,6 +112,7 @@ fn saved_turn(
     translate_turn(source, endpoint.number, endpoint.dialect)
 }
 
+#[expect(clippy::manual_map, reason = "step code translates optional affinity through an exhaustive match")]
 fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<record::Turn, record::Refusal> {
     let affinity = match source.affinity() {
         Some(value) => Some(llm::Affinity { key: *value.key(), thread: value.thread() }),
@@ -120,9 +121,8 @@ fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<rec
     let kind = match source.kind() {
         wire::TurnKind::Ordinary => match affinity {
             Some(affinity) if source.place() == 1 => record::Kind::First { affinity },
-            Some(_) => return Err(record::Refusal::Malformed),
             None if source.place() > 1 => record::Kind::Ordinary,
-            None => return Err(record::Refusal::Malformed),
+            Some(_) | None => return Err(record::Refusal::Malformed),
         },
         wire::TurnKind::Window => match affinity {
             Some(affinity) => record::Kind::Window { affinity },

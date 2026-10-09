@@ -270,8 +270,9 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
     let decoded = crate::decode_transcript(&[first.clone(), ordinary.clone()], &limits, &endpoints)
         .expect("opening and ordinary")
         .expect("transcript");
-    assert!(
-        matches!(decoded.turns[0].kind, record::Kind::First { affinity } if affinity.key == [0x42; 16] && affinity.thread == 7)
+    assert_eq!(
+        decoded.turns[0].kind,
+        record::Kind::First { affinity: smith_domain_session::llm::Affinity { key: [0x42; 16], thread: 7 } }
     );
     assert_eq!(decoded.turns[1].kind, record::Kind::Ordinary);
     assert_eq!(

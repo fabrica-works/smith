@@ -268,6 +268,10 @@ struct Flight {
 }
 
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the world retains one concrete backend and its shared provider cache inline for its whole lifetime"
+)]
 enum Backend {
     Typed {
         provider: provider::Domain,

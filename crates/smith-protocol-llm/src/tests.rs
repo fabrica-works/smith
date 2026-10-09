@@ -190,6 +190,7 @@ fn described_prompt() -> smith_domain::llm::Prompt {
     llm::Prompt {
         namespace: tools::Namespace::One,
         asker: llm::Asker::Main,
+        affinity: llm::Affinity { key: [0; 16], thread: 0 },
         endpoint: llm::Endpoint(1),
         model: b"test".as_slice().into(),
         system: Box::new([]),

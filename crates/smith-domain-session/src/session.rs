@@ -2370,6 +2370,59 @@ enum Resumed {
     WaitWithheld { id: Box<[u8]> },
 }
 
+fn recorded_sequence(turn: &crate::record::Turn, opening: bool, previous: u32) -> Result<u32, crate::record::Refusal> {
+    use crate::record::{Kind, Refusal};
+    match turn.kind {
+        Kind::First { .. } => {
+            if !opening || turn.sequence != 1 {
+                return Err(Refusal::Malformed);
+            }
+            Ok(previous)
+        }
+        Kind::Window { .. } => {
+            if !opening {
+                return Err(Refusal::Malformed);
+            }
+            turn.sequence.checked_sub(1).ok_or(Refusal::Malformed)
+        }
+        Kind::Ordinary => {
+            if opening {
+                return Err(Refusal::Malformed);
+            }
+            Ok(previous)
+        }
+    }
+}
+
+fn recorded_turn_shape(turn: &crate::record::Turn, assistants: u32) -> Result<(), crate::record::Refusal> {
+    use crate::record::Refusal;
+    match turn.kind {
+        crate::record::Kind::First { .. } | crate::record::Kind::Ordinary => {
+            if assistants != 1 {
+                return Err(Refusal::Malformed);
+            }
+        }
+        crate::record::Kind::Window { .. } => {
+            if turn.messages.len() != 1 || assistants != 0 {
+                return Err(Refusal::Malformed);
+            }
+            let message = turn.messages.first().expect("validated one window message");
+            for block in &message.content {
+                match block {
+                    Block::Text { .. } => {}
+                    Block::Refusal { .. }
+                    | Block::Opaque { .. }
+                    | Block::ToolCall { .. }
+                    | Block::ToolResult { .. } => {
+                        return Err(Refusal::Malformed);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_transcript(
     conversation: &Conversation,
     transcript: &crate::record::Transcript,
@@ -2407,24 +2460,7 @@ fn validate_transcript(
         if turn.dialect != dialect {
             return Err(Refusal::Dialect);
         }
-        match turn.kind {
-            crate::record::Kind::First { .. } => {
-                if !opening || turn.sequence != 1 {
-                    return Err(Refusal::Malformed);
-                }
-            }
-            crate::record::Kind::Window { .. } => {
-                if !opening || turn.sequence == 0 {
-                    return Err(Refusal::Malformed);
-                }
-                sequence = turn.sequence.checked_sub(1).ok_or(Refusal::Malformed)?;
-            }
-            crate::record::Kind::Ordinary => {
-                if opening {
-                    return Err(Refusal::Malformed);
-                }
-            }
-        }
+        sequence = recorded_sequence(turn, opening, sequence)?;
         opening = false;
         sequence = sequence.checked_add(1).ok_or(Refusal::Malformed)?;
         if turn.sequence != sequence || turn.messages.is_empty() {
@@ -2476,30 +2512,7 @@ fn validate_transcript(
                 return Err(Refusal::TooLarge);
             }
         }
-        match turn.kind {
-            crate::record::Kind::First { .. } | crate::record::Kind::Ordinary => {
-                if assistants != 1 {
-                    return Err(Refusal::Malformed);
-                }
-            }
-            crate::record::Kind::Window { .. } => {
-                if turn.messages.len() != 1 || assistants != 0 {
-                    return Err(Refusal::Malformed);
-                }
-                let message = turn.messages.first().expect("validated one window message");
-                for block in &message.content {
-                    match block {
-                        Block::Text { .. } => {}
-                        Block::Refusal { .. }
-                        | Block::Opaque { .. }
-                        | Block::ToolCall { .. }
-                        | Block::ToolResult { .. } => {
-                            return Err(Refusal::Malformed);
-                        }
-                    }
-                }
-            }
-        }
+        recorded_turn_shape(turn, assistants)?;
     }
     if sequence == 0 {
         return Err(Refusal::Malformed);
