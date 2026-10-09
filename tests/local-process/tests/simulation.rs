@@ -10,13 +10,13 @@ fn a_chat_resumes_from_its_files_across_runs_of_the_binary() {
     let mut first = World::new(1, &files, Placement::Spawned, b"First answer");
     first.settle();
     assert_eq!(first.exit(), Some(kernel::Exit::Code(0)));
-    assert_eq!(first.turns(), 2);
+    assert_eq!(first.turns(), 1);
     let first_messages = first.queries()[0].messages.len();
     drop(first);
     let mut second = World::new(2, &files, Placement::Spawned, b"Second answer");
     second.settle();
     assert_eq!(second.exit(), Some(kernel::Exit::Code(0)));
-    assert_eq!(second.turns(), 4);
+    assert_eq!(second.turns(), 2);
     assert!(second.queries()[0].messages.len() > first_messages, "saved conversation reached the provider");
     assert!(
         second.queries()[0].messages.iter().flat_map(|message| message.parts.iter()).any(|part| {

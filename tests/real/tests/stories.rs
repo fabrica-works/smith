@@ -45,8 +45,8 @@ fn a_chat_ends_with_a_commit_in_place() {
     assert_eq!(files[b"command.txt".as_slice()], b"ran\n");
     assert_eq!(files[b"checks-ran.txt".as_slice()], b"checked\n");
     let seen = world.seen();
-    assert_eq!(seen.queries.len(), 7, "every scripted tool reached the real agent");
-    for (query, name) in seen.queries.iter().skip(2).zip([b"read".as_slice(), b"search", b"edit", b"write", b"shell"]) {
+    assert_eq!(seen.queries.len(), 6, "every scripted tool reached the real agent");
+    for (query, name) in seen.queries.iter().skip(1).zip([b"read".as_slice(), b"search", b"edit", b"write", b"shell"]) {
         let id = query
             .messages
             .iter()
@@ -96,12 +96,12 @@ fn a_second_run_resumes_the_chat_from_its_files() {
     let scratch = Scratch::new();
     let mut first = World::new(13, &scratch, Placement::Spawned, b"First answer");
     first.settle();
-    assert_eq!(first.turns(), 2);
+    assert_eq!(first.turns(), 1);
     let messages = first.seen().queries[0].messages.len();
     drop(first);
     let mut second = World::new(14, &scratch, Placement::Spawned, b"Second answer");
     second.settle();
-    assert_eq!(second.turns(), 4);
+    assert_eq!(second.turns(), 2);
     let seen = second.seen();
     assert!(seen.queries[0].messages.len() > messages);
     assert!(

@@ -72,11 +72,6 @@ fn scripts() -> Box<[api::Script]> {
     let mut turns = Vec::new();
     for answer in ["First answer", "Second answer", "Third answer"] {
         turns.push(api::Turn {
-            lines: Box::new([api::Line::Call { name: b"wait".as_slice().into(), arguments: b"{}".as_slice().into() }]),
-            finish: api::Finish::ToolCalls,
-            tokens: 1,
-        });
-        turns.push(api::Turn {
             lines: Box::new([api::Line::Call {
                 name: b"finish".as_slice().into(),
                 arguments: format!("{{\"form\":\"report\",\"text\":\"{answer}\",\"fields\":{{}}}}").into_bytes().into(),
@@ -90,7 +85,6 @@ fn scripts() -> Box<[api::Script]> {
 
 fn change_scripts() -> Box<[api::Script]> {
     let turns = [
-        ("wait", "{}"),
         ("write", "{\"path\":\"result.txt\",\"content\":\"new\\n\"}"),
         (
             "finish",
@@ -116,7 +110,6 @@ fn change_scripts() -> Box<[api::Script]> {
 // Shared scenario data: any tier can select these same provider turns.
 fn tool_scripts() -> Box<[api::Script]> {
     let turns = [
-        ("wait", "{}"),
         ("read", r#"{"path":"original.txt"}"#),
         ("search", r#"{"pattern":"original","path":"original.txt"}"#),
         ("edit", r#"{"path":"original.txt","old":"original","new":"edited"}"#),
