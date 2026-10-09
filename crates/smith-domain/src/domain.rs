@@ -142,6 +142,8 @@ pub(crate) enum Due {
     Answered { feedback: crate::Feedback, spent: u64 },
     /// The settled result yields so the run can append queued work before the next request.
     Yielding { feedback: crate::Feedback, spent: u64 },
+    /// A parked own wait ends its live call while leaving the historical result withheld.
+    Withheld,
     /// The run returned it cancelled, after the session withdrew it.
     Cancelled { spent: u64 },
 }

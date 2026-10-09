@@ -44,6 +44,7 @@ You can write and edit files in its writable repositories.\n\n\
 You can ask for a sub-agent: an LLM of its own, working on a brief you write, with tools no wider than \
 yours and a share of the budget. Its last message comes back to you as the result. It runs on the \
 run's main LLM unless you name one of these: `fake-2`.\n\n\
+Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n\
 ## Finishing\n\n\
 When the work is done, call `finish` with its result. A result outside the host's contract returns \
 typed feedback; fix it and call `finish` again. Stopping without `finish` does not finish the run.\n\n\

@@ -126,7 +126,9 @@ pub enum Return {
     Crossed,
 
     /// Main wait intent accepted.
-    Waiting,
+    Waited,
+    /// The run parked while its wait result remained withheld.
+    Withheld,
     /// Actual bounded host text reached the caller.
     HostAnswered,
     /// The host decided, but its answer exceeded the receiving cap.
@@ -267,7 +269,8 @@ pub(crate) fn tell(
 
 fn result_of(result: &Returned) -> Return {
     match result {
-        Returned::Waiting => Return::Waiting,
+        Returned::Waited { .. } => Return::Waited,
+        Returned::Withheld => Return::Withheld,
         Returned::Crossed { .. } => Return::Crossed,
         Returned::HostAnswered(_) => Return::HostAnswered,
         Returned::HostTooLarge { .. } | Returned::HostReportedTooLarge => Return::HostTooLarge,

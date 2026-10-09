@@ -71,7 +71,7 @@ fn text_seen(world: &World, expected: &[u8]) -> bool {
 }
 
 #[test]
-fn wait_result_settles_before_waiting_then_opaque_fifo_names_cross_only_turns() {
+fn wait_result_is_deferred_and_opaque_fifo_names_cross_only_actual_turns() {
     let mut world = World::new(waiting(900));
     world.message_at(
         Time::from_nanos(500_000_000),
@@ -86,10 +86,10 @@ fn wait_result_settles_before_waiting_then_opaque_fifo_names_cross_only_turns() 
         b"second".as_slice().into(),
     );
     world.run(2000);
-    assert!(matches!(world.answer(), run::Answer::Parked { turns: 6, .. }));
+    assert!(matches!(world.answer(), run::Answer::Parked { turns: 3, .. }));
     assert_eq!(
         world.turn_metadata().iter().map(|(_, read, _)| *read).collect::<Vec<_>>(),
-        [None, None, Some(Token::new(0)), Some(Token::new(0)), Some(Token::new(99)), Some(Token::new(99))]
+        [None, Some(Token::new(0)), Some(Token::new(99))]
     );
     assert_eq!(world.waiting().len(), 2, "fresh waiting and final empty-inbox waiting");
     assert_eq!(world.waiting()[0].1, None);
@@ -100,7 +100,7 @@ fn wait_result_settles_before_waiting_then_opaque_fifo_names_cross_only_turns() 
         world.turns().iter().flat_map(|turn| &turn.messages).flat_map(|message| &message.content).any(|block| {
             matches!(block, session::llm::Block::ToolResult {
             result: session::llm::Returned::Text { text, error: false, replay: None }, ..
-        } if text.as_ref() == b"waiting")
+        } if text.as_ref() == b"Messages arrived. Read them before continuing.")
         });
     assert!(result, "wait terminal is saved as exact canonical feedback");
     assert_eq!(world.judged().1, 1);
@@ -120,7 +120,7 @@ fn bounded_message_keeps_the_zero_name_and_wall_time_runs_while_waiting() {
     );
     world.run(2000);
     assert!(text_seen(&world, b"person: full"));
-    assert!(matches!(world.answer(), run::Answer::Parked { turns: 4, .. }));
+    assert!(matches!(world.answer(), run::Answer::Parked { turns: 2, .. }));
     let mut wall = World::new(Settings {
         waiting: Duration::from_secs(20),
         budget: run::Budget { time: Duration::from_secs(2), ..calm.budget },
@@ -128,7 +128,7 @@ fn bounded_message_keeps_the_zero_name_and_wall_time_runs_while_waiting() {
     });
     wall.run(2000);
     assert_eq!(wall.waiting().len(), 1);
-    assert!(matches!(wall.answer(), run::Answer::Parked { turns: 2, .. }));
+    assert!(matches!(wall.answer(), run::Answer::Parked { turns: 1, .. }));
 }
 
 #[test]
@@ -138,10 +138,10 @@ fn parked_transcript_resumes_without_recharging_history_or_reusing_activation_nu
     let saved = history(&first);
     let mut next = World::with_history(Settings { resume: true, ..waiting(903) }, Some(saved.clone()));
     next.run(2000);
-    assert!(matches!(next.answer(), run::Answer::Parked { turns: 2, .. }));
-    assert_eq!(next.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1, 2]);
-    assert_eq!(next.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [3, 4]);
-    assert_eq!(next.prompts().len(), 2, "shared fake continues after restored assistant prefix");
+    assert!(matches!(next.answer(), run::Answer::Parked { turns: 1, .. }));
+    assert_eq!(next.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1]);
+    assert_eq!(next.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [2]);
+    assert_eq!(next.prompts().len(), 1, "shared fake continues after restored assistant prefix");
     assert!(text_seen(&next, b"Ready for a person."));
     assert_eq!(
         next.turns()[0].usage.input_tokens.expect("peer supplies input count"),
@@ -157,6 +157,12 @@ fn parked_transcript_resumes_without_recharging_history_or_reusing_activation_nu
 fn a_full_window_holds_the_next_completion_until_a_turn_is_acknowledged() {
     let mut world = World::with_window(waiting(923), smith_domain::Window { turns: 1, bytes: u64::MAX });
     let acknowledged = Time::ZERO.saturating_add(Duration::from_millis(500));
+    world.message_at(
+        Time::from_nanos(250_000_000),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"wake".as_slice().into(),
+    );
     world.acknowledge_at(acknowledged, 1);
     world.run(2000);
     assert!(matches!(world.answer(), run::Answer::Parked { turns: 2, .. }));
@@ -200,13 +206,13 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_from_one_each_time_withou
     assert!(matches!(first.answer(), run::Answer::Parked { turns: 2, .. }));
     let first_numbers = first.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>();
     assert_eq!(first_numbers, [1, 2]);
-    assert_eq!(first.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(first.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [1]);
 
     let mut second = World::with_history(Settings { resume: true, ..waiting(921) }, Some(history(&first)));
     second.run(2000);
     assert!(matches!(second.answer(), run::Answer::Parked { turns: 2, .. }));
-    assert_eq!(second.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1, 2]);
-    assert_eq!(second.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [3, 4]);
+    assert_eq!(second.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1]);
+    assert_eq!(second.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [2]);
 
     let mut continued = history(&first);
     let mut turns = continued.turns.into_vec();
@@ -215,7 +221,7 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_from_one_each_time_withou
     let mut third = World::with_history(Settings { resume: true, ..waiting(922) }, Some(continued));
     third.run(2000);
     assert!(matches!(third.answer(), run::Answer::Parked { turns: 2, .. }));
-    assert_eq!(third.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(third.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1]);
     assert_eq!(third.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [5, 6]);
 }
 

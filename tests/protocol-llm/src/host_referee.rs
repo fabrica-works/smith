@@ -167,7 +167,8 @@ impl History {
             run::Returned::Busy | run::Returned::Cancelled | run::Returned::TimedOut => {
                 self.answered.is_none() && !self.uncertain
             }
-            run::Returned::Waiting
+            run::Returned::Waited { .. }
+            | run::Returned::Withheld
             | run::Returned::Crossed { .. }
             | run::Returned::HostRejected(_)
             | run::Returned::Delivered(_)
@@ -310,7 +311,8 @@ impl History {
                     | run::Returned::Busy
                     | run::Returned::Cancelled
                     | run::Returned::TimedOut => true,
-                    run::Returned::Waiting
+                    run::Returned::Waited { .. }
+                    | run::Returned::Withheld
                     | run::Returned::Crossed { .. }
                     | run::Returned::HostRejected(_)
                     | run::Returned::Delivered(_)

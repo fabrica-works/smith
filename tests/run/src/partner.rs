@@ -552,7 +552,7 @@ impl Partner {
             Returned::HostTooLarge { .. } | Returned::HostReportedTooLarge | Returned::HostRejected(_) => {
                 self.tally.host_rejected += 1;
             }
-            Returned::Waiting => self.tally.waiting += 1,
+            Returned::Waited { .. } | Returned::Withheld => self.tally.waiting += 1,
             Returned::Crossed { .. } => self.tally.crossed_finishes += 1,
             Returned::Delivered(_) if mid_delivery => self.tally.delivered += 1,
             Returned::Accepted | Returned::Delivered(_) => self.tally.accepted += 1,
@@ -592,10 +592,13 @@ impl Partner {
                 self.talks.get_mut(&peer).expect("a pending talk").phase = Phase::Withdrawn { pending: pending - 1 }
             }
             // Its last call in flight returned.
+            Phase::Calling { pending: _, over: _ } if *result == Returned::Withheld => {
+                self.talks.get_mut(&peer).expect("withheld wait parks its conversation").phase = Phase::Yielded;
+            }
             Phase::Calling { pending: _, over } => match over {
                 Some(exhausted) => self.end(peer, End::Budget(exhausted), out),
                 None if now >= expires => self.end(peer, End::Budget(Exhausted::Time), out),
-                None if matches!(result, Returned::Waiting | Returned::Crossed { .. }) => {
+                None if matches!(result, Returned::Waited { .. } | Returned::Crossed { .. }) => {
                     let talk = self.talks.get_mut(&peer).expect("a waiting main");
                     talk.phase = Phase::Yielded;
                     out.push(Out::Event(Event::Yielded {

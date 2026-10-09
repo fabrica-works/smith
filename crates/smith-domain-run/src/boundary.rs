@@ -452,8 +452,11 @@ pub enum Returned {
     /// Main finish crossed queued messages; the run offers them before another completion.
     Crossed { text: Box<[u8]> },
 
-    /// Main's wait intent was accepted; ordinary result and continuation settle first.
-    Waiting,
+    /// Main's retained wait is answered; its opener offers queued messages before the next request.
+    Waited { text: Box<[u8]> },
+
+    /// Main parks with its own wait unanswered; the session records the call without a result.
+    Withheld,
 
     /// Actual host result/error text; the host's error is forwarded, never retried.
     HostAnswered(

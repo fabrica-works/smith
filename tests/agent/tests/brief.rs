@@ -33,6 +33,7 @@ You can write and edit files in its writable repositories.\n\n\
 You can ask for a sub-agent: an LLM of its own, working on a brief you write, with tools no wider than \
 yours and a share of the budget. Its last message comes back to you as the result. It runs on the \
 run's main LLM unless you name one of these: `fake-2`.\n\n\
+Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n\
 ## Finishing\n\n\
 When the work is done, call `finish` with its result. A result outside the host's contract returns \
 typed feedback; fix it and call `finish` again. Stopping without `finish` does not finish the run.\n\n\
@@ -461,4 +462,124 @@ fn the_request_after_a_crossed_finish_contains_the_call_answer_and_queued_messag
             } if *name == Token::new(0))));
         }
     }
+}
+
+#[test]
+fn a_wait_is_answered_with_its_message_in_one_request() {
+    use skein_lib::{Duration, Time};
+    for queued in [true, false] {
+        let settings = Settings {
+            job: Job::Reporting,
+            network: Span::millis(0, 0),
+            provider: skein_fake_llm_domain::Config {
+                latency_min: Duration::from_millis(100),
+                latency_max: Duration::from_millis(100),
+                ..Settings::calm(1193).provider
+            },
+            ..Settings::calm(1193)
+        };
+        let scripts = Box::new([Script {
+            cue: b"@deferred-wait".as_slice().into(),
+            turns: Box::new([calls(vec![call(b"wait", b"{}")], 1), calls(vec![call(b"finish", FINISH_INPUT)], 1)]),
+        }]);
+        let mut world = World::with_workspace_scripts_charter(
+            settings,
+            None,
+            None,
+            Checkout::new(),
+            scripts,
+            charter(&settings, "@deferred-wait"),
+        );
+        world.message_at(
+            Time::ZERO.saturating_add(Duration::from_millis(if queued { 50 } else { 250 })),
+            Token::new(0),
+            b"person".as_slice().into(),
+            b"follow up".as_slice().into(),
+        );
+        world.run(10_000);
+        assert!(matches!(world.answer(), run::Answer::Accepted { turns: 2, .. }));
+        assert_eq!(world.prompts().len(), 2, "the wait adds no provider completion before the waking exchange");
+        let request = &world.prompts()[1];
+        assert!(request.messages.iter().flat_map(|message| &message.parts).any(|part| matches!(part,
+            Part::ToolOutput { output, is_error: false, .. } if output.as_ref() == b"Messages arrived. Read them before continuing.")));
+        assert!(matches!(request.messages.last().expect("waking offer").parts.as_ref(),
+            [Part::Text { text }] if text.as_ref() == b"person: follow up"));
+        assert_eq!(world.waiting().len(), usize::from(!queued));
+        assert_eq!(
+            world.turn_metadata().iter().map(|(_, read, _)| *read).collect::<Vec<_>>(),
+            [None, Some(Token::new(0))]
+        );
+    }
+}
+
+#[test]
+fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
+    use skein_lib::{Duration, ReplyTo};
+    let settings = Settings {
+        job: Job::Reporting,
+        waiting: Duration::from_secs(1),
+        network: Span::millis(0, 0),
+        ..Settings::calm(1194)
+    };
+    let scripts = Box::new([Script {
+        cue: b"@parked-wait".as_slice().into(),
+        turns: Box::new([calls(vec![call(b"wait", b"{}")], 1), calls(vec![call(b"finish", FINISH_INPUT)], 1)]),
+    }]);
+    let mut first = World::with_workspace_scripts_charter(
+        settings,
+        None,
+        None,
+        Checkout::new(),
+        scripts.clone(),
+        charter(&settings, "@parked-wait"),
+    );
+    first.run(10_000);
+    assert!(matches!(first.answer(), run::Answer::Parked { turns: 1, .. }));
+    assert_eq!(first.prompts().len(), 1);
+    let saved = smith_domain::Transcript {
+        version: smith_domain::session::record::VERSION,
+        endpoint: llm::Endpoint(0),
+        dialect: 1,
+        turns: first.turns().to_vec().into(),
+    };
+    let call = first.turns()[0]
+        .messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .find_map(|block| match block {
+            llm::Block::ToolCall { id, name, .. } if name.as_ref() == b"wait" => Some(id.clone()),
+            _ => None,
+        })
+        .expect("actual wait identity");
+    assert!(
+        !first.turns()[0]
+            .messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .any(|block| matches!(block, llm::Block::ToolResult { id, .. } if *id == call))
+    );
+    let resumed = Settings { resume: true, ..settings };
+    let start = smith_domain::Event::Start {
+        reply_to: ReplyTo::new(Token::new(1)),
+        host_run: Token::new(1),
+        activation: 2,
+        window: smith_domain::Window { turns: u32::MAX, bytes: u64::MAX },
+        charter: charter(&resumed, "@parked-wait"),
+        workspace: None,
+        transcript: Some(saved),
+        answered: Box::default(),
+        messages: Box::new([run::Message {
+            name: Token::new(0),
+            label: b"person".as_slice().into(),
+            text: b"waking line".as_slice().into(),
+        }]),
+    };
+    let mut next = World::with_workspace_scripts_start(resumed, Checkout::new(), scripts, start);
+    next.run(10_000);
+    assert!(matches!(next.answer(), run::Answer::Accepted { turns: 1, .. }));
+    assert_eq!(next.prompts().len(), 1);
+    assert!(matches!(next.prompts()[0].messages.last().expect("waking result").parts.as_ref(),
+        [Part::ToolOutput { id, output, is_error: false }] if *id == call && output.ends_with(b"person: waking line")));
+    assert_eq!(next.turns()[0].sequence, 2);
+    assert_eq!(next.turn_metadata()[0].1, Some(Token::new(0)));
 }

@@ -30,6 +30,8 @@ pub enum FeedbackRefusal {
     /// The complete text exceeds the caller's cap or checked length arithmetic.
     /// No partial evidence or replacement operation result is constructed.
     TooLarge,
+    /// A withheld own wait has no concrete result to render.
+    Withheld,
 }
 
 /// Consume a semantic terminal into complete canonical feedback. This is a pure
@@ -46,11 +48,13 @@ pub fn feedback(returned: Returned, max_bytes: u64) -> Result<Feedback, Feedback
             let (text, error) = answer.into_parts();
             return unchanged(text, error, max_bytes);
         }
-        Returned::Answered { text, cut: 0, stop: Stop::EndTurn } | Returned::Crossed { text } => {
+        Returned::Answered { text, cut: 0, stop: Stop::EndTurn }
+        | Returned::Crossed { text }
+        | Returned::Waited { text } => {
             return unchanged(text, false, max_bytes);
         }
-        returned @ (Returned::Waiting
-        | Returned::HostUnknown
+        Returned::Withheld => return Err(FeedbackRefusal::Withheld),
+        returned @ (Returned::HostUnknown
         | Returned::HostTooLarge { .. }
         | Returned::HostReportedTooLarge
         | Returned::HostRejected(_)
@@ -117,7 +121,8 @@ pub fn feedback_worst_case(limits: &run::Limits) -> Option<u64> {
 
 fn render(text: &mut Text, returned: &Returned) {
     match returned {
-        Returned::Waiting => text.put(b"waiting"),
+        Returned::Withheld => unreachable!("withheld results are routed without feedback"),
+        Returned::Waited { text: note } => text.put(note),
         Returned::Crossed { text: note } => text.put(note),
         Returned::HostAnswered(answer) => text.put(answer.text()),
         Returned::HostUnknown => text.put(b"host-unknown"),

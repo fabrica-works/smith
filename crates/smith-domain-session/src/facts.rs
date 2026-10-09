@@ -102,6 +102,8 @@ pub enum FactKind {
     },
     /// The delegated call was withdrawn.
     DelegateCancelled { opener: Token },
+    /// The opener parked its own wait without a historical result.
+    DelegateWithheld { opener: Token },
     /// The session yielded.
     Yielded { opener: Token, stop: Yield },
     /// A completion came back, and used one turn and `usage`.

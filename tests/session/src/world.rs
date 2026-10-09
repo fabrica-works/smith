@@ -1884,7 +1884,9 @@ impl World {
             },
             agent::FactKind::DelegateStarted { .. } => &mut told.delegates_started,
             agent::FactKind::DelegateAnswered { .. } => &mut told.delegates_answered,
-            agent::FactKind::DelegateCancelled { .. } => &mut told.delegates_cancelled,
+            agent::FactKind::DelegateCancelled { .. } | agent::FactKind::DelegateWithheld { .. } => {
+                &mut told.delegates_cancelled
+            }
             agent::FactKind::Yielded { .. } => &mut told.yielded,
             agent::FactKind::Used { .. } => &mut told.used,
             agent::FactKind::Ended { .. } => &mut told.ended,
@@ -1980,6 +1982,7 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
     match event {
         agent::Event::Answered { owner, .. }
         | agent::Event::AnsweredAndYield { owner, .. }
+        | agent::Event::AnswerWithheld { owner }
         | agent::Event::AnswerCancelled { owner, .. } => Some(*owner),
         agent::Event::Open { .. }
         | agent::Event::Continue { .. }
@@ -1996,6 +1999,7 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
 
 fn describe_agent_event(event: &agent::Event) -> String {
     match event {
+        agent::Event::AnswerWithheld { owner } => format!("answer withheld {}", owner.raw()),
         agent::Event::AnswerCancelled { owner, spent, .. } => format!("answer cancelled {} {spent}", owner.raw()),
         agent::Event::Open { opener, opening } => format!("open {} {opening:?}", opener.raw()),
         agent::Event::Answered { owner, text, error, spent, .. } => {

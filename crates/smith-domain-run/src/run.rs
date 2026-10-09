@@ -129,8 +129,6 @@ pub(crate) struct Run {
     resumed: bool,
     /// Admitted messages and the outstanding offered/read fence.
     inbox: Inbox,
-    /// A Wait call has returned; the next main yield must park if the inbox is empty.
-    wait_requested: bool,
     /// Activation-local number of main turns told to the host.
     turns: u32,
     /// Last historical session turn sequence, including a restored prefix.
@@ -148,8 +146,8 @@ enum State {
     Stopping { reply_to: ReplyTo, main: Id<Conversation>, failure: Failure },
     /// Its main conversation is at work.
     Working { reply_to: ReplyTo, main: Id<Conversation> },
-    /// Actual settled main yield after wait; wall and idle timers remain distinct.
-    Waiting { reply_to: ReplyTo, main: Id<Conversation>, until: Time },
+    /// Main wait remains unanswered; wall and idle timers remain distinct.
+    Waiting { reply_to: ReplyTo, main: Id<Conversation>, call: Token, until: Time },
     /// Its scalar budget is exhausted, and main keeps its turn in flight.
     Over { reply_to: ReplyTo, main: Id<Conversation>, exhausted: Exhausted },
     /// It ends with `ending` once its main conversation has ended.
@@ -301,7 +299,6 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         transcript,
         resumed,
         inbox: Inbox::new(&env.limits),
-        wait_requested: false,
         turns: 0,
         sequence: None,
     };
@@ -366,15 +363,9 @@ pub(crate) fn message(
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
         State::Awaiting { reply_to, main, until: _ } => open(run, &mut domain.conversations, reply_to, main, env, out),
-        State::Waiting { reply_to, main, until: _ } => {
-            let conversation = domain.conversations.get(main).expect("waiting main remains alive");
-            let peer = match conversation.phase {
-                Phase::Running { peer } => peer,
-                Phase::Pending | Phase::Opening | Phase::Unwanted | Phase::Closing | Phase::Closed => {
-                    unreachable!("waiting requires an actual yielded running main")
-                }
-            };
-            continue_messages(run, reply_to, main, peer, &env.limits, out)
+        State::Waiting { reply_to, main, call, until: _ } => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Waited { text: prompt::waited() } });
+            State::Working { reply_to, main }
         }
         state @ (State::Preparing { .. } | State::Working { .. }) => state,
         State::Stopping { .. } | State::Over { .. } | State::Winding { .. } | State::Closed => {
@@ -393,7 +384,6 @@ fn continue_messages(
     out: &mut Queue<Request>,
 ) -> State {
     let text = run.inbox.offer(limits).expect("an admitted message fits an offer");
-    run.wait_requested = false;
     say(reply_to, main, peer, text, out)
 }
 
@@ -444,7 +434,8 @@ pub(crate) fn park(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
             finished(Ending::Parked, run.spent, run.turns),
             out,
         ),
-        State::Waiting { reply_to, main, until: _ } => {
+        State::Waiting { reply_to, main, call, until: _ } => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Withheld });
             assert!(!run.inbox.has_queued(), "an admitted wake cancels idle expiry");
             wind_down(&mut domain.conversations, reply_to, main, Ending::Parked, out)
         }
@@ -523,9 +514,13 @@ pub(crate) fn cancel(domain: &mut Domain, run: Token, out: &mut Queue<Request>) 
             stop(run, conversations, reply_to, main, Failure::Cancelled, out)
         }
         State::Preparing { reply_to, main, step: _ } => State::Stopping { reply_to, main, failure: Failure::Cancelled },
-        State::Working { reply_to, main }
-        | State::Waiting { reply_to, main, until: _ }
-        | State::Over { reply_to, main, exhausted: _ } => wind_down(conversations, reply_to, main, cancelled, out),
+        State::Waiting { reply_to, main, call, until: _ } => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Cancelled });
+            wind_down(conversations, reply_to, main, cancelled, out)
+        }
+        State::Working { reply_to, main } | State::Over { reply_to, main, exhausted: _ } => {
+            wind_down(conversations, reply_to, main, cancelled, out)
+        }
         // How the run ends is decided already.
         State::Stopping { reply_to, main, failure } => State::Stopping { reply_to, main, failure },
         State::Winding { reply_to, ending } => State::Winding { reply_to, ending },
@@ -590,15 +585,6 @@ pub(crate) fn yielded(
             assert!(conversation.calls == 0, "a main yield follows every actual call terminal");
             match !run.inbox.has_queued() {
                 false => continue_messages(run, reply_to, main, peer, &env.limits, out),
-                true if run.wait_requested => {
-                    run.wait_requested = false;
-                    out.push(Request::Waiting { host_run: run.host_name, read: run.inbox.fence() });
-                    if run.charter.waiting == Duration::ZERO {
-                        wind_down(conversations, reply_to, main, Ending::Parked, out)
-                    } else {
-                        State::Waiting { reply_to, main, until: env.now.saturating_add(run.charter.waiting) }
-                    }
-                }
                 true => match nudge(run, stop, &env.limits) {
                     Ok(()) => say(reply_to, main, peer, prompt::nudge(stop, run.nudges, env.limits.nudges), out),
                     Err(failure) => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
@@ -733,9 +719,11 @@ fn hard_stop(
     out: &mut Queue<Request>,
 ) -> State {
     match state {
-        State::Working { reply_to, main }
-        | State::Over { reply_to, main, .. }
-        | State::Waiting { reply_to, main, .. } => {
+        State::Working { reply_to, main } | State::Over { reply_to, main, .. } => {
+            wind_down(conversations, reply_to, main, Ending::Failed(failure), out)
+        }
+        State::Waiting { reply_to, main, call, .. } => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Cancelled });
             wind_down(conversations, reply_to, main, Ending::Failed(failure), out)
         }
         State::Winding { reply_to, ending } => {
@@ -892,11 +880,13 @@ pub(crate) fn delegated(
             let serving = Serving { reply_to, main, conversation: id, over: Some(exhausted), made };
             serve(domain, env, run_id, serving, ask, out)
         }
-        State::Awaiting { .. }
-        | State::Preparing { .. }
-        | State::Stopping { .. }
-        | State::Waiting { .. }
-        | State::Closed => {
+        State::Waiting { reply_to, main, call, until } => {
+            assert!(id != main, "a withheld wait blocks main's next call");
+            let serving = Serving { reply_to, main, conversation: id, over: None, made };
+            let _: State = serve(domain, env, run_id, serving, ask, out);
+            State::Waiting { reply_to, main, call, until }
+        }
+        State::Awaiting { .. } | State::Preparing { .. } | State::Stopping { .. } | State::Closed => {
             unreachable!("a run's conversation calls only while the run works or winds down")
         }
     };
@@ -927,11 +917,24 @@ fn serve(
     let Serving { reply_to, main, conversation, over, made } = serving;
     match ask {
         Ask::Wait => {
-            let result = if main == conversation && run.charter.grants.wait {
-                run.wait_requested = true;
-                Returned::Waiting
-            } else {
+            let result = if main != conversation || !run.charter.grants.wait {
                 Returned::Refused { refusal: AskRefusal::NotGranted }
+            } else if over.is_some() {
+                Returned::Refused { refusal: AskRefusal::Over }
+            } else if run.inbox.has_queued() {
+                Returned::Waited { text: prompt::waited() }
+            } else {
+                out.push(Request::Waiting { host_run: run.host_name, read: run.inbox.fence() });
+                if run.charter.waiting == Duration::ZERO {
+                    out.push(Request::Return { spent: 0, call: made.call, result: Returned::Withheld });
+                    return wind_down(conversations, reply_to, main, Ending::Parked, out);
+                }
+                return State::Waiting {
+                    reply_to,
+                    main,
+                    call: made.call,
+                    until: env.now.saturating_add(run.charter.waiting),
+                };
             };
             out.push(Request::Return { spent: 0, call: made.call, result });
         }
@@ -968,6 +971,24 @@ fn serve(
 
 pub(crate) fn withdraw(domain: &mut Domain, conversation: Token, call: Token, out: &mut Queue<Request>) {
     let conversation = Id::<Conversation>::from_token(conversation);
+    if let Some(peer) = domain.conversations.get(conversation) {
+        let id = peer.run;
+        let run = domain.runs.get_mut(id).expect("conversation retains run");
+        let waiting = match run.state {
+            State::Waiting { call: held, .. } => held == call,
+            State::Preparing { .. }
+            | State::Awaiting { .. }
+            | State::Stopping { .. }
+            | State::Working { .. }
+            | State::Over { .. }
+            | State::Winding { .. }
+            | State::Closed => false,
+        };
+        if waiting {
+            park(domain, id, out);
+            return;
+        }
+    }
     // A withdraw of a call that has returned is stale.
     let Some(id) = domain.calls.find(conversation, call) else {
         return;
@@ -1086,7 +1107,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
         State::Working { reply_to, main }
-        | State::Waiting { reply_to, main, until: _ }
+        | State::Waiting { reply_to, main, call: _, until: _ }
         | State::Over { reply_to, main, exhausted: _ } => {
             assert!(main == id, "a conversation with no asker is main");
             answer(reply_to, ending(end, run.spent, run.turns), run.inbox.fence(), out)
@@ -1115,7 +1136,10 @@ pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request
         State::Awaiting { reply_to, main, until: _ } => {
             unopened(run, conversations, reply_to, main, finished(Ending::Parked, run.spent, run.turns), out)
         }
-        State::Waiting { reply_to, main, until: _ } => wind_down(conversations, reply_to, main, Ending::Parked, out),
+        State::Waiting { reply_to, main, call, until: _ } => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Withheld });
+            wind_down(conversations, reply_to, main, Ending::Parked, out)
+        }
         State::Preparing { reply_to, main, step: _ } => State::Stopping { reply_to, main, failure },
         State::Working { reply_to, main } => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
         // It was past its budget first.

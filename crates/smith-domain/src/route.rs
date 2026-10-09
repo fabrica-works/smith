@@ -213,6 +213,7 @@ pub(crate) fn deliver(domain: &mut Domain, env: &Env<Limits>, handoff: Handoff) 
                 Due::Yielding { feedback, spent } => {
                     session::Event::AnsweredAndYield { owner, text: feedback.text, error: feedback.error, spent }
                 }
+                Due::Withheld => session::Event::AnswerWithheld { owner },
                 Due::Cancelled { spent } => session::Event::AnswerCancelled { owner, spent },
                 Due::Waiting => unreachable!("a call is on the ready list once the run has returned it"),
             }
@@ -457,7 +458,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             match &flight.answer {
                 Due::Waiting => {}
                 // The answer won the race: the run has returned it.
-                Due::Answered { .. } | Due::Yielding { .. } | Due::Cancelled { .. } => return,
+                Due::Answered { .. } | Due::Yielding { .. } | Due::Withheld | Due::Cancelled { .. } => return,
             }
             let conversation = domain.peers.get(flight.peer).expect("a peer outlives its calls").conversation;
             run::Event::Withdraw { conversation, call: owner }
@@ -547,10 +548,12 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             let flight = domain.flights.get_mut(&call).expect("the run returns a call in flight");
             if flight.withdrawn && result == run::Returned::Cancelled {
                 flight.answer = Due::Cancelled { spent };
+            } else if result == run::Returned::Withheld {
+                flight.answer = Due::Withheld;
             } else {
                 let yields = match &result {
-                    run::Returned::Crossed { .. } => true,
-                    run::Returned::Waiting
+                    run::Returned::Crossed { .. } | run::Returned::Waited { .. } => true,
+                    run::Returned::Withheld
                     | run::Returned::HostAnswered(_)
                     | run::Returned::HostUnknown
                     | run::Returned::HostTooLarge { .. }

@@ -184,6 +184,7 @@ impl World {
             }
             session::Event::Answered { owner, .. }
             | session::Event::AnsweredAndYield { owner, .. }
+            | session::Event::AnswerWithheld { owner }
             | session::Event::AnswerCancelled { owner, .. } => {
                 let position =
                     self.delegated.iter().position(|pending| pending == owner).expect("one terminal per delegate");

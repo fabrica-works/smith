@@ -21,7 +21,7 @@ fn every_run_call_terminal_has_canonical_feedback() {
     let refusal = run::DeliveryRefusal::new(None, bytes(b"review")).expect("refusal");
     let host = run::HostAnswer::new(bytes(b"host text"), false).expect("host text");
     let rows = [
-        (run::Returned::Waiting, "waiting", false),
+        (run::Returned::Waited { text: Box::from(b"messages arrived".as_slice()) }, "messages arrived", false),
         (run::Returned::Crossed { text: b"messages came".as_slice().into() }, "messages came", false),
         (run::Returned::HostAnswered(host), "host text", false),
         (

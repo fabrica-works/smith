@@ -28,6 +28,11 @@ pub(crate) fn crossed() -> Box<[u8]> {
     skein_lib::bytes::copy_of(b"Finish was not accepted because messages arrived. Read them before finishing.")
 }
 
+/// The retained wait settles only when work has arrived.
+pub(crate) fn waited() -> Box<[u8]> {
+    skein_lib::bytes::copy_of(b"Messages arrived. Read them before continuing.")
+}
+
 /// A brief has work when any literal title or text is present.
 pub(crate) fn has_brief(charter: &Charter) -> bool {
     for section in &charter.brief.sections {
@@ -144,6 +149,9 @@ fn render_system(
         text.put(b"\n");
     }
     if main {
+        if charter.grants.wait {
+            text.put(b"Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n");
+        }
         render_finishing(text, &charter.outcome, !found.checks.is_empty());
         if let Some(spec) = &charter.grants.deliver {
             text.put(b"\n## Delivery\n\nYou may call `deliver` during the run, then continue. Its opaque fields are: ");

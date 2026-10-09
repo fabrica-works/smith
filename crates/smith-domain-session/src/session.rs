@@ -274,6 +274,8 @@ pub(crate) enum Slot {
     Running { run: Id<Run> },
     /// The call has its result.
     Done { result: Block },
+    /// The opener parks this call without supplying a historical result.
+    Withheld,
 }
 
 /// A tool call running for a session, named by its own token: the call at
@@ -1425,7 +1427,7 @@ fn finish_tools(
     for slot in tools.slots.into_boxed() {
         match slot {
             Slot::Done { result } => results.push(result).expect("a result for every slot"),
-            Slot::Running { .. } => unreachable!("no run is in flight"),
+            Slot::Running { .. } | Slot::Withheld => unreachable!("ordinary tooling has a result for every call"),
         }
     }
     let results = Message { role: Role::User, content: results.into_boxed() };
@@ -1499,21 +1501,31 @@ fn resumed(
     if conversation.transcript.room() == 0 || !charge(conversation, cost, &env.limits) {
         return finish(End::TranscriptFull);
     }
-    let content = unrun(conversation, text, &mut []);
+    let content = unrun(conversation, text, &mut [], false);
     conversation.transcript.push(Message { role: Role::User, content }).expect("checked for room above");
     call(conversation, id, 0, env, out)
 }
 
 /// The opener's message after one result per call of the saved assistant tail.
 /// Unanswered calls become `NotRun`; host answers keep their original positions.
-fn unrun(conversation: &Conversation, text: Box<[u8]>, answered: &mut [crate::record::Answered]) -> Box<[Block]> {
+fn unrun(
+    conversation: &Conversation,
+    text: Box<[u8]>,
+    answered: &mut [crate::record::Answered],
+    waiting: bool,
+) -> Box<[Block]> {
     let message = conversation.transcript.last().expect("a yielded session's transcript ends with its answer");
     let (calls, _) = tally(&message.content);
     let mut content = List::with_capacity(calls.saturating_add(1));
+    let mut waking = Some(text);
     for (position, block) in message.content.iter().enumerate() {
         match block {
-            Block::ToolCall { id, .. } => {
-                let mut result = Returned::NotRun;
+            Block::ToolCall { id, name, .. } => {
+                let mut result = if waiting && name.as_ref() == b"wait" {
+                    Returned::Text { text: waking.take().expect("one withheld wait"), error: false, replay: None }
+                } else {
+                    Returned::NotRun
+                };
                 for answer in answered.iter_mut() {
                     if usize::try_from(answer.origin.position).expect("validated position") == position {
                         result = mem::replace(&mut answer.result, Returned::NotRun);
@@ -1525,7 +1537,9 @@ fn unrun(conversation: &Conversation, text: Box<[u8]>, answered: &mut [crate::re
             Block::Opaque { .. } | Block::Text { .. } | Block::Refusal { .. } | Block::ToolResult { .. } => {}
         }
     }
-    content.push(Block::Text { text, replay: None }).expect("room for the message after the results");
+    if let Some(text) = waking {
+        content.push(Block::Text { text, replay: None }).expect("room for the message after the results");
+    }
     content.into_boxed()
 }
 
@@ -1628,7 +1642,7 @@ fn cancel_tools(
                 By::Tools => {}
                 By::Opener => out.push(Request::Withdraw { owner: run.token() }),
             },
-            Slot::Done { .. } => {}
+            Slot::Done { .. } | Slot::Withheld => {}
         }
     }
     let running = tools.running;
@@ -2316,13 +2330,20 @@ pub(crate) fn open(
     open_admitted(domain, env, opener, conversation, authority, out, mark);
 }
 
+/// The restored opening is either fresh user text or the result of the last own wait.
+#[derive(Debug)]
+enum Resumed {
+    Settled,
+    WaitWithheld { id: Box<[u8]> },
+}
+
 fn validate_transcript(
     conversation: &Conversation,
     transcript: &crate::record::Transcript,
     answered: &[crate::record::Answered],
     dialect: u32,
     limits: &Limits,
-) -> Result<(u32, u64), crate::record::Refusal> {
+) -> Result<(u32, u64, Resumed), crate::record::Refusal> {
     use crate::record::{Refusal, VERSION};
     if transcript.version != VERSION {
         return Err(Refusal::Version);
@@ -2341,6 +2362,7 @@ fn validate_transcript(
     let mut bytes = conversation.bytes;
     let mut sequence = 0_u32;
     let mut previous: Option<&Message> = None;
+    let mut withheld: Option<&[u8]> = None;
     for turn in &transcript.turns {
         if turn.version != VERSION {
             return Err(Refusal::Version);
@@ -2366,7 +2388,27 @@ fn validate_transcript(
             }
             recorded_shape(message, limits)?;
             validate_recorded(message)?;
-            validate_link(previous, message)?;
+            match withheld {
+                Some(id) => {
+                    validate_wait_result(message, id)?;
+                    withheld = None;
+                }
+                None => {
+                    let missing = validate_link(previous, message)?;
+                    if let Some(position) = missing {
+                        let assistant = previous.expect("a missing result follows its assistant call");
+                        withheld = match &assistant.content[usize::try_from(position).expect("u32 fits")] {
+                            Block::ToolCall { id, .. } => Some(id),
+                            Block::Text { .. }
+                            | Block::Opaque { .. }
+                            | Block::Refusal { .. }
+                            | Block::ToolResult { .. } => {
+                                unreachable!("validation returns a call position")
+                            }
+                        };
+                    }
+                }
+            }
             previous = Some(message);
             if message.role == Role::Assistant {
                 assistants = assistants.saturating_add(1);
@@ -2414,7 +2456,35 @@ fn validate_transcript(
     if count.checked_add(3).ok_or(Refusal::TooLarge)? > limits.messages || bytes > limits.session_bytes {
         return Err(Refusal::TooLarge);
     }
-    Ok((sequence, bytes))
+    let resumed = match withheld {
+        Some(id) => Resumed::WaitWithheld { id: skein_lib::bytes::copy_of(id) },
+        None => match tail.role {
+            Role::User => Resumed::Settled,
+            Role::Assistant => {
+                let mut wait = None;
+                for block in &tail.content {
+                    match block {
+                        Block::ToolCall { id, name, .. } if name.as_ref() == b"wait" => {
+                            if wait.is_some() {
+                                return Err(Refusal::Malformed);
+                            }
+                            wait = Some(id);
+                        }
+                        Block::ToolCall { .. }
+                        | Block::Text { .. }
+                        | Block::Opaque { .. }
+                        | Block::Refusal { .. }
+                        | Block::ToolResult { .. } => {}
+                    }
+                }
+                match wait {
+                    Some(id) => Resumed::WaitWithheld { id: id.clone() },
+                    None => Resumed::Settled,
+                }
+            }
+        },
+    };
+    Ok((sequence, bytes, resumed))
 }
 
 fn restore(
@@ -2425,14 +2495,25 @@ fn restore(
     limits: &Limits,
 ) -> Result<u32, crate::record::Refusal> {
     use crate::record::Refusal;
-    let (sequence, mut bytes) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
+    let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
     let prompt = conversation.transcript.get(0).expect("admission held the initial prompt");
     let prompt_charge = content_cost(&prompt.content).ok_or(Refusal::TooLarge)?;
     let last =
         transcript.turns.last().expect("validated nonempty history").messages.last().expect("validated nonempty turn");
+    let waiting = match &resumed {
+        Resumed::Settled => false,
+        Resumed::WaitWithheld { .. } => true,
+    };
     let added = match last.role {
-        Role::Assistant => unrun_cost(&last.content, initial_text(prompt), &answered).ok_or(Refusal::TooLarge)?,
-        Role::User => prompt_charge,
+        Role::Assistant => {
+            unrun_cost(&last.content, initial_text(prompt), &answered, waiting).ok_or(Refusal::TooLarge)?
+        }
+        Role::User => match &resumed {
+            Resumed::Settled => prompt_charge,
+            Resumed::WaitWithheld { id } => {
+                prompt_charge.checked_add(len(id).ok_or(Refusal::TooLarge)?).ok_or(Refusal::TooLarge)?
+            }
+        },
     };
     // The yielded tail needs one concrete result per call and copied ids.
     // Account all of them before moving history or allocating waking content.
@@ -2464,9 +2545,24 @@ fn restore(
                     unreachable!("admission constructs one text block")
                 }
             };
-            unrun(conversation, text, &mut answered)
+            unrun(conversation, text, &mut answered, waiting)
         }
-        Role::User => prompt.content,
+        Role::User => match resumed {
+            Resumed::Settled => prompt.content,
+            Resumed::WaitWithheld { id } => {
+                let mut parts = prompt.content.into_iter();
+                let text = match parts.next().expect("admission's initial text") {
+                    Block::Text { text, .. } => text,
+                    Block::Refusal { .. }
+                    | Block::Opaque { .. }
+                    | Block::ToolCall { .. }
+                    | Block::ToolResult { .. } => {
+                        unreachable!("admission constructs one text block")
+                    }
+                };
+                Box::new([Block::ToolResult { id, result: Returned::Text { text, error: false, replay: None } }])
+            }
+        },
     };
     conversation.transcript.push(Message { role: Role::User, content }).expect("one prompt reserved");
     conversation.bytes = bytes;
@@ -2485,9 +2581,12 @@ fn initial_text(prompt: &Message) -> &[u8] {
 /// The waking user message plus every saved call's result or `NotRun`.
 /// Counts the eventual concrete blocks and copied provider ids without owning
 /// any of them, so a refusal allocates no tail-sized scratch.
-fn unrun_cost(content: &[Block], text: &[u8], answered: &[crate::record::Answered]) -> Option<u64> {
+fn unrun_cost(content: &[Block], text: &[u8], answered: &[crate::record::Answered], waiting: bool) -> Option<u64> {
     let block = u64::try_from(size_of::<Block>()).ok()?;
-    let mut cost = block.checked_add(len(text)?)?;
+    let mut cost = len(text)?;
+    if !waiting {
+        cost = cost.checked_add(block)?;
+    }
     for (position, part) in content.iter().enumerate() {
         match part {
             Block::ToolCall { id, .. } => {
@@ -2685,6 +2784,43 @@ pub(crate) fn delegate_ended(
     conclude(domain, env, id, out, mark);
 }
 
+/// Release the live delegated right while retaining its unanswered historical call.
+/// The run sends this before closing main; no provider request or yield is emitted.
+pub(crate) fn delegate_withheld(domain: &mut Domain, env: &Env<Limits>, owner: Token, out: &mut Queue<Request>) {
+    let Some(run) = domain.calls.runs.get(Id::from_token(owner)) else {
+        return;
+    };
+    if run.ended || run.by != By::Opener {
+        return;
+    }
+    let mark = out.len();
+    let Run { session: id, slot, credit, metadata, .. } = ended_run(&mut domain.calls.runs, Id::from_token(owner));
+    let session = domain.sessions.get_mut(id).expect("a delegated call retains its session");
+    let conversation = &mut session.conversation;
+    conversation.reserved = conversation.reserved.checked_sub(credit).expect("withheld call owns its result credit");
+    domain.facts.push_call(env.now, FactKind::DelegateWithheld { opener: conversation.opener }, &metadata);
+    let state = mem::replace(&mut session.state, State::Closed);
+    session.state = match state {
+        State::Tooling { mut tools } => {
+            tools.running = tools.running.checked_sub(1).expect("withheld call was running");
+            assert!(tools.running == 0, "the run's wait is a serialized writer");
+            *tools.slots.get_mut(slot).expect("withheld call's slot") = Slot::Withheld;
+            conversation.closing_tools = Some(tools);
+            State::Yielded
+        }
+        State::Closing { end, waiting } => {
+            if let Some(tools) = conversation.closing_tools.as_mut() {
+                *tools.slots.get_mut(slot).expect("withheld call's closing slot") = Slot::Withheld;
+            }
+            settled(end, waiting)
+        }
+        State::Calling { .. } | State::Backoff { .. } | State::Resting { .. } | State::Yielded | State::Closed => {
+            unreachable!("withheld terminal settles an in-flight opener call")
+        }
+    };
+    conclude(domain, env, id, out, mark);
+}
+
 fn clear_pending(conversation: &mut Conversation) {
     conversation.recording.pending = None;
 }
@@ -2719,6 +2855,7 @@ fn finish_closing(conversation: &mut Conversation) {
     for slot in tools.slots.into_boxed() {
         match slot {
             Slot::Done { result } => results.push(result).expect("one slot per call"),
+            Slot::Withheld => {}
             Slot::Running { .. } => unreachable!("all closing terminal responses have arrived"),
         }
     }
@@ -2732,15 +2869,17 @@ fn finish_closing(conversation: &mut Conversation) {
             Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => {}
         }
     }
-    conversation
-        .transcript
-        .push(Message { role: Role::User, content: results.into_boxed() })
-        .expect("tool use reserved its result message");
+    if !results.is_empty() {
+        conversation
+            .transcript
+            .push(Message { role: Role::User, content: results.into_boxed() })
+            .expect("tool use reserved its result message");
+    }
 }
 
 /// Result ids must resolve to the preceding assistant's calls, in call order.
 /// A yielded assistant may be the tail; resuming supplies its `NotRun` results.
-fn validate_link(previous: Option<&Message>, message: &Message) -> Result<(), crate::record::Refusal> {
+fn validate_link(previous: Option<&Message>, message: &Message) -> Result<Option<u32>, crate::record::Refusal> {
     use crate::record::Refusal;
     let Some(previous) = previous else {
         if message.role != Role::User {
@@ -2752,7 +2891,7 @@ fn validate_link(previous: Option<&Message>, message: &Message) -> Result<(), cr
                 Block::ToolCall { .. } | Block::ToolResult { .. } => return Err(Refusal::Malformed),
             }
         }
-        return Ok(());
+        return Ok(None);
     };
     match message.role {
         Role::Assistant => {
@@ -2781,55 +2920,84 @@ fn validate_link(previous: Option<&Message>, message: &Message) -> Result<(), cr
                 }
             }
         }
-        Role::User => {
-            let mut calls = previous.content.iter();
-            let mut answered = 0_u32;
-            for block in &message.content {
-                match block {
-                    Block::ToolResult { id, .. } => {
-                        if previous.role != Role::Assistant {
-                            return Err(Refusal::Malformed);
+        Role::User => return validate_results(previous, message),
+    }
+    Ok(None)
+}
+
+/// A resumed withheld result must appear before the next assistant turn.
+fn validate_wait_result(message: &Message, wait: &[u8]) -> Result<(), crate::record::Refusal> {
+    if message.role != Role::User {
+        return Err(crate::record::Refusal::Malformed);
+    }
+    let mut found = false;
+    for block in &message.content {
+        match block {
+            Block::ToolResult { id, .. } if id.as_ref() == wait && !found => found = true,
+            Block::ToolResult { .. } | Block::ToolCall { .. } => return Err(crate::record::Refusal::Malformed),
+            Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } => {}
+        }
+    }
+    if !found {
+        return Err(crate::record::Refusal::Malformed);
+    }
+    Ok(())
+}
+
+fn validate_results(previous: &Message, message: &Message) -> Result<Option<u32>, crate::record::Refusal> {
+    use crate::record::Refusal;
+    let mut next = 0_u32;
+    let mut actual = next_result(&message.content, &mut next)?;
+    let mut withheld = None;
+    if previous.role == Role::Assistant {
+        for (position, block) in previous.content.iter().enumerate() {
+            match block {
+                Block::ToolCall { id, name, .. } => {
+                    let matches = match actual {
+                        Some(position) => {
+                            result_id(&message.content[usize::try_from(position).expect("u32 fits")]) == id.as_ref()
                         }
-                        let mut expected = None;
-                        for candidate in calls.by_ref() {
-                            match candidate {
-                                Block::ToolCall { id, .. } => {
-                                    expected = Some(id);
-                                    break;
-                                }
-                                Block::Text { .. }
-                                | Block::Refusal { .. }
-                                | Block::Opaque { .. }
-                                | Block::ToolResult { .. } => {}
-                            }
-                        }
-                        if expected != Some(id) {
-                            return Err(Refusal::Malformed);
-                        }
-                        answered = answered.saturating_add(1);
+                        None => false,
+                    };
+                    if matches {
+                        actual = next_result(&message.content, &mut next)?;
+                    } else if name.as_ref() == b"wait" && withheld.is_none() {
+                        withheld = Some(u32::try_from(position).or(Err(Refusal::TooLarge))?);
+                    } else {
+                        return Err(Refusal::Malformed);
                     }
-                    Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } => {}
-                    Block::ToolCall { .. } => return Err(Refusal::Malformed),
                 }
-            }
-            let mut expected = 0_u32;
-            if previous.role == Role::Assistant {
-                for block in &previous.content {
-                    match block {
-                        Block::ToolCall { .. } => expected = expected.saturating_add(1),
-                        Block::Text { .. }
-                        | Block::Refusal { .. }
-                        | Block::Opaque { .. }
-                        | Block::ToolResult { .. } => {}
-                    }
-                }
-            }
-            if answered != expected {
-                return Err(Refusal::Malformed);
+                Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => {}
             }
         }
     }
-    Ok(())
+    if actual.is_some() {
+        return Err(Refusal::Malformed);
+    }
+    Ok(withheld)
+}
+
+fn result_id(block: &Block) -> &[u8] {
+    match block {
+        Block::ToolResult { id, .. } => id,
+        Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolCall { .. } => {
+            unreachable!("next_result returns a result position")
+        }
+    }
+}
+
+fn next_result(blocks: &[Block], next: &mut u32) -> Result<Option<u32>, crate::record::Refusal> {
+    let begin = *next;
+    let end = u32::try_from(blocks.len()).or(Err(crate::record::Refusal::TooLarge))?;
+    for position in begin..end {
+        *next = position.checked_add(1).ok_or(crate::record::Refusal::TooLarge)?;
+        match &blocks[usize::try_from(position).expect("u32 fits")] {
+            Block::ToolResult { .. } => return Ok(Some(position)),
+            Block::ToolCall { .. } => return Err(crate::record::Refusal::Malformed),
+            Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } => {}
+        }
+    }
+    Ok(None)
 }
 
 fn recorded_shape(message: &Message, limits: &Limits) -> Result<(), crate::record::Refusal> {

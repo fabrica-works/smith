@@ -2497,133 +2497,98 @@ fn opaque_fifo_wakes_waiting_and_read_advances_only_on_main_turn() {
     let mut h = Harness::new(LIMITS);
     let (run, conversation) = h.running(1, 9);
     let call = Token::new(20);
-    let made = crate::CallName { activation: 1, completion: 1, position: 0 };
+    let wait = Event::Delegated {
+        conversation,
+        call,
+        name: crate::CallName { activation: 1, completion: 1, position: 0 },
+        ask: Ask::Wait,
+        deadline: Time::from_nanos(u64::MAX),
+    };
+    assert_eq!(h.step(wait).as_ref(), &[Request::Waiting { host_run: Token::new(1), read: None }]);
+    for (name, text) in [(0_u64, b"first".as_slice()), (99_u64, b"second".as_slice()), (7_u64, b"third".as_slice())] {
+        let got = h.step(Event::Message { run, name: Token::new(name), label: bytes(b"person"), text: bytes(text) });
+        if name == 0 {
+            assert_eq!(got.as_ref(), &[returned(20, Returned::Waited { text: crate::prompt::waited() })]);
+        } else {
+            assert!(got.is_empty());
+        }
+    }
     assert_eq!(
-        &*h.step(Event::Delegated {
-            conversation,
-            call,
-            name: made,
-            ask: Ask::Wait,
-            deadline: Time::from_nanos(u64::MAX)
-        }),
-        &[Request::Return { spent: 0, call, result: Returned::Waiting }]
-    );
-    assert_eq!(
-        &*h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1 }),
+        h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1 }).as_ref(),
         &[Request::Turn {
             host_run: Token::new(1),
             record: Token::new(50),
             number: 1,
             position: 1,
             read: None,
-            spent: Spend::ZERO
+            spent: Spend::ZERO,
         }]
     );
     assert_eq!(
-        &*h.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"idle") }),
-        &[Request::Waiting { host_run: Token::new(1), read: None }]
+        h.step(end_turn(conversation)).as_ref(),
+        &[Request::Say { peer: Token::new(9), text: bytes(b"person: first\n\nperson: second\n\nperson: third") }]
     );
     assert_eq!(
-        &*h.step(Event::Message { label: bytes(b"person"), run, name: Token::new(0), text: bytes(b"first") }),
-        &[Request::Say { peer: Token::new(9), text: bytes(b"person: first") }]
+        h.step(Event::Turn { conversation, record: Token::new(51), sequence: 2 }).as_ref(),
+        &[Request::Turn {
+            host_run: Token::new(1),
+            record: Token::new(51),
+            number: 2,
+            position: 2,
+            read: Some(Token::new(7)),
+            spent: Spend::ZERO,
+        }]
     );
-    for (name, text) in [(99, b"second".as_slice()), (7, b"third".as_slice())] {
-        assert!(
-            h.step(Event::Message { label: bytes(b"person"), run, name: Token::new(name), text: bytes(text) })
-                .is_empty()
-        );
-    }
-    for (sequence, read, next) in [(2, 0, Some(b"person: second\n\nperson: third".as_slice())), (3, 7, None)] {
-        assert_eq!(
-            &*h.step(Event::Turn { conversation, record: Token::new(u64::from(sequence)), sequence }),
-            &[Request::Turn {
-                host_run: Token::new(1),
-                record: Token::new(u64::from(sequence)),
-                number: sequence,
-                position: sequence,
-                read: Some(Token::new(read)),
-                spent: Spend::ZERO
-            }]
-        );
-        if let Some(text) = next {
-            assert_eq!(
-                &*h.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"done") }),
-                &[Request::Say { peer: Token::new(9), text: bytes(text) }]
-            );
-        }
-    }
-    let wait = Event::Delegated {
-        conversation,
-        call,
-        name: crate::CallName { activation: 1, completion: 4, position: 0 },
-        ask: Ask::Wait,
-        deadline: Time::from_nanos(u64::MAX),
-    };
-    assert_eq!(&*h.step(wait), &[Request::Return { spent: 0, call, result: Returned::Waiting }]);
     assert_eq!(
-        &*h.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"idle") }),
+        h.step(Event::Delegated {
+            conversation,
+            call,
+            name: crate::CallName { activation: 1, completion: 3, position: 0 },
+            ask: Ask::Wait,
+            deadline: Time::from_nanos(u64::MAX),
+        })
+        .as_ref(),
         &[Request::Waiting { host_run: Token::new(1), read: Some(Token::new(7)) }]
     );
     h.after(Duration::from_secs(30));
-    assert_eq!(&*h.fire(), &[Request::Close { peer: Token::new(9) }]);
+    assert_eq!(h.fire().as_ref(), &[returned(20, Returned::Withheld), Request::Close { peer: Token::new(9) }]);
+    h.step(Event::Turn { conversation, record: Token::new(52), sequence: 3 });
     assert_eq!(
         answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
         (1, Answer::Parked { spent: Spend::ZERO, turns: 3 })
-    );
-    assert_eq!(
-        &*h.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(8), text: bytes(b"late") }),
-        &[Request::MessageRefused {
-            host_run: Token::new(1),
-            name: Token::new(8),
-            reason: crate::MessageRefusal::Ending
-        }]
     );
     h.domain.reclaim();
     assert_eq!((h.domain.runs(), h.domain.conversations(), h.domain.calls()), (0, 0, 0));
 }
 
 #[test]
-fn zero_waiting_time_parks_when_main_yields() {
-    let mut harness = Harness::new(LIMITS);
-    let mut policy = charter();
-    policy.waiting = Duration::ZERO;
-    let emitted = harness.start_workspace(70, policy, None);
-    let [Request::Admitted { .. }, Request::Open { conversation, opening }] = emitted.as_ref() else {
-        panic!("zero waiting time is admitted: {emitted:?}");
+fn zero_waiting_time_parks_with_its_wait_result_withheld() {
+    let mut h = Harness::new(LIMITS);
+    let policy = Charter { waiting: Duration::ZERO, ..charter() };
+    let emitted = h.start_workspace(70, policy, None);
+    let [Request::Admitted { .. }, Request::Open { conversation, .. }] = emitted.as_ref() else {
+        panic!("opens");
     };
-    assert!(opening.wait);
     let conversation = *conversation;
-    assert!(harness.step(Event::Started { conversation, peer: Token::new(71) }).is_empty());
-    let call = Token::new(72);
+    h.step(Event::Started { conversation, peer: Token::new(71) });
     assert_eq!(
-        harness
-            .step(Event::Delegated {
-                conversation,
-                call,
-                name: crate::CallName { activation: 1, completion: 1, position: 0 },
-                ask: Ask::Wait,
-                deadline: Time::from_nanos(u64::MAX),
-            })
-            .as_ref(),
-        [Request::Return { spent: 0, call, result: Returned::Waiting }]
+        h.step(Event::Delegated {
+            conversation,
+            call: Token::new(72),
+            name: crate::CallName { activation: 1, completion: 1, position: 0 },
+            ask: Ask::Wait,
+            deadline: EXPIRY,
+        })
+        .as_ref(),
+        &[
+            Request::Waiting { host_run: Token::new(70), read: None },
+            returned(72, Returned::Withheld),
+            Request::Close { peer: Token::new(71) }
+        ]
     );
+    h.step(Event::Turn { conversation, record: Token::new(73), sequence: 1 });
     assert_eq!(
-        harness.step(Event::Turn { conversation, record: Token::new(73), sequence: 1 }).as_ref(),
-        [Request::Turn {
-            host_run: Token::new(70),
-            record: Token::new(73),
-            number: 1,
-            position: 1,
-            read: None,
-            spent: Spend::ZERO
-        }]
-    );
-    assert_eq!(
-        harness.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"idle") }).as_ref(),
-        [Request::Waiting { host_run: Token::new(70), read: None }, Request::Close { peer: Token::new(71) }]
-    );
-    assert_eq!(
-        answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
+        answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
         (70, Answer::Parked { spent: Spend::ZERO, turns: 1 })
     );
 }
@@ -2637,38 +2602,13 @@ fn bounded_message_and_input_at_idle_deadline_preserve_existing_fifo() {
         h.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(5), text: bytes(b"full") })
             .is_empty()
     );
-    assert_eq!(
-        &*h.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"done") }),
-        &[Request::Say { peer: Token::new(9), text: bytes(b"host: full") }]
-    );
-    assert_eq!(
-        &*h.step(Event::Turn { conversation, record: Token::new(40), sequence: 1 }),
-        &[Request::Turn {
-            host_run: Token::new(1),
-            record: Token::new(40),
-            number: 1,
-            position: 1,
-            read: Some(Token::new(5)),
-            spent: Spend::ZERO
-        }]
-    );
-    assert_eq!(
-        &*h.step(Event::Delegated {
-            conversation,
-            call: Token::new(20),
-            name: crate::CallName { activation: 1, completion: 1, position: 0 },
-            ask: Ask::Wait,
-            deadline: Time::from_nanos(u64::MAX),
-        }),
-        &[Request::Return { spent: 0, call: Token::new(20), result: Returned::Waiting }]
-    );
-    assert_eq!(
-        &*h.step(Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"idle") }),
-        &[Request::Waiting { host_run: Token::new(1), read: Some(Token::new(5)) }]
-    );
     h.after(Duration::from_secs(30));
     assert_eq!(
         &*h.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(0), text: bytes(b"wake") }),
+        &[returned(20, Returned::Waited { text: crate::prompt::waited() })]
+    );
+    assert_eq!(
+        h.step(end_turn(conversation)).as_ref(),
         &[Request::Say { peer: Token::new(9), text: bytes(b"host: wake") }]
     );
     assert!(!h.domain.is_due(h.env.now), "same-iteration input cancels idle expiry before fire");
@@ -3043,7 +2983,7 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
         ask: Ask::Wait,
         deadline: EXPIRY,
     };
-    assert_eq!(harness.step(wait).as_ref(), &[returned(91, Returned::Waiting)]);
+    assert_eq!(harness.step(wait).as_ref(), &[returned(91, Returned::Refused { refusal: crate::AskRefusal::Over })]);
     assert_eq!(harness.step(end_turn(main)).as_ref(), &[Request::Close { peer: Token::new(100) }]);
     let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO })).1;
     assert_eq!(answer, failed(Failure::Budget(Exhausted::Spend), Spend { units: BUDGET.spend, ..Spend::ZERO }));

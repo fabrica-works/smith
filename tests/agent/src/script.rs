@@ -114,23 +114,20 @@ pub fn all() -> Box<[Script]> {
         script(
             b"@chat",
             vec![
-                says("Hello from the agent."),
-                calls(vec![call("wait", "{}")]),
-                says("Welcome back."),
-                calls(vec![call("wait", "{}")]),
-                says("Welcome back."),
-                calls(vec![call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Hello from the agent.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
             ],
         ),
         script(
             b"@waiting",
             vec![
-                calls(vec![call("wait", "{}")]),
-                says("Ready for a person."),
-                calls(vec![call("wait", "{}")]),
-                says("Person received."),
-                calls(vec![call("wait", "{}")]),
-                says("Waiting again."),
+                calls(vec![Line::Text { text: b"Ready for a person.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Person received.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Waiting again.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Person received.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Waiting again.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Waiting again.".as_slice().into() }, call("wait", "{}")]),
             ],
         ),
         script(

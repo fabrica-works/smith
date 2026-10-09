@@ -216,7 +216,8 @@ fn exhausted(spent: Dimension) -> run::End {
 pub(crate) const fn failed(returned: &run::Returned) -> bool {
     match returned {
         run::Returned::HostAnswered(answer) => answer.error(),
-        run::Returned::Waiting
+        run::Returned::Waited { .. }
+        | run::Returned::Withheld
         | run::Returned::Crossed { .. }
         | run::Returned::Accepted
         | run::Returned::Delivered(_)

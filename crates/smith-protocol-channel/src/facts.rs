@@ -47,6 +47,7 @@ pub(crate) fn project(fact: &domain::Fact) -> Option<(FactKind, u64)> {
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
             | session::FactKind::DelegateCancelled { .. }
+            | session::FactKind::DelegateWithheld { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
             | session::FactKind::Ended { .. } => None,

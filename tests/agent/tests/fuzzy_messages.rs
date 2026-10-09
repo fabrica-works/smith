@@ -126,7 +126,7 @@ fn cancellation_anchor(seed: u64, fixture: Fixture, late: bool) -> Option<Durati
         .enumerate()
         .find_map(|(index, (at, seen))| {
             let Seen::Completed { parts } = seen else { return None };
-            if !matches!(parts.as_slice(), [skein_fake_llm_domain::api::Part::Text { .. }]) {
+            if !parts.iter().any(|part| matches!(part, skein_fake_llm_domain::api::Part::Text { .. })) {
                 return None;
             }
             let prompt = baseline.messages_seen()[..index]

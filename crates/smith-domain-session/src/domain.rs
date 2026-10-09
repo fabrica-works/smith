@@ -175,6 +175,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
                 out,
             );
         }
+        Event::AnswerWithheld { owner } => session::delegate_withheld(domain, env, owner, out),
         Event::AnswerCancelled { owner, spent } => {
             session::delegate_ended(
                 domain,

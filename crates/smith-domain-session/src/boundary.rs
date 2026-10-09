@@ -69,6 +69,8 @@ pub enum Event {
         /// Inclusive child activation bill, charged once by the live identity.
         spent: u64,
     },
+    /// Parent terminal for its own parked wait; records the real call without supplying a result.
+    AnswerWithheld { owner: Token },
     /// Parent terminal acknowledging Withdraw. Its current delegated identity
     /// settles exactly once and releases its reserved result space. A withdrawn
     /// child still reports its activation bill; stale repeats remain inert.

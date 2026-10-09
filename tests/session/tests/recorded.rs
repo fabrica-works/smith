@@ -939,3 +939,77 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     assert_eq!(world.turns.len(), 3);
     world.close();
 }
+
+#[test]
+fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
+    use smith_domain_tools::Effect;
+    for earlier in [false, true] {
+        let mut first = World::new(27, 256);
+        let mut spec = opening(None, 100);
+        spec.spec.delegated = Box::new([llm::Descriptor { ticket: Token::new(19), effect: Effect::Write }]);
+        first.open(spec);
+        let make = |id: &[u8], name: &[u8]| llm::Block::ToolCall {
+            id: id.into(),
+            name: name.into(),
+            input: b"{}".as_slice().into(),
+            replay: None,
+            call: llm::Decoded::Delegated {
+                source: session::ToolSource::Run,
+                ticket: Token::new(19),
+                effect: Effect::Write,
+            },
+        };
+        let mut content = Vec::new();
+        if earlier {
+            content.push(make(b"earlier", b"finish"));
+        }
+        content.push(make(b"held", b"wait"));
+        content.push(make(b"later", b"finish"));
+        first.complete(content.into(), llm::Stop::ToolUse, recorded::USAGE);
+        if earlier {
+            let owner = first.delegated[0];
+            first.step(session::Event::Answered {
+                owner,
+                text: b"actual earlier result".as_slice().into(),
+                error: false,
+                spent: 0,
+            });
+        }
+        let owner = first.delegated[0];
+        first.step(session::Event::AnswerWithheld { owner });
+        assert_eq!(first.turns.len(), 1);
+        assert_eq!(first.prompts.len(), 1);
+        let tail = first.turns[0].messages.last().expect("closing partial results");
+        assert!(
+            tail.content
+                .iter()
+                .any(|block| matches!(block, llm::Block::ToolResult { id, result: llm::Returned::NotRun }
+            if id.as_ref() == b"later"))
+        );
+        assert!(
+            !tail
+                .content
+                .iter()
+                .any(|block| matches!(block, llm::Block::ToolResult { id, .. } if id.as_ref() == b"held"))
+        );
+        first.close();
+        let mut resumed = World::new(28, 256);
+        resumed.open(opening(Some(transcript(&first)), 100));
+        assert!(resumed.end.is_none(), "one own wait may be missing in the last partial results");
+        assert!(matches!(resumed.prompts[0].messages.last().expect("missing wait supplied").content.as_ref(),
+            [llm::Block::ToolResult { id, result: llm::Returned::Text { text, error: false, .. } }]
+            if id.as_ref() == b"held" && text.as_ref() == b"wake"));
+        resumed.complete(
+            Box::new([llm::Block::Text { text: b"resumed".as_slice().into(), replay: None }]),
+            llm::Stop::EndTurn,
+            llm::Usage::ZERO,
+        );
+        resumed.close();
+        let mut all = transcript(&first);
+        all.turns = first.turns.iter().cloned().chain(resumed.turns.iter().cloned()).collect::<Vec<_>>().into();
+        let mut again = World::new(29, 256);
+        again.open(opening(Some(all), 100));
+        assert!(again.end.is_none(), "the late result remains valid on a second restore");
+        again.close();
+    }
+}

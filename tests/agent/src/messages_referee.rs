@@ -213,15 +213,20 @@ impl Meeting {
                                 | session::llm::Block::ToolCall { .. }
                                 | session::llm::Block::ToolResult { .. } => None,
                             });
-                        judge.check(result.is_some(), "every actual tool call has its concrete terminal before Turn");
                         if name.as_ref() == b"wait" {
                             judge.check(
                                 matches!(result, Some(session::llm::Returned::Text {
                                 text, error: false, replay: None
-                            }) if text.as_ref() == b"waiting"),
-                                "wait settles as exact canonical result before waiting",
+                            }) if text.as_ref() == b"Messages arrived. Read them before continuing.")
+                                    || (result.is_none() && self.waiting.is_some()),
+                                "wait either settles with admitted work or remains withheld through parking",
                             );
                             self.wait_result = true;
+                        } else {
+                            judge.check(
+                                result.is_some(),
+                                "each other actual tool call has its concrete terminal before Turn",
+                            );
                         }
                     }
                     Part::Text { .. } | Part::Opaque { .. } | Part::ToolOutput { .. } => {}
@@ -267,14 +272,15 @@ impl Expectations for Meeting {
             }
             Seen::Turn { number, read, turn, .. } => self.turn(number, read, &turn, judge),
             Seen::Waiting { read } => {
+                let pending_wait = self.expected.as_ref().is_some_and(|parts| {
+                    parts.iter().any(|part| matches!(part, Part::ToolCall { name, .. } if name.as_ref() == b"wait"))
+                });
                 judge.check(
                     !self.calling
-                        && self.expected.is_none()
                         && self.queued.is_empty()
-                        && self.offered.is_none()
-                        && (self.wait_result || (self.count == 0 && self.work == Some(false)))
+                        && (pending_wait || (self.count == 0 && self.work == Some(false)))
                         && read == self.read,
-                    "Waiting follows preparation or settled wait with an empty inbox",
+                    "Waiting follows preparation or a real withheld wait with an empty inbox",
                 );
                 self.waiting = Some(judge.now());
                 judge.rearm("idle park", self.idle.saturating_add(Duration::from_secs(1)));
