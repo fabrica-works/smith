@@ -183,7 +183,7 @@ fn bad_value(name: &[u8]) -> llm::Problem {
 
 // Skein admits the grammar. Inspect only direct application members through
 // borrowed compact records; no token tree or string copy is reconstructed.
-fn field<'a>(document: &'a Document, name: &[u8]) -> Option<&'a Compact> {
+fn field(document: &Document, name: &[u8]) -> Option<Compact> {
     let mut depth = 0_u32;
     for index in 0..document.len() {
         let record = document.token(index)?;
@@ -192,7 +192,7 @@ fn field<'a>(document: &'a Document, name: &[u8]) -> Option<&'a Compact> {
             JsonKind::ObjectEnd | JsonKind::ArrayEnd => depth = depth.checked_sub(1)?,
             JsonKind::Key if depth == 1 => {
                 if document.text(record)? == name {
-                    return document.token(index.checked_add(1)?);
+                    return Some(*document.token(index.checked_add(1)?)?);
                 }
             }
             JsonKind::Key
@@ -210,7 +210,7 @@ fn field<'a>(document: &'a Document, name: &[u8]) -> Option<&'a Compact> {
 fn required_string(document: &Document, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
     match field(document, name) {
         Some(record) if record.kind == JsonKind::String => {
-            Ok(document.text(record).ok_or(llm::Problem::NotAnObject)?.into())
+            Ok(document.text(&record).ok_or(llm::Problem::NotAnObject)?.into())
         }
         Some(_) => Err(wrong_type(name)),
         None => Err(missing(name)),
@@ -220,7 +220,7 @@ fn required_string(document: &Document, name: &[u8]) -> Result<Box<[u8]>, llm::P
 fn optional_string(document: &Document, name: &[u8]) -> Result<Option<Box<[u8]>>, llm::Problem> {
     match field(document, name) {
         Some(record) if record.kind == JsonKind::String => {
-            Ok(Some(document.text(record).ok_or(llm::Problem::NotAnObject)?.into()))
+            Ok(Some(document.text(&record).ok_or(llm::Problem::NotAnObject)?.into()))
         }
         Some(_) => Err(wrong_type(name)),
         None => Ok(None),
@@ -239,7 +239,7 @@ fn optional_bool(document: &Document, name: &[u8]) -> Result<Option<bool>, llm::
 fn optional_u32(document: &Document, name: &[u8]) -> Result<Option<u32>, llm::Problem> {
     match field(document, name) {
         Some(record) if record.kind == JsonKind::Number => {
-            let number = decimal(document.text(record).ok_or(llm::Problem::NotAnObject)?).ok_or(bad_value(name))?;
+            let number = decimal(document.text(&record).ok_or(llm::Problem::NotAnObject)?).ok_or(bad_value(name))?;
             if number == 0 {
                 return Err(bad_value(name));
             }

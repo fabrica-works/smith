@@ -74,7 +74,7 @@ data: {"type":"message_stop"}
 "#;
 
 const CODEX_HISTORY: &[u8] = br#""input":[{"id":"rs_c","type":"reasoning","encrypted_content":"exact-opaque","summary":[],"future":{"proof":[1,true,null]}},{"type":"message","role":"assistant","id":"msg_c","phase":"commentary","content":[{"type":"output_text","text":"Reading"}]},{"type":"message","role":"assistant","id":"msg_r","content":[{"type":"refusal","refusal":"Cannot comply"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue."}]}]"#;
-const ANTHROPIC_HISTORY: &[u8] = br#""messages":[{"role":"assistant","content":[{"type":"thinking","future":{"proof":[1,true,null]},"thinking":"Plan carefully","signature":"signed-opaque"},{"type":"redacted_thinking","data":"hidden-opaque"},{"type":"text","text":"Answer"}]},{"role":"user","content":[{"type":"text","text":"Continue."}]}]"#;
+const ANTHROPIC_HISTORY: &[u8] = br#""messages":[{"role":"assistant","content":[{"type":"thinking","future":{"proof":[1,true,null]},"thinking":"Plan carefully","signature":"signed-opaque"},{"type":"redacted_thinking","data":"hidden-opaque"},{"type":"text","text":"Answer"}]},{"role":"user","content":[{"type":"text","text":"Continue.","cache_control":{"type":"ephemeral"}}]}]"#;
 
 fn limits() -> Limits {
     Limits {
@@ -362,11 +362,11 @@ fn correction_script() -> Box<[Script]> {
     }])
 }
 
-fn pair(assistant: &[Part], user: &[Part], arguments: &[u8], feedback: &[u8]) -> bool {
+fn pair(assistant: &[Part], user: &[Part], expected_id: &[u8], arguments: &[u8], feedback: &[u8]) -> bool {
     let [Part::ToolCall { id, name, arguments: actual }] = assistant else { return false };
     let [Part::ToolOutput { id: returned, output, is_error }] = user else { return false };
-    id.as_ref() == CALL_ID
-        && returned.as_ref() == CALL_ID
+    id.as_ref() == expected_id
+        && returned.as_ref() == expected_id
         && name.as_ref() == b"host_action"
         && actual.as_ref() == arguments
         && output.as_ref() == feedback
@@ -375,12 +375,13 @@ fn pair(assistant: &[Part], user: &[Part], arguments: &[u8], feedback: &[u8]) ->
 
 fn invalid_feedback(query: &Query) -> bool {
     let [_, assistant, user] = query.messages.as_ref() else { return false };
-    pair(&assistant.parts, &user.parts, RAW, INVALID)
+    pair(&assistant.parts, &user.parts, CALL_ID, RAW, INVALID)
 }
 
 fn corrected_feedback(query: &Query) -> bool {
     let [_, first, invalid, second, result] = query.messages.as_ref() else { return false };
-    pair(&first.parts, &invalid.parts, RAW, INVALID) && pair(&second.parts, &result.parts, BODY, HOST_RESULT)
+    pair(&first.parts, &invalid.parts, CALL_ID, RAW, INVALID)
+        && pair(&second.parts, &result.parts, b"call_0000000000000002", BODY, HOST_RESULT)
 }
 
 fn feedback_corruptions(query: &Query) {

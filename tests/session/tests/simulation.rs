@@ -446,7 +446,7 @@ fn the_token_budgets_end_a_session_after_the_turn_that_uses_them_up() {
     let settings = Settings { nudges: Count { min: 100, max: 100 }, ..calm };
     let budgets = [
         (Budget { cache_read: 100, ..BUDGET }, Dimension::CacheRead),
-        (Budget { cache_write: 30, ..BUDGET }, Dimension::CacheWrite),
+        (Budget { cache_write: 128, ..BUDGET }, Dimension::CacheWrite),
     ];
     for (budget, spent) in budgets {
         let mut world = World::new(settings);

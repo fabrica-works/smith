@@ -489,12 +489,14 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         world.run(100_000);
         let mut history = vec![message(Role::User, vec![text(BEGIN)])];
         let mut prefixes = vec![history.clone()];
-        for _turn in 0..4 {
+        for id in
+            [b"call_0000000000000001", b"call_0000000000000002", b"call_0000000000000003", b"call_0000000000000004"]
+        {
             history.extend([
                 message(
                     Role::Assistant,
                     vec![Part::ToolCall {
-                        id: ID.into(),
+                        id: id.as_slice().into(),
                         name: b"read".as_slice().into(),
                         arguments: br#"{"path":"data.txt"}"#.as_slice().into(),
                     }],
@@ -502,7 +504,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
                 message(
                     Role::User,
                     vec![Part::ToolOutput {
-                        id: ID.into(),
+                        id: id.as_slice().into(),
                         output: b"1: old\n(1 of 1 lines; skipped 0)".as_slice().into(),
                         is_error: false,
                     }],
@@ -663,5 +665,111 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         recorded_wait(&restored.turns()[0], true);
         assert_eq!(first.turn_metadata()[0].2.output, 17);
         assert_eq!(restored.turn_metadata()[0].2.output, 11, "new activation charges only its actual completion");
+    }
+}
+
+#[test]
+fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
+    for dialect in 0..2 {
+        let mut bounds = Limits {
+            client: skein_llm_world::limits(),
+            tool_bytes: 32768,
+            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            shell_default: Duration::from_secs(120),
+            shell_maximum: Duration::from_secs(1200),
+        };
+        bounds.client.http.request = 16384;
+        bounds.client.dialect.request_bytes = 16384;
+        let mut settings = Settings {
+            job: Job::Waiting,
+            waiting: Duration::from_secs(1),
+            network: Span::millis(1, 1),
+            ..Settings::calm(1110)
+        };
+        settings.limits.session.completion_bytes =
+            adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
+                .expect("actual receiving reservation");
+        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        let scripts = || {
+            Box::new([
+                Script {
+                    cue: b"@brief-native".as_slice().into(),
+                    turns: Box::new([
+                        calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 3),
+                        calls(vec![call(b"sub_agent", br#"{"brief":"@affinity-child","tools":[]}"#)], 3),
+                        calls(vec![Line::Text { text: LAST.into() }, call(b"wait", b"{}")], 3),
+                    ]),
+                },
+                Script {
+                    cue: b"@affinity-child".as_slice().into(),
+                    turns: Box::new([says(b"Child retains the run key.", 3)]),
+                },
+            ])
+        };
+        let (disk, mounted) = workspace();
+        let mut first = World::with_workspace_wire_charter(
+            settings,
+            None,
+            Some(mounted),
+            disk,
+            (wire::configurations().into_iter().nth(dialect).expect("two native forms"), bounds),
+            scripts(),
+            charter(&settings, NATIVE_INSTRUCTIONS),
+        );
+        first.run(100_000);
+        assert_eq!(first.turns().len(), 1);
+        assert!(matches!(first.answer(), run::Answer::Parked { .. }));
+        let affinity = match first.turns()[0].kind {
+            smith_domain::session::record::Kind::First { affinity } => affinity,
+            other => panic!("fresh opening: {other:?}"),
+        };
+        assert_eq!(affinity.thread, 0);
+        let original = smith_protocol_llm_world::referee::NativeRequest::from_http(&first.wire_bindings()[0].request);
+        let saved = Transcript {
+            version: first.turns()[0].version,
+            endpoint: first.turns()[0].endpoint,
+            dialect: first.turns()[0].dialect,
+            turns: first.turns().into(),
+        };
+        settings.resume = true;
+        settings.seed = 999_110;
+        let (disk, mounted) = workspace();
+        let mut resumed = World::with_workspace_wire_charter(
+            settings,
+            Some(saved),
+            Some(mounted),
+            disk,
+            (wire::configurations().into_iter().nth(dialect).expect("same native form"), bounds),
+            scripts(),
+            charter(&settings, NATIVE_INSTRUCTIONS),
+        );
+        resumed.run(100_000);
+        assert!(matches!(resumed.answer(), run::Answer::Parked { .. }));
+        assert_eq!(
+            resumed.turns().iter().map(|turn| (turn.sequence, turn.kind)).collect::<Vec<_>>(),
+            [(2, smith_domain::session::record::Kind::Ordinary), (3, smith_domain::session::record::Kind::Ordinary),]
+        );
+        assert_eq!(resumed.prompts().len(), 3, "two main requests and one actual child request");
+        for (query, binding) in resumed.prompts().iter().zip(resumed.wire_bindings()) {
+            if original.affinity.is_some() {
+                assert_eq!(query.caching, skein_fake_llm_domain::api::Caching::Scope(affinity.key));
+            } else {
+                assert!(matches!(query.caching, skein_fake_llm_domain::api::Caching::Marks(_)), "Anthropic ignores affinity and uses its native breakpoints");
+            }
+            let actual = smith_protocol_llm_world::referee::NativeRequest::from_http(&binding.request);
+            match (&original.affinity, &actual.affinity) {
+                (Some(original), Some(actual)) => {
+                    assert_eq!(actual[..2], original[..2], "recorded run key and session header survive the new seed");
+                    if query.system.starts_with(b"@affinity-child") {
+                        assert_ne!(actual[2], original[2], "a child has its own conversation thread");
+                    } else {
+                        assert_eq!(actual[2], original[2], "resumed main retains thread zero");
+                    }
+                }
+                (None, None) => {}
+                other => panic!("both requests use the same dialect: {other:?}"),
+            }
+            assert!(binding.retired.is_some(), "actual lower Closed settles every request");
+        }
     }
 }

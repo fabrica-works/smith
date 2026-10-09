@@ -492,11 +492,15 @@ fn text_part(text: &[u8]) -> Part {
 }
 
 fn wait_call() -> Part {
-    Part::ToolCall { id: ID.into(), name: b"wait".as_slice().into(), arguments: b"{}".as_slice().into() }
+    Part::ToolCall {
+        id: b"call_0000000000000002".as_slice().into(),
+        name: b"wait".as_slice().into(),
+        arguments: b"{}".as_slice().into(),
+    }
 }
 
 fn wait_feedback() -> Part {
-    Part::ToolOutput { id: ID.into(), output: BEGIN.into(), is_error: false }
+    Part::ToolOutput { id: b"call_0000000000000002".as_slice().into(), output: BEGIN.into(), is_error: false }
 }
 
 fn parked_prefix() -> Vec<Message> {
@@ -615,7 +619,8 @@ fn parking_story(index: usize) {
     assert_eq!(current, new_total.units);
     assert_eq!(saved(&first), immutable, "old Turn.spent and concrete history remain unchanged");
     assert!(immutable.turns.iter().all(|turn| turn.spent > 0));
-    assert!(first_total.cache_read > 0 && new_total.cache_read > 0);
+    assert!(first_total.cache_read > 0);
+    assert_eq!(new_total.cache_read, 0, "the newly constructed provider has no earlier written cache entry");
     assert!(first_total.cache_write > 0 && new_total.cache_write > 0);
 }
 

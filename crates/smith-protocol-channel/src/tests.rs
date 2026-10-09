@@ -243,3 +243,79 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
         );
     }
 }
+
+fn with_recorded_affinity(bytes: &[u8], affinity: Option<smith_transcript::Affinity>) -> Box<[u8]> {
+    let limits = smith_transcript::CEILINGS;
+    let mut parts =
+        smith_transcript::Turn::decode(&limits, &mut skein_lib::Reader::new(bytes)).expect("fixture turn").into_parts();
+    parts.affinity = affinity;
+    let turn = smith_transcript::Turn::new(&limits, parts).expect("bounded fixture turn");
+    let mut writer = skein_lib::Writer::new(usize::try_from(turn.measure()).expect("fixture length"));
+    turn.encode(&mut writer).expect("fixture room");
+    writer.finish()
+}
+
+#[test]
+fn a_transcript_records_affinity_only_in_its_opening_turn() {
+    use smith_domain_session::record;
+    let limits = smith_transcript::CEILINGS;
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let affinity =
+        smith_transcript::Affinity::new(&limits, smith_transcript::AffinityParts { key: [0x42; 16], thread: 7 })
+            .expect("fixed affinity");
+    let first = with_recorded_affinity(&saved_turn(1, b"00000000"), Some(affinity));
+    let ordinary = saved_turn(2, b"00000000");
+    let decoded = crate::decode_transcript(&[first.clone(), ordinary.clone()], &limits, &endpoints)
+        .expect("opening and ordinary")
+        .expect("transcript");
+    assert!(
+        matches!(decoded.turns[0].kind, record::Kind::First { affinity } if affinity.key == [0x42; 16] && affinity.thread == 7)
+    );
+    assert_eq!(decoded.turns[1].kind, record::Kind::Ordinary);
+    assert_eq!(
+        crate::decode_transcript(&[with_recorded_affinity(&first, None)], &limits, &endpoints),
+        Err(record::Refusal::Malformed)
+    );
+    let extra =
+        smith_transcript::Affinity::new(&limits, smith_transcript::AffinityParts { key: [0x42; 16], thread: 7 })
+            .expect("fixed affinity");
+    assert_eq!(
+        crate::decode_transcript(&[first, with_recorded_affinity(&ordinary, Some(extra))], &limits, &endpoints),
+        Err(record::Refusal::Malformed)
+    );
+}
+
+#[test]
+fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window() {
+    use smith_domain_session::{llm, record};
+    let limits = smith_transcript::CEILINGS;
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let window = record::Turn {
+        version: record::VERSION,
+        kind: record::Kind::Window { affinity: llm::Affinity { key: [0x25; 16], thread: 0 } },
+        endpoint: llm::Endpoint(3),
+        dialect: 0,
+        sequence: 8,
+        usage: llm::Usage::ZERO,
+        spent: 9,
+        messages: Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::Text { text: b"task and summary".as_slice().into(), replay: None }]),
+        }]),
+    };
+    let first = crate::encode_turn(&window, &limits, &endpoints).expect("window turn");
+    let decoded = crate::decode_transcript(&[first.clone(), saved_turn(9, b"00000000")], &limits, &endpoints)
+        .expect("window suffix")
+        .expect("transcript");
+    assert_eq!(decoded.turns[0], window);
+    assert!(decoded.turns[0].kind.opens_window());
+    assert!(!decoded.turns[1].kind.opens_window());
+    let mut second = window.clone();
+    second.sequence = 9;
+    let second = crate::encode_turn(&second, &limits, &endpoints).expect("second window bytes");
+    assert_eq!(crate::decode_transcript(&[first, second], &limits, &endpoints), Err(record::Refusal::Malformed));
+}

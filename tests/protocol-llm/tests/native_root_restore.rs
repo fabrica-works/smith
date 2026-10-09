@@ -173,9 +173,25 @@ fn resumed_prefix(fixture: &Fixture, tail: bool) -> Vec<Message> {
             messages.push(message(Role::User, vec![text(&waking_prompt())]));
         }
     } else {
-        messages.push(message(Role::Assistant, vec![text(FIRST), call()]));
-        messages
-            .push(message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: BEGIN.into(), is_error: false }]));
+        messages.push(message(
+            Role::Assistant,
+            vec![
+                text(FIRST),
+                Part::ToolCall {
+                    id: b"call_0000000000000002".as_slice().into(),
+                    name: b"wait".as_slice().into(),
+                    arguments: b"{}".as_slice().into(),
+                },
+            ],
+        ));
+        messages.push(message(
+            Role::User,
+            vec![Part::ToolOutput {
+                id: b"call_0000000000000002".as_slice().into(),
+                output: BEGIN.into(),
+                is_error: false,
+            }],
+        ));
     }
     messages
 }
@@ -254,7 +270,7 @@ fn recorded_wait(turn: &smith_domain::Turn, fixture: &Fixture, opaque: bool) -> 
     let wake_matches = if opaque {
         matches!(wake.content.as_ref(), [llm::Block::Text { text, replay: None }] if text.as_ref() == BEGIN)
     } else {
-        matches!(wake.content.as_ref(), [llm::Block::ToolResult { id, result: llm::Returned::Text { text, error: false, replay: None } }] if id.as_ref() == ID && text.as_ref() == BEGIN)
+        matches!(wake.content.as_ref(), [llm::Block::ToolResult { id, result: llm::Returned::Text { text, error: false, replay: None } }] if id.as_ref() == b"call_0000000000000002" && text.as_ref() == BEGIN)
     };
     if wake.role != llm::Role::User || assistant.role != llm::Role::Assistant || !wake_matches {
         return false;
@@ -329,26 +345,33 @@ fn post_tail(world: &World) -> (Transcript, AnsweredCall) {
 fn part_bytes(part: &Part) -> usize {
     match part {
         Part::Text { text } | Part::Opaque { bytes: text } => text.len(),
-        Part::ToolCall { name, arguments, .. } => name.len() + arguments.len(),
-        Part::ToolOutput { output, .. } => output.len(),
+        Part::ToolCall { id, name, arguments } => id.len() + name.len() + arguments.len(),
+        Part::ToolOutput { id, output, .. } => id.len() + output.len(),
     }
 }
 
-fn expected_usage(system_bytes: usize, expected: &[Message], output: u64, fixture: &Fixture) -> [u64; 4] {
-    let (last, earlier) = expected.split_last().expect("handwritten positive user-ending prefix");
-    let last_bytes = last.parts.iter().map(part_bytes).sum::<usize>();
-    let (fresh, cached) = if earlier.is_empty() {
-        (system_bytes + last_bytes, 0)
-    } else {
-        (last_bytes, system_bytes + earlier.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>())
-    };
-    let input = u64::try_from(fresh / 4).expect("bounded caller fixture");
-    [
-        if fixture.cache_write { 0 } else { input },
-        output,
-        u64::try_from(cached / 4).expect("bounded caller fixture"),
-        if fixture.cache_write { input } else { 0 },
-    ]
+fn expected_usage(
+    query: &Query,
+    expected: &[Message],
+    previous: Option<&[Message]>,
+    output: u64,
+    fixture: &Fixture,
+) -> [u64; 4] {
+    let fixed = query.system.len()
+        + query
+            .tools
+            .iter()
+            .map(|tool| tool.name.len() + tool.description.len() + tool.parameters.len())
+            .sum::<usize>();
+    let tokens =
+        u64::try_from((fixed + expected.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>()) / 4)
+            .expect("bounded caller fixture");
+    let read = previous.map_or(0, |messages| {
+        u64::try_from((fixed + messages.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>()) / 4)
+            .expect("previously written prompt")
+    });
+    let fresh = tokens - read;
+    [if fixture.cache_write { 0 } else { fresh }, output, read, if fixture.cache_write { fresh } else { 0 }]
 }
 
 fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>], outputs: &[u64], sequence: u32) {
@@ -359,7 +382,13 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         world.prompts().iter().zip(world.turns()).zip(expected_prompts).enumerate()
     {
         assert!(exact_prefix(query, expected_prompt), "actual query {index}: {query:?}");
-        let wanted = expected_usage(query.system.len(), expected_prompt, outputs[index], fixture);
+        let wanted = expected_usage(
+            query,
+            expected_prompt,
+            index.checked_sub(1).map(|previous| expected_prompts[previous].as_slice()),
+            outputs[index],
+            fixture,
+        );
         let actual = [
             turn.usage.input_tokens.expect("SDK fixture reports usage"),
             turn.usage.output_tokens.expect("SDK fixture reports usage"),

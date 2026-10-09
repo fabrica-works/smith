@@ -461,6 +461,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     one.settle();
     let mut ordinary = first.clone();
     ordinary.sequence = 2;
+    ordinary.kind = record::Kind::Ordinary;
     ordinary.spent = 4;
     one.agent_tells_turn(2, Some(skein_lib::Token::new(99)), &ordinary);
     one.settle();
@@ -514,6 +515,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     two.settle();
     let mut next = first;
     next.sequence = 3;
+    next.kind = record::Kind::Ordinary;
     next.spent = 5;
     two.agent_tells_turn(1, Some(skein_lib::Token::new(99)), &next);
     two.settle();
@@ -655,6 +657,7 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
     assert_eq!(transcript.turns.as_ref(), std::slice::from_ref(&turn));
     let mut second = turn.clone();
     second.sequence = 2;
+    second.kind = record::Kind::Ordinary;
     assert_eq!(world.try_agent_tells_turn(2, read, &second), Err(smith_protocol_channel::Error::Window));
     world.host_acknowledges(1);
     world.settle();

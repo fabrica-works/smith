@@ -4,7 +4,12 @@ use skein_world::domain::{Referee, Verdict};
 use smith_protocol_llm_world::referee::{Meeting, NativeRequest, Seen};
 
 fn request() -> NativeRequest {
-    NativeRequest { affinity: None, system: "system".into(), tools: "tools".into(), history: vec!["first".into()] }
+    NativeRequest {
+        affinity: None,
+        system: "system".into(),
+        tools: Some("tools".into()),
+        history: vec!["first".into()],
+    }
 }
 
 fn reject(changed: NativeRequest, reason: &str) {
@@ -25,7 +30,7 @@ fn changed_native_system_is_rejected() {
 #[test]
 fn changed_native_tool_schema_is_rejected() {
     let mut changed = request();
-    changed.tools = "different".into();
+    changed.tools = Some("different".into());
     reject(changed, "native tool bytes stay fixed within a window");
 }
 
@@ -106,4 +111,26 @@ fn changed_native_affinity_is_rejected() {
     let mut changed = request();
     changed.affinity = Some(["key".into(), "session".into(), "thread".into()]);
     reject(changed, "native affinity stays fixed within a window");
+}
+
+#[test]
+fn a_cache_control_field_inside_tool_input_stays_literal() {
+    let request = NativeRequest::from_http(&http(
+        r#"{"system":[],"tools":[],"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"id","name":"tool","input":{"value":1,"cache_control":{"type":"ephemeral"}},"cache_control":{"type":"ephemeral"}}]}]}"#,
+    ));
+    assert_eq!(
+        request.history[0],
+        r#"{"role":"assistant","content":[{"type":"tool_use","id":"id","name":"tool","input":{"value":1,"cache_control":{"type":"ephemeral"}}}]}"#
+    );
+}
+
+#[test]
+fn the_last_eligible_block_can_precede_a_literal_thinking_block() {
+    let request = NativeRequest::from_http(&http(
+        r#"{"system":[],"tools":[],"messages":[{"role":"assistant","content":[{"type":"text","text":"answer","cache_control":{"type":"ephemeral"}},{"type":"thinking","thinking":"private","signature":"sig"}]}]}"#,
+    ));
+    assert_eq!(
+        request.history[0],
+        r#"{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"private","signature":"sig"}]}"#
+    );
 }

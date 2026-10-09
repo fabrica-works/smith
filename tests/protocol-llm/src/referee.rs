@@ -18,7 +18,7 @@ use smith_domain::run::{
 pub struct NativeRequest {
     pub affinity: Option<[String; 3]>,
     pub system: String,
-    pub tools: String,
+    pub tools: Option<String>,
     pub history: Vec<String>,
 }
 
@@ -46,23 +46,32 @@ impl NativeRequest {
                 .iter()
                 .rposition(|block| matches!(block["type"].as_str(), Some("text" | "tool_use" | "tool_result")))
                 .expect("last message has an eligible block");
-            let markers = history.iter().map(|item| item.match_indices(MARKER).count()).sum::<usize>();
+            let markers = values
+                .iter()
+                .flat_map(|message| message["content"].as_array().expect("native content blocks"))
+                .filter(|block| block.get("cache_control").is_some())
+                .count();
             assert!(markers <= 1, "at most one moving Anthropic tail marker");
             for (message, item) in history.iter_mut().enumerate() {
-                let positions = item.match_indices(MARKER).map(|(position, _)| position).collect::<Vec<_>>();
-
-                for (part, block) in
-                    values[message]["content"].as_array().expect("native content blocks").iter().enumerate()
-                {
-                    if block.get("cache_control").is_some() {
+                let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+                    serde_json::from_str(item).expect("native message fields");
+                let content = fields.get("content").expect("native content");
+                let blocks: Vec<Box<serde_json::value::RawValue>> =
+                    serde_json::from_str(content.get()).expect("raw native blocks");
+                let mut cursor = item.find(content.get()).expect("exact native content bytes");
+                for (part, block) in blocks.iter().enumerate() {
+                    let offset = cursor + item[cursor..].find(block.get()).expect("next exact native block");
+                    cursor = offset + block.get().len();
+                    if values[message]["content"][part].get("cache_control").is_some() {
                         assert!(
                             message + 1 == values.len() && part == eligible,
                             "moving Anthropic marker is on the last eligible block of the last message"
                         );
+                        assert!(block.get().ends_with(&format!("{MARKER}}}")), "exact dialect tail marker bytes");
+                        let position = offset + block.get().len() - 1 - MARKER.len();
+                        item.replace_range(position..position + MARKER.len(), "");
+                        cursor -= MARKER.len();
                     }
-                }
-                if let Some(position) = positions.first() {
-                    item.replace_range(*position..*position + MARKER.len(), "");
                 }
             }
             assert_eq!(markers, 1, "exactly one moving Anthropic tail marker");
@@ -83,7 +92,7 @@ impl NativeRequest {
         Self {
             affinity,
             system: system.get().into(),
-            tools: fields.get("tools").expect("native tool definitions").get().into(),
+            tools: fields.get("tools").map(|tools| tools.get().into()),
             history,
         }
     }

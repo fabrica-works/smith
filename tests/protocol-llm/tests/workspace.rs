@@ -53,19 +53,19 @@ fn message(role: Role, parts: Vec<Part>) -> Message {
     Message { role, parts: parts.into() }
 }
 
-fn tool(name: &[u8], arguments: &[u8]) -> Part {
-    Part::ToolCall { id: ID.into(), name: name.into(), arguments: arguments.into() }
+fn tool(id: &[u8], name: &[u8], arguments: &[u8]) -> Part {
+    Part::ToolCall { id: id.into(), name: name.into(), arguments: arguments.into() }
 }
 
-fn result(output: &[u8]) -> Part {
-    Part::ToolOutput { id: ID.into(), output: output.into(), is_error: false }
+fn result(id: &[u8], output: &[u8]) -> Part {
+    Part::ToolOutput { id: id.into(), output: output.into(), is_error: false }
 }
 
 fn part_bytes(part: &Part) -> usize {
     match part {
         Part::Text { text } | Part::Opaque { bytes: text } => text.len(),
-        Part::ToolCall { name, arguments, .. } => name.len() + arguments.len(),
-        Part::ToolOutput { output, .. } => output.len(),
+        Part::ToolCall { id, name, arguments } => id.len() + name.len() + arguments.len(),
+        Part::ToolOutput { id, output, .. } => id.len() + output.len(),
     }
 }
 
@@ -75,19 +75,25 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
     let mut spent = run::Spend::ZERO;
     for (index, ((query, turn), expected)) in world.prompts().iter().zip(world.turns()).zip(prefixes).enumerate() {
         assert_eq!(query.messages.as_ref(), expected, "whole native history at completion {index}");
-        let (last, earlier) = expected.split_last().expect("user-ending prompt");
-        let last_bytes = last.parts.iter().map(part_bytes).sum::<usize>();
-        let (fresh, cached) = if earlier.is_empty() {
-            (query.system.len() + last_bytes, 0)
-        } else {
-            (
-                last_bytes,
-                query.system.len() + earlier.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>(),
+        let fixed = query.system.len()
+            + query
+                .tools
+                .iter()
+                .map(|tool| tool.name.len() + tool.description.len() + tool.parameters.len())
+                .sum::<usize>();
+        let tokens = u64::try_from(
+            (fixed + expected.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>()) / 4,
+        )
+        .expect("bounded fixture");
+        let read = index.checked_sub(1).map_or(0, |previous| {
+            u64::try_from(
+                (fixed + prefixes[previous].iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>())
+                    / 4,
             )
-        };
-        let fresh_tokens = u64::try_from(fresh / 4).expect("bounded fixture");
+            .expect("previously written prompt")
+        });
+        let fresh_tokens = tokens - read;
         let input = if cache_write { 0 } else { fresh_tokens };
-        let read = u64::try_from(cached / 4).expect("bounded fixture");
         let write = if cache_write { Some(fresh_tokens) } else { None };
         assert_eq!(
             [
@@ -174,13 +180,13 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         let first_prefix = vec![message(Role::User, vec![text(BEGIN)])];
         let mut second_prefix = first_prefix.clone();
         second_prefix.extend([
-            message(Role::Assistant, vec![tool(b"host_action", INPUT)]),
-            message(Role::User, vec![result(ANSWER)]),
+            message(Role::Assistant, vec![tool(ID, b"host_action", INPUT)]),
+            message(Role::User, vec![result(ID, ANSWER)]),
         ]);
         let mut third_prefix = second_prefix.clone();
         third_prefix.extend([
-            message(Role::Assistant, vec![text(FIRST), tool(b"wait", b"{}")]),
-            message(Role::User, vec![result(BEGIN)]),
+            message(Role::Assistant, vec![text(FIRST), tool(b"call_0000000000000002", b"wait", b"{}")]),
+            message(Role::User, vec![result(b"call_0000000000000002", BEGIN)]),
         ]);
         accounting(&first, &[first_prefix, second_prefix], &[17, 11], 0, true);
         no_workspace(&first, &settings);
