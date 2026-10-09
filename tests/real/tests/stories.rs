@@ -125,7 +125,23 @@ fn the_same_chat_runs_with_its_agent_in_process() {
     let spawned = hosted.seen();
     let in_process = colocated.seen();
     assert_eq!(spawned.shown, in_process.shown);
-    assert_eq!(spawned.queries, in_process.queries);
+    let mut spawned_queries = spawned.queries.clone();
+    let mut colocated_queries = in_process.queries.clone();
+    // The host's durable chat identity is introduced by 08.4. Until then,
+    // child kinds mint independently, while every other request field agrees.
+    for queries in [&mut spawned_queries, &mut colocated_queries] {
+        let key = match &queries.first().expect("actual native request").caching {
+            skein_fake_llm_domain::api::Caching::Scope(key) => *key,
+            skein_fake_llm_domain::api::Caching::Unscoped | skein_fake_llm_domain::api::Caching::Marks(_) => {
+                panic!("Codex run affinity is rendered")
+            }
+        };
+        for query in queries {
+            assert_eq!(query.caching, skein_fake_llm_domain::api::Caching::Scope(key));
+            query.caching = skein_fake_llm_domain::api::Caching::Scope([0; 16]);
+        }
+    }
+    assert_eq!(spawned_queries, colocated_queries);
     assert_eq!(spawned.exit, in_process.exit);
     assert_eq!(hosted.turns(), colocated.turns());
     review(&in_process, colocated.checkout(), Ending::Report(b"First answer".to_vec())).assert_passed(15);

@@ -71,7 +71,19 @@ fn a_path_with_a_git_part_or_through_a_symbolic_link_is_refused() {
         op: tools::Op::Store { at: place(root, b"link"), content: Box::from(&b"x"[..]), expect: tools::Expect::Absent },
         deadline: far(),
     });
-    assert_eq!(linked, ToDomain::Done { owner: Token::new(13), done: tools::Done::Linked });
+    assert_eq!(linked, ToDomain::Done { owner: Token::new(13), done: tools::Done::Conflict { now: None } });
+    // Absence conflicts with any existing target. A digest-conditioned store
+    // preserves the separate native refusal to write through a symbolic link.
+    let linked = world.request(FromDomain::Op {
+        owner: Token::new(14),
+        op: tools::Op::Store {
+            at: place(root, b"link"),
+            content: Box::from(&b"x"[..]),
+            expect: tools::Expect::Is { version: tools::Version::new(skein_io::digest::digest(b"old").0) },
+        },
+        deadline: far(),
+    });
+    assert_eq!(linked, ToDomain::Done { owner: Token::new(14), done: tools::Done::Linked });
     assert_eq!(world.content(b"safe"), b"old");
     world.settle();
 }

@@ -2046,7 +2046,7 @@ mod tests {
             file_bytes: 512,
             file_timeout: Duration::from_secs(1),
             queue: domain::max_out(&smith_agent_world::LIMITS).max(256),
-            routes: 66,
+            routes: io::operations(&io).expect("bounded test IO").checked_add(2).expect("file routes fit"),
             memory: u64::MAX,
         }
     }

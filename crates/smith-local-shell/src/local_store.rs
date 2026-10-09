@@ -394,6 +394,7 @@ mod tests {
                     1 => {
                         let mut next = turn();
                         next.sequence = 2;
+                        next.kind = session::record::Kind::Ordinary;
                         store.save_turn(2, Some(Token::new(3)), &next)
                     }
                     2 => {
