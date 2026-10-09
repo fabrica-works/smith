@@ -27,6 +27,8 @@ mod domain;
 
 mod facts;
 
+mod inbox;
+
 mod limits;
 
 mod long;
@@ -52,6 +54,8 @@ pub use delivery::{
 pub use domain::{Domain, fire, max_out, step};
 
 pub use facts::Fact;
+
+pub use inbox::Inbox;
 
 pub use limits::{Limits, worst_case};
 

@@ -62,6 +62,16 @@ pub struct Seen {
     pub turns: BTreeMap<u32, host::TurnValue>,
     /// Last read fence observed in an actual parent Turn or Waiting notice.
     pub read: Option<Token>,
+    /// Ingress attempts still pending admission, read or unread.
+    pub messages: Vec<Token>,
+    /// Names actually issued to the agent before any covering fence.
+    pub sent_messages: BTreeSet<Token>,
+    /// Names covered by actual parent fences.
+    pub read_messages: Vec<Token>,
+    /// One actual unread report, including the empty report.
+    pub unread: Option<Vec<Token>>,
+    /// Every refused ingress attempt or issued name.
+    pub refused_messages: Vec<(Token, host::MessageRefusal)>,
     /// Actual parent Turn metadata: sequence, scalar prefix and independent
     /// currency/raw overflow attestations. ACK never erases these observations.
     /// Contract: domain/host.md, section 6; testing-strategy.md, sections 6 and 7.
@@ -179,6 +189,17 @@ impl World {
 
     /// Deliver one typed input, with actual lower accounting and room-first flow.
     pub fn event(&mut self, event: Input) {
+        match &event {
+            Input::Parent(parent::Event::Spawn { start, .. }) => {
+                self.seen.messages.extend(start.messages.iter().map(|message| message.name));
+            }
+            Input::Parent(parent::Event::Message { agent, name, .. })
+                if self.seen.agent == Some(*agent) && self.seen.gone.is_none() =>
+            {
+                self.seen.messages.push(*name)
+            }
+            _ => {}
+        }
         self.observe_terminal(&event);
         self.trace.log(self.stage.env.now, format!("up {event:?}"));
         self.stage.push(event);
@@ -367,6 +388,15 @@ impl World {
                 ),
                 Output::Process(process::Request::Send { owner, message, .. }) => {
                     self.lower.open(Lower::Send, owner);
+                    match &message {
+                        Down::Start { start, .. } => {
+                            self.seen.sent_messages.extend(start.messages.iter().map(|message| message.name))
+                        }
+                        Down::Message { name, .. } => {
+                            self.seen.sent_messages.insert(*name);
+                        }
+                        _ => {}
+                    }
                     self.seen.down.push(message);
                 }
                 Output::Process(process::Request::Read { owner, .. }) => self.lower.open(Lower::Read, owner),
@@ -499,6 +529,19 @@ pub fn declared_value(bytes: u64) -> host::Declared {
 }
 
 impl Seen {
+    fn fence(&mut self, read: Option<Token>) {
+        if read == self.read {
+            return;
+        }
+        let name = read.expect("fences never go backwards");
+        let at = self.messages.iter().position(|old| *old == name).expect("fence owns an accepted message");
+        for name in self.messages.drain(..=at) {
+            assert!(self.sent_messages.remove(&name), "a covering fence follows actual message issuance");
+            self.read_messages.push(name);
+        }
+        self.read = read;
+    }
+
     /// Common parent referee; the kind supplies actual lower containment proof.
     pub fn observe_parent(&mut self, request: parent::Request, contained: bool, lower_settled: bool) {
         match request {
@@ -517,16 +560,18 @@ impl Seen {
                 assert!(self.withdrawals.insert(call));
             }
             parent::Request::Turn { turn, .. } => {
-                self.read = turn.read;
+                self.fence(turn.read);
                 self.turn_metadata.push((turn.number, turn.spent));
                 assert!(self.turns.insert(turn.number, turn.body).is_none());
             }
             parent::Request::Answered { answer, .. } => {
                 assert!(self.fault.is_none());
+                self.fence(answer.read);
                 assert!(self.answer.replace(answer).is_none(), "one actual run answer");
             }
             parent::Request::Faulted { fault, .. } => {
                 assert!(self.answer.is_none());
+                assert!(self.unread.is_some(), "unread is reported before a failure");
                 assert!(self.fault.replace(fault).is_none());
             }
             parent::Request::Gone { end, detail, .. } => {
@@ -535,16 +580,41 @@ impl Seen {
                     assert!(lower_settled, "Gone retains every lower terminal");
                     assert!(self.calls.is_empty(), "Gone retains every parent call");
                     assert!(self.turns.is_empty(), "Gone retains every told turn");
+                    assert!(self.unread.is_some(), "the unread report precedes Gone");
+                    assert!(self.messages.is_empty(), "every accepted message ended before Gone");
+                }
+                if self.agent.is_none() && end != End::Stopped {
+                    self.messages.clear(); // Start refusal refuses its carried messages with it.
                 }
                 assert!(self.gone.replace(end).is_none());
                 assert!(self.gone_detail.replace(detail).is_none());
             }
-            parent::Request::MessageRefused { reason, .. } => self.bounces.push(reason),
+            parent::Request::Unread { names, .. } => {
+                assert!(self.fault.is_none() && self.gone.is_none(), "unread precedes an unanswered terminal");
+                assert!(self.unread.is_none(), "one unread report");
+                assert_eq!(
+                    names.as_ref(),
+                    self.messages.as_slice(),
+                    "unread names every remaining accepted message in order"
+                );
+                self.messages.clear();
+                self.sent_messages.clear();
+                self.unread = Some(names.into_vec());
+            }
+            parent::Request::MessageRefused { name, reason, .. } => {
+                let at = self.messages.iter().rposition(|old| *old == name).expect("one actual message terminal");
+                self.messages.remove(at);
+                if !self.messages.contains(&name) {
+                    self.sent_messages.remove(&name);
+                }
+                self.refused_messages.push((name, reason));
+                self.bounces.push(reason);
+            }
             parent::Request::Rejected { account, generation, .. } => {
                 self.rejected.push((account, generation));
             }
             parent::Request::Told { .. } => self.told += 1,
-            parent::Request::Waiting { read, .. } => self.read = read,
+            parent::Request::Waiting { read, .. } => self.fence(read),
             parent::Request::Long { .. } | parent::Request::LongDone { .. } | parent::Request::Exhausted { .. } => {}
         }
     }

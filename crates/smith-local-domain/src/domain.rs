@@ -850,10 +850,11 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 },
             ),
         },
-        parent::Request::Withdrawn { .. } | parent::Request::Told { .. } => {}
-        parent::Request::MessageRefused { reason: host::MessageRefusal::Ending, .. }
-            if domain.agent_life == AgentLife::Gone => {}
-        parent::Request::Faulted { .. } | parent::Request::MessageRefused { .. } => {
+        parent::Request::Withdrawn { .. } | parent::Request::Told { .. } | parent::Request::Unread { .. } => {}
+        parent::Request::MessageRefused { .. } => {
+            out.push(Request::Show { text: Box::from(&b"Message not delivered"[..]) });
+        }
+        parent::Request::Faulted { .. } => {
             domain.agent_failed = true;
             if !domain.stop_failed {
                 out.push(Request::Show { text: Box::from(&b"Agent process failed"[..]) });

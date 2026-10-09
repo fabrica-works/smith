@@ -87,7 +87,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     {
         return None;
     }
-    limits.calls.checked_add(8)?;
+    limits.calls.checked_add(9)?;
     let outbox = outbox(limits)?;
     let alarms = limits.agents.checked_mul(3)?;
     let directories = u64::from(limits.directories).checked_mul(
@@ -122,6 +122,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.detail_bytes))?;
     Slab::<Agent>::worst_case(limits.agents)?
         .checked_add(skein_lib::List::<Token>::worst_case(limits.calls)?)?
+        .checked_add(skein_lib::List::<Token>::worst_case(limits.messages)?)?
         .checked_add(Deadlines::<Alarm>::worst_case(alarms)?)?
         .checked_add(Queue::<Fact>::worst_case(limits.facts)?)?
         .checked_add(u64::from(limits.agents).checked_mul(per_agent)?)

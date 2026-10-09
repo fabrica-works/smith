@@ -53,6 +53,9 @@ pub(crate) fn drop_run(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Qu
     slot.turns = skein_lib::Map::with_capacity(slot.turns.capacity());
     let client = slot.client;
     if unanswered {
+        if let Some(names) = slot.inbox.report() {
+            out.push(Output::Parent(parent::Request::Unread { client, names }));
+        }
         out.push(Output::Parent(parent::Request::Faulted { client, fault: smith_host_domain::Fault::Exited }));
     }
     observe(agent, now, FactKind::Dropped { client });
@@ -99,6 +102,9 @@ pub(crate) fn settle(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queu
             }
             slot.state = Stage::Gone;
             let client = slot.client;
+            if let Some(names) = slot.inbox.report() {
+                out.push(Output::Parent(parent::Request::Unread { client, names }));
+            }
             out.push(Output::Parent(parent::Request::Gone { client, end: End::Stopped, detail: Box::default() }));
             observe(agent, now, FactKind::Gone { client, end: End::Stopped });
         }

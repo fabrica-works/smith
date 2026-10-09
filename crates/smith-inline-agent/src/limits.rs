@@ -34,7 +34,7 @@ fn output_count(limits: &Limits) -> Option<u32> {
         .checked_add(crate::workspace::io_capacity(limits))?
         .checked_add(limits.smith.run.runs)?
         .checked_add(limits.smith.run.conversations)?
-        .checked_add(3)
+        .checked_add(4)
 }
 
 /// Retained roots, configuration, routing, scratch and caller queue ownership.
@@ -55,7 +55,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Map::<Token, bool>::worst_case(limits.smith.run.conversations)?)?
         .checked_add(Map::<Token, bool>::worst_case(crate::workspace::io_capacity(limits))?)?
         .checked_add(Map::<Token, crate::workspace::Machine>::worst_case(limits.smith.run.runs)?)?
-        .checked_add(Map::<u32, u64>::worst_case(limits.window.turns)?)?;
+        .checked_add(Map::<u32, u64>::worst_case(limits.window.turns)?)?
+        .checked_add(Queue::<Token>::worst_case(limits.smith.run.messages)?)?;
     Slab::<Slot>::worst_case(limits.slots)?
         .checked_add(Map::<Token, Id<Slot>>::worst_case(limits.slots)?)?
         .checked_add(u64::from(limits.slots).checked_mul(per_slot)?)?
@@ -63,6 +64,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<Output>::worst_case(outputs)?)?
         .checked_add(Queue::<Fact>::worst_case(limits.facts)?)?
         .checked_add(List::<Token>::worst_case(limits.slots)?)?
+        .checked_add(List::<Token>::worst_case(limits.smith.run.messages)?)?
         .checked_add(List::<Token>::worst_case(crate::workspace::io_capacity(limits))?)?
         .checked_add(List::<Token>::worst_case(limits.smith.run.runs)?)?
         .checked_add(List::<Token>::worst_case(crate::workspace::call_capacity(limits))?)?

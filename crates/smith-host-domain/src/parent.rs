@@ -117,6 +117,8 @@ pub enum Request {
         /// Validated last word.
         answer: Answer,
     },
+    /// Capability names its remaining accepted messages unread, once after the answer or before failure/end.
+    Unread { client: Token, names: Box<[Token]> },
     /// One typed failure before the run answer.
     Faulted {
         client: Token,

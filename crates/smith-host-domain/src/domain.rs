@@ -110,8 +110,7 @@ pub(crate) struct Agent {
     turns: Map<u32, TurnMeta>,
     accounts: Map<u32, Account>,
     messages: u32,
-    unread: Queue<Token>,
-    read: Option<Token>,
+    unread: crate::Inbox,
     number: u32,
     spent: u64,
     turn_bytes: u64,
@@ -193,7 +192,7 @@ impl Domain {
 /// separately.
 #[must_use]
 pub fn max_out(limits: &Limits) -> u32 {
-    limits.calls.saturating_add(8)
+    limits.calls.saturating_add(9)
 }
 
 /// Consume one parent notice or lower terminal with injected clocks.
@@ -246,7 +245,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
             out.push(Output::Parent(parent::Request::Started { client: agent.client, agent: token }));
             let start = agent.start.take().expect("spawn retains first message");
             for message in &start.messages {
-                agent.unread.push(message.name);
+                agent.unread.sent(message.name);
             }
             for grant in &start.grants {
                 agent.accounts.get_mut(&grant.account).expect("validated start grant").emitted = grant.generation;
@@ -265,6 +264,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
         }
         Input::Process(process::Event::Unspawned { detail, .. }) => {
             assert!(agent.phase == Phase::Spawning, "one terminal per spawn");
+            report_unread(agent, out);
             agent.phase = Phase::Closed;
             agent.start = None;
             out.push(Output::Parent(parent::Request::Gone {
@@ -451,6 +451,12 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
     for grant in &start.grants {
         accounts.insert(grant.account, Account { latest: *grant, emitted: 0 }).expect("validated unique grant names");
     }
+    let mut unread = crate::Inbox::new(env.limits.messages);
+    for message in &start.messages {
+        unread
+            .admit(message.name, &message.label, &message.text, env.limits.message_bytes)
+            .expect("validated start messages");
+    }
     let workspace = start.workspace;
     let logical_run = start.logical_run;
     let activation = start.activation;
@@ -479,8 +485,7 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
         turns: Map::with_capacity(env.limits.turns),
         accounts,
         messages: 0,
-        unread: Queue::with_capacity(env.limits.messages),
-        read: None,
+        unread,
         number: 0,
         spent: 0,
         turn_bytes: 0,
@@ -687,29 +692,6 @@ fn listens(agent: &Agent) -> bool {
     }
 }
 
-fn named_message(agent: &Agent, name: Token) -> bool {
-    if agent.read == Some(name) {
-        return true;
-    }
-    for old in &agent.unread {
-        if *old == name {
-            return true;
-        }
-    }
-    for queued in &agent.outbox {
-        match queued {
-            Down::Message { name: old, .. } => {
-                if *old == name {
-                    return true;
-                }
-            }
-            Down::Start { .. } | Down::Answer { .. } | Down::Acknowledge { .. } | Down::Grant { .. } | Down::Cancel => {
-            }
-        }
-    }
-    false
-}
-
 fn message(
     agent: &mut Agent,
     name: Token,
@@ -718,28 +700,12 @@ fn message(
     env: &Env<Limits>,
     out: &mut Queue<Output>,
 ) {
-    let too_large = match match label.len().checked_add(2) {
-        Some(bytes) => bytes.checked_add(text.len()),
-        None => None,
-    } {
-        Some(bytes) => match u64::try_from(bytes) {
-            Ok(bytes) => bytes > env.limits.message_bytes,
-            Err(_) => true,
-        },
-        None => true,
-    };
-    let reason = if !accepts(agent) {
-        Some(MessageRefusal::Ending)
-    } else if too_large {
-        Some(MessageRefusal::TooLarge)
-    } else if named_message(agent, name) {
-        Some(MessageRefusal::NameInUse)
-    } else if agent.messages.saturating_add(agent.unread.len()) >= env.limits.messages {
-        Some(MessageRefusal::Full)
+    let admitted = if accepts(agent) {
+        agent.unread.admit(name, &label, &text, env.limits.message_bytes)
     } else {
-        None
+        Err(MessageRefusal::Ending)
     };
-    if let Some(reason) = reason {
+    if let Err(reason) = admitted {
         out.push(Output::Parent(parent::Request::MessageRefused { client: agent.client, name, reason }));
         return;
     }
@@ -749,36 +715,11 @@ fn message(
 }
 
 fn known_read(agent: &Agent, read: Option<Token>) -> bool {
-    match read {
-        None => agent.read.is_none(),
-        Some(name) => {
-            if agent.read == Some(name) {
-                return true;
-            }
-            for sent in &agent.unread {
-                if *sent == name {
-                    return true;
-                }
-            }
-            false
-        }
-    }
+    agent.unread.known(read)
 }
 
 fn mark_read(agent: &mut Agent, read: Option<Token>) {
-    match read {
-        Some(name) if agent.read != Some(name) => {
-            let count = agent.unread.len();
-            for _ in 0..count {
-                let sent = agent.unread.pop().expect("known read prefix");
-                agent.read = Some(sent);
-                if sent == name {
-                    break;
-                }
-            }
-        }
-        Some(_) | None => {}
-    }
+    agent.unread.fence(read);
 }
 
 fn acknowledge_turn(agent: &mut Agent, number: u32) {
@@ -915,13 +856,7 @@ fn receive(agent: &mut Agent, owner: Token, message: Up, env: &Env<Limits>, out:
             Some(_) | None => {}
         },
         Up::MessageRefused { name, reason } => {
-            let held = agent.unread.len();
-            for _ in 0..held {
-                let old = agent.unread.pop().expect("bounded unread count");
-                if old != name {
-                    agent.unread.push(old);
-                }
-            }
+            assert!(agent.unread.refused(name), "validated refusal owns an accepted message");
             out.push(Output::Parent(parent::Request::MessageRefused { client: agent.client, name, reason }));
         }
         Up::Turn { turn } => {
@@ -988,6 +923,7 @@ fn discarded_work(agent: &Agent, message: &Up) -> bool {
 }
 
 fn heard_answer(agent: &mut Agent, answer: crate::Answer, env: &Env<Limits>, out: &mut Queue<Output>) {
+    mark_read(agent, answer.read);
     agent.last_word = true;
     agent.spent = answer.spent;
     let wall_cancel = match &answer.result {
@@ -999,6 +935,7 @@ fn heard_answer(agent: &mut Agent, answer: crate::Answer, env: &Env<Limits>, out
     } else {
         agent.told = true;
         out.push(Output::Parent(parent::Request::Answered { client: agent.client, answer }));
+        report_unread(agent, out);
     }
     agent.owed = None;
     match agent.phase {
@@ -1040,15 +977,7 @@ fn valid_record(agent: &Agent, message: &Up, env: &Env<Limits>) -> bool {
     let limits = &env.limits;
     match message {
         Up::Admitted => !agent.admitted && !agent.last_word,
-        Up::MessageRefused { name, .. } => {
-            let mut sent = false;
-            for old in &agent.unread {
-                if old == name {
-                    sent = true;
-                }
-            }
-            agent.admitted && sent
-        }
+        Up::MessageRefused { name, .. } => agent.admitted && agent.unread.refusal_known(*name),
         Up::Answer { answer } => valid_answer(agent, answer, limits),
         Up::Call { call, name, deadline, ask } => {
             if !agent.admitted || name.activation != agent.activation || name.completion == 0 || *deadline < env.now {
@@ -1151,7 +1080,7 @@ fn valid_answer(agent: &Agent, answer: &crate::Answer, limits: &Limits) -> bool 
             }
         }
     }
-    if answer.read != agent.read || answer.turns != agent.number || !valid_spend(agent, answer.spent) {
+    if !known_read(agent, answer.read) || answer.turns != agent.number || !valid_spend(agent, answer.spent) {
         return false;
     }
     match &answer.result {
@@ -1210,8 +1139,15 @@ fn draining(agent: &mut Agent, env: &Env<Limits>) {
     }
 }
 
+fn report_unread(agent: &mut Agent, out: &mut Queue<Output>) {
+    if let Some(names) = agent.unread.report() {
+        out.push(Output::Parent(parent::Request::Unread { client: agent.client, names }));
+    }
+}
+
 fn report_fault(agent: &mut Agent, fault: Fault, out: &mut Queue<Output>) {
     if !agent.told {
+        report_unread(agent, out);
         agent.told = true;
         out.push(Output::Parent(parent::Request::Faulted { client: agent.client, fault }));
     }
@@ -1312,7 +1248,7 @@ fn send_next(agent: &mut Agent, owner: Token, out: &mut Queue<Output>) {
                 Down::Start { .. } => unreachable!("Start sent directly once"),
                 Down::Message { name, .. } => {
                     agent.messages = agent.messages.checked_sub(1).expect("queued message count");
-                    agent.unread.push(*name);
+                    agent.unread.sent(*name);
                     Sent::Message
                 }
                 Down::Answer { call, .. } => {
@@ -1346,6 +1282,7 @@ fn send_next(agent: &mut Agent, owner: Token, out: &mut Queue<Output>) {
 
 fn disconnect(agent: &mut Agent, limits: &Limits, out: &mut Queue<Output>) {
     // Queued transmissions cannot happen after EOF/last word, but parent rights survive.
+    report_unread(agent, out);
     let count = agent.outbox.len();
     for _ in 0..count {
         let message = agent.outbox.pop().expect("bounded queue snapshot");
@@ -1509,7 +1446,8 @@ fn observations(domain: &mut Domain, out: &Queue<Output>, before: u32) {
                     | parent::Request::Rejected { .. }
                     | parent::Request::Exhausted { .. }
                     | parent::Request::Told { .. }
-                    | parent::Request::MessageRefused { .. },
+                    | parent::Request::MessageRefused { .. }
+                    | parent::Request::Unread { .. },
                 )
                 | Output::Process(
                     process::Request::Spawn { .. }

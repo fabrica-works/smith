@@ -220,6 +220,19 @@ impl World {
     /// Deliver one parent command, recording actual parent terminals first.
     pub fn event(&mut self, event: parent::Event) {
         match &event {
+            parent::Event::Spawn { client, start } => {
+                let seen = self.seen.entry(*client).or_default();
+                seen.messages.extend(start.messages.iter().map(|message| message.name));
+                seen.sent_messages.extend(start.messages.iter().map(|message| message.name));
+            }
+            parent::Event::Message { agent, name, .. } => {
+                if let Some(seen) =
+                    self.seen.values_mut().find(|seen| seen.agent == Some(*agent) && seen.gone.is_none())
+                {
+                    seen.messages.push(*name);
+                    seen.sent_messages.insert(*name);
+                }
+            }
             parent::Event::Answer { agent, call, .. } => {
                 let seen =
                     self.seen.values_mut().find(|seen| seen.agent == Some(*agent)).expect("parent's actual slot");
@@ -235,10 +248,7 @@ impl World {
                     self.seen.values_mut().find(|seen| seen.agent == Some(*agent)).expect("parent's actual slot");
                 seen.turns.clear();
             }
-            parent::Event::Spawn { .. }
-            | parent::Event::Message { .. }
-            | parent::Event::Grant { .. }
-            | parent::Event::Stop { .. } => {}
+            parent::Event::Grant { .. } | parent::Event::Stop { .. } => {}
         }
         self.trace.log(self.stage.env.now, format!("up {event:?}"));
         assert!(self.agent.facts_room() >= inline::max_facts());
@@ -546,6 +556,7 @@ fn parent_client(request: &parent::Request) -> Token {
         | parent::Request::Waiting { client, .. }
         | parent::Request::Long { client, .. }
         | parent::Request::LongDone { client }
+        | parent::Request::Unread { client, .. }
         | parent::Request::Rejected { client, .. }
         | parent::Request::Exhausted { client, .. }
         | parent::Request::Told { client, .. }

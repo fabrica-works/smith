@@ -435,6 +435,7 @@ impl HostService {
                 host::parent::Request::Waiting { .. }
                 | host::parent::Request::Long { .. }
                 | host::parent::Request::LongDone { .. }
+                | host::parent::Request::Unread { .. }
                 | host::parent::Request::Withdrawn { .. }
                 | host::parent::Request::Rejected { .. }
                 | host::parent::Request::Exhausted { .. }

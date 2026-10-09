@@ -33,6 +33,7 @@ pub(crate) struct Slot {
     pub(crate) next_call: u64,
     pub(crate) relays: Map<Token, Relay>,
     pub(crate) turns: Map<u32, u64>,
+    pub(crate) inbox: host::Inbox,
     pub(crate) facts_drained: bool,
     pub(crate) content_drained: bool,
 }
@@ -224,6 +225,17 @@ fn spawn(agent: &mut Domain, env: &Env<Limits>, client: Token, start: host::Star
         return;
     }
     let logical_run = start.logical_run;
+    let mut inbox = host::Inbox::new(env.limits.smith.run.messages);
+    for message in &start.messages {
+        if inbox
+            .admit(message.name, &message.label, &message.text, u64::from(env.limits.smith.run.message_bytes))
+            .is_err()
+        {
+            refused(agent, env.now, client, host::End::Invalid(host::Invalid::Messages), out);
+            return;
+        }
+        inbox.sent(message.name);
+    }
     let event = match translate::start(client, start, &env.limits) {
         Ok(event) => event,
         Err(invalid) => {
@@ -251,6 +263,7 @@ fn spawn(agent: &mut Domain, env: &Env<Limits>, client: Token, start: host::Star
         next_call: 0,
         relays: Map::with_capacity(crate::workspace::call_capacity(&env.limits)),
         turns: Map::with_capacity(env.limits.window.turns),
+        inbox,
         facts_drained: false,
         content_drained: false,
     };
@@ -270,7 +283,7 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
         parent::Event::Spawn { client, start } => spawn(agent, env, client, start, out),
         parent::Event::Message { agent: handle, name, label, text } => {
             let id = Id::<Slot>::from_token(handle);
-            let slot = match agent.slots.get(id) {
+            let slot = match agent.slots.get_mut(id) {
                 Some(slot) => slot,
                 None => return,
             };
@@ -279,7 +292,20 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
                 Stage::Cancelling | Stage::Settling | Stage::Dropped | Stage::Gone => None,
             };
             match run {
-                Some(run) => root_step(agent, env, id, smith::Event::Message { run, name, label, text }, out),
+                Some(run) => {
+                    match slot.inbox.admit(name, &label, &text, u64::from(env.limits.smith.run.message_bytes)) {
+                        Ok(()) => slot.inbox.sent(name),
+                        Err(reason) => {
+                            out.push(Output::Parent(parent::Request::MessageRefused {
+                                client: slot.client,
+                                name,
+                                reason,
+                            }));
+                            return;
+                        }
+                    }
+                    root_step(agent, env, id, smith::Event::Message { run, name, label, text }, out);
+                }
                 None => out.push(Output::Parent(parent::Request::MessageRefused {
                     client: slot.client,
                     name,

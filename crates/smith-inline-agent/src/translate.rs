@@ -320,14 +320,17 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             }
             smith::Request::MessageRefused { host_run, name, reason } => {
                 assert_eq!(slot.logical_run, host_run, "root output preserves its scoped identity and single right");
-                out.push(Output::Parent(parent::Request::MessageRefused {
-                    client,
-                    name,
-                    reason: message_refusal(reason),
-                }));
+                if slot.inbox.refused(name) {
+                    out.push(Output::Parent(parent::Request::MessageRefused {
+                        client,
+                        name,
+                        reason: message_refusal(reason),
+                    }));
+                }
             }
             smith::Request::Turn { host_run, number, spent, read, turn, opens_window, position: _ } => {
                 assert_eq!(slot.logical_run, host_run, "root output preserves its scoped identity and single right");
+                slot.inbox.fence(read);
                 let body = host::TurnValue::new(turn, u64::MAX).expect("root concrete turns have checked ownership");
                 assert!(
                     slot.turns
@@ -343,11 +346,16 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             }
             smith::Request::Waiting { host_run, read } => {
                 assert_eq!(slot.logical_run, host_run, "root output preserves its scoped identity and single right");
+                slot.inbox.fence(read);
                 out.push(Output::Parent(parent::Request::Waiting { client, read }));
             }
             smith::Request::Answer { to, answer, read } => {
                 assert_eq!(to.into_token(), client, "root output preserves its scoped identity and single right");
+                slot.inbox.fence(read);
                 out.push(Output::Parent(parent::Request::Answered { client, answer: self::answer(answer, read) }));
+                if let Some(names) = slot.inbox.report() {
+                    out.push(Output::Parent(parent::Request::Unread { client, names }));
+                }
                 stop::finish(agent, env.now, id, out);
             }
             smith::Request::Complete {
