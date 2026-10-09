@@ -37,7 +37,24 @@ fn a_chat_runs_the_same_with_its_agent_in_process() {
     colocated.settle();
     assert_eq!(spawned.exit(), colocated.exit());
     assert_eq!(spawned.shown(), colocated.shown());
-    assert_eq!(spawned.queries(), colocated.queries());
+    let mut spawned_queries = spawned.queries().to_vec();
+    let mut colocated_queries = colocated.queries().to_vec();
+    // Until the local host supplies its durable chat identity (08.4), each
+    // child kind mints from its own RNG path. Each actual activation still
+    // has one scope; every other native provider field must remain equal.
+    for queries in [&mut spawned_queries, &mut colocated_queries] {
+        let key = match &queries.first().expect("actual native request").caching {
+            skein_fake_llm_domain::api::Caching::Scope(key) => *key,
+            skein_fake_llm_domain::api::Caching::Unscoped | skein_fake_llm_domain::api::Caching::Marks(_) => {
+                panic!("Codex run affinity is rendered")
+            }
+        };
+        for query in queries {
+            assert_eq!(query.caching, skein_fake_llm_domain::api::Caching::Scope(key));
+            query.caching = skein_fake_llm_domain::api::Caching::Scope([0; 16]);
+        }
+    }
+    assert_eq!(spawned_queries, colocated_queries);
     assert_eq!(spawned.turns(), colocated.turns());
 }
 
