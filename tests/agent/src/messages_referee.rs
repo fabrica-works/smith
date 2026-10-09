@@ -29,6 +29,9 @@ pub enum Seen {
     /// The actual provider terminal won its request. Contract: domain/session.md, section 3.
     Completed { parts: Vec<Part> },
 
+    /// Actual parent cancellation input, independent of provider callbacks.
+    ParentCancelled,
+
     /// Provider failure/cancellation genuinely settled, with no invented turn.
     /// Contract: domain/session.md, sections 3 and 6.
     CompletionEnded,
@@ -86,7 +89,7 @@ pub struct Meeting {
     expected: Option<Vec<Part>>,
     calling: bool,
     answered: bool,
-    wait_result: bool,
+    cancelled: bool,
     waiting: Option<Time>,
     count: u32,
     sequence: u32,
@@ -111,7 +114,7 @@ impl Meeting {
             expected: None,
             calling: false,
             answered: false,
-            wait_result: false,
+            cancelled: false,
             waiting: None,
             count: 0,
             sequence,
@@ -131,6 +134,7 @@ impl Meeting {
             }
             match message.parts.as_ref() {
                 [Part::Text { text }] => Some(text.as_ref()),
+                [Part::ToolOutput { id, output, is_error: false }] if query.messages.iter().rev().nth(1).is_some_and(|previous| previous.role == Role::Assistant && previous.parts.iter().any(|part| matches!(part, Part::ToolCall { id: called, name, .. } if called == id && name.as_ref() == b"wait"))) => Some(output.as_ref()),
                 [] | [Part::Opaque { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. }] | [_, _, ..] => None,
             }
         });
@@ -159,7 +163,6 @@ impl Meeting {
                 self.offered = Some((names, Box::from(recorded.expect("matching offer has one literal user message"))));
                 self.waiting = None;
                 judge.withdraw(&"idle park");
-                self.wait_result = false;
             } else {
                 let later = self.queued.iter().skip(1).any(|(_, text)| last == Some(text.as_ref()));
                 judge.check(!later, "person prompts preserve actual FIFO arrival order");
@@ -194,7 +197,7 @@ impl Meeting {
                 turn.messages.iter().any(|message| {
                     message.role == llm::Role::User
                         && matches!(
-                message.content.as_ref(), [session::llm::Block::Text { text: actual, .. }] if actual == &text)
+                message.content.as_ref(), [session::llm::Block::Text { text: actual, .. } | session::llm::Block::ToolResult { result: session::llm::Returned::Text { text: actual, error: false, replay: None }, .. }] if actual == &text)
                 }),
                 "offered person text is recorded unchanged before its assistant",
             );
@@ -218,10 +221,11 @@ impl Meeting {
                                 matches!(result, Some(session::llm::Returned::Text {
                                 text, error: false, replay: None
                             }) if text.as_ref() == b"Messages arrived. Read them before continuing.")
-                                    || (result.is_none() && self.waiting.is_some()),
+                                    || (result.is_none() && self.waiting.is_some())
+                                    || (self.cancelled && matches!(result, Some(session::llm::Returned::NotRun | session::llm::Returned::Withdrawn)))
+                                    || (self.cancelled && matches!(result, Some(session::llm::Returned::Text { text, error: true, .. }) if text.as_ref() == b"cancelled")),
                                 "wait either settles with admitted work or remains withheld through parking",
                             );
-                            self.wait_result = true;
                         } else {
                             judge.check(
                                 result.is_some(),
@@ -266,6 +270,7 @@ impl Expectations for Meeting {
                 self.calling = false;
                 self.expected = Some(parts);
             }
+            Seen::ParentCancelled => self.cancelled = true,
             Seen::CompletionEnded => {
                 judge.check(self.calling, "provider settlement consumes an actual request");
                 self.calling = false;

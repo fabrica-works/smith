@@ -214,7 +214,7 @@ fn observations(world: &World, seed: u64, idle: Duration) -> [u64; 16] {
                     read = *actual;
                 }
             }
-            Seen::Started { .. } | Seen::Admitted | Seen::Answer { .. } => {}
+            Seen::Started { .. } | Seen::Admitted | Seen::ParentCancelled | Seen::Answer { .. } => {}
         }
         referee.assert_holding(seed);
     }
@@ -233,6 +233,7 @@ fn observations(world: &World, seed: u64, idle: Duration) -> [u64; 16] {
                     | Seen::Prompt { .. }
                     | Seen::Completed { .. }
                     | Seen::CompletionEnded
+                    | Seen::ParentCancelled
                     | Seen::Turn { .. }
                     | Seen::Waiting { .. }
                     | Seen::Answer { .. } => None,
@@ -272,6 +273,7 @@ fn run(seed: u64, fixture: Fixture) -> (Vec<String>, Outcome) {
             | Seen::Prompt { .. }
             | Seen::Completed { .. }
             | Seen::CompletionEnded
+            | Seen::ParentCancelled
             | Seen::Turn { .. }
             | Seen::Waiting { .. }
             | Seen::Answer { .. } => None,

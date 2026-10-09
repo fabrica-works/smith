@@ -2602,6 +2602,22 @@ fn bounded_message_and_input_at_idle_deadline_preserve_existing_fifo() {
         h.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(5), text: bytes(b"full") })
             .is_empty()
     );
+    assert_eq!(
+        h.step(end_turn(conversation)).as_ref(),
+        &[Request::Say { peer: Token::new(9), text: bytes(b"host: full") }]
+    );
+    h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1 });
+    assert_eq!(
+        h.step(Event::Delegated {
+            conversation,
+            call: Token::new(20),
+            name: crate::CallName { activation: 1, completion: 2, position: 0 },
+            ask: Ask::Wait,
+            deadline: EXPIRY,
+        })
+        .as_ref(),
+        &[Request::Waiting { host_run: Token::new(1), read: Some(Token::new(5)) }]
+    );
     h.after(Duration::from_secs(30));
     assert_eq!(
         &*h.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(0), text: bytes(b"wake") }),
@@ -2983,7 +2999,7 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
         ask: Ask::Wait,
         deadline: EXPIRY,
     };
-    assert_eq!(harness.step(wait).as_ref(), &[returned(91, Returned::Refused { refusal: crate::AskRefusal::Over })]);
+    assert_eq!(harness.step(wait).as_ref(), &[returned(91, Returned::Refused { refusal: AskRefusal::Over })]);
     assert_eq!(harness.step(end_turn(main)).as_ref(), &[Request::Close { peer: Token::new(100) }]);
     let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO })).1;
     assert_eq!(answer, failed(Failure::Budget(Exhausted::Spend), Spend { units: BUDGET.spend, ..Spend::ZERO }));

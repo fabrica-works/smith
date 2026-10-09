@@ -16,7 +16,8 @@
 //! [`Event::Failed`] or [`Event::Cancelled`], or by [`Event::BudgetDenied`]
 //! when the root withholds it before any provider lease, or [`Event::UnsentClosed`]
 //! when the run closes before publication; a [`Request::Delegate`], to the
-//! opener, by [`Event::Answered`] or [`Event::AnswerCancelled`]; a
+//! opener, by [`Event::Answered`], [`Event::AnsweredAndYield`],
+//! [`Event::AnswerWithheld`] or [`Event::AnswerCancelled`]; a
 //! [`Request::Io`], the tools' file and process operations passed on as they
 //! are, by [`Event::Done`]. A request's `owner` is echoed on its terminal
 //! event: the session's token for a call to the LLM, a tool run's own for a

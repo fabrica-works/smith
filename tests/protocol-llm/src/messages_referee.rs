@@ -79,7 +79,6 @@ pub struct Meeting {
     expected: Option<Vec<Part>>,
     calling: bool,
     answered: bool,
-    wait_result: bool,
     waiting: Option<Time>,
     count: u32,
     sequence: u32,
@@ -100,7 +99,6 @@ impl Meeting {
             expected: None,
             calling: false,
             answered: false,
-            wait_result: false,
             waiting: None,
             count: 0,
             sequence,
@@ -119,6 +117,7 @@ impl Meeting {
             }
             match message.parts.as_ref() {
                 [Part::Text { text }] => Some(text.as_ref()),
+                [Part::ToolOutput { id, output, is_error: false }] if query.messages.iter().rev().nth(1).is_some_and(|previous| previous.role == Role::Assistant && previous.parts.iter().any(|part| matches!(part, Part::ToolCall { id: called, name, .. } if called == id && name.as_ref() == b"wait"))) => Some(output.as_ref()),
                 [] | [Part::Opaque { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. }] | [_, _, ..] => None,
             }
         });
@@ -141,7 +140,6 @@ impl Meeting {
                 self.offered = Some((names, joined.into_boxed_slice()));
                 self.waiting = None;
                 judge.withdraw(&"idle park");
-                self.wait_result = false;
             } else {
                 let later = self.queued.iter().skip(1).any(|(_, text)| last == Some(text.as_ref()));
                 judge.check(!later, "person prompts preserve actual FIFO arrival order");
@@ -176,7 +174,7 @@ impl Meeting {
                 turn.messages.iter().any(|message| {
                     message.role == llm::Role::User
                         && matches!(
-                message.content.as_ref(), [session::llm::Block::Text { text: actual, .. }] if actual == &text)
+                message.content.as_ref(), [session::llm::Block::Text { text: actual, .. } | session::llm::Block::ToolResult { result: session::llm::Returned::Text { text: actual, error: false, replay: None }, .. }] if actual == &text)
                 }),
                 "offered person text is recorded unchanged before its assistant",
             );
@@ -195,15 +193,11 @@ impl Meeting {
                                 | session::llm::Block::ToolCall { .. }
                                 | session::llm::Block::ToolResult { .. } => None,
                             });
-                        judge.check(result.is_some(), "every actual tool call has its concrete terminal before Turn");
                         if name.as_ref() == b"wait" {
-                            judge.check(
-                                matches!(result, Some(session::llm::Returned::Text {
-                                text, error: false, replay: None
-                            }) if text.as_ref() == b"waiting"),
-                                "wait settles as exact canonical result before waiting",
-                            );
-                            self.wait_result = true;
+                            judge.check(matches!(result, Some(session::llm::Returned::Text { text, error: false, replay: None }) if text.as_ref() == b"Messages arrived. Read them before continuing.") || (result.is_none() && self.waiting.is_some()), "wait settles with admitted work or stays withheld through parking");
+                        } else {
+                            judge
+                                .check(result.is_some(), "other actual calls have their concrete terminal before Turn");
                         }
                     }
                     Part::Text { .. } | Part::Opaque { .. } | Part::ToolOutput { .. } => {}
@@ -243,12 +237,14 @@ impl Expectations for Meeting {
             Seen::Waiting { read } => {
                 judge.check(
                     !self.calling
-                        && self.expected.is_none()
+                        && self.expected.as_ref().is_some_and(|parts| {
+                            parts
+                                .iter()
+                                .any(|part| matches!(part, Part::ToolCall { name, .. } if name.as_ref() == b"wait"))
+                        })
                         && self.queued.is_empty()
-                        && self.offered.is_none()
-                        && self.wait_result
                         && read == self.read,
-                    "Waiting follows settled wait, turns and an empty inbox",
+                    "Waiting follows an actual held wait with an empty inbox",
                 );
                 self.waiting = Some(judge.now());
                 judge.rearm("idle park", self.idle.saturating_add(Duration::from_secs(1)));

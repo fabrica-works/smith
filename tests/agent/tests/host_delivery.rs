@@ -97,7 +97,8 @@ fn forward(agent: &Agent, host: &mut Host, next: &mut usize) {
             | Seen::Waiting { .. }
             | Seen::Prompt { .. }
             | Seen::Completed { .. }
-            | Seen::CompletionEnded => {}
+            | Seen::CompletionEnded
+            | Seen::ParentCancelled => {}
         }
     }
     *next = agent.messages_seen().len();

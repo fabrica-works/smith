@@ -6,7 +6,7 @@
 //! 9, 10 and 13; domain/session.md, section 3; testing-strategy.md, sections 2.3 and 6.
 
 use skein_fake_llm_domain::api::{Finish, Line, Message, Part, Query, Role, Script, Turn};
-use skein_lib::Duration;
+use skein_lib::{Duration, Time, Token};
 use skein_world::domain::Span;
 use smith_domain::{Answered, AnsweredCall, Transcript, run, session::llm};
 use smith_protocol_llm_world::adapter::{self as adapter, Limits};
@@ -20,6 +20,8 @@ const ID: &[u8] = b"call_0000000000000001";
 const FIRST: &[u8] = b"First activation parked.";
 const RESUMED: &[u8] = b"Actual resumed activation.";
 const LAST: &[u8] = b"Second activation parked.";
+const PERSON: &[u8] = b"host: native wake";
+const WAITED: &[u8] = b"Messages arrived. Read them before continuing.";
 const CODEX_OPAQUE: &[u8] = br#"{"type":"reasoning","id":"opaque_root","encrypted_content":"encrypted-root","summary":[],"future":{"proof":[1,true,null],"nonce":"root-proof"}}"#;
 const ANTHROPIC_OPAQUE: &[u8] = br#"{"type":"thinking","future":{"proof":[1,true,null],"nonce":"root-proof"},"thinking":"Plan for parking","signature":"signed-root"}"#;
 const CODEX_ENVELOPE: &[u8] = b"\x00\x01\x01\x00\x00\x00\x8f{\"type\":\"reasoning\",\"id\":\"opaque_root\",\"encrypted_content\":\"encrypted-root\",\"summary\":[],\"future\":{\"proof\":[1,true,null],\"nonce\":\"root-proof\"}}";
@@ -80,7 +82,14 @@ fn resumed_turn() -> Turn {
 }
 
 fn text_turn(text: &[u8], tokens: u64) -> Turn {
-    Turn { lines: Box::new([Line::Text { text: text.into() }]), finish: Finish::Stop, tokens }
+    Turn {
+        lines: Box::new([
+            Line::Text { text: text.into() },
+            Line::Call { name: b"wait".as_slice().into(), arguments: b"{}".as_slice().into() },
+        ]),
+        finish: Finish::ToolCalls,
+        tokens,
+    }
 }
 
 fn scripts(fixture: &Fixture, tail: bool) -> Box<[Script]> {
@@ -135,10 +144,10 @@ fn call() -> Part {
 }
 
 fn feedback() -> Part {
-    Part::ToolOutput { id: ID.into(), output: b"waiting".as_slice().into(), is_error: false }
+    Part::ToolOutput { id: ID.into(), output: WAITED.into(), is_error: false }
 }
 
-fn prefix(fixture: &Fixture) -> Vec<Message> {
+fn settled_prefix(fixture: &Fixture) -> Vec<Message> {
     vec![
         message(Role::User, vec![text(BEGIN)]),
         message(Role::Assistant, vec![Part::Opaque { bytes: fixture.opaque.into() }, call()]),
@@ -146,8 +155,18 @@ fn prefix(fixture: &Fixture) -> Vec<Message> {
     ]
 }
 
+fn prefix(fixture: &Fixture) -> Vec<Message> {
+    let mut messages = settled_prefix(fixture);
+    if fixture.call_replay.is_some() {
+        messages[2].parts = vec![feedback(), text(PERSON)].into();
+    } else {
+        messages.push(message(Role::User, vec![text(PERSON)]));
+    }
+    messages
+}
+
 fn resumed_prefix(fixture: &Fixture, tail: bool) -> Vec<Message> {
-    let mut messages = prefix(fixture);
+    let mut messages = if tail { settled_prefix(fixture) } else { prefix(fixture) };
     if tail {
         if fixture.call_replay.is_some() {
             messages[2].parts = vec![feedback(), text(&waking_prompt())].into();
@@ -155,14 +174,15 @@ fn resumed_prefix(fixture: &Fixture, tail: bool) -> Vec<Message> {
             messages.push(message(Role::User, vec![text(&waking_prompt())]));
         }
     } else {
-        messages.push(message(Role::Assistant, vec![text(FIRST)]));
-        messages.push(message(Role::User, vec![text(BEGIN)]));
+        messages.push(message(Role::Assistant, vec![text(FIRST), call()]));
+        messages
+            .push(message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: BEGIN.into(), is_error: false }]));
     }
     messages
 }
 
 fn waking_prompt() -> Vec<u8> {
-    let mut text = b"Earlier host answers absent from the saved transcript:\ncall activation=1 completion=2 position=1 tool=wait result: waiting\n\n".to_vec();
+    let mut text = b"Earlier host answers absent from the saved transcript:\ncall activation=1 completion=2 position=1 tool=wait result: Messages arrived. Read them before continuing.\n\n".to_vec();
     text.extend_from_slice(BEGIN);
     text
 }
@@ -220,13 +240,23 @@ fn replay(actual: Option<&llm::Replay>, expected: Option<&[u8]>) -> bool {
 }
 
 fn recorded_wait(turn: &smith_domain::Turn, fixture: &Fixture, opaque: bool) -> bool {
-    let [wake, assistant, result] = turn.messages.as_ref() else { return false };
-    let wake_matches = matches!(wake.content.as_ref(), [llm::Block::Text { text, replay: None }] if text.as_ref() == BEGIN)
-        || (!opaque
-            && matches!(wake.content.as_ref(), [llm::Block::ToolResult {
-            id, result: llm::Returned::Text { text, error: false, replay: None }
-        }, llm::Block::Text { text: prompt, replay: None }]
-            if id.as_ref() == ID && text.as_ref() == b"waiting" && prompt.as_ref() == waking_prompt()));
+    let (wake, assistant) = match turn.messages.as_ref() {
+        [wake, assistant, result] if opaque => {
+            if result.role != llm::Role::User
+                || !matches!(result.content.as_ref(), [llm::Block::ToolResult { id, result: llm::Returned::Text { text, error: false, replay: None } }] if id.as_ref() == ID && text.as_ref() == WAITED)
+            {
+                return false;
+            }
+            (wake, assistant)
+        }
+        [wake, assistant] if !opaque => (wake, assistant),
+        _ => return false,
+    };
+    let wake_matches = if opaque {
+        matches!(wake.content.as_ref(), [llm::Block::Text { text, replay: None }] if text.as_ref() == BEGIN)
+    } else {
+        matches!(wake.content.as_ref(), [llm::Block::ToolResult { id, result: llm::Returned::Text { text, error: false, replay: None } }] if id.as_ref() == ID && text.as_ref() == BEGIN)
+    };
     if wake.role != llm::Role::User || assistant.role != llm::Role::Assistant || !wake_matches {
         return false;
     }
@@ -238,18 +268,13 @@ fn recorded_wait(turn: &smith_domain::Turn, fixture: &Fixture, opaque: bool) -> 
     let first_matches = if opaque {
         matches!(first, llm::Block::Opaque { bytes } if bytes.as_ref() == fixture.envelope)
     } else {
-        matches!(first, llm::Block::Text { text, replay: metadata }
-            if text.as_ref() == RESUMED && replay(metadata.as_ref(), fixture.text_replay))
+        matches!(first, llm::Block::Text { text, replay: metadata } if text.as_ref() == RESUMED && replay(metadata.as_ref(), fixture.text_replay))
     };
     first_matches
         && id.as_ref() == ID
         && name.as_ref() == b"wait"
         && input.as_ref() == b"{}"
         && replay(metadata.as_ref(), fixture.call_replay)
-        && result.role == llm::Role::User
-        && matches!(result.content.as_ref(), [llm::Block::ToolResult {
-            id, result: llm::Returned::Text { text, error: false, replay: None }
-        }] if id.as_ref() == ID && text.as_ref() == b"waiting")
 }
 
 fn recorded_corruptions(turn: &smith_domain::Turn, fixture: &Fixture) {
@@ -354,7 +379,10 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         total.output += wanted[1];
         total.cache_read += wanted[2];
         total.cache_write += wanted[3];
-        assert_eq!(world.turn_metadata()[index], (total.turns, None, total));
+        assert_eq!(
+            world.turn_metadata()[index],
+            (total.turns, if sequence == 0 && index == 1 { Some(Token::new(0)) } else { None }, total)
+        );
         assert_eq!(turn.version, smith_domain::session::record::VERSION);
         assert_eq!(turn.endpoint, llm::Endpoint(0));
         assert_eq!(turn.dialect, 1);
@@ -365,9 +393,11 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
 }
 
 fn settled(world: &World, settings: &Settings) {
-    assert_eq!(world.waiting().len(), 1);
+    assert_eq!(world.waiting().len(), if world.turns().len() == 2 { 2 } else { 1 });
     assert_eq!(world.waiting()[0].1, None);
-    assert!(world.answered_at() >= world.waiting()[0].0.saturating_add(settings.waiting));
+    assert!(
+        world.answered_at() >= world.waiting().last().expect("actual idle wait").0.saturating_add(settings.waiting)
+    );
     assert!(world.host_submissions().is_empty() && world.host_terminals().is_empty());
     assert_eq!(world.host_decisions(), 0);
     assert!(world.checked().is_empty() && world.pushes().is_empty());
@@ -415,18 +445,13 @@ fn resume(first: &World, fixture: &Fixture, index: usize, tail: bool) {
     world.run(100_000);
     let prefix = resumed_prefix(fixture, tail);
     prefix_corruptions(&world.prompts()[0], fixture, &prefix);
-    let mut second = prefix.clone();
-    second.push(message(Role::Assistant, vec![text(RESUMED), call()]));
-    second.push(message(Role::User, vec![feedback()]));
-    accounting(&world, fixture, &[prefix, second], &[11, 5], sequence);
+    accounting(&world, fixture, &[prefix], &[11], sequence);
     if !tail {
         assert!(recorded_wait(&world.turns()[0], fixture, false));
     }
-    assert!(matches!(world.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, replay: metadata }]
-        if text.as_ref() == LAST && replay(metadata.as_ref(), fixture.text_replay)));
     settled(&world, &settings);
     assert_eq!(first.turn_metadata()[1].2.output, 20, "saved activation is independently charged");
-    assert_eq!(world.turn_metadata()[1].2.output, 16, "history is not recharged in the new activation");
+    assert_eq!(world.turn_metadata()[0].2.output, 11, "history is not recharged in the new activation");
 }
 
 fn header_refusals(first: &World, fixture: &Fixture, index: usize) {
@@ -462,11 +487,14 @@ fn native_root_parks_then_restores_whole_opaque_prefix_and_real_post_tail() {
         let bounds = bounds();
         let settings = settings(919, false, &bounds);
         let mut first = World::with_wire(settings, None, configuration(index), bounds, scripts(&fixture, false));
+        first.message_at(Time::from_nanos(500_000_000), Token::new(0), b"native wake".as_slice().into());
         first.run(100_000);
         accounting(&first, &fixture, &[vec![message(Role::User, vec![text(BEGIN)])], prefix(&fixture)], &[17, 3], 0);
         recorded_corruptions(&first.turns()[0], &fixture);
-        assert!(matches!(first.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, replay: metadata }]
-            if text.as_ref() == FIRST && replay(metadata.as_ref(), fixture.text_replay)));
+        assert!(
+            matches!(first.turns()[1].messages[1].content.as_ref(), [llm::Block::Text { text, replay: metadata }, llm::Block::ToolCall { .. }]
+            if text.as_ref() == FIRST && replay(metadata.as_ref(), fixture.text_replay))
+        );
         settled(&first, &settings);
         resume(&first, &fixture, index, false);
         resume(&first, &fixture, index, true);

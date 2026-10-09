@@ -337,8 +337,7 @@ fn native_scripts() -> Box<[Script]> {
     Box::new([Script {
         cue: b"@brief-native".as_slice().into(),
         turns: Box::new([
-            calls(vec![call(b"wait", b"{}")], 17),
-            says(FIRST, 3),
+            calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 17),
             calls(vec![Line::Text { text: RESUMED.into() }, call(b"wait", b"{}")], 11),
             says(LAST, 5),
         ]),
@@ -358,7 +357,7 @@ fn wait_call() -> Part {
 }
 
 fn wait_result() -> Part {
-    Part::ToolOutput { id: ID.into(), output: b"waiting".as_slice().into(), is_error: false }
+    Part::ToolOutput { id: ID.into(), output: BEGIN.into(), is_error: false }
 }
 
 fn part_bytes(part: &Part) -> usize {
@@ -463,7 +462,7 @@ fn native_settled(world: &World, settings: &Settings, roots: &[Token]) {
 }
 
 fn recorded_wait(turn: &smith_domain::Turn, resumed: bool) {
-    let call = turn
+    let _call = turn
         .messages
         .iter()
         .flat_map(|message| &message.content)
@@ -479,17 +478,9 @@ fn recorded_wait(turn: &smith_domain::Turn, resumed: bool) {
         })
         .expect("actual historical Wait call");
     assert_eq!(
-        turn.messages
-            .iter()
-            .flat_map(|message| &message.content)
-            .filter(|block| {
-                matches!(block, llm::Block::ToolResult { id, result: llm::Returned::Text {
-            text, error: false, replay: None
-        }} if id == call && text.as_ref() == b"waiting")
-            })
-            .count(),
-        1,
-        "actual settled Wait feedback saved once"
+        turn.messages.last().expect("actual parked tail").role,
+        llm::Role::Assistant,
+        "parked own wait remains unresulted"
     );
     if resumed {
         assert!(
@@ -541,12 +532,13 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         let first_system = expected_main("@brief-native PARENT-INSTRUCTIONS: native first activation.\n\n");
         let opening = vec![message(Role::User, vec![text(BEGIN)])];
         let mut waited = opening.clone();
-        waited.extend([message(Role::Assistant, vec![wait_call()]), message(Role::User, vec![wait_result()])]);
-        native_accounting(&first, &first_system, &[opening, waited.clone()], &[17, 3], 0, true);
+        waited.extend([
+            message(Role::Assistant, vec![text(FIRST), wait_call()]),
+            message(Role::User, vec![wait_result()]),
+        ]);
+        native_accounting(&first, &first_system, &[opening], &[17], 0, true);
         native_settled(&first, &settings, &roots);
         recorded_wait(&first.turns()[0], false);
-        assert!(matches!(first.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, .. }]
-            if text.as_ref() == FIRST));
         let actual = &first.turns()[0];
         let saved = Transcript {
             version: actual.version,
@@ -554,7 +546,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             dialect: actual.dialect,
             turns: first.turns().into(),
         };
-        assert_eq!(saved.turns.last().expect("actual persisted transcript tail").sequence, 2);
+        assert_eq!(saved.turns.last().expect("actual persisted transcript tail").sequence, 1);
         settings.resume = true;
         let (disk, mounted) = workspace();
         let roots = mounted.directories.iter().map(|directory| directory.root).collect::<Vec<_>>();
@@ -569,18 +561,10 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         );
         restored.run(100_000);
         let restored_system = expected_main("@brief-native RESUME-INSTRUCTIONS: use the saved history.\n\n");
-        waited.extend([message(Role::Assistant, vec![text(FIRST)]), message(Role::User, vec![text(BEGIN)])]);
-        let mut continued = waited.clone();
-        continued.extend([
-            message(Role::Assistant, vec![text(RESUMED), wait_call()]),
-            message(Role::User, vec![wait_result()]),
-        ]);
-        native_accounting(&restored, &restored_system, &[waited, continued], &[11, 5], 2, true);
+        native_accounting(&restored, &restored_system, &[waited], &[11], 1, true);
         native_settled(&restored, &settings, &roots);
         recorded_wait(&restored.turns()[0], true);
-        assert!(matches!(restored.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, .. }]
-            if text.as_ref() == LAST));
-        assert_eq!(first.turn_metadata()[1].2.output, 20);
-        assert_eq!(restored.turn_metadata()[1].2.output, 16, "new activation charges only its actual completions");
+        assert_eq!(first.turn_metadata()[0].2.output, 17);
+        assert_eq!(restored.turn_metadata()[0].2.output, 11, "new activation charges only its actual completion");
     }
 }

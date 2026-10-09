@@ -2397,7 +2397,11 @@ fn validate_transcript(
                     let missing = validate_link(previous, message)?;
                     if let Some(position) = missing {
                         let assistant = previous.expect("a missing result follows its assistant call");
-                        withheld = match &assistant.content[usize::try_from(position).expect("u32 fits")] {
+                        withheld = match assistant
+                            .content
+                            .get(usize::try_from(position).expect("u32 fits"))
+                            .expect("validated call position")
+                        {
                             Block::ToolCall { id, .. } => Some(id),
                             Block::Text { .. }
                             | Block::Opaque { .. }
@@ -2427,6 +2431,20 @@ fn validate_transcript(
         return Err(Refusal::Malformed);
     }
     let tail = previous.expect("validated nonempty turn");
+    validate_answers(tail, answered, sequence)?;
+    if count.checked_add(3).ok_or(Refusal::TooLarge)? > limits.messages || bytes > limits.session_bytes {
+        return Err(Refusal::TooLarge);
+    }
+    let resumed = resumed_tail(tail, withheld);
+    Ok((sequence, bytes, resumed))
+}
+
+fn validate_answers(
+    tail: &Message,
+    answered: &[crate::record::Answered],
+    sequence: u32,
+) -> Result<(), crate::record::Refusal> {
+    use crate::record::Refusal;
     for (index, answer) in answered.iter().enumerate() {
         if tail.role != Role::Assistant || answer.origin.sequence != sequence {
             return Err(Refusal::Malformed);
@@ -2453,10 +2471,11 @@ fn validate_transcript(
             }
         }
     }
-    if count.checked_add(3).ok_or(Refusal::TooLarge)? > limits.messages || bytes > limits.session_bytes {
-        return Err(Refusal::TooLarge);
-    }
-    let resumed = match withheld {
+    Ok(())
+}
+
+fn resumed_tail(tail: &Message, withheld: Option<&[u8]>) -> Resumed {
+    match withheld {
         Some(id) => Resumed::WaitWithheld { id: skein_lib::bytes::copy_of(id) },
         None => match tail.role {
             Role::User => Resumed::Settled,
@@ -2466,7 +2485,9 @@ fn validate_transcript(
                     match block {
                         Block::ToolCall { id, name, .. } if name.as_ref() == b"wait" => {
                             if wait.is_some() {
-                                return Err(Refusal::Malformed);
+                                // A generic assistant tail may hold several unstarted calls.
+                                // Only the single own wait tail identifies a held wait.
+                                return Resumed::Settled;
                             }
                             wait = Some(id);
                         }
@@ -2483,8 +2504,7 @@ fn validate_transcript(
                 }
             }
         },
-    };
-    Ok((sequence, bytes, resumed))
+    }
 }
 
 fn restore(
@@ -2785,7 +2805,7 @@ pub(crate) fn delegate_ended(
 }
 
 /// Release the live delegated right while retaining its unanswered historical call.
-/// The run sends this before closing main; no provider request or yield is emitted.
+/// It also settles while closing; no provider request or yield is emitted.
 pub(crate) fn delegate_withheld(domain: &mut Domain, env: &Env<Limits>, owner: Token, out: &mut Queue<Request>) {
     let Some(run) = domain.calls.runs.get(Id::from_token(owner)) else {
         return;
@@ -2955,7 +2975,12 @@ fn validate_results(previous: &Message, message: &Message) -> Result<Option<u32>
                 Block::ToolCall { id, name, .. } => {
                     let matches = match actual {
                         Some(position) => {
-                            result_id(&message.content[usize::try_from(position).expect("u32 fits")]) == id.as_ref()
+                            result_id(
+                                message
+                                    .content
+                                    .get(usize::try_from(position).expect("u32 fits"))
+                                    .expect("validated result position"),
+                            ) == id.as_ref()
                         }
                         None => false,
                     };
@@ -2991,7 +3016,7 @@ fn next_result(blocks: &[Block], next: &mut u32) -> Result<Option<u32>, crate::r
     let end = u32::try_from(blocks.len()).or(Err(crate::record::Refusal::TooLarge))?;
     for position in begin..end {
         *next = position.checked_add(1).ok_or(crate::record::Refusal::TooLarge)?;
-        match &blocks[usize::try_from(position).expect("u32 fits")] {
+        match blocks.get(usize::try_from(position).expect("u32 fits")).expect("within blocks") {
             Block::ToolResult { .. } => return Ok(Some(position)),
             Block::ToolCall { .. } => return Err(crate::record::Refusal::Malformed),
             Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } => {}

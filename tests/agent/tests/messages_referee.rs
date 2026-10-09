@@ -62,7 +62,7 @@ fn chat_positive_and_omitted_reordered_or_corrupted_turns() {
             let (number, read, body) = turn_fields(&mut bad[turn].1);
             match corruption {
                 1 => *number = 2,
-                2 => *read = Some(Token::new(99)),
+                2 => *read = Some(Token::new(0)),
                 3 => body.sequence += 1,
                 4 => {
                     let assistant = body
@@ -70,7 +70,12 @@ fn chat_positive_and_omitted_reordered_or_corrupted_turns() {
                         .iter_mut()
                         .find(|message| message.role == smith_domain::llm::Role::Assistant)
                         .expect("actual assistant");
-                    match &mut assistant.content[0] {
+                    let actual_call = assistant
+                        .content
+                        .iter_mut()
+                        .find(|block| matches!(block, smith_domain::session::llm::Block::ToolCall { .. }))
+                        .expect("actual wait call");
+                    match actual_call {
                         smith_domain::session::llm::Block::ToolCall { id, .. } => {
                             *id = b"invented-id".as_slice().into();
                         }
@@ -106,7 +111,7 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
                 let prompt = bad.iter_mut().find_map(|(_, seen)| match seen {
                     Seen::Prompt { query } if query.messages.last().is_some_and(|message| matches!(message.parts.as_ref(), [Part::Text { text }] if text.as_ref() == b"person: first")) => Some(query),
                     Seen::Started { .. } | Seen::Admitted | Seen::Input { .. } | Seen::Prompt { .. } | Seen::Completed { .. }
-                    | Seen::CompletionEnded | Seen::Turn { .. } | Seen::Waiting { .. } | Seen::Answer { .. } => None,
+                    | Seen::CompletionEnded | Seen::ParentCancelled | Seen::Turn { .. } | Seen::Waiting { .. } | Seen::Answer { .. } => None,
                 }).expect("actual first wake request");
                 prompt.messages.last_mut().expect("wake").parts[0] =
                     Part::Text { text: b"person: second".as_slice().into() };
@@ -119,6 +124,7 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
                 | Seen::Prompt { .. }
                 | Seen::Completed { .. }
                 | Seen::CompletionEnded
+                | Seen::ParentCancelled
                 | Seen::Turn { .. }
                 | Seen::Waiting { .. } => {
                     panic!("actual final output")
@@ -159,6 +165,7 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
                 | Seen::Prompt { .. }
                 | Seen::Completed { .. }
                 | Seen::CompletionEnded
+                | Seen::ParentCancelled
                 | Seen::Turn { .. }
                 | Seen::Waiting { .. } => panic!("actual final answer"),
             },
@@ -177,6 +184,7 @@ fn turn_fields(seen: &mut Seen) -> (&mut u32, &mut Option<Token>, &mut smith_dom
         | Seen::Prompt { .. }
         | Seen::Completed { .. }
         | Seen::CompletionEnded
+        | Seen::ParentCancelled
         | Seen::Waiting { .. }
         | Seen::Answer { .. } => {
             panic!("selected observed turn")

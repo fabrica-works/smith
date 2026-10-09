@@ -38,8 +38,7 @@ fn native_script() -> Box<[Script]> {
         cue: b"@hosttools".as_slice().into(),
         turns: Box::new([
             calls(vec![call(b"host_action", INPUT)], 17),
-            calls(vec![call(b"wait", b"{}")], 11),
-            says(FIRST, 3),
+            calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 11),
             calls(vec![Line::Text { text: RESUMED.into() }, call(b"wait", b"{}")], 7),
             says(LAST, 5),
         ]),
@@ -181,10 +180,10 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         ]);
         let mut third_prefix = second_prefix.clone();
         third_prefix.extend([
-            message(Role::Assistant, vec![tool(b"wait", b"{}")]),
-            message(Role::User, vec![result(b"waiting")]),
+            message(Role::Assistant, vec![text(FIRST), tool(b"wait", b"{}")]),
+            message(Role::User, vec![result(BEGIN)]),
         ]);
-        accounting(&first, &[first_prefix, second_prefix, third_prefix.clone()], &[17, 11, 3], 0, true);
+        accounting(&first, &[first_prefix, second_prefix], &[17, 11], 0, true);
         no_workspace(&first, &settings);
         assert_eq!(first.host_submissions().len(), 1);
         assert_eq!(first.host_submissions()[0].name, run::CallName { activation: 1, completion: 1, position: 0 });
@@ -200,7 +199,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             dialect: actual.dialect,
             turns: first.turns().into(),
         };
-        assert_eq!(saved.turns.last().expect("persisted actual tail").sequence, 3);
+        assert_eq!(saved.turns.last().expect("persisted actual tail").sequence, 2);
         settings.resume = true;
         let configuration = wire::configurations().into_iter().nth(index).expect("same native fixture");
         let mut resumed = World::with_workspace_wire(
@@ -213,18 +212,12 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             native_script(),
         );
         resumed.run(100_000);
-        third_prefix.extend([message(Role::Assistant, vec![text(FIRST)]), message(Role::User, vec![text(BEGIN)])]);
-        let mut continued = third_prefix.clone();
-        continued.extend([
-            message(Role::Assistant, vec![text(RESUMED), tool(b"wait", b"{}")]),
-            message(Role::User, vec![result(b"waiting")]),
-        ]);
-        accounting(&resumed, &[third_prefix, continued], &[7, 5], 3, true);
+        accounting(&resumed, &[third_prefix], &[7], 2, true);
         no_workspace(&resumed, &settings);
         assert!(resumed.host_submissions().is_empty() && resumed.host_terminals().is_empty());
         assert_eq!(resumed.host_decisions(), 0, "restored history performs no second host effect");
-        assert_eq!(first.turn_metadata()[2].2.output, 31);
-        assert_eq!(resumed.turn_metadata()[1].2.output, 12, "history is not recharged");
+        assert_eq!(first.turn_metadata()[1].2.output, 28);
+        assert_eq!(resumed.turn_metadata()[0].2.output, 7, "history is not recharged");
     }
 }
 

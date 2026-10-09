@@ -12,7 +12,7 @@ use smith_host_domain::{self as host, Down, Input, RunResult, Up};
 use smith_host_domain::{parent, process};
 use smith_host_world::{Lower, World as Host};
 
-fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bool) {
+fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut u32) {
     let (at, seen) = seen;
     host.stage.tick(*at);
     match seen {
@@ -32,18 +32,19 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bo
                 assert!(host.seen.turns.contains_key(&1), "ACK2 never commits the earlier parent-owned payload");
                 host.sent();
             }
-            if *number == 4 {
-                host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 4 }));
+            if *number == 3 {
+                host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 3 }));
                 assert!(host.lower.contains(Lower::Send), "actual final ACK send right stays outstanding");
             }
         }
         Seen::Waiting { read } => {
             host.up(Up::Waiting { read: *read });
-            if !*woke {
-                *woke = true;
+            if *woke < 2 {
+                let name = Token::new(u64::from(*woke));
+                *woke += 1;
                 host.event(Input::Parent(parent::Event::Message {
                     agent: host.agent(),
-                    name: Token::new(0),
+                    name,
                     label: b"person".as_slice().into(),
                     text: b"live host".as_slice().into(),
                 }));
@@ -62,7 +63,8 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bo
         | Seen::Input { .. }
         | Seen::Prompt { .. }
         | Seen::Completed { .. }
-        | Seen::CompletionEnded => {}
+        | Seen::CompletionEnded
+        | Seen::ParentCancelled => {}
     }
     assert!(host.seen.fault.is_none(), "actual composed metadata satisfies the host boundary");
 }
@@ -99,7 +101,7 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
     assert!(!host.seen.admitted, "physical Started does not invent agent admission");
     host.sent();
     let mut next = 0;
-    let mut woke = false;
+    let mut woke = 0;
     let mut done = false;
     for _ in 0..2000 {
         done = agent.drive(1);
@@ -112,12 +114,12 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
             break;
         }
     }
-    assert!(done && woke);
-    assert_eq!(agent.turns().len(), 4);
+    assert!(done && woke == 2);
+    assert_eq!(agent.turns().len(), 3);
     assert!(host.seen.answer.is_some(), "actual root answer was accepted after all actual Turns");
     let run::Answer::Parked { spent, turns } = agent.answer() else { panic!("the actual final root word is Parked") };
     assert_accounting(host.seen.answer.as_ref().expect("actual forwarded answer"), *turns, *spent);
-    assert_eq!(host.seen.turns.keys().copied().collect::<Vec<_>>(), [1, 3]);
+    assert_eq!(host.seen.turns.keys().copied().collect::<Vec<_>>(), [1]);
     assert_eq!(host.seen.turns[&1].value(), &agent.turns()[0], "parent retains the complete actual record");
 
     let owner = host.owner();
@@ -128,9 +130,7 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
     host.event(Input::Process(process::Event::Hangup { owner }));
     assert!(host.seen.exited && host.seen.empty && host.seen.eof);
     assert!(host.seen.gone.is_none(), "tree/EOF cannot consume parent commitment or pending ACK Send rights");
-    for turn in [1, 3] {
-        host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn }));
-    }
+    host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 1 }));
     assert!(host.seen.turns.is_empty());
     assert!(host.seen.gone.is_none(), "parent committed all payloads, but actual ACK writes remain owed");
     for _ in 0..16 {
@@ -218,7 +218,8 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
             | Seen::Input { .. }
             | Seen::Prompt { .. }
             | Seen::Completed { .. }
-            | Seen::CompletionEnded => {}
+            | Seen::CompletionEnded
+            | Seen::ParentCancelled => {}
         }
     }
     assert_accounting(host.seen.answer.as_ref().expect("actual global final reaches host parent"), turns, spent);

@@ -548,7 +548,11 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
         .flat_map(|message| &message.content)
         .find_map(|block| match block {
             llm::Block::ToolCall { id, name, .. } if name.as_ref() == b"wait" => Some(id.clone()),
-            _ => None,
+            llm::Block::ToolCall { .. }
+            | llm::Block::Text { .. }
+            | llm::Block::Opaque { .. }
+            | llm::Block::Refusal { .. }
+            | llm::Block::ToolResult { .. } => None,
         })
         .expect("actual wait identity");
     assert!(
@@ -568,6 +572,10 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
         workspace: None,
         transcript: Some(saved),
         answered: Box::default(),
+        grants: Box::new([smith_domain::Grant {
+            name: smith_domain::GrantName { account: 0, generation: 1 },
+            valid: Duration::from_secs(7200),
+        }]),
         messages: Box::new([run::Message {
             name: Token::new(0),
             label: b"person".as_slice().into(),
@@ -582,4 +590,14 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
         [Part::ToolOutput { id, output, is_error: false }] if *id == call && output.ends_with(b"person: waking line")));
     assert_eq!(next.turns()[0].sequence, 2);
     assert_eq!(next.turn_metadata()[0].1, Some(Token::new(0)));
+    let mut referee =
+        skein_world::domain::Referee::new(smith_agent_world::messages_referee::Meeting::new(1, settings.waiting));
+    for (at, seen) in next.messages_seen() {
+        referee.observe(*at, seen.clone(), &mut Vec::new());
+    }
+    assert_eq!(
+        referee.verdict(),
+        skein_world::domain::Verdict::Passed,
+        "actual restored wait output crosses the offered-person fence"
+    );
 }

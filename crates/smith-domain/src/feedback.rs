@@ -40,7 +40,8 @@ pub enum FeedbackRefusal {
 /// precedes allocation; admitted results require a compatible receiving cap.
 ///
 /// # Errors
-/// Returns `TooLarge` when complete feedback cannot fit `max_bytes`.
+/// Returns `TooLarge` when complete feedback cannot fit `max_bytes`, or
+/// `Withheld` when the own wait has no result to supply.
 pub fn feedback(returned: Returned, max_bytes: u64) -> Result<Feedback, FeedbackRefusal> {
     let error = crate::translate::failed(&returned);
     let returned = match returned {
@@ -122,8 +123,7 @@ pub fn feedback_worst_case(limits: &run::Limits) -> Option<u64> {
 fn render(text: &mut Text, returned: &Returned) {
     match returned {
         Returned::Withheld => unreachable!("withheld results are routed without feedback"),
-        Returned::Waited { text: note } => text.put(note),
-        Returned::Crossed { text: note } => text.put(note),
+        Returned::Waited { text: note } | Returned::Crossed { text: note } => text.put(note),
         Returned::HostAnswered(answer) => text.put(answer.text()),
         Returned::HostUnknown => text.put(b"host-unknown"),
         Returned::HostTooLarge { bytes, max } => {

@@ -27,10 +27,10 @@
 //! Awaiting     cancel, idle or wall deadline      Closed      Answer without session
 //! Preparing    cancel or deadline                Stopping    settle read/probe
 //! Stopping     read/probe terminal                Winding     close main
-//! Working      main yield, wait, empty inbox     Waiting     Waiting
-//! Working      main yield, zero wait             Winding     Waiting, close main
-//! Waiting      labelled message                  Working     Say; read on next Turn
-//! Waiting      idle alarm                         Winding     close main
+//! Working      main wait, empty inbox            Waiting     Waiting
+//! Working      main wait, zero wait              Winding     Waiting, Withheld, close main
+//! Waiting      labelled message                  Working     Waited; yield then Say
+//! Waiting      idle alarm                         Winding     Withheld, close main
 //! Working      finish or other ending             Winding     close main
 //! Working      budget failure                     Over        await main yield
 //! Over         main yield                          Winding     close main
@@ -445,7 +445,7 @@ pub(crate) fn park(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
         | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => {
-            unreachable!("idle alarm belongs only to settled Waiting")
+            unreachable!("idle alarm belongs only to a retained wait or unopened awaiting main")
         }
     };
     follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, id);
@@ -583,12 +583,13 @@ pub(crate) fn yielded(
         State::Working { reply_to, main } => {
             assert!(main == id, "a conversation with no asker is main");
             assert!(conversation.calls == 0, "a main yield follows every actual call terminal");
-            match !run.inbox.has_queued() {
-                false => continue_messages(run, reply_to, main, peer, &env.limits, out),
-                true => match nudge(run, stop, &env.limits) {
+            if run.inbox.has_queued() {
+                continue_messages(run, reply_to, main, peer, &env.limits, out)
+            } else {
+                match nudge(run, stop, &env.limits) {
                     Ok(()) => say(reply_to, main, peer, prompt::nudge(stop, run.nudges, env.limits.nudges), out),
                     Err(failure) => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
-                },
+                }
             }
         }
         State::Over { reply_to, main, exhausted } => {
@@ -883,8 +884,18 @@ pub(crate) fn delegated(
         State::Waiting { reply_to, main, call, until } => {
             assert!(id != main, "a withheld wait blocks main's next call");
             let serving = Serving { reply_to, main, conversation: id, over: None, made };
-            let _: State = serve(domain, env, run_id, serving, ask, out);
-            State::Waiting { reply_to, main, call, until }
+            match serve(domain, env, run_id, serving, ask, out) {
+                State::Working { reply_to, main } => State::Waiting { reply_to, main, call, until },
+                State::Preparing { .. }
+                | State::Awaiting { .. }
+                | State::Stopping { .. }
+                | State::Waiting { .. }
+                | State::Over { .. }
+                | State::Winding { .. }
+                | State::Closed => {
+                    unreachable!("a child's ordinary call cannot finish or park main")
+                }
+            }
         }
         State::Awaiting { .. } | State::Preparing { .. } | State::Stopping { .. } | State::Closed => {
             unreachable!("a run's conversation calls only while the run works or winds down")

@@ -814,6 +814,34 @@ fn a_delegated_result_can_yield_after_its_actual_turn_before_the_next_provider_r
     world.close();
 }
 
+fn partial_wait_mutations_are_refused(history: &record::Transcript) {
+    for own_name in [true, false] {
+        let mut changed = history.clone();
+        for message in &mut changed.turns[0].messages {
+            let mut content = message.content.to_vec();
+            if own_name {
+                for block in &mut content {
+                    if let llm::Block::ToolCall { id, name, .. } = block
+                        && id.as_ref() == b"held"
+                    {
+                        *name = b"another_tool".as_slice().into();
+                    }
+                }
+            } else {
+                content.retain(|block| !matches!(block, llm::Block::ToolResult { id, .. } if id.as_ref() == b"later"));
+            }
+            message.content = content.into();
+        }
+        let mut refused = World::new(30, 256);
+        refused.open(opening(Some(changed), 100));
+        assert_eq!(refused.end, Some(session::End::TranscriptRefused { reason: record::Refusal::Malformed }));
+        assert!(
+            refused.prompts.is_empty() && refused.delegated.is_empty(),
+            "a second missing result or a non-own missing call starts no work"
+        );
+    }
+}
+
 #[test]
 fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
     let mut world = World::new(61, 256);
@@ -846,6 +874,7 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
+            | session::FactKind::DelegateWithheld { .. }
             | session::FactKind::DelegateCancelled { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
@@ -975,6 +1004,9 @@ fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
                 spent: 0,
             });
         }
+        if earlier {
+            first.resume();
+        }
         let owner = first.delegated[0];
         first.step(session::Event::AnswerWithheld { owner });
         assert_eq!(first.turns.len(), 1);
@@ -993,6 +1025,7 @@ fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
                 .any(|block| matches!(block, llm::Block::ToolResult { id, .. } if id.as_ref() == b"held"))
         );
         first.close();
+        partial_wait_mutations_are_refused(&transcript(&first));
         let mut resumed = World::new(28, 256);
         resumed.open(opening(Some(transcript(&first)), 100));
         assert!(resumed.end.is_none(), "one own wait may be missing in the last partial results");
@@ -1012,4 +1045,32 @@ fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
         assert!(again.end.is_none(), "the late result remains valid on a second restore");
         again.close();
     }
+}
+
+#[test]
+fn a_generic_yield_with_two_unstarted_wait_calls_restores_both_as_not_run() {
+    let mut first = World::new(31, 256);
+    first.open(opening(None, 100));
+    let content = [b"one".as_slice(), b"two"].map(|id| llm::Block::ToolCall {
+        id: id.into(),
+        name: b"wait".as_slice().into(),
+        input: b"{}".as_slice().into(),
+        call: llm::Decoded::Delegated {
+            source: session::ToolSource::Run,
+            ticket: Token::new(991),
+            effect: smith_domain_tools::Effect::Write,
+        },
+        replay: None,
+    });
+    first.complete(Box::new(content), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert!(first.delegated.is_empty(), "the actual generic yield starts neither call");
+    first.close();
+    let mut restored = World::new(32, 256);
+    restored.open(opening(Some(transcript(&first)), 100));
+    assert!(restored.end.is_none());
+    assert!(matches!(restored.prompts[0].messages.last().expect("unstarted calls supplied").content.as_ref(),
+        [llm::Block::ToolResult { id: one, result: llm::Returned::NotRun },
+         llm::Block::ToolResult { id: two, result: llm::Returned::NotRun }, llm::Block::Text { text, .. }]
+        if one.as_ref() == b"one" && two.as_ref() == b"two" && text.as_ref() == b"wake"));
+    restored.close();
 }

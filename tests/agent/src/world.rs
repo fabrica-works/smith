@@ -1672,11 +1672,11 @@ impl World {
             Event::Failed { .. } | Event::Cancelled { .. } => {
                 self.messages_seen.push((self.now, crate::messages_referee::Seen::CompletionEnded));
             }
+            Event::Cancel { .. } => self.messages_seen.push((self.now, crate::messages_referee::Seen::ParentCancelled)),
             Event::Start { .. }
             | Event::Message { .. }
             | Event::Acknowledge { .. }
             | Event::Grant { .. }
-            | Event::Cancel { .. }
             | Event::HostReturned { .. }
             | Event::Delivered { .. }
             | Event::Read { .. }

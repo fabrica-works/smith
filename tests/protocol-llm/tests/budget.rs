@@ -468,10 +468,9 @@ fn parking_scripts() -> Box<[Script]> {
             b"@budget-parking-main",
             vec![
                 calls(vec![call(b"sub_agent", PARK_CHILD_INPUT)], 3),
-                calls(vec![call(b"wait", b"{}")], 5),
-                says(FIRST, 7),
+                calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 5),
                 calls(vec![Line::Text { text: RESUMED.into() }, call(b"wait", b"{}")], 11),
-                says(LAST, 13),
+                calls(vec![Line::Text { text: LAST.into() }, call(b"wait", b"{}")], 13),
             ],
         ),
         script(b"@budget-park-child", vec![says(CHILD, 17)]),
@@ -491,7 +490,7 @@ fn wait_call() -> Part {
 }
 
 fn wait_feedback() -> Part {
-    Part::ToolOutput { id: ID.into(), output: b"waiting".as_slice().into(), is_error: false }
+    Part::ToolOutput { id: ID.into(), output: BEGIN.into(), is_error: false }
 }
 
 fn parked_prefix() -> Vec<Message> {
@@ -506,10 +505,8 @@ fn parked_prefix() -> Vec<Message> {
             }],
         ),
         message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: CHILD.into(), is_error: false }]),
-        message(Role::Assistant, vec![wait_call()]),
+        message(Role::Assistant, vec![text_part(FIRST), wait_call()]),
         message(Role::User, vec![wait_feedback()]),
-        message(Role::Assistant, vec![text_part(FIRST)]),
-        message(Role::User, vec![text_part(BEGIN)]),
     ]
 }
 
@@ -526,7 +523,7 @@ fn positive_history_controls(query: &Query, expected: &[Message]) {
     changed.messages[4].parts = vec![text_part(b"rewritten waiting")].into();
     assert!(!exact_history(&changed, expected));
     let mut changed = query.clone();
-    changed.messages[5].role = Role::User;
+    changed.messages[3].role = Role::User;
     assert!(!exact_history(&changed, expected));
 }
 
@@ -565,11 +562,11 @@ fn parking_story(index: usize) {
     );
     first.run(100_000);
     let first_total = parked_accounting(&first, &MODEL_RATES[..2], 0);
-    assert_eq!((first_total.turns, first_total.output), (4, 32));
-    assert_eq!(first.turns().len(), 3);
+    assert_eq!((first_total.turns, first_total.output), (3, 25));
+    assert_eq!(first.turns().len(), 2);
     let first_main = model_calls(&first, b"fake-1");
     let first_child = model_calls(&first, b"fake-2");
-    assert_eq!((first_main.len(), first_child.len()), (3, 1));
+    assert_eq!((first_main.len(), first_child.len()), (2, 1));
     let child_bill = own_units(&first_child, MODEL_RATES[1]);
     assert!(child_bill > 0);
     let mut inclusive = child_bill;
@@ -592,19 +589,13 @@ fn parking_story(index: usize) {
     resumed.run(100_000);
     let expected_prefix = parked_prefix();
     positive_history_controls(&resumed.prompts()[0], &expected_prefix);
-    let mut last_prefix = expected_prefix.clone();
-    last_prefix.push(message(Role::Assistant, vec![text_part(RESUMED), wait_call()]));
-    last_prefix.push(message(Role::User, vec![wait_feedback()]));
-    assert!(
-        exact_history(&resumed.prompts()[1], &last_prefix),
-        "actual continued query keeps all old and new call/result pairs"
-    );
+    assert_eq!(resumed.prompts().len(), 1, "the next wait remains withheld without another provider call");
     assert!(
         resumed.prompts().iter().all(|query| query.system.starts_with(b"@budget-parking-main NEW-INSTRUCTIONS\n\n"))
     );
-    let new_total = parked_accounting(&resumed, &RESUMED_RATES, 3);
-    assert_eq!((new_total.turns, new_total.output), (2, 24));
-    assert_eq!(resumed.turns().len(), 2);
+    let new_total = parked_accounting(&resumed, &RESUMED_RATES, 2);
+    assert_eq!((new_total.turns, new_total.output), (1, 11));
+    assert_eq!(resumed.turns().len(), 1);
     assert!(
         model_calls(&resumed, b"fake-2").is_empty(),
         "the historical child is replay data, never a new actual call"

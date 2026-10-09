@@ -485,6 +485,7 @@ struct Made {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct Call {
     conversation: Token,
+    wait: bool,
     returned: bool,
 }
 
@@ -1065,8 +1066,20 @@ impl World {
             "Waiting follows preparation or an actual started main"
         );
         assert!(
-            self.calls.values().all(|call| { self.run_of_conversation[&call.conversation] != run || call.returned }),
-            "Waiting follows actual settlement of every call"
+            self.calls.values().all(|call| {
+                self.run_of_conversation[&call.conversation] != run
+                    || call.returned
+                    || (call.wait && Some(call.conversation) == view.main)
+            }),
+            "Waiting keeps only its actual main wait call outstanding"
+        );
+        assert!(
+            self.calls
+                .values()
+                .filter(|call| !call.returned && call.wait && Some(call.conversation) == view.main)
+                .count()
+                <= 1,
+            "at most one main wait remains outstanding"
         );
         view.waiting = true;
         if view.main.is_none()
@@ -1789,8 +1802,14 @@ impl World {
             | run::Event::Turn { conversation, .. }
             | run::Event::Priced { conversation, .. }
             | run::Event::Used { conversation, .. } => (conversation, false, false),
-            run::Event::Delegated { conversation, call, .. } => {
-                let fresh = self.calls.insert(*call, Call { conversation: *conversation, returned: false }).is_none();
+            run::Event::Delegated { conversation, call, ask, .. } => {
+                let fresh = self
+                    .calls
+                    .insert(
+                        *call,
+                        Call { conversation: *conversation, wait: matches!(ask, run::Ask::Wait), returned: false },
+                    )
+                    .is_none();
                 assert!(fresh, "calls have distinct names");
                 (conversation, false, false)
             }

@@ -93,7 +93,7 @@ fn wait_result_is_deferred_and_opaque_fifo_names_cross_only_actual_turns() {
     );
     assert_eq!(world.waiting().len(), 2, "fresh waiting and final empty-inbox waiting");
     assert_eq!(world.waiting()[0].1, None);
-    assert_eq!(world.waiting()[1].1, Some(Token::new(99)));
+    assert_eq!(world.waiting()[1].1, Some(Token::new(0)));
     assert!(world.answered_at() >= world.waiting()[1].0.saturating_add(Duration::from_secs(1)));
     assert!(text_seen(&world, b"person: first") && text_seen(&world, b"person: second"));
     let result =
@@ -194,23 +194,23 @@ fn a_host_that_keeps_no_turns_acknowledges_each_at_once_and_never_holds_the_run(
     let mut world = World::with_window(settings, smith_domain::Window { turns: 1, bytes: largest });
     world.acknowledge_each_turn();
     world.run(2000);
-    assert!(matches!(world.answer(), run::Answer::Parked { turns: 2, .. }));
-    assert_eq!(world.turns().len(), 2);
-    assert_eq!(world.prompts().len(), 2);
+    assert!(matches!(world.answer(), run::Answer::Parked { turns: 1, .. }));
+    assert_eq!(world.turns().len(), 1);
+    assert_eq!(world.prompts().len(), 1);
 }
 
 #[test]
 fn a_run_parked_resumed_and_parked_again_numbers_turns_from_one_each_time_without_a_gap_in_the_conversation() {
     let mut first = World::new(waiting(920));
     first.run(2000);
-    assert!(matches!(first.answer(), run::Answer::Parked { turns: 2, .. }));
+    assert!(matches!(first.answer(), run::Answer::Parked { turns: 1, .. }));
     let first_numbers = first.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>();
-    assert_eq!(first_numbers, [1, 2]);
+    assert_eq!(first_numbers, [1]);
     assert_eq!(first.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [1]);
 
     let mut second = World::with_history(Settings { resume: true, ..waiting(921) }, Some(history(&first)));
     second.run(2000);
-    assert!(matches!(second.answer(), run::Answer::Parked { turns: 2, .. }));
+    assert!(matches!(second.answer(), run::Answer::Parked { turns: 1, .. }));
     assert_eq!(second.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1]);
     assert_eq!(second.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [2]);
 
@@ -220,9 +220,9 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_from_one_each_time_withou
     continued.turns = turns.into_boxed_slice();
     let mut third = World::with_history(Settings { resume: true, ..waiting(922) }, Some(continued));
     third.run(2000);
-    assert!(matches!(third.answer(), run::Answer::Parked { turns: 2, .. }));
+    assert!(matches!(third.answer(), run::Answer::Parked { turns: 1, .. }));
     assert_eq!(third.turn_metadata().iter().map(|(number, _, _)| *number).collect::<Vec<_>>(), [1]);
-    assert_eq!(third.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [5, 6]);
+    assert_eq!(third.turns().iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [3]);
 }
 
 #[test]

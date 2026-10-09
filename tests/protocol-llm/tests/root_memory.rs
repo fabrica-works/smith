@@ -90,11 +90,15 @@ fn observation_limits(limits: &adapter::Limits) -> ObservationLimits {
 }
 
 fn bounds(messages: u32) -> Limits {
+    let decoded_call_bytes = 32_768;
+    let completion_bytes = adapter::completion_worst_case(&wire_limits().client, decoded_call_bytes)
+        .expect("explicit native fixture receiving ownership")
+        .max(131_072);
     Limits {
         accounts: 1,
         endpoints: 1,
         configured_model_bytes: 4096,
-        decoded_call_bytes: 16_384,
+        decoded_call_bytes,
         run: run::Limits {
             runs: 1,
             conversations: 1,
@@ -116,6 +120,7 @@ fn bounds(messages: u32) -> Limits {
             outcome_bytes: 256,
             check_tail: 64,
             facts: 256,
+            nudges: messages,
             messages: 1,
             message_bytes: u32::try_from(LARGE).expect("bounded caller message"),
             ..LIMITS.run
@@ -127,8 +132,8 @@ fn bounds(messages: u32) -> Limits {
             // delegate receiving credit plus context. Restore replaces this
             // allowance with the separately observed exact payload/credit cap.
             session_bytes: 1_048_576,
-            completion_bytes: 131_072,
-            completion_blocks: 32,
+            completion_bytes,
+            completion_blocks: 64,
             failure_bytes: 256,
             delegated_result_bytes: 262_144,
             parallel_tools: 1,
@@ -260,7 +265,7 @@ fn scripts(cycles: u32) -> Box<[Script]> {
 fn wire_limits() -> adapter::Limits {
     let mut client = skein_llm_world::limits();
     client.http.request = 32_768;
-    client.dialect.parts = 32;
+    client.dialect.parts = 64;
     client.dialect.request_bytes = 32_768;
     client.dialect.document_bytes = 32_768;
     client.dialect.string_bytes = 16_384;
@@ -1021,6 +1026,12 @@ impl Counted {
         assert!(self.waiting || self.answer.is_some(), "bounded root loop reached an outside wait or actual terminal");
     }
 
+    fn wake(&mut self, name: Token, text: Box<[u8]>) {
+        self.waiting = false;
+        let run = self.admitted.expect("actual admitted handle");
+        self.step(Event::Message { label: b"host".as_slice().into(), run, name, text });
+    }
+
     fn schema_constructor(&self, prompt: &llm::Prompt) -> u64 {
         let before = self.meter.held();
         self.meter.start();
@@ -1130,7 +1141,7 @@ impl Counted {
 }
 
 fn assert_generated(history: &root::Transcript, messages: u32) {
-    assert_eq!(history.turns.len(), usize::try_from((messages - 4) / 2).expect("reachable Turns"));
+    assert_eq!(history.turns.len(), usize::try_from(2 * ((messages - 4) / 5)).expect("reachable Turns"));
     let mut previous = None;
     let mut count = 0_u32;
     let mut large = 0;
@@ -1139,7 +1150,7 @@ fn assert_generated(history: &root::Transcript, messages: u32) {
         assert_eq!(turn.version, session::record::VERSION);
         assert_eq!(turn.endpoint, session::llm::Endpoint(0));
         assert_eq!(turn.dialect, 2);
-        assert_eq!(turn.messages.len(), if index % 2 == 0 { 3 } else { 1 });
+        assert_eq!(turn.messages.len(), if index % 2 == 0 { 3 } else { 2 });
         assert_eq!(turn.messages.iter().filter(|message| message.role == session::llm::Role::Assistant).count(), 1);
         for message in &turn.messages {
             if message.role == session::llm::Role::Assistant {
@@ -1169,7 +1180,7 @@ fn assert_generated(history: &root::Transcript, messages: u32) {
                         result: session::llm::Returned::Text { text, error, replay },
                     } => {
                         assert_eq!(id.as_ref(), ID);
-                        assert_eq!(text.as_ref(), b"waiting");
+                        assert_eq!(text.as_ref(), b"Messages arrived. Read them before continuing.");
                         assert!(!*error);
                         assert!(replay.is_none());
                     }
@@ -1214,15 +1225,15 @@ fn cap(source: &Counted) -> u64 {
 fn generate_prefix(counted: &mut Counted, configuration: &Configuration, messages: u32, cycles: u32) -> Limits {
     counted.start(None, false);
     counted.discover();
-    counted.cycle(configuration, cycles);
+    counted.cycle(configuration, cycles + 1);
     assert!(counted.waiting);
-    for at in 1..cycles {
+    for at in 0..cycles {
         counted.waiting = false;
         let run = counted.admitted.expect("actual admitted handle");
-        let text = if at == 1 { vec![b'x'; LARGE - 6].into_boxed_slice() } else { b"x".as_slice().into() };
+        let text = if at == 0 { vec![b'x'; LARGE - 6].into_boxed_slice() } else { b"x".as_slice().into() };
         counted.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(u64::from(at)), text });
-        counted.cycle(configuration, cycles);
-        assert!(counted.waiting);
+        counted.cycle(configuration, cycles + 1);
+        assert!(counted.waiting, "wake {at}: records={} answer={:?}", counted.records.len(), counted.answer);
     }
     let copy_meter = Meter::new();
     copy_meter.start();
@@ -1247,9 +1258,9 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
     let run = counted.admitted.expect("actual source run");
     counted.waiting = false;
     counted.step(Event::Cancel { run });
-    counted.cycle(configuration, cycles);
+    counted.cycle(configuration, cycles + 1);
     assert!(
-        matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns, .. }) if turns == 2 * cycles)
+        matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns, .. }) if turns == 2 * cycles + 1)
     );
     counted.retire_native();
 
@@ -1257,12 +1268,11 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
 }
 
 fn restore_overlap(counted: &mut Counted, configuration: &Configuration, messages: u32, cycles: u32) {
-    // The full prefix owns messages - 4 slots. Restored waking, the actual Wait
-    // assistant and its result consume three more; the next provider entrance
-    // reserves two unfilled slots (assistant plus possible tool result). Thus
-    // messages + 1 is the independently chosen minimum count for this overlap.
-    // Payload/receiving limits remain the original source's bounded contract.
-    let overlapping = bounds(messages.checked_add(1).expect("second actual receiving entrance's two slots"));
+    // The full prefix owns messages - 4 slots. Restored waking, the actual
+    // Wait/result, the offered message and text, and the next nudge occupy six
+    // more. Two provider slots remain for the next held wait, so this overlap
+    // uses messages + 4. Payload/receiving caps retain the source contract.
+    let overlapping = bounds(messages.checked_add(4).expect("second actual receiving entrance's two slots"));
     counted.replace_root(&overlapping);
     counted.start(counted.prefix.as_ref().map(copy_transcript), true);
     counted.discover();
@@ -1274,8 +1284,11 @@ fn restore_overlap(counted: &mut Counted, configuration: &Configuration, message
     counted.prompt_copy = counted.held_prompt.as_ref().map(copy_prompt);
     // The same whole native script adds the next Wait/text pair. The old
     // Wait terminal's closing Client remains live when its text Client starts.
-    counted.cycle(configuration, cycles + 1);
-    assert_eq!(counted.calls, 2, "two actual Clients share the restored logical callback");
+    counted.cycle(configuration, cycles + 2);
+    assert!(counted.waiting && counted.records.is_empty(), "first restored native wait remains held");
+    counted.wake(Token::new(100), b"wake".as_slice().into());
+    counted.cycle(configuration, cycles + 2);
+    assert_eq!(counted.calls, 3, "two settled callbacks and the next held wait use three actual Clients");
     assert_eq!(counted.records.len(), 2, "both restored terminals produced concrete Turns");
     assert_eq!(counted.records[0].sequence, 2 * cycles + 1);
     assert_eq!(counted.records[1].sequence, 2 * cycles + 2);
@@ -1287,8 +1300,8 @@ fn restore_overlap(counted: &mut Counted, configuration: &Configuration, message
     let run = counted.admitted.expect("actual overlapping restore activation");
     counted.waiting = false;
     counted.step(Event::Cancel { run });
-    counted.cycle(configuration, cycles + 1);
-    assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 2, .. })));
+    counted.cycle(configuration, cycles + 2);
+    assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 3, .. })));
     counted.resume();
     counted.retire_native();
 }
@@ -1400,8 +1413,8 @@ fn reclaim_every_owner(mut counted: Counted, tight: &Limits, configuration: Conf
 
 #[test]
 fn restored_root_arrays_payload_rewrites_and_turn_copies_stay_within_the_attained_bound() {
-    for messages in [16, 32] {
-        let cycles = (messages - 4) / 4;
+    for messages in [19, 39] {
+        let cycles = (messages - 4) / 5;
         let mut counted = Counted::new(&bounds(messages));
         let configuration = counted.configuration();
         let tight = generate_prefix(&mut counted, &configuration, messages, cycles);
@@ -1613,12 +1626,15 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     );
     assert!(counted.probe.is_none(), "the readonly mount adds no second check probe");
     counted.cycle(&configuration, 1);
+    assert!(counted.waiting && counted.records.is_empty(), "actual wait is held before the native text callback");
+    counted.wake(Token::new(100), b"wake".as_slice().into());
+    counted.cycle(&configuration, 2);
     assert!(counted.waiting && counted.overlaps > 0, "actual Wait/text terminals settle with two Clients overlapping");
     assert!(counted.caller_charter.is_some(), "caller owns both maximum paths throughout actual native handoffs");
     let run = counted.admitted.expect("maximum-path activation was actually admitted");
     counted.waiting = false;
     counted.step(Event::Cancel { run });
     counted.cycle(&configuration, 1);
-    assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 2, .. })));
+    assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 3, .. })));
     reclaim_every_owner(counted, &receiving, configuration);
 }
