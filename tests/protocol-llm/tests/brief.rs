@@ -473,8 +473,6 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         };
         bounds.client.http.request = 16384;
         bounds.client.request = 16384;
-        // The actual expanded listing schema belongs to the native document too.
-        bounds.client.document = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),
@@ -829,8 +827,6 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         };
         bounds.client.http.request = 16384;
         bounds.client.request = 16384;
-        // The native document retains the complete piecewise-write advice too.
-        bounds.client.document = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),

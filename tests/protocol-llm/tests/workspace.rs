@@ -470,8 +470,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
         };
         // The native request includes the complete depth/glob schema inventory.
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
-        bounds.client.dialect.document_bytes = 16384;
+        bounds.client.request = 16384;
         let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1013) };
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
