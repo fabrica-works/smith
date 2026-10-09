@@ -171,6 +171,7 @@ fn cancel_fire_resume_terminal_and_reclaim_settle_exactly_once() {
         resume(&mut agent, &env, &mut out);
         agent.reclaim();
     }
+    assert_eq!(out.pop(), Some(Output::Parent(parent::Request::LongDone { client: Token::new(1) })));
     let Some(Output::Parent(parent::Request::Answered { answer, .. })) = out.pop() else { panic!("cancel answer") };
     assert_eq!(answer.result, host::RunResult::Failed { failure: host::RunFailure::Cancelled });
     assert_eq!(

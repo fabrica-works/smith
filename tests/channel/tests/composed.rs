@@ -419,6 +419,9 @@ fn an_empty_start_waits_without_a_fence_and_the_first_wire_message_opens_main() 
         .expect("actual decoded message");
     while domain.pop_fact().is_some() {}
     agent::step(&mut domain, &env, AgentEvent::Message { run, name: Token::new(0), label, text }, &mut out);
+    let Some(AgentRequest::Long { operation: agent::Operation::Completion, .. }) = out.pop() else {
+        panic!("first wire work announces actual provider issuance");
+    };
     assert!(matches!(out.pop(), Some(AgentRequest::Complete { .. })), "first wire work opens the provider");
     assert!(out.pop().is_none());
 }

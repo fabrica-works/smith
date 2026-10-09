@@ -868,7 +868,7 @@ fn the_limits_fit_and_a_session_must_take_what_the_run_asks() {
 
 #[test]
 fn what_an_entry_point_may_emit_grows_with_the_tools_cancels_only_once() {
-    assert_eq!(max_out(&LIMITS), 1065);
+    assert_eq!(max_out(&LIMITS), 1142);
     // A kit's close cancels as many operations as the tools run, which go out
     // to io and lead nowhere else: what the run is sent does not grow with
     // them.
@@ -877,7 +877,7 @@ fn what_an_entry_point_may_emit_grows_with_the_tools_cancels_only_once() {
     // Four session records plus eight delegated calls may reach the run;
     // each can open/say at most MAX_OUT sessions. The kit's io cancels do not.
     assert_eq!(limits::session_steps(&wide), 74);
-    assert_eq!(max_out(&wide), 22497);
+    assert_eq!(max_out(&wide), 22646);
     let wider =
         Limits { session: session::Limits { tools: tools::Limits { calls: 512, ..tools }, ..wide.session }, ..wide };
     assert_eq!(limits::run_out(&wider), limits::run_out(&wide), "io cancels never multiply run hand-offs");
@@ -2259,10 +2259,10 @@ fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
     assert_eq!(h.next().as_ref(), &[Request::CancelIo { owner: command }]);
     assert_eq!(h.domain.commands.len(), 1, "cancellation leaves actual IO outstanding");
     assert_eq!(h.long.len(), 3, "no long terminal before actual IO settlement");
-    h.step(Event::Done { owner: command, done: tools::Done::Cancelled });
+    let ended = h.step(Event::Done { owner: command, done: tools::Done::Cancelled });
     assert_eq!(h.domain.commands.len(), 0);
     assert_eq!(h.long.as_slice(), &[Some(crate::Operation::Completion), None, Some(crate::Operation::Command), None]);
-    let ended = h.next();
+    let ended = if ended.is_empty() { h.next() } else { ended };
     let [Request::Answer { answer: run::Answer::Failed { failure: run::Failure::Cancelled, .. }, .. }] = ended.as_ref()
     else {
         panic!("only actual IO settlement permits the cancellation answer: {ended:?}");

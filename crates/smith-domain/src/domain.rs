@@ -53,7 +53,13 @@ use crate::route;
 /// much room in `out` before calling it.
 #[must_use]
 pub const fn max_out(limits: &Limits) -> u32 {
-    limits::run_out(limits).saturating_add(limits::session_out(limits).saturating_mul(2)).saturating_add(2)
+    // A session step issues at most one completion and one writer command;
+    // commands run alone (domain/session.md, section 6). Each adds one `Long`.
+    // Two notices cover the actual terminal or held completion handoff.
+    limits::run_out(limits)
+        .saturating_add(limits::session_out(limits))
+        .saturating_add(limits::session_steps(limits).saturating_mul(2))
+        .saturating_add(2)
 }
 
 /// The child observations along every bounded causal handoff of one entrance.
