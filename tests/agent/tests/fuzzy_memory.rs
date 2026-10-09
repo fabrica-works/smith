@@ -176,7 +176,7 @@ fn charter(context_bytes: u64) -> Charter {
             checks: b".temper/pre-pr".as_slice().into(),
         }),
         resume: false,
-        waiting: Duration::from_secs(30),
+        waiting: skein_lib::Duration::from_secs(30),
     }
 }
 

@@ -754,6 +754,16 @@ one drop fact per item and accept bounded writes after an oversized call.
 These controls use synthetic peers; calibrated live probe evidence remains
 separate. Workspace focused and fuzzy budgets are unchanged.
 
+Reliability limits increment 4.4 was measured through the serialized heavy
+queue with `measure -j 1` on 2026-10-09: the affected root, session, local,
+service, inline and protocol-LLM packages passed 285 focused tests in 6.759
+seconds, with no skips. Native HTTP/SSE controls stream real progress events
+for 451 virtual seconds, enforce distinct head and idle bounds, and settle
+whole expiry and cancellation without ending a sibling. Session controls
+keep one absolute expiry across retries and end an expired timeout for time
+once. These are synthetic byte controls; calibrated live slow-completion
+probe evidence remains separate. Workspace budgets are unchanged.
+
 Reliability inline increment 3.4 was measured through the serial heavy queue
 on 2026-10-09 with `measure -j 1`: the inline agent, host world and reused
 native machine world passed 87 focused tests in 1.047 seconds, with no skips.

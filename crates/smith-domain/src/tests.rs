@@ -1987,8 +1987,18 @@ fn the_selected_model_progress_reaches_the_original_root_completion() {
             transcript: None,
             answered: Box::default(),
         });
-        let [Request::Admitted { .. }, Request::Complete { deadlines, .. }] = emitted.as_ref() else {
-            panic!("original root completion: {emitted:?}");
+        let [Request::Admitted { run, .. }, Request::Read { owner, .. }] = emitted.as_ref() else {
+            panic!("original root discovery: {emitted:?}");
+        };
+        assert_eq!(run, owner);
+        let emitted = harness.step(Event::Read { owner: *owner, read: run::Read::Missing });
+        let prepared = match emitted.as_ref() {
+            [Request::Probe { owner, .. }] => harness.step(Event::Probed { owner: *owner, executable: false }),
+            [Request::Complete { .. }] => emitted,
+            _ => panic!("original root preparation: {emitted:?}"),
+        };
+        let [Request::Complete { deadlines, .. }] = prepared.as_ref() else {
+            panic!("original root completion: {prepared:?}");
         };
         assert_eq!((deadlines.head, deadlines.idle), (declared.head, declared.idle));
         assert_eq!(deadlines.whole, harness.env.now.saturating_add(BUDGET.time));

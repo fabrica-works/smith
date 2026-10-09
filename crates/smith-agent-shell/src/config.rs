@@ -306,25 +306,7 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
             return Err("duplicate endpoint name or number".into());
         }
         let address = resolve(&endpoint.address)?;
-        let transport = match endpoint.transport.as_str() {
-            "tls" => connection::Transport::Tls {
-                server_name: tls::Name::new(
-                    endpoint.server_name.as_deref().ok_or("TLS endpoint requires server_name")?,
-                )
-                .ok_or("invalid TLS server name")?,
-                trust: trust(endpoint.trust_der.as_deref())?,
-            },
-            "plaintext" => {
-                if !address.ip().is_loopback() {
-                    return Err("plaintext endpoint address must be loopback".into());
-                }
-                if endpoint.server_name.is_some() || endpoint.trust_der.is_some() {
-                    return Err("plaintext endpoint cannot name TLS server_name or trust_der".into());
-                }
-                connection::Transport::Plaintext
-            }
-            _ => return Err("endpoint transport must be tls or plaintext".into()),
-        };
+        let transport = endpoint_transport(&endpoint, address)?;
         let mut llm_endpoint = match endpoint.provider.as_str() {
             "codex" => shared::Endpoint::codex(),
             "anthropic" => shared::Endpoint::anthropic(),
@@ -388,6 +370,26 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
         channel: channel::Endpoints::new(channel_endpoints),
         llm: llm_endpoints.into_boxed_slice(),
     })
+}
+
+fn endpoint_transport(endpoint: &Endpoint, address: SocketAddr) -> Result<connection::Transport, String> {
+    match endpoint.transport.as_str() {
+        "tls" => Ok(connection::Transport::Tls {
+            server_name: tls::Name::new(endpoint.server_name.as_deref().ok_or("TLS endpoint requires server_name")?)
+                .ok_or("invalid TLS server name")?,
+            trust: trust(endpoint.trust_der.as_deref())?,
+        }),
+        "plaintext" => {
+            if !address.ip().is_loopback() {
+                return Err("plaintext endpoint address must be loopback".into());
+            }
+            if endpoint.server_name.is_some() || endpoint.trust_der.is_some() {
+                return Err("plaintext endpoint cannot name TLS server_name or trust_der".into());
+            }
+            Ok(connection::Transport::Plaintext)
+        }
+        _ => Err("endpoint transport must be tls or plaintext".into()),
+    }
 }
 
 fn endpoint_models(models: &[ModelDocument]) -> Result<Box<[llm::ConfiguredModel]>, String> {

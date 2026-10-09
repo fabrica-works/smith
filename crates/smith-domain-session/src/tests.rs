@@ -1191,7 +1191,9 @@ fn each_attempt_keeps_model_progress_and_the_same_session_expiry() {
     let progress = crate::Progress { head: Duration::from_secs(11), idle: Duration::from_secs(13) };
     let request = Spec { progress, budget: Budget { time: Duration::from_secs(90), ..BUDGET }, ..spec() };
     step(&mut h.domain, &h.env, Event::Open { opener: Token::new(1), opening: opening(request) }, &mut h.out);
-    assert!(matches!(h.next(), Some(Request::Opened { .. })));
+    let Some(Request::Opened { .. }) = h.next() else {
+        panic!("opened session");
+    };
     let Some(Request::Complete { owner, deadlines, .. }) = h.one() else {
         panic!("first completion");
     };

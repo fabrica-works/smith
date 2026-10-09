@@ -244,7 +244,7 @@ impl Peer {
         self.pump();
     }
 
-    fn bytes(&mut self, socket: u64, bytes: Vec<u8>) {
+    fn bytes(&mut self, socket: u64, bytes: &[u8]) {
         assert!(
             self.bindings.contains_key(&Token::new(socket)),
             "live binding {socket}, terminals={:?}",
@@ -254,7 +254,7 @@ impl Peer {
             .get_mut(&Token::new(socket))
             .expect("live binding")
             .response
-            .append(&bytes)
+            .append(bytes)
             .expect("bounded response intake");
         self.pump();
     }
@@ -298,14 +298,14 @@ fn progress_event() -> Vec<u8> {
 fn a_response_streaming_past_any_fixed_bound_completes() {
     let mut peer = Peer::new();
     peer.start(1, 60, 60, 900);
-    peer.bytes(100, head_for(body().len() + 9 * progress_event().len()));
+    peer.bytes(100, &head_for(body().len() + 9 * progress_event().len()));
     for seconds in (50..=450).step_by(50) {
         peer.advance(seconds);
         assert!(peer.terminals.is_empty(), "progress remains within the declared idle duration: {:?}", peer.terminals);
-        peer.bytes(100, progress_event());
+        peer.bytes(100, &progress_event());
     }
     peer.advance(451);
-    peer.bytes(100, body());
+    peer.bytes(100, &body());
     assert!(matches!(peer.terminals.as_slice(), [ToDomain::Completed { owner, completion }] if *owner == Token::new(1)
         && completion.content.iter().any(|block| matches!(block, llm::Said::Text { text, .. } if text.as_ref() == b"done"))));
     peer.advance(901);
@@ -317,7 +317,7 @@ fn model_head_and_idle_deadlines_fail_only_the_stalled_call() {
     let mut peer = Peer::new();
     peer.start(1, 5, 8, 100);
     peer.start(2, 20, 5, 100);
-    peer.bytes(101, head_for(body().len()));
+    peer.bytes(101, &head_for(body().len()));
     peer.advance(6);
     assert_eq!(peer.terminals.len(), 2);
     assert!(
@@ -332,18 +332,18 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     let mut peer = Peer::new();
     peer.start(1, 30, 30, 90);
     peer.start(2, 120, 120, 300);
-    peer.bytes(100, head_for(body().len() + 4 * progress_event().len()));
-    peer.bytes(101, head_for(body().len()));
+    peer.bytes(100, &head_for(body().len() + 4 * progress_event().len()));
+    peer.bytes(101, &head_for(body().len()));
     for seconds in [20, 40, 60, 80] {
         peer.advance(seconds);
-        peer.bytes(100, progress_event());
+        peer.bytes(100, &progress_event());
     }
     assert!(peer.terminals.is_empty());
     peer.advance(90);
     assert!(
         matches!(peer.terminals.as_slice(), [ToDomain::Failed { owner, failure: llm::Failure::TimedOut, evidence: llm::Evidence::Response, .. }] if *owner == Token::new(1))
     );
-    peer.bytes(101, body());
+    peer.bytes(101, &body());
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(2)));
     peer.advance(301);
     assert_eq!(peer.terminals.len(), 2);
@@ -351,11 +351,11 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     let mut peer = Peer::new();
     peer.start(1, 60, 60, 300);
     peer.start(2, 60, 60, 300);
-    peer.bytes(100, head_for(body().len()));
-    peer.bytes(101, head_for(body().len()));
+    peer.bytes(100, &head_for(body().len()));
+    peer.bytes(101, &head_for(body().len()));
     peer.cancel(1);
     peer.cancel(1);
-    peer.bytes(101, body());
+    peer.bytes(101, &body());
     assert!(matches!(&peer.terminals[0], ToDomain::Cancelled { owner } if *owner == Token::new(1)));
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(2)));
     peer.advance(301);
