@@ -38,7 +38,8 @@ fn capture_filters_only_content_fields_and_live_text() {
                 let line = none.expect("metadata");
                 match read(&line, &limits()).expect("read").expect("event").event {
                     Event::ResponseCompleted(value) => assert!(value.completion.is_none()),
-                    Event::SessionStarted(_)
+                    Event::Budget(_)
+                    | Event::SessionStarted(_)
                     | Event::SessionEnded(_)
                     | Event::RunStarted(_)
                     | Event::RunCompleted(_)
@@ -53,7 +54,8 @@ fn capture_filters_only_content_fields_and_live_text() {
                     | Event::Notice(_) => panic!("response"),
                 }
             }
-            Event::SessionStarted(_)
+            Event::Budget(_)
+            | Event::SessionStarted(_)
             | Event::SessionEnded(_)
             | Event::RunStarted(_)
             | Event::RunCompleted(_)
@@ -93,7 +95,8 @@ fn unknown_types_fields_and_listed_values_are_tolerated_within_this_version() {
         Event::Notice(notice) => {
             assert_eq!(notice.level, smith_events::Level::Unknown(Box::from(b"future".as_slice())));
         }
-        Event::SessionStarted(_)
+        Event::Budget(_)
+        | Event::SessionStarted(_)
         | Event::SessionEnded(_)
         | Event::RunStarted(_)
         | Event::RunCompleted(_)
@@ -252,4 +255,43 @@ fn startup_limit_reader_refuses_ambiguous_names_and_inexact_numbers() {
         assert!(read(malformed.as_bytes(), &limits()).is_err(), "{malformed}");
     }
     assert_eq!(read(line.as_bytes(), &Limits { items: 5, ..limits() }), Err(Error::Limits));
+}
+
+#[test]
+fn child_and_budget_metadata_survive_capture_and_unknown_listed_values() {
+    for (name, record, _) in
+        fixtures::samples().into_iter().filter(|(name, _, _)| name.starts_with("child_") || name.starts_with("budget_"))
+    {
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = write(&record, &capture, &limits())
+                .expect("valid bounded event fixture")
+                .expect("valid bounded event fixture");
+            assert_eq!(read(&line, &limits()).expect("valid bounded event fixture"), Some(record.clone()), "{name}");
+        }
+        let text = String::from_utf8(
+            write(&record, &Capture::Everything, &limits())
+                .expect("valid bounded event fixture")
+                .expect("valid bounded event fixture")
+                .into_vec(),
+        )
+        .expect("valid bounded event fixture");
+        let unknown = text
+            .replace("\"ordinary\"", "\"future\"")
+            .replace("\"wind_down\"", "\"future\"")
+            .replace("\"reserve\"", "\"future\"")
+            .replace("\"deadline\"", "\"future\"")
+            .replace("\"stop\":\"end\"", "\"stop\":\"future\"");
+        // Unknown enum values are retained; object keys keep their contract spelling.
+        let unknown = unknown.replace("\"future\":{", "\"reserve\":{");
+        let decoded = read(unknown.as_bytes(), &limits())
+            .expect("valid bounded event fixture")
+            .expect("valid bounded event fixture");
+        assert_eq!(
+            write(&decoded, &Capture::Everything, &limits())
+                .expect("valid bounded event fixture")
+                .expect("valid bounded event fixture")
+                .as_ref(),
+            unknown.as_bytes()
+        );
+    }
 }

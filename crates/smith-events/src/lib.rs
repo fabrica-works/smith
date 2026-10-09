@@ -16,12 +16,13 @@ mod write;
 pub use limits::{Limits, largest_record, largest_size, worst_case};
 pub use read::{Line, Reader, read};
 pub use records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
-    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
-    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, ConversationClosed,
+    ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, EffectiveLimit,
+    Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model, Notice,
+    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
+    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
+    Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 pub use write::write;
 

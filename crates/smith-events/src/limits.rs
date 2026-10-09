@@ -1,7 +1,7 @@
 //! Record-size bounds derived from content lengths and list cardinalities.
 //! Contract: protocol/limits.md, section 3.7; protocol/events.md, section 5.3.
 
-use crate::records::{Block, Capture, Count, EffectiveLimit, Event, Family, Field, Form, Message};
+use crate::records::{Block, Capture, Clamp, Count, EffectiveLimit, Event, Family, Field, Form, Message};
 use alloc::boxed::Box;
 use skein_lib::{List, Queue};
 
@@ -20,6 +20,7 @@ pub struct Limits {
 #[must_use]
 pub fn largest_size(event: &Event, capture: &Capture, limits: &Limits) -> Option<u32> {
     let length = match event {
+        Event::Budget(_) => size_budget_standing(limits)?.checked_add(59)?,
         Event::SessionStarted(_) => size_session_started(capture, limits)?.checked_add(68)?,
         Event::SessionEnded(_) => size_session_ended(capture, limits)?.checked_add(66)?,
         Event::RunStarted(_) => size_run_started(capture, limits)?.checked_add(64)?,
@@ -42,7 +43,7 @@ pub fn largest_size(event: &Event, capture: &Capture, limits: &Limits) -> Option
 #[must_use]
 pub fn largest_record(limits: &Limits) -> Option<u32> {
     let capture = &Capture::Everything;
-    let mut length = 0_u64;
+    let mut length = size_budget_standing(limits)?.checked_add(59)?;
     length = length.max(size_session_started(capture, limits)?.checked_add(68)?);
     length = length.max(size_session_ended(capture, limits)?.checked_add(66)?);
     length = length.max(size_run_started(capture, limits)?.checked_add(64)?);
@@ -72,7 +73,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         length,
     };
     let writer = skein_json::writer::Limits { depth: 16, length };
-    let mut record = 0_u64;
+    let mut record = u64::from(limits.string);
     record = record.max(heap_session_started(limits)?);
     record = record.max(heap_session_ended(limits)?);
     record = record.max(heap_run_started(limits)?);
@@ -249,6 +250,8 @@ fn heap_conversation_opened(limits: &Limits) -> Option<u64> {
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(heap_model(limits)?)?;
+    length = length.checked_add(List::<Clamp>::worst_case(limits.items)?)?;
+    length = length.checked_add(u64::from(limits.string).checked_mul(2)?.checked_mul(u64::from(limits.items))?)?;
     Some(length)
 }
 
@@ -295,7 +298,7 @@ fn heap_tool_started(limits: &Limits) -> Option<u64> {
 }
 
 fn heap_tool_completed(limits: &Limits) -> Option<u64> {
-    let mut length = 0_u64;
+    let mut length = u64::from(limits.string);
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
@@ -670,6 +673,11 @@ fn size_conversation_opened(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(8)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(9)?.checked_add(size_model(capture, limits)?)?;
+    // Requested and effective parts use three and four structural keys respectively.
+    length = length.checked_add(83)?.checked_add(112)?;
+    let listed = u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(12);
+    let clamp = listed.checked_mul(2)?.checked_add(17)?;
+    length = length.checked_add(13)?.checked_add(clamp.checked_add(1)?.checked_mul(u64::from(limits.items))?)?;
     Some(length)
 }
 
@@ -764,6 +772,13 @@ fn size_tool_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(15)?.checked_add(20_u64)?;
     length = length.checked_add(12)?.checked_add(size_delivered(capture, limits)?)?;
+    // Optional child: four integers, its stop and the existing usage object.
+    length = length
+        .checked_add(9)?
+        .checked_add(67)?
+        .checked_add(4_u64.checked_mul(20)?)?
+        .checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(8))?
+        .checked_add(size_usage(capture, limits)?)?;
     if *capture == Capture::Everything {
         length = length.checked_add(10)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
     }
@@ -864,4 +879,10 @@ fn size_block(_capture: &Capture, limits: &Limits) -> Option<u64> {
         length = length.max(candidate.checked_add(16)?);
     }
     Some(length)
+}
+
+fn size_budget_standing(limits: &Limits) -> Option<u64> {
+    // Six used/limit integers, three reserve integers and the run name.
+    let stage = u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(11);
+    141_u64.checked_add(20_u64.checked_mul(10)?)?.checked_add(stage)
 }

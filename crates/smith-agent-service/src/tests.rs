@@ -174,3 +174,76 @@ fn every_declared_conversation_can_use_the_same_endpoint() {
         assert_eq!(limits.llm.connection.per_endpoint, conversations);
     }
 }
+
+#[test]
+fn scalar_event_projection_preserves_subsecond_child_time_and_absent_requests() {
+    use skein_lib::{Duration, Token};
+    use smith_domain::run;
+    use smith_events::{ChildStop, ShareBound, SharePart, Usage};
+    for millis in [750, 1999] {
+        let kind = run::facts::Kind::Child {
+            parent: Token::new(1),
+            call: Token::new(2),
+            asked: run::Share::UNASKED,
+            granted: run::Granted {
+                turns: 3,
+                time: Duration::from_millis(millis),
+                spend: 100,
+                turns_set: run::Set::Pool,
+                time_set: run::Set::Deadline,
+            },
+        };
+        let fields = crate::child_share(kind).expect("actual child role");
+        assert_eq!(fields.requested, smith_events::Requested { turns: None, seconds: None });
+        assert_eq!(fields.share.time_ms, millis);
+        assert_eq!(
+            fields.clamped.as_slice(),
+            &[smith_events::Clamp { part: SharePart::Time, by: ShareBound::Deadline }]
+        );
+        let usage = Usage {
+            input_tokens: None,
+            cache_read_tokens: Some(7),
+            cache_write_tokens: None,
+            output_tokens: Some(8),
+            reasoning_tokens: None,
+        };
+        let terminal = crate::child_completed(
+            2,
+            ChildStop::Budget,
+            run::facts::Used { turns: 1, time: Duration::from_millis(millis), spend: 3 },
+            usage.clone(),
+        );
+        assert_eq!(terminal.time_ms, millis);
+        assert_eq!(terminal.usage, usage, "unknown native counts remain unknown");
+    }
+    assert!(crate::child_share(run::facts::Kind::Main).is_none());
+}
+
+#[test]
+fn actual_root_budget_facts_encode_without_content_under_every_capture() {
+    use smith_domain::{Fact, run};
+    use smith_events::{Capture, Event};
+    let mut world = smith_agent_world::World::new(smith_agent_world::Settings::calm(34));
+    world.run(1_000_000);
+    let mut budget_count = 0_u32;
+    let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
+    for fact in world.facts() {
+        let Fact::Run { fact } = fact else { continue };
+        let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO) else { continue };
+        budget_count += 1;
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = smith_events::write(&record, &capture, &limits)
+                .expect("valid bounded event fixture")
+                .expect("valid bounded event fixture");
+            assert_eq!(smith_events::read(&line, &limits).expect("valid bounded event fixture"), Some(record.clone()));
+            let Event::Budget(value) = &record.event else { panic!("budget projection") };
+            let run::facts::FactKind::Budget { standing, .. } = fact.kind else { panic!("actual budget fact") };
+            assert_eq!(
+                value.time_ms.used,
+                standing.time.as_nanos() / 1_000_000,
+                "run time retains its admission origin"
+            );
+        }
+    }
+    assert!(budget_count > 0, "real root/session completions produce charges");
+}

@@ -422,10 +422,12 @@ struct Start {
 /// An open, as the world tracks it.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
-#[derive(Default)]
 struct Open {
     started: bool,
     ended: bool,
+    opened_at: Time,
+    ended_at: Option<Time>,
+    spent: run::Spend,
 }
 
 /// A run as the world sees it from outside, to tell what state a cancel finds
@@ -433,6 +435,7 @@ struct Open {
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct RunView {
+    admitted_at: Time,
     budget: run::Budget,
     reserve: run::charter::Reserve,
     deadline: Time,
@@ -589,6 +592,8 @@ pub struct World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     facts: BTreeMap<&'static str, u32>,
+    facts_seen: Vec<run::facts::Fact>,
+    charges_seen: Vec<(Time, Token, crate::facts_referee::Charged)>,
     empty_brief_wait: Option<bool>,
     waiting_time: Option<Duration>,
     awaiting_message: Option<run::Message>,
@@ -667,6 +672,8 @@ impl World {
             landing: BTreeSet::new(),
             cancel_cells: BTreeMap::new(),
             facts: BTreeMap::new(),
+            facts_seen: Vec::new(),
+            charges_seen: Vec::new(),
             empty_brief_wait: None,
             waiting_time: None,
             awaiting_message: None,
@@ -708,6 +715,33 @@ impl World {
     pub fn carry_messages(&mut self, messages: Box<[run::Message]>) {
         self.carried_messages = messages;
         self.partner.tell_turns();
+    }
+
+    /// Every actual emitted fact, retained independently of its drain timing.
+    #[must_use]
+    pub fn facts_seen(&self) -> &[run::facts::Fact] {
+        &self.facts_seen
+    }
+
+    /// Host ceilings and cumulative real callbacks, observed before each usage ingress.
+    #[must_use]
+    pub fn charges_seen(&self) -> &[(Time, Token, crate::facts_referee::Charged)] {
+        &self.charges_seen
+    }
+
+    /// Settled own usage from outside callback accounting and the actual opening clock.
+    #[must_use]
+    pub fn child_usage_seen(&self, conversation: Token) -> Option<(Time, run::facts::Used)> {
+        let opened = self.opens.get(&conversation)?;
+        let ended_at = opened.ended_at?;
+        Some((
+            ended_at,
+            run::facts::Used {
+                turns: opened.spent.turns,
+                time: ended_at.saturating_since(opened.opened_at),
+                spend: opened.spent.units,
+            },
+        ))
     }
 
     /// Actual child opening shares and external ordinary credit when asked.
@@ -1115,6 +1149,7 @@ impl World {
     fn admitted(&mut self, host_run: Token, run: Token) {
         let Start { budget, reserve, checks, .. } = &self.starts[&host_run];
         let view = RunView {
+            admitted_at: self.now,
             budget: *budget,
             reserve: *reserve,
             checks: checks.clone(),
@@ -1302,8 +1337,20 @@ impl World {
                 self.conversation_of_peer.insert(*peer, *conversation);
                 view.started = true;
             }
-            run::Event::Used { spend, .. } => {
+            run::Event::Used { conversation, spend, .. } => {
+                let opened = self.opens.get_mut(conversation).expect("actual opened conversation");
+                opened.spent = opened.spent.accumulate(*spend).expect("finite own child usage");
                 view.spent = view.spent.accumulate(*spend).expect("bounded scripted usage");
+                self.charges_seen.push((
+                    self.now,
+                    owner,
+                    crate::facts_referee::Charged {
+                        spent: view.spent,
+                        budget: view.budget,
+                        reserve: view.reserve,
+                        time: self.now.saturating_since(view.admitted_at),
+                    },
+                ));
             }
             run::Event::Checked { owner, .. } | run::Event::Aborted { owner } | run::Event::Delivered { owner, .. } => {
                 self.landing.remove(owner);
@@ -1316,6 +1363,11 @@ impl World {
                 }
                 return Some((*run, cell));
             }
+            run::Event::Ended { conversation, spend, .. } => {
+                let opened = self.opens.get_mut(conversation).expect("actual opened conversation");
+                opened.ended_at = Some(self.now);
+                opened.spent.turns = opened.spent.turns.max(spend.turns);
+            }
             run::Event::Priced { .. }
             | run::Event::HostReturned { .. }
             | run::Event::Start { .. }
@@ -1323,7 +1375,6 @@ impl World {
             | run::Event::Acknowledge { .. }
             | run::Event::Turn { .. }
             | run::Event::Yielded { .. }
-            | run::Event::Ended { .. }
             | run::Event::Delegated { .. }
             | run::Event::Withdraw { .. }
             | run::Event::Read { .. }
@@ -1384,7 +1435,13 @@ impl World {
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn open(&mut self, conversation: Token, opening: run::Opening, current: Option<Token>) {
         self.opening_prompts.push(opening.prompt.clone());
-        let fresh = self.opens.insert(conversation, Open::default()).is_none();
+        let fresh = self
+            .opens
+            .insert(
+                conversation,
+                Open { started: false, ended: false, opened_at: self.now, ended_at: None, spent: run::Spend::ZERO },
+            )
+            .is_none();
         assert!(fresh, "conversations have distinct names");
         let run = current.expect("a run opens a conversation in a step about it");
         self.run_of_conversation.insert(conversation, run);
@@ -1768,6 +1825,7 @@ impl World {
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn fact(&mut self, fact: &run::facts::Fact) {
         use run::facts::FactKind as Fact;
+        self.facts_seen.push(*fact);
         let fact = &fact.kind;
         let (Fact::Admitted { run, .. }
         | Fact::MessageRead { run, .. }
@@ -1775,6 +1833,7 @@ impl World {
         | Fact::MessageUnread { run, .. }
         | Fact::MessageReceived { run, .. }
         | Fact::MessageRefused { run, .. }
+        | Fact::Budget { run, .. }
         | Fact::Prepared { run, .. }
         | Fact::Opened { run, .. }
         | Fact::Ended { run, .. }
@@ -1795,6 +1854,7 @@ impl World {
             Fact::MessageFence { read, .. } => Some(crate::messages_referee::Seen::Fence { read: *read }),
             Fact::MessageRefused { .. }
             | Fact::Admitted { .. }
+            | Fact::Budget { .. }
             | Fact::Prepared { .. }
             | Fact::Opened { .. }
             | Fact::Ended { .. }
@@ -2075,6 +2135,7 @@ fn kind(fact: &run::facts::FactKind) -> &'static str {
         Fact::MessageReceived { .. } => "message_received",
         Fact::MessageRefused { .. } => "message_refused",
         Fact::Admitted { .. } => "admitted",
+        Fact::Budget { .. } => "budget",
         Fact::Prepared { .. } => "prepared",
         Fact::Opened { .. } => "opened",
         Fact::Ended { .. } => "ended",

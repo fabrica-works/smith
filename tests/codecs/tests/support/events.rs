@@ -457,6 +457,9 @@ fn value_conversation_opened(name: &str, spelling: &str) -> ConversationOpened {
         parent: Some(u64::MAX),
         call: Some(Box::from("sample\n\"🌍".as_bytes())),
         model: value_model(name, spelling),
+        requested: None,
+        share: None,
+        clamped: List::with_capacity(0),
     }
 }
 
@@ -544,6 +547,7 @@ fn value_tool_completed(name: &str, spelling: &str) -> ToolCompleted {
         exit: Some(value_command_exit(name, spelling)),
         bytes: u64::MAX,
         duration_ms: u64::MAX,
+        child: None,
         delivery: Some(value_delivered(name, spelling)),
         result: Some(Box::from("sample\n\"🌍".as_bytes())),
     }
@@ -1486,6 +1490,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         },
         Capture::Everything,
     )];
+    samples.extend(budget_samples());
     samples.extend(samples_0());
     samples.extend(samples_1());
     samples.extend(samples_2());
@@ -1545,4 +1550,115 @@ pub fn effective_record() -> Record {
     }
     started.limits = values;
     Record { t_ms: 0, event: Event::SessionStarted(started) }
+}
+
+fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
+    use smith_events::{
+        BudgetStage, BudgetStanding, Clamp, Quantity, Requested, Reserve, Share, ShareBound, SharePart,
+    };
+    let mut samples = Vec::new();
+    samples.push((
+        "budget_ordinary",
+        Record {
+            t_ms: 750,
+            event: Event::Budget(BudgetStanding {
+                run: 1,
+                stage: BudgetStage::Ordinary,
+                turns: Quantity { used: 2, limit: 10 },
+                spend: Quantity { used: 3, limit: 100 },
+                time_ms: Quantity { used: 750, limit: 1999 },
+                reserve: Reserve { turns: 1, time_ms: 750, spend: 10 },
+            }),
+        },
+        Capture::Everything,
+    ));
+    samples.push((
+        "budget_wind_down",
+        Record {
+            t_ms: 750,
+            event: Event::Budget(BudgetStanding {
+                run: 1,
+                stage: BudgetStage::WindDown,
+                turns: Quantity { used: 2, limit: 10 },
+                spend: Quantity { used: 3, limit: 100 },
+                time_ms: Quantity { used: 750, limit: 1999 },
+                reserve: Reserve { turns: 1, time_ms: 750, spend: 10 },
+            }),
+        },
+        Capture::Everything,
+    ));
+    samples.push((
+        "child_share_clamped",
+        Record {
+            t_ms: 0,
+            event: Event::ConversationOpened(ConversationOpened {
+                run: 1,
+                conversation: 2,
+                kind: ConversationKind::Child,
+                parent: Some(1),
+                call: Some(Box::from(b"c".as_slice())),
+                model: Model {
+                    endpoint: Box::from(b"e".as_slice()),
+                    model: Box::from(b"m".as_slice()),
+                    output_tokens: 100,
+                    effort: None,
+                },
+                requested: Some(Requested { turns: Some(9), seconds: Some(2) }),
+                share: Some(Share { turns: 3, time_ms: 750, spend: 100 }),
+                clamped: {
+                    let mut clamps = List::with_capacity(2);
+                    clamps
+                        .push(Clamp { part: SharePart::Turns, by: ShareBound::Reserve })
+                        .expect("two bounded clamp parts");
+                    clamps
+                        .push(Clamp { part: SharePart::Time, by: ShareBound::Deadline })
+                        .expect("two bounded clamp parts");
+                    clamps
+                },
+            }),
+        },
+        Capture::Everything,
+    ));
+    samples.push(child_terminal("child_stop_end", smith_events::ChildStop::End));
+    samples.push(child_terminal("child_stop_budget", smith_events::ChildStop::Budget));
+    samples.push(child_terminal("child_stop_failed", smith_events::ChildStop::Failed));
+    samples.push(child_terminal("child_stop_closed", smith_events::ChildStop::Closed));
+    samples
+}
+
+fn child_terminal(name: &'static str, stop: smith_events::ChildStop) -> (&'static str, Record, Capture) {
+    use smith_events::ChildCompleted;
+    (
+        name,
+        Record {
+            t_ms: 1999,
+            event: Event::ToolCompleted(ToolCompleted {
+                run: 1,
+                conversation: 1,
+                call: Box::from(b"c".as_slice()),
+                tool: Box::from(b"sub_agent".as_slice()),
+                verdict: Verdict::Result,
+                exit: None,
+                bytes: 1,
+                duration_ms: 1999,
+                child: Some(ChildCompleted {
+                    conversation: 2,
+                    stop,
+                    turns: 1,
+                    time_ms: 1999,
+                    spent: 3,
+                    usage: Usage {
+                        input_tokens: Some(4),
+                        cache_read_tokens: None,
+                        cache_write_tokens: None,
+                        output_tokens: Some(5),
+                        reasoning_tokens: None,
+                    },
+                }),
+                delivery: None,
+                result: None,
+            }),
+        },
+        Capture::Everything,
+    )
 }

@@ -22,6 +22,7 @@ pub(crate) fn project(fact: &domain::Fact) -> Option<(FactKind, u64)> {
             | run::facts::FactKind::MessageUnread { .. }
             | run::facts::FactKind::MessageReceived { .. }
             | run::facts::FactKind::MessageRefused { .. }
+            | run::facts::FactKind::Budget { .. }
             | run::facts::FactKind::Prepared { .. }
             | run::facts::FactKind::Opened { .. }
             | run::facts::FactKind::Ended { .. }

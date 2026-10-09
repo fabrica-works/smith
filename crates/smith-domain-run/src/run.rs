@@ -103,6 +103,8 @@ pub(crate) struct Run {
     identity: crate::Identity,
     /// Next never-reused child ordinal; main is zero.
     next_ordinal: u32,
+    /// Injected activation admission time, the basis of budget wall usage.
+    started_at: Time,
     pub(crate) lease: crate::lease::Lease,
     pub(crate) charter: Charter,
     pub(crate) workspace: Option<Workspace>,
@@ -175,6 +177,8 @@ enum Ending {
 #[derive(Debug)]
 pub(crate) struct Conversation {
     pub(crate) run: Id<Run>,
+    kind: crate::facts::Kind,
+    opened_at: Time,
     /// The sub-agent call it serves, if it is a sub-agent.
     asker: Option<Id<Call>>,
     /// Its families of tools.
@@ -297,6 +301,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
     let run = Run {
         identity,
         next_ordinal: 1,
+        started_at: env.now,
         lease: crate::lease::Lease::Free,
         charter,
         workspace,
@@ -325,6 +330,8 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
     let families = workspace::families(admitted.workspace.as_ref(), Families::of(&admitted.charter.grants));
     let conversation = Conversation {
         run: id,
+        kind: crate::facts::Kind::Main,
+        opened_at: env.now,
         asker: None,
         families,
         spent: Spend::ZERO,
@@ -717,6 +724,8 @@ pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: 
     };
     conversation.spent = conversation_total;
     run.spent = run_total;
+    domain.facts.about(run_id.token());
+    domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, domain.facts.now()) });
     account_state(run);
     follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
 }
@@ -1152,11 +1161,19 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     let writing = conversation.families.tools.modify || conversation.families.tools.shell;
     let (run_id, asker) = (conversation.run, conversation.asker);
     let bill = conversation.subtree_spent;
+    let used = crate::facts::Used {
+        turns: spend.turns.max(conversation.spent.turns),
+        time: facts.now().saturating_since(conversation.opened_at),
+        spend: conversation.spent.units,
+    };
     facts.about(run_id.token());
     facts.push(FactKind::Ended { run: run_id.token(), conversation: id.token(), end });
     conversations.retire(id);
     let run = runs.get_mut(run_id).expect("a run lives until its conversations have ended");
     run.spent = run.spent.accumulate(unaccounted).expect("terminal usage was checked before it was reported");
+    if unaccounted.turns > 0 {
+        facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, facts.now()) });
+    }
     let failure = match end {
         End::PriceOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend))),
         End::UsageOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage))),
@@ -1183,6 +1200,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
             Work::Child(child) => agent::ended(child, end),
             Work::Landing(_) | Work::Host(_) => unreachable!("a sub-agent serves a sub-agent's call"),
         };
+        crate::facts::child_returned(facts, run_id.token(), call.owner, &result, used);
         out.push(Request::Return { spent: bill, call: call.owner, result });
         retire_call(calls, alarms, conversations, asker);
         return;
@@ -1237,19 +1255,24 @@ pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request
 }
 
 /// Child parentage copied from its owned call for the actual opening fact.
-pub(crate) struct OpeningFact {
-    pub(crate) child: bool,
-    pub(crate) parent: Option<Token>,
-    pub(crate) call: Option<Token>,
+pub(crate) fn opened(conversations: &Slab<Conversation>, conversation: Token) -> crate::facts::Kind {
+    conversations.get(Id::from_token(conversation)).expect("a conversation is told of as it opens").kind
 }
 
-pub(crate) fn opened(conversations: &Slab<Conversation>, calls: &Calls, conversation: Token) -> OpeningFact {
-    let conversation = conversations.get(Id::from_token(conversation)).expect("a conversation is told of as it opens");
-    if let Some(asker) = conversation.asker {
-        let call = calls.get(asker).expect("a child keeps its opening call alive");
-        return OpeningFact { child: true, parent: Some(call.conversation.token()), call: Some(call.owner) };
+fn standing(run: &Run, now: Time) -> crate::facts::Standing {
+    crate::facts::Standing {
+        // The transition to the finishing stage is introduced with the wind-down.
+        stage: crate::Stage::Ordinary,
+        turns: run.spent.turns,
+        turns_limit: run.charter.budget.turns,
+        spend: run.spent.units,
+        spend_limit: run.charter.budget.spend,
+        time: now.saturating_since(run.started_at),
+        time_limit: run.charter.budget.time,
+        reserve: run.charter.reserve,
+        reserve_spend: crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm)
+            .expect("admission checked reserve spend"),
     }
-    OpeningFact { child: false, parent: None, call: None }
 }
 
 /// What a run's state implies, applied after every transition: whether its
@@ -1727,6 +1750,8 @@ fn sub_agent(
     }
     let child = Conversation {
         run: run_id,
+        kind: crate::facts::Kind::Child { parent: asker.token(), call, asked: wanted.share, granted: plan.granted },
+        opened_at: env.now,
         asker: Some(id),
         families: plan.families,
         spent: Spend::ZERO,

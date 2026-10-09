@@ -434,6 +434,88 @@ pub struct Budget {
     pub time_ms: u64,
 }
 
+/// Optional child allowances requested by the model, sent in opening metadata.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Requested {
+    pub turns: Option<u64>,
+    pub seconds: Option<u64>,
+}
+
+/// A child's effective allowance, sent by the run's event producer.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Share {
+    pub turns: u64,
+    /// Exact effective time in milliseconds.
+    pub time_ms: u64,
+    pub spend: u64,
+}
+
+/// One child allowance lowered by the run, sent in opening metadata.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Clamp {
+    pub part: SharePart,
+    pub by: ShareBound,
+}
+
+/// A child's allowance part named by an event producer.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum SharePart {
+    /// Its completion allowance.
+    Turns,
+    /// Its wall-clock allowance.
+    Time,
+    /// A future part retained by this reader.
+    Unknown(Box<[u8]>),
+}
+
+/// The bound that lowered a child's allowance, sent by an event producer.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ShareBound {
+    /// The parent's ordinary pool above its reserve.
+    Reserve,
+    /// The asker's call deadline.
+    Deadline,
+    /// A future bound retained by this reader.
+    Unknown(Box<[u8]>),
+}
+
+/// The run's budget stage named by its event producer.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum BudgetStage {
+    /// Work draws on the ordinary pool.
+    Ordinary,
+    /// Main finishes on the reserved pool.
+    WindDown,
+    /// A future stage retained by this reader.
+    Unknown(Box<[u8]>),
+}
+
+/// A budget part's counted usage and ceiling, sent in a budget snapshot.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Quantity {
+    pub used: u64,
+    pub limit: u64,
+}
+
+/// The finishing allowances held by the run, sent in its budget snapshot.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Reserve {
+    pub turns: u64,
+    pub time_ms: u64,
+    pub spend: u64,
+}
+
+/// A cumulative run budget observation, sent once at each actual charge.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct BudgetStanding {
+    pub run: u64,
+    pub stage: BudgetStage,
+    pub turns: Quantity,
+    pub spend: Quantity,
+    pub time_ms: Quantity,
+    pub reserve: Reserve,
+}
+
 /// The tool families and host tool names the service records at admission.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Tools {
@@ -580,6 +662,9 @@ pub struct ConversationOpened {
     pub parent: Option<u64>,
     pub call: Option<Box<[u8]>>,
     pub model: Model,
+    pub requested: Option<Requested>,
+    pub share: Option<Share>,
+    pub clamped: List<Clamp>,
 }
 
 /// The conversation terminal and totals the service records at its close.
@@ -667,8 +752,36 @@ pub struct ToolCompleted {
     pub exit: Option<CommandExit>,
     pub bytes: u64,
     pub duration_ms: u64,
+    pub child: Option<ChildCompleted>,
     pub delivery: Option<Delivered>,
     pub result: Option<Box<[u8]>>,
+}
+
+/// The settled child result the service joins to its enclosing tool terminal.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct ChildCompleted {
+    pub conversation: u64,
+    pub stop: ChildStop,
+    pub turns: u64,
+    /// Exact elapsed child time in milliseconds.
+    pub time_ms: u64,
+    pub spent: u64,
+    pub usage: Usage,
+}
+
+/// How a child ended, sent with its enclosing tool terminal.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ChildStop {
+    /// The child chose to answer.
+    End,
+    /// The child's share ended its answer.
+    Budget,
+    /// The child failed without answering.
+    Failed,
+    /// The child closed without answering.
+    Closed,
+    /// A value this reader does not know, retained as UTF-8.
+    Unknown(Box<[u8]>),
 }
 
 /// The workspace check deadline the service records at its start.
@@ -731,6 +844,8 @@ pub struct Record {
 /// A record body sent by a stream producer.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Event {
+    /// The `budget` record.
+    Budget(BudgetStanding),
     /// The `session.started` record.
     SessionStarted(SessionStarted),
     /// The `session.ended` record.

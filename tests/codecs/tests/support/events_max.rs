@@ -2,12 +2,13 @@
 
 use skein_lib::List;
 use smith_events::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckStarted, Clamp, CommandExit, Completion, CompletionFailure, ConversationClosed, ConversationEnd,
+    ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass,
+    Family, Field, Form, Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity,
+    Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult, RunStarted,
+    SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta, ToolCompleted,
+    ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn payload(length: u32) -> Box<[u8]> {
@@ -183,6 +184,20 @@ fn max_conversation_opened(limits: &smith_events::Limits) -> ConversationOpened 
         parent: Some(u64::MAX),
         call: Some(payload(limits.string)),
         model: max_model(limits),
+        requested: Some(Requested { turns: Some(u64::MAX), seconds: Some(u64::MAX) }),
+        share: Some(Share { turns: u64::MAX, time_ms: u64::MAX, spend: u64::MAX }),
+        clamped: {
+            let mut values = List::with_capacity(limits.items);
+            for _ in 0..limits.items {
+                values
+                    .push(Clamp {
+                        part: SharePart::Unknown(payload(limits.string)),
+                        by: ShareBound::Unknown(payload(limits.string)),
+                    })
+                    .expect("configured clamp item room");
+            }
+            values
+        },
     }
 }
 
@@ -270,6 +285,14 @@ fn max_tool_completed(limits: &smith_events::Limits) -> ToolCompleted {
         exit: Some(max_command_exit(limits)),
         bytes: u64::MAX,
         duration_ms: u64::MAX,
+        child: Some(smith_events::ChildCompleted {
+            conversation: u64::MAX,
+            stop: smith_events::ChildStop::Unknown(payload(limits.string)),
+            turns: u64::MAX,
+            time_ms: u64::MAX,
+            spent: u64::MAX,
+            usage: max_usage(limits),
+        }),
         delivery: Some(Delivered::Unknown(payload(limits.string))),
         result: Some(payload(limits.content)),
     }
@@ -359,6 +382,17 @@ fn max_list_text(limits: &smith_events::Limits) -> List<Box<[u8]>> {
 
 pub fn largest_samples(limits: &smith_events::Limits) -> Vec<Record> {
     vec![
+        Record {
+            t_ms: u64::MAX,
+            event: Event::Budget(BudgetStanding {
+                run: u64::MAX,
+                stage: BudgetStage::Unknown(payload(limits.string)),
+                turns: Quantity { used: u64::MAX, limit: u64::MAX },
+                spend: Quantity { used: u64::MAX, limit: u64::MAX },
+                time_ms: Quantity { used: u64::MAX, limit: u64::MAX },
+                reserve: Reserve { turns: u64::MAX, time_ms: u64::MAX, spend: u64::MAX },
+            }),
+        },
         Record { t_ms: u64::MAX, event: Event::SessionStarted(max_session_started(limits)) },
         Record { t_ms: u64::MAX, event: Event::SessionEnded(max_session_ended(limits)) },
         Record { t_ms: u64::MAX, event: Event::RunStarted(max_run_started(limits)) },

@@ -11,12 +11,15 @@
 
 extern crate alloc;
 
+mod observations;
 mod service;
 
 pub mod profile;
 
 #[cfg(test)]
 mod tests;
+
+pub use observations::{ChildShare, budget_record, child_completed, child_share};
 
 pub use service::{
     Config, ConfigError, Effects, Failure, Limits, Service, done, effects_worst_case, failure, iterate, next_deadline,

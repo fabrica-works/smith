@@ -17,6 +17,7 @@ fn terminal(world: &World) -> Answered {
                 | FactKind::MessageReceived { .. }
                 | FactKind::MessageRefused { .. }
                 | FactKind::Admitted { .. }
+                | FactKind::Budget { .. }
                 | FactKind::Prepared { .. }
                 | FactKind::Opened { .. }
                 | FactKind::Ended { .. }

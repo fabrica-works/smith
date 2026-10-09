@@ -113,6 +113,16 @@ pub enum Set {
     Deadline,
 }
 
+/// The run's budget stage, recorded for its watchers (domain/run.md, section 9.1).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Stage {
+    /// Work draws on the ordinary pool.
+    Ordinary,
+
+    /// The ordinary pool is spent and main finishes on the reserve.
+    WindDown,
+}
+
 /// Host-supplied model rates, interpreted only by Session. The price is the
 /// ceiling of ((fresh input + cache writes)*input + cache reads*cached +
 /// output*output)/unit, checked before conversion to u64. The run refuses zero

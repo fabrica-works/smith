@@ -14,7 +14,10 @@
 //! to the run without a request (a conversation ending, a call made, checks
 //! or a delivery ending) are told where they happen.
 
-use skein_lib::{Queue, Slab, Time, Token};
+use skein_lib::{Duration, Queue, Slab, Time, Token};
+
+use crate::budget::{Granted, Share, Stage};
+use crate::charter::Reserve;
 
 use crate::boundary::{Answer, End, Exit, Failure, Refusal, Request, Returned};
 use crate::run::{self, Conversation, Run};
@@ -53,15 +56,10 @@ pub enum FactKind {
         /// Number of prepared repository check executables.
         checks: u32,
     },
-    /// It opened the main conversation or a child conversation.
-    Opened {
-        run: Token,
-        conversation: Token,
-        /// Whether this is a child conversation.
-        child: bool,
-        parent: Option<Token>,
-        call: Option<Token>,
-    },
+    /// It opened main or a child with its asked and effective share.
+    Opened { run: Token, conversation: Token, kind: Kind },
+    /// A completion was charged against the run's shared activation budget.
+    Budget { run: Token, standing: Standing },
     /// The conversation ended, or was refused at its entrance.
     Ended {
         run: Token,
@@ -102,6 +100,38 @@ pub enum FactKind {
         /// Single terminal value returned to the caller.
         answer: Answered,
     },
+}
+
+/// The role and share of the conversation the run opened.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Kind {
+    /// The run's main conversation.
+    Main,
+
+    /// A child serves its parent's call under the requested and effective share.
+    Child { parent: Token, call: Token, asked: Share, granted: Granted },
+}
+
+/// The run's activation budget at a charge (protocol/events.md, section 3.8).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Standing {
+    pub stage: Stage,
+    pub turns: u32,
+    pub turns_limit: u32,
+    pub spend: u64,
+    pub spend_limit: u64,
+    pub time: Duration,
+    pub time_limit: Duration,
+    pub reserve: Reserve,
+    pub reserve_spend: u64,
+}
+
+/// What one child used before its settled return, told by the run.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Used {
+    pub turns: u32,
+    pub time: Duration,
+    pub spend: u64,
 }
 
 /// What a call asked for.
@@ -160,9 +190,9 @@ pub enum Return {
     /// No capacity is currently available; a later call may fit.
     Busy,
     /// The sub-agent answered or the run supplied its terminal, as classified by the enclosing fact.
-    Answered,
+    Answered { used: Used },
     /// The sub-agent ended without an accepted answer.
-    Unanswered,
+    Unanswered { used: Used },
     /// The entrance or operation was refused with the enclosing typed reason.
     Refused,
 }
@@ -208,6 +238,10 @@ impl Facts {
         self.queue.room()
     }
 
+    pub(crate) fn now(&self) -> Time {
+        self.now
+    }
+
     /// The step being taken is about the run `run`.
     pub(crate) fn about(&mut self, run: Token) {
         self.about = Some(run);
@@ -227,7 +261,6 @@ pub(crate) fn tell(
     facts: &mut Facts,
     runs: &Slab<Run>,
     conversations: &Slab<Conversation>,
-    calls: &crate::call::Calls,
     out: &Queue<Request>,
     mark: u32,
 ) {
@@ -241,10 +274,13 @@ pub(crate) fn tell(
                 FactKind::Admitted { run: *run, resumed: run::resumed(runs, *run) }
             }
             Request::Open { conversation, opening: _ } => {
-                let run::OpeningFact { child, parent, call } = run::opened(conversations, calls, *conversation);
-                FactKind::Opened { run, conversation: *conversation, child, parent, call }
+                let kind = run::opened(conversations, *conversation);
+                FactKind::Opened { run, conversation: *conversation, kind }
             }
-            Request::Return { call, result, .. } => FactKind::Returned { run, call: *call, result: result_of(result) },
+            Request::Return { call, result, .. } => match result_of(result) {
+                Some(result) => FactKind::Returned { run, call: *call, result },
+                None => continue,
+            },
             Request::Check { owner: _, program: _, deadline, tail: _ } => {
                 FactKind::CheckStarted { run, deadline: *deadline }
             }
@@ -267,8 +303,37 @@ pub(crate) fn tell(
     }
 }
 
-fn result_of(result: &Returned) -> Return {
-    match result {
+/// The two child answers include their settled usage; other returns are told from requests.
+pub(crate) fn child_returned(facts: &mut Facts, run: Token, call: Token, result: &Returned, used: Used) {
+    let result = match result {
+        Returned::Answered { .. } => Return::Answered { used },
+        Returned::Unanswered { .. } => Return::Unanswered { used },
+        Returned::Waited { .. }
+        | Returned::Withheld
+        | Returned::Crossed { .. }
+        | Returned::HostAnswered(_)
+        | Returned::HostTooLarge { .. }
+        | Returned::HostReportedTooLarge
+        | Returned::HostUnknown
+        | Returned::HostRejected(_)
+        | Returned::Delivered(_)
+        | Returned::Nothing
+        | Returned::DeliveryRefused(_)
+        | Returned::Accepted
+        | Returned::Rejected { .. }
+        | Returned::ChecksFailed { .. }
+        | Returned::Stale
+        | Returned::DeliveryFailed { .. }
+        | Returned::Cancelled
+        | Returned::TimedOut
+        | Returned::Busy
+        | Returned::Refused { .. } => return,
+    };
+    facts.push(FactKind::Returned { run, call, result });
+}
+
+fn result_of(result: &Returned) -> Option<Return> {
+    let result = match result {
         Returned::Waited { .. } => Return::Waited,
         Returned::Withheld => Return::Withheld,
         Returned::Crossed { .. } => Return::Crossed,
@@ -287,10 +352,10 @@ fn result_of(result: &Returned) -> Return {
         Returned::Cancelled => Return::Cancelled,
         Returned::TimedOut => Return::TimedOut,
         Returned::Busy => Return::Busy,
-        Returned::Answered { .. } => Return::Answered,
-        Returned::Unanswered { .. } => Return::Unanswered,
+        Returned::Answered { .. } | Returned::Unanswered { .. } => return None,
         Returned::Refused { .. } => Return::Refused,
-    }
+    };
+    Some(result)
 }
 
 fn answered(answer: &Answer) -> Answered {

@@ -2,12 +2,13 @@
 //! Contract: protocol/events.md, sections 5.3 and 6.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
-    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
-    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, ConversationClosed,
+    ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, EffectiveLimit,
+    Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model, Notice,
+    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
+    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
+    Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -18,7 +19,8 @@ use skein_lib::{List, Writer};
 pub fn write(record: &Record, capture: &Capture, limits: &Limits) -> Result<Option<Box<[u8]>>, Error> {
     match &record.event {
         Event::TextDelta(_) if *capture != Capture::Everything => return Ok(None),
-        Event::SessionStarted(_)
+        Event::Budget(_)
+        | Event::SessionStarted(_)
         | Event::SessionEnded(_)
         | Event::RunStarted(_)
         | Event::RunCompleted(_)
@@ -66,6 +68,7 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
     json.unsigned(crate::VERSION);
     json.key(b"type");
     match &record.event {
+        Event::Budget(_) => json.string(b"budget"),
         Event::SessionStarted(_) => json.string(b"session.started"),
         Event::SessionEnded(_) => json.string(b"session.ended"),
         Event::RunStarted(_) => json.string(b"run.started"),
@@ -84,6 +87,7 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
     json.key(b"t_ms");
     json.unsigned(record.t_ms);
     match &record.event {
+        Event::Budget(value) => encode_budget_standing(json, value, capture),
         Event::SessionStarted(value) => encode_session_started(json, value, capture),
         Event::SessionEnded(value) => encode_session_ended(json, value, capture),
         Event::RunStarted(value) => encode_run_started(json, value, capture),
@@ -704,6 +708,7 @@ fn check_text(text: &[u8], capacity: u32) -> Result<(), Error> {
 
 fn validate_record(record: &Record, limits: &Limits) -> Result<(), Error> {
     match &record.event {
+        Event::Budget(value) => validate_budget_stage(&value.stage, limits),
         Event::SessionStarted(value) => validate_session_started(value, limits),
         Event::SessionEnded(value) => validate_session_ended(value, limits),
         Event::RunStarted(value) => validate_run_started(value, limits),
@@ -1073,6 +1078,13 @@ fn validate_conversation_opened(value: &ConversationOpened, limits: &Limits) -> 
         check_text(item, limits.string)?;
     }
     validate_model(&value.model, limits)?;
+    if value.clamped.len() > limits.items {
+        return Err(Error::Limits);
+    }
+    for clamp in &value.clamped {
+        validate_share_part(&clamp.part, limits)?;
+        validate_share_bound(&clamp.by, limits)?;
+    }
     Ok(())
 }
 
@@ -1134,6 +1146,12 @@ fn validate_tool_completed(value: &ToolCompleted, limits: &Limits) -> Result<(),
     check_text(&value.tool, limits.string)?;
     validate_verdict(&value.verdict, limits)?;
 
+    if let Some(item) = &value.child {
+        match &item.stop {
+            ChildStop::End | ChildStop::Budget | ChildStop::Failed | ChildStop::Closed => {}
+            ChildStop::Unknown(text) => check_text(text, limits.string)?,
+        }
+    }
     if let Some(item) = &value.delivery {
         validate_delivered(item, limits)?;
     }
@@ -1377,6 +1395,27 @@ fn encode_conversation_opened(json: &mut Encoder, value: &ConversationOpened, ca
     }
     json.key(b"model");
     write_model(json, &value.model, capture);
+    if let Some(requested) = &value.requested {
+        json.key(b"requested");
+        write_requested(json, requested);
+    }
+    if let Some(share) = &value.share {
+        json.key(b"share");
+        write_share(json, share);
+    }
+    if !value.clamped.is_empty() {
+        json.key(b"clamped");
+        json.array_start();
+        for clamp in &value.clamped {
+            json.object_start();
+            json.key(b"part");
+            write_share_part(json, &clamp.part);
+            json.key(b"by");
+            write_share_bound(json, &clamp.by);
+            json.object_end();
+        }
+        json.array_end();
+    }
 }
 
 fn encode_conversation_closed(json: &mut Encoder, value: &ConversationClosed, capture: &Capture) {
@@ -1534,6 +1573,29 @@ fn encode_tool_started(json: &mut Encoder, value: &ToolStarted, capture: &Captur
     }
 }
 
+fn write_child_completed(json: &mut Encoder, value: &ChildCompleted, capture: &Capture) {
+    json.object_start();
+    json.key(b"conversation");
+    json.unsigned(value.conversation);
+    json.key(b"stop");
+    match &value.stop {
+        ChildStop::End => json.string(b"end"),
+        ChildStop::Budget => json.string(b"budget"),
+        ChildStop::Failed => json.string(b"failed"),
+        ChildStop::Closed => json.string(b"closed"),
+        ChildStop::Unknown(text) => json.string(text),
+    }
+    json.key(b"turns");
+    json.unsigned(value.turns);
+    json.key(b"time_ms");
+    json.unsigned(value.time_ms);
+    json.key(b"spent");
+    json.unsigned(value.spent);
+    json.key(b"usage");
+    write_usage(json, &value.usage, capture);
+    json.object_end();
+}
+
 fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Capture) {
     json.key(b"run");
     json.unsigned(value.run);
@@ -1553,6 +1615,10 @@ fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Ca
     json.unsigned(value.bytes);
     json.key(b"duration_ms");
     json.unsigned(value.duration_ms);
+    if let Some(item) = &value.child {
+        json.key(b"child");
+        write_child_completed(json, item, capture);
+    }
     if let Some(item) = &value.delivery {
         json.key(b"delivery");
         write_delivered(json, item, capture);
@@ -1609,4 +1675,108 @@ fn encode_notice(json: &mut Encoder, value: &Notice, capture: &Capture) {
         json.key(b"wait_ms");
         json.unsigned(*item);
     }
+}
+
+fn write_budget_stage(json: &mut Encoder, value: &BudgetStage) {
+    match value {
+        BudgetStage::Ordinary => json.string(b"ordinary"),
+        BudgetStage::WindDown => json.string(b"wind_down"),
+        BudgetStage::Unknown(value) => json.string(value),
+    }
+}
+
+fn validate_budget_stage(value: &BudgetStage, limits: &Limits) -> Result<(), Error> {
+    match value {
+        BudgetStage::Ordinary | BudgetStage::WindDown => Ok(()),
+        BudgetStage::Unknown(value) => check_text(value, limits.string),
+    }
+}
+
+fn write_share_part(json: &mut Encoder, value: &SharePart) {
+    match value {
+        SharePart::Turns => json.string(b"turns"),
+        SharePart::Time => json.string(b"time"),
+        SharePart::Unknown(value) => json.string(value),
+    }
+}
+
+fn validate_share_part(value: &SharePart, limits: &Limits) -> Result<(), Error> {
+    match value {
+        SharePart::Turns | SharePart::Time => Ok(()),
+        SharePart::Unknown(value) => check_text(value, limits.string),
+    }
+}
+
+fn write_share_bound(json: &mut Encoder, value: &ShareBound) {
+    match value {
+        ShareBound::Reserve => json.string(b"reserve"),
+        ShareBound::Deadline => json.string(b"deadline"),
+        ShareBound::Unknown(value) => json.string(value),
+    }
+}
+
+fn validate_share_bound(value: &ShareBound, limits: &Limits) -> Result<(), Error> {
+    match value {
+        ShareBound::Reserve | ShareBound::Deadline => Ok(()),
+        ShareBound::Unknown(value) => check_text(value, limits.string),
+    }
+}
+
+fn write_requested(json: &mut Encoder, value: &Requested) {
+    json.object_start();
+    if let Some(turns) = value.turns {
+        json.key(b"turns");
+        json.unsigned(turns);
+    }
+    if let Some(seconds) = value.seconds {
+        json.key(b"seconds");
+        json.unsigned(seconds);
+    }
+    json.object_end();
+}
+
+fn write_share(json: &mut Encoder, value: &Share) {
+    json.object_start();
+    json.key(b"turns");
+    json.unsigned(value.turns);
+    json.key(b"time_ms");
+    json.unsigned(value.time_ms);
+    json.key(b"spend");
+    json.unsigned(value.spend);
+    json.object_end();
+}
+
+fn write_quantity(json: &mut Encoder, value: &Quantity) {
+    json.object_start();
+    json.key(b"used");
+    json.unsigned(value.used);
+    json.key(b"limit");
+    json.unsigned(value.limit);
+    json.object_end();
+}
+
+fn write_reserve(json: &mut Encoder, value: &Reserve) {
+    json.object_start();
+    json.key(b"turns");
+    json.unsigned(value.turns);
+    json.key(b"time_ms");
+    json.unsigned(value.time_ms);
+    json.key(b"spend");
+    json.unsigned(value.spend);
+    json.object_end();
+}
+
+fn encode_budget_standing(json: &mut Encoder, value: &BudgetStanding, _capture: &Capture) {
+    json.key(b"run");
+    json.unsigned(value.run);
+    json.key(b"stage");
+    write_budget_stage(json, &value.stage);
+    json.key(b"turns");
+    write_quantity(json, &value.turns);
+    json.key(b"spend");
+    write_quantity(json, &value.spend);
+    json.key(b"time_ms");
+    write_quantity(json, &value.time_ms);
+    json.key(b"reserve");
+    write_reserve(json, &value.reserve);
 }

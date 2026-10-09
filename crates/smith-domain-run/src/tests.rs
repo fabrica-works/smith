@@ -1954,26 +1954,69 @@ fn facts(h: &mut Harness) -> Box<[Fact]> {
 #[test]
 fn a_run_tells_what_it_did_as_content_free_facts() {
     let mut h = Harness::new(LIMITS);
-    let emitted = h.start(1, agents());
+    let reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
+    let emitted = h.start(1, Charter { reserve, ..agents() });
     let [Request::Admitted { run, .. }, Request::Read { .. }] = &*emitted else { panic!("expected a read") };
     let run = *run;
     drop(h.step(Event::Read { owner: run, read: Read::Text { text: bytes(b"Be kind."), whole: true } }));
     let main = Token::new(0);
     drop(h.step(Event::Started { conversation: main, peer: Token::new(100) }));
-    let (child, _) = h.child(main, 7, families(true, false, false), 101);
+    let asked = crate::Share { turns: Some(u32::MAX), time: Some(BUDGET.time) };
+    let opened = h.step(ask(main, 7, families(true, false, false), None, Some(asked)));
+    let [Request::Open { conversation: child, .. }] = opened.as_ref() else { panic!("child opens") };
+    let child = *child;
+    drop(h.step(Event::Started { conversation: child, peer: Token::new(101) }));
+    h.after(Duration::from_secs(3));
+    drop(h.step(Event::Used { conversation: child, spend: spend(100) }));
+    h.after(Duration::from_secs(2));
     drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"done") }));
-    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }));
+    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(100) }));
     drop(h.step(finish(main, 8, verdict(b"approve", Box::new([])))));
     drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO }));
     let told = facts(&mut h);
     let expected = [
         Fact::Admitted { run, resumed: false },
         Fact::Prepared { run, guides: 1, checks: 0 },
-        Fact::Opened { run, conversation: main, child: false, parent: None, call: None },
+        Fact::Opened { run, conversation: main, kind: crate::facts::Kind::Main },
         Fact::Called { run, conversation: main, call: Token::new(7), ask: Asked::SubAgent },
-        Fact::Opened { run, conversation: child, child: true, parent: Some(main), call: Some(Token::new(7)) },
+        Fact::Opened {
+            run,
+            conversation: child,
+            kind: crate::facts::Kind::Child {
+                parent: main,
+                call: Token::new(7),
+                asked,
+                granted: crate::Granted {
+                    turns: 8,
+                    time: Duration::from_secs(540),
+                    spend: BUDGET.spend,
+                    turns_set: crate::Set::Reserve,
+                    time_set: crate::Set::Reserve,
+                },
+            },
+        },
+        Fact::Budget {
+            run,
+            standing: crate::facts::Standing {
+                stage: crate::Stage::Ordinary,
+                turns: 1,
+                turns_limit: BUDGET.turns,
+                spend: 100,
+                spend_limit: BUDGET.spend,
+                time: Duration::from_secs(3),
+                time_limit: BUDGET.time,
+                reserve,
+                reserve_spend: 0,
+            },
+        },
         Fact::Ended { run, conversation: child, end: End::Closed },
-        Fact::Returned { run, call: Token::new(7), result: Return::Answered },
+        Fact::Returned {
+            run,
+            call: Token::new(7),
+            result: Return::Answered {
+                used: crate::facts::Used { turns: 1, time: Duration::from_secs(5), spend: 100 },
+            },
+        },
         Fact::Called { run, conversation: main, call: Token::new(8), ask: Asked::Finish },
         Fact::Returned { run, call: Token::new(8), result: Return::Accepted },
         Fact::Ended { run, conversation: main, end: End::Closed },
@@ -2033,6 +2076,7 @@ fn failed_push_reason_and_diagnostics_return_to_the_finish_caller() {
             | Fact::MessageFence { .. }
             | Fact::MessageUnread { .. }
             | Fact::Admitted { .. }
+            | Fact::Budget { .. }
             | Fact::Prepared { .. }
             | Fact::Opened { .. }
             | Fact::Ended { .. }
@@ -3452,6 +3496,7 @@ fn ordered_offers_end_each_message_read_or_unread_and_the_answer_keeps_the_last_
                 | Fact::MessageReceived { .. }
                 | Fact::MessageRefused { .. }
                 | Fact::Admitted { .. }
+                | Fact::Budget { .. }
                 | Fact::Prepared { .. }
                 | Fact::Opened { .. }
                 | Fact::Ended { .. }
@@ -3521,11 +3566,26 @@ fn delayed_facts_keep_activation_history_and_child_parentage() {
         assert_eq!(facts[0].at, Time::from_nanos(7));
         assert_eq!(facts[0].kind, Fact::Admitted { run, resumed: transcript.is_some() });
         assert_eq!(facts[2].at, Time::from_nanos(11));
-        assert_eq!(facts[2].kind, Fact::Opened { run, conversation: main, child: false, parent: None, call: None });
+        assert_eq!(facts[2].kind, Fact::Opened { run, conversation: main, kind: crate::facts::Kind::Main });
         assert_eq!(facts[4].at, Time::from_nanos(13));
         assert_eq!(
             facts[4].kind,
-            Fact::Opened { run, conversation: child, child: true, parent: Some(main), call: Some(Token::new(7)) }
+            Fact::Opened {
+                run,
+                conversation: child,
+                kind: crate::facts::Kind::Child {
+                    parent: main,
+                    call: Token::new(7),
+                    asked: crate::Share::UNASKED,
+                    granted: crate::Granted {
+                        turns: BUDGET.turns,
+                        time: EXPIRY.saturating_since(Time::from_nanos(13)),
+                        spend: BUDGET.spend,
+                        turns_set: crate::Set::Pool,
+                        time_set: crate::Set::Deadline
+                    },
+                }
+            }
         );
     }
 }

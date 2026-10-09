@@ -115,7 +115,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     domain.facts.begin(env.now);
     let mark = out.len();
     take(domain, env, event, out);
-    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, &domain.calls, out, mark);
+    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
 }
 
 fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
@@ -193,7 +193,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
         Alarm::Call { call } => run::expired(domain, call, out),
         Alarm::Host { call } => run::host_alarm(domain, env, call, out),
     }
-    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, &domain.calls, out, mark);
+    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
 }
 
 /// Root asks before publishing a completion. A denial has no effects and names

@@ -17,6 +17,7 @@ skein-io.workspace = true
 skein-channel.workspace = true
 skein-llm.workspace = true
 smith-domain.workspace = true
+smith-events.workspace = true
 smith-protocol-channel.workspace = true
 smith-protocol-llm.workspace = true
 smith-protocol-machine.workspace = true

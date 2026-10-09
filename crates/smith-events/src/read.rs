@@ -2,12 +2,13 @@
 //! Contract: protocol/events.md, section 6. No stream state is retained.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
-    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
-    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, ConversationClosed,
+    ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, EffectiveLimit,
+    Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model, Notice,
+    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
+    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
+    Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -73,6 +74,7 @@ pub fn read(line: &[u8], limits: &Limits) -> Result<Option<Record>, Error> {
     let kind = text(required(tokens, b"type")?, limits.string)?;
     let t_ms = unsigned(required(tokens, b"t_ms")?)?;
     let event = match kind.as_ref() {
+        b"budget" => Event::Budget(read_budget_standing(tokens, limits)?),
         b"session.started" => Event::SessionStarted(read_session_started(tokens, limits)?),
         b"session.ended" => Event::SessionEnded(read_session_ended(tokens, limits)?),
         b"run.started" => Event::RunStarted(read_run_started(tokens, limits)?),
@@ -978,6 +980,18 @@ fn read_conversation_opened(tokens: &[Token], limits: &Limits) -> Result<Convers
             None => None,
         },
         model: read_model(required(tokens, b"model")?, limits)?,
+        requested: match field(tokens, b"requested")? {
+            Some(item) => Some(read_requested(item)?),
+            None => None,
+        },
+        share: match field(tokens, b"share")? {
+            Some(item) => Some(read_share(item)?),
+            None => None,
+        },
+        clamped: match field(tokens, b"clamped")? {
+            Some(item) => read_list_clamp(item, limits)?,
+            None => List::with_capacity(0),
+        },
     })
 }
 
@@ -1096,6 +1110,26 @@ fn read_tool_started(tokens: &[Token], limits: &Limits) -> Result<ToolStarted, E
     })
 }
 
+fn read_child_completed(tokens: &[Token], limits: &Limits) -> Result<ChildCompleted, Error> {
+    object(tokens)?;
+    let value = text(required(tokens, b"stop")?, limits.string)?;
+    let stop = match value.as_ref() {
+        b"end" => ChildStop::End,
+        b"budget" => ChildStop::Budget,
+        b"failed" => ChildStop::Failed,
+        b"closed" => ChildStop::Closed,
+        _ => ChildStop::Unknown(value),
+    };
+    Ok(ChildCompleted {
+        conversation: unsigned(required(tokens, b"conversation")?)?,
+        stop,
+        turns: unsigned(required(tokens, b"turns")?)?,
+        time_ms: unsigned(required(tokens, b"time_ms")?)?,
+        spent: unsigned(required(tokens, b"spent")?)?,
+        usage: read_usage(required(tokens, b"usage")?, limits)?,
+    })
+}
+
 fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolCompleted, Error> {
     object(tokens)?;
     Ok(ToolCompleted {
@@ -1110,6 +1144,10 @@ fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolComplete
         },
         bytes: unsigned(required(tokens, b"bytes")?)?,
         duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
+        child: match field(tokens, b"child")? {
+            Some(item) => Some(read_child_completed(item, limits)?),
+            None => None,
+        },
         delivery: match field(tokens, b"delivery")? {
             Some(item) => Some(read_delivered(item, limits)?),
             None => None,
@@ -1367,6 +1405,122 @@ fn read_list_text(tokens: &[Token], limits: &Limits) -> Result<List<Box<[u8]>>, 
         let end = value_end(tokens, at)?;
         let item = tokens.get(at..end).ok_or(Error::Shape)?;
         let value = text(item, limits.string)?;
+        if values.push(value).is_err() {
+            return Err(Error::Limits);
+        }
+        at = end;
+    }
+    Ok(values)
+}
+
+fn read_budget_stage(tokens: &[Token], limits: &Limits) -> Result<BudgetStage, Error> {
+    let value = text(tokens, limits.string.max(64))?;
+    Ok(match value.as_ref() {
+        b"ordinary" => BudgetStage::Ordinary,
+        b"wind_down" => BudgetStage::WindDown,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            BudgetStage::Unknown(value)
+        }
+    })
+}
+
+fn read_share_part(tokens: &[Token], limits: &Limits) -> Result<SharePart, Error> {
+    let value = text(tokens, limits.string.max(64))?;
+    Ok(match value.as_ref() {
+        b"turns" => SharePart::Turns,
+        b"time" => SharePart::Time,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            SharePart::Unknown(value)
+        }
+    })
+}
+
+fn read_share_bound(tokens: &[Token], limits: &Limits) -> Result<ShareBound, Error> {
+    let value = text(tokens, limits.string.max(64))?;
+    Ok(match value.as_ref() {
+        b"reserve" => ShareBound::Reserve,
+        b"deadline" => ShareBound::Deadline,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            ShareBound::Unknown(value)
+        }
+    })
+}
+
+fn read_requested(tokens: &[Token]) -> Result<Requested, Error> {
+    object(tokens)?;
+    Ok(Requested {
+        turns: match field(tokens, b"turns")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
+        seconds: match field(tokens, b"seconds")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
+    })
+}
+
+fn read_share(tokens: &[Token]) -> Result<Share, Error> {
+    object(tokens)?;
+    Ok(Share {
+        turns: unsigned(required(tokens, b"turns")?)?,
+        time_ms: unsigned(required(tokens, b"time_ms")?)?,
+        spend: unsigned(required(tokens, b"spend")?)?,
+    })
+}
+
+fn read_quantity(tokens: &[Token]) -> Result<Quantity, Error> {
+    object(tokens)?;
+    Ok(Quantity { used: unsigned(required(tokens, b"used")?)?, limit: unsigned(required(tokens, b"limit")?)? })
+}
+
+fn read_reserve(tokens: &[Token]) -> Result<Reserve, Error> {
+    object(tokens)?;
+    Ok(Reserve {
+        turns: unsigned(required(tokens, b"turns")?)?,
+        time_ms: unsigned(required(tokens, b"time_ms")?)?,
+        spend: unsigned(required(tokens, b"spend")?)?,
+    })
+}
+
+fn read_budget_standing(tokens: &[Token], limits: &Limits) -> Result<BudgetStanding, Error> {
+    object(tokens)?;
+    Ok(BudgetStanding {
+        run: unsigned(required(tokens, b"run")?)?,
+        stage: read_budget_stage(required(tokens, b"stage")?, limits)?,
+        turns: read_quantity(required(tokens, b"turns")?)?,
+        spend: read_quantity(required(tokens, b"spend")?)?,
+        time_ms: read_quantity(required(tokens, b"time_ms")?)?,
+        reserve: read_reserve(required(tokens, b"reserve")?)?,
+    })
+}
+
+fn read_list_clamp(tokens: &[Token], limits: &Limits) -> Result<List<Clamp>, Error> {
+    if tokens.first() != Some(&Token::ArrayStart) || tokens.last() != Some(&Token::ArrayEnd) {
+        return Err(Error::Shape);
+    }
+    let mut values = List::with_capacity(limits.items);
+    let mut at = 1_usize;
+    for _ in 0..tokens.len() {
+        if at >= tokens.len().saturating_sub(1) {
+            break;
+        }
+        let end = value_end(tokens, at)?;
+        let item = tokens.get(at..end).ok_or(Error::Shape)?;
+        object(item)?;
+        let value = Clamp {
+            part: read_share_part(required(item, b"part")?, limits)?,
+            by: read_share_bound(required(item, b"by")?, limits)?,
+        };
         if values.push(value).is_err() {
             return Err(Error::Limits);
         }

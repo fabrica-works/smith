@@ -19,6 +19,7 @@
 //! nothing in flight, every start answered, every turn spent in exactly one
 //! answer).
 
+pub mod facts_referee;
 pub mod host;
 pub mod lease_referee;
 pub mod messages_referee;

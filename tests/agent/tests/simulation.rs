@@ -123,7 +123,7 @@ fn a_child_asking_for_sub_agents_is_refused() {
     assert_eq!(
         count(&world, |fact| matches!(
             fact,
-            run::facts::FactKind::Returned { result: run::facts::Return::Answered, .. }
+            run::facts::FactKind::Returned { result: run::facts::Return::Answered { .. }, .. }
         )),
         3
     );
@@ -215,7 +215,9 @@ fn host_cancellation_at_many_moments_closes_the_whole_tree() {
             Answer::Failed { failure: Failure::Cancelled, .. } => {
                 cancelled += 1;
                 nested += usize::from(
-                    count(&world, |fact| matches!(fact, run::facts::FactKind::Opened { child: true, .. })) > 0,
+                    count(&world, |fact| {
+                        matches!(fact, run::facts::FactKind::Opened { kind: run::facts::Kind::Child { .. }, .. })
+                    }) > 0,
                 );
             }
             Answer::Accepted { .. } => done += 1,
@@ -244,8 +246,11 @@ fn a_deadline_mid_tree_answers_only_after_the_tree_settles() {
             ..Settings::calm(700 + seed)
         });
         assert!(matches!(world.answer(), Answer::Failed { failure: Failure::Budget(Exhausted::Time), .. }));
-        nested +=
-            usize::from(count(&world, |fact| matches!(fact, run::facts::FactKind::Opened { child: true, .. })) > 0);
+        nested += usize::from(
+            count(&world, |fact| {
+                matches!(fact, run::facts::FactKind::Opened { kind: run::facts::Kind::Child { .. }, .. })
+            }) > 0,
+        );
         assert!(world.answered_at() <= skein_lib::Time::ZERO.saturating_add(Duration::from_secs(5)));
     }
     assert!(nested > 0, "some deadlines crossed nested work");
