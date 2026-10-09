@@ -15,6 +15,11 @@ use super::{Limit, LimitName, Per, Refusal, Value};
 pub fn words(refusal: &Refusal) -> Box<[u8]> {
     let mut output = List::with_capacity(512);
     match refusal {
+        Refusal::Field { limit } => {
+            text(&mut output, "field: ");
+            name(&mut output, limit);
+            text(&mut output, " must not be empty");
+        }
         Refusal::Broken { check, left, right } => {
             text(&mut output, check.name());
             text(&mut output, ": ");

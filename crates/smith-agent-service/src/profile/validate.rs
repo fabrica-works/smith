@@ -11,6 +11,7 @@ use super::{Check, Configuration, Layer, Limit, LimitName, Per, Profile, Refusal
 
 /// Check declared relationships before any deriving or provider work.
 pub fn declarations(profile: &Profile, configuration: &Configuration) -> Result<(), Refusal> {
+    configured_models(configuration)?;
     at_most(
         Check::ReadInPayload,
         bytes(Layer::Declared, "read_window", u64::from(profile.declared.read_window)),
@@ -47,6 +48,22 @@ pub fn declarations(profile: &Profile, configuration: &Configuration) -> Result<
             }
             positive_duration(LimitName { layer: Layer::Declared, field: "head", per }, model.head)?;
             positive_duration(LimitName { layer: Layer::Declared, field: "idle", per }, model.idle)?;
+        }
+    }
+    Ok(())
+}
+
+/// Refuse missing endpoint or model declarations before their bounds are derived.
+/// Contract: protocol/agent.md, section 4.
+pub fn configured_models(configuration: &Configuration) -> Result<(), Refusal> {
+    if configuration.endpoints.is_empty() {
+        return Err(Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") });
+    }
+    for endpoint in &configuration.endpoints {
+        if endpoint.models.is_empty() {
+            return Err(Refusal::Field {
+                limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(endpoint.number) },
+            });
         }
     }
     Ok(())

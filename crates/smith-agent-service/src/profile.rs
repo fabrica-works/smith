@@ -29,6 +29,8 @@ mod tests;
 
 pub mod validate;
 
+pub mod room;
+
 pub use checks::{Check, Refusal};
 pub use effective::{Layer, Limit, LimitName, Per, Value};
 pub use words::words;

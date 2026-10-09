@@ -645,7 +645,9 @@ fn build_models(
     models: &[ModelDocument],
 ) -> Result<service::profile::Endpoint, String> {
     if models.is_empty() {
-        return Err("endpoint model list must be nonempty".into());
+        return Err(profile_refusal(Refusal::Field {
+            limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(number) },
+        }));
     }
     let mut names = std::collections::BTreeSet::new();
     let mut prepared = Vec::with_capacity(models.len());

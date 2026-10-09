@@ -84,6 +84,8 @@ impl Check {
 /// Why startup refuses a configuration, sent to the shell before its channel opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
+    /// A required configured list is empty, sent by startup with its field name.
+    Field { limit: LimitName },
     /// A smith relationship fails, retaining both named values for the shell.
     Broken { check: Check, left: Limit, right: Limit },
     /// Derivation overflowed the named field, before any service effects.
@@ -99,6 +101,7 @@ impl Refusal {
     #[must_use]
     pub const fn check(&self) -> Option<Check> {
         match self {
+            Self::Field { .. } => None,
             Self::Broken { check, .. } => Some(*check),
             Self::Derived { .. } => Some(Check::Derived),
             Self::Environment { .. } => Some(Check::Environment),
