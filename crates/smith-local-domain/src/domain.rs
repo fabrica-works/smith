@@ -400,7 +400,12 @@ fn loaded(
     deliveries: Box<[DeliveryRecord]>,
     out: &mut Queue<Request>,
 ) {
-    assert!(domain.chat.phase == Phase::Loading && domain.chat.load_requested, "Load has one terminal");
+    assert!(
+        domain.chat.phase == Phase::Loading && domain.chat.load_requested,
+        "Load has one terminal: phase {:?}, requested {}",
+        domain.chat.phase,
+        domain.chat.load_requested
+    );
     domain.chat.state = state.unwrap_or(ChatState { activation: 0, next_message: 0, read: None });
     domain.transcript = transcript;
     domain.records = Map::with_capacity(env.limits.smith.run.answered_calls);
@@ -821,6 +826,8 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             ),
         },
         parent::Request::Withdrawn { .. } | parent::Request::Told { .. } => {}
+        parent::Request::MessageRefused { reason: host::MessageRefusal::Ending, .. }
+            if domain.agent_life == AgentLife::Gone => {}
         parent::Request::Faulted { .. } | parent::Request::MessageRefused { .. } => {
             domain.agent_failed = true;
             out.push(Request::Show { text: Box::from(&b"Agent process failed"[..]) });

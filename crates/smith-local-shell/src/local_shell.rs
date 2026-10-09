@@ -65,27 +65,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }
-    let queue = local::max_out(&prepared.limits).max(host::max_out(&host_limits)).max(256);
-    let process_limits = service::ProcessLimits {
-        io: agent_config.service.limits.io,
-        channel: protocol::Limits {
-            bodies: agent_config.service.limits.channel.bodies,
-            charter: agent_config.service.limits.channel.charter,
-            transcript: agent_config.service.limits.channel.transcript,
-            endpoints: agent_config.service.limits.channel.endpoints,
-            channel: agent_config.service.limits.channel.channel,
-            calls: host_limits.calls,
-        },
-        detail_bytes: host_limits.detail_bytes,
-        queue,
-    };
-    let limits = service::Limits {
-        local: prepared.limits,
-        inline: None,
-        envelope_bytes: host_limits.answer_bytes,
-        process: process_limits,
-        queue,
-    };
+    let limits = service_limits(prepared.limits, host_limits, &agent_config.service);
     let seed = skein_shell::seed().map_err(|error| format!("local seed failed (errno {error})"))?;
     let local_config = service::Config {
         agent: service::AgentConfig::Spawned,
@@ -130,6 +110,25 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
         .map_err(|error| format!("local kernel: {error}"))?;
     Ok(drive(&mut kernel, &Clock::new(), &mut local_service))
+}
+
+/// Bound the common local IO and the selected child before constructing either.
+fn service_limits(local: local::Limits, host: host::Limits, agent: &smith_agent_service::Config) -> service::Limits {
+    let queue = local::max_out(&local).max(host::max_out(&host)).max(256);
+    let process = service::ProcessLimits {
+        io: agent.limits.io,
+        channel: protocol::Limits {
+            bodies: agent.limits.channel.bodies,
+            charter: agent.limits.channel.charter,
+            transcript: agent.limits.channel.transcript,
+            endpoints: agent.limits.channel.endpoints,
+            channel: agent.limits.channel.channel,
+            calls: host.calls,
+        },
+        detail_bytes: host.detail_bytes,
+        queue,
+    };
+    service::Limits { local, inline: None, envelope_bytes: host.answer_bytes, process, queue }
 }
 
 #[expect(

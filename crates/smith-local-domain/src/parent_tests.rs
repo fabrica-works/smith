@@ -166,6 +166,49 @@ fn faults_and_message_refusals_keep_the_current_failure_class() {
 }
 
 #[test]
+fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Answered {
+            client: Token::new(1),
+            answer: host::Answer {
+                read: None,
+                turns: 0,
+                spent: 0,
+                result: host::RunResult::Failed {
+                    failure: host::RunFailure::Transcript(host::TranscriptRefusal::Version),
+                },
+            },
+        },
+        &mut out,
+    );
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() },
+        &mut out,
+    );
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::MessageRefused {
+            client: Token::new(1),
+            name: Token::new(3),
+            reason: host::MessageRefusal::Ending,
+        },
+        &mut out,
+    );
+    let Some(Request::Show { text }) = out.pop() else { panic!("actual transcript refusal") };
+    assert_eq!(text.as_ref(), b"Saved transcript was refused");
+    let Some(Request::Load) = out.pop() else { panic!("one transcript reload") };
+    assert!(out.is_empty());
+    assert_eq!(domain.chat.phase, Phase::Loading);
+    assert!(!domain.agent_failed);
+}
+
+#[test]
 fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
     let (mut domain, env, mut out) = running(crate::tests::config());
     parent_request(

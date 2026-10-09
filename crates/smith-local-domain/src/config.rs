@@ -190,12 +190,12 @@ impl Config {
     }
 
     fn check_budget(&self, limits: &Limits) -> Result<(), Invalid> {
-        match self.budget.check(&limits.agent.run.budget) {
+        match self.budget.check(&limits.smith.run.budget) {
             Ok(()) => {}
             Err(reason) => return Err(Invalid::Budget(reason)),
         }
-        if self.waiting > limits.agent.run.waiting {
-            return Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(limits.agent.run.waiting))));
+        if self.waiting > limits.smith.run.waiting {
+            return Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(limits.smith.run.waiting))));
         }
         Ok(())
     }

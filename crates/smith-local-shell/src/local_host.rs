@@ -84,7 +84,10 @@ pub struct Local {
 
 impl Local {
     /// Compose either agent kind with the same file and terminal shell pass.
-    #[expect(clippy::too_many_lines, reason = "startup validates the shared store, terminal, credential and selected lower owners")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "startup validates the shared store, terminal, credential and selected lower owners"
+    )]
     pub fn new(
         mut config: service::Config,
         lower: Option<agent::Config>,

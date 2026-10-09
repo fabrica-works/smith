@@ -74,7 +74,9 @@ fn the_local_inline_child_must_have_one_slot_and_matching_native_receiving_bound
         } else {
             child.smith.accounts = child.smith.accounts.checked_add(1).expect("small receiving profile");
         }
-        let Err(Invalid::Limits) = Domain::new(config(), &limits, 97) else { panic!("incompatible inline child refuses startup") };
+        let Err(Invalid::Limits) = Domain::new(config(), &limits, 97) else {
+            panic!("incompatible inline child refuses startup")
+        };
     }
 }
 
@@ -148,7 +150,7 @@ fn invalid_local_configuration_is_refused_before_agent_construction() {
 #[test]
 fn budget_and_rate_refusals_precede_agent_construction() {
     let limits = limits();
-    let ceiling = limits.agent.run.budget;
+    let ceiling = limits.smith.run.budget;
     for (budget, reason) in [
         (run::Budget { turns: ceiling.turns + 1, ..config().budget }, run::Ceiling::Turns(ceiling.turns)),
         (run::Budget { spend: ceiling.spend + 1, ..config().budget }, run::Ceiling::Spend(ceiling.spend)),

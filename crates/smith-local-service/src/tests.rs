@@ -27,7 +27,7 @@ fn config() -> Config {
     host_limits.agents = 1;
     host_limits.accounts = 1;
     local_limits.agent = local::AgentLimits::Spawned(host_limits);
-    let queue = local::max_out(&local_limits).max(smith_host_domain::max_out(&host_limits));
+    let queue = local::max_out(&local_limits).max(smith_host_domain::max_out(&host_limits)).max(64);
     let agent_limits = smith_agent_process_world::limits();
     let process = ProcessLimits {
         io: skein_io::Limits {
@@ -120,7 +120,9 @@ fn the_local_service_loads_then_routes_durable_start_requests_to_the_shell() {
 fn a_local_service_reserves_the_selected_childs_complete_transition() {
     for mut config in [config(), colocated_config()] {
         config.limits.queue = local::max_out(&config.limits.local).checked_sub(1).expect("nonzero child output");
-        let Err(crate::Error::Queue) = Service::new(config, 93) else { panic!("one missing output cell refuses startup") };
+        let Err(crate::Error::Queue) = Service::new(config, 93) else {
+            panic!("one missing output cell refuses startup")
+        };
     }
 }
 
@@ -131,11 +133,11 @@ fn a_local_service_refuses_lower_configuration_for_the_other_agent_kind() {
     let Err(crate::Error::Process) = Service::new(inline, 94) else { panic!("inline limits require native effects") };
 
     let mut spawned = config();
-    spawned.agent = crate::AgentConfig::Inline {
-        configuration: smith_agent_process_world::configuration(),
-        roots: Box::new([]),
+    spawned.agent =
+        crate::AgentConfig::Inline { configuration: smith_agent_process_world::configuration(), roots: Box::new([]) };
+    let Err(crate::Error::Process) = Service::new(spawned, 95) else {
+        panic!("spawned limits require the process adapter")
     };
-    let Err(crate::Error::Process) = Service::new(spawned, 95) else { panic!("spawned limits require the process adapter") };
 }
 
 #[test]
@@ -143,7 +145,9 @@ fn an_inline_service_refuses_an_unpriced_part_of_its_lower_inventory() {
     let mut config = colocated_config();
     let priced = config.limits.inline.as_mut().expect("inline ownership priced");
     priced.memory = priced.memory.checked_sub(1).expect("nonzero lower ownership");
-    let Err(crate::Error::Memory) = Service::new(config, 96) else { panic!("the actual inventory exceeds its advertised ownership") };
+    let Err(crate::Error::Memory) = Service::new(config, 96) else {
+        panic!("the actual inventory exceeds its advertised ownership")
+    };
 }
 
 #[test]
@@ -423,6 +427,7 @@ fn colocated_config() -> Config {
     config.local.models[0].prices = run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 };
     config.local.models[0].output = 1024;
     config.local.budget.turns = 1;
+    config.local.budget.spend = 1000;
     config.local.models[0].model = Box::from(b"fake".as_slice());
     config.limits.local.agent =
         local::AgentLimits::inline(config.limits.local.smith, config.limits.local.unsaved, config.local.budget.time)
