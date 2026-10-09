@@ -223,8 +223,8 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         no_workspace(&resumed, &settings);
         assert!(resumed.host_submissions().is_empty() && resumed.host_terminals().is_empty());
         assert_eq!(resumed.host_decisions(), 0, "restored history performs no second host effect");
-        assert_eq!(first.turn_metadata()[1].2.output, 28);
-        assert_eq!(resumed.turn_metadata()[0].2.output, 7, "history is not recharged");
+        assert_eq!(first.turn_metadata()[1].2.output, Some(28));
+        assert_eq!(resumed.turn_metadata()[0].2.output, Some(7), "history is not recharged");
     }
 }
 

@@ -284,8 +284,8 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
     world.run(20_000);
     let expected = conservation(&world, &MODEL_RATES);
     assert_eq!(expected.turns, 6);
-    assert_eq!(expected.output, 56);
-    assert!(expected.cache_read > 0 && expected.cache_write.unwrap_or(0) > 0);
+    assert_eq!(expected.output, Some(56));
+    assert!(expected.cache_read.unwrap_or(0) > 0 && expected.cache_write.unwrap_or(0) > 0);
     assert_eq!(world.turns().len(), 3, "only main's settled Turns cross the host boundary");
     let main = model_calls(&world, b"fake-1");
     let child = model_calls(&world, b"fake-2");

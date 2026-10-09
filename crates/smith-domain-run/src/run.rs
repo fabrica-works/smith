@@ -704,9 +704,12 @@ pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: 
     let run_id = conversation.run;
     let raw = Spend { units: 0, ..spend };
     let run = domain.runs.get_mut(run_id).expect("conversation retains run");
-    let added = match (conversation.spent.accumulate(raw), run.spent.accumulate(raw)) {
-        (Some(conversation_total), Some(run_total)) => Some((conversation_total, run_total)),
-        (Some(_) | None, Some(_) | None) => None,
+    let added = match conversation.spent.accumulate(raw) {
+        Some(conversation_total) => match run.spent.accumulate(raw) {
+            Some(run_total) => Some((conversation_total, run_total)),
+            None => None,
+        },
+        None => None,
     };
     let Some((conversation_total, run_total)) = added else {
         let state = mem::replace(&mut run.state, State::Closed);

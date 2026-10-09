@@ -478,8 +478,8 @@ fn resume(first: &World, fixture: &Fixture, index: usize, tail: bool) {
         assert!(recorded_wait(&world.turns()[0], fixture, false));
     }
     settled(&world, &settings);
-    assert_eq!(first.turn_metadata()[1].2.output, 20, "saved activation is independently charged");
-    assert_eq!(world.turn_metadata()[0].2.output, 11, "history is not recharged in the new activation");
+    assert_eq!(first.turn_metadata()[1].2.output, Some(20), "saved activation is independently charged");
+    assert_eq!(world.turn_metadata()[0].2.output, Some(11), "history is not recharged in the new activation");
 }
 
 fn header_refusals(first: &World, fixture: &Fixture, index: usize) {
