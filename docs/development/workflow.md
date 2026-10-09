@@ -741,3 +741,13 @@ input, and reasoning limits with each policy. Typed session worlds retain
 one drop fact per item and accept bounded writes after an oversized call.
 These controls use synthetic peers; calibrated live probe evidence remains
 separate. Workspace focused and fuzzy budgets are unchanged.
+
+Reliability inline increment 3.4 was measured through the serial heavy queue
+on 2026-10-09 with `measure -j 1`: the inline agent, host world and reused
+native machine world passed 87 focused tests in 1.047 seconds, with no skips.
+The workspace cancellation sweep passed serially in 0.066 seconds; all three
+host fuzzy stories passed in 0.377 seconds. Mounted roots retain their exact
+IO identity; checks and deliveries use the shared typed parent face. Actual
+native child commands wait for their machine terminal before cancellation
+answers, while a separate boundary fixture covers cleanup after an answer.
+Workspace focused and fuzzy budgets remain unchanged.
