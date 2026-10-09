@@ -29,6 +29,8 @@ mod facts;
 
 mod limits;
 
+mod long;
+
 mod values;
 
 #[cfg(test)]
@@ -54,3 +56,6 @@ pub use facts::Fact;
 pub use limits::{Limits, worst_case};
 
 pub use values::{Charter, Declared, Fields, Transcript, TurnValue};
+
+// The common face uses the root vocabulary for bounded work.
+pub use smith_domain::Operation;

@@ -86,7 +86,7 @@ pub enum Request {
         read: Option<Token>,
     },
     /// A bounded long operation began; the parent may show its notice.
-    Long { client: Token, span: skein_lib::Duration },
+    Long { client: Token, operation: crate::Operation, span: skein_lib::Duration },
     /// One prior long operation ended.
     LongDone { client: Token },
     /// Known-account credential rejection notice.

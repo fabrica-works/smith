@@ -36,16 +36,42 @@ fn started_binds_the_handle_and_admission_keeps_an_empty_person_queue() {
 fn waiting_and_both_long_notices_reach_the_person() {
     let notices = [
         (parent::Request::Waiting { client: Token::new(1), read: None }, b"Waiting for a message".as_slice()),
-        (parent::Request::Long { client: Token::new(1), span: Duration::from_secs(9) }, b"Running checks".as_slice()),
+        (
+            parent::Request::Long {
+                client: Token::new(1),
+                operation: host::Operation::Checks,
+                span: Duration::from_secs(9),
+            },
+            b"Running checks".as_slice(),
+        ),
         (parent::Request::LongDone { client: Token::new(1) }, b"Checks finished".as_slice()),
     ];
+    let (mut domain, env, mut out) = running(crate::tests::config());
     for (notice, expected) in notices {
-        let (mut domain, env, mut out) = running(crate::tests::config());
         parent_request(&mut domain, &env, notice, &mut out);
         let Some(Request::Show { text }) = out.pop() else { panic!("one person notice") };
         assert_eq!(text.as_ref(), expected);
         assert!(out.is_empty());
     }
+}
+
+#[test]
+fn completion_and_command_spans_do_not_claim_checks_are_running() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    for operation in [host::Operation::Completion, host::Operation::Command] {
+        parent_request(
+            &mut domain,
+            &env,
+            parent::Request::Long { client: Token::new(1), operation, span: Duration::from_secs(9) },
+            &mut out,
+        );
+    }
+    assert!(out.is_empty());
+    for _ in 0..2 {
+        parent_request(&mut domain, &env, parent::Request::LongDone { client: Token::new(1) }, &mut out);
+        assert!(out.is_empty());
+    }
+    assert_eq!(domain.long_open, 0);
 }
 
 #[test]

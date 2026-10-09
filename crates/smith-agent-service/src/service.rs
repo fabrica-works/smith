@@ -257,8 +257,8 @@ impl Effects {
             | domain::Request::WithdrawHost { .. }
             | domain::Request::Admitted { .. }
             | domain::Request::Answer { .. }
-            | domain::Request::Checking { .. }
-            | domain::Request::ChecksEnded { .. }
+            | domain::Request::Long { .. }
+            | domain::Request::LongDone { .. }
             | domain::Request::Deliver { .. }
             | domain::Request::Rejected { .. }
             | domain::Request::Exhausted { .. } => unreachable!("local domain owns host requests"),
@@ -1497,20 +1497,20 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.answer_sent = true;
             }
         }
-        domain::Request::Checking { host_run: _, deadline } => {
+        domain::Request::Long { host_run: _, operation, until } => {
             let token = service.next_send();
-            let span = deadline.saturating_since(service.domain_env.now);
+            let span = until.saturating_since(service.domain_env.now);
             if service
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_long(span, token, &mut service.channel_events, &mut service.channel_below)
+                .send_long(operation, span, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
             {
                 service.mark_failed(Failure::Send);
             }
         }
-        domain::Request::ChecksEnded { host_run: _ } => {
+        domain::Request::LongDone { host_run: _ } => {
             let token = service.next_send();
             if service
                 .channel

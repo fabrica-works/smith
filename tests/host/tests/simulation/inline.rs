@@ -285,7 +285,10 @@ fn checks_are_long_operations_for_either_kind() {
     world.settled();
     let mut spawned = Spawned::new(82, smith_host_world::limits());
     spawned.live();
-    spawned.up(host::Up::Long { span: skein_lib::Duration::from_secs(1) });
+    spawned.up(host::Up::Long {
+        operation: smith_host_domain::Operation::Checks,
+        span: skein_lib::Duration::from_secs(1),
+    });
     spawned.up(host::Up::LongDone);
     assert!(spawned.trace.lines().iter().any(|line| line.contains("Long")));
 }

@@ -681,21 +681,21 @@ fn the_watchdog_pauses_calls_waiting_turn_credit_and_bounded_longs() {
     faulted(&mut world, Fault::NoProgress);
     let mut world = World::new(37, limits());
     world.live();
-    world.up(Up::Long { span: Duration::from_secs(30) });
+    world.up(Up::Long { operation: smith_host_domain::Operation::Checks, span: Duration::from_secs(30) });
     world.at(39);
     assert_eq!(world.seen.fault, None);
     world.at(40);
     faulted(&mut world, Fault::NoProgress);
     let mut world = World::new(38, limits());
     world.live();
-    world.up(Up::Long { span: Duration::from_secs(30) });
+    world.up(Up::Long { operation: smith_host_domain::Operation::Checks, span: Duration::from_secs(30) });
     world.at(2);
     world.up(Up::LongDone);
     world.at(12);
     faulted(&mut world, Fault::NoProgress);
     let mut world = World::new(39, limits());
     world.live();
-    world.up(Up::Long { span: Duration::from_secs(121) });
+    world.up(Up::Long { operation: smith_host_domain::Operation::Checks, span: Duration::from_secs(121) });
     faulted(&mut world, Fault::Rules);
 }
 
@@ -1057,7 +1057,7 @@ fn cancelled_and_draining_paths_keep_work_and_drop_answers_only_after_a_reported
         if malformed {
             world.event(Input::Process(process::Event::Malformed { owner: world.owner() }));
         } else {
-            world.up(Up::Long { span: Duration::from_secs(121) });
+            world.up(Up::Long { operation: smith_host_domain::Operation::Checks, span: Duration::from_secs(121) });
         }
         assert_eq!(world.seen.fault, None, "explicit parent stop owns shutdown");
         assert_eq!(world.seen.signals, [Signal::Terminate]);
@@ -1130,7 +1130,7 @@ fn wall_shutdown_hangup_exit_and_breach_report_the_original_cause() {
                 assert_eq!(world.seen.fault, Some(Fault::WallTime));
             }
             2 => {
-                world.up(Up::Long { span: Duration::from_secs(121) });
+                world.up(Up::Long { operation: smith_host_domain::Operation::Checks, span: Duration::from_secs(121) });
                 assert_eq!(world.seen.fault, Some(Fault::Rules));
             }
             3 => {

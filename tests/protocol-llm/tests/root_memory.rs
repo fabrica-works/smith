@@ -933,8 +933,8 @@ impl Counted {
                 }
                 Request::HostCall { .. }
                 | Request::WithdrawHost { .. }
-                | Request::Checking { .. }
-                | Request::ChecksEnded { .. }
+                | Request::Long { .. }
+                | Request::LongDone { .. }
                 | Request::Deliver { .. }
                 | Request::Rejected { .. }
                 | Request::Exhausted { .. }

@@ -32,6 +32,13 @@ pub fn host_limits(profile: &smith_agent_service::profile::Profile, largest_turn
         spawn_timeout: Duration::from_secs(20),
         no_progress: profile.policy.max_waiting,
         long_span: profile.policy.max_time,
+        long_open: profile
+            .declared
+            .conversations
+            .checked_mul(profile.declared.calls_per_response.checked_add(1).expect("validated calls bound"))
+            .expect("validated simultaneous provider and command bounds")
+            .checked_add(1)
+            .expect("validated check span bound"),
         wall_time: profile.policy.max_time,
         grace: profile.policy.exit_grace,
         kill_after: Duration::from_secs(2),

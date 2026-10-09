@@ -875,9 +875,10 @@ fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
         OpenEvent::Waiting { read } => {
             host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Waiting { read } })
         }
-        OpenEvent::Long { span } => {
-            host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::Long { span } })
-        }
+        OpenEvent::Long { operation, span } => host::Input::Process(host::process::Event::Received {
+            owner: agent,
+            message: host::Up::Long { operation, span },
+        }),
         OpenEvent::LongDone => {
             host::Input::Process(host::process::Event::Received { owner: agent, message: host::Up::LongDone })
         }

@@ -56,7 +56,7 @@ pub enum OpenEvent {
     /// The run is waiting after reading the named message, if any.
     Waiting { read: Option<Token> },
     /// The run announced a long operation with a bounded progress extension.
-    Long { span: Duration },
+    Long { operation: smith_domain::Operation, span: Duration },
     /// The run ended its previously announced long operation.
     LongDone,
     /// One concrete turn and its checked host envelope.
@@ -521,7 +521,12 @@ impl Component {
                     0x010b if self.phase == Phase::Admitted => {
                         match smith_channel::Long::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(long) => {
-                                to_service.push(OpenEvent::Long { span: long.span() });
+                                let operation = match long.operation() {
+                                    smith_channel::Operation::Check => smith_domain::Operation::Checks,
+                                    smith_channel::Operation::Completion => smith_domain::Operation::Completion,
+                                    smith_channel::Operation::Command => smith_domain::Operation::Command,
+                                };
+                                to_service.push(OpenEvent::Long { operation, span: long.span() });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
                             Err(_) => self.refuse_rules(below),

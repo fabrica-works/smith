@@ -556,11 +556,11 @@ fn a_long_operation_stretches_progress_until_its_end() {
     world.agent_admits();
     world.settle();
     let span = skein_lib::Duration::from_nanos(42);
-    world.agent_starts_long(span);
+    world.agent_starts_long(smith_domain::Operation::Checks, span);
     world.settle();
     world.agent_ends_long();
     world.settle();
-    assert!(world.observations().contains(&Observation::HostLong { span }));
+    assert!(world.observations().contains(&Observation::HostLong { operation: smith_domain::Operation::Checks, span }));
     assert!(world.observations().contains(&Observation::HostLongDone));
 }
 

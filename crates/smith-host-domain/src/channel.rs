@@ -544,6 +544,7 @@ pub enum Up {
     },
     /// Bounded long operation stretches progress clock.
     Long {
+        operation: crate::Operation,
         /// At most `Limits::long_span`.
         span: Duration,
     },

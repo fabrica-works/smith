@@ -57,6 +57,8 @@ pub struct Limits {
     pub no_progress: Duration,
     /// Maximum declared long-operation extension.
     pub long_span: Duration,
+    /// Simultaneously announced spans, each ended by one LongDone.
+    pub long_open: u32,
     /// Independent working wall deadline.
     pub wall_time: Duration,
     /// Cancel/answer/exit grace before tree termination.

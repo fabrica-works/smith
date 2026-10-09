@@ -1165,13 +1165,18 @@ impl World {
                     .push((self.now, crate::messages_referee::Seen::Answer { turns, parked, spent, read }));
                 self.answered = Some(self.now);
             }
-            Request::Checking { host_run, .. } => {
-                assert_eq!(host_run, self.host_run, "checking notice echoes the host identity");
-                self.check_notices.push((self.now, true));
+            Request::Long { host_run, operation, .. } => {
+                assert_eq!(host_run, self.host_run, "long notice echoes the host identity");
+                match operation {
+                    smith_domain::Operation::Checks => self.check_notices.push((self.now, true)),
+                    smith_domain::Operation::Completion | smith_domain::Operation::Command => {}
+                }
             }
-            Request::ChecksEnded { host_run } => {
+            Request::LongDone { host_run } => {
                 assert_eq!(host_run, self.host_run, "ended notice echoes the host identity");
-                self.check_notices.push((self.now, false));
+                if self.check_notices.last().is_some_and(|(_, open)| *open) {
+                    self.check_notices.push((self.now, false));
+                }
             }
             Request::Complete { owner, prompt, .. } => {
                 self.host_history.prompt(&prompt).expect("exact feedback for observed provider host call");

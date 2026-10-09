@@ -1066,10 +1066,10 @@ impl World {
                     .push((self.now, crate::messages_referee::Seen::Answer { turns, parked, spent, read }));
                 self.answered = Some(self.now);
             }
-            Request::Checking { host_run, .. } => {
+            Request::Long { host_run, .. } => {
                 assert_eq!(host_run, Token::new(1), "checking notice echoes the host identity");
             }
-            Request::ChecksEnded { host_run } => {
+            Request::LongDone { host_run } => {
                 assert_eq!(host_run, Token::new(1), "ended notice echoes the host identity");
             }
             Request::Complete {

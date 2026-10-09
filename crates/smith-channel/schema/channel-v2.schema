@@ -81,7 +81,8 @@ record Turn {
     body: bytes 8388608
 }
 record Waiting { last_read: option u64 }
-record Long { span: duration }
+enum Operation { check, completion, command }
+record Long { operation: Operation span: duration }
 record LongDone {}
 record Rejected { account: u32 generation: u64 }
 record Exhausted { account: u32 retry_after: duration }

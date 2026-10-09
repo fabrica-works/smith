@@ -439,11 +439,15 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             smith::Request::Exhausted { account, retry_after } => {
                 out.push(Output::Parent(parent::Request::Exhausted { client, account, retry_after }));
             }
-            smith::Request::Checking { host_run, deadline } => {
+            smith::Request::Long { host_run, operation, until } => {
                 assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");
-                out.push(Output::Parent(parent::Request::Long { client, span: deadline.saturating_since(env.now) }));
+                out.push(Output::Parent(parent::Request::Long {
+                    client,
+                    operation,
+                    span: until.saturating_since(env.now),
+                }));
             }
-            smith::Request::ChecksEnded { host_run } => {
+            smith::Request::LongDone { host_run } => {
                 assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");
                 out.push(Output::Parent(parent::Request::LongDone { client }));
             }

@@ -281,6 +281,7 @@ impl Component {
     /// Announce the bounded span of a check or other long operation.
     pub fn send_long(
         &mut self,
+        operation: smith_domain::Operation,
         span: Duration,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
@@ -289,7 +290,12 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
-        let record = smith_channel::Long::new(&self.bodies, smith_channel::LongParts { span })?;
+        let operation = match operation {
+            smith_domain::Operation::Checks => smith_channel::Operation::Check,
+            smith_domain::Operation::Completion => smith_channel::Operation::Completion,
+            smith_domain::Operation::Command => smith_channel::Operation::Command,
+        };
+        let record = smith_channel::Long::new(&self.bodies, smith_channel::LongParts { operation, span })?;
         let Ok(length) = usize::try_from(record.measure()) else {
             return Err(Error::ResultCapacity);
         };

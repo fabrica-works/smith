@@ -278,8 +278,8 @@ impl Driver {
                 Request::MessageRefused { .. }
                 | Request::Turn { .. }
                 | Request::Waiting { .. }
-                | Request::Checking { .. }
-                | Request::ChecksEnded { .. }
+                | Request::Long { .. }
+                | Request::LongDone { .. }
                 | Request::Rejected { .. }
                 | Request::Exhausted { .. } => {}
                 Request::Deliver { owner, host_run, .. } => {

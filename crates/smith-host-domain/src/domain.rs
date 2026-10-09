@@ -118,7 +118,7 @@ pub(crate) struct Agent {
     cancel_queued: bool,
     cancel_sent: bool,
     progress: Time,
-    long: Time,
+    long: crate::long::Long,
     // Paused only while the run waits with no message still queued or unread.
     waiting: bool,
     paused: bool,
@@ -487,7 +487,7 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
         cancel_queued: false,
         cancel_sent: false,
         progress: env.now,
-        long: env.now,
+        long: crate::long::Long::new(env.now),
         waiting: false,
         paused: false,
         wall: env.now,
@@ -942,13 +942,13 @@ fn receive(agent: &mut Agent, owner: Token, message: Up, env: &Env<Limits>, out:
             agent.waiting = agent.messages == 0 && agent.unread.is_empty();
             out.push(Output::Parent(parent::Request::Waiting { client: agent.client, read }));
         }
-        Up::Long { span } => {
+        Up::Long { operation, span } => {
             agent.waiting = false;
-            agent.long = agent.long.max(env.now.saturating_add(span));
-            out.push(Output::Parent(parent::Request::Long { client: agent.client, span }));
+            agent.long.begin(env.now.saturating_add(span));
+            out.push(Output::Parent(parent::Request::Long { client: agent.client, operation, span }));
         }
         Up::LongDone => {
-            agent.long = env.now;
+            agent.long.end();
             out.push(Output::Parent(parent::Request::LongDone { client: agent.client }));
         }
         Up::Fact { body } => out.push(Output::Parent(parent::Request::Told { client: agent.client, body })),
@@ -1124,8 +1124,10 @@ fn valid_record(agent: &Agent, message: &Up, env: &Env<Limits>) -> bool {
                 }
         }
         Up::Fact { body } => agent.admitted && within(body, limits.fact_bytes),
-        Up::Long { span } => agent.admitted && *span <= limits.long_span,
-        Up::LongDone => agent.admitted,
+        Up::Long { operation: _, span } => {
+            agent.admitted && *span <= limits.long_span && agent.long.open < limits.long_open
+        }
+        Up::LongDone => agent.admitted && agent.long.open > 0,
         Up::Waiting { read } => agent.admitted && known_read(agent, *read),
         Up::Rejected { account, generation } => match agent.accounts.get(account) {
             Some(account) => agent.admitted && *generation > 0 && *generation <= account.emitted,
@@ -1425,7 +1427,7 @@ fn follow(domain: &mut Domain, env: &Env<Limits>, id: Id<Agent>, out: &mut Queue
             }
             deadline
         } else {
-            Some(agent.progress.max(agent.long).saturating_add(env.limits.no_progress))
+            Some(agent.long.stretch(agent.progress).saturating_add(env.limits.no_progress))
         }
     } else {
         None
