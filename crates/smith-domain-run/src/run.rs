@@ -403,7 +403,14 @@ fn continue_messages(
 
 /// Root calls this only for main; child bodies are discarded at its routing seam.
 /// Turns may still arrive during shutdown, before the terminal.
-pub(crate) fn turn(domain: &mut Domain, conversation: Token, record: Token, sequence: u32, out: &mut Queue<Request>) {
+pub(crate) fn turn(
+    domain: &mut Domain,
+    conversation: Token,
+    record: Token,
+    sequence: u32,
+    opens_window: bool,
+    out: &mut Queue<Request>,
+) {
     let conversation = domain.conversations.get(Id::from_token(conversation)).expect("turn precedes session end");
     assert!(conversation.asker.is_none(), "only main enters the host transcript");
     let run = domain.runs.get_mut(conversation.run).expect("run outlives its actual turns");
@@ -420,6 +427,7 @@ pub(crate) fn turn(domain: &mut Domain, conversation: Token, record: Token, sequ
         record,
         number: run.turns,
         position: sequence,
+        opens_window,
         read: run.inbox.fence(),
         spent: run.spent,
     });

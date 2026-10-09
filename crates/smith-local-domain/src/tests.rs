@@ -203,6 +203,7 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
             owner,
             message: host::Up::Turn {
                 turn: host::Turn {
+                    opens_window: true,
                     number: 1,
                     read: Some(Token::new(1)),
                     spent: 0,

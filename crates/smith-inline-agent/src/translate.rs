@@ -326,7 +326,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                     reason: message_refusal(reason),
                 }));
             }
-            smith::Request::Turn { host_run, number, spent, read, turn, position: _ } => {
+            smith::Request::Turn { host_run, number, spent, read, turn, opens_window, position: _ } => {
                 assert_eq!(slot.logical_run, host_run, "root output preserves its scoped identity and single right");
                 let body = host::TurnValue::new(turn, u64::MAX).expect("root concrete turns have checked ownership");
                 assert!(
@@ -338,7 +338,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 );
                 out.push(Output::Parent(parent::Request::Turn {
                     client,
-                    turn: host::Turn { number, spent: spent.units, read, body },
+                    turn: host::Turn { number, spent: spent.units, read, opens_window, body },
                 }));
             }
             smith::Request::Waiting { host_run, read } => {

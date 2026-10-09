@@ -335,6 +335,7 @@ impl Component {
         number: u32,
         read: Option<Token>,
         spent: run::Spend,
+        opens_window: bool,
         turn: &record::Turn,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
@@ -357,7 +358,7 @@ impl Component {
         };
         let record = smith_channel::Turn::new(
             &self.bodies,
-            smith_channel::TurnParts { number, spent: spent.units, last_read, body },
+            smith_channel::TurnParts { number, spent: spent.units, last_read, opens_window, body },
         )?;
         let Ok(length) = usize::try_from(record.measure()) else {
             return Err(Error::ResultCapacity);

@@ -135,6 +135,8 @@ pub enum Event {
 
         /// Historical transcript sequence, independent of activation numbering.
         sequence: u32,
+        /// This turn starts a provider-history window, declared by the root.
+        opens_window: bool,
     },
 
     /// From the host: end the run `run` as cancelled. A run that has already
@@ -274,6 +276,9 @@ pub enum Request {
 
         /// One-based place in the conversation, including restored turns.
         position: u32,
+
+        /// First historical turn or a later context window declared by the root.
+        opens_window: bool,
 
         /// Latest message actually consumed by this turn.
         read: Option<Token>,

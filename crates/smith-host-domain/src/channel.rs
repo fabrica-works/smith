@@ -116,6 +116,8 @@ pub struct CallName {
 /// Agent turn moved once to parent, which owns payload until exact commitment ACK.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Turn {
+    /// Begins the provider-history suffix a host sends when resuming.
+    pub opens_window: bool,
     /// Positive consecutive turn number from one; checked increment.
     pub number: u32,
     /// Global activation spend supplied by the agent in the host's unit; must

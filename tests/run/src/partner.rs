@@ -958,6 +958,7 @@ impl Partner {
             conversation: talk.conversation,
             record: Token::new(u64::from(talk.told)),
             sequence: talk.told,
+            opens_window: talk.told == 1,
         }));
     }
 

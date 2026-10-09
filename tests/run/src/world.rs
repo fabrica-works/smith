@@ -917,7 +917,7 @@ impl World {
         self.log(&format!("run -> {request:?}"));
         let mut current = current;
         match request {
-            run::Request::Turn { host_run, number, position: _, read, spent, record: _ } => {
+            run::Request::Turn { host_run, number, position: _, read, spent, opens_window: _, record: _ } => {
                 current = Some(self.observed_turn(host_run, number, read, spent));
             }
             run::Request::MessageRefused { .. } => {}

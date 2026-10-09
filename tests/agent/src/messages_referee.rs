@@ -42,6 +42,9 @@ pub enum Seen {
         /// Actual one-based main output. Contract: domain/run.md, section 13.
         number: u32,
 
+        /// Actual root history-window declaration, forwarded unchanged by bridges.
+        opens_window: bool,
+
         /// Actual read fence. Contract: domain/run.md, section 6.
         read: Option<Token>,
 

@@ -70,3 +70,19 @@ fn channel_start_goldens_seal_the_optional_fixed_sixteen_byte_identity() {
     .expect("present identity golden");
     assert_eq!(present.identity(), &Some([165; 16]));
 }
+
+#[test]
+fn channel_turn_goldens_keep_the_declared_window_flag() {
+    let first = smith_channel::Turn::decode(
+        &CEILINGS,
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v2/record_turn_full.bin")),
+    )
+    .expect("window flag golden");
+    assert!(first.opens_window());
+    let ordinary = smith_channel::Turn::decode(
+        &CEILINGS,
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v2/record_turn_smallest.bin")),
+    )
+    .expect("ordinary flag golden");
+    assert!(!ordinary.opens_window());
+}

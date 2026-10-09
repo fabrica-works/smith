@@ -107,6 +107,7 @@ fn a_parent_turn_moves_its_concrete_value_to_the_durable_store() {
         parent::Request::Turn {
             client: Token::new(1),
             turn: host::Turn {
+                opens_window: true,
                 number: 1,
                 read: None,
                 spent: 29,

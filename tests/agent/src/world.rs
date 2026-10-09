@@ -1114,13 +1114,15 @@ impl World {
     )]
     fn request(&mut self, request: Request) {
         match request {
-            Request::Turn { host_run, number, position, read, spent, turn } => {
+            Request::Turn { host_run, number, position, read, spent, opens_window, turn } => {
                 assert_eq!(host_run, self.host_run);
                 assert_eq!(usize::try_from(number).expect("bounded output number"), self.turns.len() + 1);
                 assert_eq!(position, turn.sequence);
                 self.observe(Seen::Turn { number });
-                self.messages_seen
-                    .push((self.now, crate::messages_referee::Seen::Turn { number, read, spent, turn: turn.clone() }));
+                self.messages_seen.push((
+                    self.now,
+                    crate::messages_referee::Seen::Turn { number, read, spent, opens_window, turn: turn.clone() },
+                ));
                 self.turn_metadata.push((number, read, spent));
                 self.turns.push(turn);
                 if self.auto_ack {

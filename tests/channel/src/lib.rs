@@ -54,7 +54,7 @@ pub enum Observation {
     /// A named message ended refused at the agent ingress.
     HostMessageRefused { name: Token, reason: smith_host_domain::MessageRefusal },
     /// The host received a numbered durable transcript body.
-    HostTurn { number: u32, spent: u64, read: Option<skein_lib::Token>, body: Box<[u8]> },
+    HostTurn { number: u32, spent: u64, read: Option<skein_lib::Token>, opens_window: bool, body: Box<[u8]> },
     /// A best-effort content-free fact reached the host.
     HostFact { kind: smith_channel::FactKind, elapsed: skein_lib::Duration, count: u64 },
     /// The host received a credential rejection notice.
@@ -283,6 +283,7 @@ impl Peer {
                 host::OpenEvent::Long { span } => output.push(Observation::HostLong { span }),
                 host::OpenEvent::LongDone => output.push(Observation::HostLongDone),
                 host::OpenEvent::Turn { turn } => output.push(Observation::HostTurn {
+                    opens_window: turn.opens_window,
                     number: turn.number,
                     spent: turn.spent,
                     read: turn.read,
@@ -781,6 +782,7 @@ impl World {
                 number,
                 read,
                 spent,
+                turn.sequence == 1,
                 turn,
                 skein_lib::Token::new(28),
                 &mut self.agent.agent_events,

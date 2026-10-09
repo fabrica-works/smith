@@ -267,6 +267,8 @@ pub enum Path {
     TurnSpent,
     /// The `last_read` field of `Turn`.
     TurnLastRead,
+    /// The `opens_window` field of `Turn`.
+    TurnOpensWindow,
     /// The `body` field of `Turn`.
     TurnBody,
     /// Bytes after `Turn`.
@@ -2875,6 +2877,8 @@ pub struct TurnParts {
     pub spent: u64,
     /// The `last_read` field.
     pub last_read: Option<u64>,
+    /// The `opens_window` field.
+    pub opens_window: bool,
     /// The `body` field.
     pub body: Box<[u8]>,
 }
@@ -2885,14 +2889,15 @@ pub struct Turn {
     number: u32,
     spent: u64,
     last_read: Option<u64>,
+    opens_window: bool,
     body: Box<[u8]>,
 }
 
 impl Turn {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: TurnParts) -> Result<Self, Problem> {
-        let TurnParts { number, spent, last_read, body } = parts;
-        let value = Self { number, spent, last_read, body };
+        let TurnParts { number, spent, last_read, opens_window, body } = parts;
+        let value = Self { number, spent, last_read, opens_window, body };
         value.check(limits)?;
         Ok(value)
     }
@@ -2909,13 +2914,17 @@ impl Turn {
     #[must_use]
     pub fn last_read(&self) -> &Option<u64> { &self.last_read }
 
+    /// Reads the `opens_window` field.
+    #[must_use]
+    pub fn opens_window(&self) -> bool { self.opens_window }
+
     /// Reads the `body` field.
     #[must_use]
     pub fn body(&self) -> &[u8] { &self.body }
 
     /// Moves the fields out without copying.
     #[must_use]
-    pub fn into_parts(self) -> TurnParts { TurnParts { number: self.number, spent: self.spent, last_read: self.last_read, body: self.body } }
+    pub fn into_parts(self) -> TurnParts { TurnParts { number: self.number, spent: self.spent, last_read: self.last_read, opens_window: self.opens_window, body: self.body } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
@@ -7015,6 +7024,7 @@ impl Turn {
         if field_last_read.is_some() {
         size = size.checked_add(8).expect("schema ceilings fit u32");
         }
+        size = size.checked_add(1).expect("schema ceilings fit u32");
         let field_body = &self.body;
         size = size.checked_add(4).expect("schema ceilings fit u32");
         size = size.checked_add(u32::try_from(field_body.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
@@ -7035,6 +7045,8 @@ impl Turn {
             }
             None => writer.put(&[0_u8])?,
         }
+        let field_opens_window = &self.opens_window;
+        writer.put(&[u8::from(*field_opens_window)])?;
         let field_body = &self.body;
         writer.put(&u32::try_from(field_body.len()).expect("field ceiling fits u32").to_be_bytes())?;
         writer.put(field_body.as_ref())?;
@@ -7052,8 +7064,9 @@ impl Turn {
         let decoded_number = reader.u32().ok_or(Problem { path: Path::TurnNumber, reason: skein_codec::Reason::Short })?;
         let decoded_spent = reader.u64().ok_or(Problem { path: Path::TurnSpent, reason: skein_codec::Reason::Short })?;
         let decoded_last_read = match reader.u8().ok_or(Problem { path: Path::TurnLastRead, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(reader.u64().ok_or(Problem { path: Path::TurnLastRead, reason: skein_codec::Reason::Short })?), _ => return Err(Problem { path: Path::TurnLastRead, reason: skein_codec::Reason::Tag }) };
+        let decoded_opens_window = match reader.u8().ok_or(Problem { path: Path::TurnOpensWindow, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::TurnOpensWindow, reason: skein_codec::Reason::Bool }) };
         let decoded_body = { let length = match skein_codec::read_len(reader, limits.turn_body.min(CEILINGS.turn_body)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::TurnBody, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::TurnBody, reason: skein_codec::Reason::Short })?) };
-        Self::new(limits, TurnParts { number: decoded_number, spent: decoded_spent, last_read: decoded_last_read, body: decoded_body })
+        Self::new(limits, TurnParts { number: decoded_number, spent: decoded_spent, last_read: decoded_last_read, opens_window: decoded_opens_window, body: decoded_body })
     }
 }
 
@@ -9365,6 +9378,7 @@ impl Turn {
         size = size.checked_add(4_u64)?;
         size = size.checked_add(8_u64)?;
         size = size.checked_add(1_u64.checked_add(8_u64)?)?;
+        size = size.checked_add(1_u64)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.turn_body))?)?;
         Some(size)
     }
@@ -9374,6 +9388,7 @@ impl Turn {
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -11605,8 +11620,8 @@ mod golden_tests {
 
     #[test]
     fn record_turn_smallest() {
-        let value = Turn::new(&CEILINGS, TurnParts { number: 0_u32, spent: 0_u64, last_read: None, body: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = Turn::new(&CEILINGS, TurnParts { number: 0_u32, spent: 0_u64, last_read: None, opens_window: false, body: Box::from([].as_slice()) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -11615,8 +11630,8 @@ mod golden_tests {
 
     #[test]
     fn record_turn_full() {
-        let value = Turn::new(&CEILINGS, TurnParts { number: u32::MAX, spent: u64::MAX, last_read: Some(u64::MAX), body: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255];
+        let value = Turn::new(&CEILINGS, TurnParts { number: u32::MAX, spent: u64::MAX, last_read: Some(u64::MAX), opens_window: true, body: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 0, 0, 0, 3, 0, 127, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14407,10 +14422,10 @@ mod golden_tests {
     fn bound_turn_body() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 13_usize.checked_add(4).expect("header size");
+            let header = 14_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");

@@ -105,6 +105,7 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
         host_run: Token::new(7),
         number: 1,
         position: 1,
+        opens_window: true,
         read: Some(Token::new(42)),
         spent: run::Spend::ZERO,
         turn: turn.clone(),
@@ -115,6 +116,7 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
         Some(Output::Parent(parent::Request::Turn {
             client: Token::new(1),
             turn: host::Turn {
+                opens_window: true,
                 number: 1,
                 spent: 0,
                 read: Some(Token::new(42)),

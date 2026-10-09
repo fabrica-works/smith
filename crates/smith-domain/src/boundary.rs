@@ -249,6 +249,9 @@ pub enum Request {
         /// One-based place in the conversation, including restored turns.
         position: u32,
 
+        /// First historical turn or a later context window; hosts keep this with the body.
+        opens_window: bool,
+
         /// Latest message consumed by this turn.
         read: Option<Token>,
 

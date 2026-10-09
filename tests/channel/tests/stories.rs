@@ -407,6 +407,10 @@ fn a_run_resumed_from_a_transcript_restores_the_calls_answered_after_its_last_tu
 
 #[test]
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story selects each activation's one forwarded turn")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "two activations follow concrete windows, identity, fences and exact turn accounting"
+)]
 fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_per_activation() {
     use smith_domain_session::{llm, record};
 
@@ -438,24 +442,34 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     one.settle();
     one.agent_tells_turn(1, Some(skein_lib::Token::new(99)), &first);
     one.settle();
-    let saved = one
-        .observations()
-        .iter()
-        .find_map(|event| match event {
-            Observation::HostTurn { number: 1, body, .. } => Some(body.clone()),
-            _ => None,
-        })
-        .expect("first activation's durable body");
     one.host_acknowledges(1);
     one.settle();
+    let mut ordinary = first.clone();
+    ordinary.sequence = 2;
+    ordinary.spent = 4;
+    one.agent_tells_turn(2, None, &ordinary);
+    one.settle();
+    let saved: Vec<_> = one
+        .observations()
+        .iter()
+        .filter_map(|event| match event {
+            Observation::HostTurn { opens_window, body, .. } => Some((*opens_window, body.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saved.iter().map(|(flag, _)| *flag).collect::<Vec<_>>(), [true, false]);
+    let last_window = saved.iter().rposition(|(flag, _)| *flag).expect("first declared history window");
+    let saved: Vec<_> = saved[last_window..].iter().map(|(_, body)| body.clone()).collect();
+    one.host_acknowledges(2);
+    one.settle();
     let mut spent = smith_domain::run::Spend::ZERO;
-    spent.units = 3;
+    spent.units = 4;
     one.agent_answers_with_fence(
-        smith_domain::run::Answer::Parked { spent, turns: 1 },
+        smith_domain::run::Answer::Parked { spent, turns: 2 },
         Some(skein_lib::Token::new(99)),
     );
     one.settle();
-    assert!(one.observations().contains(&Observation::HostParked { turns: 1, spent: 3 }));
+    assert!(one.observations().contains(&Observation::HostParked { turns: 2, spent: 4 }));
     assert_eq!(one.take_host_answer().expect("decoded final fence").read, Some(skein_lib::Token::new(99)));
 
     let mut two = World::new(CEILINGS, CEILINGS, StreamMode::Two);
@@ -468,7 +482,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
             activation: 2,
             workspace: None,
             charter: smith_channel_world::typed_charter(&charter),
-            transcript: smith_channel_world::typed_transcript(&[saved]),
+            transcript: smith_channel_world::typed_transcript(&saved),
             answered: Box::default(),
             directories: Box::default(),
             grants: Box::default(),
@@ -480,32 +494,32 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     let resumed = two.take_agent_start().expect("resumed decoded activation");
     assert_eq!(resumed.identity, Some(identity), "both channel halves preserve the same exact sixteen bytes");
     assert_eq!(resumed.activation, 2);
-    assert!(two.observations().contains(&Observation::AgentHistory { turns: 1, place: 1 }));
+    assert!(two.observations().contains(&Observation::AgentHistory { turns: 2, place: 1 }));
     two.agent_admits();
     two.settle();
     let mut next = first;
-    next.sequence = 2;
-    next.spent = 4;
+    next.sequence = 3;
+    next.spent = 5;
     two.agent_tells_turn(1, None, &next);
     two.settle();
     let body = two
         .observations()
         .iter()
         .find_map(|event| match event {
-            Observation::HostTurn { number: 1, body, .. } => Some(body.as_ref()),
+            Observation::HostTurn { number: 1, opens_window: false, body, .. } => Some(body.as_ref()),
             _ => None,
         })
         .expect("new activation's first output turn");
     let received = smith_transcript::Turn::decode(&smith_transcript::CEILINGS, &mut skein_lib::Reader::new(body))
         .expect("bounded output turn");
-    assert_eq!(received.place(), 2, "conversation sequence continues after saved history");
+    assert_eq!(received.place(), 3, "conversation sequence continues after saved history");
     two.host_acknowledges(1);
     two.settle();
     let mut spent = smith_domain::run::Spend::ZERO;
-    spent.units = 4;
+    spent.units = 5;
     two.agent_answers(smith_domain::run::Answer::Parked { spent, turns: 1 });
     two.settle();
-    assert!(two.observations().contains(&Observation::HostParked { turns: 1, spent: 4 }));
+    assert!(two.observations().contains(&Observation::HostParked { turns: 1, spent: 5 }));
 }
 
 #[test]
@@ -601,7 +615,11 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
         .observations()
         .iter()
         .find_map(|observation| match observation {
-            Observation::HostTurn { number: 1, spent: 11, read: actual, body } if *actual == read => Some(body.clone()),
+            Observation::HostTurn { number: 1, spent: 11, read: actual, opens_window: true, body }
+                if *actual == read =>
+            {
+                Some(body.clone())
+            }
             _ => None,
         })
         .expect("one forwarded turn");

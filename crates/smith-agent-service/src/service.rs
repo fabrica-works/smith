@@ -1401,13 +1401,22 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.mark_failed(Failure::Send);
             }
         }
-        domain::Request::Turn { host_run: _, number, position: _, read, spent, turn } => {
+        domain::Request::Turn { host_run: _, number, position: _, read, spent, opens_window, turn } => {
             let token = service.next_send();
             if service
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_turn(number, read, spent, &turn, token, &mut service.channel_events, &mut service.channel_below)
+                .send_turn(
+                    number,
+                    read,
+                    spent,
+                    opens_window,
+                    &turn,
+                    token,
+                    &mut service.channel_events,
+                    &mut service.channel_below,
+                )
                 .is_err()
             {
                 service.mark_failed(Failure::Send);

@@ -2567,12 +2567,13 @@ fn opaque_fifo_wakes_waiting_and_read_advances_only_on_main_turn() {
         }
     }
     assert_eq!(
-        h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1 }).as_ref(),
+        h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1, opens_window: true }).as_ref(),
         &[Request::Turn {
             host_run: Token::new(1),
             record: Token::new(50),
             number: 1,
             position: 1,
+            opens_window: true,
             read: None,
             spent: Spend::ZERO,
         }]
@@ -2582,12 +2583,13 @@ fn opaque_fifo_wakes_waiting_and_read_advances_only_on_main_turn() {
         &[Request::Say { peer: Token::new(9), text: bytes(b"person: first\n\nperson: second\n\nperson: third") }]
     );
     assert_eq!(
-        h.step(Event::Turn { conversation, record: Token::new(51), sequence: 2 }).as_ref(),
+        h.step(Event::Turn { conversation, record: Token::new(51), sequence: 2, opens_window: false }).as_ref(),
         &[Request::Turn {
             host_run: Token::new(1),
             record: Token::new(51),
             number: 2,
             position: 2,
+            opens_window: false,
             read: Some(Token::new(7)),
             spent: Spend::ZERO,
         }]
@@ -2605,7 +2607,7 @@ fn opaque_fifo_wakes_waiting_and_read_advances_only_on_main_turn() {
     );
     h.after(Duration::from_secs(30));
     assert_eq!(h.fire().as_ref(), &[returned(20, Returned::Withheld), Request::Close { peer: Token::new(9) }]);
-    h.step(Event::Turn { conversation, record: Token::new(52), sequence: 3 });
+    h.step(Event::Turn { conversation, record: Token::new(52), sequence: 3, opens_window: false });
     assert_eq!(
         answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
         (1, Answer::Parked { spent: Spend::ZERO, turns: 3 })
@@ -2639,7 +2641,7 @@ fn zero_waiting_time_parks_with_its_wait_result_withheld() {
             Request::Close { peer: Token::new(71) }
         ]
     );
-    h.step(Event::Turn { conversation, record: Token::new(73), sequence: 1 });
+    h.step(Event::Turn { conversation, record: Token::new(73), sequence: 1, opens_window: true });
     assert_eq!(
         answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
         (70, Answer::Parked { spent: Spend::ZERO, turns: 1 })
@@ -2659,7 +2661,7 @@ fn bounded_message_and_input_at_idle_deadline_preserve_existing_fifo() {
         h.step(end_turn(conversation)).as_ref(),
         &[Request::Say { peer: Token::new(9), text: bytes(b"host: full") }]
     );
-    h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1 });
+    h.step(Event::Turn { conversation, record: Token::new(50), sequence: 1, opens_window: true });
     assert_eq!(
         h.step(Event::Delegated {
             conversation,
@@ -3185,7 +3187,8 @@ fn preparation_refuses_bad_messages_without_disrupting_the_admitted_opening() {
     assert_eq!(opening.prompt.as_ref(), b"Begin the work your brief describes.\n\npeer: 123456");
     let main = *conversation;
     harness.step(Event::Started { conversation: main, peer: Token::new(9) });
-    let emitted = harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1 });
+    let emitted =
+        harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1, opens_window: true });
     let [Request::Turn { read, .. }] = emitted.as_ref() else { panic!("one told turn") };
     assert_eq!(*read, Some(Token::new(2)));
     harness.step(end_turn(main));
@@ -3257,7 +3260,8 @@ fn ordered_offers_end_each_message_read_or_unread_and_the_answer_keeps_the_last_
             &*harness.step(end_turn(main)),
             &[Request::Say { peer: Token::new(9), text: bytes(b"peer: aaa\n\npeer: aaa") }]
         );
-        let told = harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1 });
+        let told =
+            harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1, opens_window: true });
         let [Request::Turn { read, .. }] = &*told else { panic!("one actual told turn") };
         assert_eq!(*read, Some(Token::new(0)), "names are opaque, including a fence of zero");
         assert_eq!(
@@ -3412,7 +3416,8 @@ fn carried_messages_open_after_the_briefs_instruction_and_before_later_messages(
         b"Begin the work your brief describes.\n\nperson: first\n\nperson: second\n\npeer: third"
     );
     harness.step(Event::Started { conversation: main, peer: Token::new(9) });
-    let emitted = harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1 });
+    let emitted =
+        harness.step(Event::Turn { conversation: main, record: Token::new(40), sequence: 1, opens_window: true });
     let [Request::Turn { read, .. }] = &*emitted else { panic!("one told turn") };
     assert_eq!(*read, Some(Token::new(8)));
     let mut reads = List::with_capacity(LIMITS.messages);
@@ -3495,7 +3500,7 @@ fn prepared_empty_brief_awaits_first_message_without_opening_main() {
     assert_eq!(opening.prompt.as_ref(), b"person: real task");
     let conversation = *conversation;
     assert!(harness.step(Event::Started { conversation, peer: Token::new(81) }).is_empty());
-    let emitted = harness.step(Event::Turn { conversation, record: Token::new(82), sequence: 1 });
+    let emitted = harness.step(Event::Turn { conversation, record: Token::new(82), sequence: 1, opens_window: true });
     let [Request::Turn { read, number, spent, .. }] = emitted.as_ref() else { panic!("actual first turn") };
     assert_eq!((*read, *number, *spent), (Some(Token::new(0)), 1, Spend::ZERO));
     let facts = observed_facts(&mut harness);
@@ -3621,7 +3626,12 @@ fn a_finish_crossing_a_message_continues_only_with_wait_authority() {
             let emitted = harness.step(end_turn(main));
             let [Request::Say { peer, text }] = emitted.as_ref() else { panic!("queued work is the continuation") };
             assert_eq!((*peer, text.as_ref()), (Token::new(100), b"person: late work".as_slice()));
-            let emitted = harness.step(Event::Turn { conversation: main, record: Token::new(97), sequence: 1 });
+            let emitted = harness.step(Event::Turn {
+                conversation: main,
+                record: Token::new(97),
+                sequence: 1,
+                opens_window: true,
+            });
             let [Request::Turn { read, .. }] = emitted.as_ref() else { panic!("told turn fence") };
             assert_eq!(*read, Some(Token::new(0)));
             assert_eq!(

@@ -17,10 +17,11 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut u3
     host.stage.tick(*at);
     match seen {
         Seen::Admitted => host.up(Up::Admitted),
-        Seen::Turn { number, read, spent, turn } => {
+        Seen::Turn { number, read, spent, opens_window, turn } => {
             host.up(Up::Turn {
                 turn: host::Turn {
                     number: *number,
+                    opens_window: *opens_window,
                     read: *read,
                     spent: spent.units,
                     body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),
@@ -116,6 +117,15 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
     }
     assert!(done && woke == 2);
     assert_eq!(agent.turns().len(), 3);
+    let windows: Vec<_> = agent
+        .messages_seen()
+        .iter()
+        .filter_map(|(_, seen)| match seen {
+            Seen::Turn { opens_window, .. } => Some(*opens_window),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(windows, [true, false, false], "only the actual historical first turn opens the initial window");
     assert!(host.seen.answer.is_some(), "actual root answer was accepted after all actual Turns");
     let run::Answer::Parked { spent, turns } = agent.answer() else { panic!("the actual final root word is Parked") };
     assert_accounting(host.seen.answer.as_ref().expect("actual forwarded answer"), *turns, *spent);
@@ -196,10 +206,11 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
         host.stage.tick(*at);
         match seen {
             Seen::Admitted => host.up(Up::Admitted),
-            Seen::Turn { number, read, spent, turn } => {
+            Seen::Turn { number, read, spent, opens_window, turn } => {
                 host.up(Up::Turn {
                     turn: host::Turn {
                         number: *number,
+                        opens_window: *opens_window,
                         read: *read,
                         spent: spent.units,
                         body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),

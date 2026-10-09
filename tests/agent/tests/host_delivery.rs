@@ -82,10 +82,18 @@ fn forward(agent: &Agent, host: &mut Host, next: &mut usize) {
         host.stage.tick(*at);
         match seen {
             Seen::Admitted => host.up(Up::Admitted),
-            Seen::Turn { number, read, spent, turn } => {
+            Seen::Turn { number, read, spent, opens_window, turn } => {
                 let body = host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn");
                 assert!(body.owned_bytes() <= 65_536);
-                host.up(Up::Turn { turn: host::Turn { number: *number, read: *read, spent: spent.units, body } });
+                host.up(Up::Turn {
+                    turn: host::Turn {
+                        number: *number,
+                        read: *read,
+                        spent: spent.units,
+                        opens_window: *opens_window,
+                        body,
+                    },
+                });
                 if *number == 1 {
                     host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 1 }));
                     assert!(host.lower.contains(Lower::Send), "actual early ACK send is retained");

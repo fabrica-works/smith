@@ -468,6 +468,7 @@ impl Component {
                                         to_service.push(OpenEvent::Turn {
                                             turn: channel::Turn {
                                                 number: turn.number(),
+                                                opens_window: turn.opens_window(),
                                                 spent: turn.spent(),
                                                 read: match turn.last_read() {
                                                     Some(name) => Some(Token::new(*name)),
@@ -664,7 +665,7 @@ mod tests {
     fn turn_body(payload: Box<[u8]>) -> Box<[u8]> {
         let record = smith_channel::Turn::new(
             &smith_channel::CEILINGS,
-            smith_channel::TurnParts { number: 1, spent: 2, last_read: None, body: payload },
+            smith_channel::TurnParts { number: 1, spent: 2, last_read: None, opens_window: true, body: payload },
         )
         .expect("envelope");
         let mut writer = Writer::new(usize::try_from(record.measure()).expect("measure"));

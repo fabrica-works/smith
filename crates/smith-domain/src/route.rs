@@ -387,9 +387,10 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
                 return;
             }
             let sequence = turn.sequence;
+            let opens_window = sequence == 1;
             let record =
                 domain.turns.insert(TurnHandoff { turn: Some(turn) }).expect("room for every queued session turn");
-            run::Event::Turn { conversation: opener, record: record.token(), sequence }
+            run::Event::Turn { conversation: opener, record: record.token(), sequence, opens_window }
         }
         session::Request::Complete {
             owner,
@@ -518,13 +519,13 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             return out.push(Request::Answer { to, answer, read });
         }
         run::Request::Waiting { host_run, read } => return out.push(Request::Waiting { host_run, read }),
-        run::Request::Turn { host_run, record, number, position, read, spent } => {
+        run::Request::Turn { host_run, record, number, position, opens_window, read, spent } => {
             let id = Id::<TurnHandoff>::from_token(record);
             let handoff = domain.turns.get_mut(id).expect("root issued the concrete turn binding");
             let turn = handoff.turn.take().expect("one actual output takes the concrete body");
             assert_eq!(turn.sequence, position, "run and record name the same conversation turn");
             domain.turns.retire(id);
-            return out.push(Request::Turn { host_run, number, position, read, spent, turn });
+            return out.push(Request::Turn { host_run, number, position, opens_window, read, spent, turn });
         }
         run::Request::Checking { host_run, deadline } => return out.push(Request::Checking { host_run, deadline }),
         run::Request::ChecksEnded { host_run } => return out.push(Request::ChecksEnded { host_run }),
