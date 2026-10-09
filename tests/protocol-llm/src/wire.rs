@@ -449,10 +449,21 @@ fn resolutions(context: &Context, completion: &shared::Completion) -> Box<[Resol
                     name: name.clone(),
                     input: arguments.clone(),
                     call: match name.as_ref() {
-                        b"finish" | b"deliver" => {
-                            crate::translate::decode(name, arguments, context.grants(), context.served())
-                        }
-                        _ => adapter::decode(name, arguments, context.grants(), context.served(), &context.limits()),
+                        b"finish" | b"deliver" => crate::translate::decode(
+                            name,
+                            arguments,
+                            context.grants(),
+                            context.served(),
+                            context.asker(),
+                        ),
+                        _ => adapter::decode(
+                            name,
+                            arguments,
+                            context.grants(),
+                            context.served(),
+                            context.asker(),
+                            &context.limits(),
+                        ),
                     },
                 })
             }

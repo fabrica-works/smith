@@ -20,8 +20,15 @@ pub fn decode(
     input: &[u8],
     grants: tools::Grants,
     served: &[llm::Served],
+    asker: llm::Asker,
     limits: &Limits,
 ) -> llm::Decoded {
+    if name == b"sub_agent" {
+        match asker {
+            llm::Asker::Child => return invalid(llm::Problem::Nesting),
+            llm::Asker::Main => {}
+        }
+    }
     let kind = match name {
         b"read" if grants.inspect => Kind::Read,
         b"list" if grants.inspect => Kind::List,
@@ -43,6 +50,17 @@ pub fn decode(
     let tokens = document.as_tokens();
     if tokens.first() != Some(&Token::ObjectStart) {
         return invalid(llm::Problem::NotAnObject);
+    }
+    match kind {
+        Kind::SubAgent if field(tokens, b"agents").is_some() => return invalid(llm::Problem::Nesting),
+        Kind::SubAgent
+        | Kind::Read
+        | Kind::List
+        | Kind::Search
+        | Kind::Write
+        | Kind::Edit
+        | Kind::Shell
+        | Kind::Wait => {}
     }
     match call(kind, tokens) {
         Ok(value) => value,
@@ -307,8 +325,5 @@ fn families(tokens: &[Token]) -> Result<run::charter::Families, llm::Problem> {
             Token::Key(_) | Token::String(_) | Token::Number(_) | Token::True | Token::False | Token::Null => {}
         }
     }
-    Ok(run::charter::Families {
-        tools: run::charter::Tools { inspect, modify, shell },
-        agents: optional_bool(tokens, b"agents")?.unwrap_or(false),
-    })
+    Ok(run::charter::Families { tools: run::charter::Tools { inspect, modify, shell }, agents: false })
 }

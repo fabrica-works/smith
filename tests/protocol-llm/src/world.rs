@@ -272,7 +272,7 @@ enum Backend {
     Typed {
         provider: provider::Domain,
         stage: Stage<provider::Config, provider::Event, provider::Request>,
-        calls: Ledger<Token, (tools::Grants, Box<[llm::Served]>)>,
+        calls: Ledger<Token, (tools::Grants, Box<[llm::Served]>, llm::Asker)>,
     },
     Wire(wire::Composition),
 }
@@ -975,16 +975,16 @@ impl World {
                 Backend::Typed { stage, calls, .. } => stage.out.pop().map(|request| {
                     let provider::Request::Reply { to, result } = request;
                     let owner = to.into_token();
-                    let (grants, served) = calls.end(owner);
-                    (owner, grants, served, result)
+                    let (grants, served, asker) = calls.end(owner);
+                    (owner, grants, served, asker, result)
                 }),
                 Backend::Wire(_) => unreachable!("wire progress returns before typed replies"),
             };
-            let Some((owner, grants, served, result)) = reply else { break };
+            let Some((owner, grants, served, asker, result)) = reply else { break };
             if self.flights.get((Family::Completion, owner)).is_some_and(|flight| !flight.cancelled) {
                 let event = match result {
                     Ok(answer) => {
-                        Event::Completed { owner, completion: translate::completion(answer, grants, &served) }
+                        Event::Completed { owner, completion: translate::completion(answer, grants, &served, asker) }
                     }
                     Err(error) => Event::Failed {
                         owner,
@@ -1121,7 +1121,7 @@ impl World {
                         wire.start(owner, prompt, receiving, self.stage.env.now, self.stage.env.wall);
                     }
                     Backend::Typed { stage, calls, .. } => {
-                        calls.open(owner, (prompt.tools, prompt.served.clone()));
+                        calls.open(owner, (prompt.tools, prompt.served.clone(), prompt.asker));
                         let query = translate::query(prompt);
                         self.messages_seen
                             .push((self.now, crate::messages_referee::Seen::Prompt { query: query.clone() }));

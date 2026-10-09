@@ -199,7 +199,7 @@ pub struct World {
     git_head: Option<u64>,
     git_expected: Option<u64>,
     commits: Vec<(run::CallName, u32)>,
-    pending: BTreeMap<Token, (tools::Grants, Box<[agent::llm::Served]>)>,
+    pending: BTreeMap<Token, (tools::Grants, Box<[agent::llm::Served]>, agent::llm::Asker)>,
     cancelled: BTreeSet<Token>,
     events: VecDeque<Event>,
     store: Store,
@@ -947,14 +947,14 @@ impl World {
             while let Some(reply) = self.provider_out.pop() {
                 let provider::Request::Reply { to, result } = reply;
                 let owner = to.into_token();
-                let (grants, served) = self.pending.remove(&owner).expect("one provider terminal per call");
+                let (grants, served, asker) = self.pending.remove(&owner).expect("one provider terminal per call");
                 if self.cancelled.remove(&owner) {
                     continue;
                 }
                 let event = match result {
                     Ok(answer) => Event::Agent(AgentIo::Completed {
                         owner,
-                        completion: translate::completion(answer, grants, &served),
+                        completion: translate::completion(answer, grants, &served, asker),
                     }),
                     Err(error) => Event::Agent(AgentIo::Failed {
                         owner,
@@ -1384,6 +1384,7 @@ impl World {
                 if !prompt.served.contains(&agent::llm::Served::Finish) {
                     self.child_prompts.push((prompt.tools, prompt.served.clone()));
                 }
+                let asker = prompt.asker;
                 let grants = prompt.tools;
                 let served = prompt.served.clone();
                 if matches!(self.first_failure, FirstFailure::Exhaust) {
@@ -1406,7 +1407,7 @@ impl World {
                     }));
                     return;
                 }
-                assert!(self.pending.insert(owner, (grants, served)).is_none());
+                assert!(self.pending.insert(owner, (grants, served, asker)).is_none());
                 let query = translate::query(prompt);
                 provider::step(
                     &mut self.provider,

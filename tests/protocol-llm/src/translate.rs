@@ -92,6 +92,7 @@ pub(crate) fn completion(
     answer: provider::Answer,
     grants: tools::Grants,
     served: &[agent::Served],
+    asker: agent::Asker,
 ) -> agent::Completion {
     let stop = match answer.finish {
         provider::Finish::Stop => agent::Stop::EndTurn,
@@ -113,7 +114,7 @@ pub(crate) fn completion(
             provider::Part::Text { text } => agent::Said::Text { text, replay: None },
             provider::Part::Opaque { bytes } => agent::Said::Opaque { bytes },
             provider::Part::ToolCall { id, name, arguments } => {
-                let call = decode(&name, &arguments, grants, served);
+                let call = decode(&name, &arguments, grants, served, asker);
                 agent::Said::ToolCall { id, name, input: arguments, call, replay: None }
             }
             provider::Part::ToolOutput { .. } => panic!("a fake completion contains no tool result"),
@@ -122,8 +123,18 @@ pub(crate) fn completion(
     agent::Completion { reasoning_dropped: Box::default(), content, stop, usage }
 }
 
-pub(crate) fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, served: &[agent::Served]) -> agent::Decoded {
+pub(crate) fn decode(
+    name: &[u8],
+    arguments: &[u8],
+    grants: tools::Grants,
+    served: &[agent::Served],
+    asker: agent::Asker,
+) -> agent::Decoded {
     let invalid = || agent::Decoded::Invalid { problem: agent::Problem::UnknownTool };
+    if name == b"sub_agent" && (asker == agent::Asker::Child || arguments.windows(8).any(|part| part == b"\"agents\""))
+    {
+        return agent::Decoded::Invalid { problem: agent::Problem::Nesting };
+    }
     for tool in served {
         match tool {
             agent::Served::Host(tool) if tool.name.as_ref() == name => {
@@ -171,7 +182,7 @@ pub(crate) fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, serve
                 shell: has(b"\"shell\""),
             },
 
-            agents: has(b"\"agents\":true"),
+            agents: false,
         };
         return agent::Decoded::Served {
             ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: None },
@@ -184,7 +195,7 @@ pub(crate) fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, serve
         shell_default: skein_lib::Duration::from_secs(120),
         shell_maximum: skein_lib::Duration::from_secs(1200),
     };
-    adapter::decode(name, arguments, grants, served, &limits)
+    adapter::decode(name, arguments, grants, served, asker, &limits)
 }
 
 fn finish(arguments: &[u8]) -> Option<run::outcome::Declared> {
@@ -325,7 +336,7 @@ mod host_tests {
         });
         let granted = tools::Grants { inspect: false, modify: false, shell: false };
         let raw = br#" {"nested":[1,true,{"unchanged":"\u0041"}],"policy":"unknown"} "#;
-        let decoded = decode(b"opaque", raw, granted, std::slice::from_ref(&tool));
+        let decoded = decode(b"opaque", raw, granted, std::slice::from_ref(&tool), agent::Asker::Main);
         let agent::Decoded::Served { ask: run::Ask::Host { input, effect, .. } } = decoded else {
             panic!("valid opaque object is relayed");
         };
@@ -333,7 +344,7 @@ mod host_tests {
         assert_eq!(effect, run::HostEffect::Write);
         for malformed in [b"{bad}".as_slice(), b"{}{}", b"[]", b"{\"key\":}", b"{\"key\":NaN}", b"{\"key\":\"\xff\"}"] {
             assert!(matches!(
-                decode(b"opaque", malformed, granted, std::slice::from_ref(&tool)),
+                decode(b"opaque", malformed, granted, std::slice::from_ref(&tool), agent::Asker::Main),
                 agent::Decoded::Invalid { .. }
             ));
         }

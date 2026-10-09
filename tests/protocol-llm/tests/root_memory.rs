@@ -635,6 +635,7 @@ fn copy_prompt(prompt: &llm::Prompt) -> llm::Prompt {
         })
         .collect();
     let copied = llm::Prompt {
+        asker: prompt.asker,
         endpoint: prompt.endpoint,
         model: prompt.model.clone(),
         system: prompt.system.clone(),

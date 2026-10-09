@@ -108,7 +108,12 @@ fn part(block: agent::Block) -> provider::Part {
 }
 
 #[must_use]
-pub fn completion(answer: provider::Answer, grants: tools::Grants, served: &[agent::Served]) -> agent::Completion {
+pub fn completion(
+    answer: provider::Answer,
+    grants: tools::Grants,
+    served: &[agent::Served],
+    asker: agent::Asker,
+) -> agent::Completion {
     let stop = match answer.finish {
         provider::Finish::Stop => agent::Stop::EndTurn,
         provider::Finish::ToolCalls => agent::Stop::ToolUse,
@@ -129,7 +134,7 @@ pub fn completion(answer: provider::Answer, grants: tools::Grants, served: &[age
             provider::Part::Text { text } => agent::Said::Text { text, replay: None },
             provider::Part::Opaque { bytes } => agent::Said::Opaque { bytes },
             provider::Part::ToolCall { id, name, arguments } => {
-                let call = decode(&name, &arguments, grants, served);
+                let call = decode(&name, &arguments, grants, served, asker);
                 agent::Said::ToolCall { id, name, input: arguments, call, replay: None }
             }
             provider::Part::ToolOutput { .. } => panic!("a fake completion contains no tool result"),
@@ -139,8 +144,18 @@ pub fn completion(answer: provider::Answer, grants: tools::Grants, served: &[age
 }
 
 #[must_use]
-pub fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, served: &[agent::Served]) -> agent::Decoded {
+pub fn decode(
+    name: &[u8],
+    arguments: &[u8],
+    grants: tools::Grants,
+    served: &[agent::Served],
+    asker: agent::Asker,
+) -> agent::Decoded {
     let invalid = || agent::Decoded::Invalid { problem: agent::Problem::UnknownTool };
+    if name == b"sub_agent" && (asker == agent::Asker::Child || arguments.windows(8).any(|part| part == b"\"agents\""))
+    {
+        return agent::Decoded::Invalid { problem: agent::Problem::Nesting };
+    }
     for tool in served {
         match tool {
             agent::Served::Host(tool) if tool.name.as_ref() == name => {
@@ -185,7 +200,7 @@ pub fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, served: &[ag
                 shell: has(b"\"shell\""),
             },
 
-            agents: has(b"\"agents\":true"),
+            agents: false,
         };
         return agent::Decoded::Served {
             ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: None },

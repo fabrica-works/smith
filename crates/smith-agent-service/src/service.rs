@@ -2252,6 +2252,7 @@ mod tests {
     #[test]
     fn typed_prompt_capture_preserves_text_and_tool_input_without_a_credential() {
         let prompt = domain::llm::Prompt {
+            asker: domain::llm::Asker::Main,
             endpoint: domain::llm::Endpoint(1),
             model: Box::from(&b"model"[..]),
             system: Box::from(&b"system instructions"[..]),

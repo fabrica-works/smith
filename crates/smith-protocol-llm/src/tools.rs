@@ -74,7 +74,7 @@ pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
                 ToolKind::SubAgent,
                 b"sub_agent",
                 b"Ask a sub-agent to work under the granted tool families and optional model.",
-                br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"agents":{"type":"boolean"},"llm":{"type":"string"}},"required":["brief","tools"]}"#,
+                br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"}},"required":["brief","tools"]}"#,
             )),
             llm::Served::Deliver => add(&mut descriptors, descriptor(
                 ToolKind::Deliver,

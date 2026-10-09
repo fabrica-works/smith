@@ -36,6 +36,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),
         system: b"@client-host".as_slice().into(),

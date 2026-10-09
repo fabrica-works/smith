@@ -204,6 +204,12 @@ fn decode(
         }
     }
     let resolution = take_resolution(position, name, input, resolved)?;
+    if name == b"sub_agent" {
+        match context.asker {
+            llm::Asker::Child => return Ok(llm::Decoded::Invalid { problem: llm::Problem::Nesting }),
+            llm::Asker::Main => {}
+        }
+    }
     for descriptor in &context.application {
         if descriptor.name.as_ref() != name {
             continue;

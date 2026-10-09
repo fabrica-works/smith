@@ -89,7 +89,7 @@ pub(crate) fn plan(
     share: Option<crate::Share>,
     limits: &Limits,
 ) -> Result<Plan, AskRefusal> {
-    if !families.agents || !wanted.within(families) {
+    if !families.agents || wanted.agents || !wanted.within(families) {
         return Err(AskRefusal::NotGranted);
     }
     if means.conversations >= limits.run_conversations {
@@ -109,7 +109,7 @@ pub(crate) fn plan(
     if !budget.is_workable() {
         return Err(AskRefusal::Unworkable);
     }
-    Ok(Plan { llm, families: Families { tools: wanted.tools, agents: false }, budget })
+    Ok(Plan { llm, families: wanted, budget })
 }
 
 /// The child `child` of a call that just began.

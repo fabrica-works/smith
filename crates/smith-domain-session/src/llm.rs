@@ -160,6 +160,9 @@ pub struct Descriptor {
 /// agent could not hold what it decoded.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Problem {
+    /// A nesting request refused by the protocol; a sub-agent does its work itself.
+    Nesting,
+
     /// No tool the prompt offered has the call's name.
     UnknownTool,
     /// The input is not a JSON object.

@@ -111,7 +111,7 @@ fn a_report_only_run_with_a_writable_directory_is_told_of_its_checks() {
 }
 
 #[test]
-fn sub_agents_return_results_and_a_child_gets_no_sub_agent_tool() {
+fn a_child_asking_for_sub_agents_is_refused() {
     let world = settled(&Settings { job: Job::Delegating, ..Settings::calm(3) });
     assert!(matches!(world.answer(), Answer::Accepted { outcome: Declared::Change(_), .. }));
     assert_eq!(world.checked(), [true]);
@@ -141,7 +141,14 @@ fn sub_agents_return_results_and_a_child_gets_no_sub_agent_tool() {
             .flat_map(|query| &query.messages)
             .flat_map(|message| &message.parts)
             .any(|part| { matches!(part, skein_fake_llm_domain::api::Part::ToolOutput { is_error: true, .. }) }),
-        "an unoffered sub-agent call receives the ordinary refusal"
+        "a child receives an error result for its nesting request"
+    );
+    assert!(
+        fixer.iter().flat_map(|query| &query.messages).flat_map(|message| &message.parts).any(|part| {
+            matches!(part, skein_fake_llm_domain::api::Part::ToolOutput { output, is_error: true, .. }
+            if output.windows(b"Nesting".len()).any(|bytes| bytes == b"Nesting"))
+        }),
+        "the independent fixture decoder returns the typed nesting problem"
     );
     assert_eq!(
         count(&world, |fact| matches!(fact, run::facts::FactKind::Called { ask: run::facts::Asked::Finish, .. })),

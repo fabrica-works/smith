@@ -19,3 +19,16 @@ fn turn_rejects_an_unsupported_version_before_fields() {
     let problem = Turn::decode(&CEILINGS, &mut Reader::new(&[0, 2])).expect_err("version two");
     assert_eq!((problem.path, problem.reason), (Path::TurnVersion, Reason::Version));
 }
+
+#[test]
+fn nesting_problem_goldens_have_their_own_wire_tag() {
+    use smith_transcript::v3::CallProblem;
+    for bytes in [
+        include_bytes!("../../../crates/smith-transcript/golden/v3/enum_call_problem_nesting_full.bin").as_slice(),
+        include_bytes!("../../../crates/smith-transcript/golden/v3/enum_call_problem_nesting_smallest.bin").as_slice(),
+    ] {
+        let mut reader = Reader::new(bytes);
+        assert_eq!(CallProblem::decode(&CEILINGS, &mut reader).expect("nesting problem"), CallProblem::Nesting);
+        assert_eq!(bytes, [8], "the handwritten tag is distinct from every prior problem");
+    }
+}

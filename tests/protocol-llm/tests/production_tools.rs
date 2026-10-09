@@ -20,6 +20,7 @@ fn grants() -> tools::Grants {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"test".as_slice().into(),
         system: Box::new([]),
@@ -68,7 +69,7 @@ fn each_workspace_call_decodes_escaped_input_and_ignores_unknown_members() {
         (b"shell", br#"{"command":"printf ok","timeout":5}"#, tools::Tool::Shell),
     ];
     for (name, input, expected) in cases {
-        let decoded = adapter::decode(name, input, grants(), &[], &limits);
+        let decoded = adapter::decode(name, input, grants(), &[], llm::Asker::Main, &limits);
         match decoded {
             llm::Decoded::Owned { call } => {
                 assert_eq!(tools::tool(&call), expected, "{}", String::from_utf8_lossy(name));
@@ -92,7 +93,7 @@ fn malformed_workspace_calls_have_field_named_typed_problems_then_correct() {
         (b"shell", br#"{"command":"x","timeout":-1}"#, b"timeout"),
     ];
     for (name, input, field) in cases {
-        let decoded = adapter::decode(name, input, grants(), &[], &limits);
+        let decoded = adapter::decode(name, input, grants(), &[], llm::Asker::Main, &limits);
         match decoded {
             llm::Decoded::Invalid {
                 problem:
@@ -106,11 +107,11 @@ fn malformed_workspace_calls_have_field_named_typed_problems_then_correct() {
         }
     }
     assert!(matches!(
-        adapter::decode(b"read", b"{bad}", grants(), &[], &limits),
+        adapter::decode(b"read", b"{bad}", grants(), &[], llm::Asker::Main, &limits),
         llm::Decoded::Invalid { problem: llm::Problem::NotAnObject }
     ));
     assert!(matches!(
-        adapter::decode(b"unknown", b"{}", grants(), &[], &limits),
+        adapter::decode(b"unknown", b"{}", grants(), &[], llm::Asker::Main, &limits),
         llm::Decoded::Invalid { problem: llm::Problem::UnknownTool }
     ));
 }
@@ -120,24 +121,62 @@ fn wait_and_sub_agent_decode_into_run_asks() {
     let limits = limits();
     let served = [llm::Served::Wait, llm::Served::SubAgent];
     assert!(matches!(
-        adapter::decode(b"wait", b"{}", grants(), &served, &limits),
+        adapter::decode(b"wait", b"{}", grants(), &served, llm::Asker::Main, &limits),
         llm::Decoded::Served { ask: run::Ask::Wait }
     ));
     let decoded = adapter::decode(
         b"sub_agent",
-        br#"{"brief":"look","tools":["inspect","shell"],"agents":true,"llm":"small"}"#,
+        br#"{"brief":"look","tools":["inspect","shell"],"llm":"small"}"#,
         grants(),
         &served,
+        llm::Asker::Main,
         &limits,
     );
     match decoded {
         llm::Decoded::Served { ask: run::Ask::SubAgent { brief, families, llm, share: None } } => {
             assert_eq!(brief.as_ref(), b"look");
-            assert!(families.tools.inspect && families.tools.shell && !families.tools.modify && families.agents);
+            assert!(families.tools.inspect && families.tools.shell && !families.tools.modify && !families.agents);
             assert_eq!(llm.as_deref(), Some(b"small".as_slice()));
         }
         other @ (llm::Decoded::Owned { .. } | llm::Decoded::Served { .. } | llm::Decoded::Invalid { .. }) => {
             panic!("{other:?}");
         }
     }
+}
+
+#[test]
+fn nesting_is_refused_for_any_agents_field_and_any_child_sub_agent_call() {
+    let limits = limits();
+    for input in [
+        br#"{"brief":"look","tools":["inspect"],"agents":true}"#.as_slice(),
+        br#"{"agents":true}"#,
+        br#"{"brief":null,"agents":false}"#,
+        br#"{"brief":"look","tools":[],"agents":false}"#,
+        br#"{"brief":"look","tools":[],"agents":null}"#,
+        br#"{"brief":"look","tools":[],"agents":{"future":[]}}"#,
+    ] {
+        assert_eq!(
+            adapter::decode(b"sub_agent", input, grants(), &[llm::Served::SubAgent], llm::Asker::Main, &limits),
+            llm::Decoded::Invalid { problem: llm::Problem::Nesting },
+        );
+    }
+    for input in [b"{}".as_slice(), b"{invalid", br#"{"brief":"look","tools":[]}"#] {
+        assert_eq!(
+            adapter::decode(b"sub_agent", input, grants(), &[], llm::Asker::Child, &limits),
+            llm::Decoded::Invalid { problem: llm::Problem::Nesting },
+        );
+    }
+    assert_eq!(
+        adapter::decode(b"sub_agent", b"{}", grants(), &[], llm::Asker::Main, &limits),
+        llm::Decoded::Invalid { problem: llm::Problem::UnknownTool },
+    );
+    let schemas = adapter::schemas(&prompt());
+    let child = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
+    let document = skein_llm::Json::from_bytes(&child.schema, &limits.client.dialect).expect("valid schema");
+    assert!(
+        !document
+            .as_tokens()
+            .iter()
+            .any(|token| matches!(token, skein_json::Token::Key(name) if name.as_ref() == b"agents"))
+    );
 }

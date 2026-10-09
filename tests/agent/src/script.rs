@@ -293,7 +293,7 @@ fn delegating() -> Vec<Turn> {
             sub_agent("@explore Find where the answer is.", "inspect", ""),
             sub_agent("@explore Find what the checks want.", "inspect", r#","llm":"fake-2""#),
         ]),
-        calls(vec![sub_agent("@fix Make the answer 43.", "inspect,modify,shell", r#","agents":true"#)]),
+        calls(vec![sub_agent("@fix Make the answer 43.", "inspect,modify,shell", "")]),
         calls(vec![change("A sub-agent made the answer 43.")]),
     ]
 }

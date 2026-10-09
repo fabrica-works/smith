@@ -29,6 +29,7 @@ fn limits() -> Limits {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),
         system: b"@adapter-boundary".as_slice().into(),

@@ -2246,6 +2246,7 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
 fn problem_cost(problem: &Problem) -> Option<u64> {
     match problem {
         Problem::UnknownTool
+        | Problem::Nesting
         | Problem::NotAnObject
         | Problem::TooLarge
         | Problem::Oversize { .. }

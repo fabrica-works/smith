@@ -133,6 +133,7 @@ impl Peer {
                 owner: Token::new(owner),
                 grant: GrantName { account: 0, generation: 1 },
                 prompt: llm::Prompt {
+                    asker: llm::Asker::Main,
                     endpoint: llm::Endpoint(0),
                     model: b"fixture".as_slice().into(),
                     system: b"timed reasoning".as_slice().into(),

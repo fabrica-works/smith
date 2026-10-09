@@ -23,6 +23,8 @@ pub use smith_domain_session::llm::{Endpoint, Evidence, Failure, Problem, Replay
 /// message.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Prompt {
+    /// Whether this completion belongs to main or a child, for nesting refusals.
+    pub asker: Asker,
     pub endpoint: Endpoint,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
@@ -37,6 +39,17 @@ pub struct Prompt {
     pub messages: Box<[Message]>,
     /// The most tokens the answer may take.
     pub max_tokens: u32,
+}
+
+/// The conversation whose prompt the root sends to the protocol.
+/// Contract: domain/run.md, section 5.3; protocol/llm.md, section 4.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Asker {
+    /// The run's main conversation, which may be granted sub-agents.
+    Main,
+
+    /// A sub-agent, whose nesting requests are refused.
+    Child,
 }
 
 /// A tool the run serves, which a prompt offers the LLM, and which the
@@ -241,6 +254,7 @@ impl Decoded {
             }
             Decoded::Invalid { problem } => match problem {
                 Problem::UnknownTool
+                | Problem::Nesting
                 | Problem::NotAnObject
                 | Problem::TooLarge
                 | Problem::Oversize { .. }

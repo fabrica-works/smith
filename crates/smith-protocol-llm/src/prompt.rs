@@ -22,9 +22,10 @@ pub fn prepare_prompt(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Context), Error> {
     worst_case(limits, &receiving).ok_or(Error::Limit)?;
+    let asker = prompt.asker;
     let grants = prompt.tools;
     let (translated, served) = translate(prompt, &application, limits)?;
-    Ok((translated, Context { owner, grants, served, application, receiving, limits: *limits }))
+    Ok((translated, Context { owner, asker, grants, served, application, receiving, limits: *limits }))
 }
 
 /// Prepare the translated prompt and retained context for the connection
@@ -60,7 +61,7 @@ fn translate(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Box<[llm::Served]>), Error> {
     inventory(&input, application, limits)?;
-    let llm::Prompt { endpoint: _, model, system, tools: _, served, messages, max_tokens } = input;
+    let llm::Prompt { asker: _, endpoint: _, model, system, tools: _, served, messages, max_tokens } = input;
     let mut offered = List::with_capacity(limits.client.dialect.parts);
     for descriptor in &served {
         match descriptor {

@@ -171,6 +171,7 @@ fn returned(source: &wire::Returned) -> Result<llm::Returned, record::Refusal> {
 fn problem(source: &wire::CallProblem) -> llm::Problem {
     match source {
         wire::CallProblem::UnknownTool => llm::Problem::UnknownTool,
+        wire::CallProblem::Nesting => llm::Problem::Nesting,
         wire::CallProblem::NotAnObject => llm::Problem::NotAnObject,
         wire::CallProblem::Missing(field) => llm::Problem::Missing { field: Box::from(field.field()) },
         wire::CallProblem::WrongType(field) => llm::Problem::WrongType { field: Box::from(field.field()) },

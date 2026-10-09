@@ -139,6 +139,7 @@ fn encode_returned(source: &llm::Returned, limits: &wire::v3::Limits) -> Result<
 fn encode_problem(source: &llm::Problem, limits: &wire::v3::Limits) -> Result<wire::CallProblem, Error> {
     let problem = match source {
         llm::Problem::UnknownTool => wire::CallProblem::UnknownTool,
+        llm::Problem::Nesting => wire::CallProblem::Nesting,
         llm::Problem::NotAnObject => wire::CallProblem::NotAnObject,
         llm::Problem::Missing { field } => wire::CallProblem::Missing(wire::FieldProblem::new(
             limits,

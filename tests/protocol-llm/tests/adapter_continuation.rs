@@ -97,6 +97,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 
 fn prompt(messages: Box<[llm::Message]>) -> llm::Prompt {
     llm::Prompt {
+        asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),
         system: b"Literal continuation control.".as_slice().into(),

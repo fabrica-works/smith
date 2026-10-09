@@ -1565,20 +1565,6 @@ fn simultaneous_sessions_reserve_one_run_budget_and_return_unused_credit() {
 }
 
 #[test]
-fn a_child_opening_has_workspace_tools_only_even_when_the_ask_requests_agents() {
-    let mut h = Harness::new(LIMITS);
-    let (_, main) = h.running_on(1, 100, agents());
-    let (child, opening) = h.child(main, 7, families(true, false, true), 101);
-    assert_eq!(opening.families, families(true, false, false));
-    assert!(!opening.finish && !opening.deliver && !opening.wait);
-    assert!(opening.host_tools.is_empty());
-    assert_eq!(
-        &*h.step(ask(child, 8, families(true, false, false), None, None)),
-        &[returned(8, refused(AskRefusal::NotGranted))]
-    );
-}
-
-#[test]
 fn a_sub_agent_runs_on_the_llm_named_for_it_among_the_charters() {
     let mut h = Harness::new(LIMITS);
     let (_, main) = h.running_on(1, 100, agents());

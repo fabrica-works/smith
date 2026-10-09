@@ -19,7 +19,7 @@ use smith_protocol_llm_world::{
 const BEGIN: &[u8] = b"Begin the work your brief describes.";
 const ID: &[u8] = b"call_0000000000000001";
 const CHILD: &[u8] = b"BUDGET-CHILD: actual child result.";
-const CHILD_INPUT: &[u8] = br#"{"brief":"@budget-child own task","tools":["inspect"],"agents":true,"llm":"fake-2"}"#;
+const CHILD_INPUT: &[u8] = br#"{"brief":"@budget-child own task","tools":["inspect"],"llm":"fake-2"}"#;
 const GRAND_INPUT: &[u8] = br#"{"brief":"@budget-grand own task","tools":["inspect"],"llm":"fake-3"}"#;
 const REPORT: &[u8] = br#"{"report":"Budget work finished.","source":"actual-checkout"}"#;
 const READ: &[u8] = br#"{"path":"data.txt"}"#;

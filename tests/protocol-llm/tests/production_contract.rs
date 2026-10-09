@@ -118,6 +118,7 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
     let rules = contract();
     for configuration in &wire::configurations() {
         let prompt = llm::Prompt {
+            asker: llm::Asker::Main,
             endpoint: llm::Endpoint(1),
             model: b"model".as_slice().into(),
             system: b"@contract-schema".as_slice().into(),

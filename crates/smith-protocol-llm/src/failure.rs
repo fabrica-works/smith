@@ -76,6 +76,7 @@ pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, 
         llm::Problem::Oversize { bytes, bound } => return call_size_problem(bytes, Some(bound), maximum),
         llm::Problem::CutOff { bytes } => return call_size_problem(bytes, None, maximum),
         llm::Problem::UnknownTool
+        | llm::Problem::Nesting
         | llm::Problem::NotAnObject
         | llm::Problem::Missing { .. }
         | llm::Problem::WrongType { .. }
@@ -84,6 +85,7 @@ pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, 
     }
     let (prefix, field): (&[u8], Option<Box<[u8]>>) = match problem {
         llm::Problem::UnknownTool => (b"unknown tool", None),
+        llm::Problem::Nesting => (b"a sub-agent does its work itself", None),
         llm::Problem::NotAnObject => (b"input is not a complete JSON object", None),
         llm::Problem::Missing { field } => (b"missing field ", Some(field)),
         llm::Problem::WrongType { field } => (b"wrong field type ", Some(field)),

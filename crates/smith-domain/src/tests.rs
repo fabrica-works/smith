@@ -643,7 +643,7 @@ fn verdict(name: &[u8]) -> Ask {
 
 /// A sub-agent that may only read, and itself ask for sub-agents.
 fn sub_agent(brief: &[u8]) -> Ask {
-    let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: true };
+    let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: false };
     Ask::SubAgent { brief: bytes(brief), families, llm: None, share: None }
 }
 
@@ -992,6 +992,7 @@ fn a_finish_the_run_rejects_at_once_comes_back_from_the_ready_list_as_the_sessio
 
     let (owner, prompt) = completing(h.next());
     assert_eq!(owner, main);
+    assert_eq!(prompt.asker, crate::llm::Asker::Main);
     let [Block::ToolResult { id, result: Returned::Text { text, error: true, replay: None } }] = last(&prompt) else {
         panic!("expected the rejection, got {:?}", last(&prompt));
     };
@@ -1077,6 +1078,7 @@ fn a_sub_agent_opens_a_child_session_whose_last_message_answers_the_call() {
     // The run opens the child within the step: its session calls its LLM.
     let (child, prompt) = completing(h.answer(main, Box::new([served(b"a1", sub_agent(b"Find the bug."))])));
     assert_ne!(child, main);
+    assert_eq!(prompt.asker, crate::llm::Asker::Child);
     assert_eq!(prompt.tools, tools::Grants { inspect: true, modify: false, shell: false }, "the families asked for");
     assert!(prompt.served.is_empty(), "a child receives workspace tools only");
     assert_eq!((h.domain.peers(), h.domain.flights()), (2, 1));

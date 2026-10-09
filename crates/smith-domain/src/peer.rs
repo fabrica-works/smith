@@ -206,6 +206,7 @@ impl Peer {
             resolved.push(Message { role, content: blocks.into_boxed() }).expect("room for every message");
         }
         Prompt {
+            asker: if self.is_main() { llm::Asker::Main } else { llm::Asker::Child },
             endpoint,
             model,
             system,

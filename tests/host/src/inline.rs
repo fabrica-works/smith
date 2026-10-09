@@ -18,6 +18,7 @@ struct Binding {
     owner: Token,
     tools: smith::tools::Grants,
     served: Box<[smith::llm::Served]>,
+    asker: smith::llm::Asker,
     cancelled: bool,
 }
 
@@ -343,11 +344,12 @@ impl World {
                     Lower::Complete { owner, prompt, .. } => {
                         self.minted += 1;
                         let callback = Token::new(self.minted);
+                        let asker = prompt.asker;
                         let tools = prompt.tools;
                         let served = prompt.served.clone();
                         assert!(
                             self.bindings
-                                .insert(callback, Binding { agent, owner, tools, served, cancelled: false })
+                                .insert(callback, Binding { agent, owner, tools, served, asker, cancelled: false })
                                 .is_none()
                         );
                         self.lower.open(callback, (agent, owner));
@@ -439,7 +441,12 @@ impl World {
                 match result {
                     Ok(answer) => Below::Completed {
                         owner: binding.owner,
-                        completion: smith_agent_world::translate::completion(answer, binding.tools, &binding.served),
+                        completion: smith_agent_world::translate::completion(
+                            answer,
+                            binding.tools,
+                            &binding.served,
+                            binding.asker,
+                        ),
                     },
                     Err(error) => Below::Failed {
                         owner: binding.owner,

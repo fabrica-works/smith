@@ -97,6 +97,7 @@ fn endpoints_with_connect(connect: Duration) -> Endpoints {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        asker: llm::Asker::Main,
         endpoint: llm::Endpoint(42),
         model: b"fixture-model".as_slice().into(),
         system: b"testing component".as_slice().into(),

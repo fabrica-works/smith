@@ -2070,6 +2070,8 @@ pub enum CallProblem {
     Oversize(OversizeProblem),
     /// `cut_off` carrying `CutProblem`.
     CutOff(CutProblem),
+    /// `nesting` without a payload.
+    Nesting,
 }
 
 impl CallProblem {
@@ -2084,7 +2086,7 @@ impl CallProblem {
             Self::Missing(record) | Self::WrongType(record) | Self::BadValue(record) => FieldProblem::check(record, limits),
             Self::Oversize(record) => OversizeProblem::check(record, limits),
             Self::CutOff(record) => CutProblem::check(record, limits),
-            Self::UnknownTool | Self::NotAnObject | Self::TooLarge => Ok(()),
+            Self::UnknownTool | Self::NotAnObject | Self::TooLarge | Self::Nesting => Ok(()),
         }?;
         if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
         if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
@@ -3803,7 +3805,7 @@ impl CallProblem {
             Self::Missing(record) | Self::WrongType(record) | Self::BadValue(record) => 1_u32.checked_add(FieldProblem::measure(record)).expect("schema ceilings fit u32"),
             Self::Oversize(record) => 1_u32.checked_add(OversizeProblem::measure(record)).expect("schema ceilings fit u32"),
             Self::CutOff(record) => 1_u32.checked_add(CutProblem::measure(record)).expect("schema ceilings fit u32"),
-            Self::UnknownTool | Self::NotAnObject | Self::TooLarge => 1,
+            Self::UnknownTool | Self::NotAnObject | Self::TooLarge | Self::Nesting => 1,
         }
     }
 
@@ -3818,6 +3820,7 @@ impl CallProblem {
             Self::TooLarge => writer.put(&[5_u8])?,
             Self::Oversize(record) => { writer.put(&[6_u8])?; record.encode(writer)?; }
             Self::CutOff(record) => { writer.put(&[7_u8])?; record.encode(writer)?; }
+            Self::Nesting => writer.put(&[8_u8])?,
         }
         Ok(())
     }
@@ -3840,6 +3843,7 @@ impl CallProblem {
             5 => Self::TooLarge,
             6 => Self::Oversize(OversizeProblem::decode_from(limits, reader)?),
             7 => Self::CutOff(CutProblem::decode_from(limits, reader)?),
+            8 => Self::Nesting,
             _ => return Err(Problem { path: Path::CallProblemTag, reason: skein_codec::Reason::Tag }),
         };
         Self::new(limits, value)
@@ -6442,6 +6446,26 @@ mod golden_tests {
     fn enum_call_problem_cut_off_full() {
         let value = CallProblem::CutOff(CutProblem::new(&CEILINGS, CutProblemParts { bytes: u64::MAX }).expect("golden within ceilings"));
         let golden: &[u8] = &[7, 255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(CallProblem::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_call_problem_nesting_smallest() {
+        let value = CallProblem::Nesting;
+        let golden: &[u8] = &[8];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(CallProblem::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_call_problem_nesting_full() {
+        let value = CallProblem::Nesting;
+        let golden: &[u8] = &[8];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

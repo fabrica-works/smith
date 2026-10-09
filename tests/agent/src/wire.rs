@@ -455,7 +455,7 @@ fn resolutions(context: &Context, completion: &shared::Completion) -> Box<[Resol
                     position: u32::try_from(position).expect("bounded actual assistant position"),
                     name: name.clone(),
                     input: arguments.clone(),
-                    call: crate::translate::decode(name, arguments, context.grants(), context.served()),
+                    call: crate::translate::decode(name, arguments, context.grants(), context.served(), context.asker()),
                 })
             }
             shared::Block::Text { .. }
@@ -495,7 +495,7 @@ pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
             llm::Served::Wait => descriptors.push(descriptor(ToolKind::Wait, b"wait", br#"{"type":"object","properties":{},"additionalProperties":false}"#)),
             llm::Served::Deliver => descriptors.push(descriptor(ToolKind::Deliver, b"deliver", br#"{"type":"object","properties":{"ticket":{"type":"string"}},"required":["ticket"],"additionalProperties":false}"#)),
             llm::Served::Finish => descriptors.push(descriptor(ToolKind::Finish, b"finish", br#"{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"report":{"type":"string"},"source":{"type":"string"},"failure":{"type":"string"},"cause":{"type":"string"},"verdict":{"type":"string"},"children":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string"},"path":{"type":"string"}},"required":["kind","path"],"additionalProperties":false}}},"anyOf":[{"required":["title","body"]},{"required":["report"]},{"required":["failure"]},{"required":["verdict","body"]}],"additionalProperties":false}"#)),
-            llm::Served::SubAgent => descriptors.push(descriptor(ToolKind::SubAgent, b"sub_agent", br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"agents":{"type":"boolean"},"llm":{"type":"string"}},"required":["brief","tools"],"additionalProperties":false}"#)),
+            llm::Served::SubAgent => descriptors.push(descriptor(ToolKind::SubAgent, b"sub_agent", br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"}},"required":["brief","tools"],"additionalProperties":false}"#)),
         }
     }
     descriptors.into()

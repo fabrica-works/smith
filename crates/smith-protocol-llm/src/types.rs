@@ -104,6 +104,7 @@ pub struct ResolvedCall {
 #[derive(Debug)]
 pub struct Context {
     pub(crate) owner: Token,
+    pub(crate) asker: llm::Asker,
     pub(crate) grants: tools::Grants,
     pub(crate) served: Box<[llm::Served]>,
     pub(crate) application: Box<[ToolSchema]>,
@@ -112,6 +113,12 @@ pub struct Context {
 }
 
 impl Context {
+    /// The root's conversation identity for classifying nesting requests.
+    #[must_use]
+    pub const fn asker(&self) -> llm::Asker {
+        self.asker
+    }
+
     /// Limits used for the admitted call and its application decoder.
     #[must_use]
     pub const fn limits(&self) -> Limits {
