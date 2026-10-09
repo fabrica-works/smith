@@ -170,11 +170,9 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     let arguments: Vec<_> = invocation.arguments.iter().map(|argument| argument.to_str().expect("UTF-8")).collect();
     assert!(!arguments.contains(&"--ignore-user-config"));
     assert!(!arguments.contains(&"--ignore-rules"));
-    assert!(
-        arguments
-            .iter()
-            .any(|argument| argument.starts_with("projects.") && argument.ends_with(".trust_level=\"trusted\""))
-    );
+    let (_, projects) = codex.overrides.iter().find(|(key, _)| key == "projects").expect("whole trust table");
+    let parsed: toml::Value = toml::from_str(&format!("projects={projects}")).expect("dynamic path TOML");
+    assert_eq!(parsed["projects"][private.workspace.to_str().expect("path")]["trust_level"].as_str(), Some("trusted"));
     assert_eq!(std::fs::read(home.join("config.toml")).expect("unmodified config"), configuration);
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }

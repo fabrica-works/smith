@@ -86,10 +86,12 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
             .filter(|(key, _)| key != "harness")
             .map(|(key, value)| (key, value.to_string()))
             .collect();
-        overrides.push((
-            format!("projects.{}.trust_level", toml::Value::String(context.private.workspace.display().to_string())),
-            "\"trusted\"".into(),
-        ));
+        // Codex splits dotted override paths literally; quote the dynamic path
+        // within a top-level TOML table value, including dots in the workspace.
+        let project = toml::Table::from_iter([("trust_level".into(), toml::Value::String("trusted".into()))]);
+        let projects =
+            toml::Table::from_iter([(context.private.workspace.display().to_string(), toml::Value::Table(project))]);
+        overrides.push(("projects".into(), toml::Value::Table(projects).to_string()));
         overrides.push((
             "model_reasoning_effort".into(),
             toml::Value::String(context.model.effort.clone().expect("validated effort")).to_string(),
