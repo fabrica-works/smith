@@ -5,7 +5,7 @@ use smith_agent_service::profile::{self, Configuration, Endpoint, Model, Oversiz
 
 #[test]
 fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
-    for seed in [19405, 31007, 90451, 130003] {
+    for seed in [19_405, 31_007, 90_451, 130_003] {
         let mut rng = Rng::new(seed);
         for case in 0_u32..512 {
             let mut profile = profile::standard();
@@ -39,13 +39,20 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
             match profile::derive(&profile, &configuration) {
                 Ok(limits) => {
                     assert!(output < window, "seed={seed}, case={case}: output fits window");
-                    assert!(profile.declared.read_window <= profile.declared.tool_payload,
-                        "seed={seed}, case={case}: default read fits payload");
-                    assert!(profile.policy.shell_timeout <= profile.policy.tool_deadline,
-                        "seed={seed}, case={case}: shell fits tool deadline");
-                    assert!(profile.policy.fields <= smith_charter::CEILINGS.run_result_fields,
-                        "seed={seed}, case={case}: fields fit vocabulary");
-                    profile::validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
+                    assert!(
+                        profile.declared.read_window <= profile.declared.tool_payload,
+                        "seed={seed}, case={case}: default read fits payload"
+                    );
+                    assert!(
+                        profile.policy.shell_timeout <= profile.policy.tool_deadline,
+                        "seed={seed}, case={case}: shell fits tool deadline"
+                    );
+                    assert!(
+                        profile.policy.fields <= smith_charter::CEILINGS.run_result_fields,
+                        "seed={seed}, case={case}: fields fit vocabulary"
+                    );
+                    profile::validate::machine(&limits.machine, &limits.domain.session.tools)
+                        .expect("machine holds tools");
                 }
                 Err(refusal) => {
                     assert!(refusal.check().is_some(), "seed={seed}, case={case}: named smith check");
