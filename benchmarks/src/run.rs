@@ -30,7 +30,7 @@ pub struct Prepared {
     pub identity: Identity,
     pub program: PathBuf,
     pub arguments: Vec<String>,
-    /// Only Codex may name its existing read-only borrowed login directory.
+    /// Read-only source login for Codex's attempt-owned access-only home.
     pub codex_home: Option<PathBuf>,
     /// The committed adapter pin; absent only for offline stream replays.
     #[serde(default)]
@@ -559,6 +559,22 @@ fn observe(
     }
     archive(guard, directory, result, "stdout.log", &process.stdout)?;
     archive(guard, directory, result, "stderr.log", &process.stderr)?;
+    if let Some(observing) = &mut process.observing {
+        match observing.as_mut() {
+            crate::agent::Observing::Codex(observing) => {
+                if let Some(borrowed) = observing.prepared.borrowed.take() {
+                    let proof = borrowed.finish(guard)?;
+                    archive(
+                        guard,
+                        directory,
+                        result,
+                        "credential-proof.json",
+                        &serde_json::to_vec_pretty(&proof).map_err(|error| error.to_string())?,
+                    )?;
+                }
+            }
+        }
+    }
     result.resources = resources(process)?;
     result.counts = process.observer.counts();
     result.tokens = match process.observer.thread() {
@@ -615,7 +631,36 @@ struct Work<'a> {
     directory: &'a Path,
 }
 
+fn credential_lifetime(work: Work<'_>) -> Result<Duration, String> {
+    Duration::from_secs(work.task.deadline_seconds)
+        .checked_add(Duration::from_millis(work.prepared.grace_ms))
+        .and_then(|span| span.checked_add(Duration::from_millis(work.prepared.settlement_ms)))
+        .ok_or_else(|| "credential lifetime overflow".into())
+}
+
+fn archive_preparation(
+    prepared: &crate::agent::Prepared,
+    work: Work<'_>,
+    result: &mut AttemptResult,
+) -> Result<(), String> {
+    match prepared {
+        crate::agent::Prepared::Codex(prepared) => {
+            result.identity.user_configuration_sha256 =
+                Measure::unavailable("attempt-owned Codex home; user configuration is not read");
+            archive(
+                work.guard,
+                work.directory,
+                result,
+                "overrides.json",
+                &serde_json::to_vec_pretty(&prepared.overrides).map_err(|error| error.to_string())?,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Capture, Duration), Setup> {
+    let mut step = SetupStep::Configuration;
     let attempt = (|| {
         let mut environment = crate::isolate::environment(work.machine, work.private, &work.task.environment)?;
         let Some(pin_file) = &work.prepared.configuration else {
@@ -658,7 +703,7 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
         if version.trim().strip_prefix("codex-cli ").unwrap_or(version.trim()) != result.identity.agent_version {
             return Err("installed version differs from the planned identity".into());
         }
-        let home = work.prepared.codex_home.as_deref().ok_or("Codex requires its existing CODEX_HOME")?;
+        let home = work.prepared.codex_home.as_deref().ok_or("Codex requires its read-only source login directory")?;
         let model = crate::ModelChoice {
             model: Some(result.identity.model.requested_model.clone()),
             effort: Some(result.identity.model.requested_effort.clone()),
@@ -678,20 +723,14 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 arm: &arm,
                 installed_version: version,
                 home,
+                wall: work.clock.now().wall,
+                lifetime: credential_lifetime(work)?,
             })
-            .map_err(|error| error.reason)?;
-        match &prepared {
-            crate::agent::Prepared::Codex(prepared) => {
-                result.identity.user_configuration_sha256.clone_from(&prepared.user_configuration);
-                archive(
-                    work.guard,
-                    work.directory,
-                    result,
-                    "overrides.json",
-                    &serde_json::to_vec_pretty(&prepared.overrides).map_err(|error| error.to_string())?,
-                )?;
-            }
-        }
+            .map_err(|error| {
+                step = error.step;
+                error.reason
+            })?;
+        archive_preparation(&prepared, work, result)?;
         let invocation = prepared.command();
         environment.extend(invocation.environment);
         match invocation.mode {
@@ -709,7 +748,7 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
             invocation.teardown,
         ))
     })();
-    attempt.map_err(|reason| Setup { step: SetupStep::Configuration, reason })
+    attempt.map_err(|reason| Setup { step, reason })
 }
 
 fn afterwards(

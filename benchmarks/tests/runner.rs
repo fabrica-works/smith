@@ -51,7 +51,9 @@ fn a_recorded_answer_is_observed_before_the_tree_settles() {
 fn a_prepared_adapter_observes_the_answer_through_the_common_supervisor() {
     let prepared = smith_bench::agent::Prepared::Codex(smith_bench::agent::codex::Prepared {
         overrides: Vec::new(),
-        user_configuration: smith_bench::Measure::unavailable("offline replay has no user configuration"),
+        credential: "/tmp/smith-codex-capture-no-login/auth.json".into(),
+        expires: skein_lib::Wall::EPOCH,
+        borrowed: None,
         home: "/tmp/smith-codex-capture-no-login".into(),
         final_message: "/tmp/smith-codex-capture-final.txt".into(),
         model: smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) },

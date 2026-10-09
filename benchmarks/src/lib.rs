@@ -21,6 +21,8 @@ pub mod arm;
 
 pub mod guard;
 
+pub mod credential;
+
 pub mod isolate;
 
 pub mod process;

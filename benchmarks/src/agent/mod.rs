@@ -27,13 +27,17 @@ pub struct Context<'a> {
     pub arm: &'a crate::arm::ArmRef,
     /// Observed outside the attempt timer from the selected executable.
     pub installed_version: &'a str,
+    /// Read-only source login, never the invocation's `CODEX_HOME`.
     pub home: &'a Path,
+    pub wall: skein_lib::Wall,
+    /// Hard deadline plus the grace and settlement spans; adapter adds teardown.
+    pub lifetime: skein_lib::Duration,
 }
 
 /// The adapter's prepared invocation; unsupported agents refuse before this value.
 #[derive(Debug)]
 pub enum Prepared {
-    /// Codex's pinned standalone command, in its existing login directory.
+    /// Codex's pinned standalone command, in an attempt-owned home.
     Codex(codex::Prepared),
 }
 

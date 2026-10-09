@@ -117,7 +117,7 @@ fn a_named_path_cannot_read_credentials_or_an_unrelated_file() {
 }
 
 #[test]
-fn the_pinned_adapter_refuses_version_drift_and_never_rewrites_user_configuration() {
+fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     use smith_bench::agent::{Context, Prepared};
     use smith_bench::arm::ArmRef;
     use smith_bench::guard::Guard;
@@ -129,6 +129,9 @@ fn the_pinned_adapter_refuses_version_drift_and_never_rewrites_user_configuratio
     std::fs::create_dir_all(&home).expect("fake user home");
     let configuration = b"model=\"user-choice\"\n[agents]\nmax_threads=99\n";
     std::fs::write(home.join("config.toml"), configuration).expect("unrelated user configuration");
+    let auth = synthetic_auth(500);
+    std::fs::write(home.join("auth.json"), &auth).expect("synthetic source login");
+    std::fs::write(home.join("AGENTS.md"), "UNRELATED_GLOBAL_INSTRUCTION").expect("global marker");
     let guard = Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), std::slice::from_ref(&home))
         .expect("guard");
     let private = empty(&guard, &root.join("scratch")).expect("private scratch");
@@ -149,22 +152,124 @@ fn the_pinned_adapter_refuses_version_drift_and_never_rewrites_user_configuratio
         arm: &arm,
         installed_version: "codex-cli 0.159.0",
         home: &home,
+        wall: skein_lib::Wall::from_nanos(100_000_000_000),
+        lifetime: skein_lib::Duration::from_secs(20),
     };
     assert_eq!(Agent::Codex.prepare(&context).expect_err("version drift").step, SetupStep::Configuration);
     context.installed_version = "codex-cli 0.160.0";
     let prepared = Agent::Codex.prepare(&context).expect("pinned version");
     let Prepared::Codex(codex) = &prepared;
-    assert!(matches!(codex.user_configuration, Measure::Observed { .. }));
+    assert_eq!(codex.home, private.root.join("codex"));
+    assert_eq!(std::fs::read_dir(&codex.home).expect("private home").count(), 1);
+    let proof = codex.borrowed.as_ref().expect("converted credentials").finish(&guard).expect("settled cleanup");
+    assert!(proof.source_unchanged);
+    assert!(!codex.credential.exists());
+    assert_eq!(std::fs::read(home.join("auth.json")).expect("source unchanged"), auth);
     assert!(codex.overrides.contains(&("agents.max_threads".into(), "6".into())));
     let invocation = prepared.command();
     let arguments: Vec<_> = invocation.arguments.iter().map(|argument| argument.to_str().expect("UTF-8")).collect();
-    assert!(arguments.contains(&"--ignore-user-config"));
-    assert!(arguments.contains(&"--ignore-rules"));
+    assert!(!arguments.contains(&"--ignore-user-config"));
+    assert!(!arguments.contains(&"--ignore-rules"));
     assert!(
         arguments
             .iter()
             .any(|argument| argument.starts_with("projects.") && argument.ends_with(".trust_level=\"trusted\""))
     );
     assert_eq!(std::fs::read(home.join("config.toml")).expect("unmodified config"), configuration);
+    std::fs::remove_dir_all(root).expect("fixture cleanup");
+}
+
+fn synthetic_auth(expires: u64) -> Vec<u8> {
+    use base64::Engine;
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!("{{\"exp\":{expires}}}"));
+    serde_json::to_vec(&serde_json::json!({"auth_mode":"chatgpt", "last_refresh":"2000-01-01T00:00:00Z",
+        "tokens":{"id_token":"UNISSUED_ID", "access_token":format!("header.{claims}.signature"),
+        "account_id":"UNISSUED_ACCOUNT", "refresh_token":"UNISSUED_REFRESH_MUST_NOT_COPY"}}))
+    .expect("fixture")
+}
+
+#[test]
+fn access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = private("credentials");
+    let source = root.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("fixture source");
+    let original = synthetic_auth(500);
+    std::fs::write(source.join("auth.json"), &original).expect("source auth");
+    for name in ["AGENTS.md", "config.toml", "skills", "memories", "plugins"] {
+        std::fs::write(source.join(name), "UNRELATED_HOME_MARKER").expect("source marker");
+    }
+    let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let home = root.join("attempt-codex");
+    let borrowed = smith_bench::credential::codex(
+        &guard,
+        &source,
+        &home,
+        skein_lib::Wall::from_nanos(100_000_000_000),
+        skein_lib::Duration::from_secs(20),
+    )
+    .expect("access-only conversion");
+    assert_eq!(std::fs::metadata(&home).expect("home mode").permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::metadata(&borrowed.credential).expect("auth mode").permissions().mode() & 0o777, 0o600);
+    assert_eq!(std::fs::read_dir(&home).expect("initial home").count(), 1);
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&borrowed.credential).expect("private auth")).expect("auth shape");
+    assert_eq!(record["auth_mode"], "chatgpt");
+    assert_eq!(record["tokens"]["refresh_token"], "");
+    assert_eq!(record["tokens"]["id_token"], "UNISSUED_ID");
+    assert_eq!(record["tokens"]["account_id"], "UNISSUED_ACCOUNT");
+    assert_eq!(record["last_refresh"], "1970-01-01T00:01:40Z");
+    assert!(!serde_json::to_string(&record).expect("record").contains("UNISSUED_REFRESH"));
+    assert!(!format!("{borrowed:?}").contains("UNISSUED"));
+    let proof = borrowed.finish(&guard).expect("after tree settlement");
+    assert!(proof.source_unchanged && proof.credential_removed && proof.private_refresh_empty);
+    assert_eq!(std::fs::read(source.join("auth.json")).expect("source unchanged"), original);
+    std::fs::remove_dir_all(root).expect("fixture cleanup");
+}
+
+#[test]
+fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home() {
+    let root = private("expiry");
+    let source = root.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("fixture source");
+    std::fs::write(source.join("auth.json"), synthetic_auth(110)).expect("source auth");
+    let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let home = root.join("attempt-codex");
+    let refusal = smith_bench::credential::codex(
+        &guard,
+        &source,
+        &home,
+        skein_lib::Wall::from_nanos(100_000_000_000),
+        skein_lib::Duration::from_secs(20),
+    )
+    .expect_err("lapsed token");
+    assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Credentials);
+    assert!(refusal.reason.contains("run `codex` once"));
+    assert!(!refusal.reason.contains("UNISSUED"));
+    assert!(!home.exists());
+    std::fs::remove_dir_all(root).expect("fixture cleanup");
+}
+
+#[test]
+fn changed_user_auth_is_reported_after_private_credentials_are_removed() {
+    let root = private("changed-source");
+    let source = root.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("fixture source");
+    std::fs::write(source.join("auth.json"), synthetic_auth(500)).expect("source auth");
+    let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let borrowed = smith_bench::credential::codex(
+        &guard,
+        &source,
+        &root.join("attempt-codex"),
+        skein_lib::Wall::from_nanos(100_000_000_000),
+        skein_lib::Duration::from_secs(20),
+    )
+    .expect("conversion");
+    std::fs::write(source.join("auth.json"), synthetic_auth(501)).expect("user refresh control");
+    assert!(borrowed.finish(&guard).expect_err("source changed").contains("stop before further inference"));
+    assert!(!borrowed.credential.exists());
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }

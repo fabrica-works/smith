@@ -1,5 +1,5 @@
-//! Codex preparation retains pinned overrides, private paths and config digests.
-//! It never copies a login or writes in `CODEX_HOME`. The command's settings are
+//! Codex preparation retains pinned overrides and private credential paths.
+//! It never writes to the source login. The command's settings are
 //! explicit; its observer retains only root stream evidence until collection.
 //! Contracts: benchmarks.md, sections 6, 8.2, 10 and 14.
 
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use crate::agent::{Context, HarnessFault, Invocation, Seen};
 use crate::isolate::{Setup, SetupStep};
-use crate::{Agent, Measure, ModelChoice, Provider};
+use crate::{Agent, ModelChoice, Provider};
 
 use super::{Item, Observation, Observer};
 
@@ -16,7 +16,9 @@ use super::{Item, Observation, Observer};
 #[derive(Debug)]
 pub struct Prepared {
     pub overrides: Vec<(String, String)>,
-    pub user_configuration: Measure<String>,
+    pub credential: PathBuf,
+    pub expires: skein_lib::Wall,
+    pub borrowed: Option<crate::credential::Borrowed>,
     pub home: PathBuf,
     pub final_message: PathBuf,
     pub model: ModelChoice,
@@ -92,20 +94,12 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
             "model_reasoning_effort".into(),
             toml::Value::String(context.model.effort.clone().expect("validated effort")).to_string(),
         ));
-        let user_configuration = match std::fs::symlink_metadata(context.home.join("config.toml")) {
-            Ok(metadata) if metadata.is_file() => {
-                Measure::Observed { value: crate::arm::binary_digest(&context.home.join("config.toml"))? }
-            }
-            Ok(_) => return Err("Codex config.toml is not an ordinary file".into()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Measure::unavailable("Codex user config.toml is absent")
-            }
-            Err(error) => return Err(error.to_string()),
-        };
         Ok(Prepared {
             overrides,
-            user_configuration,
-            home: context.home.into(),
+            credential: PathBuf::new(),
+            expires: skein_lib::Wall::EPOCH,
+            borrowed: None,
+            home: context.private.root.join("codex"),
             final_message: context.private.root.join("final.txt"),
             model: context.model.clone(),
             program,
@@ -113,7 +107,21 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
             teardown,
         })
     })();
-    configuration.map_err(|reason| Setup { step: SetupStep::Configuration, reason })
+    let mut prepared = configuration.map_err(|reason| Setup { step: SetupStep::Configuration, reason })?;
+    let borrowed = crate::credential::codex(
+        context.guard,
+        context.home,
+        &prepared.home,
+        context.wall,
+        context.lifetime.checked_add(prepared.teardown).ok_or_else(|| Setup {
+            step: SetupStep::Configuration,
+            reason: "credential teardown lifetime overflow".into(),
+        })?,
+    )?;
+    prepared.credential.clone_from(&borrowed.credential);
+    prepared.expires = borrowed.expires;
+    prepared.borrowed = Some(borrowed);
+    Ok(prepared)
 }
 
 impl Prepared {
@@ -121,10 +129,7 @@ impl Prepared {
     #[must_use]
     pub fn command(&self) -> Invocation {
         let mut arguments: Vec<OsString> =
-            ["--no-daemon", "exec", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config", "-m"]
-                .into_iter()
-                .map(Into::into)
-                .collect();
+            ["--no-daemon", "exec", "--json", "-m"].into_iter().map(Into::into).collect();
         arguments.push(self.model.model.as_ref().expect("prepared model").into());
         for (key, value) in &self.overrides {
             arguments.extend(["-c".into(), format!("{key}={value}").into()]);

@@ -1,0 +1,8 @@
+id = "codex-isolation"
+version = 1
+kind = "probe"
+tier = "small"
+deadline_seconds = 60
+prompt = "Read README.md using a tool, then answer only with its frozen task token. Do not create children or modify files.\n"
+guards = ["benchmarks.md, section 6"]
+seed_sha256 = "43d6e7547f4c0b16cb80f18243f6c0f8e1387e08fcdc10265ae91a29630e5156"

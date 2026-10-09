@@ -156,10 +156,16 @@ Codex JSON lines. Recorded replay programs provide offline runner controls.
 
 The Codex adapter checkpoint adds a `configuration` path to a prepared request.
 It verifies the installed executable digest and version before inference,
-renders the pinned command itself, records the user's `config.toml` digest,
-and archives its rendered overrides. Authentication stays in the user's
-existing `CODEX_HOME`; the harness writes nothing there. Requests carrying a
-Codex home require this configuration path and cannot supply arbitrary arguments.
+renders the pinned command itself, and archives its rendered overrides.
+Its attempt-owned `CODEX_HOME` starts with only private access-only `auth.json`,
+converted read-only from the selected source login. The one converter copies
+id/access/account fields, leaves refresh empty, sets the write timestamp, and
+refuses tokens expiring before the hard deadline and settlement ladder.
+The guarded directory and file have modes 0700 and 0600. After tree settlement,
+the private auth file is removed and source auth digests must match; only this
+nonsecret proof is archived. No user configuration, instructions, skills,
+plugins or memories are read or copied. Requests carrying a source Codex home
+require this configuration path and cannot supply arbitrary arguments.
 Unpinned pipe replays remain an offline control and cannot name a login directory.
 
 Named-thread collection opens `state_5.sqlite` read-only, queries only the root
@@ -177,10 +183,9 @@ These source checks and offline controls do not establish live acceptance.
 The first child, repeated-usage and unknown-model failure recordings are pending;
 the previous explicitly synthetic fixtures remain until they can be replaced.
 
-Instruction parity is awaiting clarification before any credentialed attempt.
-`--ignore-user-config` excludes configuration, but the pinned [app-server host](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/app-server/src/message_processor.rs)
-unconditionally installs a [global instruction provider](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/codex-home/src/instructions/mod.rs)
-which reads `CODEX_HOME/AGENTS.override.md` or `AGENTS.md` independently of
-configuration overrides. The existing user directory contains `AGENTS.md`.
-The harness preserves it and does not copy a login or alter user files to
-resolve this difference from the instruction-parity contract.
+Instruction parity uses the attempt-owned home required by the designer decision
+in smith `95a9807` and the plan's Credentials section. First credentialed
+verification must establish access-only authentication without refresh, no
+user global instructions/skills/memories in the attempt rollout, and unchanged
+source auth digests. These live checks remain pending; refusal must stop further
+inference without falling back to the user's home.
