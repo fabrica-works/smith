@@ -163,6 +163,15 @@ modify (`write`, `edit`), shell.
 - **One payload bound.** One declared tool payload bounds a `read`'s
   window, a `write`'s content and the call the LLM writes, so what can
   be read in one window can be written back in one call.
+- **Files larger than a piece.** A file may hold more than one piece, up
+  to `file_bytes` (protocol/limits.md, 2.2):
+  - `read` pages through it in windows;
+  - `edit` loads it, applies its edits and stores it whole;
+  - a file larger than a piece is made by a `write` of its first piece,
+    then `edit`s that extend it.
+
+  A file past `file_bytes` is answered as too large, by `read` and by
+  `edit` alike. The tools' descriptions state both bounds.
 - **Bounded and visible.** Each tool's output has a size limit, and what
   a limit cut is said, with how much. A failure comes back with its
   output (a failing test's tail, an edit that matched nothing), not a

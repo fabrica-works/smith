@@ -87,6 +87,7 @@ settings override them (`docs/design/shell.md`).
 |---|---|---|
 | `conversations` | count | the most conversations open at once across a run's tree: main, its sub-agents and compactions; so the most LLM calls in flight |
 | `tool_payload` | bytes | the most a tool exchanges in one piece: a `read`'s largest window, a `write`'s content, the arguments of one call |
+| `file_bytes` | bytes | the largest file the tools hold whole: a file `read` pages through in windows, and one `edit` loads and stores. It is at least `tool_payload`, so a file can grow past one piece: written once, then extended by edits |
 | `calls_per_response` | count | the most tool calls one completion may make, and so the most result blocks the next message holds |
 | render caps | bytes, count | what a tool's output may hold (below) |
 | `llm_pool` | bytes | the memory every LLM call in flight shares, sending and receiving (section 5) |
@@ -277,8 +278,7 @@ them (agent.md, section 2):
 
 - **a command's captured output:** at least `shell_head` and
   `shell_tail`;
-- **a file's load and store:** at least the tools domain's file bound,
-  and a store at least `tool_payload`;
+- **a file's load and store:** at least `file_bytes`;
 - **a scan and a search:** at least `list_entries`, `search_hits` and
   `search_bytes`;
 - **paths:** at least the tools domain's path bound;
@@ -422,6 +422,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `turn-in-channel` | the largest turn, start and message fit the channel's frame ceilings |
 | `render-in-result` | every tool's outcome at its caps, a host's answer, a message and a sub-agent's result render uncut within one rendered result's bound: the cut is a safeguard, never what a cap relies on (llm.md, section 5). A bound held below its derived worst case by any other limit breaks it |
 | `read-in-payload` | `read_window` is at most `tool_payload` |
+| `payload-in-file` | `tool_payload` is at most `file_bytes` |
 | `machine-holds-tools` | the machine's output, file, scan, search and path limits hold the tools' (3.5) |
 | `environment` | the configured environment's names are valid and distinct |
 | `request-head` | a request's head holds a credential at its bound (2.4), the affinity's headers and the endpoint's configured headers, none of which is a reserved name |
@@ -464,7 +465,8 @@ reserve against the budget.
   connections.
 - **The rest is counted at its derived limits:** each conversation's
   window of history; the channel's queue and frames; the machine's
-  captures; io's buffers; the event sink's output cap. Each layer's
+  captures; each write in flight's file and its result, `file_bytes`
+  each; io's buffers; the event sink's output cap. Each layer's
   `worst_case` adds what its containers report (programming-model.md,
   section 6.3).
 - **Waiting is the backpressure.** A full pool slows the run's calls; it

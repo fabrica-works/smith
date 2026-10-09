@@ -599,6 +599,7 @@ The declared quantities of protocol/limits.md, section 2.2:
 |---|---|---|
 | `conversations` | 6 | provisional; the parallel-children probe |
 | `tool_payload` | 64 KiB | provisional; the large-write probe |
+| `file_bytes` | 1 MiB: the largest file the tools read whole and edit | provisional; the large-write probe |
 | `calls_per_response` | 16 | provisional; the parallel-read probe |
 | `read_window` | 32 KiB; a call may ask up to `tool_payload` | decided |
 | `guide` | 16 KiB, a guide kept whole up to it | decided |
