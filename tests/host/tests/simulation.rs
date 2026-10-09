@@ -171,7 +171,7 @@ fn admission_refusals_preserve_separate_process_rights() {
             }
             4 => {
                 request.directories = Box::new([smith_host_domain::Directory {
-                    root: skein_lib::Token::new(1),
+                    root: Token::new(1),
                     name: Box::from(&b"a"[..]),
                     writable: false,
                     git: false,

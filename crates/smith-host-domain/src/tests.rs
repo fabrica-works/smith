@@ -153,7 +153,7 @@ fn mount(name: &[u8], writable: bool, git: bool, conflicts: &[&[u8]]) -> crate::
         paths.push(Box::from(*path)).expect("fixture conflict count");
     }
     crate::Directory {
-        root: skein_lib::Token::new(1),
+        root: Token::new(1),
         name: Box::from(name),
         writable,
         git,
