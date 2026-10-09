@@ -127,9 +127,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
             return session_step(domain, env, session::Event::Cancelled { owner });
         }
         Event::Done { owner, done } => {
-            if let Some(host_run) = domain.commands.remove(&owner) {
-                domain.notices.push(Request::LongDone { host_run });
-            }
+            crate::operation::command_done(domain, owner);
             if room_for_content(domain, env, crate::facts::done_bytes(&done)) {
                 domain.content.push(crate::Content::Tool { owner, done: done.clone() });
             }
@@ -187,7 +185,7 @@ fn acknowledge(domain: &mut Domain, env: &Env<Limits>, run: Token, turn: u32) {
     if let Some(pending) = domain.pending.remove(&run) {
         let mut emitted = Queue::with_capacity(2);
         complete(domain, env, pending, &mut emitted);
-        for _ in 0..2 {
+        for _ in 0_u32..2 {
             if let Some(request) = emitted.pop() {
                 domain.notices.push(request);
             }
@@ -353,7 +351,7 @@ fn history_fits(transcript: Option<&session::record::Transcript>, answered: &[u8
 /// Routes what the child domains emitted, and what that leads to, until both
 /// have emitted all they will in this entry point.
 pub(crate) fn hand_off(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    for _ in 0..2 {
+    for _ in 0_u32..2 {
         if let Some(notice) = domain.notices.pop() {
             out.push(notice);
         }
@@ -440,20 +438,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             return out.push(Request::Cancel { owner });
         }
         session::Request::Io { owner, op, deadline } => {
-            let command = match &op {
-                crate::tools::Op::Spawn { .. } => true,
-                crate::tools::Op::Load { .. }
-                | crate::tools::Op::Scan { .. }
-                | crate::tools::Op::Store { .. }
-                | crate::tools::Op::Search { .. } => false,
-            };
-            if command {
-                let conversation = domain.session.io_opener(owner).expect("issued command retains its session");
-                let host_run = run::host_name(&domain.run, conversation).expect("issued command retains its run");
-                let old = domain.commands.insert(owner, host_run).expect("one command per live tools call");
-                assert!(old.is_none(), "the previous operation has actually ended");
-                out.push(Request::Long { host_run, operation: Operation::Command, until: deadline });
-            }
+            crate::operation::command(domain, owner, &op, deadline, out);
             return out.push(Request::Io { owner, op, deadline });
         }
         session::Request::CancelIo { owner } => return out.push(Request::CancelIo { owner }),

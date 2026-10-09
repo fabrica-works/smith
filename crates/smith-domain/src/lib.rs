@@ -34,6 +34,7 @@ mod facts;
 mod feedback;
 mod limits;
 pub mod llm;
+mod operation;
 mod peer;
 mod route;
 #[cfg(test)]
