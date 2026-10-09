@@ -122,7 +122,15 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
         .iter()
         .filter_map(|(_, seen)| match seen {
             Seen::Turn { opens_window, .. } => Some(*opens_window),
-            _ => None,
+            Seen::Started { .. }
+            | Seen::Admitted
+            | Seen::Input { .. }
+            | Seen::Prompt { .. }
+            | Seen::Completed { .. }
+            | Seen::ParentCancelled
+            | Seen::CompletionEnded
+            | Seen::Waiting { .. }
+            | Seen::Answer { .. } => None,
         })
         .collect();
     assert_eq!(windows, [true, false, false], "only the actual historical first turn opens the initial window");
