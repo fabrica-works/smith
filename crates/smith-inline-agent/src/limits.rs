@@ -30,7 +30,9 @@ pub fn max_out(limits: &Limits) -> u32 {
 
 fn output_count(limits: &Limits) -> Option<u32> {
     smith::max_out(&limits.smith)
-        .checked_add(limits.smith.run.calls)?
+        .checked_add(crate::workspace::call_capacity(limits))?
+        .checked_add(crate::workspace::io_capacity(limits))?
+        .checked_add(limits.smith.run.runs)?
         .checked_add(limits.smith.run.conversations)?
         .checked_add(3)
 }
@@ -45,10 +47,14 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     {
         return None;
     }
+    limits.smith.session.tools.kits.checked_mul(limits.smith.session.tools.calls)?;
+    limits.smith.run.calls.checked_add(limits.smith.run.runs)?;
     let outputs = output_count(limits)?;
     let per_slot = smith::worst_case(&limits.smith)?
-        .checked_add(Map::<Token, Relay>::worst_case(limits.smith.run.calls)?)?
+        .checked_add(Map::<Token, Relay>::worst_case(crate::workspace::call_capacity(limits))?)?
         .checked_add(Map::<Token, bool>::worst_case(limits.smith.run.conversations)?)?
+        .checked_add(Map::<Token, bool>::worst_case(crate::workspace::io_capacity(limits))?)?
+        .checked_add(Map::<Token, crate::workspace::Machine>::worst_case(limits.smith.run.runs)?)?
         .checked_add(Map::<u32, u64>::worst_case(limits.window.turns)?)?;
     Slab::<Slot>::worst_case(limits.slots)?
         .checked_add(Map::<Token, Id<Slot>>::worst_case(limits.slots)?)?
@@ -57,9 +63,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<Output>::worst_case(outputs)?)?
         .checked_add(Queue::<Fact>::worst_case(limits.facts)?)?
         .checked_add(List::<Token>::worst_case(limits.slots)?)?
-        .checked_add(List::<Token>::worst_case(limits.smith.run.calls)?)?
+        .checked_add(List::<Token>::worst_case(crate::workspace::io_capacity(limits))?)?
+        .checked_add(List::<Token>::worst_case(limits.smith.run.runs)?)?
+        .checked_add(List::<Token>::worst_case(crate::workspace::call_capacity(limits))?)?
         .checked_add(List::<Token>::worst_case(limits.smith.run.conversations)?)?
         .checked_add(List::<smith::run::Message>::worst_case(limits.smith.run.messages)?)?
+        .checked_add(List::<smith::run::Directory>::worst_case(limits.smith.run.directories)?)?
         .checked_add(List::<smith::Grant>::worst_case(limits.smith.accounts)?)?
         .checked_add(List::<smith::AnsweredCall>::worst_case(limits.smith.run.answered_calls)?)?
         .checked_add(u64::from(limits.smith.run.answered_calls).checked_mul(smith::run::Delivered::worst_case())?)?

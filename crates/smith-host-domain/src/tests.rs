@@ -152,7 +152,13 @@ fn mount(name: &[u8], writable: bool, git: bool, conflicts: &[&[u8]]) -> crate::
     for path in conflicts {
         paths.push(Box::from(*path)).expect("fixture conflict count");
     }
-    crate::Directory { name: Box::from(name), writable, git, conflicts: paths.into_boxed() }
+    crate::Directory {
+        root: skein_lib::Token::new(1),
+        name: Box::from(name),
+        writable,
+        git,
+        conflicts: paths.into_boxed(),
+    }
 }
 
 fn admit_start(start: Start, limits: crate::Limits) -> Output {

@@ -15,7 +15,7 @@ use crate::{Below, Fact, FactKind, Limits, Output, stop, translate};
 
 #[derive(Debug)]
 pub(crate) struct Relay {
-    pub(crate) name: smith::run::RelayName,
+    pub(crate) name: crate::workspace::Call,
     pub(crate) withdrawn: bool,
 }
 
@@ -28,6 +28,9 @@ pub(crate) struct Slot {
     pub(crate) state: Stage,
     pub(crate) wall: Time,
     pub(crate) completions: Map<Token, bool>,
+    pub(crate) io: Map<Token, bool>,
+    pub(crate) machine: Map<Token, crate::workspace::Machine>,
+    pub(crate) next_call: u64,
     pub(crate) relays: Map<Token, Relay>,
     pub(crate) turns: Map<u32, u64>,
     pub(crate) facts_drained: bool,
@@ -219,10 +222,6 @@ fn spawn(agent: &mut Domain, env: &Env<Limits>, client: Token, start: host::Star
         refused(agent, env.now, client, host::End::Busy, out);
         return;
     }
-    if start.workspace.is_some() || !start.directories.is_empty() {
-        refused(agent, env.now, client, host::End::Invalid(host::Invalid::Directories), out);
-        return;
-    }
     let logical_run = start.logical_run;
     let event = match translate::start(client, start, &env.limits) {
         Ok(event) => event,
@@ -246,7 +245,10 @@ fn spawn(agent: &mut Domain, env: &Env<Limits>, client: Token, start: host::Star
         state: Stage::Live,
         wall,
         completions: Map::with_capacity(env.limits.smith.run.conversations),
-        relays: Map::with_capacity(env.limits.smith.run.calls),
+        io: Map::with_capacity(crate::workspace::io_capacity(&env.limits)),
+        machine: Map::with_capacity(env.limits.smith.run.runs),
+        next_call: 0,
+        relays: Map::with_capacity(crate::workspace::call_capacity(&env.limits)),
         turns: Map::with_capacity(env.limits.window.turns),
         facts_drained: false,
         content_drained: false,
@@ -294,16 +296,14 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
                 Some(relay) => relay.name,
                 None => return,
             };
-            let reply = match translate::host_reply(reply) {
-                Some(reply) => reply,
+            let event = match crate::workspace::parent_answer(relay, reply) {
+                Some(event) => event,
                 None => return,
             };
             slot.relays.remove(&call).expect("the retained relay receives one answer");
             match slot.state {
-                Stage::Live | Stage::Cancelling => {
-                    root_step(agent, env, id, smith::Event::HostReturned { relay, reply }, out);
-                }
-                Stage::Settling | Stage::Gone => {}
+                Stage::Live | Stage::Cancelling | Stage::Settling => root_step(agent, env, id, event, out),
+                Stage::Gone => {}
             }
             stop::settle(agent, env.now, id, out);
         }
@@ -351,23 +351,12 @@ fn terminal(agent: &mut Domain, env: &Env<Limits>, handle: Token, completion: Be
         Some(slot) => slot,
         None => return,
     };
-    let owner = match &completion {
-        Below::Completed { owner, .. } | Below::Failed { owner, .. } | Below::Cancelled { owner } => *owner,
+    let event = match crate::workspace::terminal(slot, completion) {
+        Some(event) => event,
+        None => return,
     };
-    if slot.completions.remove(&owner).is_none() {
-        return;
-    }
     match slot.state {
-        Stage::Live | Stage::Cancelling | Stage::Settling => {
-            let event = match completion {
-                Below::Completed { owner, completion } => smith::Event::Completed { owner, completion },
-                Below::Failed { owner, failure, evidence, detail } => {
-                    smith::Event::Failed { owner, failure, evidence, detail }
-                }
-                Below::Cancelled { owner } => smith::Event::Cancelled { owner },
-            };
-            root_step(agent, env, id, event, out);
-        }
+        Stage::Live | Stage::Cancelling | Stage::Settling => root_step(agent, env, id, event, out),
         Stage::Gone => {}
     }
     stop::settle(agent, env.now, id, out);

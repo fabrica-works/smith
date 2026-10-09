@@ -578,6 +578,7 @@ impl World {
                 reply,
             }]),
             directories: Box::from([smith_host_domain::channel::Directory {
+                root: skein_lib::Token::new(1),
                 name: Box::from(*b"src"),
                 writable: true,
                 git: true,

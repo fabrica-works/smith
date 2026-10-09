@@ -13,6 +13,9 @@ smith-host-domain.workspace = true
 smith-domain.workspace = true
 smith-inline-agent.workspace = true
 smith-agent-world.workspace = true
+smith-machine-world.workspace = true
+smith-protocol-machine.workspace = true
+skein-fake-machine.workspace = true
 skein-fake-llm-domain.workspace = true
 
 # Ordinary Rust (programming-model.md, section 10.2), so not the step crates' lints.

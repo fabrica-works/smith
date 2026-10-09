@@ -6,7 +6,7 @@
 //! `step`, `fire` and `resume` produce ordered parent notices and
 //! lower requests. The owner routes every lower terminal, drains observations
 //! each pass, and calls `reclaim` only after handing the outputs onward.
-//! Workspace starts are refused until the workspace routing increment.
+//! Workspace operations keep exact mounted IO roots and machine terminal rights.
 //! Stop cancels and waits within the wall bound; the later stop increment adds
 //! the host's cancel grace and explicit drop.
 //!
@@ -30,6 +30,7 @@ mod facts;
 mod limits;
 mod stop;
 mod translate;
+mod workspace;
 
 #[cfg(test)]
 mod tests;

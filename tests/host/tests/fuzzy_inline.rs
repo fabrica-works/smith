@@ -35,3 +35,26 @@ fn inline_message_cancel_crossings_replay_for_every_seed() {
         skein_world::domain::assert_replays(seed, seed + 1000, story);
     }
 }
+
+fn workspace_story(seed: u64) -> (Vec<String>, Vec<Option<smith_host_domain::RunResult>>) {
+    let mut world = World::new(seed, inline::limits());
+    world.event(parent::Event::Spawn { client: Token::new(1), start: inline::workspace_start(seed, Job::Reporting) });
+    let mut rng = Rng::new(seed);
+    if rng.between(0, 1) == 1 {
+        world.schedule.send(
+            Time::ZERO.saturating_add(Duration::from_millis(rng.between(0, 25))),
+            parent::Event::Stop { agent: world.handle(Token::new(1)) },
+        );
+    }
+    world.run();
+    world.settled();
+    let outcomes = world.seen.into_values().map(|seen| seen.answer.map(|answer| answer.result)).collect();
+    (world.trace.lines().to_vec(), outcomes)
+}
+
+#[test]
+fn inline_workspace_cancel_crossings_replay_for_every_seed() {
+    for seed in 400..416 {
+        skein_world::domain::assert_replays(seed, seed + 1000, workspace_story);
+    }
+}

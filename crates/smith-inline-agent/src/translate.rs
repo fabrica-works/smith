@@ -70,7 +70,7 @@ pub(crate) fn start(client: Token, source: host::Start, limits: &Limits) -> Resu
         window: limits.window,
         messages: messages.into_boxed(),
         charter: source.charter.into_value(),
-        workspace: None,
+        workspace: crate::workspace::start(source.workspace, source.directories, limits)?,
         transcript,
         answered: answered.into_boxed(),
         grants: grants.into_boxed(),
@@ -258,7 +258,7 @@ const fn exhausted(value: run::Exhausted) -> host::Exhausted {
     }
 }
 
-fn delivery(value: host::Delivery) -> Option<run::Delivery> {
+pub(crate) fn delivery(value: host::Delivery) -> Option<run::Delivery> {
     match value {
         host::Delivery::Delivered(value) => {
             let mut receipts = List::with_capacity(u32::try_from(value.receipts().len()).ok()?);
@@ -387,9 +387,10 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             },
             smith::Request::HostCall { host_run, relay, name, tool, effect, input, deadline } => {
                 assert_eq!(slot.logical_run, host_run, "root output preserves its scoped identity and single right");
+                let call = crate::workspace::call(slot);
                 assert!(
                     slot.relays
-                        .insert(relay.owner, Relay { name: relay, withdrawn: false })
+                        .insert(call, Relay { name: crate::workspace::Call::Host(relay), withdrawn: false })
                         .expect("root bounds its host rights")
                         .is_none(),
                     "root output preserves its scoped identity and single right"
@@ -397,7 +398,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 out.push(Output::Parent(parent::Request::Called {
                     client,
                     logical_run: host_run,
-                    call: relay.owner,
+                    call,
                     name: host::CallName {
                         activation: name.activation,
                         completion: name.completion,
@@ -408,11 +409,23 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 }));
             }
             smith::Request::WithdrawHost { relay } => {
-                if let Some(pending) = slot.relays.get_mut(&relay.owner) {
-                    assert_eq!(pending.name, relay, "root output preserves its scoped identity and single right");
+                let mut found = None;
+                for (call, pending) in &slot.relays {
+                    match pending.name {
+                        crate::workspace::Call::Host(name) => {
+                            if name == relay {
+                                found = Some(*call);
+                                break;
+                            }
+                        }
+                        crate::workspace::Call::Delivery(_) => {}
+                    }
+                }
+                if let Some(call) = found {
+                    let pending = slot.relays.get_mut(&call).expect("retained relay name");
                     if !pending.withdrawn {
                         pending.withdrawn = true;
-                        out.push(Output::Parent(parent::Request::Withdrawn { client, call: relay.owner }));
+                        out.push(Output::Parent(parent::Request::Withdrawn { client, call }));
                     }
                 }
             }
@@ -424,15 +437,53 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             smith::Request::Exhausted { account, retry_after } => {
                 out.push(Output::Parent(parent::Request::Exhausted { client, account, retry_after }));
             }
-            smith::Request::Checking { .. }
-            | smith::Request::ChecksEnded { .. }
-            | smith::Request::Deliver { .. }
-            | smith::Request::Io { .. }
-            | smith::Request::CancelIo { .. }
-            | smith::Request::Read { .. }
-            | smith::Request::Probe { .. }
-            | smith::Request::Check { .. }
-            | smith::Request::Abort { .. } => unreachable!("workspace starts were refused before root admission"),
+            smith::Request::Checking { host_run, deadline } => {
+                assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");
+                out.push(Output::Parent(parent::Request::Long { client, span: deadline.saturating_since(env.now) }));
+            }
+            smith::Request::ChecksEnded { host_run } => {
+                assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");
+                out.push(Output::Parent(parent::Request::LongDone { client }));
+            }
+            smith::Request::Deliver { host_run, owner, change, name, deadline } => {
+                assert_eq!(slot.logical_run, host_run, "root workspace requests preserve logical scope");
+                let call = crate::workspace::call(slot);
+                assert!(
+                    slot.relays
+                        .insert(call, Relay { name: crate::workspace::Call::Delivery(owner), withdrawn: false })
+                        .expect("bounded parent rights")
+                        .is_none(),
+                    "each delivery owns one unique parent call"
+                );
+                out.push(Output::Parent(parent::Request::Called {
+                    client,
+                    logical_run: host_run,
+                    call,
+                    name: host::CallName {
+                        activation: name.activation,
+                        completion: name.completion,
+                        position: name.position,
+                    },
+                    deadline,
+                    ask: host::Ask::Deliver {
+                        fields: host::Fields::new(change, u64::MAX).expect("root bounds checked fields"),
+                    },
+                }));
+            }
+            smith::Request::Io { owner, op, deadline } => {
+                crate::workspace::io(slot, id.token(), owner, op, deadline, out);
+            }
+            smith::Request::CancelIo { owner } => crate::workspace::cancel_io(slot, id.token(), owner, out),
+            smith::Request::Read { owner, at, max, deadline } => {
+                crate::workspace::read(slot, id.token(), owner, at, max, deadline, out);
+            }
+            smith::Request::Probe { owner, at, deadline } => {
+                crate::workspace::probe(slot, id.token(), owner, at, deadline, out);
+            }
+            smith::Request::Check { owner, program, deadline, tail } => {
+                crate::workspace::check(slot, id.token(), owner, program, deadline, tail, out);
+            }
+            smith::Request::Abort { owner } => crate::workspace::abort(slot, id.token(), owner, out),
         }
     }
 }

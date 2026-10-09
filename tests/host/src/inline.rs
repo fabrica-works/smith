@@ -74,8 +74,30 @@ pub fn start(seed: u64, job: smith_agent_world::Job) -> host::Start {
     }
 }
 
+/// A prepared native workspace with original mounted-root identity.
+#[must_use]
+pub fn workspace_start(seed: u64, job: smith_agent_world::Job) -> host::Start {
+    let mut settings = smith_agent_world::Settings::calm(seed);
+    settings.job = job;
+    let mut charter = smith_agent_world::scripted_charter(&settings);
+    charter.models = Box::default();
+    charter.grants.agents = false;
+    charter.conventions =
+        Some(run::Conventions { guide: b"AGENTS.md".as_slice().into(), checks: b"check-ok".as_slice().into() });
+    let mut source = start(seed, job);
+    source.charter = host::Charter::new(charter, settings.limits.run.run_bytes).expect("bounded workspace charter");
+    source.workspace = Some(Token::new(9));
+    source.directories = Box::from([host::Directory {
+        name: b"work".as_slice().into(),
+        root: Token::new(1),
+        writable: true,
+        git: true,
+        conflicts: Box::default(),
+    }]);
+    source
+}
+
 /// Real inline agent with native fake LLM and boundary-only rights accounting.
-#[derive(Debug)]
 pub struct World {
     pub agent: inline::Domain,
     pub stage: Stage<inline::Limits, parent::Event, Output>,
@@ -92,6 +114,10 @@ pub struct World {
     provider_out: Queue<provider::Request>,
     bindings: BTreeMap<Token, Binding>,
     minted: u64,
+    pub machine: smith_machine_world::World,
+    pub machine_trace: Vec<String>,
+    pub auto_machine: bool,
+    pub pending_machine: Vec<(Token, Token, Below)>,
     pub auto_ack: bool,
     pub auto_answer: bool,
     pending: Vec<parent::Event>,
@@ -120,10 +146,29 @@ impl World {
             provider_out: Queue::with_capacity(provider::MAX_OUT),
             bindings: BTreeMap::new(),
             minted: 0,
+            machine: smith_machine_world::World::new(
+                seed,
+                &[
+                    skein_fake_machine::Item::directory(b"src"),
+                    skein_fake_machine::Item::file(b"src/lib.rs", b"pub fn answer() -> u32 { 42 }\n"),
+                    skein_fake_machine::Item::file(b"README.md", b"smith"),
+                    skein_fake_machine::Item::file(b"AGENTS.md", b"The answer is in src/lib.rs"),
+                    skein_fake_machine::Item { mode: 0o755, ..skein_fake_machine::Item::file(b"check-ok", b"") },
+                ],
+            ),
+            machine_trace: Vec::new(),
+            auto_machine: true,
+            pending_machine: Vec::new(),
             auto_ack: true,
             auto_answer: true,
             pending: Vec::new(),
         }
+    }
+
+    /// Replace the native provider script before the first request.
+    pub fn scripts(&mut self, scripts: Box<[provider::api::Script]>) {
+        assert_eq!(self.provider.calls(), 0);
+        self.provider = provider::Domain::scripted(&self.provider_env.limits, 1, scripts);
     }
 
     /// Return the generation-safe parent handle learned from Started.
@@ -215,6 +260,7 @@ impl World {
     pub fn settled(&self) {
         self.lower.assert_settled();
         assert!(self.bindings.is_empty());
+        assert!(self.pending_machine.is_empty());
         assert_eq!(self.agent.hosted(), 0);
         for seen in self.seen.values() {
             assert!(seen.gone.is_some());
@@ -241,16 +287,22 @@ impl World {
                             });
                         }
                     }
-                    if let parent::Request::Called { call, .. } = &request
+                    if let parent::Request::Called { call, ask, .. } = &request
                         && self.auto_answer
                     {
                         self.pending.push(parent::Event::Answer {
                             agent: seen.agent.expect("Started before Called"),
                             call: *call,
-                            reply: host::Reply::Host { error: false, body: b"host completed".as_slice().into() },
+                            reply: match ask {
+                                host::Ask::Host { .. } => {
+                                    host::Reply::Host { error: false, body: b"host completed".as_slice().into() }
+                                }
+                                host::Ask::Deliver { .. } => host::Reply::Delivery(host::Delivery::Nothing),
+                            },
                         });
                     }
-                    let lower_settled = !self.bindings.values().any(|binding| Some(binding.agent) == seen.agent);
+                    let lower_settled = !self.bindings.values().any(|binding| Some(binding.agent) == seen.agent)
+                        && !self.pending_machine.iter().any(|(agent, _, _)| Some(*agent) == seen.agent);
                     seen.observe_parent(request, lower_settled, lower_settled);
                 }
                 Output::Lower { agent, request } => match request {
@@ -285,8 +337,47 @@ impl World {
                         assert!(!binding.cancelled, "cancel emitted once");
                         binding.cancelled = true;
                     }
+                    Lower::Io { owner, op, deadline } => {
+                        self.machine_request(agent, smith_protocol_machine::FromDomain::Op { owner, op, deadline });
+                    }
+                    Lower::Read { owner, at, max, deadline } => self
+                        .machine_request(agent, smith_protocol_machine::FromDomain::Read { owner, at, max, deadline }),
+                    Lower::Probe { owner, at, deadline } => {
+                        self.machine_request(agent, smith_protocol_machine::FromDomain::Probe { owner, at, deadline });
+                    }
+                    Lower::Check { owner, program, deadline, tail } => self.machine_request(
+                        agent,
+                        smith_protocol_machine::FromDomain::Check { owner, program, deadline, tail },
+                    ),
+                    Lower::CancelIo { owner } | Lower::Abort { owner } => {
+                        self.machine_trace.push(format!("cancel {agent:?} {owner:?}"));
+                    }
                 },
             }
+        }
+    }
+
+    fn machine_request(&mut self, agent: Token, request: smith_protocol_machine::FromDomain) {
+        self.machine_trace.push(format!("{request:?}"));
+        let terminal = match self.machine.request(request) {
+            smith_protocol_machine::ToDomain::Done { owner, done } => Below::Done { owner, done },
+            smith_protocol_machine::ToDomain::Read { owner, read } => Below::Read { owner, read },
+            smith_protocol_machine::ToDomain::Probed { owner, executable } => Below::Probed { owner, executable },
+            smith_protocol_machine::ToDomain::Checked { owner, ran } => Below::Checked { owner, ran },
+            smith_protocol_machine::ToDomain::Aborted { owner } => Below::Aborted { owner },
+        };
+        self.minted += 1;
+        let callback = Token::new(self.minted);
+        self.lower.open(callback, (agent, callback));
+        self.pending_machine.push((agent, callback, terminal));
+    }
+
+    /// Return already settled native-machine callbacks, optionally held across a parent race.
+    pub fn machine_replies(&mut self) {
+        for (agent, callback, terminal) in std::mem::take(&mut self.pending_machine) {
+            self.lower.end(callback);
+            inline::step(&mut self.agent, &self.stage.env, Input::Below { agent, terminal }, &mut self.stage.out);
+            self.outputs();
         }
     }
 
@@ -325,6 +416,10 @@ impl World {
     fn pass(&mut self) {
         for _ in 0..4096 {
             self.outputs();
+            if self.auto_machine && !self.pending_machine.is_empty() {
+                self.machine_replies();
+                continue;
+            }
             let pending = std::mem::take(&mut self.pending);
             for event in pending {
                 self.event(event);

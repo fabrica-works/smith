@@ -65,6 +65,7 @@ fn setup() -> (Agent, Host) {
     start.answered = Box::new([]);
     start.workspace = Some(Token::new(1));
     start.directories = Box::new([host::Directory {
+        root: skein_lib::Token::new(1),
         name: b"work".as_slice().into(),
         writable: true,
         git: true,

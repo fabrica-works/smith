@@ -46,6 +46,7 @@ pub(crate) fn finish(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queu
         *slot.completions.get_mut(owner).expect("retained provider right") = true;
         out.push(Output::Lower { agent: id.token(), request: Lower::Cancel { owner: *owner } });
     }
+    crate::workspace::cancel(slot, id.token(), out);
     let mut withdraw = List::with_capacity(slot.relays.capacity());
     for (owner, relay) in &slot.relays {
         if !relay.withdrawn {
@@ -63,7 +64,12 @@ pub(crate) fn settle(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queu
     let slot = agent.slots.get_mut(id).expect("settlement belongs to a retained slot");
     match slot.state {
         Stage::Settling => {
-            if !slot.completions.is_empty() || !slot.relays.is_empty() || !slot.turns.is_empty() {
+            if !slot.completions.is_empty()
+                || !slot.io.is_empty()
+                || !slot.machine.is_empty()
+                || !slot.relays.is_empty()
+                || !slot.turns.is_empty()
+            {
                 return;
             }
             slot.state = Stage::Gone;

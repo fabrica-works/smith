@@ -71,3 +71,17 @@ fn the_common_parent_referee_rejects_two_answers_to_one_inline_call() {
         });
     }
 }
+
+#[test]
+#[should_panic(expected = "Gone retains every lower terminal")]
+fn the_common_parent_referee_rejects_a_gone_with_an_actual_machine_right() {
+    let mut world = World::new(84, inline::limits());
+    world.auto_machine = false;
+    world.event(parent::Event::Spawn { client: Token::new(1), start: inline::workspace_start(84, Job::Reporting) });
+    assert_eq!(world.pending_machine.len(), 1);
+    world.seen.get_mut(&Token::new(1)).expect("Started slot").observe_parent(
+        parent::Request::Gone { client: Token::new(1), end: End::Stopped, detail: Box::default() },
+        true,
+        false,
+    );
+}

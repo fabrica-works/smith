@@ -71,6 +71,7 @@ pub fn prepare_start(
             let mut directories = List::with_capacity(count);
             for directory in workspace.directories {
                 let item = channel::Directory {
+                    root: directory.root,
                     name: directory.name,
                     writable: directory.writable,
                     git: directory.git,

@@ -73,6 +73,8 @@ pub struct Window {
 /// Parent mount descriptor forwarded without filesystem or delivery policy.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Directory {
+    /// Opaque mounted IO root for the inline kind; spawned adapters attach their own.
+    pub root: Token,
     /// Unique safe single component bounded by `Limits::name_bytes`; the host
     /// attests text encoding, and bytes move unchanged.
     pub name: Box<[u8]>,

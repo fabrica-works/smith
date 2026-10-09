@@ -3,7 +3,7 @@
 //! no operation is answered here and each provider request owes one terminal.
 
 use alloc::boxed::Box;
-use skein_lib::{Duration, Token};
+use skein_lib::{Duration, Time, Token};
 use smith_domain as smith;
 use smith_host_domain::parent;
 
@@ -14,6 +14,16 @@ pub enum Below {
     Completed { owner: Token, completion: smith::llm::Completion },
     /// A provider failed with actual transport evidence; ends one Complete.
     Failed { owner: Token, failure: smith::llm::Failure, evidence: smith::llm::Evidence, detail: Box<[u8]> },
+    /// A tool IO terminal sent by the machine; ends one Io.
+    Done { owner: Token, done: smith::tools::Done },
+    /// A guide read terminal sent by the machine; ends one Read.
+    Read { owner: Token, read: smith::run::Read },
+    /// An executable probe sent by the machine; ends one Probe.
+    Probed { owner: Token, executable: bool },
+    /// A contained check terminal sent by the machine; ends one Check.
+    Checked { owner: Token, ran: smith::run::Ran },
+    /// A stopped contained check sent by the machine; ends one Check.
+    Aborted { owner: Token },
     /// A provider confirmed cancellation; ends one Complete.
     Cancelled { owner: Token },
 }
@@ -41,6 +51,18 @@ pub enum Lower {
         max_failure_bytes: u32,
         decoded_call_bytes: u64,
     },
+    /// A tool operation routed to the machine; ends with Done.
+    Io { owner: Token, op: smith::tools::Op, deadline: Time },
+    /// Cancel a tool operation; its Done remains owed.
+    CancelIo { owner: Token },
+    /// Read a bounded guide from a mounted root; ends with Read.
+    Read { owner: Token, at: smith::run::Place, max: u32, deadline: Time },
+    /// Probe the check executable; ends with Probed.
+    Probe { owner: Token, at: smith::run::Place, deadline: Time },
+    /// Run contained checks; ends with Checked or Aborted.
+    Check { owner: Token, program: smith::run::Place, deadline: Time, tail: u32 },
+    /// Stop contained checks; their existing terminal remains owed.
+    Abort { owner: Token },
     /// Cancel a completion; its existing terminal remains owed.
     Cancel { owner: Token },
 }

@@ -159,3 +159,96 @@ fn inline_scripts_use_actual_root_types_without_a_codec() {
     assert!(!start.charter.value().grants.host_tools.is_empty());
     assert_eq!(start.charter.value().grants.tools, run::charter::Tools { inspect: false, modify: false, shell: false });
 }
+
+fn workspace_start(seed: u64) -> smith_host_domain::Start {
+    let settings = smith_agent_world::Settings::calm(seed);
+    let mut charter = smith_agent_world::scripted_charter(&settings);
+    charter.models = Box::default();
+    charter.grants.agents = false;
+    charter.brief.sections[0].text = b"inline-workspace".as_slice().into();
+    charter.conventions = Some(smith_domain::run::Conventions {
+        guide: b"AGENTS.md".as_slice().into(),
+        checks: b"check-ok".as_slice().into(),
+    });
+    let mut source = inline::start(seed, smith_agent_world::Job::Coding);
+    source.charter =
+        smith_host_domain::Charter::new(charter, settings.limits.run.run_bytes).expect("workspace charter");
+    source.workspace = Some(Token::new(9));
+    source.directories = Box::from([smith_host_domain::Directory {
+        name: b"work".as_slice().into(),
+        root: Token::new(1),
+        writable: true,
+        git: true,
+        conflicts: Box::default(),
+    }]);
+    source
+}
+
+fn workspace_script(commands: &[(&[u8], &[u8])]) -> Box<[skein_fake_llm_domain::api::Script]> {
+    Box::from([skein_fake_llm_domain::api::Script {
+        cue: b"inline-workspace".as_slice().into(),
+        turns: commands
+            .iter()
+            .map(|(name, arguments)| skein_fake_llm_domain::api::Turn {
+                lines: Box::from([skein_fake_llm_domain::api::Line::Call {
+                    name: (*name).into(),
+                    arguments: (*arguments).into(),
+                }]),
+                finish: skein_fake_llm_domain::api::Finish::ToolCalls,
+                tokens: 40,
+            })
+            .collect(),
+    }])
+}
+
+#[test]
+fn an_inline_run_checks_and_delivers_a_change_through_its_host() {
+    let mut world = World::new(81, inline::limits());
+    world.scripts(workspace_script(&[(b"finish", br#"{"title":"checked","body":"change"}"#)]));
+    world.event(parent::Event::Spawn { client: Token::new(1), start: workspace_start(81) });
+    world.run();
+    assert!(
+        matches!(
+            world.seen[&Token::new(1)].answer,
+            Some(smith_host_domain::Answer { result: smith_host_domain::RunResult::Accepted { .. }, .. })
+        ),
+        "{}",
+        world.trace.lines().join("\n")
+    );
+    assert!(world.machine_trace.iter().any(|request| request.starts_with("Check")));
+    assert!(world.trace.lines().iter().any(|request| request.contains("LongDone")));
+    assert!(world.trace.lines().iter().any(|request| request.contains("ask: Deliver")));
+    world.settled();
+}
+
+#[test]
+fn checks_are_long_operations_for_either_kind() {
+    let mut world = World::new(82, inline::limits());
+    world.scripts(workspace_script(&[(b"finish", br#"{"title":"checked","body":"change"}"#)]));
+    world.event(parent::Event::Spawn { client: Token::new(1), start: workspace_start(82) });
+    world.run();
+    assert_eq!(world.trace.lines().iter().filter(|request| request.contains("Parent(Long {")).count(), 1);
+    assert_eq!(world.trace.lines().iter().filter(|request| request.contains("Parent(LongDone {")).count(), 1);
+    world.settled();
+    let mut spawned = Spawned::new(82, smith_host_world::limits());
+    spawned.live();
+    spawned.up(host::Up::Long { span: skein_lib::Duration::from_secs(1) });
+    spawned.up(host::Up::LongDone);
+    assert!(spawned.trace.lines().iter().any(|line| line.contains("Long")));
+}
+
+#[test]
+fn an_inline_cancel_waits_for_its_pending_machine_terminal() {
+    let mut world = World::new(83, inline::limits());
+    world.auto_machine = false;
+    world.event(parent::Event::Spawn { client: Token::new(1), start: workspace_start(83) });
+    assert_eq!(world.pending_machine.len(), 1);
+    let handle = world.handle(Token::new(1));
+    world.event(parent::Event::Stop { agent: handle });
+    assert!(world.seen[&Token::new(1)].gone.is_none());
+    assert_eq!(world.agent.hosted(), 1);
+    world.auto_machine = true;
+    world.machine_replies();
+    world.run();
+    world.settled();
+}

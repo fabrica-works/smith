@@ -58,7 +58,7 @@ fn env() -> Env<Limits> {
 }
 
 #[test]
-fn workspace_starts_are_refused_before_a_slot_or_provider_request() {
+fn empty_workspace_is_refused_before_a_slot_or_provider_request() {
     let env = env();
     let mut agent = Domain::new(&env.limits, configuration(), 1);
     let mut out = Queue::with_capacity(crate::max_out(&env.limits));
@@ -281,4 +281,118 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
         text: b"drained".as_slice().into(),
     });
     assert!(domain.takes(&input), "draining restores the target root reservation");
+}
+
+#[test]
+fn workspace_routes_keep_equal_tokens_in_separate_lower_families() {
+    let env = env();
+    let mut agent = Domain::new(&env.limits, configuration(), 91);
+    let mut out = Queue::with_capacity(crate::max_out(&env.limits));
+    step(&mut agent, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start: start() }), &mut out);
+    let Some(Output::Parent(parent::Request::Started { agent: handle, .. })) = out.pop() else {
+        panic!("Started first")
+    };
+    while out.pop().is_some() {}
+    let owner = Token::new(55);
+    agent.lower.push(smith::Request::Io {
+        owner,
+        op: smith::tools::Op::Load {
+            at: smith::tools::Place { root: Token::new(9), path: b"a".as_slice().into() },
+            max: 3,
+        },
+        deadline: Time::from_nanos(100),
+    });
+    agent.lower.push(smith::Request::Read {
+        owner,
+        at: run::Place { root: Token::new(9), path: b"guide".as_slice().into() },
+        max: 3,
+        deadline: Time::from_nanos(100),
+    });
+    translate::route(&mut agent, &env, Id::from_token(handle), &mut out);
+    let Some(Output::Lower { agent: emitted_agent, request: Lower::Io { owner: name, .. } }) = out.pop() else {
+        panic!("expected Io")
+    };
+    assert_eq!(emitted_agent, handle);
+    assert_eq!(name, owner);
+    let Some(Output::Lower { agent: emitted_agent, request: Lower::Read { owner: name, .. } }) = out.pop() else {
+        panic!("expected Read")
+    };
+    assert_eq!(emitted_agent, handle);
+    assert_eq!(name, owner);
+    let slot = agent.slots.get_mut(Id::from_token(handle)).expect("retained slot");
+    assert!(crate::workspace::terminal(slot, Below::Probed { owner, executable: true }).is_none());
+    assert!(crate::workspace::terminal(slot, Below::Done { owner, done: smith::tools::Done::Cancelled }).is_some());
+    assert_eq!(slot.machine.len(), 1);
+    assert!(crate::workspace::terminal(slot, Below::Done { owner, done: smith::tools::Done::Cancelled }).is_none());
+    assert!(crate::workspace::terminal(slot, Below::Read { owner, read: run::Read::Missing }).is_some());
+    assert!(crate::workspace::terminal(slot, Below::Read { owner, read: run::Read::Missing }).is_none());
+}
+
+#[test]
+fn probe_check_and_abort_route_once_and_wait_for_the_matching_terminal() {
+    let env = env();
+    let mut agent = Domain::new(&env.limits, configuration(), 92);
+    let mut out = Queue::with_capacity(crate::max_out(&env.limits));
+    step(&mut agent, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start: start() }), &mut out);
+    let Some(Output::Parent(parent::Request::Started { agent: handle, .. })) = out.pop() else {
+        panic!("Started first")
+    };
+    while out.pop().is_some() {}
+    let owner = Token::new(56);
+    let slot = agent.slots.get_mut(Id::from_token(handle)).expect("retained slot");
+    crate::workspace::probe(
+        slot,
+        handle,
+        owner,
+        run::Place { root: Token::new(9), path: b"check".as_slice().into() },
+        Time::from_nanos(100),
+        &mut out,
+    );
+    let Some(Output::Lower { request: Lower::Probe { owner: name, .. }, .. }) = out.pop() else {
+        panic!("expected Probe")
+    };
+    assert_eq!(name, owner);
+    assert!(crate::workspace::terminal(slot, Below::Probed { owner, executable: true }).is_some());
+    crate::workspace::check(
+        slot,
+        handle,
+        owner,
+        run::Place { root: Token::new(9), path: b"check".as_slice().into() },
+        Time::from_nanos(100),
+        3,
+        &mut out,
+    );
+    let Some(Output::Lower { request: Lower::Check { owner: name, .. }, .. }) = out.pop() else {
+        panic!("expected Check")
+    };
+    assert_eq!(name, owner);
+    crate::workspace::abort(slot, handle, owner, &mut out);
+    crate::workspace::abort(slot, handle, owner, &mut out);
+    assert_eq!(out.pop(), Some(Output::Lower { agent: handle, request: Lower::Abort { owner } }));
+    assert!(out.is_empty());
+    assert_eq!(slot.machine.len(), 1);
+    assert!(crate::workspace::terminal(slot, Below::Read { owner, read: run::Read::Missing }).is_none());
+    assert!(crate::workspace::terminal(slot, Below::Aborted { owner }).is_some());
+    assert!(crate::workspace::terminal(slot, Below::Aborted { owner }).is_none());
+}
+
+#[test]
+fn directories_move_the_exact_io_root_into_the_run() {
+    let bounds = bounds();
+    let workspace = crate::workspace::start(
+        Some(Token::new(10)),
+        Box::from([host::Directory {
+            root: Token::new(900),
+            name: b"mounted".as_slice().into(),
+            writable: false,
+            git: true,
+            conflicts: Box::from([b"conflict".as_slice().into()]),
+        }]),
+        &bounds,
+    )
+    .expect("bounded mount")
+    .expect("present workspace");
+    assert_eq!(workspace.directories[0].root, Token::new(900));
+    assert!(!workspace.directories[0].writable);
+    assert_eq!(workspace.directories[0].conflicts[0].as_ref(), b"conflict");
 }
