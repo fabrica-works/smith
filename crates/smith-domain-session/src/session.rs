@@ -403,7 +403,7 @@ fn open_admitted(
                 tools::Refusal::Busy => End::Busy,
                 tools::Refusal::Invalid => End::Invalid,
             };
-            out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::ZERO });
+            out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::NONE });
         }
         Some(News::Closed { .. }) | None => unreachable!("the tools answer an open with its kit, opened or refused"),
     }
@@ -1721,12 +1721,22 @@ fn sum_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>
 /// Numeric budget bookkeeping adds only supplied counts, including after gaps.
 fn checked_reported(previous: Usage, received: Usage) -> Option<Usage> {
     Some(Usage {
-        input_tokens: Some(previous.input_tokens?.checked_add(received.input_tokens.unwrap_or(0))?),
-        output_tokens: Some(previous.output_tokens?.checked_add(received.output_tokens.unwrap_or(0))?),
-        cache_read_tokens: Some(previous.cache_read_tokens?.checked_add(received.cache_read_tokens.unwrap_or(0))?),
-        cache_write_tokens: Some(previous.cache_write_tokens?.checked_add(received.cache_write_tokens.unwrap_or(0))?),
-        reasoning_tokens: Some(previous.reasoning_tokens?.checked_add(received.reasoning_tokens.unwrap_or(0))?),
+        input_tokens: add_reported_count(previous.input_tokens, received.input_tokens)?,
+        output_tokens: add_reported_count(previous.output_tokens, received.output_tokens)?,
+        cache_read_tokens: add_reported_count(previous.cache_read_tokens, received.cache_read_tokens)?,
+        cache_write_tokens: add_reported_count(previous.cache_write_tokens, received.cache_write_tokens)?,
+        reasoning_tokens: add_reported_count(previous.reasoning_tokens, received.reasoning_tokens)?,
     })
+}
+
+fn add_reported_count(previous: Option<u64>, received: Option<u64>) -> Option<Option<u64>> {
+    match previous {
+        Some(previous) => match received {
+            Some(received) => Some(Some(previous.checked_add(received)?)),
+            None => Some(Some(previous)),
+        },
+        None => Some(received),
+    }
 }
 
 /// Ends the session with `end`, which has nothing in flight but its kit: the
@@ -1743,7 +1753,7 @@ const OUT_OF_TIME: End = End::Budget { spent: Dimension::Time };
 /// Refuses an open at the entrance: the session ends without having opened.
 fn refuse(facts: &mut Facts, opener: Token, end: End, out: &mut Queue<Request>) {
     facts.push(FactKind::Ended { opener, end, turns: 0, usage: Usage::ZERO });
-    out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::ZERO });
+    out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::NONE });
 }
 
 /// The conversation for `spec`, and the authority its kit opens with; or
@@ -1788,7 +1798,7 @@ fn admit(
         budget: spec.budget,
         turns: 0,
         usage: Usage::ZERO,
-        reported: Usage::ZERO,
+        reported: Usage::NONE,
         expires: now.saturating_add(spec.budget.time),
         // Named as the kit opens: until then, the session is Closed, which
         // holds nothing.
@@ -1825,16 +1835,16 @@ fn spent(conversation: &Conversation, now: Time) -> Option<Dimension> {
     if *turns >= budget.turns {
         return Some(Dimension::Turns);
     }
-    if usage.input_tokens.expect("reported total is present") >= budget.input {
+    if usage.input_tokens.unwrap_or(0) >= budget.input {
         return Some(Dimension::Input);
     }
-    if usage.output_tokens.expect("reported total is present") >= budget.output {
+    if usage.output_tokens.unwrap_or(0) >= budget.output {
         return Some(Dimension::Output);
     }
-    if usage.cache_read_tokens.expect("reported total is present") > budget.cache_read {
+    if usage.cache_read_tokens.unwrap_or(0) > budget.cache_read {
         return Some(Dimension::CacheRead);
     }
-    if usage.cache_write_tokens.expect("reported total is present") > budget.cache_write {
+    if usage.cache_write_tokens.unwrap_or(0) > budget.cache_write {
         return Some(Dimension::CacheWrite);
     }
     if now >= *expires {
@@ -1847,10 +1857,7 @@ fn spent(conversation: &Conversation, now: Time) -> Option<Dimension> {
 /// budget left. The conversation is copied: the session keeps it, and the
 /// protocol layer holds the copy (copy at emission).
 fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Request {
-    let left = conversation
-        .budget
-        .output
-        .saturating_sub(conversation.reported.output_tokens.expect("reported total is present"));
+    let left = conversation.budget.output.saturating_sub(conversation.reported.output_tokens.unwrap_or(0));
     let max_tokens = u32::try_from(left).unwrap_or(u32::MAX).min(conversation.output);
     let prompt = Prompt {
         endpoint: conversation.endpoint,

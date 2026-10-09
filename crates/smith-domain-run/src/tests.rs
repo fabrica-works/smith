@@ -324,7 +324,15 @@ pub(crate) fn charter() -> Charter {
 }
 
 fn spend(input: u64) -> Spend {
-    Spend { units: input, turns: 1, input, output: 10, cache_read: 0, cache_write: 0 }
+    Spend {
+        units: input,
+        turns: 1,
+        input: Some(input),
+        output: Some(10),
+        cache_read: Some(0),
+        cache_write: Some(0),
+        reasoning: None,
+    }
 }
 
 /// What a run answered, and to which call.
@@ -759,7 +767,15 @@ fn an_llm_that_stops_without_finishing_is_nudged_until_its_nudges_run_out() {
     assert_eq!(h.domain.next_deadline(), None);
     // A turn that won the race with the close is spent all the same.
     assert!(h.step(Event::Used { conversation, spend: spend(5) }).is_empty(), "winding down");
-    let total = Spend { units: 20, turns: 4, input: 20, output: 40, cache_read: 0, cache_write: 0 };
+    let total = Spend {
+        units: 20,
+        turns: 4,
+        input: Some(20),
+        output: Some(40),
+        cache_read: Some(0),
+        cache_write: Some(0),
+        reasoning: None,
+    };
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
     let unfinished = Failure::Policy(Policy::Unfinished { nudges: LIMITS.nudges, rejected: 0 });
     assert_eq!(answered(emitted), (1, failed(unfinished, total)));
@@ -812,8 +828,15 @@ fn spending_past_the_budget_keeps_admitted_turns_stable_until_yield() {
     assert!(h.step(Event::Used { conversation, spend: spend(1) }).is_empty(), "past it: main keeps its turn");
     assert!(h.step(Event::Used { conversation, spend: spend(1) }).is_empty());
     assert_eq!(&*h.step(end_turn(conversation)), &[Request::Close { peer: Token::new(100) }]);
-    let total =
-        Spend { units: BUDGET.spend + 2, turns: 3, input: BUDGET.spend + 2, output: 30, cache_read: 0, cache_write: 0 };
+    let total = Spend {
+        units: BUDGET.spend + 2,
+        turns: 3,
+        input: Some(BUDGET.spend + 2),
+        output: Some(30),
+        cache_read: Some(0),
+        cache_write: Some(0),
+        reasoning: None,
+    };
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), total)));
 
@@ -3292,8 +3315,8 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
 
 #[test]
 fn checked_spend_addition_rejects_the_whole_increment() {
-    let known = Spend { turns: 2, input: 4, output: u64::MAX, units: 10, ..Spend::ZERO };
-    let next = Spend { turns: 1, input: 3, output: 1, units: 11, ..Spend::ZERO };
+    let known = Spend { turns: 2, input: Some(4), output: Some(u64::MAX), units: 10, ..Spend::ZERO };
+    let next = Spend { turns: 1, input: Some(3), output: Some(1), units: 11, ..Spend::ZERO };
     assert_eq!(known.accumulate(next), None);
     let known = Spend { units: u64::MAX, ..Spend::ZERO };
     assert_eq!(known.accumulate(next), None);
@@ -3339,9 +3362,9 @@ fn run_wide_overflow_preflight_preserves_charged_prefix() {
 fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
     let mut harness = Harness::new(LIMITS);
     let (_, main) = harness.running(1, 100);
-    let full = Spend { output: u64::MAX, ..Spend::ZERO };
+    let full = Spend { output: Some(u64::MAX), ..Spend::ZERO };
     assert!(harness.step(Event::Used { conversation: main, spend: full }).is_empty());
-    let overflow = Spend { output: 1, ..Spend::ZERO };
+    let overflow = Spend { output: Some(1), ..Spend::ZERO };
     assert_eq!(
         harness.step(Event::Used { conversation: main, spend: overflow }).as_ref(),
         &[Request::Close { peer: Token::new(100) }]

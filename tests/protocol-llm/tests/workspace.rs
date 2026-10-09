@@ -107,10 +107,12 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
         );
         spent.turns += 1;
         spent.units += 1;
-        spent.input += input;
-        spent.output += outputs[index];
-        spent.cache_read += read;
-        spent.cache_write += write.unwrap_or(0);
+        spent.input = Some(spent.input.unwrap_or(0) + input);
+        spent.output = Some(spent.output.unwrap_or(0) + outputs[index]);
+        spent.cache_read = Some(spent.cache_read.unwrap_or(0) + read);
+        if let Some(write) = write {
+            spent.cache_write = Some(spent.cache_write.unwrap_or(0) + write);
+        }
         assert_eq!(world.turn_metadata()[index], (spent.turns, None, spent));
         assert_eq!(turn.sequence, prior + spent.turns);
         assert_eq!(turn.version, smith_domain::session::record::VERSION);

@@ -191,8 +191,11 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
     let main_prompt = main.usage.input_tokens.expect("peer supplies count")
         + main.usage.cache_read_tokens.expect("peer supplies count")
         + main.usage.cache_write_tokens.expect("peer supplies count");
-    let global_prompt = spent.input + spent.cache_read + spent.cache_write;
-    assert!(global_prompt > main_prompt && spent.output > main.usage.output_tokens.expect("peer supplies count"));
+    let global_prompt = spent.input.unwrap_or(0) + spent.cache_read.unwrap_or(0) + spent.cache_write.unwrap_or(0);
+    assert!(
+        global_prompt > main_prompt
+            && spent.output.unwrap_or(0) > main.usage.output_tokens.expect("peer supplies count")
+    );
 
     let mut host = Host::new(
         942,
@@ -271,7 +274,7 @@ fn assert_raw_terminals(agent: &Agent, spent: run::Spend) {
     }
     assert_eq!(
         (spent.turns, spent.input, spent.output, spent.cache_read, spent.cache_write),
-        (completions, input, output, cache_read, cache_write),
+        (completions, Some(input), Some(output), Some(cache_read), Some(cache_write)),
         "every main/child provider winner contributes once"
     );
 }

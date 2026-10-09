@@ -153,16 +153,19 @@ pub struct Spend {
     pub turns: u32,
 
     /// Actual fresh input tokens.
-    pub input: u64,
+    pub input: Option<u64>,
 
     /// Actual output tokens.
-    pub output: u64,
+    pub output: Option<u64>,
 
     /// Actual cache-read tokens.
-    pub cache_read: u64,
+    pub cache_read: Option<u64>,
 
     /// Actual cache-write tokens.
-    pub cache_write: u64,
+    pub cache_write: Option<u64>,
+
+    /// Reported reasoning tokens, already within output and never charged again.
+    pub reasoning: Option<u64>,
 
     /// Own completion units summed once across all conversations.
     pub units: u64,
@@ -212,7 +215,8 @@ pub enum ReceivingLimit {
 
 impl Spend {
     /// Empty activation accounting.
-    pub const ZERO: Spend = Spend { turns: 0, input: 0, output: 0, cache_read: 0, cache_write: 0, units: 0 };
+    pub const ZERO: Spend =
+        Spend { turns: 0, input: None, output: None, cache_read: None, cache_write: None, reasoning: None, units: 0 };
 
     /// Add only a fully representable increment. No part of a failed addition
     /// is charged.
@@ -220,10 +224,11 @@ impl Spend {
     pub fn accumulate(self, increment: Spend) -> Option<Spend> {
         Some(Spend {
             turns: self.turns.checked_add(increment.turns)?,
-            input: self.input.checked_add(increment.input)?,
-            output: self.output.checked_add(increment.output)?,
-            cache_read: self.cache_read.checked_add(increment.cache_read)?,
-            cache_write: self.cache_write.checked_add(increment.cache_write)?,
+            input: add_count(self.input, increment.input)?,
+            output: add_count(self.output, increment.output)?,
+            cache_read: add_count(self.cache_read, increment.cache_read)?,
+            cache_write: add_count(self.cache_write, increment.cache_write)?,
+            reasoning: add_count(self.reasoning, increment.reasoning)?,
             units: self.units.checked_add(increment.units)?,
         })
     }
@@ -233,11 +238,35 @@ impl Spend {
     pub fn unreported(self, reported: Spend) -> Spend {
         Spend {
             turns: self.turns.checked_sub(reported.turns).expect("reported completions belong to session"),
-            input: self.input.checked_sub(reported.input).expect("reported usage belongs to session"),
-            output: self.output.checked_sub(reported.output).expect("reported usage belongs to session"),
-            cache_read: self.cache_read.checked_sub(reported.cache_read).expect("reported usage belongs to session"),
-            cache_write: self.cache_write.checked_sub(reported.cache_write).expect("reported usage belongs to session"),
+            input: residual_count(self.input, reported.input),
+            output: residual_count(self.output, reported.output),
+            cache_read: residual_count(self.cache_read, reported.cache_read),
+            cache_write: residual_count(self.cache_write, reported.cache_write),
+            reasoning: residual_count(self.reasoning, reported.reasoning),
             ..Spend::ZERO
+        }
+    }
+}
+
+fn add_count(previous: Option<u64>, received: Option<u64>) -> Option<Option<u64>> {
+    match previous {
+        Some(previous) => match received {
+            Some(received) => Some(Some(previous.checked_add(received)?)),
+            None => Some(Some(previous)),
+        },
+        None => Some(received),
+    }
+}
+
+fn residual_count(total: Option<u64>, reported: Option<u64>) -> Option<u64> {
+    match total {
+        Some(total) => match reported {
+            Some(reported) => Some(total.checked_sub(reported).expect("reported usage belongs to session")),
+            None => Some(total),
+        },
+        None => {
+            assert!(reported.is_none(), "reported count belongs to the session total");
+            None
         }
     }
 }

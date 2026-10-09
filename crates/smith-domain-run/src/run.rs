@@ -649,12 +649,9 @@ pub fn completion_overflow(domain: &Domain, conversation: Token, price: u64, usa
     if run.spent.units.checked_add(price).is_none() {
         return Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)));
     }
-    if run.spent.turns.checked_add(usage.turns).is_none()
-        || run.spent.input.checked_add(usage.input).is_none()
-        || run.spent.output.checked_add(usage.output).is_none()
-        || run.spent.cache_read.checked_add(usage.cache_read).is_none()
-        || run.spent.cache_write.checked_add(usage.cache_write).is_none()
-    {
+    let raw_total = Spend { units: 0, ..run.spent };
+    let raw_increment = Spend { units: 0, ..usage };
+    if raw_total.accumulate(raw_increment).is_none() {
         return Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)));
     }
     None

@@ -403,10 +403,10 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         }
         total.turns += 1;
         total.units += 1;
-        total.input += wanted[0];
-        total.output += wanted[1];
-        total.cache_read += wanted[2];
-        total.cache_write += wanted[3];
+        total.input = Some(total.input.unwrap_or(0) + wanted[0]);
+        total.output = Some(total.output.unwrap_or(0) + wanted[1]);
+        total.cache_read = Some(total.cache_read.unwrap_or(0) + wanted[2]);
+        total.cache_write = Some(total.cache_write.unwrap_or(0) + wanted[3]);
         assert_eq!(
             world.turn_metadata()[index],
             (total.turns, if sequence == 0 && index == 1 { Some(Token::new(0)) } else { None }, total)

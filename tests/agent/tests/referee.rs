@@ -105,7 +105,7 @@ fn an_answer_that_omits_a_provider_turn_is_rejected() {
     referee.observe(Time::ZERO, Seen::Completing { owner: Token::new(3) }, &mut Vec::new());
     referee.observe(
         Time::ZERO,
-        Seen::Completed { owner: Token::new(3), spent: Spend { turns: 1, input: 7, ..Spend::ZERO } },
+        Seen::Completed { owner: Token::new(3), spent: Spend { turns: 1, input: Some(7), ..Spend::ZERO } },
         &mut Vec::new(),
     );
     broken(

@@ -1643,10 +1643,11 @@ impl World {
                     spent: run::Spend {
                         units,
                         turns: 1,
-                        input: completion.usage.input_tokens.expect("scripted peer supplies count"),
-                        output: completion.usage.output_tokens.expect("scripted peer supplies count"),
-                        cache_read: completion.usage.cache_read_tokens.expect("scripted peer supplies count"),
-                        cache_write: completion.usage.cache_write_tokens.expect("scripted peer supplies count"),
+                        input: completion.usage.input_tokens,
+                        output: completion.usage.output_tokens,
+                        cache_read: completion.usage.cache_read_tokens,
+                        cache_write: completion.usage.cache_write_tokens,
+                        reasoning: completion.usage.reasoning_tokens,
                     },
                 });
             }
@@ -1755,10 +1756,11 @@ impl World {
                         .accumulate(run::Spend {
                             units: 0,
                             turns: 1,
-                            input: usage.input_tokens.expect("scripted peer supplies count"),
-                            output: usage.output_tokens.expect("scripted peer supplies count"),
-                            cache_read: usage.cache_read_tokens.expect("scripted peer supplies count"),
-                            cache_write: usage.cache_write_tokens.expect("scripted peer supplies count"),
+                            input: usage.input_tokens,
+                            output: usage.output_tokens,
+                            cache_read: usage.cache_read_tokens,
+                            cache_write: usage.cache_write_tokens,
+                            reasoning: usage.reasoning_tokens,
                         })
                         .expect("bounded observed usage");
                 }

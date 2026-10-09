@@ -55,15 +55,33 @@ fn usage(observation: &CompletionObservation) -> llm::Usage {
 }
 
 fn total(observations: &[CompletionObservation], rates: &[Rate]) -> run::Spend {
-    let mut expected = run::Spend::ZERO;
+    let mut expected = run::Spend {
+        input: observations
+            .iter()
+            .filter_map(|observation| usage(observation).input_tokens)
+            .reduce(|total, next| total + next),
+        output: observations
+            .iter()
+            .filter_map(|observation| usage(observation).output_tokens)
+            .reduce(|total, next| total + next),
+        cache_read: observations
+            .iter()
+            .filter_map(|observation| usage(observation).cache_read_tokens)
+            .reduce(|total, next| total + next),
+        cache_write: observations
+            .iter()
+            .filter_map(|observation| usage(observation).cache_write_tokens)
+            .reduce(|total, next| total + next),
+        reasoning: observations
+            .iter()
+            .filter_map(|observation| usage(observation).reasoning_tokens)
+            .reduce(|total, next| total + next),
+        ..run::Spend::ZERO
+    };
     for observation in observations {
         let actual = usage(observation);
         let rate = rates.iter().find(|rate| rate.model == observation.model.as_ref()).expect("outside model table");
         expected.turns += 1;
-        expected.input += actual.input_tokens.expect("scripted peer supplies count");
-        expected.output += actual.output_tokens.expect("scripted peer supplies count");
-        expected.cache_read += actual.cache_read_tokens.expect("scripted peer supplies count");
-        expected.cache_write += actual.cache_write_tokens.expect("scripted peer supplies count");
         expected.units += charge(actual, *rate);
     }
     expected
@@ -83,7 +101,10 @@ fn conservation(world: &World, rates: &[Rate]) -> run::Spend {
     assert_eq!(spent(world.answer()), expected, "one own-completion charge per outside callback");
     assert_eq!(world.prompts().len(), world.completions().len());
     assert_eq!(world.turn_metadata().last().expect("actual main Turn").2, expected);
-    assert!(expected.input + expected.cache_read + expected.cache_write > 0 && expected.output > 0);
+    assert!(
+        expected.input.unwrap_or(0) + expected.cache_read.unwrap_or(0) + expected.cache_write.unwrap_or(0) > 0
+            && expected.output.unwrap_or(0) > 0
+    );
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.judged().0 > 0 && world.judged().1 == 1);
     expected
@@ -264,7 +285,7 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
     let expected = conservation(&world, &MODEL_RATES);
     assert_eq!(expected.turns, 6);
     assert_eq!(expected.output, 56);
-    assert!(expected.cache_read > 0 && expected.cache_write > 0);
+    assert!(expected.cache_read > 0 && expected.cache_write.unwrap_or(0) > 0);
     assert_eq!(world.turns().len(), 3, "only main's settled Turns cross the host boundary");
     let main = model_calls(&world, b"fake-1");
     let child = model_calls(&world, b"fake-2");

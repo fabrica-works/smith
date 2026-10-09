@@ -73,15 +73,33 @@ fn usage(observation: &CompletionObservation) -> skein_llm::Usage {
 }
 
 fn total(observations: &[CompletionObservation], rates: &[Rate]) -> run::Spend {
-    let mut expected = run::Spend::ZERO;
+    let mut expected = run::Spend {
+        input: observations
+            .iter()
+            .filter_map(|observation| usage(observation).input)
+            .reduce(|total, next| total + next),
+        output: observations
+            .iter()
+            .filter_map(|observation| usage(observation).output)
+            .reduce(|total, next| total + next),
+        cache_read: observations
+            .iter()
+            .filter_map(|observation| usage(observation).cache_read)
+            .reduce(|total, next| total + next),
+        cache_write: observations
+            .iter()
+            .filter_map(|observation| usage(observation).cache_write)
+            .reduce(|total, next| total + next),
+        reasoning: observations
+            .iter()
+            .filter_map(|observation| usage(observation).reasoning)
+            .reduce(|total, next| total + next),
+        ..run::Spend::ZERO
+    };
     for observation in observations {
         let actual = usage(observation);
         let rate = rates.iter().find(|rate| rate.model == observation.model.as_ref()).expect("outside model table");
         expected.turns += 1;
-        expected.input += actual.input.unwrap_or(0);
-        expected.output += actual.output.unwrap_or(0);
-        expected.cache_read += actual.cache_read.unwrap_or(0);
-        expected.cache_write += actual.cache_write.unwrap_or(0);
         expected.units += charge(actual, *rate);
     }
     expected
@@ -101,7 +119,10 @@ fn conservation(world: &World, rates: &[Rate]) -> run::Spend {
     assert_eq!(spent(world.answer()), expected, "one own-completion charge per outside callback");
     assert_eq!(world.prompts().len(), world.completions().len());
     assert_eq!(world.turn_metadata().last().expect("actual main Turn").2, expected);
-    assert!(expected.input + expected.cache_read + expected.cache_write > 0 && expected.output > 0);
+    assert!(
+        expected.input.unwrap_or(0) + expected.cache_read.unwrap_or(0) + expected.cache_write.unwrap_or(0) > 0
+            && expected.output.unwrap_or(0) > 0
+    );
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.judged().0 > 0 && world.judged().1 == 1);
     expected
@@ -346,7 +367,7 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
     let expected = conservation(&world, &MODEL_RATES);
     assert_eq!(expected.turns, 6);
     assert_eq!(expected.output, 56);
-    assert!(expected.cache_read > 0 && expected.cache_write > 0);
+    assert!(expected.cache_read > 0 && expected.cache_write.unwrap_or(0) > 0);
     assert_eq!(world.turns().len(), 3, "only main's settled Turns cross the host boundary");
     let main = model_calls(&world, b"fake-1");
     let child = model_calls(&world, b"fake-2");
@@ -573,7 +594,7 @@ fn parking_story(index: usize) {
     );
     first.run(100_000);
     let first_total = parked_accounting(&first, &MODEL_RATES[..2], 0);
-    assert_eq!((first_total.turns, first_total.output), (3, 25));
+    assert_eq!((first_total.turns, first_total.output), (3, Some(25)));
     assert_eq!(first.turns().len(), 2);
     let first_main = model_calls(&first, b"fake-1");
     let first_child = model_calls(&first, b"fake-2");
@@ -605,7 +626,7 @@ fn parking_story(index: usize) {
         resumed.prompts().iter().all(|query| query.system.starts_with(b"@budget-parking-main NEW-INSTRUCTIONS\n\n"))
     );
     let new_total = parked_accounting(&resumed, &RESUMED_RATES, 2);
-    assert_eq!((new_total.turns, new_total.output), (1, 11));
+    assert_eq!((new_total.turns, new_total.output), (1, Some(11)));
     assert_eq!(resumed.turns().len(), 1);
     assert!(
         model_calls(&resumed, b"fake-2").is_empty(),
@@ -620,9 +641,9 @@ fn parking_story(index: usize) {
     assert_eq!(current, new_total.units);
     assert_eq!(saved(&first), immutable, "old Turn.spent and concrete history remain unchanged");
     assert!(immutable.turns.iter().all(|turn| turn.spent > 0));
-    assert!(first_total.cache_read > 0);
-    assert_eq!(new_total.cache_read, 0, "the newly constructed provider has no earlier written cache entry");
-    assert!(first_total.cache_write > 0 && new_total.cache_write > 0);
+    assert!(first_total.cache_read.unwrap_or(0) > 0);
+    assert_eq!(new_total.cache_read, Some(0), "the newly constructed provider has no earlier written cache entry");
+    assert!(first_total.cache_write.unwrap_or(0) > 0 && new_total.cache_write.unwrap_or(0) > 0);
 }
 
 #[test]

@@ -457,7 +457,15 @@ impl Partner {
     #[must_use]
     pub fn turn_max(&self) -> Spend {
         let Script { input, output, cache, .. } = self.script;
-        Spend { units: input, turns: 1, input, output, cache_read: cache, cache_write: cache }
+        Spend {
+            units: input,
+            turns: 1,
+            input: Some(input),
+            output: Some(output),
+            cache_read: Some(cache),
+            cache_write: Some(cache),
+            reasoning: None,
+        }
     }
 
     /// Delivers a new typed opening to the scripted peer or session and retains its pending terminal obligations.
@@ -929,12 +937,13 @@ impl Partner {
         let mut spend = Spend {
             units: 0,
             turns: 1,
-            input: self.rng.between(1, input),
-            output: self.rng.between(1, output),
-            cache_read: self.rng.below(cache.saturating_add(1)),
-            cache_write: self.rng.below(cache.saturating_add(1)),
+            input: Some(self.rng.between(1, input)),
+            output: Some(self.rng.between(1, output)),
+            cache_read: Some(self.rng.below(cache.saturating_add(1))),
+            cache_write: Some(self.rng.below(cache.saturating_add(1))),
+            reasoning: None,
         };
-        spend.units = spend.input;
+        spend.units = spend.input.expect("scripted input is reported");
         let talk = self.talks.get_mut(&peer).expect("a live conversation spends");
         talk.spent = talk.spent.accumulate(spend).expect("bounded scripted usage");
         self.spent = self.spent.accumulate(spend).expect("bounded scripted usage");

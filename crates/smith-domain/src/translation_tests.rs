@@ -26,7 +26,15 @@ fn every_session_yield_and_usage_counter_maps_to_the_run() {
     };
     assert_eq!(
         translate::spend(11, usage),
-        run::Spend { turns: 11, input: 2, output: 3, cache_read: 5, cache_write: 7, units: 0 }
+        run::Spend {
+            turns: 11,
+            input: Some(2),
+            output: Some(3),
+            cache_read: Some(5),
+            cache_write: Some(7),
+            units: 0,
+            reasoning: None
+        }
     );
 }
 

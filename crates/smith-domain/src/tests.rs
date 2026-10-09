@@ -1062,7 +1062,7 @@ fn an_accepted_finish_closes_main_and_the_run_answers_the_worker() {
         panic!("expected the run accepted, got {emitted:?}");
     };
     assert_eq!(to, &ReplyTo::new(Token::new(7)));
-    assert_eq!((spent.turns, spent.input), (1, USAGE.input_tokens.expect("fixture reports input")));
+    assert_eq!((spent.turns, spent.input), (1, USAGE.input_tokens));
     h.domain.reclaim();
     assert_eq!((h.domain.peers(), h.domain.tickets(), h.domain.flights()), (0, 0, 0), "main's tickets went with it");
 }
@@ -2230,7 +2230,7 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         };
         assert_eq!(
             (spent.units, spent.turns, spent.input, spent.output, *turns),
-            (31, 1, 0, raw.output_tokens.unwrap_or(0), 1)
+            (31, 1, raw.input_tokens, raw.output_tokens, 1)
         );
         let turn = harness.turns.iter().next().expect("one saved turn");
         assert_eq!((turn.usage, turn.spent), (raw, 31));
