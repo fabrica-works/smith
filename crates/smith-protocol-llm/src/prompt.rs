@@ -65,7 +65,18 @@ fn translate(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Box<[llm::Served]>), Error> {
     inventory(&input, application, limits)?;
-    let llm::Prompt { asker: _, endpoint: _, affinity, model, system, tools: _, namespace, served, messages, max_tokens } = input;
+    let llm::Prompt {
+        asker: _,
+        endpoint: _,
+        affinity,
+        model,
+        system,
+        tools: _,
+        namespace,
+        served,
+        messages,
+        max_tokens,
+    } = input;
     let mut offered = List::with_capacity(limits.client.dialect.parts);
     for descriptor in &served {
         match descriptor {

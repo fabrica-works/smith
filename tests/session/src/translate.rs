@@ -40,7 +40,8 @@ enum Family {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
-    let agent::Prompt { endpoint: _, affinity, model, system, tools, namespace, delegated, messages, max_tokens } = prompt;
+    let agent::Prompt { endpoint: _, affinity, model, system, tools, namespace, delegated, messages, max_tokens } =
+        prompt;
     let mut offered = offer(tools).into_vec();
     for descriptor in &delegated {
         let Ticketed::Tool { name, effect, schema } = tickets.resolve(descriptor.ticket) else {
