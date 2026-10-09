@@ -14,7 +14,7 @@ use skein_shell::Clock;
 use skein_world::end_to_end::{Command, Method, PeakScope};
 
 use crate::guard::Guard;
-use crate::isolate::{Machine, Private};
+use crate::isolate::{Machine, Private, Setup, SetupStep};
 use crate::process::{Bounds, Capture, ProcessResult, execute};
 use crate::{
     Artifact, AttemptResult, End, Exit, Forced, Health, Identity, Measure, Outcome, ResourceScope, Resources, Spend,
@@ -48,7 +48,16 @@ pub struct Prepared {
 pub struct Recorded {
     pub result: AttemptResult,
     pub directory: PathBuf,
-    pub incomplete: bool,
+    pub incomplete: Incomplete,
+}
+
+/// Whether preparation prevented this attempt from contributing to a complete suite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Incomplete {
+    /// The attempt reached inference and has its measured terminal.
+    No,
+    /// Setup refused the attempt at this named preparation step.
+    Setup(SetupStep),
 }
 
 fn milliseconds(span: Duration) -> u64 {
@@ -383,85 +392,98 @@ fn prepare(
     task_directory: &Path,
     root: &Path,
     prepared: &Prepared,
-) -> Result<(Private, String), String> {
-    if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
-        return Err("prepared identity differs from the frozen task".into());
-    }
-    let prompt = task.prompt.as_bytes().to_vec();
-    if prompt.is_empty()
-        || prompt.len() > 4088
-        || !prompt.ends_with(b"\n")
-        || prompt[..prompt.len() - 1].contains(&b'\n')
-    {
-        return Err("prompt must be one paragraph ending in a newline, under 4088 bytes".into());
-    }
-    if format!("{:x}", Sha256::digest(&prompt)) != prepared.identity.prompt_sha256 {
-        return Err("prompt digest differs".into());
-    }
-    if crate::arm::binary_digest(&prepared.program)? != prepared.identity.binary_sha256 {
-        return Err("prepared binary digest differs".into());
-    }
-    if prepared.identity.agent != crate::Agent::Codex {
-        return Err(
+) -> Result<(Private, String), Setup> {
+    let mut step = SetupStep::Configuration;
+    let prepared_attempt =
+        (|| {
+            if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
+                return Err("prepared identity differs from the frozen task".into());
+            }
+            let prompt = task.prompt.as_bytes().to_vec();
+            if prompt.is_empty()
+                || prompt.len() > 4088
+                || !prompt.ends_with(b"\n")
+                || prompt[..prompt.len() - 1].contains(&b'\n')
+            {
+                return Err("prompt must be one paragraph ending in a newline, under 4088 bytes".into());
+            }
+            if format!("{:x}", Sha256::digest(&prompt)) != prepared.identity.prompt_sha256 {
+                return Err("prompt digest differs".into());
+            }
+            if crate::arm::binary_digest(&prepared.program)? != prepared.identity.binary_sha256 {
+                return Err("prepared binary digest differs".into());
+            }
+            if prepared.identity.agent != crate::Agent::Codex {
+                return Err(
             "this prepared pipe face requires the Codex observer; smith driving is the legacy adapter increment".into(),
         );
-    }
-    if prepared.setup_deadline_seconds == 0 || task.deadline_seconds == 0 {
-        return Err("setup and task require positive author deadlines".into());
-    }
-    for seconds in std::iter::once(prepared.setup_deadline_seconds)
-        .chain(std::iter::once(task.deadline_seconds))
-        .chain(task.grade.iter().map(|grade| grade.deadline_seconds))
-    {
-        if seconds == 0 || seconds.checked_mul(1_000_000_000).is_none() {
-            return Err("author deadline is outside the clock's range".into());
-        }
-    }
-    for milliseconds in [prepared.teardown_ms, prepared.grace_ms, prepared.settlement_ms] {
-        if milliseconds.checked_mul(1_000_000).is_none() {
-            return Err("supervision policy is outside the clock's range".into());
-        }
-    }
-    let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root)?;
-    free_space(clock, machine, &private, prepared)?;
-    crate::isolate::environment(machine, &private, &task.environment)?;
-    seed_commit(clock, guard, machine, &private, prepared)?;
-    let commit = raw(
-        clock,
-        machine,
-        &private,
-        &["git".into(), "rev-parse".into(), "HEAD".into()],
-        prepared.setup_deadline_seconds,
-        prepared,
-    )?;
-    if !succeeded(&commit) {
-        return Err("cannot retain frozen seed commit".into());
-    }
-    let revision = String::from_utf8(commit.stdout).map_err(|error| error.to_string())?.trim().to_owned();
-    let mut warming = private.clone();
-    warming.cargo_home.clone_from(&private.warm_cargo);
-    warming.target.clone_from(&private.warm_target);
-    for command in &task.setup {
-        let result = raw_environment(
-            clock,
-            machine,
-            &warming,
-            command,
-            prepared,
-            (prepared.setup_deadline_seconds, &task.environment),
-        )?;
-        if !succeeded(&result) {
-            return Err(format!("setup command failed: {:?}, {:?}", result.exit, result.error));
-        }
-    }
-    copy_cache(clock, guard, machine, &private, prepared)?;
-    if !task.grade.is_empty() {
-        let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
-        grading.warm_cargo.clone_from(&private.warm_cargo);
-        grading.warm_target.clone_from(&private.warm_target);
-        copy_cache(clock, guard, machine, &grading, prepared)?;
-    }
-    Ok((private, revision))
+            }
+            if prepared.setup_deadline_seconds == 0 || task.deadline_seconds == 0 {
+                return Err("setup and task require positive author deadlines".into());
+            }
+            for seconds in std::iter::once(prepared.setup_deadline_seconds)
+                .chain(std::iter::once(task.deadline_seconds))
+                .chain(task.grade.iter().map(|grade| grade.deadline_seconds))
+            {
+                if seconds == 0 || seconds.checked_mul(1_000_000_000).is_none() {
+                    return Err("author deadline is outside the clock's range".into());
+                }
+            }
+            for milliseconds in [prepared.teardown_ms, prepared.grace_ms, prepared.settlement_ms] {
+                if milliseconds.checked_mul(1_000_000).is_none() {
+                    return Err("supervision policy is outside the clock's range".into());
+                }
+            }
+            let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root)
+                .map_err(|refusal| {
+                    step = refusal.step;
+                    refusal.reason
+                })?;
+            step = SetupStep::Space;
+            free_space(clock, machine, &private, prepared)?;
+            step = SetupStep::Configuration;
+            crate::isolate::environment(machine, &private, &task.environment)?;
+            step = SetupStep::Seed;
+            seed_commit(clock, guard, machine, &private, prepared)?;
+            let commit = raw(
+                clock,
+                machine,
+                &private,
+                &["git".into(), "rev-parse".into(), "HEAD".into()],
+                prepared.setup_deadline_seconds,
+                prepared,
+            )?;
+            if !succeeded(&commit) {
+                return Err("cannot retain frozen seed commit".into());
+            }
+            let revision = String::from_utf8(commit.stdout).map_err(|error| error.to_string())?.trim().to_owned();
+            let mut warming = private.clone();
+            warming.cargo_home.clone_from(&private.warm_cargo);
+            warming.target.clone_from(&private.warm_target);
+            step = SetupStep::Warm;
+            for command in &task.setup {
+                let result = raw_environment(
+                    clock,
+                    machine,
+                    &warming,
+                    command,
+                    prepared,
+                    (prepared.setup_deadline_seconds, &task.environment),
+                )?;
+                if !succeeded(&result) {
+                    return Err(format!("setup command failed: {:?}, {:?}", result.exit, result.error));
+                }
+            }
+            copy_cache(clock, guard, machine, &private, prepared)?;
+            if !task.grade.is_empty() {
+                let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
+                grading.warm_cargo.clone_from(&private.warm_cargo);
+                grading.warm_target.clone_from(&private.warm_target);
+                copy_cache(clock, guard, machine, &grading, prepared)?;
+            }
+            Ok((private, revision))
+        })();
+    prepared_attempt.map_err(|reason| Setup { step, reason })
 }
 
 fn lexical(base: &Path, path: &Path) -> PathBuf {
@@ -692,10 +714,12 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
     let existed = root.exists();
     let mut result = blank(prepared.identity.clone());
     let mut inference = false;
+    let mut setup_step = SetupStep::Scratch;
     let work = (|| {
         if existed {
             return Err("attempt scratch root already exists; setup refused".into());
         }
+        setup_step = SetupStep::Seed;
         let task = task_for(prepared)?;
         archive(
             guard,
@@ -713,7 +737,12 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         )?;
         archive(guard, &directory, &mut result, "prompt.txt", task.prompt.as_bytes())?;
         let task_directory = prepared.task.parent().ok_or("task needs a directory")?;
-        let (private, revision) = prepare(&clock, guard, machine, &task, task_directory, &root, prepared)?;
+        let (private, revision) =
+            prepare(&clock, guard, machine, &task, task_directory, &root, prepared).map_err(|refusal| {
+                setup_step = refusal.step;
+                refusal.reason
+            })?;
+        setup_step = SetupStep::Configuration;
         let seed = crate::grade::snapshot(&task_directory.join("seed"))?;
         let mut environment = crate::isolate::environment(machine, &private, &task.environment)?;
         if let Some(home) = &prepared.codex_home {
@@ -761,7 +790,8 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             result.outcome.end = End::HarnessError { what: format!("owned workspace deletion failed: {error}") };
         }
     }
-    let incomplete = matches!(result.outcome.end, End::Refused { .. });
+    let incomplete =
+        if matches!(result.outcome.end, End::Refused { .. }) { Incomplete::Setup(setup_step) } else { Incomplete::No };
     let bytes = crate::render_result(&result)?;
     let _: Artifact = crate::grade::archive(guard, &directory, "result.json", bytes.as_bytes())?;
     Ok(Recorded { result, directory, incomplete })

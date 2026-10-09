@@ -79,3 +79,61 @@ fn a_program_without_an_answer_ends_at_the_hard_deadline() {
     assert!(result.answered.is_none());
     assert!(result.tree.live_pids.is_empty());
 }
+
+#[test]
+fn an_overflowing_stderr_retains_its_prefix_and_settles_the_tree() {
+    let clock = Clock::new();
+    let mut command = replay("");
+    command.arguments = vec!["-c".into(), "cat >/dev/null; trap '' TERM; yes error >&2".into()];
+    let result = execute(&clock, command, Box::from(&b"answer\n"[..]), Capture::Codex, bounds())
+        .expect("overflowing tree settles");
+    assert_eq!(result.error.as_deref(), Some("stderr exceeds the attempt log bound"));
+    assert_eq!(result.stderr.len(), bounds().stderr);
+    assert_eq!(result.forced, Forced::Killed);
+    assert!(result.answered.is_none());
+    assert!(result.tree.live_pids.is_empty());
+    assert!(result.end.as_nanos() - result.start.as_nanos() < 180_000_000);
+}
+
+#[test]
+fn an_overflowing_stdout_retains_its_prefix_and_settles_the_tree() {
+    let clock = Clock::new();
+    let mut command = replay("");
+    command.arguments = vec!["-c".into(), "cat >/dev/null; trap '' TERM; yes output".into()];
+    let result = execute(&clock, command, Box::new([]), Capture::Raw, bounds()).expect("overflowing tree settles");
+    assert_eq!(result.error.as_deref(), Some("stdout exceeds the attempt log bound"));
+    assert_eq!(result.stdout.len(), bounds().stdout);
+    assert_eq!(result.forced, Forced::Killed);
+    assert!(result.tree.live_pids.is_empty());
+}
+
+#[test]
+fn stderr_at_its_bound_is_complete_and_a_settled_overflow_still_fails() {
+    let clock = Clock::new();
+    for (text, error) in [("12345678", None), ("123456789", Some("stderr exceeds the attempt log bound"))] {
+        let mut command = replay("");
+        command.arguments = vec!["-c".into(), format!("cat >/dev/null; printf {text} >&2").into()];
+        let mut policy = bounds();
+        policy.stderr = 8;
+        let result = execute(&clock, command, Box::new([]), Capture::Raw, policy).expect("short stderr settles");
+        assert_eq!(result.error.as_deref(), error);
+        assert_eq!(result.stderr, b"12345678");
+        assert!(result.tree.live_pids.is_empty());
+    }
+}
+
+#[test]
+fn an_answer_near_the_hard_deadline_receives_its_full_teardown_allowance() {
+    let clock = Clock::new();
+    let mut command = replay("sleep 0.12; exit 0");
+    command.arguments[1] =
+        command.arguments[1].to_string_lossy().replace("cat \"$1\"", "sleep 0.08; cat \"$1\"").into();
+    let mut policy = bounds();
+    policy.hard = Duration::from_millis(160);
+    policy.teardown = Duration::from_millis(180);
+    let result = execute(&clock, command, Box::new([]), Capture::Codex, policy).expect("accepted answer settles");
+    assert!(result.error.is_none(), "{:?}", result.error);
+    assert_eq!(result.forced, Forced::No);
+    assert_eq!(result.observer.classify(result.exit, result.forced).end, End::Completed);
+    assert!(result.answered.is_some());
+}

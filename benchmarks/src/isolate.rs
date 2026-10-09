@@ -12,6 +12,30 @@ use std::path::{Path, PathBuf};
 
 use crate::guard::Guard;
 
+/// The preparation step that refused an attempt before inference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupStep {
+    /// The fresh private scratch paths could not be made.
+    Scratch,
+    /// The frozen seed could not be validated or materialised.
+    Seed,
+    /// The author's warm-up or private cache copy failed.
+    Warm,
+    /// Available disk space could not satisfy the attempt's estimate.
+    Space,
+    /// The pinned invocation or its exact environment was refused.
+    Configuration,
+    /// The adapter found an absent or lapsed existing login.
+    Credentials,
+}
+
+/// A preparation refusal, rendered by the runner into the result's setup end.
+#[derive(Debug)]
+pub struct Setup {
+    pub step: SetupStep,
+    pub reason: String,
+}
+
 /// The machine's tool paths, supplied once to attempt preparation.
 #[derive(Clone, Debug)]
 pub struct Machine {
@@ -111,16 +135,22 @@ fn copy_seed(guard: &Guard, source: &Path, destination: &Path) -> Result<(), Str
 
 /// Materialise a fresh guarded attempt after verifying the frozen seed digest.
 /// The caller supplies an existing private scratch parent outside repositories.
-pub fn prepare(guard: &Guard, seed: &Path, sha256: &str, root: &Path) -> Result<Private, String> {
-    if crate::seed_digest(seed).map_err(|error| error.to_string())? != sha256 {
-        return Err("seed digest differs; setup refused before materialisation".into());
-    }
-    let paths = empty(guard, root)?;
-    copy_seed(guard, seed, &paths.workspace)?;
-    if crate::seed_digest(&paths.workspace).map_err(|error| error.to_string())? != sha256 {
-        return Err("materialised seed digest differs; setup refused".into());
-    }
-    Ok(paths)
+pub fn prepare(guard: &Guard, seed: &Path, sha256: &str, root: &Path) -> Result<Private, Setup> {
+    let mut step = SetupStep::Seed;
+    let materialised = (|| {
+        if crate::seed_digest(seed).map_err(|error| error.to_string())? != sha256 {
+            return Err("seed digest differs; setup refused before materialisation".into());
+        }
+        step = SetupStep::Scratch;
+        let paths = empty(guard, root)?;
+        step = SetupStep::Seed;
+        copy_seed(guard, seed, &paths.workspace)?;
+        if crate::seed_digest(&paths.workspace).map_err(|error| error.to_string())? != sha256 {
+            return Err("materialised seed digest differs; setup refused".into());
+        }
+        Ok(paths)
+    })();
+    materialised.map_err(|reason| Setup { step, reason })
 }
 
 /// Create fresh private command paths with an initially empty workspace.
@@ -251,7 +281,9 @@ mod tests {
         let fake_home = std::env::temp_dir().join(format!("smith-bench-isolation-{}", std::process::id()));
         let guard = Guard::new(&fake_home, &fake_home.join("config"), &fake_home.join("state"), &[]).expect("guard");
         let attempt = fake_home.join("attempt");
-        assert!(prepare(&guard, &seed, &"0".repeat(64), &attempt).expect_err("digest").contains("digest"));
+        let refused = prepare(&guard, &seed, &"0".repeat(64), &attempt).expect_err("digest");
+        assert_eq!(refused.step, SetupStep::Seed);
+        assert!(refused.reason.contains("digest"));
         assert!(!fake_home.exists());
     }
 }

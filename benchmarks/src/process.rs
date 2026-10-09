@@ -326,6 +326,9 @@ impl Referee<Process> for Policy {
         let (binaries, outputs) = processes.split_at_mut(1);
         let Process::Binary(binary) = &mut binaries[0] else { unreachable!("first host is Binary") };
         let Process::Output(output) = &mut outputs[0] else { unreachable!("second host is output") };
+        if binary.stderr_overflowed() {
+            output.error.get_or_insert_with(|| "stderr exceeds the attempt log bound".into());
+        }
         if binary.counts().is_some() {
             self.settled = true;
             self.deadline = None;
@@ -336,7 +339,7 @@ impl Referee<Process> for Policy {
         {
             self.answer_seen = true;
             let teardown = answered.checked_add(self.teardown).expect("validated teardown deadline");
-            self.deadline = self.deadline.map(|hard| hard.min(teardown));
+            self.deadline = Some(teardown);
         }
         let due = self.deadline.is_some_and(|deadline| deadline <= now) || output.error.is_some();
         if due && self.ladder == Ladder::Watching {
@@ -411,6 +414,11 @@ pub fn execute(
     let mut processes = outcome.procs.into_iter();
     let Process::Binary(binary) = processes.next().expect("retained Binary") else { unreachable!("first host") };
     let Process::Output(output) = processes.next().expect("retained output") else { unreachable!("second host") };
+    let error = if binary.stderr_overflowed() {
+        output.error.or_else(|| Some("stderr exceeds the attempt log bound".into()))
+    } else {
+        output.error
+    };
     let forced = match binary.tree_status().cleanup() {
         skein_world::end_to_end::Cleanup::None => crate::Forced::No,
         skein_world::end_to_end::Cleanup::Terminate => crate::Forced::Terminated,
@@ -430,7 +438,7 @@ pub fn execute(
         stdout: output.bytes,
         stderr: binary.stderr().to_vec(),
         observer: output.observer,
-        error: output.error,
+        error,
         counts: binary.counts().expect("genuine tree settlement"),
         tree: {
             let tree = binary.tree_status();

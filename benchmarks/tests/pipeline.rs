@@ -76,9 +76,9 @@ fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer
     assert_eq!(process.exit, smith_bench::Exit::Code(0), "{:?}", process.stderr);
     let directory = root.join("state/smith-bench/runs/archives/one");
     let result = smith_bench::read_result(&directory.join("result.json")).expect("attempt archive");
-    let recorded = smith_bench::run::Recorded { result, directory, incomplete: false };
+    let recorded = smith_bench::run::Recorded { result, directory, incomplete: smith_bench::run::Incomplete::No };
     assert_eq!(recorded.result.outcome.end, End::Completed);
-    assert!(!recorded.incomplete);
+    assert_eq!(recorded.incomplete, smith_bench::run::Incomplete::No);
     assert_eq!(recorded.result.outcome.grade, Some(Measure::Observed { value: true }));
     assert_eq!(recorded.result.outcome.protected_files_changed, Measure::Observed { value: Vec::new() });
     assert!(recorded.result.outcome.checks.iter().all(|check| check.passed == Measure::Observed { value: true }));
@@ -139,7 +139,7 @@ fn an_existing_scratch_root_is_refused_and_never_deleted() {
     fs::write(scratch.join("sentinel"), "keep").expect("sentinel");
     let recorded = attempt(&guard, &machine, &root.join("state"), &prepared).expect("record setup refusal");
     assert!(matches!(recorded.result.outcome.end, End::Refused { .. }));
-    assert!(recorded.incomplete);
+    assert_eq!(recorded.incomplete, smith_bench::run::Incomplete::Setup(smith_bench::isolate::SetupStep::Scratch));
     assert_eq!(fs::read_to_string(scratch.join("sentinel")).expect("retained original"), "keep");
     fs::remove_dir_all(root).expect("remove synthetic story");
 }

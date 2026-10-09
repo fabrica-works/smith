@@ -189,7 +189,7 @@ fn attempt_command(request: &Path) -> ExitCode {
     match smith_bench::run::attempt_file(request) {
         Ok(recorded) => {
             println!("{}", recorded.directory.join("result.json").display());
-            if recorded.incomplete {
+            if recorded.incomplete != smith_bench::run::Incomplete::No {
                 ExitCode::from(2)
             } else if matches!(recorded.result.outcome.end, smith_bench::End::Completed)
                 && recorded
