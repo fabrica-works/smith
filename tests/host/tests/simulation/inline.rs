@@ -252,3 +252,63 @@ fn an_inline_cancel_waits_for_its_pending_machine_terminal() {
     world.run();
     world.settled();
 }
+
+#[test]
+fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
+    use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
+    let mut world = World::new(85, inline::limits());
+    world.tool_terminals = inline::ToolTerminals::Hold;
+    let mut source = inline::workspace_start(85, Job::Reporting);
+    let mut charter = source.charter.into_value();
+    charter.grants.agents = true;
+    charter.brief.sections[0].text = b"inline-parent-command".as_slice().into();
+    source.charter = host::Charter::new(charter, u64::MAX).expect("bounded parent charter");
+    world.scripts(Box::from([
+        Script {
+            cue: b"inline-parent-command".as_slice().into(),
+            turns: Box::from([Turn {
+                lines: Box::from([Line::Call {
+                    name: b"sub_agent".as_slice().into(),
+                    arguments: br#"{"brief":"inline-child-command","tools":["shell"]}"#.as_slice().into(),
+                }]),
+                finish: Finish::ToolCalls,
+                tokens: 40,
+            }]),
+        },
+        Script {
+            cue: b"inline-child-command".as_slice().into(),
+            turns: Box::from([Turn {
+                lines: Box::from([Line::Call {
+                    name: b"shell".as_slice().into(),
+                    arguments: br#"{"command":"true"}"#.as_slice().into(),
+                }]),
+                finish: Finish::ToolCalls,
+                tokens: 40,
+            }]),
+        },
+    ]));
+    world.event(parent::Event::Spawn { client: Token::new(1), start: source });
+    for _ in 0..100 {
+        if world
+            .pending_machine
+            .iter()
+            .any(|(_, _, terminal)| matches!(terminal, smith_inline_agent::Below::Done { .. }))
+        {
+            break;
+        }
+        world.at(world.next_deadline().expect("native provider alarm"));
+    }
+    assert!(world.machine_trace.iter().any(|request| request.contains("Spawn")), "actual child command requested");
+    let handle = world.handle(Token::new(1));
+    world.event(parent::Event::Stop { agent: handle });
+    assert!(world.seen[&Token::new(1)].answer.is_none(), "the native root also waits for its command terminal");
+    assert!(
+        world.seen[&Token::new(1)].gone.is_none(),
+        "the command's actual native terminal is held across cancellation"
+    );
+    assert!(world.machine_trace.iter().any(|request| request.starts_with("cancel")));
+    world.tool_terminals = inline::ToolTerminals::Forward;
+    world.machine_replies();
+    world.run();
+    world.settled();
+}

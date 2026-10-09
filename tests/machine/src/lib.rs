@@ -59,6 +59,7 @@ pub struct World {
     root_handle: Opened,
     seed: u64,
     writable: bool,
+    limits: Limits,
     now: Time,
     memory: Memory,
     trace: Vec<String>,
@@ -78,6 +79,15 @@ impl World {
         Self::with_grant(seed, items, false)
     }
 
+    /// Use caller-compatible receiving bounds with the existing native fake driver.
+    #[must_use]
+    pub fn bounded(seed: u64, items: &[Item], limits: Limits) -> Self {
+        let mut world = Self::with_grant(seed, items, true);
+        assert!(smith_protocol_machine::worst_case(&limits).is_some());
+        world.limits = limits;
+        world
+    }
+
     fn with_grant(seed: u64, items: &[Item], writable: bool) -> Self {
         let mut machine = Machine::new();
         let root_handle = machine.lay(items);
@@ -86,6 +96,7 @@ impl World {
             root_handle,
             seed,
             writable,
+            limits: machine_limits(),
             now: Time::ZERO,
             memory: Memory::Unchecked,
             trace: Vec::new(),
@@ -159,7 +170,7 @@ impl World {
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
             .with_machine(Adapter(Rc::clone(&self.machine)));
         world.spawn_root(Handle::new(root.raw()), |root| {
-            Application::new(self.seed, self.writable, self.now, root, job.copy())
+            Application::new(self.seed, self.writable, self.now, root, job.copy(), self.limits)
         });
         let outcome = world.run();
         let terminal = copy_terminal(outcome.procs[0].terminals.first().expect("one terminal"));
@@ -360,8 +371,7 @@ struct Application {
 }
 
 impl Application {
-    fn new(seed: u64, writable: bool, offset: Time, root_fd: Fd, job: Job) -> Self {
-        let limits = machine_limits();
+    fn new(seed: u64, writable: bool, offset: Time, root_fd: Fd, job: Job, limits: Limits) -> Self {
         let mut file_io = FileIo::with_whole_limit(16, 128, 32, 128, Duration::from_secs(1));
         file_io.seed_randomness(seed);
         let root = file_io.adopt_root(root_fd).expect("one root slot");

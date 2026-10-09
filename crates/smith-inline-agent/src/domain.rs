@@ -302,8 +302,8 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
             };
             slot.relays.remove(&call).expect("the retained relay receives one answer");
             match slot.state {
-                Stage::Live | Stage::Cancelling | Stage::Settling => root_step(agent, env, id, event, out),
-                Stage::Gone => {}
+                Stage::Live | Stage::Cancelling => root_step(agent, env, id, event, out),
+                Stage::Settling | Stage::Gone => {}
             }
             stop::settle(agent, env.now, id, out);
         }
@@ -356,8 +356,8 @@ fn terminal(agent: &mut Domain, env: &Env<Limits>, handle: Token, completion: Be
         None => return,
     };
     match slot.state {
-        Stage::Live | Stage::Cancelling | Stage::Settling => root_step(agent, env, id, event, out),
-        Stage::Gone => {}
+        Stage::Live | Stage::Cancelling => root_step(agent, env, id, event, out),
+        Stage::Settling | Stage::Gone => {}
     }
     stop::settle(agent, env.now, id, out);
 }

@@ -396,3 +396,101 @@ fn directories_move_the_exact_io_root_into_the_run() {
     assert!(!workspace.directories[0].writable);
     assert_eq!(workspace.directories[0].conflicts[0].as_ref(), b"conflict");
 }
+
+#[test]
+fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
+    let env = env();
+    let mut agent = Domain::new(&env.limits, configuration(), 93);
+    let mut out = Queue::with_capacity(crate::max_out(&env.limits));
+    step(&mut agent, &env, Input::Parent(parent::Event::Spawn { client: Token::new(1), start: start() }), &mut out);
+    let Some(Output::Parent(parent::Request::Started { agent: handle, .. })) = out.pop() else {
+        panic!("Started first")
+    };
+    let mut completion = None;
+    while let Some(output) = out.pop() {
+        if let Output::Lower { request: Lower::Complete { owner, .. }, .. } = output {
+            completion = Some(owner);
+        }
+    }
+    // This unit supplies a root-boundary command fixture; the composed worlds
+    // supply actual root operations and the native fake-machine settlement.
+    agent.lower.push(smith::Request::Io {
+        owner: Token::new(100),
+        op: smith::tools::Op::Spawn {
+            cwd: smith::tools::Place { root: Token::new(9), path: b".".as_slice().into() },
+            command: b"sleep".as_slice().into(),
+            env: Box::default(),
+            roots: Box::default(),
+            head: 1,
+            tail: 1,
+        },
+        deadline: Time::from_nanos(100),
+    });
+    translate::route(&mut agent, &env, Id::from_token(handle), &mut out);
+    while out.pop().is_some() {}
+    step(&mut agent, &env, Input::Parent(parent::Event::Stop { agent: handle }), &mut out);
+    agent.reclaim();
+    for _ in 0_u32..8 {
+        if !agent.is_ready() {
+            break;
+        }
+        resume(&mut agent, &env, &mut out);
+        agent.reclaim();
+    }
+    let mut provider_cancelled = false;
+    while let Some(output) = out.pop() {
+        if let Output::Lower { request: Lower::Cancel { .. }, .. } = output {
+            provider_cancelled = true;
+        }
+    }
+    assert!(provider_cancelled, "deliver cancellation only after the actual cancel request");
+    step(
+        &mut agent,
+        &env,
+        Input::Below { agent: handle, terminal: Below::Cancelled { owner: completion.expect("actual Complete") } },
+        &mut out,
+    );
+    agent.reclaim();
+    for _ in 0_u32..8 {
+        if !agent.is_ready() {
+            break;
+        }
+        resume(&mut agent, &env, &mut out);
+        agent.reclaim();
+    }
+    let mut answered = false;
+    let mut cancel_io = false;
+    while let Some(output) = out.pop() {
+        match output {
+            Output::Parent(parent::Request::Answered { .. }) => answered = true,
+            Output::Lower { request: Lower::CancelIo { owner }, .. } => {
+                assert_eq!(owner, Token::new(100));
+                cancel_io = true;
+            }
+            Output::Parent(parent::Request::Gone { .. }) => panic!("command terminal is still owed"),
+            Output::Parent(_) | Output::Lower { .. } => {}
+        }
+    }
+    assert!(answered);
+    assert!(cancel_io);
+    assert_eq!(agent.hosted(), 1);
+    // After Answered, the terminal consumes the retained right without entering
+    // the native root again. The boundary fixture therefore needs no tools job.
+    step(
+        &mut agent,
+        &env,
+        Input::Below { agent: handle, terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled } },
+        &mut out,
+    );
+    let Some(Output::Parent(parent::Request::Gone { .. })) = out.pop() else {
+        panic!("command terminal settles Gone")
+    };
+    assert!(out.is_empty());
+    step(
+        &mut agent,
+        &env,
+        Input::Below { agent: handle, terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled } },
+        &mut out,
+    );
+    assert!(out.is_empty());
+}

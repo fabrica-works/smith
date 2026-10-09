@@ -97,6 +97,15 @@ pub fn workspace_start(seed: u64, job: smith_agent_world::Job) -> host::Start {
     source
 }
 
+/// Select whether native tool terminals cross the inline boundary immediately.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ToolTerminals {
+    /// Forward each completed native command.
+    Forward,
+    /// Retain completed commands until explicitly released.
+    Hold,
+}
+
 /// Real inline agent with native fake LLM and boundary-only rights accounting.
 pub struct World {
     pub agent: inline::Domain,
@@ -117,6 +126,7 @@ pub struct World {
     pub machine: smith_machine_world::World,
     pub machine_trace: Vec<String>,
     pub auto_machine: bool,
+    pub tool_terminals: ToolTerminals,
     pub pending_machine: Vec<(Token, Token, Below)>,
     pub auto_ack: bool,
     pub auto_answer: bool,
@@ -146,7 +156,7 @@ impl World {
             provider_out: Queue::with_capacity(provider::MAX_OUT),
             bindings: BTreeMap::new(),
             minted: 0,
-            machine: smith_machine_world::World::new(
+            machine: smith_machine_world::World::bounded(
                 seed,
                 &[
                     skein_fake_machine::Item::directory(b"src"),
@@ -155,9 +165,25 @@ impl World {
                     skein_fake_machine::Item::file(b"AGENTS.md", b"The answer is in src/lib.rs"),
                     skein_fake_machine::Item { mode: 0o755, ..skein_fake_machine::Item::file(b"check-ok", b"") },
                 ],
+                smith_protocol_machine::Limits {
+                    operations: 8,
+                    roots: 1,
+                    path_bytes: 4096,
+                    file_bytes: 1_048_576,
+                    entries: 256,
+                    entry_bytes: 65_536,
+                    processes: 2,
+                    output_bytes: 65_536,
+                    search_hits: 256,
+                    search_bytes: 65_536,
+                    search_line_bytes: 65_536,
+                    env_bytes: 65_536,
+                    stop_grace: Duration::from_millis(1),
+                },
             ),
             machine_trace: Vec::new(),
             auto_machine: true,
+            tool_terminals: ToolTerminals::Forward,
             pending_machine: Vec::new(),
             auto_ack: true,
             auto_answer: true,
@@ -240,6 +266,7 @@ impl World {
     /// Drive real alarms until every requested slot has its containment terminal.
     pub fn run(&mut self) {
         for _ in 0..4096 {
+            self.pass();
             if self.seen.values().all(|seen| seen.gone.is_some()) && !self.seen.is_empty() {
                 return;
             }
@@ -297,7 +324,12 @@ impl World {
                                 host::Ask::Host { .. } => {
                                     host::Reply::Host { error: false, body: b"host completed".as_slice().into() }
                                 }
-                                host::Ask::Deliver { .. } => host::Reply::Delivery(host::Delivery::Nothing),
+                                host::Ask::Deliver { .. } => host::Reply::Delivery(host::Delivery::Delivered(
+                                    host::Delivered::new(Box::from([
+                                        host::Receipt::new(0, b"kept".as_slice().into()).expect("bounded receipt")
+                                    ]))
+                                    .expect("bounded delivery"),
+                                )),
                             },
                         });
                     }
@@ -381,6 +413,19 @@ impl World {
         }
     }
 
+    fn machine_ready_replies(&mut self) {
+        let mut held = Vec::new();
+        for (agent, callback, terminal) in std::mem::take(&mut self.pending_machine) {
+            if self.tool_terminals == ToolTerminals::Hold && matches!(&terminal, Below::Done { .. }) {
+                held.push((agent, callback, terminal));
+            } else {
+                self.pending_machine.push((agent, callback, terminal));
+            }
+        }
+        self.machine_replies();
+        self.pending_machine.extend(held);
+    }
+
     fn provider_replies(&mut self) {
         while let Some(provider::Request::Reply { to, result }) = self.provider_out.pop() {
             let callback = to.into_token();
@@ -416,8 +461,12 @@ impl World {
     fn pass(&mut self) {
         for _ in 0..4096 {
             self.outputs();
-            if self.auto_machine && !self.pending_machine.is_empty() {
-                self.machine_replies();
+            if self.auto_machine
+                && self.pending_machine.iter().any(|(_, _, terminal)| {
+                    self.tool_terminals == ToolTerminals::Forward || !matches!(terminal, Below::Done { .. })
+                })
+            {
+                self.machine_ready_replies();
                 continue;
             }
             let pending = std::mem::take(&mut self.pending);
