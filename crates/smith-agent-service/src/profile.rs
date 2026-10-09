@@ -56,7 +56,13 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     let policy = profile.policy;
     let memory = declared.memory.ok_or(derived(Layer::Declared, "memory"))?;
     let path = path::path(profile, configuration)?;
-    let client = path.client;
+    let mut client = path.client;
+    // Receiving maxima cover both configured transports; each destination
+    // takes its own pieces before entering the actual native connection pool.
+    client.http.request = tls::client::MAX_PLAINTEXT;
+    client.http.read = 19_000;
+    client.http.send = 19_000;
+    client.sse.chunk = client.http.read;
     let decoded_call_bytes = u64::from(declared.calls_per_response)
         .checked_mul(u64::from(client.input))
         .ok_or(derived(Layer::Session, "decoded_call_bytes"))?
@@ -85,8 +91,8 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     let mut domain = derive_domain(profile, configuration, &path)?;
     domain.decoded_call_bytes = decoded_call_bytes;
     domain.session.completion_bytes = completion;
-    // Before skein's derivation removes its sent-text cap, rendering takes the
-    // smaller cap and marks oversized outcomes rather than refusing the call.
+    // The result bound holds whole capped outcomes; native outgoing text has
+    // no receiving-string cap. Cutting remains a safeguard at this layer.
     let rendered_result = llm::render_worst_case(
         &domain.session.tools,
         domain.run.host_reply_bytes.max(domain.run.message_bytes),
@@ -144,6 +150,22 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     Ok(limits)
 }
 
+/// Measure one endpoint's fixed schema, framing and configured option contribution.
+/// The root adds the admitted contract's exact generated-schema bytes to each opening.
+pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools::Limits) -> Result<u64, Refusal> {
+    let client = endpoint_client(profile, endpoint)?;
+    let inventory = profile.policy.host_tools.checked_add(10).ok_or(derived(Layer::Llm, "prompt_allowance"))?;
+    let framing = llm::prompt_allowance(endpoint.provider, &client, inventory)
+        .or(Err(derived(Layer::Llm, "prompt_allowance")))?;
+    let stated = llm::Stated::from_tools(tools, client.input).ok_or(derived(Layer::Llm, "fixed_schema_bytes"))?;
+    llm::fixed_schema_bytes(&stated)
+        .ok_or(derived(Layer::Llm, "fixed_schema_bytes"))?
+        .checked_add(framing)
+        .ok_or(derived(Layer::Llm, "prompt_allowance"))?
+        .checked_add(endpoint.option_bytes)
+        .ok_or(derived(Layer::Llm, "endpoint_own"))
+}
+
 // Endpoint-derived request heads include both credential ceilings and fit one
 // native TLS plaintext piece (skein's llm-connection.md, section 7).
 fn tls_limits() -> tls::client::Limits {
@@ -184,7 +206,7 @@ fn derive_domain(
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Tools, field.name())),
     };
-    let own = room::own_part(&tools, path.client.input, 0).ok_or(derived(Layer::Service, "own_part"))?;
+    let own = room::own_part(&tools, path.client.input, path.framing).ok_or(derived(Layer::Service, "own_part"))?;
     let parts = room::room(profile, configuration, own, 0)?;
     let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
     let run = match run::derive(&run::Derivation {
@@ -227,12 +249,16 @@ fn derive_domain(
         output_items: path.client.output_items,
         call_input: path.client.input,
         detail: path.client.detail_bytes,
-        own: own
+        own: parts
+            .own
+            .checked_sub(path.framing)
+            .ok_or(derived(Layer::Session, "history_bytes"))?
             .checked_add(parts.host)
             .ok_or(derived(Layer::Session, "history_bytes"))?
             .checked_mul(u64::from(shared::ESCAPE))
             .ok_or(derived(Layer::Session, "history_bytes"))?,
-        allowance: 0,
+        allowance: path.framing,
+        protocol_allowance: own.checked_add(parts.host).ok_or(derived(Layer::Session, "protocol_allowance"))?,
         threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
         tools,
     }) {

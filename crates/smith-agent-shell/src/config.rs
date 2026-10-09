@@ -273,6 +273,12 @@ fn build(document: Document) -> Result<Configuration, String> {
                 model: model.name.clone(),
                 window: model.window,
                 output: model.output,
+                protocol_allowance: service::profile::endpoint_allowance(
+                    &profile,
+                    endpoint,
+                    &limits.domain.session.tools,
+                )
+                .map_err(profile_refusal)?,
                 head: model.head,
                 idle: model.idle,
             });

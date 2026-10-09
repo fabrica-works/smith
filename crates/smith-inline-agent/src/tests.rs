@@ -24,6 +24,7 @@ fn configuration() -> smith::Config {
     smith::Config {
         endpoints: Box::from([run::charter::Endpoint(0)]),
         models: Box::from([smith::ConfiguredModel {
+            protocol_allowance: 0,
             endpoint: run::charter::Endpoint(0),
             model: b"fake-1".as_slice().into(),
             window: 8192,

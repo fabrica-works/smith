@@ -388,6 +388,7 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
     found.guides.push(Guide { repository: 0, text: bytes(b"Run the tests."), whole: true }).expect("room");
     let expected = Opening {
         final_turn: None,
+        generated_schema_bytes: LIMITS.schema_costs.finish(&charter().outcome).expect("schema count"),
         identity: opening.identity,
         ordinal: 0,
         activation: 1,

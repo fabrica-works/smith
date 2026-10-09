@@ -127,6 +127,10 @@ impl Domain {
                     model: model.model.clone(),
                     window: model.window,
                     output: model.output,
+                    protocol_allowance: *config
+                        .protocol_allowances
+                        .get(index)
+                        .expect("validated per-model protocol inventory"),
                     head: progress.head,
                     idle: progress.idle,
                 })

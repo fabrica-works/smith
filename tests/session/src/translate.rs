@@ -41,6 +41,7 @@ pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
     let agent::Prompt {
         endpoint: _,
         affinity,
+        protocol_allowance: _,
         model,
         system,
         tools,

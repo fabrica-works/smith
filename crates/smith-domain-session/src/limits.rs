@@ -202,6 +202,8 @@ pub struct Derivation {
     /// Fixed Smith and largest host system/schema bytes, already escaped.
     pub own: u64,
     pub allowance: u64,
+    /// Receiving ceiling for the actual opening's measured protocol contribution.
+    pub protocol_allowance: u64,
     /// Numerator and denominator of the compaction share.
     pub threshold: [u32; 2],
 }
@@ -266,7 +268,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     Ok(Limits {
         sessions: inputs.conversations,
         spend: inputs.max_spend,
-        protocol_allowance: inputs.allowance,
+        protocol_allowance: inputs.protocol_allowance,
         history_messages: history_items,
         history_blocks: history_items,
         history_bytes,

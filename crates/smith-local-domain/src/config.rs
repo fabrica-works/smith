@@ -42,6 +42,8 @@ pub struct Config {
     pub sub_agents: bool,
     /// Declared deadlines in the same order as `models`, kept outside charters.
     pub progress: Box<[smith_domain::session::Progress]>,
+    /// Startup-measured provider/schema bytes, in the same order as models.
+    pub protocol_allowances: Box<[u64]>,
     /// Activation budget in the host's unit.
     pub budget: run::Budget,
     /// Main's finishing turns and time, kept outside child-opening budgets.
@@ -182,6 +184,14 @@ impl Config {
         for (index, account) in self.accounts.iter().enumerate() {
             if self.accounts.get(index.saturating_add(1)..).unwrap_or_default().contains(account) {
                 return Err(Invalid::Accounts);
+            }
+        }
+        if self.protocol_allowances.len() != self.models.len() {
+            return Err(Invalid::Models);
+        }
+        for allowance in &self.protocol_allowances {
+            if *allowance > limits.smith.session.protocol_allowance {
+                return Err(Invalid::Models);
             }
         }
         self.check_models(limits)?;

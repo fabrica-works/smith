@@ -226,6 +226,9 @@ impl Settings {
                 tools: TOOLS,
             },
             provider: provider::Config {
+                cache_entries: 0,
+                cache_lifetime: Duration::from_secs(60),
+                unscoped_reads: 0,
                 calls: 16,
                 query_bytes: 1 << 20,
                 script_bytes: 1 << 20,
@@ -284,6 +287,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     agent::Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: b"fake-1"[..].into(),
@@ -1394,7 +1398,10 @@ impl World {
         );
         assert!(Some(self.now) < session.expires, "session {opener} has time left");
         let messages = u32::try_from(prompt.messages.len()).expect("a small transcript");
-        assert!(messages < self.settings.agent.messages, "session {opener}'s transcript has room for the answer");
+        assert!(
+            messages < self.settings.agent.history_messages,
+            "session {opener}'s transcript has room for the answer"
+        );
         let left = budget.output - usage.output_tokens.unwrap_or(0);
         let most = u32::try_from(left).unwrap_or(u32::MAX).min(session.max_tokens);
         assert_eq!(prompt.max_tokens, most, "session {opener}'s answer takes no more than the output budget left");

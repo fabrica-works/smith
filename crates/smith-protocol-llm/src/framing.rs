@@ -1,0 +1,62 @@
+//! Startup measures provider punctuation with empty application text.
+//! Only a byte count leaves this module; no credential or destination is kept.
+//! `prompt_allowance` prices the configured tool inventory and fixed routing
+//! fields. Contract: protocol/limits.md, section3.2.
+
+use alloc::boxed::Box;
+
+use skein_lib::List;
+use skein_llm::{self as shared, client};
+
+use crate::Error;
+
+/// Measure fixed provider framing, including the largest supported optional routing fields.
+/// Actual endpoint option text and identity are counted separately in its own part.
+pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, tools: u32) -> Result<u64, Error> {
+    let mut offered = List::with_capacity(tools);
+    for _ in 0..tools {
+        let schema =
+            shared::Json::from_bytes(b"{}", &shared::DocumentLimits { bytes: 2, strings: 1, tokens: 2, depth: 2 })
+                .or(Err(Error::Invalid))?;
+        offered
+            .push(shared::Tool { name: Box::from(b"a".as_slice()), description: Box::new([]), schema })
+            .or(Err(Error::Limit))?;
+    }
+    let endpoint = match provider {
+        shared::Provider::OpenAiCodex => shared::Endpoint::codex(),
+        shared::Provider::Anthropic => shared::Endpoint::anthropic(),
+    };
+    let reasoning_effort = match provider {
+        shared::Provider::OpenAiCodex => Some(Box::<[u8]>::default()),
+        shared::Provider::Anthropic => None,
+    };
+    let mut prompt = shared::Prompt {
+        model: Box::from(b"a".as_slice()),
+        instructions: Box::new([]),
+        tools: offered.into_boxed(),
+        choice: shared::ToolChoice::Auto,
+        messages: Box::new([shared::Message {
+            role: shared::Role::User,
+            content: Box::new([shared::Block::Text { text: Box::new([]), replay: None }]),
+        }]),
+        reasoning_effort,
+        affinity: Some(shared::Affinity { key: [0; 16], thread: u32::MAX }),
+        max_output_tokens: None,
+    };
+    prompt.output_ceiling(provider, client.declared_output_tokens).or(Err(Error::Invalid))?;
+    let account_id = match provider {
+        shared::Provider::OpenAiCodex => Box::from(b"a".as_slice()),
+        shared::Provider::Anthropic => Box::new([]),
+    };
+    let credential = shared::Credential { access_token: Box::from(b"a".as_slice()), account_id };
+    let mut limits = *client;
+    limits.http.request = skein_tls::client::MAX_PLAINTEXT;
+    limits.http.read = 4096;
+    limits.http.send = skein_tls::client::MAX_PLAINTEXT;
+    limits.sse.chunk = limits.http.read;
+    let measured = match client::measure(&prompt, &credential, &endpoint, &limits) {
+        Ok(measured) => measured,
+        Err(error) => return Err(Error::from_shared(error)),
+    };
+    Ok(u64::from(measured.body))
+}

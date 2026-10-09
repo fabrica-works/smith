@@ -405,6 +405,7 @@ fn fill_spec(limits: Limits) -> Spec {
     Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(1),
@@ -494,6 +495,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     let spec = Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
@@ -572,6 +574,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let spec = Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
@@ -692,6 +695,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     let spec = Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),

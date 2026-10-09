@@ -60,6 +60,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
     let Opening {
         final_turn,
         host_tools,
+        generated_schema_bytes,
         llm,
         system,
         prompt,
@@ -106,6 +107,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         },
         endpoint: llm::Endpoint(llm.endpoint.0),
         affinity: llm::Affinity { key: identity.bytes(), thread: ordinal },
+        protocol_allowance: generated_schema_bytes,
         progress,
         model: llm.model,
         system,
@@ -257,7 +259,8 @@ pub(crate) const fn host_effect(effect: run::HostEffect) -> Effect {
     }
 }
 
-/// Lossless small sibling translation; no provider parsing or retry policy.
+/// Project the existing run failure class; native cap detail remains in session facts.
+/// Smith06.7 extends the application answer carrier; no retry policy lives here.
 fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
     match failure {
         llm::Failure::Limit { .. } | llm::Failure::ApplicationLimit => run::CompletionFailure::Limit,

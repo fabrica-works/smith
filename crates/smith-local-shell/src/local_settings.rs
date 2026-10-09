@@ -196,6 +196,7 @@ pub fn policy(
     settings: &Settings,
     endpoints: &channel::Endpoints,
     agent_limits: domain::Limits,
+    protocol_allowances: Box<[u64]>,
 ) -> Result<Prepared, String> {
     run::Budget {
         turns: settings.budget.turns,
@@ -287,6 +288,7 @@ pub fn policy(
         brief: run::charter::Brief { sections: brief.into() },
         models: models.into(),
         sub_agents: settings.sub_agents,
+        protocol_allowances,
         progress: settings
             .models
             .iter()
@@ -615,7 +617,8 @@ mod tests {
         limits: &domain::Limits,
         previous: &run::charter::Charter,
     ) {
-        let enabled = policy(settings, endpoints, *limits).expect("enabled sub-agent policy");
+        let enabled = policy(settings, endpoints, *limits, vec![0; settings.models.len()].into())
+            .expect("enabled sub-agent policy");
         let encoded = channel::encode_charter(&local::charter(&enabled.config), &wire::CEILINGS, endpoints)
             .expect("enabled charter");
         let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, endpoints).expect("enabled wire grant");
@@ -679,7 +682,9 @@ mod tests {
                 "seconds" => exceeded.budget.seconds = most + 1,
                 _ => unreachable!("test keys"),
             }
-            let refused = policy(&exceeded, &endpoints, agent_limits).err().expect("past ceiling");
+            let refused = policy(&exceeded, &endpoints, agent_limits, vec![0; exceeded.models.len()].into())
+                .err()
+                .expect("past ceiling");
             assert!(refused.contains(&format!("budget.{key}")) && refused.contains(&most.to_string()), "{refused}");
         }
         for key in ["input_price", "cached_price", "cache_write_price", "output_price"] {
@@ -691,10 +696,13 @@ mod tests {
                 "output_price" => unpriced.models[0].output_price = 0,
                 _ => unreachable!("test keys"),
             }
-            let refused = policy(&unpriced, &endpoints, agent_limits).err().expect("zero rate");
+            let refused = policy(&unpriced, &endpoints, agent_limits, vec![0; unpriced.models.len()].into())
+                .err()
+                .expect("zero rate");
             assert_eq!(refused, format!("models[0].{key} must be positive"));
         }
-        let prepared = policy(&settings, &endpoints, agent_limits).expect("bounded policy");
+        let prepared =
+            policy(&settings, &endpoints, agent_limits, vec![0; settings.models.len()].into()).expect("bounded policy");
         assert!(prepared.paths.is_empty());
         assert_eq!(prepared.limits.endpoints.as_ref(), &[run::charter::Endpoint(7)]);
         let encoded = channel::encode_charter(&local::charter(&prepared.config), &wire::CEILINGS, &endpoints)

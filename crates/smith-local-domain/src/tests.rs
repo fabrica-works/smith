@@ -38,6 +38,7 @@ pub(super) fn config() -> Config {
                 text: Box::from(&b"Work carefully"[..]),
             }]),
         },
+        protocol_allowances: Box::new([0]),
         progress: Box::new([smith_domain::session::Progress {
             head: Duration::from_secs(60),
             idle: Duration::from_secs(30),

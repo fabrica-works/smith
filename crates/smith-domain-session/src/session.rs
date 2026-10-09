@@ -157,6 +157,7 @@ pub(crate) struct Session {
 /// What a session holds in every state.
 #[derive(Debug)]
 struct Conversation {
+    protocol_allowance: u64,
     /// The opener's token, echoed on every record back to it.
     opener: Token,
     endpoint: Endpoint,
@@ -1934,6 +1935,7 @@ fn admit(
     now: Time,
 ) -> Option<(Conversation, tools::Authority)> {
     if spec.output == 0
+        || spec.protocol_allowance > limits.protocol_allowance
         || spec.progress.head == Duration::ZERO
         || spec.progress.idle == Duration::ZERO
         || !affordable(&spec.budget, &limits.budget)
@@ -1951,6 +1953,7 @@ fn admit(
     let mut transcript = List::with_capacity(limits.history_messages);
     transcript.push(Message { role: Role::User, content }).ok()?;
     let conversation = Conversation {
+        protocol_allowance: spec.protocol_allowance,
         opener,
         endpoint: spec.endpoint,
         affinity: spec.affinity,
@@ -2071,6 +2074,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
     let left = conversation.budget.output.saturating_sub(conversation.reported.output_tokens.unwrap_or(0));
     let max_tokens = u32::try_from(left).unwrap_or(u32::MAX).min(conversation.output);
     let prompt = Prompt {
+        protocol_allowance: conversation.protocol_allowance,
         endpoint: conversation.endpoint,
         affinity: conversation.affinity,
         model: conversation.model.clone(),

@@ -694,13 +694,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     };
     let prompt = peer.prompt(prompt);
     let reservation = match input_bytes {
-        Some(bytes) => session::reserve_completion(
-            &mut domain.session,
-            owner,
-            bytes,
-            env.limits.session.protocol_allowance,
-            prompt.max_tokens,
-        ),
+        Some(bytes) => session::reserve_completion(&mut domain.session, owner, bytes, 0, prompt.max_tokens),
         None => None,
     };
     let Some(most) = reservation else {
@@ -755,6 +749,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
 /// Session alone prices, while token ceilings remain receiving limits.
 fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: run::Opening) {
     let progress = domain.config.progress(&opening.llm);
+    let allowance = domain.config.protocol_allowance(&opening.llm);
     let activation = opening.activation;
     let account = opening.llm.account;
     let dialect = opening.llm.dialect;
@@ -785,6 +780,10 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         let ended = run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO };
         return run_step(domain, env, ended);
     };
+    let Some(protocol_allowance) = spec.protocol_allowance.checked_add(allowance) else {
+        return run_step(domain, env, run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO });
+    };
+    spec.protocol_allowance = protocol_allowance;
     if !answered.is_empty() {
         let Some(length) = answered.len().checked_add(spec.prompt.len()) else {
             return run_step(

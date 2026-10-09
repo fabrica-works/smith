@@ -776,6 +776,7 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    protocol_allowance: 0,
                     endpoint: smith_domain::run::charter::Endpoint(0),
                     model: Box::from(&b"fixture-model"[..]),
                     window: 8192,
@@ -1158,6 +1159,7 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    protocol_allowance: 0,
                     endpoint: smith_domain::run::charter::Endpoint(0),
                     model: Box::from(&b"fixture-model"[..]),
                     window: 8192,

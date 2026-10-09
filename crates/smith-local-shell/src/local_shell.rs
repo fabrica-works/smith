@@ -40,7 +40,22 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let agent_bytes = local_settings::agent_document(&settings)?;
     let agent_config = config::parse(&agent_bytes)?;
     let endpoints = agent_config.service.channel_endpoints.clone();
-    let mut prepared = local_settings::policy(&settings, &endpoints, agent_config.service.limits.domain)?;
+    let mut protocol_allowances = Vec::with_capacity(settings.models.len());
+    for model in &settings.models {
+        let endpoint = endpoints.resolve(model.endpoint.as_bytes()).ok_or("local model endpoint is absent")?;
+        let configured = agent_config
+            .service
+            .domain
+            .models
+            .iter()
+            .find(|configured| {
+                configured.endpoint.0 == endpoint.number && configured.model.as_ref() == model.name.as_bytes()
+            })
+            .ok_or("local model declaration is absent")?;
+        protocol_allowances.push(configured.protocol_allowance);
+    }
+    let mut prepared =
+        local_settings::policy(&settings, &endpoints, agent_config.service.limits.domain, protocol_allowances.into())?;
     fs::create_dir_all(state_root).map_err(|error| format!("state directory: {error}"))?;
     let agent_path = state_root.join("agent.json");
     save_agent_config(&agent_path, &agent_bytes)?;

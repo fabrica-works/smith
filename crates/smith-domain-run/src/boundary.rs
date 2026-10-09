@@ -655,6 +655,8 @@ pub struct Opening {
     /// Whether the parent offers main the separately granted delivery tool.
     /// It is false for every child; this descriptor grants no final outcome form.
     pub deliver: bool,
+    /// Contract-generated schema bytes, counted exactly from startup renderer costs.
+    pub generated_schema_bytes: u64,
     /// The LLM it talks to.
     pub llm: Llm,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.

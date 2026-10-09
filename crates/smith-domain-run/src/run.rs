@@ -1625,6 +1625,7 @@ fn open(
         &run.found,
         run.spent,
         run.deadline.saturating_since(env.now),
+        &env.limits.schema_costs,
     );
     let offered = run.inbox.offer(&env.limits);
     opening.prompt = prompt::opening(prompt::has_brief(&run.charter), offered);
@@ -1909,6 +1910,7 @@ fn sub_agent(
             note: prompt::child_final_note(),
             allowance: agent::final_allowance(plan.budget.time, env.limits.wrap_up),
         }),
+        generated_schema_bytes: 0,
         identity: run.identity,
         ordinal,
         activation: run.activation,

@@ -344,6 +344,7 @@ fn configuration() -> agent::Config {
     agent::Config {
         endpoints: Box::new([agent::run::charter::Endpoint(0)]),
         models: Box::new([smith_domain::ConfiguredModel {
+            protocol_allowance: 0,
             endpoint: smith_domain::run::charter::Endpoint(0),
             model: Box::from(&b"fake"[..]),
             window: 8192,

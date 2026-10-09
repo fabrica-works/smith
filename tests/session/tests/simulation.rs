@@ -196,6 +196,7 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
         Time::ZERO,
         Spec {
             affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            protocol_allowance: 0,
             progress: smith_domain_session::Progress { head: Duration::from_secs(1), idle: Duration::from_secs(1) },
             ..spec(b"fix the build")
         },

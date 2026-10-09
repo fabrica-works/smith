@@ -26,6 +26,7 @@ mod decode;
 mod descriptions;
 mod endpoints;
 mod failure;
+mod framing;
 mod grants;
 mod limits;
 mod prompt;
@@ -45,6 +46,7 @@ pub use endpoints::{
     OversizedReasoning, endpoint_own,
 };
 pub use failure::{cancelled, failed, refusal};
+pub use framing::prompt_allowance;
 pub use grants::{GrantError, Grants};
 pub use limits::{Limits, Receiving, completion_worst_case, render_worst_case, worst_case};
 pub use prompt::{prepare_prompt, prompt};

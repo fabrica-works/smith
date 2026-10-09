@@ -239,6 +239,8 @@ pub struct Affinity {
 pub struct Prompt {
     pub endpoint: Endpoint,
     pub affinity: Affinity,
+    /// The opening's measured protocol contribution, included in input pricing.
+    pub protocol_allowance: u64,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
@@ -275,7 +277,7 @@ impl Prompt {
             .checked_add(
                 u64::try_from(size_of::<Message>()).ok()?.checked_mul(u64::try_from(self.messages.len()).ok()?)?,
             )?;
-        bytes = bytes.checked_add(self.namespace.owned_bytes()?)?;
+        bytes = bytes.checked_add(self.namespace.owned_bytes()?)?.checked_add(self.protocol_allowance)?;
         match &self.choice {
             ToolChoice::Auto | ToolChoice::None => {}
             ToolChoice::Only(tickets) => {

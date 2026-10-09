@@ -26,9 +26,26 @@ pub(crate) fn main(
     found: &Found,
     spent: Spend,
     left: Duration,
+    costs: &crate::SchemaCosts,
 ) -> Opening {
+    let mut generated_schema_bytes = costs
+        .finish(&charter.outcome)
+        .expect("admitted contract schema arithmetic")
+        .checked_add(costs.finish_text)
+        .expect("admitted contract schema text arithmetic");
+    match &charter.grants.deliver {
+        Some(change) => {
+            generated_schema_bytes = generated_schema_bytes
+                .checked_add(costs.deliver(change).expect("admitted delivery schema arithmetic"))
+                .expect("admitted schema aggregate")
+                .checked_add(costs.deliver_text)
+                .expect("admitted schema text aggregate");
+        }
+        None => {}
+    }
     Opening {
         final_turn: None,
+        generated_schema_bytes,
         identity,
         ordinal: 0,
         activation,

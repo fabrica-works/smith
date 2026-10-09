@@ -24,6 +24,8 @@ pub struct ConfiguredModel {
     pub window: u32,
     /// Declared maximum completion tokens, thinking included.
     pub output: u32,
+    /// Endpoint-specific fixed schemas, provider framing and configured option bytes.
+    pub protocol_allowance: u64,
     /// First response byte deadline for each call.
     pub head: Duration,
     /// Maximum gap between response events for each call.
@@ -71,6 +73,7 @@ impl Config {
             if model.model.is_empty()
                 || model.window == 0
                 || model.output == 0
+                || model.protocol_allowance > limits.session.protocol_allowance
                 || model.head == Duration::ZERO
                 || model.idle == Duration::ZERO
                 || !self.contains(model.endpoint)
@@ -107,6 +110,15 @@ impl Config {
         for model in &self.models {
             if llm.endpoint == model.endpoint && llm.model == model.model {
                 return crate::session::Progress { head: model.head, idle: model.idle };
+            }
+        }
+        unreachable!("admission checked the declared model")
+    }
+
+    pub(crate) fn protocol_allowance(&self, llm: &Llm) -> u64 {
+        for model in &self.models {
+            if llm.endpoint == model.endpoint && llm.model == model.model {
+                return model.protocol_allowance;
             }
         }
         unreachable!("admission checked the declared model")

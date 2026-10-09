@@ -254,6 +254,8 @@ pub struct Spec {
     pub endpoint: Endpoint,
     /// The opener's affinity; a resumed session keeps its transcript's instead.
     pub affinity: crate::llm::Affinity,
+    /// Measured fixed/provider and generated-contract bytes absent from domain text.
+    pub protocol_allowance: u64,
     pub progress: Progress,
     /// The provider's name for the model.
     pub model: Box<[u8]>,

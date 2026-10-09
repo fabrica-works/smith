@@ -260,6 +260,7 @@ impl Harness {
                     endpoints: Box::new([Endpoint(1), Endpoint(2)]),
                     models: Box::new([
                         crate::ConfiguredModel {
+                            protocol_allowance: 0,
                             endpoint: Endpoint(1),
                             model: Box::from(&b"model-a"[..]),
                             window: 8192,
@@ -268,6 +269,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            protocol_allowance: 0,
                             endpoint: Endpoint(1),
                             model: Box::from(&b"model-b"[..]),
                             window: 8192,
@@ -276,6 +278,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            protocol_allowance: 0,
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-a"[..]),
                             window: 8192,
@@ -284,6 +287,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            protocol_allowance: 0,
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-b"[..]),
                             window: 8192,

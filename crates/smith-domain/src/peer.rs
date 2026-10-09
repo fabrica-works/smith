@@ -241,6 +241,7 @@ impl Peer {
         let sllm::Prompt {
             endpoint,
             affinity,
+            protocol_allowance: _,
             model,
             system,
             tools,

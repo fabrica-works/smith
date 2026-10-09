@@ -43,6 +43,7 @@ pub fn configuration() -> smith::Config {
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .into_iter()
             .map(|model| smith::ConfiguredModel {
+                protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: model.into(),
                 window: 8192,

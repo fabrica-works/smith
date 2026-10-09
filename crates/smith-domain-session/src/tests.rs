@@ -292,6 +292,7 @@ fn spec() -> Spec {
     Spec {
         final_turn: None,
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
+        protocol_allowance: 0,
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(b"model"),
@@ -2572,6 +2573,7 @@ fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
         detail: 128,
         own: 600,
         allowance: 100,
+        protocol_allowance: 100,
         threshold: [4, 5],
     };
     let limits = crate::derive(&inputs).expect("derived window");

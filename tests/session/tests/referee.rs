@@ -5,6 +5,7 @@ use smith_session_world::assert_prompt_extends;
 fn prompt() -> Prompt {
     Prompt {
         choice: smith_domain_session::llm::ToolChoice::Auto,
+        protocol_allowance: 0,
         namespace: smith_domain_tools::Namespace::One,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         endpoint: Endpoint(0),

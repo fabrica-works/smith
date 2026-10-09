@@ -2137,6 +2137,7 @@ fn configuration() -> agent::Config {
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .iter()
             .map(|name| smith_domain::ConfiguredModel {
+                protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: (*name).into(),
                 window: 65_536,

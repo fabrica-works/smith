@@ -742,6 +742,7 @@ fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
         smith_domain::Config {
             endpoints: Box::new([Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                protocol_allowance: 0,
                 endpoint: smith_domain::run::charter::Endpoint(0),
                 model: Box::from(&b"m"[..]),
                 window: 8192,
