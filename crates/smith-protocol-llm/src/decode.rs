@@ -250,8 +250,8 @@ fn optional_u32(document: &Document, name: &[u8]) -> Result<Option<u32>, llm::Pr
     }
 }
 
-fn optional_seconds(tokens: &[Token], name: &[u8]) -> Result<Option<Duration>, llm::Problem> {
-    match optional_u32(tokens, name)? {
+fn optional_seconds(document: &Document, name: &[u8]) -> Result<Option<Duration>, llm::Problem> {
+    match optional_u32(document, name)? {
         Some(seconds) => Ok(Some(Duration::from_secs(u64::from(seconds)))),
         None => Ok(None),
     }
