@@ -87,7 +87,7 @@ pub(crate) struct Job {
 
 /// The session whose live job issued the IO token, without exposing job state.
 pub(crate) fn io_session(domain: &Domain, owner: Token) -> Option<Token> {
-    let job = domain.jobs.get(skein_lib::Id::from_token(owner))?;
+    let job = domain.jobs.get(Id::from_token(owner))?;
     Some(kit::session(domain.kits.get(job.kit)?))
 }
 

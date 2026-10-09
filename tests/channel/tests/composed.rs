@@ -46,7 +46,7 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     host_world.sent();
     let decoded = wire.take_agent_start().expect("translated Start reached agent side");
     let mut domain = agent::Domain::new(&limits, configuration(), 7);
-    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(agent::max_out(&limits));
     while domain.pop_fact().is_some() {}
     agent::step(
@@ -69,12 +69,18 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     );
     let mut run = None;
     let mut completion = None;
+    let mut completion_span = None;
     while let Some(request) = out.pop() {
         match request {
             AgentRequest::Admitted { host_run, run: admitted } => {
                 assert_eq!(host_run, Token::new(7));
                 run = Some(admitted);
                 wire.agent_admits();
+            }
+            AgentRequest::Long { host_run, operation: agent::Operation::Completion, until } => {
+                assert_eq!(host_run, Token::new(7));
+                completion_span = Some(until.saturating_since(env.now));
+                wire.agent_starts_long(agent::Operation::Completion, until.saturating_since(env.now));
             }
             AgentRequest::Complete { owner, .. } => completion = Some(owner),
             other => panic!("unexpected initial agent request: {other:?}"),
@@ -86,6 +92,12 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     assert!(wire.observations().contains(&Observation::HostAdmitted));
     host_world.up(Up::Admitted);
     assert!(host_world.seen.admitted);
+    let span = completion_span.expect("actual issued completion announces its deadline");
+    assert!(wire.observations().contains(&Observation::HostLong { operation: agent::Operation::Completion, span }));
+    host_world.up(Up::Long { operation: agent::Operation::Completion, span });
+    host_world.at(11);
+    assert_eq!(host_world.seen.fault, None, "completion outlasts the ten-second no-progress bound");
+    env.now = Time::ZERO.saturating_add(Duration::from_secs(11));
 
     // Send beyond the kit's ingress directly through the host channel half.
     // Every hostile-but-decodable input reaches the real root/run ingress.
@@ -151,6 +163,11 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     assert!(out.pop().is_none());
     while domain.pop_fact().is_some() {}
     agent::step(&mut domain, &env, AgentEvent::Cancelled { owner: completion }, &mut out);
+    assert_eq!(out.pop(), Some(AgentRequest::LongDone { host_run: Token::new(7) }));
+    wire.agent_ends_long();
+    wire.settle();
+    assert!(wire.observations().contains(&Observation::HostLongDone));
+    host_world.up(Up::LongDone);
     let answer = match out.pop().expect("real agent domain answers after provider settlement") {
         AgentRequest::Answer { to, answer, read: _ } => {
             assert_eq!(to, ReplyTo::new(Token::new(1)));

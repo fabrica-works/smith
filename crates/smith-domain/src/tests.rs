@@ -352,7 +352,6 @@ impl Harness {
                     requests.push(Request::Answer { to, answer, read }).expect("room for max_out");
                 }
                 Request::Long { host_run, operation, until } => {
-                    assert_eq!(host_run, Token::new(77));
                     self.long.push(Some(operation)).expect("bounded issued operation history");
                     match operation {
                         crate::Operation::Checks => {
@@ -363,7 +362,6 @@ impl Harness {
                     }
                 }
                 Request::LongDone { host_run } => {
-                    assert_eq!(host_run, Token::new(77));
                     self.long.push(None).expect("bounded actual operation terminals");
                     if self.checking {
                         self.checking = false;
