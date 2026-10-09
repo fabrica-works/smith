@@ -281,6 +281,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
+        final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),

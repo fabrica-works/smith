@@ -58,6 +58,7 @@ pub(crate) struct Offered {
 /// asked for may write, which the widest the asker may give them do.
 pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progress) -> Option<(Spec, Offered)> {
     let Opening {
+        final_turn,
         host_tools,
         llm,
         system,
@@ -99,6 +100,10 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
     }
     let run::Budget { turns, spend: _, time } = budget;
     let spec = Spec {
+        final_turn: match final_turn {
+            Some(final_turn) => Some(session::FinalTurn { note: final_turn.note, allowance: final_turn.allowance }),
+            None => None,
+        },
         endpoint: llm::Endpoint(llm.endpoint.0),
         affinity: llm::Affinity { key: identity.bytes(), thread: ordinal },
         progress,
@@ -159,6 +164,7 @@ pub(crate) fn effect(ask: &Ask) -> Effect {
 /// Why the session yielded, as the run hears it.
 pub(crate) const fn stop(stop: Yield) -> run::Stop {
     match stop {
+        Yield::Budget => run::Stop::Budget,
         Yield::Done => run::Stop::EndTurn,
         Yield::Truncated => run::Stop::MaxTokens,
         Yield::Refused => run::Stop::Refusal,

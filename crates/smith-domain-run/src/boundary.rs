@@ -41,7 +41,7 @@ use alloc::boxed::Box;
 
 use crate::delivery::{CallName, Delivered, Delivery, DeliveryFailure, DeliveryRefusal};
 
-use skein_lib::{ReplyTo, Time, Token};
+use skein_lib::{Duration, ReplyTo, Time, Token};
 
 use crate::budget::{Budget, Exhausted, Spend};
 use crate::charter::{Charter, Families, Llm, Tools};
@@ -633,6 +633,8 @@ pub enum Read {
 /// What a conversation is opened with.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Opening {
+    /// Session-owned final answer for a child; main finishes through the run gate.
+    pub final_turn: Option<FinalTurn>,
     /// The run identity shared by all its conversations.
     pub identity: crate::Identity,
     /// Unique conversation ordinal within this activation; main is zero.
@@ -674,9 +676,19 @@ pub struct Opening {
     pub families: Families,
 }
 
+/// The run's child final note and allowance (domain/run.md, section 5.3).
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub struct FinalTurn {
+    /// Appended by the session before its final answer.
+    pub note: Box<[u8]>,
+    pub allowance: Duration,
+}
+
 /// Why a conversation's LLM stopped calling tools.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Stop {
+    /// The child's share ended and its final turn answered.
+    Budget,
     /// It finished its turn.
     EndTurn,
     /// It ran out of tokens mid-answer.
@@ -755,13 +767,13 @@ pub enum CompletionFailure {
     /// Provider rate allowance requires the retained cooldown.
     RateLimited {
         /// Exact lower cooldown, without scheduling or recovery policy.
-        retry_after: skein_lib::Duration,
+        retry_after: Duration,
     },
 
     /// Provider account allowance requires the retained cooldown.
     Exhausted {
         /// Exact lower cooldown, without scheduling or recovery policy.
-        retry_after: skein_lib::Duration,
+        retry_after: Duration,
     },
 }
 

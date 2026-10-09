@@ -34,6 +34,7 @@ pub const OPAQUE: &[u8] = b"\0provider reasoning\xffsignature";
 pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::Opening {
     record::Opening {
         spec: session::Spec {
+            final_turn: None,
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
             progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
             endpoint: llm::Endpoint(7),
@@ -119,6 +120,8 @@ pub struct World {
     /// Exact completion usage and its cumulative overflow attestation.
     /// Contract: domain/session.md, section 6; domain/run.md, section 10.
     pub used: Vec<llm::Usage>,
+    /// Actual opener-facing yields, retaining final answer text and its stop.
+    pub yielded: Vec<(session::Yield, Box<[u8]>)>,
     /// Settled count, cumulative raw prefix and its overflow attestation.
     /// Contract: domain/session.md, section 6; domain/run.md, section 10.
     pub terminal_usage: Option<(u32, llm::Usage)>,
@@ -162,6 +165,7 @@ impl World {
             spend: vec![],
             own_spend: vec![],
             used: vec![],
+            yielded: vec![],
             terminal_usage: None,
             facts: vec![],
             end: None,
@@ -261,7 +265,8 @@ impl World {
                 assert_eq!(opener, Token::new(31));
                 self.used.push(usage);
             }
-            session::Request::Yielded { .. } | session::Request::Cancel { .. } | session::Request::Withdraw { .. } => {}
+            session::Request::Yielded { stop, text, .. } => self.yielded.push((stop, text)),
+            session::Request::Cancel { .. } | session::Request::Withdraw { .. } => {}
             session::Request::Io { owner, op, .. } => {
                 assert!(!self.operations.iter().any(|(pending, _)| pending == &owner));
                 self.operations.push((owner, op));

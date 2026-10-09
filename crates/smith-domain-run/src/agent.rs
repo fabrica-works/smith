@@ -69,6 +69,11 @@ pub(crate) struct Plan {
     pub(crate) granted: Granted,
 }
 
+/// Keep an exact quarter of a short share, up to the named policy allowance.
+pub(crate) fn final_allowance(time: Duration, wrap_up: Duration) -> Duration {
+    Duration::from_nanos(time.as_nanos() / 4).min(wrap_up)
+}
+
 /// What a run has to open a sub-agent with: what it has spent, how many
 /// conversations it has, and the time it has left.
 #[derive(Clone, Copy, Debug)]

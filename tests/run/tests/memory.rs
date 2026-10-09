@@ -83,6 +83,7 @@ const LIMITS: Limits = Limits {
     outcome_bytes: 256,
     delivery_timeout: Duration::from_secs(60),
     check_timeout: Duration::from_secs(60),
+    wrap_up: Duration::from_secs(60),
     check_tail: 1024,
     facts: 24,
     messages: 8,

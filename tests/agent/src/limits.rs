@@ -60,6 +60,7 @@ pub const LIMITS: Limits = Limits {
         outcome_bytes: 4096,
         delivery_timeout: Duration::from_secs(60),
         check_timeout: Duration::from_secs(60),
+        wrap_up: Duration::from_secs(60),
         check_tail: 512,
         facts: 1024,
         messages: 8,

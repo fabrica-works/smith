@@ -61,6 +61,7 @@ pub(crate) const LIMITS: Limits = Limits {
     outcome_bytes: 1024,
     delivery_timeout: Duration::from_secs(300),
     check_timeout: Duration::from_secs(300),
+    wrap_up: Duration::from_secs(60),
     check_tail: 4096,
     facts: 64,
     messages: 8,
@@ -378,6 +379,7 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
     let mut found = Found::with_capacity(1);
     found.guides.push(Guide { repository: 0, text: bytes(b"Run the tests."), whole: true }).expect("room");
     let expected = Opening {
+        final_turn: None,
         identity: opening.identity,
         ordinal: 0,
         activation: 1,
@@ -4238,4 +4240,72 @@ fn ordinary_time_exhaustion_parks_a_wait_and_withholds_its_actual_call() {
     assert_eq!(harness.fire().as_ref(), &[returned(91, Returned::Withheld), Request::Close { peer: Token::new(100) }]);
     let (_, answer) = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO }));
     assert_eq!(answer, Answer::Parked { spent: Spend::ZERO, turns: 0 });
+}
+
+#[test]
+fn child_wrap_up_is_an_exact_quarter_of_750ms_and_sixty_seconds_of_one_hour() {
+    assert_eq!(
+        super::agent::final_allowance(Duration::from_millis(750), Duration::from_secs(60)),
+        Duration::from_nanos(187_500_000)
+    );
+    assert_eq!(
+        super::agent::final_allowance(Duration::from_secs(3600), Duration::from_secs(60)),
+        Duration::from_secs(60)
+    );
+    for (time, expected) in [
+        (Duration::from_millis(750), Duration::from_nanos(187_500_000)),
+        (Duration::from_secs(3600), Duration::from_secs(60)),
+    ] {
+        let mut harness = Harness::new(Limits {
+            wrap_up: Duration::from_secs(60),
+            budget: Budget { time: Duration::from_secs(7200), ..LIMITS.budget },
+            ..LIMITS
+        });
+        let mut selected = agents();
+        selected.budget.time = Duration::from_secs(7200);
+        let (_, main) = harness.running_on(1, 100, selected);
+        let mut request =
+            ask(main, 7, families(true, false, false), None, Some(crate::Share { turns: Some(2), time: Some(time) }));
+        let Event::Delegated { deadline, .. } = &mut request else { unreachable!() };
+        *deadline = Time::ZERO.saturating_add(Duration::from_secs(7200));
+        let emitted = harness.step(request);
+        let [Request::Open { opening, .. }] = emitted.as_ref() else {
+            panic!("actual child opening");
+        };
+        assert_eq!(opening.budget.time, time);
+        let final_turn = opening.final_turn.as_ref().expect("child gets its final allowance");
+        assert_eq!(final_turn.allowance, expected);
+        assert_eq!(
+            final_turn.note.as_ref(),
+            b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run."
+        );
+    }
+}
+
+#[test]
+fn a_capped_child_answer_keeps_its_budget_stop_until_the_actual_end_and_returns_once() {
+    let mut harness = Harness::new(LIMITS);
+    let (_, main) = harness.running_on(1, 100, agents());
+    let (child, _) = harness.child(main, 7, families(true, false, false), 101);
+    drop(harness.step(Event::Used { conversation: child, spend: spend(50) }));
+    assert_eq!(
+        harness
+            .step(Event::Yielded { conversation: child, stop: Stop::Budget, text: bytes(b"What I found.") })
+            .as_ref(),
+        &[Request::Close { peer: Token::new(101) }]
+    );
+    let emitted = harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
+    let [Request::Return { call, result: Returned::Answered { text, stop, used, .. }, spent }] = emitted.as_ref()
+    else {
+        panic!("actual parent receives one answered terminal: {emitted:?}");
+    };
+    assert_eq!(*call, Token::new(7));
+    assert_eq!(text.as_ref(), b"What I found.");
+    assert_eq!(*stop, Stop::Budget);
+    assert_eq!(used.turns, 1);
+    assert_eq!(*spent, 50);
+    assert!(
+        harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) }).is_empty(),
+        "stale end cannot answer twice"
+    );
 }

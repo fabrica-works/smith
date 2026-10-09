@@ -640,6 +640,7 @@ fn cancels_find_runs_in_every_state() {
             conversations: 16,
             calls: 16,
             check_timeout: Duration::from_millis(1_999),
+            wrap_up: Duration::from_secs(60),
             ..landing.run
         };
         let host = host::Script {
@@ -735,6 +736,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
             conversations: 16,
             calls: 16,
             check_timeout: Duration::from_millis(1_999),
+            wrap_up: Duration::from_secs(60),
             ..landing.run
         };
         let host = host::Script {
@@ -827,11 +829,37 @@ fn asks_the_run_cannot_grant_are_refused_and_the_llm_goes_on() {
 }
 
 #[test]
-fn sub_agents_with_a_small_share_come_back_unanswered_when_it_runs_out() {
+fn a_child_that_reaches_its_final_turn_answers_for_its_budget() {
     let settings = asking(32);
     let partner = Script { shares: 1000, yields: 0, ..settings.partner };
-    let stats = settled(&Settings { partner, ..settings }).stats();
-    assert!(stats.partner.unanswered > 0, "{stats:?}");
+    let world = settled(&Settings { partner, ..settings });
+    let stats = world.stats();
+    assert!(stats.partner.answered > 0, "{stats:?}");
+    assert_eq!(smith_run_world::child_final_referee::judge(world.facts_seen()), skein_world::domain::Verdict::Passed);
+    let mut bad = world.facts_seen().to_vec();
+    let opened = bad
+        .iter()
+        .find_map(|fact| {
+            let run::facts::FactKind::Opened { run, conversation, kind: run::facts::Kind::Child { granted, .. } } =
+                fact.kind
+            else {
+                return None;
+            };
+            (granted.turns >= 2).then_some((run, conversation))
+        })
+        .expect("the story actually gives a child at least two turns");
+    bad.push(run::facts::Fact {
+        at: bad.last().expect("actual facts").at,
+        kind: run::facts::FactKind::Ended {
+            run: opened.0,
+            conversation: opened.1,
+            end: run::End::Budget(Exhausted::Turns),
+        },
+    });
+    assert!(
+        matches!(smith_run_world::child_final_referee::judge(&bad), skein_world::domain::Verdict::Failed(_)),
+        "positive-first oracle rejects an unanswered own-turn quota"
+    );
 }
 
 #[test]

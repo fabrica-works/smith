@@ -741,3 +741,55 @@ fn both_native_forms_restore_genuine_positive_priced_child_and_wait_history_with
         parking_story(index);
     }
 }
+
+#[test]
+fn both_native_forms_ask_for_a_childs_last_answer_with_none_and_keep_written_calls_not_run() {
+    const INPUT: &[u8] =
+        br#"{"brief":"@budget-child own task","tools":["inspect"],"llm":"fake-2","max_turns":1,"max_seconds":30}"#;
+    for index in 0..2 {
+        let settings = settings(714, false, false);
+        let scripts = Box::new([
+            script(
+                b"@budget-main",
+                vec![calls(vec![call(b"sub_agent", INPUT)], 3), calls(vec![call(b"finish", REPORT)], 7)],
+            ),
+            script(
+                b"@budget-child",
+                vec![
+                    calls(vec![Line::Text { text: CHILD.into() }, call(b"read", READ)], 5),
+                    says(b"An extra completion must not start.", 11),
+                ],
+            ),
+        ]);
+        let mut world = native_world(settings, b"@budget-main", &MODEL_RATES, scripts, None, index);
+        world.run(100_000);
+        native_settled(&world);
+        let expected = conservation(&world, &MODEL_RATES);
+        assert_eq!(expected.turns, 3);
+        assert_eq!(model_calls(&world, b"fake-2").len(), 1);
+        assert!(matches!(world.answer(), run::Answer::Accepted { .. }));
+        let child = world
+            .prompts()
+            .iter()
+            .find(|query| query.model.as_ref() == b"fake-2")
+            .expect("decoded native child request");
+        assert_eq!(child.choice, skein_fake_llm_domain::api::ToolChoice::None);
+        assert!(child.tools.iter().any(|tool| tool.name.as_ref() == b"read"), "definition stays offered");
+        assert!(child.messages.last().expect("actual final note").parts.iter().any(|part| {
+            matches!(part, Part::Text { text } if text.as_ref() == b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run.")
+        }));
+        assert!(
+            !world.boundaries().iter().any(|(_, boundary)| {
+                matches!(boundary, Boundary::Io { op: tools::Op::Load { at, .. } } if at.path.as_ref() == b"data.txt")
+            }),
+            "the written read starts no actual IO"
+        );
+        let resumed =
+            world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").nth(1).expect("parent resumes");
+        assert!(resumed.messages.iter().flat_map(|message| &message.parts).any(|part| {
+            matches!(part, Part::ToolOutput { is_error: false, output, .. }
+                if output.starts_with(CHILD) && output.windows(b"stop=budget".len()).any(|text| text == b"stop=budget")
+                && output.windows(b"stopped for budget: yes".len()).any(|text| text == b"stopped for budget: yes"))
+        }));
+    }
+}

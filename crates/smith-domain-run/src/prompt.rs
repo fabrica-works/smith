@@ -26,6 +26,13 @@ use crate::workspace::{self, Directory, Workspace};
 /// The first user message of a main conversation.
 pub(crate) const BEGIN: &[u8] = b"Begin the work your brief describes.";
 
+/// The child's last prompt, independent of provider and host vocabulary.
+pub(crate) fn child_final_note() -> Box<[u8]> {
+    skein_lib::bytes::copy_of(
+        b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run.",
+    )
+}
+
 /// The finish result says why the run returns to its queued messages.
 pub(crate) fn crossed() -> Box<[u8]> {
     skein_lib::bytes::copy_of(b"Finish was not accepted because messages arrived. Read them before finishing.")
@@ -463,6 +470,7 @@ fn render_verdict(text: &mut Text, rule: &VerdictRule) {
 
 fn render_nudge(text: &mut Text, stop: Stop, nudge: u32, nudges: u32) {
     text.put(match stop {
+        Stop::Budget => unreachable!("only main is nudged, and it has no session final turn"),
         Stop::EndTurn => b"You stopped without calling `finish`, so the work is not done.",
         Stop::MaxTokens => b"Your answer was cut off: it ran out of tokens.",
         Stop::Refusal => b"You declined to go on.",

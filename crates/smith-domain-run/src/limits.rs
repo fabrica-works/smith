@@ -113,6 +113,8 @@ pub struct Limits {
     pub outcome_bytes: u64,
     /// How long a repository's checks may run.
     pub check_timeout: Duration,
+    /// Maximum time kept for a child's final answer, capped at a quarter of its share.
+    pub wrap_up: Duration,
     /// The most bytes of a failed check's output the LLM is shown: its tail.
     pub check_tail: u32,
     /// Reserved observations buffered until the parent drains them; at least [`crate::max_facts`].
@@ -188,6 +190,7 @@ pub struct Derivation {
     pub max_spend: u64,
     pub max_time: Duration,
     pub check_timeout: Duration,
+    pub wrap_up: Duration,
     pub sections: u32,
     pub host_tools: u32,
     pub verdicts: u32,
@@ -255,6 +258,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         outcome_bytes: 4096,
         delivery_timeout: Duration::from_secs(60),
         check_timeout: inputs.check_timeout,
+        wrap_up: inputs.wrap_up,
         check_tail: inputs.shell_tail,
         facts: 1024,
         messages: inputs.inbox,

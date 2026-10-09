@@ -249,6 +249,8 @@ pub enum Request {
 /// What a session is opened for.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
+    /// A child's final answer; main's run supplies its own finishing prompts.
+    pub final_turn: Option<FinalTurn>,
     pub endpoint: Endpoint,
     /// The opener's affinity; a resumed session keeps its transcript's instead.
     pub affinity: crate::llm::Affinity,
@@ -270,6 +272,24 @@ pub struct Spec {
     pub output: u32,
     /// Allowance supplied at admission, checked before starting more work.
     pub budget: Budget,
+}
+
+/// Opener-supplied child wrap-up note and allowance (domain/session.md, section 7).
+#[derive(PartialEq, Eq, Debug)]
+pub struct FinalTurn {
+    /// Appended once after the latest settled tool results.
+    pub note: Box<[u8]>,
+    pub allowance: Duration,
+}
+
+impl FinalTurn {
+    /// Whether the final sequence is due, counting a compaction when its window needs one.
+    #[must_use]
+    pub fn due(&self, turns: u32, time: Duration, compaction: bool) -> bool {
+        let completions = if compaction { 2 } else { 1 };
+        let time_needed = if compaction { self.allowance.saturating_mul(2) } else { self.allowance };
+        turns <= completions || time <= time_needed
+    }
 }
 
 /// A model's progress deadlines, supplied by the root on session admission.
@@ -341,6 +361,8 @@ pub enum Dimension {
 /// Why a session yielded: how the LLM stopped calling tools.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Yield {
+    /// The child's final answer, forced by its share ending.
+    Budget,
     /// The LLM finished its turn.
     Done,
     /// The LLM ran out of tokens mid-answer.

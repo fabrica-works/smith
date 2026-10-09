@@ -52,6 +52,11 @@ fn random_worlds_settle_with_every_start_answered_once() {
     for seed in 0..301 {
         let settings = if seed == 300 { time_pressure() } else { noisy(seed) };
         let world = settled(&settings);
+        assert_eq!(
+            smith_run_world::child_final_referee::judge(world.facts_seen()),
+            skein_world::domain::Verdict::Passed,
+            "child quota seed {seed}"
+        );
         let stats = world.stats();
         cancels += stats.cancels;
         races += stats.partner.races;

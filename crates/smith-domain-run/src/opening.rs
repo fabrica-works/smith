@@ -28,6 +28,7 @@ pub(crate) fn main(
     left: Duration,
 ) -> Opening {
     Opening {
+        final_turn: None,
         identity,
         ordinal: 0,
         activation,

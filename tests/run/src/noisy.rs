@@ -88,6 +88,7 @@ pub fn noisy(seed: u64) -> Settings {
         outcome_bytes: pick(10, 400),
         delivery_timeout: Duration::from_millis(pick(1_000, 30_000)),
         check_timeout: Duration::from_millis(pick(1_000, 30_000)),
+        wrap_up: Duration::from_secs(60),
         check_tail: small(pick(0, 300)),
         ..run
     };

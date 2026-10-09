@@ -222,6 +222,7 @@ const fn calm_run_limits() -> run::Limits {
         outcome_bytes: 4096,
         delivery_timeout: Duration::from_secs(600),
         check_timeout: Duration::from_secs(600),
+        wrap_up: Duration::from_secs(60),
         check_tail: 256,
         facts: 64,
         messages: 8,

@@ -60,6 +60,7 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         duration("connection_keep", policy.connection_keep),
         duration("tool_deadline", policy.tool_deadline),
         duration("shell_timeout", policy.shell_timeout),
+        duration("wrap_up", policy.wrap_up),
         duration("group_stop", policy.group_stop),
         duration("close", policy.close),
         duration("write_deadline", policy.write_deadline),

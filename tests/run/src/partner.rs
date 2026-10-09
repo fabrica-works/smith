@@ -349,6 +349,7 @@ pub struct Partner {
 enum Choice {
     Auto,
     Finishing,
+    Answering,
 }
 
 struct Talk {
@@ -361,6 +362,7 @@ struct Talk {
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     finish: bool,
     choice: Choice,
+    final_allowance: Option<Duration>,
     wait: bool,
     deliver: bool,
     host_tools: Vec<(Box<[u8]>, HostEffect)>,
@@ -492,6 +494,7 @@ impl Partner {
             conversation,
             finish: opening.finish,
             choice: Choice::Auto,
+            final_allowance: opening.final_turn.as_ref().map(|final_turn| final_turn.allowance),
             wait: opening.wait,
             deliver: opening.deliver,
             host_tools: opening.host_tools.iter().map(|tool| (tool.name.clone(), tool.effect)).collect(),
@@ -683,6 +686,19 @@ impl Partner {
             !talk.host_tools.is_empty() && talk.choice == Choice::Auto,
         );
         let roll = u32::try_from(self.rng.below(1000)).expect("below 1000");
+        if talk.choice == Choice::Answering && roll >= self.script.faults {
+            let conversation = talk.conversation;
+            self.tell(peer, out);
+            self.talks.get_mut(&peer).expect("final answer is still live").phase = Phase::Yielded;
+            out.push(Out::Event(Event::Yielded {
+                conversation,
+                stop: Stop::Budget,
+                text: b"Here is what I found before my share ended.".as_slice().into(),
+            }));
+            self.tally.yields += 1;
+            return;
+        }
+
         let Script { faults, finishes, asks, host_calls, deliveries, waits, yields, .. } = self.script;
         let finishing = faults.saturating_add(finishes);
         let asking = finishing.saturating_add(asks);
@@ -944,6 +960,12 @@ impl Partner {
         }
         let latency = self.draw(self.script.turn);
         let talk = self.talks.get_mut(&peer).expect("a live admitted conversation");
+        if let Some(allowance) = talk.final_allowance {
+            let remaining_turns = talk.budget.turns.saturating_sub(talk.spent.turns);
+            if remaining_turns <= 1 || talk.expires.saturating_since(now) <= allowance {
+                talk.choice = Choice::Answering;
+            }
+        }
         talk.phase = Phase::Turning;
         let at = now.saturating_add(latency).min(talk.expires);
         self.wake(at, peer, out);

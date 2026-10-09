@@ -402,6 +402,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 /// Caller-owned input with the same exact byte charge in every fill route.
 fn fill_spec(limits: Limits) -> Spec {
     Spec {
+        final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
@@ -486,6 +487,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         (completion, delegate)
     };
     let spec = Spec {
+        final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
@@ -563,6 +565,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
     let opaque = limits.session_bytes - charge - 2 * block - 1 - reserve;
     let spec = Spec {
+        final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
@@ -681,6 +684,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         }]),
     };
     let spec = Spec {
+        final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
@@ -1283,5 +1287,48 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
             assert!(narrowed.complete.is_none(), "one byte beyond the admitted payload publishes no request");
             assert_eq!(narrowed.end, Some(smith_domain_session::End::TranscriptFull));
         }
+    }
+}
+
+#[test]
+fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released() {
+    let block = size(size_of::<Block>());
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let note_bytes = 8192;
+    let original = Limits { messages: 5, ..LIMITS };
+    let credit = smith_domain_session::completion_reserve(&original).expect("whole provider credit");
+    let cap = spec_cost + block + note_bytes + credit;
+    for extra in [0, 1] {
+        let limits = Limits { session_bytes: cap, ..original };
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        let mut out = Queue::with_capacity(max_out(&limits));
+        let meter = Meter::new();
+        let mut domain = Domain::new(&limits, 32);
+        let bound = worst_case(&limits).expect("checked final note bound");
+        let mut selected = fill_spec(limits);
+        selected.budget.turns = 1;
+        selected.final_turn = Some(smith_domain_session::FinalTurn {
+            note: bytes(note_bytes + extra),
+            allowance: Duration::from_secs(1),
+        });
+        let seen = measured_step(
+            &mut domain,
+            &env,
+            &mut out,
+            &meter,
+            bound,
+            Event::Open { opener: Token::new(1), opening: zero_opening(selected) },
+        );
+        if extra == 0 {
+            let owner = seen.complete.expect("exact final note and provider credit fit");
+            assert!(seen.end.is_none());
+            let closing = measured_step(&mut domain, &env, &mut out, &meter, bound, Event::UnsentClosed { owner });
+            assert_eq!(closing.end, Some(smith_domain_session::End::Closed));
+        } else {
+            assert!(seen.complete.is_none(), "one byte beyond the cap publishes no provider request");
+            assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
+        }
+        domain.reclaim();
+        assert_eq!(domain.sessions(), 0, "final note is released with its session");
     }
 }

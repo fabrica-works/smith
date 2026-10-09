@@ -289,6 +289,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 
 fn spec() -> Spec {
     Spec {
+        final_turn: None,
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
@@ -2453,4 +2454,101 @@ fn an_allowed_descriptor_keeps_its_argument_problem_during_narrowing() {
         &[Block::ToolResult { id: bytes(b"allowed-invalid"), result: Returned::Invalid { problem } }]
     );
     assert_eq!(h.domain.runs(), 0, "a malformed allowed call still starts no operation");
+}
+
+#[test]
+fn a_childs_last_turn_has_one_note_no_effects_and_yields_its_answer_for_budget() {
+    for stop in [Stop::ToolUse, Stop::EndTurn, Stop::MaxTokens, Stop::Refusal] {
+        let mut harness = Harness::new(LIMITS);
+        let mut selected = spec();
+        selected.budget.turns = 1;
+        selected.final_turn = Some(crate::FinalTurn { note: bytes(b"Answer now."), allowance: Duration::from_secs(1) });
+        let (owner, prompt) = harness.open_with(1, selected);
+        assert_eq!(prompt.choice, crate::llm::ToolChoice::None);
+        assert_eq!(prompt.delegated.as_ref(), &[FINISH]);
+        assert_eq!(prompt.messages.last().unwrap().content.as_ref(), &[text(b"Answer now.")]);
+        let answer = completion(Box::new([text(b"What I found."), tool_call(b"outside", list())]), stop);
+        assert!(harness.step(Event::Completed { owner, completion: answer }).is_none(), "no IO or delegate starts");
+        harness.domain.reclaim();
+        assert_eq!(yielded(harness.resume()), (1, Yield::Budget, bytes(b"What I found.")));
+        assert_eq!(harness.turns, 1);
+        assert_eq!(harness.turn_records.len(), 1);
+        let record = harness.turn_records.last().expect("settled final turn");
+        let Block::ToolResult { result, .. } = &record.messages.last().unwrap().content[0] else {
+            panic!("actual tool result is retained");
+        };
+        assert_eq!(result, &Returned::NotRun { why: crate::llm::NotRun::OutsideChoice });
+        let ended = harness.step(Event::Continue { session: owner, content: bytes(b"Again.") });
+        let Some(Request::Ended { end: End::Budget { spent: Dimension::Turns }, .. }) = ended else {
+            panic!("the final answer cannot be continued: {ended:?}");
+        };
+    }
+}
+
+#[test]
+fn an_exact_quarter_allowance_keeps_187_point_6ms_ordinary_and_187_point_5ms_final() {
+    for (left, final_now) in [(187_600_000, false), (187_500_000, true), (187_250_000, true)] {
+        let mut harness = Harness::new(LIMITS);
+        let mut selected = spec();
+        selected.budget.time = Duration::from_millis(750);
+        selected.final_turn =
+            Some(crate::FinalTurn { note: bytes(b"Answer now."), allowance: Duration::from_nanos(187_500_000) });
+        let (owner, first) = harness.open_with(1, selected);
+        assert_eq!(first.choice, crate::llm::ToolChoice::Auto);
+        assert_eq!(yielded(harness.step(Event::Completed { owner, completion: done() })).1, Yield::Done);
+        harness.env.now = Time::ZERO.saturating_add(Duration::from_nanos(750_000_000 - left));
+        let (_, prompt) = calling(harness.step(Event::Continue { session: owner, content: bytes(b"Go on.") }));
+        let expected = if final_now { crate::llm::ToolChoice::None } else { crate::llm::ToolChoice::Auto };
+        assert_eq!(prompt.choice, expected);
+        assert_eq!(
+            prompt.messages.last().unwrap().content.as_ref(),
+            &[text(if final_now { b"Answer now." } else { b"Go on." })]
+        );
+    }
+}
+
+#[test]
+fn a_due_compaction_counts_two_turns_and_twice_the_final_allowance() {
+    let final_turn = crate::FinalTurn { note: bytes(b"Answer."), allowance: Duration::from_millis(100) };
+    let roomy = Duration::from_secs(1);
+    assert!(!final_turn.due(2, roomy, false));
+    assert!(final_turn.due(2, roomy, true));
+    assert!(!final_turn.due(3, Duration::from_nanos(200_000_001), true));
+    assert!(final_turn.due(3, Duration::from_millis(200), true));
+    assert!(!final_turn.due(3, Duration::from_millis(200), false));
+    assert!(final_turn.due(3, Duration::from_millis(100), false));
+}
+
+#[test]
+fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
+    let mut harness = Harness::new(LIMITS);
+    let mut selected = spec();
+    selected.budget.turns = 2;
+    selected.final_turn = Some(crate::FinalTurn { note: bytes(b"Answer now."), allowance: Duration::from_secs(1) });
+    let (owner, first) = harness.open_with(1, selected);
+    assert_eq!(first.choice, crate::llm::ToolChoice::Auto);
+    let (io, _) = running(harness.step(Event::Completed { owner, completion: reading() }));
+    let (_, final_prompt) = calling(harness.step(ran(io, b"main.rs")));
+    assert_eq!(final_prompt.choice, crate::llm::ToolChoice::None);
+    let messages = &final_prompt.messages;
+    let Block::ToolResult { id, .. } = &messages[messages.len() - 2].content[0] else {
+        panic!("the latest read result precedes the note");
+    };
+    assert_eq!(id.as_ref(), b"c1");
+    assert_eq!(messages.last().unwrap().content.as_ref(), &[text(b"Answer now.")]);
+    assert_eq!(
+        harness.step(Event::Failed {
+            owner,
+            failure: Failure::Overloaded,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default(),
+        }),
+        None
+    );
+    harness.env.now = harness.domain.next_deadline().expect("retry wake");
+    let (_, retry) = calling(harness.fire());
+    assert_eq!(retry.messages, final_prompt.messages, "retry preserves exactly one note after the results");
+    assert_eq!(retry.choice, crate::llm::ToolChoice::None);
+    assert_eq!(yielded(harness.step(Event::Completed { owner, completion: done() })).1, Yield::Budget);
+    assert_eq!(harness.turns, 2, "one failed attempt spends no turn");
 }

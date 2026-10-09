@@ -48,6 +48,7 @@ extern crate alloc;
 mod boundary;
 mod domain;
 mod facts;
+mod final_turn;
 mod limits;
 pub mod llm;
 pub mod record;
@@ -55,7 +56,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-pub use boundary::{Budget, BudgetDenial, Deadlines, Dimension, End, Event, Progress, Request, Spec, Yield};
+pub use boundary::{Budget, BudgetDenial, Deadlines, Dimension, End, Event, FinalTurn, Progress, Request, Spec, Yield};
 pub use domain::{Domain, fire, max_facts, max_out, max_to_opener, resume, step};
 pub use facts::{Choice, Fact, FactKind, ResponseInfo, ToolCall, ToolSource};
 pub use limits::{Derivation, Field, Limits, MAX_PARALLEL, completion_reserve, derive, worst_case};

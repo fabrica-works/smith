@@ -187,3 +187,12 @@ fn a_tool_piece_must_fit_the_separately_declared_whole_file() {
     assert_eq!(limits.domain.session.tools.tool_payload, 256);
     assert_eq!(limits.machine.file_bytes, 1_u32 << 20_u32);
 }
+
+#[test]
+fn zero_child_wrap_up_is_a_named_deadline_refusal() {
+    let mut selected = profile();
+    selected.policy.wrap_up = Duration::ZERO;
+    let refusal = super::derive(&selected, &declarations()).expect_err("zero child wrap-up");
+    assert_eq!(refusal.check(), Some(Check::Deadlines));
+    assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.wrap_up=0 ns; policy.deadline_minimum=0 ns");
+}

@@ -1886,6 +1886,10 @@ fn sub_agent(
     run.conversations = run.conversations.saturating_add(1);
     run.next_ordinal = next_ordinal;
     let opening = Opening {
+        final_turn: Some(crate::FinalTurn {
+            note: prompt::child_final_note(),
+            allowance: agent::final_allowance(plan.budget.time, env.limits.wrap_up),
+        }),
         identity: run.identity,
         ordinal,
         activation: run.activation,
@@ -2078,6 +2082,7 @@ fn nudge(run: &mut Run, stop: Stop, limits: &Limits) -> Result<(), Failure> {
 /// its last stop shows.
 fn unfinished(stop: Stop, nudges: u32, rejected: u32) -> Failure {
     match stop {
+        Stop::Budget => unreachable!("main has no session-owned final turn"),
         Stop::EndTurn => Failure::Policy(Policy::Unfinished { nudges, rejected }),
         Stop::MaxTokens => Failure::Model(Fault::Truncated),
         Stop::Refusal => Failure::Model(Fault::Refused),

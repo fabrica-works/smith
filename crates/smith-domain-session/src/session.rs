@@ -169,6 +169,7 @@ struct Conversation {
     namespace: tools::Namespace,
     delegated: Box<[Descriptor]>,
     choice: ToolChoice,
+    final_turn: crate::final_turn::Final,
     output: u32,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
@@ -1317,6 +1318,9 @@ fn answered(
             | Block::ToolResult { .. } => {}
         }
     }
+    if conversation.final_turn.answering() && tally(&completion.content).0 > 0 {
+        return use_tools(conversation, id, calls, completion.content, env, out);
+    }
     match completion.stop {
         Stop::ToolUse => use_tools(conversation, id, calls, completion.content, env, out),
         Stop::EndTurn => pause(conversation, Yield::Done, completion.content, &env.limits, out),
@@ -1535,6 +1539,11 @@ fn finish_tools(
     env: &Env<Limits>,
     out: &mut Queue<Request>,
 ) -> State {
+    let final_text = if conversation.final_turn.answering() {
+        Some(text_of(&conversation.transcript.last().expect("settled assistant message").content))
+    } else {
+        None
+    };
     let mut results = List::with_capacity(tools.slots.len());
     for slot in tools.slots.into_boxed() {
         match slot {
@@ -1544,6 +1553,9 @@ fn finish_tools(
     }
     let results = Message { role: Role::User, content: results.into_boxed() };
     conversation.transcript.push(results).expect("room was checked when the message was recorded");
+    if let Some(text) = final_text {
+        return final_answer(conversation, text, out);
+    }
     match tools.after {
         After::Complete => call(conversation, id, 0, env, out),
         After::Yield => {
@@ -1589,6 +1601,7 @@ fn pause(
     if let Some(end) = tell_turn(conversation, out) {
         return finish(end);
     }
+    let stop = if conversation.final_turn.answering() { Yield::Budget } else { stop };
     out.push(Request::Yielded { opener: conversation.opener, stop, text });
     State::Yielded
 }
@@ -1602,6 +1615,9 @@ fn resumed(
     env: &Env<Limits>,
     out: &mut Queue<Request>,
 ) -> State {
+    if let Some(spent) = conversation.final_turn.spent() {
+        return finish(End::Budget { spent });
+    }
     // A budget the last answer took past its end comes before the room.
     if let Some(spent) = spent(conversation, env.now) {
         return finish(End::Budget { spent });
@@ -1724,6 +1740,9 @@ fn call(
     if let Some(spent) = spent(conversation, env.now) {
         return finish(End::Budget { spent });
     }
+    if let Some(end) = final_prompt(conversation, env) {
+        return finish(end);
+    }
     {
         let Recording { sequence, .. } = conversation.recording;
 
@@ -1733,6 +1752,30 @@ fn call(
     }
     out.push(complete(id, conversation, &env.limits));
     State::Calling { attempt }
+}
+
+/// Move the already charged opener note into its one final user message.
+fn final_prompt(conversation: &mut Conversation, env: &Env<Limits>) -> Option<End> {
+    let turns = conversation.budget.turns.checked_sub(conversation.turns).expect("unspent turns checked");
+    let time = conversation.expires.saturating_since(env.now);
+    let note = conversation.final_turn.take_note(turns, time)?;
+    let cost = u64::try_from(size_of::<Block>()).expect("one block cell fits");
+    if conversation.transcript.room() == 0 || !charge(conversation, Some(cost), &env.limits) {
+        return Some(End::TranscriptFull);
+    }
+    conversation.choice = ToolChoice::None;
+    let content = Box::new([Block::Text { text: note, replay: None }]);
+    conversation.transcript.push(Message { role: Role::User, content }).expect("final note slot checked");
+    None
+}
+
+/// An actual final completion yields its text after every call has a not-run result.
+fn final_answer(conversation: &mut Conversation, text: Box<[u8]>, out: &mut Queue<Request>) -> State {
+    if let Some(end) = tell_turn(conversation, out) {
+        return finish(end);
+    }
+    out.push(Request::Yielded { opener: conversation.opener, stop: Yield::Budget, text });
+    State::Yielded
 }
 
 fn cancel_call(id: Id<Session>, end: End, out: &mut Queue<Request>) -> State {
@@ -1875,8 +1918,10 @@ fn admit(
         return None;
     }
     let content: Box<[Block]> = Box::new([Block::Text { text: spec.prompt, replay: None }]);
+    let final_turn = crate::final_turn::Final::new(spec.final_turn);
     let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?
-        .checked_add(spec.authority.namespace_bytes()?)?;
+        .checked_add(spec.authority.namespace_bytes()?)?
+        .checked_add(final_turn.note_bytes()?)?;
     if bytes > limits.session_bytes {
         return None;
     }
@@ -1893,6 +1938,7 @@ fn admit(
         namespace: spec.authority.namespace(),
         delegated: spec.delegated,
         choice: ToolChoice::Auto,
+        final_turn,
         output: spec.output,
         transcript,
         bytes,

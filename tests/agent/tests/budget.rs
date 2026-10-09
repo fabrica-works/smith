@@ -423,7 +423,7 @@ fn parallel_children_cannot_spend_the_last_ordinary_turn_twice_and_main_finishes
 }
 
 #[test]
-fn a_real_child_session_reaches_its_requested_turn_share_and_ends() {
+fn a_real_child_session_answers_its_last_turn_without_running_written_calls() {
     const QUOTA_INPUT: &[u8] =
         br#"{"brief":"@budget-child own task","tools":["inspect"],"llm":"fake-2","max_turns":1,"max_seconds":30}"#;
     let settings = settings(708, false, false);
@@ -434,7 +434,10 @@ fn a_real_child_session_reaches_its_requested_turn_share_and_ends() {
         ),
         script(
             b"@budget-child",
-            vec![calls(vec![call(b"read", READ)], 5), says(b"This second completion must not start.", 11)],
+            vec![
+                calls(vec![Line::Text { text: CHILD.into() }, call(b"read", READ)], 5),
+                says(b"This second completion must not start.", 11),
+            ],
         ),
     ]);
     let mut world = typed_world(&settings, b"@budget-main MAIN-INSTRUCTIONS", &MODEL_RATES, scripts);
@@ -445,14 +448,20 @@ fn a_real_child_session_reaches_its_requested_turn_share_and_ends() {
     assert_eq!(model_calls(&world, b"fake-1").len(), 2, "actual main Session receives the child terminal and finishes");
     let resumed =
         world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").nth(1).expect("main resumes");
-    assert!(
-        resumed
-            .messages
-            .iter()
-            .flat_map(|message| &message.parts)
-            .any(|part| { matches!(part, Part::ToolOutput { is_error: true, .. }) }),
-        "a quota terminal returns to the actual asker"
-    );
+    assert!(resumed.messages.iter().flat_map(|message| &message.parts).any(|part| {
+        matches!(part, Part::ToolOutput { is_error: false, output, .. }
+            if output.starts_with(CHILD) && output.windows(b"stopped for budget: yes".len()).any(|text| text == b"stopped for budget: yes"))
+    }), "the actual asker receives the answer and budget stop");
+    let child_query =
+        world.prompts().iter().find(|query| query.model.as_ref() == b"fake-2").expect("actual child request");
+    assert_eq!(child_query.choice, skein_fake_llm_domain::api::ToolChoice::None, "actual native child choice");
+    assert!(child_query.messages.last().expect("one final note").parts.iter().any(|part| {
+        matches!(part, Part::Text { text } if text.as_ref() == b"Your share is ending. This is your final turn. Answer now with what you have. No tool calls will run.")
+    }));
+    assert!(world.facts().iter().any(|fact| {
+        matches!(fact, smith_domain::Fact::Session { fact }
+            if matches!(fact.kind, smith_domain::session::FactKind::CompletionStarted { choice: smith_domain::session::Choice::None, .. }))
+    }));
     assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
 }
 

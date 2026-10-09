@@ -177,7 +177,7 @@ fn render(text: &mut Text, returned: &Returned) {
         Returned::Busy => text.put(b"busy"),
         Returned::Answered { text: answer, cut, stop, used, left } => {
             render_child(text, answer, *cut, *stop);
-            render_usage(text, *used, *left, false);
+            render_usage(text, *used, *left, *stop == Stop::Budget);
         }
         Returned::Unanswered { end, used, left } => {
             text.put(b"unanswered end=");
@@ -253,6 +253,7 @@ fn render_child(text: &mut Text, answer: &[u8], cut: u64, stop: Stop) {
     text.number(cut);
     text.put(b" stop=");
     text.put(match stop {
+        Stop::Budget => b"budget",
         Stop::EndTurn => b"end-turn",
         Stop::MaxTokens => b"max-tokens",
         Stop::Refusal => b"refusal",
