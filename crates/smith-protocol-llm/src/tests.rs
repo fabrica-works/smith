@@ -228,11 +228,11 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             3,
         ),
         (
-            "Write a file; read its current version first. Batch writes, edits and commands; run serially in call order.",
+            "Write a file; read its current version first. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
             2,
         ),
         (
-            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Batch writes, edits and commands; run serially in call order.",
+            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
             5,
         ),
         (
@@ -366,4 +366,23 @@ fn resolved_failure_paths_render_in_the_fixed_namespace_live_and_on_replay() {
         assert_eq!(rendered, (expected.into(), true));
         assert_eq!(rendered, render_outcome(&outcome.clone(), &namespace, 4096).expect("replay"));
     }
+}
+
+#[test]
+fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap() {
+    use smith_domain::llm::Problem;
+    let golden = b"input too large: 1024 bytes, bound 256 bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound";
+    let exact = u32::try_from(golden.len()).expect("fixed feedback length");
+    assert_eq!(
+        crate::failure::problem(Problem::Oversize { bytes: 1024, bound: 256 }, exact).expect("exact room"),
+        golden.as_slice()
+    );
+    assert_eq!(
+        crate::failure::problem(Problem::Oversize { bytes: 1024, bound: 256 }, exact - 1),
+        Err(crate::Error::Limit)
+    );
+    assert_eq!(
+        crate::failure::problem(Problem::CutOff { bytes: 17 }, 4096).expect("cut note"),
+        b"input cut off after 17 bytes; make a smaller call and try again".as_slice()
+    );
 }

@@ -921,7 +921,7 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
             id: b"large".as_slice().into(),
             name: b"write".as_slice().into(),
             input: b"{}".as_slice().into(),
-            call: llm::Decoded::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 512 } },
+            call: llm::Decoded::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 256 } },
             replay: None,
         }]),
         llm::Stop::ToolUse,
@@ -933,52 +933,93 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     assert!(matches!(
         answer,
         llm::Block::ToolResult {
-            result: llm::Returned::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 512 } },
+            result: llm::Returned::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 256 } },
             ..
         }
     ));
-    for (index, content) in [b"abcd".as_slice(), b"abcdefgh".as_slice()].into_iter().enumerate() {
-        let input = if index == 0 {
-            br#"{"path":"data","content":"abcd"}"#.as_slice()
-        } else {
-            br#"{"path":"data","content":"abcdefgh"}"#.as_slice()
-        };
-        world.complete(
-            Box::new([llm::Block::ToolCall {
-                id: format!("piece-{index}").into_bytes().into(),
-                name: b"write".as_slice().into(),
-                input: input.into(),
-                call: llm::Decoded::Owned {
-                    call: Call::Write {
-                        path: Path {
-                            absolute: false,
-                            parts: Box::new([Part::Name {
-                                name: Name::new(b"data".as_slice().into()).expect("file name"),
-                            }]),
+    let path = || Path {
+        absolute: false,
+        parts: Box::new([Part::Name { name: Name::new(b"data".as_slice().into()).expect("file name") }]),
+    };
+    let initial = [vec![b'a'; 188], b"END!".to_vec()].concat();
+    let first_input =
+        format!("{{\"path\":\"data\",\"content\":\"{}\"}}", std::str::from_utf8(&initial).unwrap()).into_bytes();
+    assert!(first_input.len() <= 256, "the first part fits one call");
+    world.complete(
+        Box::new([llm::Block::ToolCall {
+            id: b"piece-0".as_slice().into(),
+            name: b"write".as_slice().into(),
+            input: first_input.into(),
+            call: llm::Decoded::Owned { call: Call::Write { path: path(), content: initial.clone().into() } },
+            replay: None,
+        }]),
+        llm::Stop::ToolUse,
+        llm::Usage::ZERO,
+    );
+    let [(owner, Op::Store { content, expect, .. })] = world.operations.as_slice() else { panic!("one initial store") };
+    assert_eq!(content.as_ref(), initial);
+    assert_eq!(*expect, smith_domain_tools::Expect::Absent);
+    let first_version = Version::new([1, 0, 0, 0]);
+    world.step(session::Event::Done { owner: *owner, done: Done::Stored { version: first_version } });
+    world.resume();
+    let first_extension = [vec![b'b'; 64], b"END!".to_vec()].concat();
+    let second_extension = [vec![b'c'; 64], b"END!".to_vec()].concat();
+    let edit_input = format!(
+        "{{\"path\":\"data\",\"edits\":[{{\"old\":\"END!\",\"new\":\"{}\"}},{{\"old\":\"END!\",\"new\":\"{}\"}}]}}",
+        std::str::from_utf8(&first_extension).unwrap(),
+        std::str::from_utf8(&second_extension).unwrap()
+    )
+    .into_bytes();
+    assert!(edit_input.len() <= 256, "both edits fit one call");
+    world.complete(
+        Box::new([llm::Block::ToolCall {
+            id: b"piece-1".as_slice().into(),
+            name: b"edit".as_slice().into(),
+            input: edit_input.into(),
+            call: llm::Decoded::Owned {
+                call: Call::Edit {
+                    path: path(),
+                    edits: Box::new([
+                        smith_domain_tools::Replacement {
+                            old: b"END!".as_slice().into(),
+                            new: first_extension.into(),
+                            occurrences: smith_domain_tools::Occurrences::Once,
                         },
-                        content: content.into(),
-                    },
+                        smith_domain_tools::Replacement {
+                            old: b"END!".as_slice().into(),
+                            new: second_extension.into(),
+                            occurrences: smith_domain_tools::Occurrences::Once,
+                        },
+                    ]),
                 },
-                replay: None,
-            }]),
-            llm::Stop::ToolUse,
-            llm::Usage::ZERO,
-        );
-        assert_eq!(world.operations.len(), 1);
-        let (owner, op) = &world.operations[0];
-        let owner = *owner;
-        let Op::Store { content: actual, .. } = op else { panic!("bounded write reaches IO") };
-        assert_eq!(actual.as_ref(), content);
-        world.step(session::Event::Done {
-            owner,
-            done: Done::Stored { version: Version::new([u64::try_from(index).expect("index") + 1, 0, 0, 0]) },
-        });
-        world.resume();
-        assert!(matches!(
-            world.turns.last().expect("accepted piece").messages[1].content[0],
-            llm::Block::ToolResult { result: llm::Returned::Owned { outcome: Outcome::Written { .. } }, .. }
-        ));
-    }
+            },
+            replay: None,
+        }]),
+        llm::Stop::ToolUse,
+        llm::Usage::ZERO,
+    );
+    let [(owner, Op::Load { .. })] = world.operations.as_slice() else { panic!("the edit loads once") };
+    world.step(session::Event::Done {
+        owner: *owner,
+        done: Done::Loaded { content: initial.into(), version: first_version },
+    });
+    let expected = [vec![b'a'; 188], vec![b'b'; 64], vec![b'c'; 64], b"END!".to_vec()].concat();
+    assert!(expected.len() > 256, "the completed file exceeds one call's input bound");
+    let [(owner, Op::Store { content, expect, .. })] = world.operations.as_slice() else {
+        panic!("the whole edit batch stores once")
+    };
+    assert_eq!(content.as_ref(), expected);
+    assert_eq!(*expect, smith_domain_tools::Expect::Is { version: first_version });
+    world.step(session::Event::Done { owner: *owner, done: Done::Stored { version: Version::new([2, 0, 0, 0]) } });
+    world.resume();
+    assert!(matches!(
+        world.turns[1].messages[1].content[0],
+        llm::Block::ToolResult { result: llm::Returned::Owned { outcome: Outcome::Written { .. } }, .. }
+    ));
+    assert!(matches!(
+        world.turns[2].messages[1].content[0],
+        llm::Block::ToolResult { result: llm::Returned::Owned { outcome: Outcome::Edited { .. } }, .. }
+    ));
     assert_eq!(world.turns.len(), 3);
     world.close();
 }

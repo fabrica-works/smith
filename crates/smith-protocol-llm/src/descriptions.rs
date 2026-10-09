@@ -71,6 +71,10 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
         }
     }
     match tool {
+        Tool::Write | Tool::Edit => output.put(b"For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. "),
+        Tool::Read | Tool::List | Tool::Search | Tool::Shell => {}
+    }
+    match tool {
         Tool::Read | Tool::List | Tool::Search => {
             output.put(b"Batch independent reads, lists and searches side by side.");
         }

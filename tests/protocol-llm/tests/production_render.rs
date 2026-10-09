@@ -184,3 +184,51 @@ fn written_text_and_mechanical_feedback_keep_their_error_flags() {
         assert!(*is_error);
     }
 }
+
+#[test]
+fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
+    for name in [b"write".as_slice(), b"edit"] {
+        let history = llm::Prompt {
+            namespace: tools::Namespace::One,
+            affinity: llm::Affinity { key: [0; 16], thread: 0 },
+            asker: llm::Asker::Main,
+            endpoint: llm::Endpoint(1),
+            model: b"model".as_slice().into(),
+            system: Box::new([]),
+            tools: tools::Grants { inspect: false, modify: true, shell: false },
+            served: Box::new([]),
+            max_tokens: 32,
+            messages: Box::new([
+                llm::Message {
+                    role: llm::Role::Assistant,
+                    content: Box::new([llm::Block::ToolCall {
+                        id: b"large".as_slice().into(),
+                        name: name.into(),
+                        input: b"{}".as_slice().into(),
+                        replay: None,
+                    }]),
+                },
+                llm::Message {
+                    role: llm::Role::User,
+                    content: Box::new([llm::Block::ToolResult {
+                        id: b"large".as_slice().into(),
+                        result: llm::Returned::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 256 } },
+                    }]),
+                },
+            ]),
+        };
+        let translated = adapter::prompt(history, &[], &limits()).expect("corrective prompt");
+        let [skein_llm::Block::ToolCall { name: actual, arguments, .. }] = translated.messages[0].content.as_ref()
+        else {
+            panic!("replayable call")
+        };
+        assert_eq!(actual.as_ref(), name);
+        assert_eq!(arguments.as_ref(), b"{}");
+        let [skein_llm::Block::ToolResult { id, text, is_error }] = translated.messages[1].content.as_ref() else {
+            panic!("corrective result")
+        };
+        assert_eq!(id.as_ref(), b"large");
+        assert_eq!(text.as_ref(), b"input too large: 1024 bytes, bound 256 bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound");
+        assert!(*is_error);
+    }
+}

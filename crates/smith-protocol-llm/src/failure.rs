@@ -146,7 +146,7 @@ fn call_size_problem(bytes: u64, bound: Option<u32>, maximum: u32) -> Result<Box
         None => None,
     };
     let (prefix, suffix): (&[u8], &[u8]) = match bound {
-        Some(_) => (b"input too large: ", b" bytes; make a smaller write or an edit"),
+        Some(_) => (b"input too large: ", b" bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound"),
         None => (b"input cut off after ", b" bytes; make a smaller call and try again"),
     };
     let mut length = prefix.len().checked_add(size.as_bytes().len()).ok_or(Error::Limit)?;
