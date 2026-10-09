@@ -51,12 +51,11 @@ pub enum Error {
 /// Checked memory bound for both domains and their routing queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    local::worst_case(&limits.local)?
+    local::spawned_worst_case(&limits.local, &limits.host)?
         .checked_add(protocol::terminal_worst_case(&protocol::TerminalLimits {
             line_bytes: limits.local.line_bytes,
             show_bytes: limits.local.show_bytes,
         })?)?
-        .checked_add(host::worst_case(&limits.host)?)?
         .checked_add(ProcessAdapter::worst_case(&limits.process)?)?
         .checked_add(Queue::<local::Event>::worst_case(limits.queue)?)?
         .checked_add(Queue::<local::Request>::worst_case(limits.queue)?.checked_mul(2)?)?
@@ -94,7 +93,6 @@ enum SnapshotState {
 pub struct Service {
     limits: Limits,
     local: local::Domain,
-    host: Option<host::Domain>,
     effects: Option<agent_service::Effects>,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
@@ -110,14 +108,11 @@ pub struct Service {
     local_events: Queue<local::Event>,
     local_requests: Queue<local::Request>,
     host_events: Queue<host::Input>,
-    host_requests: Queue<host::Output>,
     shell: Queue<local::Request>,
     lower: Queue<host::process::Request>,
     values: Map<u32, Box<[u8]>>,
     paths: Box<[Box<[u8]>]>,
     start_values: Option<StartValues>,
-    pending_start: Option<local::ExternalStart>,
-    host_agent: Option<Token>,
     failed: bool,
 }
 
@@ -185,13 +180,12 @@ impl Service {
         let local_result = if effects.is_some() {
             local::Domain::new(config.local, &config.limits.local, seed)
         } else {
-            local::Domain::new_external(config.local, &config.limits.local, seed)
+            local::Domain::new_external(config.local, &config.limits.local, config.limits.host, seed)
         };
         let local = match local_result {
             Ok(local) => local,
             Err(error) => return Err(Error::Local(error)),
         };
-        let host = if effects.is_some() { None } else { Some(host::Domain::new(&config.limits.host)) };
         let process =
             ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).ok_or(Error::Process)?;
         let terminal = protocol::Terminal::new(protocol::TerminalLimits {
@@ -204,7 +198,6 @@ impl Service {
         Ok(Self {
             limits: config.limits,
             local,
-            host,
             effects,
             completions: Queue::with_capacity(queue),
             submissions: Queue::with_capacity(queue),
@@ -220,14 +213,11 @@ impl Service {
             local_events: Queue::with_capacity(queue),
             local_requests: Queue::with_capacity(queue),
             host_events: Queue::with_capacity(queue),
-            host_requests: Queue::with_capacity(queue),
             shell: Queue::with_capacity(queue),
             lower: Queue::with_capacity(queue),
             values: Map::with_capacity(accounts),
             paths: config.paths,
             start_values: None,
-            pending_start: None,
-            host_agent: None,
             failed: false,
         })
     }
@@ -272,11 +262,6 @@ impl Service {
         self.local_events.push(local::Event::Credential { grant });
     }
 
-    /// Queue one host-channel or process terminal from the lower adapter.
-    pub fn host_event(&mut self, event: host::Input) {
-        self.host_events.push(event);
-    }
-
     /// Shell work, including terminal, file, credential and git requests.
     pub fn shell_requests(&mut self) -> &mut Queue<local::Request> {
         &mut self.shell
@@ -297,10 +282,6 @@ impl Service {
         let mut next: Option<Time> = None;
         for deadline in [
             self.local.next_deadline(),
-            match &self.host {
-                Some(host) => host.next_deadline(),
-                None => None,
-            },
             self.process.next_deadline(),
             match &self.effects {
                 Some(effects) => effects.next_deadline(),
@@ -324,10 +305,6 @@ impl Service {
             || !self.submissions.is_empty()
             || self.local.is_ready()
             || self.local.is_due(now)
-            || match &self.host {
-                Some(host) => host.is_due(now),
-                None => false,
-            }
             || match &self.effects {
                 Some(effects) => effects.work_pending(now),
                 None => false,
@@ -335,7 +312,6 @@ impl Service {
             || !self.local_events.is_empty()
             || !self.local_requests.is_empty()
             || !self.host_events.is_empty()
-            || !self.host_requests.is_empty()
             || !self.terminal_events.is_empty()
             || self.process.work_pending(now)
     }
@@ -452,7 +428,10 @@ impl Service {
 
     fn route_local(&mut self, now: Time, request: local::Request) {
         match request {
-            local::Request::External(external) => self.route_external(now, *external),
+            local::Request::Process(request) => {
+                self.prepare_values(&request);
+                self.lower.push(request);
+            }
             local::Request::Git { owner, directory, op, deadline } => match op {
                 local::GitOp::Markers { paths } => {
                     self.process.start_markers(owner, directory, paths, deadline, &mut self.local_events);
@@ -477,7 +456,7 @@ impl Service {
                 self.process.plain_status(owner, directory, deadline, &mut self.local_events);
             }
             local::Request::SaveState { state, fresh } => {
-                if self.effects.is_some() && self.capture_activation != Some(state.activation) {
+                if self.capture_activation != Some(state.activation) {
                     self.capture_activation = Some(state.activation);
                     self.snapshot_state = SnapshotState::Capturing { saved: false };
                     self.process
@@ -518,199 +497,66 @@ impl Service {
         }
     }
 
-    fn route_external(&mut self, now: Time, request: local::ExternalRequest) {
-        match request {
-            local::ExternalRequest::Start(start) => {
-                let mut directories = List::with_capacity(64);
-                if let Some(workspace) = &start.workspace {
-                    for (position, directory) in workspace.directories.iter().enumerate() {
-                        if directory.writable && !directory.git {
-                            directories
-                                .push(u32::try_from(position).expect("admitted directory"))
-                                .expect("bounded plain directories");
-                        }
-                    }
-                }
-                self.process.capture_plain(directories, now.saturating_add(start.charter.budget.time));
-                self.pending_start = Some(start);
-            }
-            local::ExternalRequest::Message { run, name, label, text } => {
-                self.host_events.push(host::Input::Parent(host::parent::Event::Message {
-                    agent: run,
-                    name,
-                    label,
-                    text,
-                }));
-            }
-            local::ExternalRequest::Acknowledge { run, turn } => {
-                self.host_events.push(host::Input::Parent(host::parent::Event::Acknowledge { agent: run, turn }));
-            }
-            local::ExternalRequest::Grant { run, grant } => {
-                self.host_events.push(host::Input::Parent(host::parent::Event::Grant {
-                    agent: run,
-                    grant: host::Grant {
-                        account: grant.name.account,
-                        generation: grant.name.generation,
-                        valid: grant.valid,
-                    },
-                }));
-            }
-            local::ExternalRequest::Delivery { owner, delivery } => {
-                let agent = self.host_agent.expect("delivery belongs to started host agent");
-                match protocol::delivery_to_host(delivery) {
-                    Ok(delivery) => self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
-                        agent,
-                        call: owner,
-                        reply: host::Reply::Delivery(delivery),
-                    })),
-                    Err(_) => {
-                        self.failed = true;
-                        self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
-                            agent,
-                            call: owner,
-                            reply: host::Reply::Unavailable,
-                        }));
-                    }
-                }
-            }
-            local::ExternalRequest::Cancel { run } => {
-                self.host_events.push(host::Input::Parent(host::parent::Event::Stop { agent: run }));
-            }
-        }
-    }
-
     fn start_captured(&mut self) {
         match self.process.take_capture_done() {
             Some(true) => {
-                if self.effects.is_some() {
-                    let state = core::mem::replace(&mut self.snapshot_state, SnapshotState::Idle);
-                    match state {
-                        SnapshotState::Capturing { saved: true } => self.local_events.push(local::Event::StateSaved),
-                        SnapshotState::Capturing { saved: false } => {}
-                        SnapshotState::Idle | SnapshotState::Failed => {
-                            unreachable!("capture belongs to activation save")
-                        }
-                    }
-                    return;
-                }
-                let start = self.pending_start.take().expect("capture belongs to pending start");
-                let mut credentials = List::with_capacity(u32::try_from(start.grants.len()).expect("bounded grants"));
-                for grant in &start.grants {
-                    let value = self.values.get(&grant.name.account).expect("grant value supplied before Start");
-                    credentials.push(value.clone()).expect("bounded grant count");
-                }
-                let prepared =
-                    protocol::prepare_start(start, &self.limits.host, self.paths.clone(), credentials.into_boxed());
-                match prepared {
-                    Ok(prepared) => {
-                        self.start_values =
-                            Some(StartValues { paths: prepared.paths, credentials: prepared.credentials });
-                        self.host_events.push(host::Input::Parent(host::parent::Event::Spawn {
-                            client: Token::new(1),
-                            start: prepared.start,
-                        }));
-                    }
-                    Err(_) => {
-                        self.failed = true;
-                        self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
-                        self.local_events.push(local::Event::External(local::ExternalEvent::Gone));
-                    }
+                let state = core::mem::replace(&mut self.snapshot_state, SnapshotState::Idle);
+                match state {
+                    SnapshotState::Capturing { saved: true } => self.local_events.push(local::Event::StateSaved),
+                    SnapshotState::Capturing { saved: false } => {}
+                    SnapshotState::Idle | SnapshotState::Failed => unreachable!("capture belongs to activation save"),
                 }
             }
             Some(false) => {
-                if self.effects.is_some() {
-                    self.snapshot_state = SnapshotState::Failed;
-                    self.local_events.push(local::Event::StoreFailed { reason: local::StoreFailure::Read });
-                    return;
-                }
-                self.pending_start = None;
-                self.failed = true;
-                self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
-                self.local_events.push(local::Event::External(local::ExternalEvent::Gone));
+                self.snapshot_state = SnapshotState::Failed;
+                self.local_events.push(local::Event::StoreFailed { reason: local::StoreFailure::Read });
             }
             None => {}
         }
     }
 
-    fn route_host(&mut self, request: host::Output) {
+    fn prepare_values(&mut self, request: &host::process::Request) {
         match request {
-            host::Output::Parent(host::parent::Request::Started { agent, .. }) => self.host_agent = Some(agent),
-            host::Output::Parent(host::parent::Request::Admitted { .. }) => {
-                let run = self.host_agent.expect("Started precedes Admitted");
-                self.local_events.push(local::Event::External(local::ExternalEvent::Admitted { run }));
-            }
-            host::Output::Parent(host::parent::Request::Turn { turn, .. }) => {
-                let value = turn.body.into_value();
-                self.local_events.push(local::Event::External(local::ExternalEvent::Turn {
-                    number: turn.number,
-                    read: turn.read,
-                    turn: value,
-                }));
-            }
-            host::Output::Parent(host::parent::Request::Answered { answer, .. }) => {
-                match protocol::answer_to_local(answer) {
-                    Ok(answer) => {
-                        self.local_events.push(local::Event::External(local::ExternalEvent::Answer { answer }));
+            host::process::Request::Send { message, .. } => match message {
+                host::Down::Start { start, .. } => {
+                    let mut credentials =
+                        List::with_capacity(u32::try_from(start.grants.len()).expect("bounded grant count"));
+                    for grant in &start.grants {
+                        credentials
+                            .push(self.values.get(&grant.account).expect("credential supplied before Start").clone())
+                            .expect("one envelope per named grant");
                     }
-                    Err(_) => {
-                        self.failed = true;
-                        self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
-                    }
+                    assert_eq!(
+                        start.directories.len(),
+                        self.paths.len(),
+                        "typed mounted directories keep configured path order"
+                    );
+                    self.start_values =
+                        Some(StartValues { paths: self.paths.clone(), credentials: credentials.into_boxed() });
                 }
-            }
-            host::Output::Parent(host::parent::Request::Called { call, name, deadline, ask, .. }) => {
-                self.called(call, name, deadline, ask);
-            }
-            host::Output::Parent(host::parent::Request::Waiting { .. }) => {
-                self.local_events.push(local::Event::External(local::ExternalEvent::Waiting));
-            }
-            host::Output::Parent(host::parent::Request::Rejected { account, .. }) => {
-                self.local_events.push(local::Event::External(local::ExternalEvent::Rejected { account }));
-            }
-            host::Output::Parent(host::parent::Request::Exhausted { .. }) => {
-                self.local_events.push(local::Event::External(local::ExternalEvent::Exhausted));
-            }
-            host::Output::Parent(
-                host::parent::Request::Faulted { .. } | host::parent::Request::MessageRefused { .. },
-            ) => {
-                self.failed = true;
-                self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
-            }
-            host::Output::Parent(host::parent::Request::Gone { .. }) => {
-                self.local_events.push(local::Event::External(local::ExternalEvent::Gone));
-                self.host_agent = None;
-            }
-            host::Output::Parent(
-                host::parent::Request::Withdrawn { .. }
-                | host::parent::Request::Told { .. }
-                | host::parent::Request::Long { .. }
-                | host::parent::Request::LongDone { .. },
-            ) => {}
-            host::Output::Process(request) => self.lower.push(request),
+                host::Down::Message { .. }
+                | host::Down::Acknowledge { .. }
+                | host::Down::Answer { .. }
+                | host::Down::Grant { .. }
+                | host::Down::Cancel => {}
+            },
+            host::process::Request::Spawn { .. }
+            | host::process::Request::Read { .. }
+            | host::process::Request::Signal { .. }
+            | host::process::Request::Wait { .. }
+            | host::process::Request::Reap { .. } => {}
         }
     }
 
-    fn called(&mut self, call: Token, name: host::CallName, deadline: Time, ask: host::Ask) {
-        let agent = self.host_agent.expect("call belongs to started host agent");
-        match ask {
-            host::Ask::Deliver { fields } => {
-                self.local_events.push(local::Event::External(local::ExternalEvent::Deliver {
-                    name: agent::run::CallName {
-                        activation: name.activation,
-                        completion: name.completion,
-                        position: name.position,
-                    },
-                    owner: call,
-                    change: fields.into_value(),
-                    deadline,
-                }));
+    fn process_terminals(&mut self) {
+        for _ in 0..self.host_events.capacity() {
+            if self.local_events.room() == 0 {
+                break;
             }
-            host::Ask::Host { .. } => {
-                self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
-                    agent,
-                    call,
-                    reply: host::Reply::Unavailable,
-                }));
+            match self.host_events.pop() {
+                Some(host::Input::Process(event)) => self.local_events.push(local::Event::Process(event)),
+                Some(host::Input::Parent(_)) => unreachable!("the process adapter supplies process terminals only"),
+                None => break,
             }
         }
     }
@@ -740,8 +586,8 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     );
     service.drain_terminal();
     service.start_captured();
+    service.process_terminals();
     local_pass(service, now, wall);
-    host_pass(service, now, wall);
     service.process.down(
         now,
         wall,
@@ -756,9 +602,6 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.flush_submissions();
     service.finish_exit();
     service.local.reclaim();
-    if let Some(host) = &mut service.host {
-        host.reclaim();
-    }
 }
 
 const EFFECT_OPERATION_BIT: u64 = 1 << 63;
@@ -788,7 +631,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             | local::Event::Credential { .. }
             | local::Event::NoCredential { .. }
             | local::Event::Agent(_)
-            | local::Event::External(_)) => {
+            | local::Event::Process(_)) => {
                 local::step(&mut service.local, &local_env, other, &mut service.local_requests);
                 continue;
             }
@@ -819,36 +662,6 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
     }
     service.drain_terminal();
     service.start_captured();
-}
-
-fn host_pass(service: &mut Service, now: Time, wall: Wall) {
-    let host_env = Env { now, wall, limits: service.limits.host };
-    for _ in 0..service.host_events.capacity() {
-        if service.host_requests.room() < host::max_out(&service.limits.host) {
-            break;
-        }
-        let Some(event) = service.host_events.pop() else { break };
-        host::step(
-            service.host.as_mut().expect("spawned events own a host domain"),
-            &host_env,
-            event,
-            &mut service.host_requests,
-        );
-    }
-    if match &service.host {
-        Some(host) => host.is_due(now),
-        None => false,
-    } && service.host_requests.room() >= host::max_out(&service.limits.host)
-    {
-        host::fire(service.host.as_mut().expect("spawned mode owns watchdog"), &host_env, &mut service.host_requests);
-    }
-    for _ in 0..service.host_requests.capacity() {
-        if service.local_events.room() == 0 || service.lower.room() == 0 || service.host_events.room() == 0 {
-            break;
-        }
-        let Some(request) = service.host_requests.pop() else { break };
-        service.route_host(request);
-    }
 }
 
 #[expect(

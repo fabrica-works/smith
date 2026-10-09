@@ -22,7 +22,6 @@ mod credential;
 mod delivery_store;
 mod git;
 mod git_child;
-mod host_bridge;
 mod markers;
 mod plain;
 mod store;
@@ -35,9 +34,6 @@ pub use credential::{Begin, Credential, CredentialEvent, CredentialLimits, Crede
 pub use delivery_store::{decode_delivery, save_delivery};
 pub use git::{Git, GitAction, GitCompletion, GitLimits, git_worst_case};
 pub use git_child::{GitChild, git_child_worst_case};
-pub use host_bridge::{
-    BridgeError, PreparedStart, answer_to_local, delivery_to_host, name_to_host, prepare_start, saved_reply_to_host,
-};
 pub use markers::{MarkerAction, Markers, markers_worst_case};
 pub use plain::{Plain, PlainAction, PlainLimits, Snapshot, plain_worst_case};
 pub use store::{File, StoreError, decode_state, decode_turns, save_state, save_turn, turn_name};

@@ -2,14 +2,13 @@
 //! (domain/host.md, sections 2 and 6). The answer stays here until the last
 //! save terminal; a slow store therefore cannot let the person see it early.
 
-use crate::ExternalFinal;
 use skein_lib::Queue;
 use smith_domain::run;
 
 #[derive(Debug)]
 pub(crate) enum Final {
     InProcess(run::Answer),
-    External(ExternalFinal),
+    Spawned(smith_host_domain::Answer),
 }
 
 /// Bounded unsaved activation numbers and conversation positions, and a held child answer.

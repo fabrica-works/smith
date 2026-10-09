@@ -3,7 +3,7 @@ use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use smith_domain::run::{self, charter::Endpoint, outcome};
 
 use crate::{
-    Config, Contract, Domain, Event, ExternalEvent, ExternalFinal, ExternalRequest, Invalid, Limits, Request, charter,
+    Config, Contract, Domain, Event, Invalid, Limits, Request, charter,
 };
 
 fn limits() -> Limits {
@@ -124,72 +124,72 @@ fn invalid_local_configuration_is_refused_before_agent_construction() {
 
 #[test]
 fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
+    use smith_host_domain::{self as host, process};
     let limits = limits();
     let env = Env { now: Time::ZERO, wall: Wall::from_nanos(0), limits: limits.clone() };
-    let mut domain = Domain::new_external(config(), &limits, 11).expect("external local domain");
+    let mut domain = Domain::new_external(config(), &limits, host_limits(), 11).expect("spawned local domain");
     let mut out = Queue::with_capacity(crate::max_out(&limits));
     crate::resume(&mut domain, &env, &mut out);
-    let Some(Request::Load) = out.pop() else { panic!("load first") };
-    crate::step(&mut domain, &env, Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) }, &mut out);
+    assert!(matches!(out.pop(), Some(Request::Load)));
+    crate::step(&mut domain, &env, Event::Loaded { state: None, transcript: None, deliveries: Box::default() }, &mut out);
     crate::step(&mut domain, &env, Event::Line { text: Box::from(&b"hello"[..]) }, &mut out);
-    let Some(Request::Credential { account: 7 }) = out.pop() else { panic!("credential before start") };
+    assert!(matches!(out.pop(), Some(Request::Credential { account: 7 })));
     let Some(Request::SaveState { state, fresh: false }) = out.pop() else { panic!("activation saved") };
-    assert_eq!(state.activation, 1);
-    crate::step(
-        &mut domain,
-        &env,
-        Event::Credential {
-            grant: smith_domain::Grant {
-                name: smith_domain::GrantName { account: 7, generation: 1 },
-                valid: Duration::from_secs(60),
-            },
-        },
-        &mut out,
-    );
-    crate::step(&mut domain, &env, Event::StateSaved, &mut out);
-    let Some(Request::External(start)) = out.pop() else { panic!("external start") };
-    let ExternalRequest::Start(start) = *start else { panic!("start request") };
-    assert_eq!(start.activation, 1);
-    assert_eq!(start.grants.len(), 1);
-    assert_eq!(start.charter.instructions.as_ref(), b"Assist the person");
+    assert_eq!(state.activation,1);
+    crate::step(&mut domain,&env,Event::Credential { grant: smith_domain::Grant { name: smith_domain::GrantName { account:7,generation:1 },valid:Duration::from_secs(60) } },&mut out);
+    crate::step(&mut domain,&env,Event::StateSaved,&mut out);
+    let Some(Request::Process(process::Request::Spawn { owner, .. })) = out.pop() else { panic!("owned child spawn") };
+    crate::step(&mut domain,&env,Event::Process(process::Event::Spawned { owner,process:Token::new(3) }),&mut out);
+    let Some(Request::Process(process::Request::Send { message:host::Down::Start { start,.. },.. })) = out.pop() else { panic!("typed start first") };
+    assert_eq!(start.activation,1);
+    assert_eq!(start.grants.len(),1);
+    assert_eq!(start.charter.into_value().instructions.as_ref(),b"Assist the person");
+    assert!(matches!(out.pop(),Some(Request::Process(process::Request::Wait { .. }))));
+    assert!(matches!(out.pop(),Some(Request::Process(process::Request::Reap { .. }))));
+    crate::step(&mut domain,&env,Event::Process(process::Event::Sent { owner }),&mut out);
+    assert!(matches!(out.pop(),Some(Request::Process(process::Request::Read { .. }))));
+    crate::step(&mut domain,&env,Event::Process(process::Event::Received { owner,message:host::Up::Admitted }),&mut out);
+    let outputs=drain_requests(&mut out);
+    let message=outputs.iter().find_map(|request| match request { Request::Process(process::Request::Send { message:host::Down::Message { name,label,text },.. })=>Some((name,label,text)),_=>None }).expect("first named person line");
+    assert_eq!(*message.0,Token::new(1));assert_eq!(message.1.as_ref(),b"person");assert_eq!(message.2.as_ref(),b"hello");
+    crate::step(&mut domain,&env,Event::Process(process::Event::Sent { owner }),&mut out);
+    drain_requests(&mut out);
+    let turn=smith_domain::Turn { version:smith_domain::session::record::VERSION,endpoint:smith_domain::session::llm::Endpoint(4),dialect:1,sequence:1,usage:smith_domain::session::llm::Usage::ZERO,spent:0,messages:Box::default() };
+    crate::step(&mut domain,&env,Event::Process(process::Event::Received { owner,message:host::Up::Turn { turn:host::Turn { number:1,read:Some(Token::new(1)),spent:0,body:host::TurnValue::new(turn,host_limits().turn_bytes).expect("sealed concrete turn") } } }),&mut out);
+    let outputs=drain_requests(&mut out);
+    assert!(outputs.iter().any(|request|matches!(request,Request::SaveTurn { number:1,read:Some(name),.. } if *name==Token::new(1))));
+    assert!(!outputs.iter().any(|request|matches!(request,Request::Process(process::Request::Send { message:host::Down::Acknowledge { .. },.. }))));
+    crate::step(&mut domain,&env,Event::TurnSaved { number:1 },&mut out);
+    let outputs=drain_requests(&mut out);
+    assert!(outputs.iter().any(|request|matches!(request,Request::Process(process::Request::Send { message:host::Down::Acknowledge { turn:1 },.. }))));
+    crate::step(&mut domain,&env,Event::Process(process::Event::Sent { owner }),&mut out);
+    drain_requests(&mut out);
+    crate::step(&mut domain,&env,Event::Process(process::Event::Received { owner,message:host::Up::Answer { answer:host::Answer { read:Some(Token::new(1)),turns:1,spent:0,result:host::RunResult::Parked } } }),&mut out);
+    let outputs=drain_requests(&mut out);
+    assert!(!outputs.iter().any(|request|matches!(request,Request::Show { text } if text.as_ref()==b"Chat parked")),"answer waits for process exit and empty tree");
+    for request in outputs {
+        if let Request::Process(process::Request::Signal { owner,.. })=request { crate::step(&mut domain,&env,Event::Process(process::Event::Signalled { owner }),&mut out); }
+    }
+    drain_requests(&mut out);
+    crate::step(&mut domain,&env,Event::Process(process::Event::Hangup { owner }),&mut out);
+    crate::step(&mut domain,&env,Event::Process(process::Event::Exited { owner }),&mut out);
+    crate::step(&mut domain,&env,Event::Process(process::Event::Reaped { owner,detail:Box::default() }),&mut out);
+    let outputs=drain_requests(&mut out);
+    assert!(outputs.iter().any(|request|matches!(request,Request::Show { text } if text.as_ref()==b"Chat parked")));
+    assert!(outputs.iter().any(|request|matches!(request,Request::Load)));
+}
 
-    crate::step(&mut domain, &env, Event::External(ExternalEvent::Admitted { run: Token::new(3) }), &mut out);
-    let Some(Request::External(message)) = out.pop() else { panic!("first message") };
-    let ExternalRequest::Message { run, name, label, text } = *message else { panic!("message request") };
-    assert_eq!(run, Token::new(3));
-    assert_eq!(name, Token::new(1));
-    assert_eq!(label.as_ref(), b"person");
-    assert_eq!(text.as_ref(), b"hello");
+fn drain_requests(out: &mut Queue<Request>) -> alloc::vec::Vec<Request> {
+    let mut requests=alloc::vec::Vec::new();while let Some(request)=out.pop(){requests.push(request);}requests
+}
 
-    let turn = smith_domain::Turn {
-        version: smith_domain::session::record::VERSION,
-        endpoint: smith_domain::session::llm::Endpoint(4),
-        dialect: 1,
-        sequence: 1,
-        usage: smith_domain::session::llm::Usage::ZERO,
-        spent: 0,
-        messages: Box::new([]),
-    };
-    crate::step(
-        &mut domain,
-        &env,
-        Event::External(ExternalEvent::Turn { number: 1, read: Some(Token::new(1)), turn }),
-        &mut out,
-    );
-    let Some(Request::SaveTurn { number: 1, read: Some(read), .. }) = out.pop() else {
-        panic!("turn saved before ACK")
-    };
-    assert_eq!(read, Token::new(1));
-    crate::step(&mut domain, &env, Event::TurnSaved { number: 1 }, &mut out);
-    let Some(Request::External(ack)) = out.pop() else { panic!("ACK after durable terminal") };
-    let ExternalRequest::Acknowledge { run, turn: 1 } = *ack else { panic!("exact ACK") };
-    assert_eq!(run, Token::new(3));
-    crate::step(&mut domain, &env, Event::External(ExternalEvent::Answer { answer: ExternalFinal::Parked }), &mut out);
-    assert!(out.is_empty(), "a last word waits for child exit and reap");
-    crate::step(&mut domain, &env, Event::External(ExternalEvent::Gone), &mut out);
-    let Some(Request::Show { text }) = out.pop() else { panic!("last word shown after Gone") };
-    assert_eq!(text.as_ref(), b"Chat parked");
-    let Some(Request::Load) = out.pop() else { panic!("next run may load after Gone") };
+pub(super) fn host_limits() -> smith_host_domain::Limits {
+    smith_host_domain::Limits {
+        agents:1,directories:4,conflicts:16,path_bytes:1024,name_bytes:256,accounts:8,
+        charter_bytes:65536,transcript_bytes:1048576,answered_bytes:1048576,message_bytes:4096,messages:8,calls:8,call_bytes:4096,answer_bytes:smith_host_domain::Delivered::worst_case(),
+        turns:2,turn_bytes:1048576,unacknowledged_bytes:2097152,fact_bytes:512,outcome_bytes:4096,detail_bytes:512,
+        spawn_timeout:Duration::from_secs(5),no_progress:Duration::from_secs(60),long_span:Duration::from_secs(3600),wall_time:Duration::from_secs(3600),grace:Duration::from_secs(5),kill_after:Duration::from_secs(1),facts:64,
+    }
 }
 
 #[test]

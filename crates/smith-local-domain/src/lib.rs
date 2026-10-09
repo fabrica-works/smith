@@ -34,6 +34,7 @@
 
 extern crate alloc;
 
+mod agent;
 mod boundary;
 mod chat;
 mod config;
@@ -48,12 +49,14 @@ mod turns;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod agent_tests;
+
 pub use boundary::{
-    AgentIo, ChatState, CredentialFailure, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus,
-    ExternalEvent, ExternalFinal, ExternalRequest, ExternalStart, GitOp, GitResult, IntentDirectory, Request,
-    StoreFailure,
+    AgentIo, ChatState, CredentialFailure, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp,
+    GitResult, IntentDirectory, Request, StoreFailure,
 };
 pub use config::{Config, Contract, Invalid, PushTarget, charter};
 pub use domain::{Domain, fire, max_out, resume, step};
 pub use facts::Fact;
-pub use limits::{Limits, max_line_bytes, worst_case};
+pub use limits::{Limits, max_line_bytes, spawned_worst_case, worst_case};
