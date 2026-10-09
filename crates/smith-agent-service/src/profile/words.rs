@@ -38,6 +38,7 @@ pub fn words(refusal: &Refusal) -> Box<[u8]> {
             text(&mut output, " has an invalid or repeated name");
         }
         Refusal::Connection(error) => connection(&mut output, *error),
+        Refusal::Llm { endpoint, violation } => native(&mut output, *endpoint, *violation),
     }
     output.into_boxed()
 }
@@ -195,5 +196,52 @@ fn number(output: &mut List<u8>, mut value: u64) {
             break;
         }
         output.push(*digit).expect("room checked");
+    }
+}
+
+fn native(output: &mut List<u8>, endpoint: u32, violation: skein_llm::Violation) {
+    use skein_llm::Violation;
+    let (relationship, left, left_value, right, right_value) = match violation {
+        Violation::Overflow { rule } => {
+            text(output, "derived: ");
+            name(output, &LimitName { layer: super::Layer::Llm, field: rule_name(rule), per: Per::Endpoint(endpoint) });
+            text(output, " does not fit its type");
+            return;
+        }
+        Violation::InputAnswer { input, answer } => ("input-answer", "input", input, "answer", answer),
+        Violation::OutputItemsCalls { output_items, calls } => {
+            ("output-items-calls", "output_items", output_items, "calls_per_response", calls)
+        }
+        Violation::StringsInput { strings, input } => ("strings-input", "strings", strings, "input", input),
+        Violation::StringsReasoning { strings, reasoning } => {
+            ("strings-reasoning", "strings", strings, "reasoning", reasoning)
+        }
+    };
+    text(output, relationship);
+    text(output, ": ");
+    name(output, &LimitName { layer: super::Layer::Llm, field: left, per: Per::Endpoint(endpoint) });
+    text(output, "=");
+    number(output, u64::from(left_value));
+    text(output, "; ");
+    name(output, &LimitName { layer: super::Layer::Llm, field: right, per: Per::Endpoint(endpoint) });
+    text(output, "=");
+    number(output, u64::from(right_value));
+}
+
+const fn rule_name(rule: skein_llm::Rule) -> &'static str {
+    use skein_llm::Rule;
+    match rule {
+        Rule::Request => "request",
+        Rule::Answer => "answer",
+        Rule::Input => "input",
+        Rule::Reasoning => "reasoning",
+        Rule::OutputItems => "output_items",
+        Rule::Strings => "strings",
+        Rule::Tokens => "tokens",
+        Rule::Retained => "retained",
+        Rule::Receiving => "receiving",
+        Rule::Skip => "skip",
+        Rule::Tools => "tools",
+        Rule::HistoryItems => "history_items",
     }
 }

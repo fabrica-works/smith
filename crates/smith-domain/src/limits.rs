@@ -78,7 +78,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         || run_limits.directories > session_limits.tools.repos
         || run_limits.directory_name_bytes > session_limits.tools.path_bytes
         || run_limits.host_path_bytes > session_limits.tools.host_path_bytes
-        || u64::from(run_limits.answered_bytes) > session_limits.session_bytes
+        || u64::from(run_limits.answered_bytes) > session_limits.history_bytes
     {
         return None;
     }
@@ -87,7 +87,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     }
     let decoded_cells = u64::from(session_limits.completion_blocks)
         .checked_mul(u64::try_from(size_of::<crate::llm::Decoded>()).ok()?)?;
-    if decoded_cells > limits.decoded_call_bytes.min(session_limits.session_bytes) {
+    if decoded_cells > limits.decoded_call_bytes.min(session_limits.history_bytes) {
         return None;
     }
     let children = run::worst_case(run_limits)?.checked_add(session::worst_case(session_limits)?)?;
@@ -182,7 +182,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let facts = Queue::<Fact>::worst_case(facts(limits)?)?
         .checked_add(u64::from(facts(limits)?).checked_mul(limits.session.completion_bytes)?)?;
     let content = Queue::<crate::Content>::worst_case(limits.session.facts)?
-        .checked_add(u64::from(limits.session.facts).checked_add(1)?.checked_mul(limits.session.session_bytes)?)?;
+        .checked_add(u64::from(limits.session.facts).checked_add(1)?.checked_mul(limits.session.history_bytes)?)?;
     children
         .checked_add(
             u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<run::charter::Endpoint>()).ok()?)?,
@@ -276,10 +276,10 @@ pub(crate) const fn run_steps(limits: &Limits) -> u32 {
 /// History payload and separate allocated record/message envelopes. The source
 /// session byte cap prices Block cells/payloads, never these arrays.
 pub(crate) fn record_payload(limits: &Limits) -> Option<u64> {
-    let messages = u64::from(limits.session.messages);
+    let messages = u64::from(limits.session.history_messages);
     limits
         .session
-        .session_bytes
+        .history_bytes
         .checked_add(messages.checked_mul(u64::try_from(size_of::<session::record::Turn>()).ok()?)?)?
         .checked_add(messages.checked_mul(u64::try_from(size_of::<session::llm::Message>()).ok()?)?)
 }
@@ -298,16 +298,16 @@ pub fn max_turn_bytes(limits: &Limits) -> Option<u64> {
 /// copied host declarations. Child queue and caller-output ownership coexist.
 pub(crate) fn prompt_payload(limits: &Limits) -> Option<u64> {
     let session_block = u64::try_from(size_of::<session::llm::Block>()).ok()?;
-    let blocks = limits.session.session_bytes.checked_div(session_block)?;
+    let blocks = limits.session.history_bytes.checked_div(session_block)?;
     let root_block = u64::try_from(size_of::<crate::llm::Block>()).ok()?;
-    let messages =
-        u64::from(limits.session.messages).checked_mul(u64::try_from(size_of::<crate::llm::Message>()).ok()?)?;
+    let messages = u64::from(limits.session.history_messages)
+        .checked_mul(u64::try_from(size_of::<crate::llm::Message>()).ok()?)?;
     let descriptors = u64::from(limits.run.host_tools)
         .checked_add(4)?
         .checked_mul(u64::try_from(size_of::<crate::llm::Served>()).ok()?)?;
     limits
         .session
-        .session_bytes
+        .history_bytes
         .checked_add(blocks.checked_mul(root_block)?)?
         .checked_add(messages)?
         .checked_add(descriptors)?

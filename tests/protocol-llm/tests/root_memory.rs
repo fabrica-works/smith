@@ -136,7 +136,7 @@ fn bounds(messages: u32) -> Limits {
             // Source generation has independent room for maximum provider and
             // delegate receiving credit plus context. Restore replaces this
             // allowance with the separately observed exact payload/credit cap.
-            session_bytes: 1_048_576,
+            history_bytes: 1_048_576,
             completion_bytes,
             completion_blocks: 64,
             failure_bytes: 256,
@@ -1285,7 +1285,7 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
     counted.saved = counted.prefix.as_ref().map(copy_transcript);
     let capped = cap(counted);
     let tight = Limits {
-        session: session::Limits { session_bytes: capped, ..counted.env.limits.session },
+        session: session::Limits { history_bytes: capped, ..counted.env.limits.session },
         ..counted.env.limits
     };
     let run = counted.admitted.expect("actual source run");
@@ -1373,7 +1373,7 @@ fn refuse_one_over(counted: &mut Counted, configuration: &Configuration, cycles:
     for extra_message in [true, false] {
         let mut negative = *tight;
         if extra_message {
-            negative.session.session_bytes += 16_384;
+            negative.session.history_bytes += 16_384;
             assert!(size::<session::llm::Block>() + len(b"x") < 16_384, "count control has independent byte headroom");
         }
         counted.replace_root(&negative);

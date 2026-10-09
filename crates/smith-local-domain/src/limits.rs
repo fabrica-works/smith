@@ -111,8 +111,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(limits.smith.run.run_bytes)?;
     let lines = Queue::<Token>::worst_case(limits.lines)?
         .checked_add(u64::from(limits.lines).checked_mul(u64::from(limits.line_bytes))?)?;
-    let record = limits.smith.session.session_bytes.checked_add(
-        u64::from(limits.smith.session.messages).checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
+    let record = limits.smith.session.history_bytes.checked_add(
+        u64::from(limits.smith.session.history_messages).checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
     )?;
     let unsaved = u64::from(limits.unsaved).checked_mul(record)?;
     let out = Queue::<Request>::worst_case(crate::max_out(limits))?.checked_add(u64::from(limits.show_bytes))?;

@@ -56,8 +56,9 @@ const LIMITS: Limits = Limits {
     sessions: 2,
     spend: 100,
     protocol_allowance: 0,
-    messages: 8,
-    session_bytes: 65_536,
+    history_blocks: u32::MAX,
+    history_messages: 8,
+    history_bytes: 65_536,
     completion_bytes: 4096,
     completion_blocks: 16,
     failure_bytes: 512,
@@ -112,7 +113,7 @@ impl Harness {
             usage: Usage::ZERO,
 
             turn_records: List::with_capacity(
-                limits.sessions.checked_mul(limits.messages).expect("all fixture turns fit"),
+                limits.sessions.checked_mul(limits.history_messages).expect("all fixture turns fit"),
             ),
             prices_reported: 0,
         }
@@ -450,7 +451,7 @@ fn receiving_limits(pressure: u64, content: &[Block], result_credit: u64) -> Lim
         ..LIMITS
     };
     let envelope = crate::completion_reserve(&limits).expect("provider bounds fit").max(result_credit);
-    Limits { session_bytes: pressure.checked_add(envelope).expect("fixture envelope fits"), ..limits }
+    Limits { history_bytes: pressure.checked_add(envelope).expect("fixture envelope fits"), ..limits }
 }
 
 fn initial_bytes() -> u64 {
@@ -1149,7 +1150,7 @@ fn opens_beyond_the_session_slots_are_refused_as_busy() {
 
 #[test]
 fn specs_beyond_the_limits_are_refused_as_invalid() {
-    for (limits, spec) in [(Limits { session_bytes: 16, ..LIMITS }, spec()), (LIMITS, Spec { output: 0, ..spec() })] {
+    for (limits, spec) in [(Limits { history_bytes: 16, ..LIMITS }, spec()), (LIMITS, Spec { output: 0, ..spec() })] {
         let mut h = Harness::new(limits);
         let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec) });
         assert_eq!(refused, Some(ended(End::Invalid, 0)));
@@ -1605,7 +1606,7 @@ fn a_session_whose_time_is_up_starts_no_completion_even_before_its_alarm_fires()
 fn a_conversation_that_outgrows_its_bytes_ends_the_session() {
     let envelope = crate::completion_reserve(&LIMITS).expect("provider reservation fits");
     let limits =
-        Limits { session_bytes: 1024_u64.checked_add(envelope).expect("pressure plus envelope fits"), ..LIMITS };
+        Limits { history_bytes: 1024_u64.checked_add(envelope).expect("pressure plus envelope fits"), ..LIMITS };
     let mut h = Harness::new(limits);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"c1", cat(b"main.rs"))]);
@@ -1672,22 +1673,22 @@ fn late_oversized_completion_replaces_the_closing_reason() {
 #[test]
 fn a_session_starts_no_completion_whose_answer_it_could_not_keep() {
     // The prompt, the tools' call and their results: no room for an answer.
-    let mut h = Harness::new(Limits { messages: 3, ..LIMITS });
+    let mut h = Harness::new(Limits { history_messages: 3, ..LIMITS });
     let (owner, _) = h.open(1);
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     assert_eq!(h.step(ran(run, b"main.rs")), Some(ended(End::TranscriptFull, 1)));
     // Nor is a transcript too short to hold a prompt and its answer.
-    assert_eq!(worst_case(&Limits { messages: 1, ..LIMITS }), None);
+    assert_eq!(worst_case(&Limits { history_messages: 1, ..LIMITS }), None);
 }
 
 #[test]
 fn a_transcript_with_no_room_for_another_message_ends_the_session() {
-    let mut h = Harness::new(Limits { messages: 2, ..LIMITS });
+    let mut h = Harness::new(Limits { history_messages: 2, ..LIMITS });
     let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec()) });
     assert_eq!(refused, Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0)));
     assert_eq!((h.domain.sessions(), h.domain.kits()), (0, 0), "two slots refuse before acquiring a kit");
 
-    let mut h = Harness::new(Limits { messages: 3, ..LIMITS });
+    let mut h = Harness::new(Limits { history_messages: 3, ..LIMITS });
     let session = h.yielded();
     assert_eq!(h.step(Event::Continue { session, content: bytes(b"go on") }), Some(ended(End::TranscriptFull, 1)));
     assert_eq!(h.turn_records.len(), 1, "the actual admitted completion is recorded");
@@ -1823,7 +1824,7 @@ fn the_minimum_fact_reserve_keeps_the_same_complete_native_call_history() {
 #[test]
 fn the_worst_case_is_bounded_or_refused() {
     let bytes = worst_case(&LIMITS).expect("the test limits fit");
-    assert!(bytes > 2 * LIMITS.session_bytes, "every session may hold its bytes");
+    assert!(bytes > 2 * LIMITS.history_bytes, "every session may hold its bytes");
     let told = worst_case(&Limits { facts: LIMITS.facts + 1, ..LIMITS }).expect("the test limits fit");
     let fact = u64::try_from(size_of::<crate::Fact>()).expect("a size fits");
     assert_eq!(
@@ -1831,7 +1832,7 @@ fn the_worst_case_is_bounded_or_refused() {
         fact + LIMITS.completion_bytes,
         "the stamped fact and bounded provider identity are counted"
     );
-    assert_eq!(worst_case(&Limits { sessions: u32::MAX, session_bytes: u64::MAX, ..LIMITS }), None);
+    assert_eq!(worst_case(&Limits { sessions: u32::MAX, history_bytes: u64::MAX, ..LIMITS }), None);
 }
 
 #[test]
@@ -2014,11 +2015,11 @@ fn unsent_close_releases_provider_credit_without_requesting_a_cancel() {
 fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
     let reservation = crate::completion_reserve(&LIMITS).expect("configured provider bounds fit");
     let exact = initial_bytes().checked_add(reservation).expect("exact entrance fits");
-    let mut admitted = Harness::new(Limits { session_bytes: exact, ..LIMITS });
+    let mut admitted = Harness::new(Limits { history_bytes: exact, ..LIMITS });
     let (owner, _) = admitted.open(1);
     assert_eq!(crate::session::provider_credit_for_test(&admitted.domain, owner), (reservation, Some(reservation)));
     assert_eq!(admitted.step(Event::UnsentClosed { owner }), Some(ended(End::Closed, 0)));
-    let mut refused = Harness::new(Limits { session_bytes: exact.checked_sub(1).expect("positive cap"), ..LIMITS });
+    let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..LIMITS });
     assert_eq!(
         refused.step(Event::Open { opener: Token::new(1), opening: opening(spec()) }),
         Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0))
@@ -2044,7 +2045,7 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
     let provider = crate::completion_reserve(&limits).expect("provider envelope fits");
     let provider_entrance = initial_bytes().checked_add(provider).expect("provider entrance fits");
     assert!(exact > provider_entrance);
-    let mut admitted = Harness::new(Limits { session_bytes: exact, ..limits });
+    let mut admitted = Harness::new(Limits { history_bytes: exact, ..limits });
     let (owner, _) = admitted.open(1);
     let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
     let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
@@ -2053,7 +2054,7 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
     let expected = [result(b"a", read(&[b'x'; 4096])), result(b"b", read(&[b'y'; 4096]))];
     assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
 
-    let mut refused = Harness::new(Limits { session_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
+    let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
     let (owner, _) = refused.open(1);
     assert_eq!(
         refused.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }),
@@ -2551,4 +2552,37 @@ fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
     assert_eq!(retry.choice, crate::llm::ToolChoice::None);
     assert_eq!(yielded(harness.step(Event::Completed { owner, completion: done() })).1, Yield::Budget);
     assert_eq!(harness.turns, 2, "one failed attempt spends no turn");
+}
+
+#[test]
+fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
+    let inputs = crate::Derivation {
+        conversations: 1,
+        calls_per_response: 2,
+        max_turns: 20,
+        max_spend: 100,
+        max_time: Duration::from_secs(60),
+        tool_deadline: Duration::from_secs(10),
+        tools: LIMITS.tools,
+        request: 6000,
+        history_items: 100,
+        own_items: 11,
+        output_items: 6,
+        call_input: 256,
+        detail: 128,
+        own: 600,
+        allowance: 100,
+        threshold: [4, 5],
+    };
+    let limits = crate::derive(&inputs).expect("derived window");
+    assert_eq!(limits.history_bytes, 800);
+    assert_eq!(limits.history_messages, 89);
+    assert_eq!(limits.history_blocks, 89);
+    assert_eq!(limits.completion_blocks, 6);
+    assert_eq!(limits.failure_bytes, 128);
+    assert_eq!(limits.protocol_allowance, 100);
+    assert!(limits.history_bytes * 6 + inputs.own + inputs.allowance * 6 <= inputs.request);
+    assert_eq!(crate::derive(&crate::Derivation { request: 1199, ..inputs }), Err(crate::Field::HistoryBytes));
+    assert_eq!(crate::derive(&crate::Derivation { history_items: 12, ..inputs }), Err(crate::Field::HistoryItems));
+    assert_eq!(crate::derive(&crate::Derivation { allowance: u64::MAX, ..inputs }), Err(crate::Field::Allowance));
 }

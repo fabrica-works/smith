@@ -345,7 +345,7 @@ impl Peer {
 /// The most asks a peer holds: as many as fit the session's byte limit at
 /// their fixed size.
 pub(crate) fn asks(limits: &session::Limits) -> u32 {
-    per(limits.session_bytes, size_of::<Ask>()).min(limits.completion_blocks)
+    per(limits.history_bytes, size_of::<Ask>()).min(limits.completion_blocks)
 }
 
 fn per(bytes: u64, size: usize) -> u32 {

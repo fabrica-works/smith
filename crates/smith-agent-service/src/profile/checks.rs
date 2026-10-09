@@ -94,6 +94,8 @@ pub enum Refusal {
     Environment { index: u32 },
     /// The native connection component rejected its configured endpoints or bounds.
     Connection(EndpointError),
+    /// Native endpoint derivation refused its declared quantities before startup.
+    Llm { endpoint: u32, violation: skein_llm::Violation },
 }
 
 impl Refusal {
@@ -104,7 +106,7 @@ impl Refusal {
             Self::Broken { check, .. } => Some(*check),
             Self::Derived { .. } => Some(Check::Derived),
             Self::Environment { .. } => Some(Check::Environment),
-            Self::Field { .. } | Self::Connection(_) => None,
+            Self::Field { .. } | Self::Connection(_) | Self::Llm { .. } => None,
         }
     }
 }

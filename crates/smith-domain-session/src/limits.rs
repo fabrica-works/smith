@@ -29,10 +29,12 @@ pub struct Limits {
     pub protocol_allowance: u64,
     /// Messages a session's transcript holds, the spec's prompt included: at
     /// least two, the prompt and an answer.
-    pub messages: u32,
+    pub history_messages: u32,
+    /// Blocks retained across the whole window, including its initial prompt.
+    pub history_blocks: u32,
     /// Bytes a session holds: its spec, its transcript and the tool results
     /// it is collecting, each block counted at its fixed size plus its payload.
-    pub session_bytes: u64,
+    pub history_bytes: u64,
 
     /// Maximum owned content of one provider completion, including
     /// block cells, replay envelopes and decoded owned-call fields. The session
@@ -110,7 +112,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         return None;
     }
     let parallel = limits.parallel_tools;
-    if !(1..=MAX_PARALLEL).contains(&parallel) || parallel > limits.tools.calls || limits.messages < 2 {
+    if !(1..=MAX_PARALLEL).contains(&parallel)
+        || parallel > limits.tools.calls
+        || limits.history_messages < 2
+        || limits.history_blocks == 0
+    {
         return None;
     }
     if limits.tools.kits < limits.sessions {
@@ -127,15 +133,18 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let tools_out = Queue::<tools::Request>::worst_case(tools::max_out(&limits.tools))?;
     // Each session owns its transcript's list and up to its byte limit.
     // Result slots coexist with the assembled result Block array. The latter
-    // is charged in session_bytes; the full Slot container is additional.
+    // is charged in history_bytes; the full Slot container is additional.
     // The whole byte-cap quotient and configured completion block cap form
     // a conservative bound for any admitted live batch, also across restore.
     // Keeping their maximum avoids assuming Slot <= Block.
     let block = u64::try_from(size_of::<Block>()).ok()?;
-    let calls = u32::try_from(limits.session_bytes.checked_div(block)?).ok()?.max(limits.completion_blocks);
+    let calls = u32::try_from(limits.history_bytes.checked_div(block)?)
+        .ok()?
+        .min(limits.history_blocks)
+        .max(limits.completion_blocks);
     let slots = List::<Slot>::worst_case(calls)?;
     let session =
-        List::<Message>::worst_case(limits.messages)?.checked_add(slots)?.checked_add(limits.session_bytes)?;
+        List::<Message>::worst_case(limits.history_messages)?.checked_add(slots)?.checked_add(limits.history_bytes)?;
     let held = u64::from(limits.sessions).checked_mul(session)?;
     // One parent handoff owns exactly one fixed boxed Opening node. Its
     // validated payload is charged by the session byte cap, and its restore
@@ -143,8 +152,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Count the node throughout input validation and transfer, independently
     // of its release timing and all payload/record cells.
     let opening = u64::try_from(size_of::<Opening>()).ok()?;
-    let staging = List::<Turn>::worst_case(limits.messages)?
-        .checked_add(List::<Message>::worst_case(limits.messages)?)?
+    let staging = List::<Turn>::worst_case(limits.history_messages)?
+        .checked_add(List::<Message>::worst_case(limits.history_messages)?)?
         .checked_add(opening)?
         .checked_add(limits.completion_bytes)?;
     sessions
@@ -183,6 +192,18 @@ pub struct Derivation {
     pub max_time: Duration,
     pub tool_deadline: Duration,
     pub tools: tools::Limits,
+    pub request: u64,
+    pub history_items: u32,
+    /// System and offered-tool entries deducted from native history counts.
+    pub own_items: u32,
+    pub output_items: u32,
+    pub call_input: u32,
+    pub detail: u32,
+    /// Fixed Smith and largest host system/schema bytes, already escaped.
+    pub own: u64,
+    pub allowance: u64,
+    /// Numerator and denominator of the compaction share.
+    pub threshold: [u32; 2],
 }
 
 /// The first field this layer cannot derive, returned to its parent before effects.
@@ -192,6 +213,14 @@ pub enum Field {
     Sessions,
     /// Concurrent tools, derived from calls per response.
     ParallelTools,
+    /// History bytes after escaped fixed framing and prompt allowance.
+    HistoryBytes,
+    /// History messages and blocks after the system and tool entries.
+    HistoryItems,
+    /// Blocks received from one completion.
+    CompletionBlocks,
+    /// Protocol text added to the session's input reservation.
+    Allowance,
 }
 
 impl Field {
@@ -201,6 +230,10 @@ impl Field {
         match self {
             Self::Sessions => "sessions",
             Self::ParallelTools => "parallel_tools",
+            Self::HistoryBytes => "history_bytes",
+            Self::HistoryItems => "history_items",
+            Self::CompletionBlocks => "completion_blocks",
+            Self::Allowance => "protocol_allowance",
         }
     }
 }
@@ -214,15 +247,32 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     if inputs.calls_per_response == 0 {
         return Err(Field::ParallelTools);
     }
+    let allowance = inputs.allowance.checked_mul(6).ok_or(Field::Allowance)?;
+    let history_bytes = inputs
+        .request
+        .checked_sub(inputs.own)
+        .ok_or(Field::HistoryBytes)?
+        .checked_sub(allowance)
+        .ok_or(Field::HistoryBytes)?
+        .checked_div(6)
+        .expect("fixed nonzero escaping factor");
+    let history_items = inputs.history_items.checked_sub(inputs.own_items).ok_or(Field::HistoryItems)?;
+    if history_items < 2 || history_bytes == 0 {
+        return Err(Field::HistoryItems);
+    }
+    if inputs.output_items == 0 {
+        return Err(Field::CompletionBlocks);
+    }
     Ok(Limits {
         sessions: inputs.conversations,
         spend: inputs.max_spend,
-        protocol_allowance: 0,
-        messages: 64,
-        session_bytes: 33_554_432,
+        protocol_allowance: inputs.allowance,
+        history_messages: history_items,
+        history_blocks: history_items,
+        history_bytes,
         completion_bytes: 4096,
-        completion_blocks: 16,
-        failure_bytes: 512,
+        completion_blocks: inputs.output_items,
+        failure_bytes: inputs.detail,
         delegated_result_bytes: 4_194_304,
         budget: Budget {
             turns: inputs.max_turns,

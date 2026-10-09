@@ -147,7 +147,7 @@ impl World {
         let mut limits = crate::Settings::calm(seed).agent;
         limits.sessions = 1;
         limits.spend = u64::MAX;
-        limits.messages = 32;
+        limits.history_messages = 32;
         limits.facts = facts;
         World {
             domain: session::Domain::new(&limits, seed),

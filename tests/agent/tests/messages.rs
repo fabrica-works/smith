@@ -368,7 +368,7 @@ fn every_transient_history_refusal_is_exact_and_starts_no_provider_or_tool_effec
                     .expect("saved text");
                 *text = vec![
                     b'x';
-                    usize::try_from(waiting(907).limits.session.session_bytes + 1).expect("bounded fixture")
+                    usize::try_from(waiting(907).limits.session.history_bytes + 1).expect("bounded fixture")
                 ]
                 .into();
             }

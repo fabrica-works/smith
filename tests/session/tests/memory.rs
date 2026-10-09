@@ -48,8 +48,9 @@ const LIMITS: Limits = Limits {
     sessions: 1,
     spend: 1,
     protocol_allowance: 0,
-    messages: 4,
-    session_bytes: 1024,
+    history_blocks: u32::MAX,
+    history_messages: 4,
+    history_bytes: 1024,
     completion_bytes: 4096,
     completion_blocks: 16,
     failure_bytes: 512,
@@ -102,7 +103,7 @@ enum Route {
 /// Source-derived caps for original payload generation; explicit credit and
 /// message-cell envelopes replace V1's ignored receiving provisions.
 fn pressure_limits(original: Limits, route: Route, messages: u32) -> (Limits, u64, u64, u64) {
-    let pressure = original.session_bytes;
+    let pressure = original.history_bytes;
     let block = size(size_of::<Block>());
     let part = size(size_of::<Part>());
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
@@ -130,11 +131,11 @@ fn pressure_limits(original: Limits, route: Route, messages: u32) -> (Limits, u6
         completion_blocks: original.parallel_tools,
         // A second provider turn may contain calls: its assistant and results
         // need two message cells even when the old V1 driver expected one.
-        messages: original.messages.max(messages),
+        history_messages: original.history_messages.max(messages),
         ..original
     };
     let envelope = reservation_envelope(&limits).expect("checked provider and whole-batch bounds");
-    limits.session_bytes = pressure.checked_add(envelope).expect("bounded payload plus canonical credit");
+    limits.history_bytes = pressure.checked_add(envelope).expect("bounded payload plus canonical credit");
     (limits, spec_cost, output, field)
 }
 
@@ -216,7 +217,7 @@ fn observe_fill(
 /// space without allocating; emitted concrete Turn/prompt/yield copies belong to
 /// their receivers and are dropped under the shared meter's handoff convention.
 fn fill(original: Limits, route: Route, full_service: bool) {
-    let pressure = original.session_bytes;
+    let pressure = original.history_bytes;
     let block = size(size_of::<Block>());
     // Each original route reaches three held messages; the full-service
     // supplement adds one assistant and one caller message. Two more cells
@@ -325,7 +326,7 @@ fn received(content: Box<[Block]>, stop: Stop) -> Completion {
 }
 
 fn assert_retained_payload(meter: &Meter, limits: &Limits, route: Route, full_service: bool, pressure: u64) {
-    let payload = if full_service { limits.session_bytes } else { pressure };
+    let payload = if full_service { limits.history_bytes } else { pressure };
     // An all-invalid batch resumes after reclaim, so full-service terminal
     // payloads of different sessions do not coexist.
     let simultaneous = if full_service && matches!(route, Route::Invalid) { 1 } else { limits.sessions };
@@ -375,11 +376,11 @@ fn fill_service_tail(
     };
     let held_messages = 3_u32 + 1 + 1;
     assert!(
-        limits.messages.checked_sub(held_messages).expect("counted actual held messages") >= 2,
+        limits.history_messages.checked_sub(held_messages).expect("counted actual held messages") >= 2,
         "exact byte refusal has room for next assistant and result messages"
     );
     let padding = limits
-        .session_bytes
+        .history_bytes
         .checked_sub(retained + block + 1 + block)
         .expect("full service can hold its final caller message");
     assert!(
@@ -424,8 +425,12 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
         for full_service in [false, true] {
             fill(LIMITS, route, full_service);
-            fill(Limits { sessions: 64, spend: 1, session_bytes: 65_536, ..LIMITS }, route, full_service);
-            fill(Limits { sessions: 1000, spend: 1, messages: 8, session_bytes: 600, ..LIMITS }, route, full_service);
+            fill(Limits { sessions: 64, spend: 1, history_bytes: 65_536, ..LIMITS }, route, full_service);
+            fill(
+                Limits { sessions: 1000, spend: 1, history_messages: 8, history_bytes: 600, ..LIMITS },
+                route,
+                full_service,
+            );
             fill(Limits { sessions: 64, spend: 1, parallel_tools: MAX_PARALLEL, ..LIMITS }, route, full_service);
         }
     }
@@ -443,9 +448,9 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     let turn_charge = block + 1 + block + 3 + block + 1;
     let output = 16_384 - spec_charge - turn_charge;
     let limits = Limits {
-        messages: 6,
+        history_messages: 6,
         spend: u64::MAX,
-        session_bytes: 16_384,
+        history_bytes: 16_384,
         completion_bytes: 512,
         completion_blocks: 2,
         delegated_result_bytes: output,
@@ -541,16 +546,16 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         result: smith_domain_session::llm::Returned::Text { text, error: false, replay: None }, ..
     } if text.len() == usize::try_from(output).expect("bounded cap")));
     drop(saved);
-    assert!(meter.held() >= limits.session_bytes);
+    assert!(meter.held() >= limits.history_bytes);
 }
 
 #[test]
 fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     use smith_domain_session::record;
     let limits = Limits {
-        messages: 6,
+        history_messages: 6,
         spend: u64::MAX,
-        session_bytes: 16_384,
+        history_bytes: 16_384,
         completion_bytes: 256,
         completion_blocks: 1,
         ..LIMITS
@@ -563,7 +568,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let block = size(size_of::<Block>());
     let charge = 2 + size(size_of::<Descriptor>()) + block + 1;
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
-    let opaque = limits.session_bytes - charge - 2 * block - 1 - reserve;
+    let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve;
     let spec = Spec {
         final_turn: None,
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
@@ -630,7 +635,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     }
     assert!(completed, "maximum admitted history separately preserves complete provider receiving room");
     meter.check(measured, bound, &limits);
-    assert!(meter.held() >= limits.session_bytes - reserve);
+    assert!(meter.held() >= limits.history_bytes - reserve);
 }
 
 #[test]
@@ -645,7 +650,8 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     let block = size(size_of::<Block>());
     let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 1;
     let original = block + 1 + u64::from(calls) * (block + id_bytes + 2);
-    let limits = Limits { messages: 4, session_bytes: spec_charge + original, spend: u64::MAX, tools, ..LIMITS };
+    let limits =
+        Limits { history_messages: 4, history_bytes: spec_charge + original, spend: u64::MAX, tools, ..LIMITS };
     let bound = worst_case(&limits).expect("bounded restore limits");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(max_out(&limits));
@@ -903,11 +909,11 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
     let block = size(size_of::<Block>());
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
     let completion_bytes = block + 3 + size(size_of::<Part>()) + 1;
-    let base = Limits { completion_bytes, completion_blocks: 1, failure_bytes: 0, messages: 5, ..LIMITS };
+    let base = Limits { completion_bytes, completion_blocks: 1, failure_bytes: 0, history_messages: 5, ..LIMITS };
     let reserve = smith_domain_session::completion_reserve(&base).expect("checked minimal actual provider terminal");
     let exact = spec_cost.checked_add(reserve).expect("checked spec plus provider reserve");
-    for session_bytes in [exact - 1, exact] {
-        let limits = Limits { session_bytes, ..base };
+    for history_bytes in [exact - 1, exact] {
+        let limits = Limits { history_bytes, ..base };
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();
@@ -920,7 +926,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
             worst_case(&limits).expect("checked limits"),
             Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
         );
-        if session_bytes == exact {
+        if history_bytes == exact {
             assert!(seen.complete.is_some(), "exact provider reservation admits work");
         } else {
             assert!(seen.complete.is_none());
@@ -938,7 +944,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
     assert!(exact_result >= 3, "the normalized one-byte mount and one-byte file fit");
     for read_bytes in [exact_result, exact_result + 1, 1 << 20] {
         let limits = Limits {
-            session_bytes: exact,
+            history_bytes: exact,
             tools: smith_domain_tools::Limits {
                 read_bytes: u32::try_from(read_bytes).expect("bounded read cap"),
                 // This control attains read payload credit; its possible failure
@@ -1002,10 +1008,10 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
 
 #[test]
 fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
-    let original = Limits { sessions: 1, session_bytes: 600, messages: 8, ..LIMITS };
+    let original = Limits { sessions: 1, history_bytes: 600, history_messages: 8, ..LIMITS };
     let (limits, spec_cost, _, _) = pressure_limits(original, Route::Talk, 3_u32 + 2);
     let reserve = smith_domain_session::completion_reserve(&limits).expect("checked credit");
-    let held = limits.session_bytes.checked_sub(reserve).expect("retained maximum leaves exact provider credit");
+    let held = limits.history_bytes.checked_sub(reserve).expect("retained maximum leaves exact provider credit");
     let block = size(size_of::<Block>());
     let message = held.checked_sub(spec_cost + block + 1 + block).expect("maximum caller message fits");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1048,7 +1054,7 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
         Event::Continue { session: owner, content: bytes(message) },
     );
     assert_eq!(seen.complete, Some(owner), "held payload plus receiving credit exactly equals service cap");
-    assert_eq!(spec_cost + block + 1 + block + message + reserve, limits.session_bytes);
+    assert_eq!(spec_cost + block + 1 + block + message + reserve, limits.history_bytes);
     let seen = measured_step(
         &mut domain,
         &env,
@@ -1072,15 +1078,15 @@ fn the_original_maximum_parallel_width_has_live_result_rights() {
     let width = MAX_PARALLEL;
     let call = size(size_of::<Block>()) + 3 + size(size_of::<Part>()) + 1;
     let mut limits = Limits {
-        messages: 5,
+        history_messages: 5,
         parallel_tools: width,
         completion_blocks: width,
         completion_bytes: call * u64::from(width),
         tools: smith_domain_tools::Limits { calls: width, read_bytes: 4096, ..LIMITS.tools },
         ..LIMITS
     };
-    limits.session_bytes = limits
-        .session_bytes
+    limits.history_bytes = limits
+        .history_bytes
         .checked_add(reservation_envelope(&limits).expect("checked widest credit"))
         .expect("pressure plus credit fits");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1144,11 +1150,15 @@ fn missing_completion(field: u64) -> Completion {
 
 #[test]
 fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
-    let original = Limits { messages: 4, ..LIMITS };
+    let original = Limits { history_messages: 4, ..LIMITS };
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
-        let (mut limits, _, output, field) = pressure_limits(original, route, original.messages);
-        limits.messages = original.messages;
-        assert_eq!(limits.messages - 3, 1, "the original held transcript leaves one cell, below the two-cell promise");
+        let (mut limits, _, output, field) = pressure_limits(original, route, original.history_messages);
+        limits.history_messages = original.history_messages;
+        assert_eq!(
+            limits.history_messages - 3,
+            1,
+            "the original held transcript leaves one cell, below the two-cell promise"
+        );
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();
@@ -1199,7 +1209,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
             Route::Talk => {
                 let block = size(size_of::<Block>());
                 let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
-                let message = original.session_bytes - spec_cost - block - 1 - block;
+                let message = original.history_bytes - spec_cost - block - 1 - block;
                 let seen = measured_step(
                     &mut domain,
                     &env,

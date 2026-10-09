@@ -165,7 +165,7 @@ fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: c
     }
     let peer = domain.peers.get_mut(id).expect("a peer lives as its session");
     let before = peer.tickets();
-    let completion = peer.completion(completion, env.limits.decoded_call_bytes.min(env.limits.session.session_bytes));
+    let completion = peer.completion(completion, env.limits.decoded_call_bytes.min(env.limits.session.history_bytes));
     domain.tickets = domain.tickets.saturating_add(peer.tickets()).saturating_sub(before);
     session_step(domain, env, session::Event::Completed { owner, completion });
 }
@@ -323,7 +323,7 @@ fn start(
 }
 
 fn history_fits(transcript: Option<&session::record::Transcript>, answered: &[u8], limits: &Limits) -> bool {
-    let cap = u64::from(limits.session.messages);
+    let cap = u64::from(limits.session.history_messages);
     let mut messages = 0_u64;
     let mut history_bytes = 0_u64;
     if let Some(transcript) = transcript {
@@ -349,7 +349,7 @@ fn history_fits(transcript: Option<&session::record::Transcript>, answered: &[u8
     let total = history_bytes.checked_add(u64::try_from(answered.len()).expect("owned length fits"));
     match total {
         Some(bytes) => match limits::record_payload(limits) {
-            Some(cap) => bytes <= cap && bytes <= limits.session.session_bytes,
+            Some(cap) => bytes <= cap && bytes <= limits.session.history_bytes,
             None => false,
         },
         None => false,
@@ -890,7 +890,7 @@ fn was_rejected(credential: &Credential, generation: u64) -> bool {
 }
 
 fn room_for_content(domain: &mut Domain, env: &Env<Limits>, bytes: u64) -> bool {
-    if domain.content.room() == 0 || bytes > env.limits.session.session_bytes {
+    if domain.content.room() == 0 || bytes > env.limits.session.history_bytes {
         domain.content_lost = domain.content_lost.saturating_add(1);
         false
     } else {

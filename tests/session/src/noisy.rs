@@ -31,8 +31,8 @@ pub fn noisy(seed: u64) -> Settings {
         progress: smith_domain_session::Progress { head: call_head, idle: call_head },
         agent: Limits {
             sessions,
-            messages: pick(4, 16),
-            session_bytes: u64::from(pick(2_000, 8_000)),
+            history_messages: pick(4, 16),
+            history_bytes: u64::from(pick(2_000, 8_000)),
             completion_bytes: 4096,
             completion_blocks: 16,
             failure_bytes: 512,
@@ -91,9 +91,9 @@ pub fn noisy(seed: u64) -> Settings {
     // original draw pressures retained payload; canonical terminals additionally
     // require pre-effect provider/result credit (domain/session.md, sections 3, 5
     // and 12). This checked envelope retains the original receiving maxima.
-    settings.agent.session_bytes = settings
+    settings.agent.history_bytes = settings
         .agent
-        .session_bytes
+        .history_bytes
         .checked_add(crate::reservation_envelope(&settings.agent).expect("bounded scripted credits"))
         .expect("bounded pressure plus credit envelope");
     settings

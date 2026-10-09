@@ -225,7 +225,7 @@ impl Agent {
     pub(crate) fn prepare(&self, source: RunStart) -> Result<host::Start, BridgeError> {
         match self {
             Self::Inline { limits, .. } => {
-                prepare_start(source, limits.smith.run.run_bytes, limits.smith.session.session_bytes)
+                prepare_start(source, limits.smith.run.run_bytes, limits.smith.session.history_bytes)
             }
             Self::Spawned { limits, .. } => prepare_start(source, limits.charter_bytes, limits.transcript_bytes),
         }

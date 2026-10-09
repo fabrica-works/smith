@@ -90,11 +90,11 @@ fn transcript_refusals_precede_tools_and_completions() {
 fn oversized_history_and_fresh_specs_are_refused_at_the_entrance() {
     let old = scenario(3, 256);
     let mut world = World::new(3, 256);
-    world.env.limits.messages = 5;
+    world.env.limits.history_messages = 5;
     world.open(opening(Some(transcript(&old)), 100));
     assert_eq!(world.end, Some(session::End::TranscriptRefused { reason: record::Refusal::TooLarge }));
     let mut world = World::new(3, 256);
-    world.env.limits.session_bytes = 512;
+    world.env.limits.history_bytes = 512;
     world.open(opening(Some(transcript(&old)), 100));
     assert_eq!(world.end, Some(session::End::TranscriptRefused { reason: record::Refusal::TooLarge }));
     let mut world = World::new(3, 256);
@@ -483,12 +483,12 @@ fn fill_initial(spec: &mut record::Opening, total: u64) {
 #[test]
 fn cap_filled_provider_credit_preserves_replay_completion_that_wins_cancel() {
     let mut world = World::new(101, session::max_facts(&smith_session_world::Settings::calm(0).agent));
-    world.env.limits.session_bytes = 16_384;
+    world.env.limits.history_bytes = 16_384;
     world.env.limits.completion_bytes = 2048;
     world.env.limits.completion_blocks = 3;
     let reserve = session::completion_reserve(&world.env.limits).expect("bounded caps");
     let mut spec = opening(None, u64::MAX);
-    fill_initial(&mut spec, world.env.limits.session_bytes - reserve);
+    fill_initial(&mut spec, world.env.limits.history_bytes - reserve);
     world.open(spec);
     assert_eq!(world.prompts.len(), 1);
     let call = recorded::called().into_vec().remove(1);
@@ -546,15 +546,15 @@ fn cap_filled_provider_credit_preserves_replay_completion_that_wins_cancel() {
 fn one_byte_or_one_message_less_refuses_before_provider_and_tools() {
     for short_slot in [false, true] {
         let mut world = World::new(102, session::max_facts(&smith_session_world::Settings::calm(0).agent));
-        world.env.limits.session_bytes = 16_384;
+        world.env.limits.history_bytes = 16_384;
         world.env.limits.completion_bytes = 256;
         world.env.limits.completion_blocks = 1;
         let reserve = session::completion_reserve(&world.env.limits).expect("bounded caps");
         let mut spec = opening(None, u64::MAX);
         let extra = u64::from(!short_slot);
-        fill_initial(&mut spec, world.env.limits.session_bytes - reserve + extra);
+        fill_initial(&mut spec, world.env.limits.history_bytes - reserve + extra);
         if short_slot {
-            world.env.limits.messages = 2;
+            world.env.limits.history_messages = 2;
         }
         world.open(spec);
         assert_eq!(world.end, Some(session::End::TranscriptRefused { reason: record::Refusal::TooLarge }));
@@ -568,7 +568,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
     use smith_domain_tools::Effect;
     for short in [false, true] {
         let mut world = World::new(103, session::max_facts(&smith_session_world::Settings::calm(0).agent));
-        world.env.limits.session_bytes = 16_384;
+        world.env.limits.history_bytes = 16_384;
         world.env.limits.completion_bytes = 512;
         world.env.limits.completion_blocks = 2;
         world.env.limits.delegated_result_bytes = 2048;
@@ -599,7 +599,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
             )
             .expect("small fixture");
         }
-        fill_initial(&mut spec, world.env.limits.session_bytes - held - 4096 + u64::from(short));
+        fill_initial(&mut spec, world.env.limits.history_bytes - held - 4096 + u64::from(short));
         world.open(spec);
         assert_eq!(world.prompts.len(), 1);
         world.complete(calls.into(), llm::Stop::ToolUse, llm::Usage::ZERO);
@@ -644,13 +644,13 @@ fn exact_failure_classes_and_transport_evidence_survive_policy_without_diagnosti
         for evidence in [llm::Evidence::Unsent, llm::Evidence::Unknown, llm::Evidence::Response] {
             for closing in [false, true] {
                 let mut world = World::new(104, 256);
-                world.env.limits.session_bytes = 16_384;
+                world.env.limits.history_bytes = 16_384;
                 world.env.limits.completion_bytes = 128;
                 world.env.limits.completion_blocks = 1;
                 world.env.limits.failure_bytes = 512;
                 let reserve = session::completion_reserve(&world.env.limits).expect("bounded terminal cap");
                 let mut spec = opening(None, u64::MAX);
-                fill_initial(&mut spec, world.env.limits.session_bytes - reserve);
+                fill_initial(&mut spec, world.env.limits.history_bytes - reserve);
                 world.open(spec);
                 assert_eq!(world.prompts.len(), 1);
                 if closing {
@@ -680,7 +680,7 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
     for kind in 0..4 {
         for short in [false, true] {
             let mut world = World::new(110 + kind, session::max_facts(&smith_session_world::Settings::calm(0).agent));
-            world.env.limits.session_bytes = 16_384;
+            world.env.limits.history_bytes = 16_384;
             world.env.limits.completion_bytes = 512;
             world.env.limits.completion_blocks = 1;
             world.env.limits.tools.read_bytes = 4096;
@@ -714,7 +714,7 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
                 }]),
                 grants: Grants { inspect: true, modify: true, shell: true },
             };
-            fill_initial(&mut spec, world.env.limits.session_bytes - skeleton - credit + u64::from(short));
+            fill_initial(&mut spec, world.env.limits.history_bytes - skeleton - credit + u64::from(short));
             world.open(spec);
             assert_eq!(world.prompts.len(), 1, "provider credit secured before actual call");
             world.complete(

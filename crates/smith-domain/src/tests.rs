@@ -105,8 +105,9 @@ const LIMITS: Limits = Limits {
         sessions: 4,
         spend: 10_000,
         protocol_allowance: 0,
-        messages: 16,
-        session_bytes: 2_097_152,
+        history_blocks: u32::MAX,
+        history_messages: 16,
+        history_bytes: 2_097_152,
         completion_bytes: 4096,
         completion_blocks: 16,
         failure_bytes: 512,
@@ -981,7 +982,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
     let limits = Limits {
         run,
         session: session::Limits {
-            session_bytes: 8192,
+            history_bytes: 8192,
             completion_bytes: 128,
             completion_blocks: 1,
             delegated_result_bytes: crate::feedback_worst_case(&run).expect("complete compatible feedback"),
@@ -1225,11 +1226,11 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
     // C bounds provider content; D bounds each complete canonical child result.
     // A one-byte tighter transcript must refuse the entire adjacent read batch.
     let mut lower = LIMITS.session.delegated_result_bytes.checked_mul(2).expect("two result caps");
-    let mut upper = LIMITS.session.session_bytes;
+    let mut upper = LIMITS.session.history_bytes;
     assert!(
         children(
             &side_by_side_with(
-                &Limits { session: session::Limits { session_bytes: lower, ..LIMITS.session }, ..LIMITS },
+                &Limits { session: session::Limits { history_bytes: lower, ..LIMITS.session }, ..LIMITS },
                 256
             )
             .2
@@ -1243,7 +1244,7 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
         }
         let distance = upper.checked_sub(lower).expect("ordered receiving edge");
         let middle = lower.checked_add(distance.checked_div(2).expect("nonzero divisor")).expect("midpoint");
-        let limits = Limits { session: session::Limits { session_bytes: middle, ..LIMITS.session }, ..LIMITS };
+        let limits = Limits { session: session::Limits { history_bytes: middle, ..LIMITS.session }, ..LIMITS };
         if children(&side_by_side_with(&limits, 256).2).is_some() {
             upper = middle;
         } else {
@@ -1251,7 +1252,7 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
         }
     }
     assert_eq!(upper, lower.checked_add(1).expect("adjacent receiving edge"));
-    let tight = Limits { session: session::Limits { session_bytes: lower, ..LIMITS.session }, ..LIMITS };
+    let tight = Limits { session: session::Limits { history_bytes: lower, ..LIMITS.session }, ..LIMITS };
     let (tight_world, _, refused) = side_by_side_with(&tight, 256);
     assert!(children(&refused).is_none(), "all result credit precedes the first child effect");
     let refused_turn = tight_world.turns.last().expect("actual assistant and unstarted result tail survive");
@@ -1269,7 +1270,7 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
         ]
     );
 
-    let limits = Limits { session: session::Limits { session_bytes: upper, ..LIMITS.session }, ..LIMITS };
+    let limits = Limits { session: session::Limits { history_bytes: upper, ..LIMITS.session }, ..LIMITS };
     let (mut world, run, emitted) = side_by_side_with(&limits, 256);
     let [first, second] = children(&emitted).expect("the complete batch was reserved");
     let answer = filler(limits.run.answer_bytes);
@@ -1779,7 +1780,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
         let receiving = Limits {
             run,
             session: session::Limits {
-                session_bytes: 8192,
+                history_bytes: 8192,
                 completion_bytes: 128,
                 completion_blocks: 1,
                 delegated_result_bytes: crate::feedback_worst_case(&run).unwrap(),

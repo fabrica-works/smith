@@ -18,6 +18,10 @@ use crate as service;
 
 mod quantities;
 
+mod path;
+
+pub use path::client as endpoint_client;
+
 mod checks;
 
 mod effective;
@@ -51,8 +55,17 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     let declared = profile.declared;
     let policy = profile.policy;
     let memory = declared.memory.ok_or(derived(Layer::Declared, "memory"))?;
-    let client = client_limits();
-    let decoded_call_bytes = 4096;
+    let path = path::path(profile, configuration)?;
+    let client = path.client;
+    let decoded_call_bytes = u64::from(declared.calls_per_response)
+        .checked_mul(u64::from(client.input))
+        .ok_or(derived(Layer::Session, "decoded_call_bytes"))?
+        .checked_add(
+            u64::from(client.output_items)
+                .checked_mul(u64::try_from(core::mem::size_of::<domain::llm::Decoded>()).expect("cell fits u64"))
+                .ok_or(derived(Layer::Session, "decoded_call_bytes"))?,
+        )
+        .ok_or(derived(Layer::Session, "decoded_call_bytes"))?;
     let completion =
         llm::completion_worst_case(&client, decoded_call_bytes).ok_or(derived(Layer::Session, "completion_bytes"))?;
     let bodies = smith_channel::CEILINGS;
@@ -69,7 +82,8 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         close_timeout: policy.close,
         retry: Duration::from_millis(10),
     };
-    let mut domain = derive_domain(profile, configuration)?;
+    let mut domain = derive_domain(profile, configuration, &path)?;
+    domain.decoded_call_bytes = decoded_call_bytes;
     domain.session.completion_bytes = completion;
     // Before skein's derivation removes its sent-text cap, rendering takes the
     // smaller cap and marks oversized outcomes rather than refusing the call.
@@ -78,8 +92,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         domain.run.host_reply_bytes.max(domain.run.message_bytes),
         domain.session.delegated_result_bytes,
     )
-    .ok_or(derived(Layer::Render, "result"))?
-    .min(client.dialect.string_bytes);
+    .ok_or(derived(Layer::Render, "result"))?;
     let mut charter = smith_charter::CEILINGS;
     charter.charter_brief = policy.sections;
     charter.tools_host = policy.host_tools;
@@ -137,28 +150,6 @@ fn tls_limits() -> tls::client::Limits {
     tls::client::Limits { read: 4096, send: tls::client::MAX_PLAINTEXT, records: tls::client::MAX_RECORD }
 }
 
-fn client_limits() -> shared::client::Limits {
-    shared::client::Limits {
-        http: http::client::Limits { request: 4096, head: 4096, headers: 32, read: 256, send: 31 },
-        sse: http::sse::Limits { line: 4096, event: 8192, field: 128, chunk: 128 },
-        dialect: openai::Limits {
-            request_bytes: 8192,
-            document_bytes: 8192,
-            string_bytes: 4096,
-            depth: 32,
-            tokens: 1024,
-            parts: 16,
-            input_bytes: 2048,
-            opaque_bytes: 2048,
-            answer_bytes: 8192,
-            detail_bytes: 256,
-        },
-        error_bytes: 4096,
-        drop_reasoning: false,
-        declared_output_tokens: 4096,
-    }
-}
-
 fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
     let schema = smith_channel::schema(bodies).or(Err(derived(Layer::Channel, "output_bytes")))?;
     let version = schema.version(2).ok_or(derived(Layer::Channel, "version"))?;
@@ -169,7 +160,11 @@ fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
     largest.checked_add(8).ok_or(derived(Layer::Channel, "frame_bytes"))
 }
 
-fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<domain::Limits, Refusal> {
+fn derive_domain(
+    profile: &Profile,
+    configuration: &Configuration,
+    path: &path::Path,
+) -> Result<domain::Limits, Refusal> {
     let declared = profile.declared;
     let policy = profile.policy;
     let tools = match tools::derive(&tools::Derivation {
@@ -189,8 +184,7 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Tools, field.name())),
     };
-    let own =
-        room::own_part(&tools, client_limits().dialect.input_bytes, 0).ok_or(derived(Layer::Service, "own_part"))?;
+    let own = room::own_part(&tools, path.client.input, 0).ok_or(derived(Layer::Service, "own_part"))?;
     let parts = room::room(profile, configuration, own, 0)?;
     let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
     let run = match run::derive(&run::Derivation {
@@ -210,9 +204,9 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         shell_tail: declared.shell_tail,
         tool_payload: declared.tool_payload,
         tool_deadline: policy.tool_deadline,
-        host: parts.host.min(u64::from(client_limits().dialect.string_bytes)),
-        offer: parts.offer.min(u64::from(client_limits().dialect.string_bytes)),
-        message: parts.message.min(client_limits().dialect.string_bytes),
+        host: parts.host,
+        offer: parts.offer,
+        message: parts.message,
         room: parts.room,
         compaction_threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
         schema_costs,
@@ -227,6 +221,19 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         max_spend: policy.max_spend,
         max_time: policy.max_time,
         tool_deadline: policy.tool_deadline,
+        request: u64::from(path.request),
+        history_items: path.history_items,
+        own_items: policy.host_tools.checked_add(11).ok_or(derived(Layer::Session, "history_items"))?,
+        output_items: path.client.output_items,
+        call_input: path.client.input,
+        detail: path.client.detail_bytes,
+        own: own
+            .checked_add(parts.host)
+            .ok_or(derived(Layer::Session, "history_bytes"))?
+            .checked_mul(u64::from(shared::ESCAPE))
+            .ok_or(derived(Layer::Session, "history_bytes"))?,
+        allowance: 0,
+        threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
         tools,
     }) {
         Ok(limits) => limits,
@@ -259,8 +266,8 @@ fn component_limits(
     domain: &domain::Limits,
     rendered_result: u32,
 ) -> Result<llm::ComponentLimits, Refusal> {
-    let mut stated = llm::Stated::from_tools(&domain.session.tools, client.dialect.input_bytes)
-        .ok_or(derived(Layer::Llm, "output_ceiling"))?;
+    let mut stated =
+        llm::Stated::from_tools(&domain.session.tools, client.input).ok_or(derived(Layer::Llm, "output_ceiling"))?;
     stated.host_part = domain.run.host_part;
     Ok(llm::ComponentLimits {
         adapter: llm::Limits { client, tool_bytes: 32_768, rendered_result, stated },
@@ -270,12 +277,13 @@ fn component_limits(
             calls: profile.declared.conversations,
             per_endpoint: profile.declared.conversations,
             idle_keep: profile.policy.connection_keep,
+            memory: profile.declared.llm_pool,
             io,
             tls: tls_limits(),
         },
         receiving: llm::Receiving {
             max_completion_bytes: domain.session.completion_bytes,
-            max_completion_blocks: client.dialect.parts,
+            max_completion_blocks: client.output_items,
             decoded_call_bytes: domain.decoded_call_bytes,
             max_failure_bytes: domain.session.failure_bytes,
         },

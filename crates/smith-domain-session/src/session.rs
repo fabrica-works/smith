@@ -173,7 +173,7 @@ struct Conversation {
     output: u32,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
-    /// Bytes held, counted against `Limits::session_bytes`.
+    /// Bytes held, counted against `Limits::history_bytes`.
     bytes: u64,
     /// Logical space owed to provider and tool terminals.
     reserved: u64,
@@ -1626,7 +1626,13 @@ fn resumed(
         Some(bytes) => bytes.checked_add(u64::try_from(size_of::<Block>()).expect("block size fits")),
         None => None,
     };
-    if conversation.transcript.room() == 0 || !charge(conversation, cost, &env.limits) {
+    let Some(blocks) = env.limits.completion_blocks.checked_add(1) else {
+        return finish(End::TranscriptFull);
+    };
+    if conversation.transcript.room() == 0
+        || !blocks_fit(conversation, blocks, &env.limits)
+        || !charge(conversation, cost, &env.limits)
+    {
         return finish(End::TranscriptFull);
     }
     let content = unrun(conversation, text, &mut [], false);
@@ -1922,10 +1928,10 @@ fn admit(
     let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?
         .checked_add(spec.authority.namespace_bytes()?)?
         .checked_add(final_turn.note_bytes()?)?;
-    if bytes > limits.session_bytes {
+    if bytes > limits.history_bytes || limits.history_blocks == 0 {
         return None;
     }
-    let mut transcript = List::with_capacity(limits.messages);
+    let mut transcript = List::with_capacity(limits.history_messages);
     transcript.push(Message { role: Role::User, content }).ok()?;
     let conversation = Conversation {
         opener,
@@ -2186,7 +2192,7 @@ fn charge(conversation: &mut Conversation, cost: Option<u64>, limits: &Limits) -
         return false;
     };
     match bytes.checked_add(conversation.reserved) {
-        Some(total) if total <= limits.session_bytes => {}
+        Some(total) if total <= limits.history_bytes => {}
         Some(_) | None => return false,
     }
     conversation.bytes = bytes;
@@ -2212,7 +2218,30 @@ pub(crate) fn provider_reserve(limits: &Limits) -> Option<u64> {
     Some(completion.max(terminal))
 }
 
+fn blocks_fit(conversation: &Conversation, added: u32, limits: &Limits) -> bool {
+    let mut held = added;
+    for message in &conversation.transcript {
+        let Ok(blocks) = u32::try_from(message.content.len()) else {
+            return false;
+        };
+        held = match held.checked_add(blocks) {
+            Some(held) => held,
+            None => return false,
+        };
+        if held > limits.history_blocks {
+            return false;
+        }
+    }
+    held <= limits.history_blocks
+}
+
 fn provider_room(conversation: &Conversation, limits: &Limits) -> bool {
+    let Some(pending) = limits.completion_blocks.checked_mul(2) else {
+        return false;
+    };
+    if !blocks_fit(conversation, pending, limits) {
+        return false;
+    }
     let Some(reserve) = provider_reserve(limits) else {
         return false;
     };
@@ -2223,7 +2252,7 @@ fn provider_room(conversation: &Conversation, limits: &Limits) -> bool {
         return false;
     };
     match held.checked_add(reserve) {
-        Some(total) => total <= limits.session_bytes,
+        Some(total) => total <= limits.history_bytes,
         None => false,
     }
 }
@@ -2282,7 +2311,7 @@ fn reserve_batch(conversation: &mut Conversation, next: u32, limits: &Limits) ->
     let Some(total) = conversation.bytes.checked_add(reserved) else {
         return false;
     };
-    if total > limits.session_bytes {
+    if total > limits.history_bytes {
         return false;
     }
     conversation.reserved = reserved;
@@ -2641,10 +2670,11 @@ fn validate_transcript(
         return Err(Refusal::Dialect);
     }
     // Check sizes before cloning or allocating history into the bounded list.
-    if transcript.turns.len() > usize::try_from(limits.messages).expect("u32 fits") {
+    if transcript.turns.len() > usize::try_from(limits.history_messages).expect("u32 fits") {
         return Err(Refusal::TooLarge);
     }
     let mut count = 1_u32;
+    let mut blocks = 1_u32;
     let mut bytes = conversation.bytes;
     let mut sequence = 0_u32;
     let mut opening = true;
@@ -2666,13 +2696,20 @@ fn validate_transcript(
         if turn.sequence != sequence || turn.messages.is_empty() {
             return Err(Refusal::Malformed);
         }
-        if turn.messages.len() > usize::try_from(limits.messages).expect("u32 fits") {
+        if turn.messages.len() > usize::try_from(limits.history_messages).expect("u32 fits") {
             return Err(Refusal::TooLarge);
         }
         let mut assistants = 0_u32;
         for message in &turn.messages {
+            blocks = blocks
+                .checked_add(u32::try_from(message.content.len()).or(Err(Refusal::TooLarge))?)
+                .ok_or(Refusal::TooLarge)?;
+            let reserved = limits.completion_blocks.checked_mul(2).ok_or(Refusal::TooLarge)?;
+            if blocks.checked_add(reserved).ok_or(Refusal::TooLarge)? > limits.history_blocks {
+                return Err(Refusal::TooLarge);
+            }
             count = count.checked_add(1).ok_or(Refusal::TooLarge)?;
-            if count >= limits.messages {
+            if count >= limits.history_messages {
                 return Err(Refusal::TooLarge);
             }
             recorded_shape(message, limits)?;
@@ -2708,7 +2745,7 @@ fn validate_transcript(
             }
             bytes =
                 bytes.checked_add(content_cost(&message.content).ok_or(Refusal::TooLarge)?).ok_or(Refusal::TooLarge)?;
-            if bytes > limits.session_bytes {
+            if bytes > limits.history_bytes {
                 return Err(Refusal::TooLarge);
             }
         }
@@ -2719,7 +2756,7 @@ fn validate_transcript(
     }
     let tail = previous.expect("validated nonempty turn");
     validate_answers(tail, answered, sequence)?;
-    if count.checked_add(3).ok_or(Refusal::TooLarge)? > limits.messages || bytes > limits.session_bytes {
+    if count.checked_add(3).ok_or(Refusal::TooLarge)? > limits.history_messages || bytes > limits.history_bytes {
         return Err(Refusal::TooLarge);
     }
     let resumed = resumed_tail(tail, withheld);
@@ -2831,12 +2868,12 @@ fn restore(
     bytes = bytes.checked_sub(prompt_charge).ok_or(Refusal::TooLarge)?;
     bytes = bytes.checked_add(added).ok_or(Refusal::TooLarge)?;
     let reserve = provider_reserve(limits).ok_or(Refusal::TooLarge)?;
-    if bytes.checked_add(reserve).ok_or(Refusal::TooLarge)? > limits.session_bytes {
+    if bytes.checked_add(reserve).ok_or(Refusal::TooLarge)? > limits.history_bytes {
         return Err(Refusal::TooLarge);
     }
     // Move the waking prompt: cloning its potentially large text before
     // clearing the initial transcript would also exceed the bounded staging.
-    let initial = mem::replace(&mut conversation.transcript, List::with_capacity(limits.messages));
+    let initial = mem::replace(&mut conversation.transcript, List::with_capacity(limits.history_messages));
     let mut initial = initial.into_boxed().into_iter();
     let prompt = initial.next().expect("admission held the initial prompt");
     assert!(initial.next().is_none(), "admission holds exactly one user message");
@@ -3333,7 +3370,7 @@ fn recorded_shape(message: &Message, limits: &Limits) -> Result<(), crate::recor
         None => None,
     };
     match fixed {
-        Some(fixed) if fixed <= limits.session_bytes => Ok(()),
+        Some(fixed) if fixed <= limits.history_bytes => Ok(()),
         Some(_) | None => Err(crate::record::Refusal::TooLarge),
     }
 }
