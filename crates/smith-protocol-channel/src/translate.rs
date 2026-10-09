@@ -547,6 +547,12 @@ pub(crate) fn invalid_start(invalid: run::Invalid, limits: &channel::Limits) -> 
         )?),
         run::Invalid::Llm => channel::InvalidStart::Llm,
         run::Invalid::Conversation => channel::InvalidStart::Conversation,
+        run::Invalid::HostPart { bound } => {
+            channel::InvalidStart::HostPart(channel::WindowBound::new(limits, channel::WindowBoundParts { bound })?)
+        }
+        run::Invalid::Room { bound } => {
+            channel::InvalidStart::Room(channel::WindowBound::new(limits, channel::WindowBoundParts { bound })?)
+        }
     })
 }
 

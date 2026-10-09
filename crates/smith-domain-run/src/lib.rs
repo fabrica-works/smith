@@ -58,6 +58,7 @@ mod prepare;
 mod prompt;
 pub use prompt::budget_prompt_bytes;
 mod run;
+mod schema_costs;
 #[cfg(test)]
 mod tests;
 mod wind_down;
@@ -81,6 +82,7 @@ pub use identity::Identity;
 pub use inbox::rendered_bytes;
 pub use limits::{Derivation, Field, Limits, derive, worst_case};
 pub use prompt::fixed_prompt_bytes;
+pub use schema_costs::SchemaCosts;
 pub use workspace::{Directory, Workspace};
 
 pub use delivery::{

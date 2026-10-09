@@ -2139,7 +2139,7 @@ fn configuration() -> agent::Config {
             .map(|name| smith_domain::ConfiguredModel {
                 endpoint: run::charter::Endpoint(0),
                 model: (*name).into(),
-                window: 8192,
+                window: 65_536,
                 output: 4096,
                 head: Duration::from_secs(60),
                 idle: Duration::from_secs(30),
@@ -2155,7 +2155,7 @@ fn main_model() -> run::charter::Llm {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        window: 8192,
+        window: 65_536,
         output: 4096,
         dialect: 1,
     }

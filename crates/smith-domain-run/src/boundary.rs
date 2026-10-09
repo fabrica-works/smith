@@ -555,6 +555,8 @@ pub enum Returned {
 /// Why a delegated run ask is refused before an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AskRefusal {
+    /// A sub-agent brief exceeds the host's window part before effects.
+    TooLarge { bound: u64 },
     /// Parent supplied a zero transcript completion. No check or host effect
     /// begins; a valid session origin is one-based and bounded before dispatch.
     Name,
@@ -871,6 +873,10 @@ pub enum Refusal {
 /// What about a charter does not fit the limits.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Invalid {
+    /// Rendered charter text, generated schemas and guides exceed this host part.
+    HostPart { bound: u64 },
+    /// A charter model leaves less room than startup derived.
+    Room { bound: u64 },
     /// A start's messages exceed their bounds or repeat a name.
     Messages,
     /// The agent does not read this charter version; the protocol refuses it before domain admission.

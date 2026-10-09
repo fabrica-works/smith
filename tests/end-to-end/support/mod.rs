@@ -260,7 +260,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) {
             "endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","connect":10000,"handshake":10000,"address":"127.0.0.1:34443","server_name":"skein.test","trust_der":trust,"identity":"plain"}],
             "environment":[],"trace":{"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"}},
         "chat":"chat","instructions":"@local-shell Assist",
-        "models":[{"endpoint":"fake","name":"fake","window":8192,"output":1024,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
+        "models":[{"endpoint":"fake","name":"fake","window":65536,"output":1024,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
         "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30,
         "contract":{"form":"report","max":128},"token_directory":scenario.launch.token_directory,
         "accounts":accounts

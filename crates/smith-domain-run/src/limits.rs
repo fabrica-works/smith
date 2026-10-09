@@ -48,6 +48,14 @@ pub struct Limits {
     /// traversal, rendering or effects; excess refuses as `Invalid::TooLarge`.
     /// Cells, instructions and all title/text payloads also fit `run_bytes`.
     pub brief_sections: u32,
+    /// Rendered charter text, generated schemas and guides admitted at entrance.
+    pub host_part: u64,
+    /// Minimum threshold less two outputs admitted for every charter model.
+    pub room: u64,
+    /// The window threshold numerator and denominator supplied by startup.
+    pub compaction_threshold: [u32; 2],
+    /// Exact protocol renderer projections, measured at startup.
+    pub schema_costs: crate::SchemaCosts,
     /// Directories a present workspace may list; empty present workspaces refuse.
     pub directories: u32,
 
@@ -198,6 +206,12 @@ pub struct Derivation {
     pub shell_tail: u32,
     pub tool_payload: u32,
     pub tool_deadline: Duration,
+    pub host: u64,
+    pub offer: u64,
+    pub message: u32,
+    pub room: u64,
+    pub compaction_threshold: [u32; 2],
+    pub schema_costs: crate::SchemaCosts,
 }
 
 /// The first field this layer cannot derive, returned to its parent before effects.
@@ -220,19 +234,17 @@ impl Field {
 /// Derive this layer from declarations, refusing checked arithmetic overflow.
 /// Contract: protocol/limits.md, sections 2 and 3.
 pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
-    let message_bytes = 4096_u32;
-    let separators = inputs.inbox.checked_sub(1).ok_or(Field::OfferBytes)?.checked_mul(2).ok_or(Field::OfferBytes)?;
-    let offer_bytes = inputs
-        .inbox
-        .checked_mul(message_bytes)
-        .ok_or(Field::OfferBytes)?
-        .checked_add(separators)
-        .ok_or(Field::OfferBytes)?;
+    let message_bytes = inputs.message;
+    let offer_bytes = u32::try_from(inputs.offer).or(Err(Field::OfferBytes))?;
     Ok(Limits {
         runs: 1,
         conversations: inputs.conversations,
         run_bytes: 1 << 16,
         brief_sections: inputs.sections,
+        host_part: inputs.host,
+        room: inputs.room,
+        compaction_threshold: inputs.compaction_threshold,
+        schema_costs: inputs.schema_costs,
         directories: 2,
         directory_name_bytes: 256,
         host_path_bytes: 4096,

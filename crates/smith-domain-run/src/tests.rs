@@ -36,6 +36,10 @@ pub(crate) const LIMITS: Limits = Limits {
     conversations: 4,
     run_bytes: 4096,
     brief_sections: 4,
+    host_part: u64::MAX,
+    room: 0,
+    compaction_threshold: [4, 5],
+    schema_costs: crate::SchemaCosts::NONE,
     directories: 2,
     directory_name_bytes: 256,
     host_path_bytes: 4096,
@@ -4307,5 +4311,51 @@ fn a_capped_child_answer_keeps_its_budget_stop_until_the_actual_end_and_returns_
     assert!(
         harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) }).is_empty(),
         "stale end cannot answer twice"
+    );
+}
+
+#[test]
+fn charter_rendering_at_the_host_edge_is_admitted_and_one_byte_more_refuses() {
+    let mut selected = charter();
+    selected.instructions = bytes(b"base");
+    selected.outcome.change = None;
+    selected.grants.deliver = None;
+    selected.outcome.report = Some(crate::outcome::TextSpec {
+        max: 32,
+        fields: (0..20)
+            .map(|index| FieldRule { name: format!("long_contract_field_{index:02}").into_bytes().into(), max: 32 })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    });
+    let receiving = Limits { run_bytes: 16_384, outcome_bytes: 8192, ..LIMITS };
+    let edge = crate::prompt::host_bytes(&selected, None, receiving.guide_bytes).expect("rendered host")
+        + receiving.schema_costs.finish(&selected.outcome).expect("schema")
+        + receiving.schema_costs.finish_text;
+    let receiving = Limits { host_part: edge, ..receiving };
+    let mut admitted = Harness::new(receiving);
+    let requests = admitted.start_workspace(1, selected.clone(), None);
+    assert!(
+        matches!(requests.first(), Some(Request::Admitted { .. })),
+        "large contract exactly at the edge: {requests:?}"
+    );
+    selected.instructions = bytes(b"basex");
+    let mut refused = Harness::new(receiving);
+    let requests = refused.start_workspace(1, selected, None);
+    assert!(
+        matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::HostPart { bound })), .. }] if *bound == edge)
+    );
+}
+
+#[test]
+fn a_charter_model_below_the_derived_room_is_refused_before_preparation() {
+    let selected = charter();
+    let [numerator, denominator] = LIMITS.compaction_threshold;
+    let room = u64::from(selected.llm.window) * u64::from(numerator) / u64::from(denominator)
+        - 2 * u64::from(selected.llm.output);
+    let receiving = Limits { room: room + 1, ..LIMITS };
+    let mut refused = Harness::new(receiving);
+    let requests = refused.start(1, selected);
+    assert!(
+        matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::Room { bound })), .. }] if *bound == room + 1)
     );
 }

@@ -1815,6 +1815,14 @@ fn sub_agent(
     out: &mut Queue<Request>,
 ) {
     let Asking { call, deadline, name: _ } = made;
+    if u64::try_from(wanted.brief.len()).unwrap_or(u64::MAX) > env.limits.host_part {
+        out.push(Request::Return {
+            spent: 0,
+            call,
+            result: Returned::Refused { refusal: AskRefusal::TooLarge { bound: env.limits.host_part } },
+        });
+        return;
+    }
     let asking = conversations.get(asker).expect("a conversation lives until it has ended");
     let left = run.deadline.saturating_since(env.now);
     let means = Means {
@@ -1847,6 +1855,17 @@ fn sub_agent(
         plan.budget == crate::Budget { turns: plan.granted.turns, time: plan.granted.time, spend: plan.granted.spend },
         "a child's opening budget is exactly its effective grant"
     );
+    match prompt::child_host_bytes(&run.charter, run.workspace.as_ref(), &run.found, &wanted.brief, plan.families) {
+        Some(bytes) if bytes <= env.limits.host_part => {}
+        Some(_) | None => {
+            out.push(Request::Return {
+                spent: 0,
+                call,
+                result: Returned::Refused { refusal: AskRefusal::TooLarge { bound: env.limits.host_part } },
+            });
+            return;
+        }
+    }
     if conversations.is_full() || calls.is_full() {
         out.push(Request::Return { spent: 0, call, result: Returned::Busy });
         return;

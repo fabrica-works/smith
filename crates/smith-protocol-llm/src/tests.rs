@@ -207,6 +207,7 @@ fn described_prompt() -> smith_domain::llm::Prompt {
 #[test]
 fn golden_descriptions_state_batching_and_every_effective_parameter() {
     let stated = crate::Stated {
+        host_part: u64::MAX,
         path_bytes: 37,
         read_window: 73,
         tool_payload: 257,
@@ -398,10 +399,71 @@ fn oversized_call_feedback_states_size_bound_and_batched_recovery_within_its_cap
 fn fixed_own_schema_measurement_matches_the_complete_fixed_inventory() {
     let stated = crate::Stated::from_tools(&tools(), 2048).expect("bounded quantities");
     let mut prompt = described_prompt();
+    prompt.namespace = tools::Namespace::One;
     prompt.served = Box::new([smith_domain::llm::Served::Wait, smith_domain::llm::Served::SubAgent]);
     let inventory = crate::schemas(&prompt, &stated);
     let rendered =
         inventory.iter().map(|tool| tool.name.len() + tool.description.len() + tool.schema.len()).sum::<usize>();
     assert_eq!(crate::fixed_schema_bytes(&stated), u64::try_from(rendered).ok());
     assert_eq!(inventory.len(), 8);
+}
+
+#[test]
+fn drawn_contract_schema_costs_equal_every_rendered_byte() {
+    use smith_domain::run::outcome::{ChangeSpec, FieldRule, ItemRule, ItemSpec, OutcomeSpec, TextSpec, VerdictRule};
+    let costs = crate::schema_costs().expect("startup renderer costs");
+    let mut rng = Rng::new(46_106);
+    let words = [b"plain".as_slice(), b"\\\"", b"\n\t\x01", "é😀".as_bytes()];
+    for _ in 0..512 {
+        let mut fields = || {
+            (0..rng.next_u64() % 5)
+                .map(|_| FieldRule {
+                    name: words[usize::try_from(rng.next_u64() % 4).expect("word index")].into(),
+                    max: u32::try_from(rng.next_u64() & u64::from(u32::MAX)).expect("u32 cap"),
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        };
+        let change = ChangeSpec { checks_must_pass: false, fields: fields() };
+        let report = TextSpec { max: u32::MAX, fields: fields() };
+        let failure = TextSpec { max: 0, fields: fields() };
+        let kind_fields = fields();
+        let verdict_fields = fields();
+        let kinds = (0..rng.next_u64() % 4)
+            .map(|index| ItemRule {
+                kind: words[usize::try_from(index).expect("word index")].into(),
+                fields: kind_fields.clone(),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let verdicts = (0..rng.next_u64() % 4)
+            .map(|index| VerdictRule {
+                name: words[usize::try_from(index).expect("word index")].into(),
+                text_max: u32::MAX,
+                fields: verdict_fields.clone(),
+                items: ItemSpec { min: 0, max: 23, kinds: kinds.clone() },
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let outcome = OutcomeSpec {
+            change: (rng.next_u64() % 2 == 0).then_some(change.clone()),
+            report: (rng.next_u64() % 2 == 0).then_some(report),
+            failure: (rng.next_u64() % 2 == 0).then_some(failure),
+            verdicts,
+        };
+        assert_eq!(
+            costs.finish(&outcome),
+            Some(
+                u64::try_from(crate::finish_schema(&outcome, u32::MAX).expect("rendered finish").len())
+                    .expect("length")
+            )
+        );
+        assert_eq!(
+            costs.deliver(&change),
+            Some(
+                u64::try_from(crate::deliver_schema(&change, u32::MAX).expect("rendered deliver").len())
+                    .expect("length")
+            )
+        );
+    }
 }

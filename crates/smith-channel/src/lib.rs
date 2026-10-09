@@ -34,6 +34,6 @@ pub use v2::{
     PolicyFailureParts, PriceRate, PriceRateValue, PriceRateValueParts, Receipt, ReceiptParts, ReceivingLimit,
     ReceivingLimitValue, ReceivingLimitValueParts, Refused, RefusedParts, Rejected, RejectedParts, Reply, RunFailure,
     RunResult, SavedReply, Start, StartParts, StartRefusal, TranscriptRefusal, TranscriptRefusalValue,
-    TranscriptRefusalValueParts, Turn, TurnParts, Waiting, WaitingParts, Window, WindowParts, Withdraw, WithdrawParts,
-    Workspace, WorkspaceParts,
+    TranscriptRefusalValueParts, Turn, TurnParts, Waiting, WaitingParts, Window, WindowBound, WindowBoundParts,
+    WindowParts, Withdraw, WithdrawParts, Workspace, WorkspaceParts,
 };

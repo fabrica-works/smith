@@ -139,9 +139,10 @@ enum BudgetRefusal {
     reserve: BudgetPartValue, completion: BudgetCompletion, checks: BudgetChecks
 }
 record BudgetRefusalValue { value: BudgetRefusal }
+record WindowBound { bound: u64 }
 enum InvalidStart {
     charter_version, malformed_charter, activation, window, conventions, too_large,
-    workspace, grants, outcome, budget: BudgetRefusalValue, price: PriceRateValue, llm, conversation, endpoint, messages
+    workspace, grants, outcome, budget: BudgetRefusalValue, price: PriceRateValue, llm, conversation, endpoint, messages, host_part: WindowBound, room: WindowBound
 }
 record InvalidStartValue { value: InvalidStart }
 enum StartRefusal { busy, invalid: InvalidStartValue }

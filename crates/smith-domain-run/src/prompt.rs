@@ -121,6 +121,43 @@ fn render_wind_down(text: &mut Text, reserve: Reserve) {
     text.put(b" to finish. Use only finish, or deliver when offered.");
 }
 
+/// Count every charter-dependent system byte, with the largest permitted guides.
+/// This pass renders into a counter and retains no text or filesystem state.
+pub(crate) fn host_bytes(charter: &Charter, mounted: Option<&Workspace>, guide_bytes: u32) -> Option<u64> {
+    let repositories = workspace::directories(mounted);
+    let mut found = Found::with_capacity(u32::try_from(repositories.len()).ok()?);
+    for (index, directory) in repositories.iter().enumerate() {
+        if directory.writable {
+            found.checks.push(u32::try_from(index).ok()?).expect("one check per directory");
+        }
+    }
+    let mut text = Text::measuring();
+    render_main_prefix(&mut text, charter);
+    render_system(&mut text, charter, mounted, &found, Families::of(&charter.grants), true);
+    for (index, _) in repositories.iter().enumerate() {
+        let guide = Guide { repository: u32::try_from(index).ok()?, text: Box::new([]), whole: false };
+        render_guide(&mut text, repositories, &guide, conventions::guide(charter));
+        if guide_bytes > 0 {
+            text.add_host(u64::from(guide_bytes).checked_add(2)?);
+        }
+    }
+    text.host_bytes
+}
+
+/// Count the caller brief and the charter-dependent common child system text.
+pub(crate) fn child_host_bytes(
+    charter: &Charter,
+    mounted: Option<&Workspace>,
+    found: &Found,
+    brief: &[u8],
+    families: Families,
+) -> Option<u64> {
+    let mut text = Text::measuring();
+    render_child_prefix(&mut text, brief);
+    render_system(&mut text, charter, mounted, found, families, false);
+    text.host_bytes
+}
+
 /// The system text of a run's main conversation, given what the run found in
 /// its checkout.
 pub(crate) fn system(charter: &Charter, mounted: Option<&Workspace>, found: &Found, budget: Budget) -> Box<[u8]> {
@@ -232,6 +269,7 @@ pub(crate) fn nudge(stop: Stop, nudge: u32, nudges: u32) -> Box<[u8]> {
 /// Each section is `## {title}\n\n{text}` plus existing paragraph termination;
 /// the delimiter bound is two instruction LFs plus seven bytes per section.
 fn render_main_prefix(text: &mut Text, charter: &Charter) {
+    text.host = true;
     if !charter.instructions.is_empty() {
         text.put(&charter.instructions);
         end_paragraph(text, &charter.instructions);
@@ -243,14 +281,17 @@ fn render_main_prefix(text: &mut Text, charter: &Charter) {
         text.put(&section.text);
         end_paragraph(text, &section.text);
     }
+    text.host = false;
 }
 
 /// A child's caller task, with no parent instructions or structured context.
 fn render_child_prefix(text: &mut Text, brief: &[u8]) {
+    text.host = true;
     if !brief.is_empty() {
         text.put(brief);
         end_paragraph(text, brief);
     }
+    text.host = false;
 }
 
 /// Shared guides/mechanics after the distinct main or raw child prefix.
@@ -281,6 +322,7 @@ fn render_system(
         }
         render_finishing(text, &charter.outcome, !found.checks.is_empty());
         if let Some(spec) = &charter.grants.deliver {
+            text.host = true;
             text.put(b"\n## Delivery\n\nYou may call `deliver` during the run, then continue. Its opaque fields are: ");
             render_fields(text, &spec.fields);
             if !found.checks.is_empty() {
@@ -296,6 +338,7 @@ fn render_system(
                 }
             }
             text.put(b" The host supplies receipts, nothing, named refusal, bounded failure or stale.\n");
+            text.host = false;
         }
     } else {
         render_answering(text);
@@ -313,6 +356,7 @@ fn render_agents(text: &mut Text, models: &[Llm]) {
         text.put(b"run's main LLM.\n");
         return;
     }
+    text.host = true;
     text.put(b"run's main LLM unless you name one of these: ");
     let mut rest = models.len();
     for llm in models {
@@ -327,6 +371,7 @@ fn render_agents(text: &mut Text, models: &[Llm]) {
         }
     }
     text.put(b".\n");
+    text.host = false;
 }
 
 /// One blank line after a text that came as it is, whether or not it ends
@@ -339,6 +384,7 @@ fn end_paragraph(text: &mut Text, came: &[u8]) {
 }
 
 fn render_guide(text: &mut Text, repositories: &[Directory], guide: &Guide, guide_path: &[u8]) {
+    text.host = true;
     text.put(b"## ");
     text.put(guide_path);
     if repositories.len() == 1 {
@@ -355,6 +401,7 @@ fn render_guide(text: &mut Text, repositories: &[Directory], guide: &Guide, guid
     if !guide.whole {
         text.put(b"(The file goes on: read the rest with your tools.)\n\n");
     }
+    text.host = false;
 }
 
 fn render_tools(text: &mut Text, tools: Tools) {
@@ -379,6 +426,7 @@ fn render_checkout(text: &mut Text, repositories: &[Directory], checks: &[u32], 
     if repositories.is_empty() {
         text.put(b"There is no checkout.\n");
     }
+    text.host = true;
     match repositories.len() {
         0 => {}
         1 => text.put(b"Paths start in your working directory. Use `src/lib.rs`, without a directory-name prefix.\n"),
@@ -415,12 +463,14 @@ fn render_checkout(text: &mut Text, repositories: &[Directory], checks: &[u32], 
         text.put(b"\n");
         index = index.saturating_add(1);
     }
+    text.host = false;
 }
 
 fn render_finishing(text: &mut Text, spec: &OutcomeSpec, checks: bool) {
     text.put(b"## Finishing\n\n");
     text.put(b"When the work is done, call `finish` with its result. A result outside the host's contract returns ");
     text.put(b"typed feedback; fix it and call `finish` again. Stopping without `finish` does not finish the run.\n");
+    text.host = true;
     if let Some(rule) = &spec.change {
         text.put(b"\nChange: the workspace changes, with these host-required result fields:\n");
         render_fields(text, &rule.fields);
@@ -445,6 +495,7 @@ fn render_finishing(text: &mut Text, spec: &OutcomeSpec, checks: bool) {
             render_verdict(text, rule);
         }
     }
+    text.host = false;
     text.put(b"Extra fields are allowed within the aggregate result byte limit; no field name may repeat.\n");
 }
 
@@ -518,23 +569,35 @@ struct Text {
     len: usize,
     /// Where they go, once the text has been measured.
     writer: Option<Writer>,
+    host: bool,
+    host_bytes: Option<u64>,
 }
 
 impl Text {
     fn measuring() -> Text {
-        Text { len: 0, writer: None }
+        Text { len: 0, writer: None, host: false, host_bytes: Some(0) }
     }
 
     /// A text to write what this one measured.
     fn writing(self) -> Text {
-        Text { len: 0, writer: Some(Writer::new(self.len)) }
+        Text { len: 0, writer: Some(Writer::new(self.len)), host: false, host_bytes: Some(0) }
     }
 
     fn put(&mut self, bytes: &[u8]) {
         self.len = self.len.saturating_add(bytes.len());
+        if self.host {
+            self.add_host(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        }
         if let Some(writer) = &mut self.writer {
             writer.put(bytes).expect("a text is written as it was measured");
         }
+    }
+
+    fn add_host(&mut self, bytes: u64) {
+        self.host_bytes = match self.host_bytes {
+            Some(current) => current.checked_add(bytes),
+            None => None,
+        };
     }
 
     /// `n` in decimal digits.

@@ -70,7 +70,7 @@ fn config() -> Config {
                 account: 7,
                 endpoint: Endpoint(4),
                 model: Box::from(&b"small"[..]),
-                window: 8192,
+                window: 65_536,
                 output: 128,
             }]),
             sub_agents: false,

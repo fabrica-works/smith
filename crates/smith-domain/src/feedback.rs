@@ -198,6 +198,7 @@ fn render(text: &mut Text, returned: &Returned) {
         Returned::Refused { refusal } => {
             text.put(b"refused reason=");
             text.put(match refusal {
+                run::AskRefusal::TooLarge { bound: _ } => b"too-large",
                 run::AskRefusal::Name => b"name",
                 run::AskRefusal::NotGranted => b"not-granted",
                 run::AskRefusal::TooMany => b"too-many",
@@ -205,6 +206,18 @@ fn render(text: &mut Text, returned: &Returned) {
                 run::AskRefusal::Unworkable => b"unworkable",
                 run::AskRefusal::Over => b"over",
             });
+            match refusal {
+                run::AskRefusal::TooLarge { bound } => {
+                    text.put(b" bound=");
+                    text.number(*bound);
+                }
+                run::AskRefusal::Name
+                | run::AskRefusal::NotGranted
+                | run::AskRefusal::TooMany
+                | run::AskRefusal::UnknownLlm
+                | run::AskRefusal::Unworkable
+                | run::AskRefusal::Over => {}
+            }
         }
     }
 }

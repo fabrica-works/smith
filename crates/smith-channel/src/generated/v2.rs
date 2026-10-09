@@ -405,6 +405,10 @@ pub enum Path {
     BudgetRefusalValueValue,
     /// Bytes after `BudgetRefusalValue`.
     BudgetRefusalValueTail,
+    /// The `bound` field of `WindowBound`.
+    WindowBoundBound,
+    /// Bytes after `WindowBound`.
+    WindowBoundTail,
     /// The tag of `InvalidStart`.
     InvalidStartTag,
     /// The `value` field of `InvalidStartValue`.
@@ -5263,6 +5267,70 @@ impl BudgetRefusalValue {
     }
 }
 
+/// Movable fields of `WindowBound`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct WindowBoundParts {
+    /// The `bound` field.
+    pub bound: u64,
+}
+
+/// `WindowBound` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct WindowBound {
+    bound: u64,
+}
+
+impl WindowBound {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: WindowBoundParts) -> Result<Self, Problem> {
+        let WindowBoundParts { bound } = parts;
+        let value = Self { bound };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `bound` field.
+    #[must_use]
+    pub fn bound(&self) -> u64 { self.bound }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> WindowBoundParts { WindowBoundParts { bound: self.bound } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        let Self { .. } = self;
+        if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_path > CEILINGS.directory_path { return Err(Problem { path: Path::DirectoryPath, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_conflicts > CEILINGS.directory_conflicts { return Err(Problem { path: Path::DirectoryConflicts, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_conflicts_item > CEILINGS.directory_conflicts_item { return Err(Problem { path: Path::DirectoryConflicts, reason: skein_codec::Reason::Bound }); }
+        if limits.workspace_directories > CEILINGS.workspace_directories { return Err(Problem { path: Path::WorkspaceDirectories, reason: skein_codec::Reason::Bound }); }
+        if limits.grant_value_credential > CEILINGS.grant_value_credential { return Err(Problem { path: Path::GrantValueCredential, reason: skein_codec::Reason::Bound }); }
+        if limits.receipt_text > CEILINGS.receipt_text { return Err(Problem { path: Path::ReceiptText, reason: skein_codec::Reason::Bound }); }
+        if limits.delivered_receipts > CEILINGS.delivered_receipts { return Err(Problem { path: Path::DeliveredReceipts, reason: skein_codec::Reason::Bound }); }
+        if limits.marker_path > CEILINGS.marker_path { return Err(Problem { path: Path::MarkerPath, reason: skein_codec::Reason::Bound }); }
+        if limits.delivery_refusal_explanation > CEILINGS.delivery_refusal_explanation { return Err(Problem { path: Path::DeliveryRefusalExplanation, reason: skein_codec::Reason::Bound }); }
+        if limits.delivery_failure_diagnostic > CEILINGS.delivery_failure_diagnostic { return Err(Problem { path: Path::DeliveryFailureDiagnostic, reason: skein_codec::Reason::Bound }); }
+        if limits.host_reply_text > CEILINGS.host_reply_text { return Err(Problem { path: Path::HostReplyText, reason: skein_codec::Reason::Bound }); }
+        if limits.answered_call_tool > CEILINGS.answered_call_tool { return Err(Problem { path: Path::AnsweredCallTool, reason: skein_codec::Reason::Bound }); }
+        if limits.message_label > CEILINGS.message_label { return Err(Problem { path: Path::MessageLabel, reason: skein_codec::Reason::Bound }); }
+        if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
+        if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
+        if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
+        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
+        if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
+        if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
+        if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
+        if limits.host_ask_tool > CEILINGS.host_ask_tool { return Err(Problem { path: Path::HostAskTool, reason: skein_codec::Reason::Bound }); }
+        if limits.host_ask_input > CEILINGS.host_ask_input { return Err(Problem { path: Path::HostAskInput, reason: skein_codec::Reason::Bound }); }
+        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
+        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
+        if limits.deliver_ask_fields > CEILINGS.deliver_ask_fields { return Err(Problem { path: Path::DeliverAskFields, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_body > CEILINGS.turn_body { return Err(Problem { path: Path::TurnBody, reason: skein_codec::Reason::Bound }); }
+        if limits.accepted_result > CEILINGS.accepted_result { return Err(Problem { path: Path::AcceptedResult, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
 /// `InvalidStart` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum InvalidStart {
@@ -5296,6 +5364,10 @@ pub enum InvalidStart {
     Endpoint,
     /// `messages` without a payload.
     Messages,
+    /// `host_part` carrying `WindowBound`.
+    HostPart(WindowBound),
+    /// `room` carrying `WindowBound`.
+    Room(WindowBound),
 }
 
 impl InvalidStart {
@@ -5309,6 +5381,7 @@ impl InvalidStart {
         match self {
             Self::Budget(record) => BudgetRefusalValue::check(record, limits),
             Self::Price(record) => PriceRateValue::check(record, limits),
+            Self::HostPart(record) | Self::Room(record) => WindowBound::check(record, limits),
             Self::CharterVersion | Self::MalformedCharter | Self::Activation | Self::Window | Self::Conventions | Self::TooLarge | Self::Workspace | Self::Grants | Self::Outcome | Self::Llm | Self::Conversation | Self::Endpoint | Self::Messages => Ok(()),
         }?;
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
@@ -8519,6 +8592,35 @@ impl BudgetRefusalValue {
     }
 }
 
+impl WindowBound {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        size = size.checked_add(8).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_bound = &self.bound;
+        writer.put(&field_bound.to_be_bytes())?;
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::WindowBoundTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_bound = reader.u64().ok_or(Problem { path: Path::WindowBoundBound, reason: skein_codec::Reason::Short })?;
+        Self::new(limits, WindowBoundParts { bound: decoded_bound })
+    }
+}
+
 impl InvalidStart {
     /// Measures this variant's wire encoding.
     #[must_use]
@@ -8526,6 +8628,7 @@ impl InvalidStart {
         match self {
             Self::Budget(record) => 1_u32.checked_add(BudgetRefusalValue::measure(record)).expect("schema ceilings fit u32"),
             Self::Price(record) => 1_u32.checked_add(PriceRateValue::measure(record)).expect("schema ceilings fit u32"),
+            Self::HostPart(record) | Self::Room(record) => 1_u32.checked_add(WindowBound::measure(record)).expect("schema ceilings fit u32"),
             Self::CharterVersion | Self::MalformedCharter | Self::Activation | Self::Window | Self::Conventions | Self::TooLarge | Self::Workspace | Self::Grants | Self::Outcome | Self::Llm | Self::Conversation | Self::Endpoint | Self::Messages => 1,
         }
     }
@@ -8548,6 +8651,8 @@ impl InvalidStart {
             Self::Conversation => writer.put(&[12_u8])?,
             Self::Endpoint => writer.put(&[13_u8])?,
             Self::Messages => writer.put(&[14_u8])?,
+            Self::HostPart(record) => { writer.put(&[15_u8])?; record.encode(writer)?; }
+            Self::Room(record) => { writer.put(&[16_u8])?; record.encode(writer)?; }
         }
         Ok(())
     }
@@ -8577,6 +8682,8 @@ impl InvalidStart {
             12 => Self::Conversation,
             13 => Self::Endpoint,
             14 => Self::Messages,
+            15 => Self::HostPart(WindowBound::decode_from(limits, reader)?),
+            16 => Self::Room(WindowBound::decode_from(limits, reader)?),
             _ => return Err(Problem { path: Path::InvalidStartTag, reason: skein_codec::Reason::Tag }),
         };
         Self::new(limits, value)
@@ -10359,6 +10466,26 @@ impl BudgetRefusalValue {
     }
 }
 
+impl WindowBound {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(8_u64)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?;
+        Some(heap)
+    }
+}
+
 impl InvalidStart {
     /// Maximum encoded bytes among variants.
     #[must_use]
@@ -10367,6 +10494,8 @@ impl InvalidStart {
         let mut biggest = 0_u64;
         biggest = biggest.max(BudgetRefusalValue::worst_case_bytes(limits)?);
         biggest = biggest.max(PriceRateValue::worst_case_bytes(limits)?);
+        biggest = biggest.max(WindowBound::worst_case_bytes(limits)?);
+        biggest = biggest.max(WindowBound::worst_case_bytes(limits)?);
         1_u64.checked_add(biggest)
     }
 
@@ -10377,6 +10506,8 @@ impl InvalidStart {
         let mut biggest = 0_u64;
         biggest = biggest.max(BudgetRefusalValue::worst_case_heap(limits)?);
         biggest = biggest.max(PriceRateValue::worst_case_heap(limits)?);
+        biggest = biggest.max(WindowBound::worst_case_heap(limits)?);
+        biggest = biggest.max(WindowBound::worst_case_heap(limits)?);
         Some(biggest)
     }
 }
@@ -10607,6 +10738,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(BudgetChecks::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetRefusal::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetRefusalValue::worst_case_bytes(limits)?);
+    biggest = biggest.max(WindowBound::worst_case_bytes(limits)?);
     biggest = biggest.max(InvalidStart::worst_case_bytes(limits)?);
     biggest = biggest.max(InvalidStartValue::worst_case_bytes(limits)?);
     biggest = biggest.max(StartRefusal::worst_case_bytes(limits)?);
@@ -10694,6 +10826,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(BudgetChecks::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetRefusal::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetRefusalValue::worst_case_heap(limits)?);
+    biggest = biggest.max(WindowBound::worst_case_heap(limits)?);
     biggest = biggest.max(InvalidStart::worst_case_heap(limits)?);
     biggest = biggest.max(InvalidStartValue::worst_case_heap(limits)?);
     biggest = biggest.max(StartRefusal::worst_case_heap(limits)?);
@@ -10707,7 +10840,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Operation, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, CompletionFailure, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetChecks, BudgetChecksParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts};
+    use super::{CEILINGS, Path, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Operation, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, CompletionFailure, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetChecks, BudgetChecksParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, WindowBound, WindowBoundParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -13791,6 +13924,26 @@ mod golden_tests {
     }
 
     #[test]
+    fn record_window_bound_smallest() {
+        let value = WindowBound::new(&CEILINGS, WindowBoundParts { bound: 0_u64 }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(WindowBound::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_window_bound_full() {
+        let value = WindowBound::new(&CEILINGS, WindowBoundParts { bound: u64::MAX }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(WindowBound::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
     fn enum_invalid_start_charter_version_smallest() {
         let value = InvalidStart::CharterVersion;
         let golden: &[u8] = &[0];
@@ -14084,6 +14237,46 @@ mod golden_tests {
     fn enum_invalid_start_messages_full() {
         let value = InvalidStart::Messages;
         let golden: &[u8] = &[14];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_invalid_start_host_part_smallest() {
+        let value = InvalidStart::HostPart(WindowBound::new(&CEILINGS, WindowBoundParts { bound: 0_u64 }).expect("golden within ceilings"));
+        let golden: &[u8] = &[15, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_invalid_start_host_part_full() {
+        let value = InvalidStart::HostPart(WindowBound::new(&CEILINGS, WindowBoundParts { bound: u64::MAX }).expect("golden within ceilings"));
+        let golden: &[u8] = &[15, 255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_invalid_start_room_smallest() {
+        let value = InvalidStart::Room(WindowBound::new(&CEILINGS, WindowBoundParts { bound: 0_u64 }).expect("golden within ceilings"));
+        let golden: &[u8] = &[16, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_invalid_start_room_full() {
+        let value = InvalidStart::Room(WindowBound::new(&CEILINGS, WindowBoundParts { bound: u64::MAX }).expect("golden within ceilings"));
+        let golden: &[u8] = &[16, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

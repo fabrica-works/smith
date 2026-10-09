@@ -189,6 +189,10 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Tools, field.name())),
     };
+    let own =
+        room::own_part(&tools, client_limits().dialect.input_bytes, 0).ok_or(derived(Layer::Service, "own_part"))?;
+    let parts = room::room(profile, configuration, own, 0)?;
+    let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
     let run = match run::derive(&run::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
@@ -206,6 +210,12 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         shell_tail: declared.shell_tail,
         tool_payload: declared.tool_payload,
         tool_deadline: policy.tool_deadline,
+        host: parts.host.min(u64::from(client_limits().dialect.string_bytes)),
+        offer: parts.offer.min(u64::from(client_limits().dialect.string_bytes)),
+        message: parts.message.min(client_limits().dialect.string_bytes),
+        room: parts.room,
+        compaction_threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
+        schema_costs,
     }) {
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Run, field.name())),
@@ -249,8 +259,9 @@ fn component_limits(
     domain: &domain::Limits,
     rendered_result: u32,
 ) -> Result<llm::ComponentLimits, Refusal> {
-    let stated = llm::Stated::from_tools(&domain.session.tools, client.dialect.input_bytes)
+    let mut stated = llm::Stated::from_tools(&domain.session.tools, client.dialect.input_bytes)
         .ok_or(derived(Layer::Llm, "output_ceiling"))?;
+    stated.host_part = domain.run.host_part;
     Ok(llm::ComponentLimits {
         adapter: llm::Limits { client, tool_bytes: 32_768, rendered_result, stated },
         connection: connection::Limits {

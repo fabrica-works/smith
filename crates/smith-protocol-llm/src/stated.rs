@@ -8,6 +8,8 @@ use smith_domain::tools;
 /// The service's immutable effective quantities stated when a conversation opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Stated {
+    /// Maximum rendered host part and raw sub-agent brief bytes.
+    pub host_part: u64,
     pub path_bytes: u32,
     /// Current fixed read window, in bytes.
     pub read_window: u32,
@@ -34,6 +36,7 @@ impl Stated {
     pub fn from_tools(limits: &tools::Limits, call_input_bytes: u32) -> Option<Stated> {
         let output = limits.shell_head.checked_add(limits.shell_tail)?;
         Some(Stated {
+            host_part: u64::MAX,
             path_bytes: limits.path_bytes,
             read_window: limits.read_bytes,
             tool_payload: limits.tool_payload,

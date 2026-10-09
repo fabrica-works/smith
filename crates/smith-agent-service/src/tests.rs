@@ -14,7 +14,7 @@ fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
             models: Box::new([Model {
                 name: Box::from(b"fake".as_slice()),
                 window: 65_536,
-                output: 32,
+                output: 4096,
                 reasoning_item: 2048,
                 oversized_reasoning: OversizedReasoning::Fail,
                 head: skein_lib::Duration::from_secs(1),
@@ -156,11 +156,10 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         assert!(machine.search_bytes >= tools.search_bytes);
         assert!(machine.path_bytes >= tools.path_bytes);
         assert_eq!(machine.env_bytes, configuration.environment_bytes);
-        assert_eq!(
-            limits.llm.adapter.stated,
-            smith_protocol_llm::Stated::from_tools(&tools, limits.llm.adapter.client.dialect.input_bytes,)
-                .expect("derived effective quantities fit")
-        );
+        let mut stated = smith_protocol_llm::Stated::from_tools(&tools, limits.llm.adapter.client.dialect.input_bytes)
+            .expect("derived quantities fit");
+        stated.host_part = limits.domain.run.host_part;
+        assert_eq!(limits.llm.adapter.stated, stated);
     }
     let mut profile = crate::profile::standard();
     profile.declared.memory = Some(u64::MAX);

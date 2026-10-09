@@ -69,7 +69,7 @@ pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
             models: Box::new([Model {
                 name: Box::from(b"fake".as_slice()),
                 window: 65_536,
-                output: 32,
+                output: 4096,
                 reasoning_item: 2048,
                 oversized_reasoning: OversizedReasoning::Fail,
                 head: skein_lib::Duration::from_secs(1),
@@ -200,7 +200,7 @@ pub fn configuration() -> agent::Config {
             models: Box::new([smith_domain::ConfiguredModel {
                 endpoint: smith_domain::run::charter::Endpoint(0),
                 model: Box::from(&b"fake"[..]),
-                window: 8192,
+                window: 65_536,
                 output: 4096,
                 head: Duration::from_secs(2),
                 idle: Duration::from_secs(3),

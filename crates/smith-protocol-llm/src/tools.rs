@@ -32,19 +32,9 @@ pub fn schemas(prompt: &llm::Prompt, stated: &crate::Stated) -> Box<[ToolSchema]
         match offered {
             llm::Served::Host(_) => {}
             llm::Served::Wait => add(&mut descriptors, waiting()),
-            llm::Served::SubAgent => add(&mut descriptors, sub_agent()),
-            llm::Served::Deliver => add(&mut descriptors, descriptor(
-                ToolKind::Deliver,
-                b"deliver",
-                b"Offer the checked change to the host under the change contract.",
-                br#"{"type":"object","properties":{"ticket":{"type":"string"}},"required":["ticket"]}"#,
-            )),
-            llm::Served::Finish => add(&mut descriptors, descriptor(
-                ToolKind::Finish,
-                b"finish",
-                b"Declare the final result under the host's result contract.",
-                br#"{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"report":{"type":"string"},"source":{"type":"string"},"failure":{"type":"string"},"cause":{"type":"string"},"verdict":{"type":"string"},"children":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string"},"path":{"type":"string"}},"required":["kind","path"]}}},"anyOf":[{"required":["title","body"]},{"required":["report"]},{"required":["failure"]},{"required":["verdict","body"]}]}"#,
-            )),
+            llm::Served::SubAgent => add(&mut descriptors, sub_agent(stated.host_part)),
+            llm::Served::Deliver => add(&mut descriptors, delivering()),
+            llm::Served::Finish => add(&mut descriptors, finishing()),
         }
     }
     descriptors.into_boxed()
@@ -88,7 +78,7 @@ pub fn fixed_schema_bytes(stated: &crate::Stated) -> Option<u64> {
         owned(tools::Tool::Edit, b"edit", stated, &tools::Namespace::One),
         owned(tools::Tool::Shell, b"shell", stated, &tools::Namespace::One),
         waiting(),
-        sub_agent(),
+        sub_agent(stated.host_part),
     ] {
         for field in [&schema.name, &schema.description, &schema.schema] {
             bytes = bytes.checked_add(u64::try_from(field.len()).ok()?)?;
@@ -106,10 +96,51 @@ fn waiting() -> ToolSchema {
     )
 }
 
-fn sub_agent() -> ToolSchema {
-    descriptor(ToolKind::SubAgent, b"sub_agent",
-        b"Ask a sub-agent to work under the granted tool families and optional model. Optional max_turns and max_seconds ask for a share, clamped to what is left above the finishing reserve. The child is told its effective share.",
-        br#"{"type":"object","properties":{"brief":{"type":"string"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"},"max_turns":{"type":"integer","minimum":1},"max_seconds":{"type":"integer","minimum":1}},"required":["brief","tools"]}"#)
+fn sub_agent(host_part: u64) -> ToolSchema {
+    let prefix = br#"{"type":"object","properties":{"brief":{"type":"string","maxLength":"#;
+    let suffix = br#"},"tools":{"type":"array","items":{"type":"string","enum":["inspect","modify","shell"]}},"llm":{"type":"string"},"max_turns":{"type":"integer","minimum":1},"max_seconds":{"type":"integer","minimum":1}},"required":["brief","tools"]}"#;
+    let decimal = skein_lib::Decimal::of(host_part);
+    let bytes = decimal.as_bytes();
+    let length = prefix
+        .len()
+        .checked_add(bytes.len())
+        .expect("fixed prefix and u64")
+        .checked_add(suffix.len())
+        .expect("fixed suffix");
+    let mut writer = skein_lib::Writer::new(length);
+    writer.put(prefix).expect("measured prefix");
+    writer.put(bytes).expect("measured bound");
+    writer.put(suffix).expect("measured suffix");
+    ToolSchema { kind: ToolKind::SubAgent, name: Box::from(b"sub_agent".as_slice()),
+        description: Box::from(b"Ask a sub-agent to work under the granted tool families and optional model. Optional max_turns and max_seconds ask for a share, clamped to what is left above the finishing reserve. The child is told its effective share. The brief and inherited context fit the stated host part.".as_slice()),
+        schema: writer.finish() }
+}
+
+pub(crate) fn contract_text_bytes() -> Option<[u64; 2]> {
+    let finish = finishing();
+    let deliver = delivering();
+    Some([
+        u64::try_from(finish.name.len()).ok()?.checked_add(u64::try_from(finish.description.len()).ok()?)?,
+        u64::try_from(deliver.name.len()).ok()?.checked_add(u64::try_from(deliver.description.len()).ok()?)?,
+    ])
+}
+
+fn delivering() -> ToolSchema {
+    descriptor(
+        ToolKind::Deliver,
+        b"deliver",
+        b"Offer the checked change to the host under the change contract.",
+        br#"{"type":"object","properties":{"ticket":{"type":"string"}},"required":["ticket"]}"#,
+    )
+}
+
+fn finishing() -> ToolSchema {
+    descriptor(
+                ToolKind::Finish,
+                b"finish",
+                b"Declare the final result under the host's result contract.",
+                br#"{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"},"report":{"type":"string"},"source":{"type":"string"},"failure":{"type":"string"},"cause":{"type":"string"},"verdict":{"type":"string"},"children":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string"},"path":{"type":"string"}},"required":["kind","path"]}}},"anyOf":[{"required":["title","body"]},{"required":["report"]},{"required":["failure"]},{"required":["verdict","body"]}]}"#,
+            )
 }
 
 fn add(descriptors: &mut List<ToolSchema>, schema: ToolSchema) {

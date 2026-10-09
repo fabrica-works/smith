@@ -283,6 +283,55 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
     if grants.deliver.is_some() && !writable {
         return Err(Invalid::Grants);
     }
+    let mut host = crate::prompt::host_bytes(charter, workspace, limits.guide_bytes);
+    host = match host {
+        Some(bytes) => match limits.schema_costs.finish(outcome) {
+            Some(schema) => match bytes.checked_add(schema) {
+                Some(total) => total.checked_add(limits.schema_costs.finish_text),
+                None => None,
+            },
+            None => None,
+        },
+        None => None,
+    };
+    match &grants.deliver {
+        Some(change) => {
+            host = match host {
+                Some(bytes) => match limits.schema_costs.deliver(change) {
+                    Some(schema) => match bytes.checked_add(schema) {
+                        Some(total) => total.checked_add(limits.schema_costs.deliver_text),
+                        None => None,
+                    },
+                    None => None,
+                },
+                None => None,
+            };
+        }
+        None => {}
+    }
+    for tool in &grants.host_tools {
+        for text in [&tool.name, &tool.description, &tool.schema] {
+            host = match host {
+                Some(bytes) => match len(text) {
+                    Some(length) => bytes.checked_add(length),
+                    None => None,
+                },
+                None => None,
+            };
+        }
+    }
+    match host {
+        Some(bytes) if bytes <= limits.host_part => {}
+        Some(_) | None => return Err(Invalid::HostPart { bound: limits.host_part }),
+    }
+    if !has_room(llm, limits) {
+        return Err(Invalid::Room { bound: limits.room });
+    }
+    for model in models {
+        if !has_room(model, limits) {
+            return Err(Invalid::Room { bound: limits.room });
+        }
+    }
     Ok(())
 }
 
@@ -396,4 +445,20 @@ fn valid_host_tools(tools: &[HostTool], limits: &Limits) -> bool {
         }
     }
     true
+}
+
+fn has_room(llm: &Llm, limits: &Limits) -> bool {
+    let [numerator, denominator] = limits.compaction_threshold;
+    let within = match u64::from(llm.window).checked_mul(u64::from(numerator)) {
+        Some(product) => product.checked_div(u64::from(denominator)),
+        None => None,
+    };
+    let outputs = u64::from(llm.output).checked_mul(2).expect("two u32 outputs fit u64");
+    match within {
+        Some(within) => match within.checked_sub(outputs) {
+            Some(room) => room >= limits.room,
+            None => false,
+        },
+        None => false,
+    }
 }

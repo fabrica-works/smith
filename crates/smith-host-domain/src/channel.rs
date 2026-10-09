@@ -444,6 +444,10 @@ pub enum Rate {
 /// The agent's reason for rejecting a start before admission.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum RunInvalid {
+    /// Rendered charter and schema bytes exceed the agent's host part.
+    HostPart { bound: u64 },
+    /// A selected model leaves less room than the agent derived.
+    Room { bound: u64 },
     /// A start's carried messages exceed their bounds or repeat a name.
     Messages,
     /// The agent does not read the charter's version.

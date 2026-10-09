@@ -22,6 +22,10 @@ pub fn noisy(seed: u64) -> Settings {
         conversations: small(pick(1, 4)),
         run_bytes: pick(1_000, 6_000),
         brief_sections: 4,
+        host_part: u64::MAX,
+        room: 0,
+        compaction_threshold: [4, 5],
+        schema_costs: smith_domain_run::SchemaCosts::NONE,
         nudges: small(pick(0, 3)),
         budget: Budget { turns: 30, time: Duration::from_secs(3600), ..calm.run.budget },
         ..calm.run

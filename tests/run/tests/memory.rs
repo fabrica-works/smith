@@ -57,6 +57,10 @@ const LIMITS: Limits = Limits {
     conversations: 2,
     run_bytes: 1024,
     brief_sections: 4,
+    host_part: u64::MAX,
+    room: 0,
+    compaction_threshold: [4, 5],
+    schema_costs: smith_domain_run::SchemaCosts::NONE,
     directories: 1,
     directory_name_bytes: 64,
     host_path_bytes: 63,
@@ -549,6 +553,10 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
         conflict_path_bytes: 4096,
         run_bytes: 65_536,
         brief_sections: 4,
+        host_part: u64::MAX,
+        room: 0,
+        compaction_threshold: [4, 5],
+        schema_costs: smith_domain_run::SchemaCosts::NONE,
         ..LIMITS
     };
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
