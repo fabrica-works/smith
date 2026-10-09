@@ -64,7 +64,7 @@ fn a_drop_after_an_answer_releases_held_turns_without_replacing_the_answer() {
     spawned.live();
     spawned.up(host::Up::Turn {
         turn: host::Turn {
-            opens_window: (1) == 1,
+            opens_window: true,
             number: 1,
             spent: 0,
             read: None,
