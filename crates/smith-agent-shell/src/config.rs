@@ -23,7 +23,7 @@ use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
 use crate::trace::{Capture, TraceConfig};
-use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Refusal};
+use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Layer, LimitName, Per, Refusal};
 
 const CONFIG_BYTES: u64 = 1 << 20;
 
@@ -279,9 +279,7 @@ fn build(document: Document) -> Result<Configuration, String> {
     let complete = service::worst_case(&config.limits, &config.llm_endpoints)
         .and_then(|bytes| bytes.checked_add(reserve))
         .ok_or_else(|| {
-            profile_refusal(Refusal::Derived {
-                limit: service::profile::LimitName::deployment(service::profile::Layer::Service, "worst_case"),
-            })
+            profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
         })?;
     service::profile::validate::memory(complete, memory).map_err(profile_refusal)?;
     Ok(Configuration { service: config, memory, trace, profile, declarations })
@@ -364,8 +362,8 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
                 credential: credential_limits(limits),
             },
             account: endpoint.account,
-            connect: duration(endpoint.connect, "endpoint.connect")?,
-            handshake: duration(endpoint.handshake, "endpoint.handshake")?,
+            connect: endpoint_duration(endpoint.connect, endpoint.number, "connect")?,
+            handshake: endpoint_duration(endpoint.handshake, endpoint.number, "handshake")?,
             reasoning_effort: endpoint.reasoning_effort.map(|value| value.into_bytes().into()),
             cache_key: endpoint.cache_key.map(|value| value.into_bytes().into()),
             identity,
@@ -517,10 +515,10 @@ fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverr
         profile.policy.max_spend = value;
     }
     if let Some(value) = overrides.max_time {
-        profile.policy.max_time = duration(value, "profile.policy.max_time")?;
+        profile.policy.max_time = duration(value, LimitName::deployment(Layer::Policy, "max_time"))?;
     }
     if let Some(value) = overrides.max_waiting {
-        profile.policy.max_waiting = duration(value, "profile.policy.max_waiting")?;
+        profile.policy.max_waiting = duration(value, LimitName::deployment(Layer::Policy, "max_waiting"))?;
     }
     if let Some(value) = overrides.sections {
         if value == 0 {
@@ -576,35 +574,39 @@ fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverr
 
 fn apply_durations(profile: &mut service::profile::Profile, overrides: &PolicyOverrides) -> Result<(), String> {
     if let Some(value) = overrides.connection_keep {
-        profile.policy.connection_keep = duration(value, "profile.policy.connection_keep")?;
+        profile.policy.connection_keep = duration(value, LimitName::deployment(Layer::Policy, "connection_keep"))?;
     }
     if let Some(value) = overrides.tool_deadline {
-        profile.policy.tool_deadline = duration(value, "profile.policy.tool_deadline")?;
+        profile.policy.tool_deadline = duration(value, LimitName::deployment(Layer::Policy, "tool_deadline"))?;
     }
     if let Some(value) = overrides.shell_timeout {
-        profile.policy.shell_timeout = duration(value, "profile.policy.shell_timeout")?;
+        profile.policy.shell_timeout = duration(value, LimitName::deployment(Layer::Policy, "shell_timeout"))?;
     }
     if let Some(value) = overrides.group_stop {
-        profile.policy.group_stop = duration(value, "profile.policy.group_stop")?;
+        profile.policy.group_stop = duration(value, LimitName::deployment(Layer::Policy, "group_stop"))?;
     }
     if let Some(value) = overrides.close {
-        profile.policy.close = duration(value, "profile.policy.close")?;
+        profile.policy.close = duration(value, LimitName::deployment(Layer::Policy, "close"))?;
     }
     if let Some(value) = overrides.write_deadline {
-        profile.policy.write_deadline = duration(value, "profile.policy.write_deadline")?;
+        profile.policy.write_deadline = duration(value, LimitName::deployment(Layer::Policy, "write_deadline"))?;
     }
     if let Some(value) = overrides.cancel_grace {
-        profile.policy.cancel_grace = duration(value, "profile.policy.cancel_grace")?;
+        profile.policy.cancel_grace = duration(value, LimitName::deployment(Layer::Policy, "cancel_grace"))?;
     }
     if let Some(value) = overrides.exit_grace {
-        profile.policy.exit_grace = duration(value, "profile.policy.exit_grace")?;
+        profile.policy.exit_grace = duration(value, LimitName::deployment(Layer::Policy, "exit_grace"))?;
     }
     Ok(())
 }
 
-fn duration(millis: u64, name: &str) -> Result<Duration, String> {
-    let nanos = millis.checked_mul(1_000_000).ok_or_else(|| format!("{name} duration overflows"))?;
+fn duration(millis: u64, name: LimitName) -> Result<Duration, String> {
+    let nanos = millis.checked_mul(1_000_000).ok_or_else(|| profile_refusal(Refusal::Derived { limit: name }))?;
     Ok(Duration::from_nanos(nanos))
+}
+
+fn endpoint_duration(millis: u64, endpoint: u32, field: &'static str) -> Result<Duration, String> {
+    duration(millis, LimitName { layer: Layer::Policy, field, per: Per::Endpoint(endpoint) })
 }
 
 fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, String> {
@@ -626,7 +628,11 @@ fn build_models(
     }
     let mut names = std::collections::BTreeSet::new();
     let mut prepared = Vec::with_capacity(models.len());
-    for model in models {
+    for (index, model) in models.iter().enumerate() {
+        let index = u32::try_from(index).map_err(|_| {
+            profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "configured_models") })
+        })?;
+        let per = Per::Model { endpoint: number, model: index };
         if model.name.is_empty()
             || model.name.len()
                 > usize::try_from(smith_charter::CEILINGS.llm_model).expect("model name bound fits usize")
@@ -645,14 +651,14 @@ fn build_models(
             output: model.output,
             reasoning_item: model.reasoning_item,
             oversized_reasoning: reasoning_policy(model.oversized_reasoning.as_deref())?,
-            head: duration(model.head, "model.head")?,
-            idle: duration(model.idle, "model.idle")?,
+            head: duration(model.head, LimitName { layer: Layer::Declared, field: "head", per })?,
+            idle: duration(model.idle, LimitName { layer: Layer::Declared, field: "idle", per })?,
         });
     }
     Ok(service::profile::Endpoint {
         number,
-        connect: duration(connect, "endpoint.connect")?,
-        handshake: duration(handshake, "endpoint.handshake")?,
+        connect: endpoint_duration(connect, number, "connect")?,
+        handshake: endpoint_duration(handshake, number, "handshake")?,
         models: prepared.into_boxed_slice(),
     })
 }
@@ -798,6 +804,18 @@ mod tests {
             );
             assert!(parse(json.as_bytes()).is_err(), "invalid transport {extra}");
         }
+    }
+
+    #[test]
+    fn overflowing_declared_durations_name_the_first_field_and_its_scope() {
+        let mut policy = document();
+        policy.profile.policy.max_time = Some(u64::MAX);
+        assert_eq!(build(policy).err().as_deref(), Some("derived: policy.max_time does not fit its type"));
+        let endpoint = LimitName { layer: Layer::Declared, field: "idle", per: Per::Model { endpoint: 7, model: 3 } };
+        assert_eq!(
+            duration(u64::MAX, endpoint).err().as_deref(),
+            Some("derived: declared.idle[endpoint=7,model=3] does not fit its type")
+        );
     }
 
     #[test]
