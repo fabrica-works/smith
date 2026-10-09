@@ -629,24 +629,32 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     assert_eq!(batch, 16, "the scripted call batch measured independently of history room");
     assert!(turns.iter().skip(1).all(|turn| turn.usage.cache_read_tokens.unwrap_or(0) > 0));
     assert!(turns.iter().all(|turn| turn.usage.cache_write_tokens.unwrap_or(0) > 0));
-    native_settled(&world, &settings, &roots);
+    native_settled(&world, &settings, &roots, batch + 1);
 }
 
-fn native_settled(world: &World, settings: &Settings, roots: &[Token]) {
+fn native_settled(world: &World, settings: &Settings, roots: &[Token], expected_loads: usize) {
     assert_eq!(world.waiting().len(), 1);
     assert_eq!(world.waiting()[0].1, None);
     assert!(world.answered_at() >= world.waiting()[0].0.saturating_add(settings.waiting));
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.host_terminals().is_empty() && world.delivery_submissions().is_empty());
+    let mut loads = Vec::new();
     let discovery = world
         .boundaries()
         .iter()
-        .map(|(_, boundary)| match boundary {
-            Boundary::Read { at } => (b"read".as_slice(), at.root, at.path.as_ref()),
-            Boundary::Probe { at } => (b"probe".as_slice(), at.root, at.path.as_ref()),
-            Boundary::Io { .. } | Boundary::Check { .. } => panic!("Wait-only native script does no workspace effects"),
+        .filter_map(|(_, boundary)| match boundary {
+            Boundary::Read { at } => Some((b"read".as_slice(), at.root, at.path.as_ref())),
+            Boundary::Probe { at } => Some((b"probe".as_slice(), at.root, at.path.as_ref())),
+            Boundary::Io { op: tools::Op::Load { at, .. } } => {
+                loads.push((at.root, at.path.as_ref()));
+                None
+            }
+            Boundary::Io { .. } | Boundary::Check { .. } => {
+                panic!("native read/wait script changes no workspace bytes")
+            }
         })
         .collect::<Vec<_>>();
+    assert_eq!(loads, vec![(roots[0], b"data.txt".as_slice()); expected_loads]);
     assert_eq!(
         discovery,
         [
@@ -744,7 +752,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             message(Role::User, vec![wait_result()]),
         ]);
         native_accounting(&first, &first_system, &[opening], &[17], 0, true, if index == 0 { Some(0) } else { None });
-        native_settled(&first, &settings, &roots);
+        native_settled(&first, &settings, &roots, 0);
         recorded_wait(&first.turns()[0], false);
         let actual = &first.turns()[0];
         let saved = Transcript {
@@ -777,7 +785,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             true,
             if index == 0 { Some(0) } else { None },
         );
-        native_settled(&restored, &settings, &roots);
+        native_settled(&restored, &settings, &roots, 0);
         recorded_wait(&restored.turns()[0], true);
         assert_eq!(first.turn_metadata()[0].2.output, Some(17));
         assert_eq!(restored.turn_metadata()[0].2.output, Some(11), "new activation charges only its actual completion");
