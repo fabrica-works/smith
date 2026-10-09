@@ -800,7 +800,13 @@ fn memory_seen(out: &mut Queue<Request>) -> MemorySeen {
                             } => {
                                 seen.read = Some(size(content.len()));
                             }
-                            Block::ToolResult { result: smith_domain_session::llm::Returned::NotRun, .. } => {
+                            Block::ToolResult {
+                                result:
+                                    smith_domain_session::llm::Returned::NotRun {
+                                        why: smith_domain_session::llm::NotRun::Stopped,
+                                    },
+                                ..
+                            } => {
                                 seen.not_run += 1;
                             }
                             Block::ToolResult { .. }
@@ -1222,5 +1228,10 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
 }
 
 fn run_call(ticket: u64, effect: Effect) -> Decoded {
-    Decoded::Delegated { source: smith_domain_session::ToolSource::Run, ticket: Token::new(ticket), effect }
+    Decoded::Delegated {
+        descriptor: Token::new(ticket),
+        source: smith_domain_session::ToolSource::Run,
+        ticket: Token::new(ticket),
+        effect,
+    }
 }

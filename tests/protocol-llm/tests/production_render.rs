@@ -113,6 +113,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
     let (live_text, live_error) =
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     let history = llm::Prompt {
+        choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
@@ -143,6 +144,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
 #[test]
 fn written_text_and_mechanical_feedback_keep_their_error_flags() {
     let history = llm::Prompt {
+        choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
@@ -164,7 +166,10 @@ fn written_text_and_mechanical_feedback_keep_their_error_flags() {
                         problem: llm::Problem::Missing { field: b"path".as_slice().into() },
                     },
                 },
-                llm::Block::ToolResult { id: b"not-run".as_slice().into(), result: llm::Returned::NotRun },
+                llm::Block::ToolResult {
+                    id: b"not-run".as_slice().into(),
+                    result: llm::Returned::NotRun { why: llm::NotRun::Stopped },
+                },
                 llm::Block::ToolResult { id: b"withdrawn".as_slice().into(), result: llm::Returned::Withdrawn },
             ]),
         }]),

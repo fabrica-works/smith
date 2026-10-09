@@ -38,8 +38,18 @@ enum Family {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
-    let agent::Prompt { endpoint: _, affinity, model, system, tools, namespace, delegated, messages, max_tokens } =
-        prompt;
+    let agent::Prompt {
+        endpoint: _,
+        affinity,
+        model,
+        system,
+        tools,
+        namespace,
+        delegated,
+        choice: _,
+        messages,
+        max_tokens,
+    } = prompt;
     let mut offered = offer(tools).into_vec();
     for descriptor in &delegated {
         let Ticketed::Tool { name, effect, schema } = tickets.resolve(descriptor.ticket) else {
@@ -162,9 +172,14 @@ fn block(part: provider::Part, tickets: &mut Tickets, opener: u64, served: &[age
         provider::Part::Opaque { bytes } => agent::Block::Opaque { bytes },
         provider::Part::ToolCall { id, name, arguments } => {
             let call = match delegated(&name, served, tickets) {
-                Some((tool, effect)) => {
+                Some((tool, effect, descriptor)) => {
                     let ticket = tickets.issue(opener, Ticketed::Call { tool, arguments: arguments.clone() });
-                    agent::Decoded::Delegated { source: smith_domain_session::ToolSource::Run, ticket, effect }
+                    agent::Decoded::Delegated {
+                        descriptor,
+                        source: smith_domain_session::ToolSource::Run,
+                        ticket,
+                        effect,
+                    }
                 }
                 None => decode(&name, &arguments),
             };
@@ -177,9 +192,9 @@ fn block(part: provider::Part, tickets: &mut Tickets, opener: u64, served: &[age
 /// The tool of `served` named `name`, if the call is to one of them.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-fn delegated(name: &[u8], served: &[agent::Descriptor], tickets: &Tickets) -> Option<(&'static [u8], Effect)> {
+fn delegated(name: &[u8], served: &[agent::Descriptor], tickets: &Tickets) -> Option<(&'static [u8], Effect, Token)> {
     served.iter().find_map(|descriptor| match tickets.resolve(descriptor.ticket) {
-        Ticketed::Tool { name: tool, effect, .. } => (*tool == name).then_some((*tool, *effect)),
+        Ticketed::Tool { name: tool, effect, .. } => (*tool == name).then_some((*tool, *effect, descriptor.ticket)),
         Ticketed::Call { .. } => panic!("a descriptor's ticket names a tool"),
     })
 }
@@ -274,6 +289,11 @@ fn render_with_namespace(result: &agent::Returned, namespace: &Namespace) -> (Bo
         }
         agent::Returned::Invalid { problem } => (format!("malformed call: {problem:?}").into_bytes().into(), true),
         agent::Returned::Withdrawn => (b"withdrawn".as_slice().into(), true),
-        agent::Returned::NotRun => (b"not run: the answer stopped first".as_slice().into(), true),
+        agent::Returned::NotRun { why: agent::NotRun::OutsideChoice } => {
+            (b"not run: outside the narrowed choice".as_slice().into(), true)
+        }
+        agent::Returned::NotRun { why: agent::NotRun::Stopped } => {
+            (b"not run: the answer stopped first".as_slice().into(), true)
+        }
     }
 }

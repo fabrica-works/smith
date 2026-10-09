@@ -336,7 +336,7 @@ impl History {
                 llm::Returned::Withdrawn
                 | llm::Returned::Owned { .. }
                 | llm::Returned::Invalid { .. }
-                | llm::Returned::NotRun,
+                | llm::Returned::NotRun { .. },
             ) => Err("host feedback was rewritten"),
             None => Err("continuation omitted host feedback"),
         }

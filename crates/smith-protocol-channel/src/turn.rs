@@ -154,7 +154,7 @@ fn encode_returned(source: &llm::Returned, limits: &wire::v3::Limits) -> Result<
             limits,
             wire::InvalidParts { problem: encode_problem(problem, limits)? },
         )?),
-        llm::Returned::NotRun => wire::Returned::NotRun,
+        llm::Returned::NotRun { .. } => wire::Returned::NotRun,
         llm::Returned::Text { text, error, replay } => {
             if replay.is_some() {
                 return Err(Error::Transcript(record::Refusal::Unresolved));

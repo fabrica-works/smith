@@ -553,7 +553,7 @@ fn a_yielded_call_tail_becomes_not_run_only_after_the_continue() {
     );
     assert!(
         matches!(&records[1].messages[0].content[0], Block::ToolResult {
-        id, result: Returned::NotRun,
+        id, result: Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped },
     } if id == pending),
         "the actual Continue carries exact NotRun before the waking assistant"
     );

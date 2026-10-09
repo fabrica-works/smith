@@ -126,6 +126,19 @@ impl Peer {
         false
     }
 
+    fn host_descriptor(&self, name: &[u8]) -> Token {
+        for (index, declaration) in self.offered.host_tools.iter().enumerate() {
+            if declaration.name.as_ref() == name {
+                return Token::new(
+                    FIRST
+                        .checked_add(u64::try_from(index).expect("bounded host declarations"))
+                        .expect("bounded descriptor"),
+                );
+            }
+        }
+        unreachable!("decoded host ask was offered")
+    }
+
     fn decoded(&mut self, call: Decoded, limit: u64) -> sllm::Decoded {
         let ask = match call {
             Decoded::Owned { call } => return sllm::Decoded::Owned { call },
@@ -154,12 +167,19 @@ impl Peer {
             Ask::Host { .. } => session::ToolSource::Host,
             Ask::Wait | Ask::Finish { .. } | Ask::Deliver { .. } | Ask::SubAgent { .. } => session::ToolSource::Run,
         };
+        let descriptor = match &ask {
+            Ask::Finish { .. } => FINISH,
+            Ask::Deliver { .. } => DELIVER,
+            Ask::SubAgent { .. } => SUB_AGENT,
+            Ask::Wait => WAIT,
+            Ask::Host { tool, .. } => self.host_descriptor(tool),
+        };
         let effect = translate::effect(&ask);
         let ticket = self.ticket();
         let fresh = self.asks.insert(ticket, ask).expect("checked for room above");
         assert!(fresh.is_none(), "tickets are not reused");
         self.held = held;
-        sllm::Decoded::Delegated { source, ticket: Token::new(ticket), effect }
+        sllm::Decoded::Delegated { source, ticket: Token::new(ticket), descriptor, effect }
     }
 
     /// The ask the session dispatches as `ticket`.
@@ -179,25 +199,34 @@ impl Peer {
     /// The protocol layer's view of the session's `prompt`: every ticket in it
     /// resolved, the answers copied.
     pub(crate) fn prompt(&self, prompt: sllm::Prompt) -> Prompt {
-        let sllm::Prompt { endpoint, affinity, model, system, tools, namespace, delegated, messages, max_tokens } =
-            prompt;
+        let sllm::Prompt {
+            endpoint,
+            affinity,
+            model,
+            system,
+            tools,
+            namespace,
+            delegated,
+            choice,
+            messages,
+            max_tokens,
+        } = prompt;
         let mut served = List::with_capacity(u32::try_from(delegated.len()).expect("bounded declaration inventory"));
         for descriptor in &delegated {
-            let tool = match descriptor.ticket {
-                WAIT => Served::Wait,
-                DELIVER => Served::Deliver,
-                FINISH => Served::Finish,
-                SUB_AGENT => Served::SubAgent,
-                ticket => {
-                    let index = usize::try_from(ticket.raw().checked_sub(FIRST).expect("host descriptor range"))
-                        .expect("bounded host descriptor");
-                    Served::Host(
-                        self.offered.host_tools.get(index).expect("descriptor names admitted declaration").clone(),
-                    )
-                }
-            };
+            let tool = self.descriptor(descriptor.ticket);
             served.push(tool).expect("room for every descriptor");
         }
+        let choice = match choice {
+            sllm::ToolChoice::Auto => llm::ToolChoice::Auto,
+            sllm::ToolChoice::None => llm::ToolChoice::None,
+            sllm::ToolChoice::Only(tickets) => {
+                let mut selected = List::with_capacity(u32::try_from(tickets.len()).expect("bounded choice"));
+                for ticket in tickets {
+                    selected.push(self.descriptor(ticket)).expect("one choice cell per ticket");
+                }
+                llm::ToolChoice::Only(selected.into_boxed())
+            }
+        };
         let mut resolved = List::with_capacity(u32::try_from(messages.len()).expect("a transcript fits its limit"));
         for sllm::Message { role, content } in messages {
             let mut blocks = List::with_capacity(u32::try_from(content.len()).expect("a message fits in memory"));
@@ -215,8 +244,23 @@ impl Peer {
             tools,
             namespace,
             served: served.into_boxed(),
+            choice,
             messages: resolved.into_boxed(),
             max_tokens,
+        }
+    }
+
+    fn descriptor(&self, ticket: Token) -> Served {
+        match ticket {
+            WAIT => Served::Wait,
+            DELIVER => Served::Deliver,
+            FINISH => Served::Finish,
+            SUB_AGENT => Served::SubAgent,
+            ticket => {
+                let index = usize::try_from(ticket.raw().checked_sub(FIRST).expect("host descriptor range"))
+                    .expect("bounded host descriptor");
+                Served::Host(self.offered.host_tools.get(index).expect("descriptor names admitted declaration").clone())
+            }
         }
     }
 
@@ -243,7 +287,7 @@ impl Peer {
                 let result = match result {
                     sllm::Returned::Owned { outcome } => Returned::Owned { outcome },
                     sllm::Returned::Invalid { problem } => Returned::Invalid { problem },
-                    sllm::Returned::NotRun => Returned::NotRun,
+                    sllm::Returned::NotRun { why } => Returned::NotRun { why },
                     sllm::Returned::Text { text, error, replay } => Returned::Text { text, error, replay },
                     sllm::Returned::Withdrawn => Returned::Withdrawn,
                 };

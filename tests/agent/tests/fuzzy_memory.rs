@@ -351,7 +351,7 @@ impl Driver {
                         | smith_domain::llm::Returned::Served { .. }
                         | smith_domain::llm::Returned::Owned { .. }
                         | smith_domain::llm::Returned::Withdrawn
-                        | smith_domain::llm::Returned::NotRun => {}
+                        | smith_domain::llm::Returned::NotRun { .. } => {}
                     }
                 }
             }

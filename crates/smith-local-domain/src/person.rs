@@ -101,7 +101,7 @@ fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
         session::llm::Returned::Text { error: false, .. } => b"Tool finished\n",
         session::llm::Returned::Text { error: true, .. }
         | session::llm::Returned::Invalid { .. }
-        | session::llm::Returned::NotRun
+        | session::llm::Returned::NotRun { .. }
         | session::llm::Returned::Withdrawn => b"Tool failed\n",
     }
 }

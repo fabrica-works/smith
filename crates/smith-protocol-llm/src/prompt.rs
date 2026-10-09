@@ -74,6 +74,7 @@ fn translate(
         tools: _,
         namespace,
         served,
+        choice,
         messages,
         max_tokens,
     } = input;
@@ -95,11 +96,25 @@ fn translate(
             .push(shared::Tool { name: descriptor.name.clone(), description: descriptor.description.clone(), schema })
             .or(Err(Error::Limit))?;
     }
+    let shared_choice = match &choice {
+        llm::ToolChoice::Auto => shared::ToolChoice::Auto,
+        llm::ToolChoice::None => shared::ToolChoice::None,
+        llm::ToolChoice::Only(selected) => {
+            let mut names = List::with_capacity(u32::try_from(selected.len()).or(Err(Error::Limit))?);
+            for descriptor in selected {
+                if !served.contains(descriptor) {
+                    return Err(Error::Invalid);
+                }
+                names.push(bytes::copy_of(served_name(descriptor))).or(Err(Error::Limit))?;
+            }
+            shared::ToolChoice::Only(names.into_boxed())
+        }
+    };
     let mut translated = List::with_capacity(limits.client.dialect.parts);
     for message in messages {
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
-            let block = translate_block(block, &namespace, limits)?;
+            let block = translate_block(block, &namespace, &choice, limits)?;
             content.push(block).expect("room for each admitted source block");
         }
         let role = match message.role {
@@ -113,7 +128,7 @@ fn translate(
             model,
             instructions: system,
             tools: offered.into_boxed(),
-            choice: shared::ToolChoice::Auto,
+            choice: shared_choice,
             messages: translated.into_boxed(),
             reasoning_effort: None,
             affinity: Some(shared::Affinity { key: affinity.key, thread: affinity.thread }),
@@ -121,6 +136,47 @@ fn translate(
         },
         served,
     ))
+}
+
+fn served_name(descriptor: &llm::Served) -> &[u8] {
+    match descriptor {
+        llm::Served::Wait => b"wait",
+        llm::Served::Finish => b"finish",
+        llm::Served::Deliver => b"deliver",
+        llm::Served::SubAgent => b"sub_agent",
+        llm::Served::Host(tool) => &tool.name,
+    }
+}
+
+fn outside_choice(choice: &llm::ToolChoice, maximum: u32) -> Result<Box<[u8]>, Error> {
+    let prefix = b"not run: allowed calls now: ";
+    let mut length = prefix.len();
+    match choice {
+        llm::ToolChoice::Only(selected) => {
+            for descriptor in selected {
+                length = length.checked_add(served_name(descriptor).len()).ok_or(Error::Limit)?;
+                length = length.checked_add(1).ok_or(Error::Limit)?;
+            }
+        }
+        llm::ToolChoice::None => length = length.checked_add(4).ok_or(Error::Limit)?,
+        llm::ToolChoice::Auto => return Err(Error::Invalid),
+    }
+    if u64::try_from(length).or(Err(Error::Limit))? > u64::from(maximum) {
+        return Err(Error::Limit);
+    }
+    let mut writer = skein_lib::Writer::new(length);
+    writer.put(prefix).or(Err(Error::Limit))?;
+    match choice {
+        llm::ToolChoice::Only(selected) => {
+            for descriptor in selected {
+                writer.put(served_name(descriptor)).or(Err(Error::Limit))?;
+                writer.put(b" ").or(Err(Error::Limit))?;
+            }
+        }
+        llm::ToolChoice::None => writer.put(b"none").or(Err(Error::Limit))?,
+        llm::ToolChoice::Auto => unreachable!("validated above"),
+    }
+    Ok(writer.finish())
 }
 
 fn inventory(input: &llm::Prompt, application: &[ToolSchema], limits: &Limits) -> Result<(), Error> {
@@ -295,7 +351,12 @@ fn history_admitted(messages: &[llm::Message], limits: &Limits) -> Result<(), Er
     Ok(())
 }
 
-fn translate_block(block: llm::Block, namespace: &tools::Namespace, limits: &Limits) -> Result<shared::Block, Error> {
+fn translate_block(
+    block: llm::Block,
+    namespace: &tools::Namespace,
+    choice: &llm::ToolChoice,
+    limits: &Limits,
+) -> Result<shared::Block, Error> {
     match block {
         llm::Block::Text { text, replay } => Ok(shared::Block::Text { text, replay: replay_value(replay, limits)? }),
         llm::Block::Refusal { text, replay } => {
@@ -312,7 +373,7 @@ fn translate_block(block: llm::Block, namespace: &tools::Namespace, limits: &Lim
             Ok(shared::Block::ToolCall { id, name, arguments: input, replay: replay_value(replay, limits)? })
         }
         llm::Block::ToolResult { id, result } => {
-            let (text, error) = result_text(result, namespace, limits)?;
+            let (text, error) = result_text(result, namespace, choice, limits)?;
             Ok(shared::Block::ToolResult { id, text, is_error: error })
         }
     }
@@ -321,6 +382,7 @@ fn translate_block(block: llm::Block, namespace: &tools::Namespace, limits: &Lim
 fn result_text(
     result: llm::Returned,
     namespace: &tools::Namespace,
+    choice: &llm::ToolChoice,
     limits: &Limits,
 ) -> Result<(Box<[u8]>, bool), Error> {
     match result {
@@ -329,7 +391,10 @@ fn result_text(
             None => Ok((crate::render::cut_text(text, limits.rendered_result), error)),
         },
         llm::Returned::Withdrawn => Ok((bytes::copy_of(b"withdrawn"), true)),
-        llm::Returned::NotRun => Ok((bytes::copy_of(b"not run"), true)),
+        llm::Returned::NotRun { why } => match why {
+            llm::NotRun::Stopped => Ok((bytes::copy_of(b"not run"), true)),
+            llm::NotRun::OutsideChoice => Ok((outside_choice(choice, limits.rendered_result)?, true)),
+        },
         llm::Returned::Invalid { problem } => {
             Ok((crate::failure::problem(problem, limits.client.dialect.string_bytes)?, true))
         }

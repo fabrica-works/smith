@@ -778,7 +778,7 @@ fn append_result(bytes: &mut List<u8>, result: &domain::llm::Returned) -> bool {
         domain::llm::Returned::Owned { outcome: _ } => append(bytes, b":owned"),
         domain::llm::Returned::Served { returned: _, error: _ } => append(bytes, b":served"),
         domain::llm::Returned::Invalid { problem: _ } => append(bytes, b":invalid"),
-        domain::llm::Returned::NotRun => append(bytes, b":not-run"),
+        domain::llm::Returned::NotRun { .. } => append(bytes, b":not-run"),
     }
 }
 
@@ -2292,6 +2292,7 @@ mod tests {
     #[test]
     fn typed_prompt_capture_preserves_text_and_tool_input_without_a_credential() {
         let prompt = domain::llm::Prompt {
+            choice: smith_domain::llm::ToolChoice::Auto,
             namespace: tools::Namespace::One,
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             asker: domain::llm::Asker::Main,

@@ -42,8 +42,10 @@ fn transcript_refusals_precede_tools_and_completions() {
         (
             record::Refusal::Malformed,
             Box::new(|t| {
-                t.turns[0].messages[2].content[0] =
-                    llm::Block::ToolResult { id: b"unmatched".as_slice().into(), result: llm::Returned::NotRun }
+                t.turns[0].messages[2].content[0] = llm::Block::ToolResult {
+                    id: b"unmatched".as_slice().into(),
+                    result: llm::Returned::NotRun { why: llm::NotRun::Stopped },
+                }
             }),
         ),
         (record::Refusal::Unresolved, Box::new(|t| t.turns[0].messages[1].content = recorded::called())),
@@ -277,7 +279,10 @@ fn yielded_historical_calls_resume_with_concrete_not_run_results() {
     resumed.open(opening(Some(transcript(&world)), 100));
     assert_eq!(
         resumed.prompts[0].messages[2].content[0],
-        llm::Block::ToolResult { id: b"provider-call".as_slice().into(), result: llm::Returned::NotRun }
+        llm::Block::ToolResult {
+            id: b"provider-call".as_slice().into(),
+            result: llm::Returned::NotRun { why: llm::NotRun::Stopped }
+        }
     );
     resumed.close();
 }
@@ -319,7 +324,10 @@ fn closing_a_resting_batch_keeps_its_result_and_marks_only_unstarted_calls() {
     ));
     assert_eq!(
         results[1],
-        llm::Block::ToolResult { id: b"provider-call".as_slice().into(), result: llm::Returned::NotRun }
+        llm::Block::ToolResult {
+            id: b"provider-call".as_slice().into(),
+            result: llm::Returned::NotRun { why: llm::NotRun::Stopped }
+        }
     );
 }
 
@@ -526,7 +534,10 @@ fn cap_filled_provider_credit_preserves_replay_completion_that_wins_cancel() {
     assert_eq!(world.turns[0].messages[1].content.as_ref(), expected.as_slice());
     assert_eq!(
         world.turns[0].messages[2].content.as_ref(),
-        &[llm::Block::ToolResult { id: b"provider-call".as_slice().into(), result: llm::Returned::NotRun }]
+        &[llm::Block::ToolResult {
+            id: b"provider-call".as_slice().into(),
+            result: llm::Returned::NotRun { why: llm::NotRun::Stopped }
+        }]
     );
     world.close();
 }
@@ -572,6 +583,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
                 name: b"served".as_slice().into(),
                 input: b"{}".as_slice().into(),
                 call: llm::Decoded::Delegated {
+                    descriptor: Token::new(19),
                     source: smith_domain_session::ToolSource::Run,
                     ticket: Token::new(19),
                     effect: Effect::Read,
@@ -612,7 +624,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
         let turn = world.turns.last().expect("actual final turn survives full history");
         for (index, id) in [b"first".as_slice(), b"second".as_slice()].into_iter().enumerate() {
             let result = if short {
-                llm::Returned::NotRun
+                llm::Returned::NotRun { why: llm::NotRun::Stopped }
             } else {
                 llm::Returned::Text {
                     text: vec![if index == 0 { b'a' } else { b'b' }; 2048].into(),
@@ -721,7 +733,10 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
                 assert_eq!(world.end, Some(session::End::TranscriptFull));
                 assert_eq!(
                     world.turns[0].messages[2].content[0],
-                    llm::Block::ToolResult { id: id.into(), result: llm::Returned::NotRun }
+                    llm::Block::ToolResult {
+                        id: id.into(),
+                        result: llm::Returned::NotRun { why: llm::NotRun::Stopped }
+                    }
                 );
             } else {
                 assert_eq!(world.operations.len(), 1);
@@ -1049,6 +1064,7 @@ fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
             input: b"{}".as_slice().into(),
             replay: None,
             call: llm::Decoded::Delegated {
+                descriptor: Token::new(19),
                 source: session::ToolSource::Run,
                 ticket: Token::new(19),
                 effect: Effect::Write,
@@ -1081,7 +1097,7 @@ fn a_parked_wait_preserves_other_results_and_resumes_only_the_missing_result() {
         assert!(
             tail.content
                 .iter()
-                .any(|block| matches!(block, llm::Block::ToolResult { id, result: llm::Returned::NotRun }
+                .any(|block| matches!(block, llm::Block::ToolResult { id, result: llm::Returned::NotRun { why: llm::NotRun::Stopped } }
             if id.as_ref() == b"later"))
         );
         assert!(
@@ -1122,6 +1138,7 @@ fn a_generic_yield_with_two_unstarted_wait_calls_restores_both_as_not_run() {
         name: b"wait".as_slice().into(),
         input: b"{}".as_slice().into(),
         call: llm::Decoded::Delegated {
+            descriptor: Token::new(991),
             source: session::ToolSource::Run,
             ticket: Token::new(991),
             effect: smith_domain_tools::Effect::Write,
@@ -1135,8 +1152,8 @@ fn a_generic_yield_with_two_unstarted_wait_calls_restores_both_as_not_run() {
     restored.open(opening(Some(transcript(&first)), 100));
     assert!(restored.end.is_none());
     assert!(matches!(restored.prompts[0].messages.last().expect("unstarted calls supplied").content.as_ref(),
-        [llm::Block::ToolResult { id: one, result: llm::Returned::NotRun },
-         llm::Block::ToolResult { id: two, result: llm::Returned::NotRun }, llm::Block::Text { text, .. }]
+        [llm::Block::ToolResult { id: one, result: llm::Returned::NotRun { why: llm::NotRun::Stopped } },
+         llm::Block::ToolResult { id: two, result: llm::Returned::NotRun { why: llm::NotRun::Stopped } }, llm::Block::Text { text, .. }]
         if one.as_ref() == b"one" && two.as_ref() == b"two" && text.as_ref() == b"wake"));
     restored.close();
 }

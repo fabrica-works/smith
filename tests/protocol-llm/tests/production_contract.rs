@@ -117,6 +117,7 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
     let rules = contract();
     for configuration in &wire::configurations() {
         let prompt = llm::Prompt {
+            choice: smith_domain::llm::ToolChoice::Auto,
             namespace: smith_domain::tools::Namespace::One,
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             asker: llm::Asker::Main,

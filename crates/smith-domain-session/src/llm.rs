@@ -99,6 +99,8 @@ pub enum Decoded {
         source: crate::ToolSource,
         /// Opener-issued opaque name for a tool or delegated call.
         ticket: Token,
+        /// Descriptor ticket identifying the offered tool, independent of this call.
+        descriptor: Token,
         /// Whether this delegated call may write, used to serialize writers.
         effect: tools::Effect,
     },
@@ -131,7 +133,7 @@ pub enum Returned {
     },
     /// Nothing ran for the call: the LLM stopped for another reason than
     /// calling tools, its answer cut short or its turn ended.
-    NotRun,
+    NotRun { why: NotRun },
     /// An opener's concrete rendered answer, without a local ticket.
     Text {
         /// Opaque opener-provided result bytes, preserved in concrete history.
@@ -143,6 +145,26 @@ pub enum Returned {
     },
     /// A delegated call whose withdrawal won its terminal race.
     Withdrawn,
+}
+
+/// Why a concrete tool call ran nothing (domain/session.md, section 5).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum NotRun {
+    /// The provider stopped without asking for execution.
+    Stopped,
+    /// The call was outside the completion's retained choice.
+    OutsideChoice,
+}
+
+/// The offered descriptors this completion may call; definitions stay unchanged.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ToolChoice {
+    /// Any offered tool, or none.
+    Auto,
+    /// No tool may run.
+    None,
+    /// Only the opener descriptors named by these tickets may run.
+    Only(Box<[Token]>),
 }
 
 /// A tool the opener serves, which the prompt offers the LLM: `ticket` names
@@ -226,6 +248,7 @@ pub struct Prompt {
     pub namespace: tools::Namespace,
     /// Opener-owned tool descriptors; tickets are resolved only by the opener.
     pub delegated: Box<[Descriptor]>,
+    pub choice: ToolChoice,
     /// The conversation so far, oldest first, ending with a user message.
     pub messages: Box<[Message]>,
     /// The most tokens the answer may take.
@@ -251,6 +274,14 @@ impl Prompt {
                 u64::try_from(size_of::<Message>()).ok()?.checked_mul(u64::try_from(self.messages.len()).ok()?)?,
             )?;
         bytes = bytes.checked_add(self.namespace.owned_bytes()?)?;
+        match &self.choice {
+            ToolChoice::Auto | ToolChoice::None => {}
+            ToolChoice::Only(tickets) => {
+                bytes = bytes.checked_add(
+                    u64::try_from(tickets.len()).ok()?.checked_mul(u64::try_from(size_of::<Token>()).ok()?)?,
+                )?;
+            }
+        }
         for message in &self.messages {
             bytes = bytes.checked_add(crate::session::content_cost(&message.content)?)?;
         }

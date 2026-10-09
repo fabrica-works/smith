@@ -190,6 +190,7 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
 fn described_prompt() -> smith_domain::llm::Prompt {
     use smith_domain::llm;
     llm::Prompt {
+        choice: llm::ToolChoice::Auto,
         namespace: tools::Namespace::One,
         asker: llm::Asker::Main,
         affinity: llm::Affinity { key: [0; 16], thread: 0 },

@@ -225,7 +225,7 @@ impl Meeting {
                                 text, error: false, replay: None
                             }) if text.as_ref() == b"Messages arrived. Read them before continuing.")
                                     || (result.is_none() && self.waiting.is_some())
-                                    || (self.cancelled && matches!(result, Some(session::llm::Returned::NotRun | session::llm::Returned::Withdrawn)))
+                                    || (self.cancelled && matches!(result, Some(session::llm::Returned::NotRun { .. } | session::llm::Returned::Withdrawn)))
                                     || (self.cancelled && matches!(result, Some(session::llm::Returned::Text { text, error: true, .. }) if text.as_ref() == b"cancelled")),
                                 format!("wait either settles with admitted work or remains withheld through parking: {result:?}, cancelled={}", self.cancelled),
                             );

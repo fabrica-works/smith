@@ -1253,8 +1253,14 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
     assert_eq!(
         refused_turn.messages.last().expect("results").content.as_ref(),
         &[
-            session::llm::Block::ToolResult { id: bytes(b"a1"), result: session::llm::Returned::NotRun },
-            session::llm::Block::ToolResult { id: bytes(b"a2"), result: session::llm::Returned::NotRun },
+            session::llm::Block::ToolResult {
+                id: bytes(b"a1"),
+                result: session::llm::Returned::NotRun { why: session::llm::NotRun::Stopped }
+            },
+            session::llm::Block::ToolResult {
+                id: bytes(b"a2"),
+                result: session::llm::Returned::NotRun { why: session::llm::NotRun::Stopped }
+            },
         ]
     );
 
@@ -1317,7 +1323,11 @@ fn the_asks_of_an_answer_that_yields_are_forgotten() {
     let [_, _, Message { role: Role::User, content }] = &*prompt.messages else {
         panic!("expected the nudge after the call that did not run");
     };
-    let [Block::ToolResult { id: _, result: Returned::NotRun }, Block::Text { .. }] = &**content else {
+    let [
+        Block::ToolResult { id: _, result: Returned::NotRun { why: crate::llm::NotRun::Stopped } },
+        Block::Text { .. },
+    ] = &**content
+    else {
         panic!("expected the call not run, then the nudge, got {content:?}");
     };
 }

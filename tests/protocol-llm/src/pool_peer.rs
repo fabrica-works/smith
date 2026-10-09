@@ -131,6 +131,7 @@ impl Peer {
                 owner: Token::new(owner),
                 grant: GrantName { account: 0, generation: 1 },
                 prompt: llm::Prompt {
+                    choice: smith_domain::llm::ToolChoice::Auto,
                     namespace: smith_domain::tools::Namespace::One,
                     affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
                     asker: llm::Asker::Main,

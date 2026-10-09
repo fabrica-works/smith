@@ -79,7 +79,7 @@ fn part(block: agent::Block) -> provider::Part {
         agent::Block::ToolResult { id, result } => {
             let error = match &result {
                 agent::Returned::Text { error, .. } | agent::Returned::Served { error, .. } => *error,
-                agent::Returned::Withdrawn | agent::Returned::Invalid { .. } | agent::Returned::NotRun => true,
+                agent::Returned::Withdrawn | agent::Returned::Invalid { .. } | agent::Returned::NotRun { .. } => true,
                 agent::Returned::Owned { outcome } => !matches!(
                     outcome,
                     tools::Outcome::Read { .. }
@@ -101,7 +101,7 @@ fn part(block: agent::Block) -> provider::Part {
                 agent::Returned::Owned { .. }
                 | agent::Returned::Served { .. }
                 | agent::Returned::Invalid { .. }
-                | agent::Returned::NotRun => format!("{result:?}").into_bytes().into(),
+                | agent::Returned::NotRun { .. } => format!("{result:?}").into_bytes().into(),
             };
             provider::Part::ToolOutput { id, output, is_error: error }
         }

@@ -167,6 +167,7 @@ struct Conversation {
     tools: Grants,
     namespace: tools::Namespace,
     delegated: Box<[Descriptor]>,
+    choice: crate::llm::ToolChoice,
     output: u32,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
@@ -631,6 +632,88 @@ pub(crate) fn budget_denied(
 /// require their terminal.
 pub(crate) fn unsent_closed(domain: &mut Domain, env: &Env<Limits>, owner: Token, out: &mut Queue<Request>) {
     unsent_finished(domain, env, owner, End::Closed, out);
+}
+
+/// Replace a current unsent Complete with one carrying the final-turn note.
+pub(crate) fn narrowed(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    owner: Token,
+    note: Box<[u8]>,
+    choice: crate::llm::ToolChoice,
+    out: &mut Queue<Request>,
+) {
+    let Some(id) = addressed(&domain.sessions, owner) else {
+        return;
+    };
+    let session = domain.sessions.get_mut(id).expect("addressed above");
+    match session.state {
+        State::Calling { .. } => {}
+        State::Backoff { .. }
+        | State::Tooling { .. }
+        | State::Resting { .. }
+        | State::Yielded
+        | State::Closing { .. }
+        | State::Closed => return,
+    }
+    let mark = out.len();
+    let conversation = &mut session.conversation;
+    release_provider(conversation);
+    if !valid_choice(&choice, &conversation.delegated) {
+        session.state = finish(End::Invalid);
+        conclude(domain, env, id, out, mark);
+        return;
+    }
+    let old = choice_bytes(&conversation.choice);
+    let new = choice_bytes(&choice);
+    conversation.bytes = conversation.bytes.checked_sub(old).expect("retained choice counted");
+    conversation.choice = crate::llm::ToolChoice::Auto;
+    let cost = match new.checked_add(u64::try_from(size_of::<Block>()).expect("block cell fits")) {
+        Some(cost) => cost.checked_add(u64::try_from(note.len()).expect("note length fits")),
+        None => None,
+    };
+    session.state = if conversation.transcript.room() == 0 || !charge(conversation, cost, &env.limits) {
+        finish(End::TranscriptFull)
+    } else {
+        conversation.choice = choice;
+        let content = Box::new([Block::Text { text: note, replay: None }]);
+        conversation.transcript.push(Message { role: Role::User, content }).expect("note slot checked");
+        call(conversation, id, 0, env, out)
+    };
+    conclude(domain, env, id, out, mark);
+}
+
+fn valid_choice(choice: &crate::llm::ToolChoice, offered: &[Descriptor]) -> bool {
+    match choice {
+        crate::llm::ToolChoice::Auto | crate::llm::ToolChoice::None => true,
+        crate::llm::ToolChoice::Only(tickets) => {
+            if tickets.len() > offered.len() {
+                return false;
+            }
+            for (index, ticket) in tickets.iter().enumerate() {
+                let mut present = false;
+                for descriptor in offered {
+                    if descriptor.ticket == *ticket {
+                        present = true;
+                    }
+                }
+                if !present || tickets.get(..index).expect("enumerated prefix").contains(ticket) {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+}
+
+fn choice_bytes(choice: &crate::llm::ToolChoice) -> u64 {
+    match choice {
+        crate::llm::ToolChoice::Auto | crate::llm::ToolChoice::None => 0,
+        crate::llm::ToolChoice::Only(tickets) => u64::try_from(tickets.len())
+            .expect("bounded descriptors")
+            .checked_mul(u64::try_from(size_of::<Token>()).expect("token cell fits"))
+            .expect("admitted descriptor bound fits"),
+    }
 }
 
 /// Settles a current reserved but unpublished provider request. Other states
@@ -1258,7 +1341,10 @@ fn answered_late(
         for block in &message.content {
             match block {
                 Block::ToolCall { id, .. } => results
-                    .push(Block::ToolResult { id: id.clone(), result: Returned::NotRun })
+                    .push(Block::ToolResult {
+                        id: id.clone(),
+                        result: Returned::NotRun { why: crate::llm::NotRun::Stopped },
+                    })
                     .expect("reserved skeleton"),
                 Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => {}
             }
@@ -1331,9 +1417,11 @@ fn advance(
     let mut started: u32 = 0;
     let mut next = end;
     for index in tools.next..end {
-        let message = conversation.transcript.last().expect("the assistant message is last while tooling");
-        let block = message.content.get(usize::try_from(index).expect("a u32 fits in a usize"));
-        match block.expect("within the message") {
+        let block = current_block(conversation, index);
+        if answer_unchosen(conversation, block, index, &mut tools.slots) {
+            continue;
+        }
+        match block {
             Block::ToolCall { id: provider_id, name, input, call: Decoded::Owned { call }, .. } => {
                 let effect = tools::effect(call);
                 if !joins(batch, effect, started, env.limits.parallel_tools) {
@@ -1378,7 +1466,7 @@ fn advance(
                 id: provider_id,
                 name,
                 input,
-                call: Decoded::Delegated { source, ticket, effect },
+                call: Decoded::Delegated { source, ticket, effect, descriptor: _ },
                 ..
             } => {
                 if !joins(batch, *effect, started, env.limits.parallel_tools) {
@@ -1391,10 +1479,7 @@ fn advance(
                 // The opener runs the race, and the session waits for it as
                 // long as it lives.
                 let (opener, call, deadline) = (conversation.opener, *ticket, conversation.expires);
-                let sequence = {
-                    let Recording { sequence, .. } = conversation.recording;
-                    sequence.checked_add(1).expect("checked before tool effects")
-                };
+                let sequence = next_sequence(conversation);
                 let origin = crate::record::Origin { sequence, position: index };
                 out.push(Request::Delegate { owner: run.token(), opener, call, deadline, origin });
                 tools.slots.push(Slot::Running { run }).expect("a slot for every call");
@@ -1535,11 +1620,12 @@ fn unrun(
                 let mut result = if waiting && name.as_ref() == b"wait" {
                     Returned::Text { text: waking.take().expect("one withheld wait"), error: false, replay: None }
                 } else {
-                    Returned::NotRun
+                    Returned::NotRun { why: crate::llm::NotRun::Stopped }
                 };
                 for answer in answered.iter_mut() {
                     if usize::try_from(answer.origin.position).expect("validated position") == position {
-                        result = mem::replace(&mut answer.result, Returned::NotRun);
+                        result =
+                            mem::replace(&mut answer.result, Returned::NotRun { why: crate::llm::NotRun::Stopped });
                     }
                 }
                 let result = Block::ToolResult { id: id.clone(), result };
@@ -1790,6 +1876,7 @@ fn admit(
         tools: spec.authority.grants,
         namespace: spec.authority.namespace(),
         delegated: spec.delegated,
+        choice: crate::llm::ToolChoice::Auto,
         output: spec.output,
         transcript,
         bytes,
@@ -1817,6 +1904,41 @@ fn affordable(budget: &Budget, most: &Budget) -> bool {
         && budget.cache_read <= most.cache_read
         && budget.cache_write <= most.cache_write
         && budget.time <= most.time
+}
+
+fn next_sequence(conversation: &Conversation) -> u32 {
+    conversation.recording.sequence.checked_add(1).expect("checked before tool effects")
+}
+
+fn current_block(conversation: &Conversation, index: u32) -> &Block {
+    let message = conversation.transcript.last().expect("the assistant message is last while tooling");
+    message.content.get(usize::try_from(index).expect("u32 fits usize")).expect("within the assistant message")
+}
+
+fn answer_unchosen(conversation: &Conversation, block: &Block, index: u32, slots: &mut List<Slot>) -> bool {
+    if chosen(&conversation.choice, block) {
+        return false;
+    }
+    let result = Block::ToolResult {
+        id: call_id(conversation, index),
+        result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice },
+    };
+    slots.push(Slot::Done { result }).expect("one slot per call");
+    true
+}
+
+fn chosen(choice: &crate::llm::ToolChoice, block: &Block) -> bool {
+    match block {
+        Block::ToolCall { call, .. } => match choice {
+            crate::llm::ToolChoice::Auto => true,
+            crate::llm::ToolChoice::None => false,
+            crate::llm::ToolChoice::Only(tickets) => match call {
+                Decoded::Delegated { descriptor, .. } => tickets.contains(descriptor),
+                Decoded::Owned { .. } | Decoded::Invalid { .. } | Decoded::Historical => false,
+            },
+        },
+        Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => true,
+    }
 }
 
 /// The first dimension of the budget that keeps the session from starting
@@ -1867,6 +1989,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
         tools: conversation.tools,
         namespace: conversation.namespace.clone(),
         delegated: conversation.delegated.clone(),
+        choice: conversation.choice.clone(),
         messages: conversation.transcript.to_boxed(),
         max_tokens,
     };
@@ -2107,6 +2230,9 @@ fn batch_credit(conversation: &Conversation, next: u32, limits: &Limits) -> Opti
     let mut started = 0_u32;
     let mut credit = 0_u64;
     for block in message.content.get(start..).expect("next belongs to assistant") {
+        if !chosen(&conversation.choice, block) {
+            continue;
+        }
         let (effect, wanted) = match block {
             Block::ToolCall { call: Decoded::Owned { call }, .. } => {
                 (tools::effect(call), tools::result_worst_case(call, &limits.tools)?)
@@ -2200,7 +2326,7 @@ fn payload_cost(block: &Block) -> Option<u64> {
             // A delegated call is the opener's to hold.
             let decoded = match call {
                 Decoded::Owned { call } => call_cost(call)?,
-                Decoded::Delegated { source: _, ticket: _, effect: _ } | Decoded::Historical => 0,
+                Decoded::Delegated { .. } | Decoded::Historical => 0,
                 Decoded::Invalid { problem } => problem_cost(problem)?,
             };
             len(id)?
@@ -2226,7 +2352,7 @@ fn returned_cost(result: &Returned) -> Option<u64> {
     match result {
         Returned::Owned { outcome } => outcome_cost(outcome),
         Returned::Invalid { problem } => problem_cost(problem),
-        Returned::NotRun | Returned::Withdrawn => Some(0),
+        Returned::NotRun { .. } | Returned::Withdrawn => Some(0),
         Returned::Text { text, replay, .. } => len(text)?.checked_add(replay_cost(replay.as_ref())?),
     }
 }
@@ -2561,7 +2687,7 @@ fn validate_answers(
         }
         match answer.result {
             Returned::Text { .. } => {}
-            Returned::Owned { .. } | Returned::Invalid { .. } | Returned::NotRun | Returned::Withdrawn => {
+            Returned::Owned { .. } | Returned::Invalid { .. } | Returned::NotRun { .. } | Returned::Withdrawn => {
                 return Err(Refusal::Malformed);
             }
         }
@@ -2716,7 +2842,7 @@ fn unrun_cost(content: &[Block], text: &[u8], answered: &[crate::record::Answere
                             Returned::Text { text, .. } => cost = cost.checked_add(len(text)?)?,
                             Returned::Owned { .. }
                             | Returned::Invalid { .. }
-                            | Returned::NotRun
+                            | Returned::NotRun { .. }
                             | Returned::Withdrawn => {
                                 return None;
                             }
@@ -2866,7 +2992,7 @@ pub(crate) fn delegate_ended(
             FactKind::DelegateAnswered { opener: conversation.opener, bytes: count(text.len()).into(), error: *error }
         }
         Returned::Withdrawn => FactKind::DelegateCancelled { opener: conversation.opener },
-        Returned::Owned { .. } | Returned::Invalid { .. } | Returned::NotRun => {
+        Returned::Owned { .. } | Returned::Invalid { .. } | Returned::NotRun { .. } => {
             unreachable!("terminals carry a concrete answer or withdrawal")
         }
     };
@@ -2987,7 +3113,10 @@ fn finish_closing(conversation: &mut Conversation) {
         match block {
             Block::ToolCall { id, .. } => {
                 results
-                    .push(Block::ToolResult { id: id.clone(), result: Returned::NotRun })
+                    .push(Block::ToolResult {
+                        id: id.clone(),
+                        result: Returned::NotRun { why: crate::llm::NotRun::Stopped },
+                    })
                     .expect("one result per call");
             }
             Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => {}

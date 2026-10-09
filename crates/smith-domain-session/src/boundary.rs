@@ -125,6 +125,9 @@ pub enum Event {
         /// Session-issued pending completion owner, without a provider lease.
         owner: Token,
     },
+
+    /// Settles an unsent Complete, appends the note and asks with this choice from now on.
+    Narrowed { owner: Token, note: Box<[u8]>, choice: crate::llm::ToolChoice },
     /// Terminal for `Complete`: the call produced no message.
     Failed {
         owner: Token,

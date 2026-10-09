@@ -17,7 +17,9 @@ use alloc::boxed::Box;
 use smith_domain_run as run;
 use smith_domain_tools as tools;
 
-pub use smith_domain_session::llm::{Affinity, Endpoint, Evidence, Failure, Phase, Problem, Replay, Role, Stop, Usage};
+pub use smith_domain_session::llm::{
+    Affinity, Endpoint, Evidence, Failure, NotRun, Phase, Problem, Replay, Role, Stop, Usage,
+};
 
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.
@@ -38,6 +40,7 @@ pub struct Prompt {
     pub namespace: tools::Namespace,
     /// Typed run tools offered for this completion; only the main conversation offers finish.
     pub served: Box<[Served]>,
+    pub choice: ToolChoice,
     /// The conversation so far, oldest first, ending with a user message.
     pub messages: Box<[Message]>,
     /// The most tokens the answer may take.
@@ -53,6 +56,17 @@ pub enum Asker {
 
     /// A sub-agent, whose nesting requests are refused.
     Child,
+}
+
+/// Which of the unchanged offered tools may run in this completion.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ToolChoice {
+    /// Any offered tool.
+    Auto,
+    /// No tools.
+    None,
+    /// Only these resolved opener descriptors.
+    Only(Box<[Served]>),
 }
 
 /// A tool the run serves, which a prompt offers the LLM, and which the
@@ -170,7 +184,7 @@ pub enum Returned {
     },
     /// Nothing ran for the call: the LLM stopped for another reason than
     /// calling tools, its answer cut short or its turn ended.
-    NotRun,
+    NotRun { why: NotRun },
 }
 
 /// The next assistant message.

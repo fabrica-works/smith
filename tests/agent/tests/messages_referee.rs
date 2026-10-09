@@ -149,7 +149,9 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
                     .expect("actual settled wait");
                 match block {
                     smith_domain::session::llm::Block::ToolResult { result, .. } => {
-                        *result = smith_domain::session::llm::Returned::NotRun;
+                        *result = smith_domain::session::llm::Returned::NotRun {
+                            why: smith_domain::session::llm::NotRun::Stopped,
+                        };
                     }
                     smith_domain::session::llm::Block::Text { .. }
                     | smith_domain::session::llm::Block::Refusal { .. }
@@ -260,7 +262,9 @@ fn a_late_wait_after_actual_parent_cancel_has_not_run_and_requires_that_observat
                 matches!(
                     block,
                     smith_domain::session::llm::Block::ToolResult {
-                        result: smith_domain::session::llm::Returned::NotRun,
+                        result: smith_domain::session::llm::Returned::NotRun {
+                            why: smith_domain::session::llm::NotRun::Stopped
+                        },
                         ..
                     }
                 )

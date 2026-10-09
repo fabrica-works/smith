@@ -405,7 +405,12 @@ const FINISH: Descriptor = Descriptor { ticket: Token::new(7), effect: Effect::W
 
 /// The LLM's call `id` to a tool the opener serves, kept under `ticket`.
 fn delegated(id: &[u8], ticket: u64, effect: Effect) -> Block {
-    let call = Decoded::Delegated { source: crate::ToolSource::Run, ticket: Token::new(ticket), effect };
+    let call = Decoded::Delegated {
+        descriptor: Token::new(ticket),
+        source: crate::ToolSource::Run,
+        ticket: Token::new(ticket),
+        effect,
+    };
     Block::ToolCall { id: bytes(id), name: bytes(b"finish"), input: bytes(b"{}"), call, replay: None }
 }
 
@@ -681,7 +686,10 @@ fn the_calls_a_yield_leaves_are_answered_when_the_opener_continues() {
     let session = h.yielded_with(spec(), cut);
     let (_, prompt) = calling(h.step(Event::Continue { session, content: bytes(b"go on") }));
     let last = prompt.messages.last().expect("the opener's message goes last");
-    let content = [Block::ToolResult { id: bytes(b"c1"), result: Returned::NotRun }, text(b"go on")];
+    let content = [
+        Block::ToolResult { id: bytes(b"c1"), result: Returned::NotRun { why: crate::llm::NotRun::Stopped } },
+        text(b"go on"),
+    ];
     assert_eq!((last.role, &*last.content), (Role::User, &content[..]));
 
     // A turn that ended with a call it did not wait for: the call does not run.
@@ -690,7 +698,10 @@ fn the_calls_a_yield_leaves_are_answered_when_the_opener_continues() {
     let session = h.yielded_with(spec(), ended);
     let (_, prompt) = calling(h.step(Event::Continue { session, content: bytes(b"go on") }));
     let last = prompt.messages.last().expect("the opener's message goes last");
-    assert_eq!(last.content.first(), Some(&Block::ToolResult { id: bytes(b"c1"), result: Returned::NotRun }));
+    assert_eq!(
+        last.content.first(),
+        Some(&Block::ToolResult { id: bytes(b"c1"), result: Returned::NotRun { why: crate::llm::NotRun::Stopped } })
+    );
 }
 
 #[test]
@@ -1615,7 +1626,12 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
         id: bytes(b"oversized"),
         name: bytes(b"finish"),
         input: huge,
-        call: Decoded::Delegated { source: crate::ToolSource::Run, ticket: FINISH.ticket, effect: Effect::Write },
+        call: Decoded::Delegated {
+            descriptor: FINISH.ticket,
+            source: crate::ToolSource::Run,
+            ticket: FINISH.ticket,
+            effect: Effect::Write,
+        },
         replay: None,
     };
     let completion = completion(Box::new([call]), Stop::ToolUse);
@@ -2242,4 +2258,130 @@ fn completion_reservation_uses_the_highest_rate_for_every_input_kind() {
         assert_eq!(crate::preview_reservation(&harness.domain, owner, 7, 5, 4), Some(expected));
         assert_eq!(crate::reserve_completion(&mut harness.domain, owner, 7, 5, 4), Some(expected));
     }
+}
+
+#[test]
+fn narrowing_an_unsent_completion_appends_its_note_and_preserves_definitions() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, original) = h.open(1);
+    assert_eq!(original.choice, crate::llm::ToolChoice::Auto);
+    let note = bytes(b"The ordinary budget is spent. Finish now.");
+    let chosen = crate::llm::ToolChoice::Only(Box::new([FINISH.ticket]));
+    let Some(Request::Complete { owner: next, prompt, .. }) =
+        h.step(Event::Narrowed { owner, note: note.clone(), choice: chosen.clone() })
+    else {
+        panic!("narrowing must reask without a provider terminal");
+    };
+    assert_eq!(next, owner);
+    assert_eq!(h.turns, 0);
+    assert_eq!(prompt.choice, chosen);
+    assert_eq!(prompt.tools, original.tools);
+    assert_eq!(prompt.delegated, original.delegated);
+    assert_eq!(prompt.system, original.system);
+    assert_eq!(prompt.messages.len(), original.messages.len() + 1);
+    assert_eq!(prompt.messages.last().unwrap().content.as_ref(), &[text(&note)]);
+}
+
+#[test]
+fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    drop(calling(h.step(Event::Narrowed {
+        owner,
+        note: bytes(b"Finish now."),
+        choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+    })));
+    let content = Box::new([tool_call(b"outside", cat(b"main.rs"))]);
+    assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
+    assert_eq!(h.domain.runs(), 0, "the disallowed call has no live tool identity");
+    h.domain.reclaim();
+    let Some(Request::Complete { prompt, .. }) = h.resume() else {
+        panic!("one not-run result precedes the next request");
+    };
+    assert_eq!(
+        prompt.messages.last().unwrap().content.as_ref(),
+        &[Block::ToolResult {
+            id: bytes(b"outside"),
+            result: Returned::NotRun { why: crate::llm::NotRun::OutsideChoice },
+        }]
+    );
+    assert_eq!(prompt.choice, crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])));
+    let mut notes = 0_u32;
+    for message in &prompt.messages {
+        for block in &message.content {
+            match block {
+                Block::Text { text, .. } => {
+                    if text.as_ref() == b"Finish now." {
+                        notes += 1;
+                    }
+                }
+                Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } => {}
+            }
+        }
+    }
+    assert_eq!(notes, 1);
+}
+
+#[test]
+fn a_selected_descriptor_can_have_a_distinct_live_call_ticket() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    drop(calling(h.step(Event::Narrowed {
+        owner,
+        note: bytes(b"Finish now."),
+        choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+    })));
+    let mut call = delegated(b"allowed", 1234, Effect::Write);
+    let Block::ToolCall { call: Decoded::Delegated { descriptor, .. }, .. } = &mut call else { unreachable!() };
+    *descriptor = FINISH.ticket;
+    let Some(Request::Delegate { call, .. }) =
+        h.step(Event::Completed { owner, completion: completion(Box::new([call]), Stop::ToolUse) })
+    else {
+        panic!("the chosen descriptor must dispatch its actual call");
+    };
+    assert_eq!(call, Token::new(1234));
+}
+
+#[test]
+fn a_narrowing_note_follows_the_latest_settled_results() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
+    let Some(Request::Complete { prompt: before, .. }) = h.step(ran(run, b"main.rs")) else {
+        panic!("settled read reasks");
+    };
+    let Some(Request::Complete { prompt: after, .. }) = h.step(Event::Narrowed {
+        owner,
+        note: bytes(b"Finish now."),
+        choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+    }) else {
+        panic!("narrowed completion reasks");
+    };
+    assert_eq!(&after.messages[..before.messages.len()], before.messages.as_ref());
+    assert_eq!(after.messages.last().unwrap().content.as_ref(), &[text(b"Finish now.")]);
+    assert_eq!(h.turns, 1, "the unsent narrowing spends no extra turn");
+}
+
+#[test]
+fn a_narrowing_note_follows_a_yielded_session_waking_message() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    drop(yielded(
+        h.step(Event::Completed { owner, completion: completion(Box::new([text(b"done for now")]), Stop::EndTurn) }),
+    ));
+    let Some(Request::Complete { prompt: before, .. }) =
+        h.step(Event::Continue { session: owner, content: bytes(b"continue") })
+    else {
+        panic!("waking message asks");
+    };
+    let Some(Request::Complete { prompt: after, .. }) = h.step(Event::Narrowed {
+        owner,
+        note: bytes(b"Finish now."),
+        choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+    }) else {
+        panic!("narrowed completion reasks");
+    };
+    assert_eq!(&after.messages[..before.messages.len()], before.messages.as_ref());
+    assert_eq!(after.messages.last().unwrap().content.as_ref(), &[text(b"Finish now.")]);
+    assert_eq!(h.turns, 1);
 }

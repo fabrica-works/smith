@@ -1318,7 +1318,7 @@ impl World {
                         if session.accepted_late[index] {
                             assert_eq!(
                                 result,
-                                Some(&Returned::NotRun),
+                                Some(&Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped }),
                                 "actual late Closing winners settle calls without effects"
                             );
                         } else {
@@ -1338,7 +1338,7 @@ impl World {
                             } else {
                                 assert_eq!(
                                     *result,
-                                    Returned::NotRun,
+                                    Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped },
                                     "an unstarted delegated call has no terminal right"
                                 );
                             }
@@ -1347,14 +1347,14 @@ impl World {
                             Returned::Owned { outcome } => {
                                 assert!(fixture::fits(call, outcome), "actual result belongs to its call");
                             }
-                            Returned::NotRun => {}
+                            Returned::NotRun { .. } => {}
                             Returned::Text { .. } | Returned::Invalid { .. } | Returned::Withdrawn => {
                                 panic!("an owned call retains its actual owned result or never ran")
                             }
                         },
                         Decoded::Invalid { problem } => match result {
                             Returned::Invalid { problem: actual } => assert_eq!(actual, problem),
-                            Returned::NotRun => {}
+                            Returned::NotRun { .. } => {}
                             Returned::Text { .. } | Returned::Owned { .. } | Returned::Withdrawn => {
                                 panic!("an invalid call retains its exact problem or never ran")
                             }
@@ -2019,6 +2019,7 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
         | agent::Event::Overflowed { .. }
         | agent::Event::BudgetDenied { .. }
         | agent::Event::UnsentClosed { .. }
+        | agent::Event::Narrowed { .. }
         | agent::Event::Failed { .. }
         | agent::Event::Cancelled { .. }
         | agent::Event::Done { .. } => None,
@@ -2044,6 +2045,7 @@ fn describe_agent_event(event: &agent::Event) -> String {
             format!("completed {} {:?} with {} blocks", owner.raw(), completion.stop, completion.content.len())
         }
         agent::Event::Overflowed { owner, end } => format!("overflowed {} {end:?}", owner.raw()),
+        agent::Event::Narrowed { owner, note, choice } => format!("narrowed {} {note:?} {choice:?}", owner.raw()),
         agent::Event::UnsentClosed { owner } => format!("unsent closed {}", owner.raw()),
         agent::Event::BudgetDenied { owner, reason } => format!("budget denied {} {reason:?}", owner.raw()),
         agent::Event::Failed { owner, failure, .. } => format!("failed {} {failure:?}", owner.raw()),
@@ -2090,7 +2092,12 @@ fn describe_agent_request(request: &agent::Request) -> String {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 fn not_run(prompt: &Prompt) -> u32 {
     let Some(last) = prompt.messages.last() else { return 0 };
-    let unrun = last.content.iter().filter(|block| matches!(block, Block::ToolResult { result: Returned::NotRun, .. }));
+    let unrun = last.content.iter().filter(|block| {
+        matches!(
+            block,
+            Block::ToolResult { result: Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped }, .. }
+        )
+    });
     u32::try_from(unrun.count()).expect("a small message")
 }
 
@@ -2120,7 +2127,11 @@ fn assert_resumed_tail(session: &Session, index: usize, preceding: &[agent::llm:
             if let Block::ToolCall { id, .. } = block {
                 let result =
                     recorded_result(preceding, id).expect("continuing a yielded call supplies its next-Turn result");
-                assert_eq!(*result, Returned::NotRun, "yielded calls did not execute and precede the waking assistant");
+                assert_eq!(
+                    *result,
+                    Returned::NotRun { why: smith_domain_session::llm::NotRun::Stopped },
+                    "yielded calls did not execute and precede the waking assistant"
+                );
             }
         }
     }

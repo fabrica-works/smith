@@ -178,6 +178,7 @@ impl World {
             | session::Event::Overflowed { owner, .. }
             | session::Event::BudgetDenied { owner, .. }
             | session::Event::UnsentClosed { owner }
+            | session::Event::Narrowed { owner, .. }
             | session::Event::Cancelled { owner }
             | session::Event::Failed { owner, .. } => {
                 assert_eq!(self.completing.take(), Some(*owner), "one terminal per completion");
@@ -318,6 +319,7 @@ pub fn called() -> Box<[llm::Block]> {
             name: b"sub_agent".as_slice().into(),
             input: br#"{"task":"review"}"#.as_slice().into(),
             call: llm::Decoded::Delegated {
+                descriptor: Token::new(991),
                 source: smith_domain_session::ToolSource::Run,
                 ticket: Token::new(991),
                 effect: Effect::Write,

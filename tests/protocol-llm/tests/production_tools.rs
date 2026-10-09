@@ -19,6 +19,7 @@ fn grants() -> tools::Grants {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,

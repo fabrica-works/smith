@@ -211,7 +211,7 @@ fn returned(source: &wire::Returned) -> Result<llm::Returned, record::Refusal> {
             llm::Returned::Text { text: Box::from(value.text()), error: value.error(), replay: None }
         }
         wire::Returned::Invalid(value) => llm::Returned::Invalid { problem: problem(value.problem()) },
-        wire::Returned::NotRun => llm::Returned::NotRun,
+        wire::Returned::NotRun => llm::Returned::NotRun { why: llm::NotRun::Stopped },
         wire::Returned::Withdrawn => llm::Returned::Withdrawn,
     };
     Ok(value)
