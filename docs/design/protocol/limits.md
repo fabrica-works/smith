@@ -349,7 +349,23 @@ For each model the configuration declares:
 
     It is measured as rendered, at the entrance, never at the
     vocabulary's maxima. A start whose charter, with its directories'
-    guides at their bound, passes it is refused at the entrance. A sub-agent's brief takes the charter's place, and a
+    guides at their bound, passes it is refused at the entrance.
+  - **How the run counts what the protocol renders.** The system text
+    is the run's own to write, so the run counts it directly. The
+    generated schemas are `smith-protocol-llm`'s to render, and the run
+    cannot call the renderer without a cycle, so the run counts them
+    from plain numbers in its limits:
+    - **what the numbers are:** the schemas' fixed bytes, each kind of
+      element's bytes besides its own text, and each byte's escaped
+      length;
+    - **where they come from:** the service measures them at startup
+      with the protocol's renderer, as it measures smith's own part;
+    - **every entrance uses them.** The root's, the inline agent's and
+      the spawned agent's entrances all run the run's admission, so
+      each is guarded, and none needs a measurement from the protocol
+      at the entrance;
+    - **a property keeps them exact:** the count equals the rendered
+      bytes for drawn contracts. A sub-agent's brief takes the charter's place, and a
     `sub_agent` call whose brief passes it is answered as too large
     (llm.md, section 4);
   - **the window's messages:** two offers (below). The task is the
