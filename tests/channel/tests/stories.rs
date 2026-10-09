@@ -447,7 +447,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     let mut ordinary = first.clone();
     ordinary.sequence = 2;
     ordinary.spent = 4;
-    one.agent_tells_turn(2, None, &ordinary);
+    one.agent_tells_turn(2, Some(skein_lib::Token::new(99)), &ordinary);
     one.settle();
     let saved: Vec<_> = one
         .observations()
@@ -500,7 +500,7 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     let mut next = first;
     next.sequence = 3;
     next.spent = 5;
-    two.agent_tells_turn(1, None, &next);
+    two.agent_tells_turn(1, Some(skein_lib::Token::new(99)), &next);
     two.settle();
     let body = two
         .observations()
