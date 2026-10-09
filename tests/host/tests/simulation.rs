@@ -61,6 +61,7 @@ fn receipts(text: &[u8]) -> Delivered {
 fn turn(world: &mut World, number: u32, spent: u64, read: Option<Token>, bytes: usize) {
     world.up(Up::Turn {
         turn: Turn {
+            opens_window: number == 1,
             number,
             spent,
             read,
@@ -365,7 +366,13 @@ fn payloads_beyond_the_limits_break_the_rules() {
     for record in [
         Up::Fact { body: vec![0; usize::try_from(limits().fact_bytes + 1).expect("fact bound")].into() },
         Up::Turn {
-            turn: Turn { number: 1, spent: 0, read: None, body: smith_host_world::turn_value(limits().turn_bytes + 1) },
+            turn: Turn {
+                opens_window: (1) == 1,
+                number: 1,
+                spent: 0,
+                read: None,
+                body: smith_host_world::turn_value(limits().turn_bytes + 1),
+            },
         },
         Up::Call {
             call: Token::new(20),

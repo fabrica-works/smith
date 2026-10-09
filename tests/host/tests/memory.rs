@@ -237,6 +237,7 @@ fn maximum_v2_starts_and_full_queued_replies_fit_every_slot() {
                     owner,
                     Up::Turn {
                         turn: Turn {
+                            opens_window: number == 1,
                             number,
                             spent: u64::from(number),
                             read: None,

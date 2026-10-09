@@ -63,7 +63,13 @@ fn a_drop_after_an_answer_releases_held_turns_without_replacing_the_answer() {
     let mut spawned = Spawned::new(319, smith_host_world::limits());
     spawned.live();
     spawned.up(host::Up::Turn {
-        turn: host::Turn { number: 1, spent: 0, read: None, body: smith_host_world::turn_value(64) },
+        turn: host::Turn {
+            opens_window: (1) == 1,
+            number: 1,
+            spent: 0,
+            read: None,
+            body: smith_host_world::turn_value(64),
+        },
     });
     let answer = host::Answer { read: None, turns: 1, spent: 0, result: RunResult::Parked };
     spawned.up(host::Up::Answer { answer });
