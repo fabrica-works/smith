@@ -900,6 +900,10 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one corrective completion, initial write and ordered edit batch stay in boundary order"
+)]
 fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     use smith_domain_tools::{Authority, Call, Done, Grants, Name, Op, Outcome, Part, Path, Repo, Version};
     let mut world = World::new(62, 256);
@@ -943,7 +947,8 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     };
     let initial = [vec![b'a'; 188], b"END!".to_vec()].concat();
     let first_input =
-        format!("{{\"path\":\"data\",\"content\":\"{}\"}}", std::str::from_utf8(&initial).unwrap()).into_bytes();
+        format!("{{\"path\":\"data\",\"content\":\"{}\"}}", std::str::from_utf8(&initial).expect("ASCII first part"))
+            .into_bytes();
     assert!(first_input.len() <= 256, "the first part fits one call");
     world.complete(
         Box::new([llm::Block::ToolCall {
@@ -966,8 +971,8 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     let second_extension = [vec![b'c'; 64], b"END!".to_vec()].concat();
     let edit_input = format!(
         "{{\"path\":\"data\",\"edits\":[{{\"old\":\"END!\",\"new\":\"{}\"}},{{\"old\":\"END!\",\"new\":\"{}\"}}]}}",
-        std::str::from_utf8(&first_extension).unwrap(),
-        std::str::from_utf8(&second_extension).unwrap()
+        std::str::from_utf8(&first_extension).expect("ASCII first extension"),
+        std::str::from_utf8(&second_extension).expect("ASCII second extension")
     )
     .into_bytes();
     assert!(edit_input.len() <= 256, "both edits fit one call");
