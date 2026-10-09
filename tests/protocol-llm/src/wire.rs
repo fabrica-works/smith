@@ -10,9 +10,11 @@
 use std::collections::BTreeMap;
 
 use crate::adapter::{self as adapter, Context, Limits, Receiving, ResolvedCall};
-use skein_lib::{Time, Token, Wall};
+use skein_fake_llm_domain as provider;
+use skein_lib::{ReplyTo, Time, Token, Wall};
 use skein_llm::{self as shared, client};
 use skein_llm_world::fake::Exchange;
+use skein_world::domain::Stage;
 use smith_domain::{Event, llm};
 
 pub use smith_protocol_llm::schemas;
@@ -154,6 +156,9 @@ pub(crate) struct Composition {
     scripts: Box<[skein_fake_llm_domain::api::Script]>,
     active: BTreeMap<Token, usize>,
     bindings: Vec<Binding>,
+    provider: provider::Domain,
+    provider_stage: Stage<provider::Config, provider::Event, provider::Request>,
+    provider_routes: BTreeMap<Token, (usize, ReplyTo)>,
 }
 
 impl core::fmt::Debug for Composition {
@@ -189,7 +194,17 @@ impl Composition {
         limits: Limits,
         scripts: Box<[skein_fake_llm_domain::api::Script]>,
     ) -> Self {
-        Self { configuration, limits, scripts, active: BTreeMap::new(), bindings: Vec::new() }
+        let config = provider::Config { calls: 256, cache_entries: 256, ..skein_llm_world::fake::config() };
+        Self {
+            provider: provider::Domain::try_scripted(&config, 3, scripts.clone()).expect("bounded composition scripts"),
+            provider_stage: Stage::new(config, provider::MAX_OUT, provider::MAX_OUT + 3),
+            provider_routes: BTreeMap::new(),
+            configuration,
+            limits,
+            scripts,
+            active: BTreeMap::new(),
+            bindings: Vec::new(),
+        }
     }
 
     /// The actual root Complete supplies every receiving field and the owning
@@ -200,6 +215,7 @@ impl Composition {
             .expect("bounded physical bindings");
         let mut wire = Wire::prepare(owner, prompt, receiving, &self.configuration, &self.limits, self.scripts.clone())
             .expect("caller supplied compatible actual root/Client receiving limits");
+        wire.peer.manual_replies = true;
         wire.peer.at(now, wall);
         let index = self.bindings.len();
         assert!(self.active.insert(owner, index).is_none(), "one active actual Client per logical callback");
@@ -237,6 +253,22 @@ impl Composition {
     pub(crate) fn advance(&mut self, now: Time, wall: Wall, ending: bool) -> Progress {
         let mut progress =
             Progress { immediate: false, terminals: Vec::new(), queries: Vec::new(), requests: Vec::new() };
+        self.provider_stage.env.now = now;
+        self.provider_stage.env.wall = wall;
+        while self.provider_stage.has_room() && self.provider.is_due(now) {
+            provider::fire(&mut self.provider, &self.provider_stage.env, &mut self.provider_stage.out);
+        }
+        while let Some(provider::Request::Reply { to, result }) = self.provider_stage.out.pop() {
+            let (index, to) = self.provider_routes.remove(&to.into_token()).expect("one native provider reply route");
+            self.bindings[index]
+                .wire
+                .as_mut()
+                .expect("reply before physical retirement")
+                .peer
+                .reply(provider::Request::Reply { to, result });
+            progress.immediate = true;
+        }
+
         for (index, binding) in self.bindings.iter_mut().enumerate() {
             let Some(wire) = binding.wire.as_mut() else { continue };
             wire.peer.at(now, wall);
@@ -256,6 +288,20 @@ impl Composition {
                 }
                 returned
             };
+            for provider::Event::Call { reply_to, query } in core::mem::take(&mut wire.peer.pending) {
+                let route = Token::new(u64::try_from(index).expect("finite physical bindings"));
+                assert!(
+                    self.provider_routes.insert(route, (index, reply_to)).is_none(),
+                    "one active query per physical binding"
+                );
+                provider::step(
+                    &mut self.provider,
+                    &self.provider_stage.env,
+                    provider::Event::Call { reply_to: ReplyTo::new(route), query },
+                    &mut self.provider_stage.out,
+                );
+                progress.immediate = true;
+            }
             binding.accepted_usage = wire.accepted_usage;
             if !wire.peer.queries.is_empty() {
                 progress.requests.push((binding.owner, crate::referee::NativeRequest::from_http(&wire.peer.requests)));

@@ -96,6 +96,7 @@ fn endpoints_with_connect(connect: Duration) -> Endpoints {
 fn prompt() -> llm::Prompt {
     llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(42),
         model: b"fixture-model".as_slice().into(),
@@ -197,7 +198,7 @@ fn a_connect_deadline_keeps_timed_out_failure_evidence() {
         up.pop(),
         Some(ToDomain::Failed {
             owner,
-            failure: llm::Failure::TimedOut,
+            failure: llm::Failure::TimedOut { phase: llm::Phase::Connect },
             evidence: llm::Evidence::Unsent,
             ..
         }) if owner == Token::new(7)
@@ -219,7 +220,20 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
         (shared::Failure::Limit { which: shared::Cap::Answer, bound: 512 }, llm::Failure::Limit),
         (shared::Failure::Protocol, llm::Failure::Protocol),
         (shared::Failure::Cancelled, llm::Failure::Cancelled),
-        (shared::Failure::TimedOut, llm::Failure::TimedOut),
+        (
+            shared::Failure::TimedOut { phase: shared::Phase::Connect },
+            llm::Failure::TimedOut { phase: llm::Phase::Connect },
+        ),
+        (
+            shared::Failure::TimedOut { phase: shared::Phase::Handshake },
+            llm::Failure::TimedOut { phase: llm::Phase::Handshake },
+        ),
+        (shared::Failure::TimedOut { phase: shared::Phase::Head }, llm::Failure::TimedOut { phase: llm::Phase::Head }),
+        (shared::Failure::TimedOut { phase: shared::Phase::Idle }, llm::Failure::TimedOut { phase: llm::Phase::Idle }),
+        (
+            shared::Failure::TimedOut { phase: shared::Phase::Whole },
+            llm::Failure::TimedOut { phase: llm::Phase::Whole },
+        ),
     ];
     let evidence = [
         (shared::client::Evidence::Unsent, llm::Evidence::Unsent),
@@ -309,7 +323,7 @@ fn a_tls_handshake_deadline_stops_the_unsent_call() {
         up.pop(),
         Some(ToDomain::Failed {
             owner,
-            failure: llm::Failure::TimedOut,
+            failure: llm::Failure::TimedOut { phase: llm::Phase::Handshake },
             evidence: llm::Evidence::Unsent,
             ..
         }) if owner == Token::new(7)
@@ -330,6 +344,10 @@ fn the_whole_deadline_precedes_a_later_endpoint_connect_deadline() {
     component.fire(&env(10_000_000_001, &limits), &mut up, &mut io);
     assert!(matches!(
         up.pop(),
-        Some(ToDomain::Failed { failure: llm::Failure::TimedOut, evidence: llm::Evidence::Unsent, .. })
+        Some(ToDomain::Failed {
+            failure: llm::Failure::TimedOut { phase: llm::Phase::Whole },
+            evidence: llm::Evidence::Unsent,
+            ..
+        })
     ));
 }

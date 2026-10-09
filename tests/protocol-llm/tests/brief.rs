@@ -366,8 +366,8 @@ fn wait_result() -> Part {
 fn part_bytes(part: &Part) -> usize {
     match part {
         Part::Text { text } | Part::Opaque { bytes: text } => text.len(),
-        Part::ToolCall { name, arguments, .. } => name.len() + arguments.len(),
-        Part::ToolOutput { output, .. } => output.len(),
+        Part::ToolCall { id, name, arguments } => id.len() + name.len() + arguments.len(),
+        Part::ToolOutput { id, output, .. } => id.len() + output.len(),
     }
 }
 
@@ -396,19 +396,27 @@ fn native_accounting(
         assert_eq!(query.system.as_ref(), system, "whole native structured opening at completion {index}");
         assert_eq!(query.model.as_ref(), b"fake-1");
         assert_eq!(query.messages.as_ref(), prefix, "whole native history and concrete feedback at completion {index}");
-        let (last, earlier) = prefix.split_last().expect("handwritten user-ending native history");
-        let last_bytes = last.parts.iter().map(part_bytes).sum::<usize>();
-        let (fresh, cached) = if earlier.is_empty() {
-            (system.len() + last_bytes, 0)
+        let fixed = system.len()
+            + query
+                .tools
+                .iter()
+                .map(|tool| tool.name.len() + tool.description.len() + tool.parameters.len())
+                .sum::<usize>();
+        let prompt_bytes = fixed + prefix.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>();
+        let tokens = u64::try_from(prompt_bytes / 4).expect("bounded outside fixture");
+        // Only an earlier actual request wrote its prompt. Its answer was not
+        // written until the next request includes it. A new World has no writes.
+        let read = if index == 0 {
+            0
         } else {
-            (
-                last_bytes,
-                system.len() + earlier.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>(),
+            let previous = &prefixes[index - 1];
+            u64::try_from(
+                (fixed + previous.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>()) / 4,
             )
+            .expect("bounded previously written prompt")
         };
-        let fresh_tokens = u64::try_from(fresh / 4).expect("bounded outside fixture");
+        let fresh_tokens = tokens - read;
         let input = if cache_write { 0 } else { fresh_tokens };
-        let read = u64::try_from(cached / 4).expect("bounded outside fixture");
         let write = if cache_write { Some(fresh_tokens) } else { None };
         assert_eq!(
             [

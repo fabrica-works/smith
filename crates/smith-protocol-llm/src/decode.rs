@@ -48,7 +48,10 @@ pub fn decode(
         }
     };
     let tokens = document.document();
-    if match tokens.token(0) { Some(record) => record.kind != JsonKind::ObjectStart, None => true } {
+    if match tokens.token(0) {
+        Some(record) => record.kind != JsonKind::ObjectStart,
+        None => true,
+    } {
         return invalid(llm::Problem::NotAnObject);
     }
     match kind {
@@ -192,8 +195,13 @@ fn field<'a>(document: &'a Document, name: &[u8]) -> Option<&'a Compact> {
                     return document.token(index.checked_add(1)?);
                 }
             }
-            JsonKind::Key | JsonKind::String | JsonKind::Number | JsonKind::True
-            | JsonKind::False | JsonKind::Null | JsonKind::Long => {}
+            JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::True
+            | JsonKind::False
+            | JsonKind::Null
+            | JsonKind::Long => {}
         }
     }
     None
@@ -321,17 +329,24 @@ fn families(document: &Document) -> Result<run::charter::Families, llm::Problem>
                     in_tools = false;
                 }
             }
-            JsonKind::String if in_tools && depth == 2 => match document.text(record).ok_or(llm::Problem::NotAnObject)? {
-                b"inspect" => inspect = true,
-                b"modify" => modify = true,
-                b"shell" => shell = true,
-                _ => return Err(bad_value(b"tools")),
-            },
+            JsonKind::String if in_tools && depth == 2 => {
+                match document.text(record).ok_or(llm::Problem::NotAnObject)? {
+                    b"inspect" => inspect = true,
+                    b"modify" => modify = true,
+                    b"shell" => shell = true,
+                    _ => return Err(bad_value(b"tools")),
+                }
+            }
             JsonKind::Number | JsonKind::True | JsonKind::False | JsonKind::Null if in_tools && depth == 2 => {
                 return Err(wrong_type(b"tools"));
             }
-            JsonKind::Key | JsonKind::String | JsonKind::Number | JsonKind::True
-            | JsonKind::False | JsonKind::Null | JsonKind::Long => {}
+            JsonKind::Key
+            | JsonKind::String
+            | JsonKind::Number
+            | JsonKind::True
+            | JsonKind::False
+            | JsonKind::Null
+            | JsonKind::Long => {}
         }
     }
     Ok(run::charter::Families { tools: run::charter::Tools { inspect, modify, shell }, agents: false })

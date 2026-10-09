@@ -184,6 +184,9 @@ mod tests {
             .expect("one endpoint");
         let endpoints = Endpoints::new(entries);
         let turn = smith_domain::Turn {
+            kind: smith_domain::session::record::Kind::First {
+                affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            },
             version: smith_domain::session::record::VERSION,
             endpoint: smith_domain::session::llm::Endpoint(2),
             dialect: 1,

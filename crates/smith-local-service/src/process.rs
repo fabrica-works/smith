@@ -602,6 +602,7 @@ impl ProcessAdapter {
                 | io::Event::Output { .. }
                 | io::Event::Spawned { .. }
                 | io::Event::Exited { .. }
+                | io::Event::Usage { .. }
                 | io::Event::Failed { .. }
                 | io::Event::Closed { .. }) => self.process.as_mut().expect("spawn precedes process IO").from_io(
                     now,
@@ -927,6 +928,7 @@ fn io_owner(event: &io::Event) -> Option<Token> {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => Some(*owner),
         io::Event::Shutdown { .. } => None,

@@ -16,6 +16,7 @@ use crate::translate;
 
 /// Check two actual requests of one window (domain/session.md, sections 3 and 10).
 pub fn assert_prompt_extends(previous: &Prompt, current: &Prompt) {
+    assert_eq!(current.affinity, previous.affinity, "a window keeps its affinity");
     assert_eq!(current.system, previous.system, "a window keeps its system text");
     assert_eq!(current.tools, previous.tools, "a window keeps its tool grants");
     assert_eq!(current.delegated, previous.delegated, "a window keeps its tool descriptors");
@@ -241,6 +242,9 @@ impl Settings {
                 calls_per_answer: 1,
                 malformed: 0,
                 tool_rounds: 2,
+                cache_lifetime: Duration::from_secs(300),
+                cache_entries: 8,
+                unscoped_reads: 0,
             },
             network: Span::millis(1, 20),
             tool: Span::millis(10, 500),
@@ -270,6 +274,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: b"fake-1"[..].into(),
@@ -1750,7 +1755,7 @@ impl World {
                     }
                     self.agent_stage.push(agent::Event::Failed {
                         owner,
-                        failure: Failure::TimedOut,
+                        failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Whole },
                         evidence: smith_domain_session::llm::Evidence::Unknown,
                         detail: Box::default(),
                     });

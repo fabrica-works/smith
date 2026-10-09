@@ -61,7 +61,7 @@ fn every_contract_form_yields_a_bounded_json_schema() {
             .expect("contract-derived schema fits the dialect");
         let document = skein_llm::Json::from_bytes(&schema, &limits().client.dialect)
             .expect("scripted peer accepts a complete JSON object schema");
-        assert_eq!(document.as_tokens().first(), Some(&skein_json::Token::ObjectStart));
+        assert_eq!(document.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
         assert!(schema.windows(b"\"maxLength\"".len()).any(|part| part == b"\"maxLength\""));
     }
     let all_schema = adapter::finish_schema(&all, limits().client.dialect.document_bytes).expect("four forms");
@@ -118,6 +118,7 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
     for configuration in &wire::configurations() {
         let prompt = llm::Prompt {
             namespace: smith_domain::tools::Namespace::One,
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             asker: llm::Asker::Main,
             endpoint: llm::Endpoint(1),
             model: b"model".as_slice().into(),
@@ -179,7 +180,7 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
         for offered in &query.tools {
             let schema = skein_llm::Json::from_bytes(&offered.parameters, &bounds.client.dialect)
                 .expect("scripted peer accepts the whole schema document");
-            assert_eq!(schema.as_tokens().first(), Some(&skein_json::Token::ObjectStart));
+            assert_eq!(schema.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
         }
         assert!(query.tools[0].parameters.windows(b"observation".len()).any(|part| part == b"observation"));
         assert!(query.tools[1].parameters.windows(b"ticket".len()).any(|part| part == b"ticket"));

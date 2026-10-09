@@ -59,12 +59,23 @@ pub fn encode_turn(
         record::Kind::Window { affinity } => (wire::TurnKind::Window, Some(affinity)),
     };
     let affinity = match affinity {
-        Some(affinity) => Some(wire::Affinity::new(limits, wire::AffinityParts { key: affinity.key, thread: affinity.thread })?),
+        Some(affinity) => {
+            Some(wire::Affinity::new(limits, wire::AffinityParts { key: affinity.key, thread: affinity.thread })?)
+        }
         None => None,
     };
     let turn = wire::Turn::new(
         limits,
-        wire::TurnParts { kind, affinity, endpoint, dialect, place: source.sequence, usage, spent: source.spent, messages },
+        wire::TurnParts {
+            kind,
+            affinity,
+            endpoint,
+            dialect,
+            place: source.sequence,
+            usage,
+            spent: source.spent,
+            messages,
+        },
     )?;
     let Ok(length) = usize::try_from(turn.measure()) else {
         return Err(Error::ResultCapacity);

@@ -88,7 +88,7 @@ fn random_worlds_settle_with_every_session_ended() {
                 End::Busy => "busy".into(),
                 End::Invalid => "invalid".into(),
                 End::Closed => "closed".into(),
-                End::Failed { failure: Failure::TimedOut, .. } => "timed out".into(),
+                End::Failed { failure: Failure::TimedOut { .. }, .. } => "timed out".into(),
                 End::Failed { .. } => "failed".into(),
                 End::Budget { spent } => format!("{spent:?}"),
                 End::TranscriptRefused { .. } | End::PriceOverflow | End::UsageOverflow => {

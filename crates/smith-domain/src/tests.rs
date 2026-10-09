@@ -594,6 +594,11 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
     for sequence in 1..=17_u32 {
         turns
             .push(session::record::Turn {
+                kind: if sequence == 1 {
+                    session::record::Kind::First { affinity: session::llm::Affinity { key: [0; 16], thread: 0 } }
+                } else {
+                    session::record::Kind::Ordinary
+                },
                 version: session::record::VERSION,
                 endpoint: session::llm::Endpoint(1),
                 dialect: 1,
@@ -2127,6 +2132,7 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
         endpoint: session::llm::Endpoint(1),
         dialect: 1,
         turns: Box::new([session::record::Turn {
+            kind: session::record::Kind::First { affinity: crate::llm::Affinity { key: [0; 16], thread: 0 } },
             version: session::record::VERSION,
             endpoint: session::llm::Endpoint(1),
             dialect: 1,

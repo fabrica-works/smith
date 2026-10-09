@@ -341,6 +341,7 @@ impl Auth {
             | io::Event::Stream { .. }
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
             | io::Event::Shutdown { .. } => {}
         }
     }
@@ -487,6 +488,7 @@ pub(crate) fn event_owner(event: &io::Event) -> Token {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => *owner,
         io::Event::Shutdown { .. } => Token::new(u64::MAX),

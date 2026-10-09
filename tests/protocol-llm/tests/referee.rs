@@ -4,7 +4,7 @@ use skein_world::domain::{Referee, Verdict};
 use smith_protocol_llm_world::referee::{Meeting, NativeRequest, Seen};
 
 fn request() -> NativeRequest {
-    NativeRequest { system: "system".into(), tools: "tools".into(), history: vec!["first".into()] }
+    NativeRequest { affinity: None, system: "system".into(), tools: "tools".into(), history: vec!["first".into()] }
 }
 
 fn reject(changed: NativeRequest, reason: &str) {
@@ -69,10 +69,41 @@ fn codex_history_and_escaped_marker_words_stay_literal() {
     ));
     assert_eq!(codex.history[0], r#"{"type":"message","cache_control":{"type":"ephemeral"}}"#);
     let quoted = NativeRequest::from_http(&http(
-        r#"{"system":[],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"literal ,\"cache_control\":{\"type\":\"ephemeral\"}"}]}]}"#,
+        r#"{"system":[],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"literal ,\"cache_control\":{\"type\":\"ephemeral\"}","cache_control":{"type":"ephemeral"}}]}]}"#,
     ));
     assert_eq!(
         quoted.history[0],
         r#"{"role":"user","content":[{"type":"text","text":"literal ,\"cache_control\":{\"type\":\"ephemeral\"}"}]}"#
     );
+}
+
+#[test]
+#[should_panic(expected = "exactly one moving Anthropic tail marker")]
+fn an_absent_anthropic_tail_marker_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"plain"}]}]}"#,
+    ));
+}
+
+#[test]
+#[should_panic(expected = "last eligible block of the last message")]
+fn a_marker_on_an_earlier_eligible_block_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[],"tools":[],"messages":[{"role":"user","content":[{"type":"text","text":"first","cache_control":{"type":"ephemeral"}},{"type":"tool_result","tool_use_id":"id","content":"result"}]}]}"#,
+    ));
+}
+
+#[test]
+#[should_panic(expected = "last eligible block of the last message")]
+fn a_marker_on_thinking_is_rejected() {
+    let _request = NativeRequest::from_http(&http(
+        r#"{"system":[],"tools":[],"messages":[{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"private","cache_control":{"type":"ephemeral"}}]}]}"#,
+    ));
+}
+
+#[test]
+fn changed_native_affinity_is_rejected() {
+    let mut changed = request();
+    changed.affinity = Some(["key".into(), "session".into(), "thread".into()]);
+    reject(changed, "native affinity stays fixed within a window");
 }

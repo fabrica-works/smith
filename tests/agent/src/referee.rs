@@ -220,6 +220,7 @@ impl Expectations for Meeting {
         match seen {
             Seen::Prompt { owner, query } => {
                 if let Some(previous) = self.prompts.get(&owner) {
+                    judge.check(previous.caching == query.caching, "a session keeps its affinity");
                     judge.check(previous.system == query.system, "a session keeps its system text");
                     judge.check(previous.tools == query.tools, "a session keeps its offered tools");
                     judge.check(

@@ -34,6 +34,7 @@ pub const OPAQUE: &[u8] = b"\0provider reasoning\xffsignature";
 pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::Opening {
     record::Opening {
         spec: session::Spec {
+            affinity: llm::Affinity { key: [0; 16], thread: 0 },
             progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
             endpoint: llm::Endpoint(7),
             model: b"model".as_slice().into(),

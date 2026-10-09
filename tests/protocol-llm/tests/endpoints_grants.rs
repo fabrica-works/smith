@@ -51,6 +51,7 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
     assert_eq!(codex.provider, shared::Provider::OpenAiCodex);
     assert_eq!(endpoints.resolve(llm::Endpoint(7)).expect("second name").index, 1);
     let mut prompt = shared::Prompt {
+        affinity: Some(shared::Affinity { key: [0; 16], thread: 0 }),
         model: b"model".as_slice().into(),
         instructions: Box::new([]),
         tools: Box::new([]),
@@ -123,6 +124,7 @@ fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() 
     anthropic.identity = smith_protocol_llm::IdentityProfile::ClaudeCode;
     let endpoints = Endpoints::new(Box::new([anthropic]), 1, 1).expect("provider supports identity");
     let mut prompt = shared::Prompt {
+        affinity: Some(shared::Affinity { key: [0; 16], thread: 0 }),
         model: b"model".as_slice().into(),
         instructions: b"domain system".as_slice().into(),
         tools: Box::new([]),

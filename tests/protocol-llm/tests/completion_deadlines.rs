@@ -56,9 +56,9 @@ fn model_head_and_idle_deadlines_fail_only_the_stalled_call() {
     peer.bytes(101, &head_for(body().len()));
     peer.advance(6);
     assert_eq!(peer.terminals.len(), 2);
-    assert!(
-        peer.terminals.iter().all(|event| matches!(event, ToDomain::Failed { failure: llm::Failure::TimedOut, .. }))
-    );
+    for (owner, phase) in [(Token::new(1), llm::Phase::Head), (Token::new(2), llm::Phase::Idle)] {
+        assert!(peer.terminals.iter().any(|event| matches!(event, ToDomain::Failed { owner: actual, failure: llm::Failure::TimedOut { phase: actual_phase }, .. } if *actual == owner && *actual_phase == phase)));
+    }
     peer.advance(101);
     assert_eq!(peer.terminals.len(), 2, "expired calls settle once");
 }
@@ -77,7 +77,7 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     assert!(peer.terminals.is_empty());
     peer.advance(90);
     assert!(
-        matches!(peer.terminals.as_slice(), [ToDomain::Failed { owner, failure: llm::Failure::TimedOut, evidence: llm::Evidence::Response, .. }] if *owner == Token::new(1))
+        matches!(peer.terminals.as_slice(), [ToDomain::Failed { owner, failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, evidence: llm::Evidence::Response, .. }] if *owner == Token::new(1))
     );
     peer.bytes(101, &body());
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(2)));

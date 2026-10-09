@@ -391,6 +391,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 /// Caller-owned input with the same exact byte charge in every fill route.
 fn fill_spec(limits: Limits) -> Spec {
     Spec {
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(1),
@@ -474,6 +475,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         (completion, delegate)
     };
     let spec = Spec {
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
@@ -550,6 +552,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
     let opaque = limits.session_bytes - charge - 2 * block - 1 - reserve;
     let spec = Spec {
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),
@@ -565,6 +568,9 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         endpoint: Endpoint(7),
         dialect: 2,
         turns: Box::new([record::Turn {
+            kind: smith_domain_session::record::Kind::First {
+                affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            },
             version: record::VERSION,
             endpoint: Endpoint(7),
             dialect: 2,
@@ -648,6 +654,9 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         endpoint: Endpoint(7),
         dialect: 2,
         turns: Box::new([record::Turn {
+            kind: smith_domain_session::record::Kind::First {
+                affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+            },
             version: record::VERSION,
             endpoint: Endpoint(7),
             dialect: 2,
@@ -661,6 +670,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         }]),
     };
     let spec = Spec {
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(7),
         model: bytes(1),

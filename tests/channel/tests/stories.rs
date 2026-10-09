@@ -336,6 +336,18 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
     let turn = smith_transcript::Turn::new(
         &limits,
         smith_transcript::TurnParts {
+            kind: smith_transcript::TurnKind::Ordinary,
+            affinity: if place == 1 {
+                Some(
+                    smith_transcript::Affinity::new(
+                        &limits,
+                        smith_transcript::AffinityParts { key: [0; 16], thread: 0 },
+                    )
+                    .expect("fixture affinity"),
+                )
+            } else {
+                None
+            },
             endpoint: Box::default(),
             dialect: Box::from(dialect),
             place,
@@ -417,6 +429,9 @@ fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_pe
     let charter: Box<[u8]> =
         Box::from(&include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin")[..]);
     let first = record::Turn {
+        kind: smith_domain_session::record::Kind::First {
+            affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        },
         version: record::VERSION,
         endpoint: llm::Endpoint(0),
         dialect: 0,
@@ -570,6 +585,9 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
     use smith_domain_session::{llm, record};
 
     let turn = record::Turn {
+        kind: smith_domain_session::record::Kind::First {
+            affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        },
         version: record::VERSION,
         endpoint: llm::Endpoint(0),
         dialect: 0,

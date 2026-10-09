@@ -983,6 +983,7 @@ fn route_io_event(service: &mut Service, event: io::Event) {
         | io::Event::Output { .. }
         | io::Event::Spawned { .. }
         | io::Event::Exited { .. }
+        | io::Event::Usage { .. }
         | io::Event::Failed { .. }
         | io::Event::Closed { .. }) => route_owned_io(service, event),
     }
@@ -1001,6 +1002,7 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
             | io::Event::Output { .. }
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
             | io::Event::Failed { .. }
             | io::Event::Shutdown { .. } => false,
         };
@@ -1027,6 +1029,7 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
         | io::Event::Output { .. }
         | io::Event::Spawned { .. }
         | io::Event::Exited { .. }
+        | io::Event::Usage { .. }
         | io::Event::Failed { .. }
         | io::Event::Shutdown { .. } => false,
     };
@@ -1065,6 +1068,7 @@ fn io_event_owner(event: &io::Event) -> Option<Token> {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => Some(*owner),
         io::Event::Shutdown { .. } => None,
@@ -1086,6 +1090,7 @@ fn remap_io_owner(event: io::Event, owner: Token) -> io::Event {
         io::Event::Output { up, .. } => io::Event::Output { owner, up },
         io::Event::Spawned { child, pipes, .. } => io::Event::Spawned { owner, child, pipes },
         io::Event::Exited { exit, .. } => io::Event::Exited { owner, exit },
+        io::Event::Usage { usage, .. } => io::Event::Usage { owner, usage },
         io::Event::Failed { error, .. } => io::Event::Failed { owner, error },
         io::Event::Closed { .. } => io::Event::Closed { owner },
         io::Event::Shutdown { .. } => unreachable!("signals have no component owner"),
@@ -1711,6 +1716,7 @@ fn component_down(service: &mut Service) {
             | io::Request::Output { .. }
             | io::Request::Spawn { .. }
             | io::Request::Signal { .. }
+            | io::Request::Usage { .. }
             | io::Request::Close { .. }
             | io::Request::Abort { .. }) => service.io_requests.push(other),
         }
@@ -2266,6 +2272,7 @@ mod tests {
     fn typed_prompt_capture_preserves_text_and_tool_input_without_a_credential() {
         let prompt = domain::llm::Prompt {
             namespace: tools::Namespace::One,
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             asker: domain::llm::Asker::Main,
             endpoint: domain::llm::Endpoint(1),
             model: Box::from(&b"model"[..]),

@@ -84,7 +84,7 @@ fn every_completion_failure_and_transport_evidence_maps_without_inference() {
         (llm::Failure::Cancelled, run::CompletionFailure::Cancelled),
         (llm::Failure::Overloaded, run::CompletionFailure::Overloaded),
         (llm::Failure::Unavailable, run::CompletionFailure::Unavailable),
-        (llm::Failure::TimedOut, run::CompletionFailure::TimedOut),
+        (llm::Failure::TimedOut { phase: llm::Phase::Whole }, run::CompletionFailure::TimedOut),
         (llm::Failure::ContextTooLong, run::CompletionFailure::ContextTooLong),
         (llm::Failure::Invalid, run::CompletionFailure::Invalid),
         (llm::Failure::Unauthorized, run::CompletionFailure::Unauthorized),

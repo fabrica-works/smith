@@ -78,6 +78,15 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
     let turn = wire::Turn::new(
         &limits,
         wire::TurnParts {
+            kind: wire::TurnKind::Ordinary,
+            affinity: if place == 1 {
+                Some(
+                    wire::Affinity::new(&limits, wire::AffinityParts { key: [0; 16], thread: 0 })
+                        .expect("fixture affinity"),
+                )
+            } else {
+                None
+            },
             endpoint: Box::default(),
             dialect: Box::from(dialect),
             place,

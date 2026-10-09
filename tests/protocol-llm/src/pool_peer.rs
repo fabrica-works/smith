@@ -132,6 +132,7 @@ impl Peer {
                 grant: GrantName { account: 0, generation: 1 },
                 prompt: llm::Prompt {
                     namespace: smith_domain::tools::Namespace::One,
+                    affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
                     asker: llm::Asker::Main,
                     endpoint: llm::Endpoint(0),
                     model: b"fixture".as_slice().into(),
@@ -223,7 +224,8 @@ impl Peer {
                     | IoRequest::Reject { .. }
                     | IoRequest::Output { .. }
                     | IoRequest::Spawn { .. }
-                    | IoRequest::Signal { .. }) => panic!("unexpected request: {other:?}"),
+                    | IoRequest::Signal { .. }
+                    | IoRequest::Usage { .. }) => panic!("unexpected request: {other:?}"),
                 }
             }
             let mut delivered = false;

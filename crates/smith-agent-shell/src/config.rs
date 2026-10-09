@@ -342,7 +342,11 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
         }
         let mut headers = Vec::with_capacity(endpoint.headers.len());
         for header in endpoint.headers {
-            if header.name.is_empty() || header.name.contains(['\r', '\n', ':']) || header.value.contains(['\r', '\n'])
+            if header.name.eq_ignore_ascii_case("session-id")
+                || header.name.eq_ignore_ascii_case("thread-id")
+                || header.name.is_empty()
+                || header.name.contains(['\r', '\n', ':'])
+                || header.value.contains(['\r', '\n'])
             {
                 return Err("invalid endpoint HTTP header".into());
             }
@@ -802,6 +806,18 @@ mod tests {
         });
         let configuration = build(document).expect("resolved endpoint");
         service::Service::new(configuration.service, 1).expect("LLM and channel endpoints");
+    }
+
+    #[test]
+    fn affinity_header_names_and_static_cache_keys_are_refused_in_configuration() {
+        for name in ["session-id", "SESSION-ID", "thread-id", "ThReAd-Id"] {
+            let json = format!(
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},"endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext","headers":[{{"name":"{name}","value":"host override"}}]}}],"environment":[]}}"#
+            );
+            assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("invalid endpoint HTTP header"));
+        }
+        let error = serde_json::from_str::<Endpoint>(r#"{"name":"old","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","cache_key":"static"}"#).err().expect("removed field is rejected");
+        assert!(error.to_string().contains("unknown field `cache_key`"));
     }
 
     #[test]

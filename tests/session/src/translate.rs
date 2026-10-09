@@ -40,7 +40,7 @@ enum Family {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
-    let agent::Prompt { endpoint: _, model, system, tools, namespace, delegated, messages, max_tokens } = prompt;
+    let agent::Prompt { endpoint: _, affinity, model, system, tools, namespace, delegated, messages, max_tokens } = prompt;
     let mut offered = offer(tools).into_vec();
     for descriptor in &delegated {
         let Ticketed::Tool { name, effect, schema } = tickets.resolve(descriptor.ticket) else {
@@ -54,7 +54,16 @@ pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
         });
     }
     let messages = messages.into_iter().map(|message| translate_message(message, &namespace)).collect();
-    provider::Query { model, system, tools: offered.into(), choice: provider::ToolChoice::Auto, messages, max_tokens }
+    let caching = provider::Caching::Scope(affinity.key);
+    provider::Query {
+        caching,
+        model,
+        system,
+        tools: offered.into(),
+        choice: provider::ToolChoice::Auto,
+        messages,
+        max_tokens,
+    }
 }
 
 /// The agent's terminal event for the provider's answer to the call of `owner`,

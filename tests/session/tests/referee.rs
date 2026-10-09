@@ -5,6 +5,7 @@ use smith_session_world::assert_prompt_extends;
 fn prompt() -> Prompt {
     Prompt {
         namespace: smith_domain_tools::Namespace::One,
+        affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         endpoint: Endpoint(0),
         model: b"model".as_slice().into(),
         system: b"system".as_slice().into(),
@@ -32,4 +33,13 @@ fn edited_window_history_is_rejected() {
     let mut changed = prompt();
     changed.messages[0].content = Box::new([]);
     assert_prompt_extends(&prompt(), &changed);
+}
+
+#[test]
+#[should_panic(expected = "a window keeps its affinity")]
+fn changed_window_affinity_is_rejected() {
+    let previous = prompt();
+    let mut changed = prompt();
+    changed.affinity.thread = 1;
+    assert_prompt_extends(&previous, &changed);
 }

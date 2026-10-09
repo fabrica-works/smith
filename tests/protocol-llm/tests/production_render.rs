@@ -117,6 +117,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     let history = llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"model".as_slice().into(),
@@ -146,6 +147,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
 fn written_text_and_mechanical_feedback_keep_their_error_flags() {
     let history = llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"model".as_slice().into(),

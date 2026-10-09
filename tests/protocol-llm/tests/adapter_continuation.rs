@@ -97,6 +97,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 fn prompt(messages: Box<[llm::Message]>) -> llm::Prompt {
     llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),

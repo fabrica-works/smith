@@ -377,6 +377,7 @@ impl Process {
             | IoEvent::Connected { .. }
             | IoEvent::Spawned { .. }
             | IoEvent::Exited { .. }
+            | IoEvent::Usage { .. }
             | IoEvent::Shutdown { .. }
             | IoEvent::Failed { .. }
             | IoEvent::Closed { .. }

@@ -53,7 +53,7 @@ fn a_waiting_whole_expiry_is_unsent_and_leaves_the_running_call_live() {
     peer.start(2, 1, 1, 10);
     peer.advance(10);
     assert!(matches!(peer.terminals.as_slice(), [ToDomain::Failed {
-        owner, failure: llm::Failure::TimedOut, evidence: llm::Evidence::Unsent, ..
+        owner, failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, evidence: llm::Evidence::Unsent, ..
     }] if *owner == Token::new(2)));
     assert_eq!(peer.connections(), 1);
     peer.complete(100);

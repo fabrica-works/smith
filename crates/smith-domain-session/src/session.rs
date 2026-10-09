@@ -2490,7 +2490,10 @@ fn validate_transcript(
                 for block in &message.content {
                     match block {
                         Block::Text { .. } => {}
-                        Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } => {
+                        Block::Refusal { .. }
+                        | Block::Opaque { .. }
+                        | Block::ToolCall { .. }
+                        | Block::ToolResult { .. } => {
                             return Err(Refusal::Malformed);
                         }
                     }

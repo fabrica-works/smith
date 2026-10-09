@@ -16,6 +16,7 @@ use smith_domain::run::{
 /// Exact JSON values from one actual native request, retained by the protocol oracle.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NativeRequest {
+    pub affinity: Option<[String; 3]>,
     pub system: String,
     pub tools: String,
     pub history: Vec<String>,
@@ -35,17 +36,52 @@ impl NativeRequest {
         let mut history = items.into_iter().map(|item| String::from(item.get())).collect::<Vec<_>>();
         if fields.contains_key("messages") {
             const MARKER: &str = ",\"cache_control\":{\"type\":\"ephemeral\"}";
-            let mut markers = 0;
-            for item in &mut history {
+            let values = history
+                .iter()
+                .map(|item| serde_json::from_str::<serde_json::Value>(item).expect("native message"))
+                .collect::<Vec<_>>();
+            let last = values.last().expect("Anthropic request has a last message");
+            let content = last["content"].as_array().expect("native content blocks");
+            let eligible = content
+                .iter()
+                .rposition(|block| matches!(block["type"].as_str(), Some("text" | "tool_use" | "tool_result")))
+                .expect("last message has an eligible block");
+            let markers = history.iter().map(|item| item.match_indices(MARKER).count()).sum::<usize>();
+            assert!(markers <= 1, "at most one moving Anthropic tail marker");
+            for (message, item) in history.iter_mut().enumerate() {
                 let positions = item.match_indices(MARKER).map(|(position, _)| position).collect::<Vec<_>>();
-                markers += positions.len();
-                assert!(markers <= 1, "at most one moving Anthropic tail marker");
+
+                for (part, block) in
+                    values[message]["content"].as_array().expect("native content blocks").iter().enumerate()
+                {
+                    if block.get("cache_control").is_some() {
+                        assert!(
+                            message + 1 == values.len() && part == eligible,
+                            "moving Anthropic marker is on the last eligible block of the last message"
+                        );
+                    }
+                }
                 if let Some(position) = positions.first() {
                     item.replace_range(*position..*position + MARKER.len(), "");
                 }
             }
+            assert_eq!(markers, 1, "exactly one moving Anthropic tail marker");
         }
+        let affinity = fields.get("prompt_cache_key").map(|cache| {
+            let head = core::str::from_utf8(&bytes[..head]).expect("native HTTP head");
+            let header = |name: &str| {
+                head.lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(field, _)| field.eq_ignore_ascii_case(name))
+                    .expect("Codex affinity header")
+                    .1
+                    .trim()
+                    .to_string()
+            };
+            [cache.get().to_string(), header("session-id"), header("thread-id")]
+        });
         Self {
+            affinity,
             system: system.get().into(),
             tools: fields.get("tools").expect("native tool definitions").get().into(),
             history,
@@ -260,6 +296,7 @@ impl Expectations for Meeting {
         match seen {
             Seen::Request { owner, request } => {
                 if let Some(previous) = self.requests.get(&owner) {
+                    judge.check(previous.affinity == request.affinity, "native affinity stays fixed within a window");
                     judge.check(previous.system == request.system, "native system bytes stay fixed within a window");
                     judge.check(previous.tools == request.tools, "native tool bytes stay fixed within a window");
                     judge.check(

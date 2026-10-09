@@ -155,7 +155,12 @@ fn a_symbolic_link_refusal_becomes_linked_and_a_scan_keeps_more() {
     assert!(below.pop().is_some());
     component.from_below(
         &env(),
-        BelowEvent::File(file::Event::Failed { owner: Token::new(1), error: kernel::Error::TooManyLinks }),
+        BelowEvent::File(file::Event::Failed {
+            owner: Token::new(1),
+            error: kernel::Error::TooManyLinks,
+            committed: false,
+            residue: None,
+        }),
         &mut to_domain,
         &mut below,
     );

@@ -53,6 +53,7 @@ pub fn query(prompt: agent::Prompt) -> provider::Query {
         })
         .collect();
     provider::Query {
+        caching: provider::Caching::Scope(prompt.affinity.key),
         model: prompt.model,
         system: prompt.system,
         tools: tools.into(),

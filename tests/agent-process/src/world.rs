@@ -929,18 +929,21 @@ impl World {
                                 &crate::limits().llm.adapter.client.dialect,
                             )
                             .expect("provider metadata");
-                            for token in metadata.value.as_tokens() {
-                                bytes += match token {
-                                    skein_json::Token::Key(value)
-                                    | skein_json::Token::String(value)
-                                    | skein_json::Token::Number(value) => value.len(),
-                                    skein_json::Token::ObjectStart
-                                    | skein_json::Token::ObjectEnd
-                                    | skein_json::Token::ArrayStart
-                                    | skein_json::Token::ArrayEnd
-                                    | skein_json::Token::True
-                                    | skein_json::Token::False
-                                    | skein_json::Token::Null => 1,
+                            let document = metadata.value.document();
+                            for index in 0..document.len() {
+                                let token = document.token(index).expect("within provider metadata");
+                                bytes += match token.kind {
+                                    skein_json::Kind::Long => panic!("owned metadata does not skip a scalar"),
+                                    skein_json::Kind::Key | skein_json::Kind::String | skein_json::Kind::Number => {
+                                        document.text(token).expect("text-bearing metadata record").len()
+                                    }
+                                    skein_json::Kind::ObjectStart
+                                    | skein_json::Kind::ObjectEnd
+                                    | skein_json::Kind::ArrayStart
+                                    | skein_json::Kind::ArrayEnd
+                                    | skein_json::Kind::True
+                                    | skein_json::Kind::False
+                                    | skein_json::Kind::Null => 1,
                                 };
                             }
                         }

@@ -300,6 +300,9 @@ mod tests {
 
     fn turn() -> Turn {
         Turn {
+            kind: smith_domain::session::record::Kind::First {
+                affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            },
             version: session::record::VERSION,
             endpoint: session::llm::Endpoint(2),
             dialect: 1,

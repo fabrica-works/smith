@@ -20,6 +20,7 @@ fn grants() -> tools::Grants {
 fn prompt() -> llm::Prompt {
     llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"test".as_slice().into(),
@@ -49,7 +50,7 @@ fn production_schemas_cover_every_offered_workspace_and_run_tool() {
         assert!(schema.description.len() > 20);
         let document = skein_llm::Json::from_bytes(&schema.schema, &limits().client.dialect)
             .expect("production schema is bounded valid JSON");
-        assert_eq!(document.as_tokens().first(), Some(&skein_json::Token::ObjectStart));
+        assert_eq!(document.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
     }
 }
 
@@ -222,10 +223,9 @@ fn nesting_is_refused_for_any_agents_field_and_any_child_sub_agent_call() {
     let schemas = adapter::schemas(&prompt(), &limits.stated);
     let child = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
     let document = skein_llm::Json::from_bytes(&child.schema, &limits.client.dialect).expect("valid schema");
-    assert!(
-        !document
-            .as_tokens()
-            .iter()
-            .any(|token| matches!(token, skein_json::Token::Key(name) if name.as_ref() == b"agents"))
-    );
+    let document = document.document();
+    assert!(!(0..document.len()).any(|index| {
+        let token = document.token(index).expect("within document");
+        token.kind == skein_json::Kind::Key && document.text(token) == Some(b"agents".as_slice())
+    }));
 }

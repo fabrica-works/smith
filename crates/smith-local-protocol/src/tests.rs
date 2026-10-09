@@ -113,7 +113,12 @@ fn a_deleted_original_conflict_file_is_resolved() {
     .unwrap();
     drop(markers.start());
     let crate::MarkerAction::Done(GitResult::Markers { first: None }) =
-        markers.from_file(skein_io::file::Event::Failed { owner, error: skein_io::kernel::Error::NotFound })
+        markers.from_file(skein_io::file::Event::Failed {
+            owner,
+            error: skein_io::kernel::Error::NotFound,
+            committed: false,
+            residue: None,
+        })
     else {
         panic!("deleted conflict resolved")
     };

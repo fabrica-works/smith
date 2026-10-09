@@ -149,6 +149,7 @@ mod tests {
     #[test]
     fn a_turn_shows_the_tool_name_and_its_terminal() {
         let turn = agent::Turn {
+            kind: session::record::Kind::First { affinity: session::llm::Affinity { key: [0; 16], thread: 0 } },
             version: 1,
             endpoint: session::llm::Endpoint(1),
             dialect: 1,

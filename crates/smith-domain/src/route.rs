@@ -407,7 +407,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
                 return;
             }
             let sequence = turn.sequence;
-            let opens_window = sequence == 1;
+            let opens_window = turn.kind.opens_window();
             let record =
                 domain.turns.insert(TurnHandoff { turn: Some(turn) }).expect("room for every queued session turn");
             run::Event::Turn { conversation: opener, record: record.token(), sequence, opens_window }

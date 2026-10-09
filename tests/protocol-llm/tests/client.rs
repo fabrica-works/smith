@@ -36,6 +36,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 fn prompt() -> llm::Prompt {
     llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
+        affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),
@@ -529,5 +530,38 @@ fn unknown_call_uses_its_full_secured_fallback_cell() {
         assert!(wire.close().is_empty());
         assert!(wire.settle().is_empty());
         assert!(wire.settle().is_empty());
+    }
+}
+
+#[test]
+fn actual_requests_render_the_run_key_and_thread_only_for_codex() {
+    for configuration in wire::configurations() {
+        for (thread, expected_thread) in
+            [(0, "42424242-4242-4242-4242-424242424242"), (0x0102_0304, "42424242-4242-4242-4242-424243404146")]
+        {
+            let mut prompt = prompt();
+            prompt.affinity = llm::Affinity { key: [0x42; 16], thread };
+            let (wire, terminal) = run_wire(prompt, &configuration, 200 + u64::from(thread));
+            assert!(matches!(terminal, Event::Completed { .. }));
+            let request = smith_protocol_llm_world::referee::NativeRequest::from_http(&wire.peer.requests);
+            match configuration.endpoint.provider {
+                skein_llm::Provider::OpenAiCodex => {
+                    assert_eq!(
+                        request.affinity,
+                        Some([
+                            "\"42424242-4242-4242-4242-424242424242\"".into(),
+                            "42424242-4242-4242-4242-424242424242".into(),
+                            expected_thread.into()
+                        ])
+                    );
+                    assert_eq!(wire.peer.queries[0].caching, skein_fake_llm_domain::api::Caching::Scope([0x42; 16]));
+                }
+                skein_llm::Provider::Anthropic => {
+                    assert_eq!(request.affinity, None);
+                    assert!(!String::from_utf8_lossy(&wire.peer.requests).contains("session-id:"));
+                    assert!(!String::from_utf8_lossy(&wire.peer.requests).contains("thread-id:"));
+                }
+            }
+        }
     }
 }

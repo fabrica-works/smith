@@ -151,6 +151,7 @@ impl Post {
             | io::Event::Output { .. }
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
             | io::Event::Shutdown { .. } => {}
         }
         self.route(now, wall, out);
@@ -437,6 +438,7 @@ mod tests {
                 | io::Request::Stream { .. }
                 | io::Request::Output { .. }
                 | io::Request::Spawn { .. }
+                | io::Request::Usage { .. }
                 | io::Request::Signal { .. }
                 | io::Request::Close { .. } => panic!("unexpected POST operation {request:?}"),
             }

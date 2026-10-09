@@ -195,6 +195,7 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
     let opener = world.submit(
         Time::ZERO,
         Spec {
+            affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
             progress: smith_domain_session::Progress { head: Duration::from_secs(1), idle: Duration::from_secs(1) },
             ..spec(b"fix the build")
         },
@@ -203,7 +204,10 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
 
     assert_eq!(
         end(&world, opener),
-        End::Failed { failure: Failure::TimedOut, evidence: smith_domain_session::llm::Evidence::Unknown }
+        End::Failed {
+            failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Whole },
+            evidence: smith_domain_session::llm::Evidence::Unknown
+        }
     );
     let stats = world.stats();
     assert_eq!((stats.calls, stats.timeouts, stats.late_answers), (3, 3, 3));

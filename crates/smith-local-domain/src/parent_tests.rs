@@ -117,6 +117,7 @@ fn told_and_withdrawn_do_not_abandon_a_durable_delivery() {
 fn a_parent_turn_moves_its_concrete_value_to_the_durable_store() {
     let (mut domain, env, mut out) = running(crate::tests::config());
     let turn = smith_domain::Turn {
+        kind: session::record::Kind::First { affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 } },
         version: session::record::VERSION,
         endpoint: session::llm::Endpoint(4),
         dialect: 1,

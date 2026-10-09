@@ -335,6 +335,7 @@ fn changed_bytes_between_check_and_submission_are_rejected_after_positive_check(
 fn prefix_query() -> skein_fake_llm_domain::api::Query {
     use skein_fake_llm_domain::api::{Message, Part, Query, Role, ToolChoice};
     Query {
+        caching: skein_fake_llm_domain::api::Caching::Scope([0; 16]),
         model: b"model".as_slice().into(),
         system: b"system".as_slice().into(),
         tools: Box::new([]),
@@ -380,4 +381,13 @@ fn changed_conversation_tools_are_rejected() {
         parameters: b"{}".as_slice().into(),
     }]);
     broken(referee, Seen::Prompt { owner: Token::new(1), query: changed }, "a session keeps its offered tools");
+}
+
+#[test]
+fn changed_window_affinity_is_rejected() {
+    let mut referee = Referee::new(Meeting::default());
+    referee.observe(Time::ZERO, Seen::Prompt { owner: Token::new(1), query: prefix_query() }, &mut Vec::new());
+    let mut changed = prefix_query();
+    changed.caching = skein_fake_llm_domain::api::Caching::Scope([1; 16]);
+    broken(referee, Seen::Prompt { owner: Token::new(1), query: changed }, "a session keeps its affinity");
 }

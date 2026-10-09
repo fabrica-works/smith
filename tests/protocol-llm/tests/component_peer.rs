@@ -165,6 +165,7 @@ fn run(dialect: Provider, calls: bool) {
             grant: GrantName { account: 0, generation: 1 },
             prompt: llm::Prompt {
                 namespace: smith_domain::tools::Namespace::One,
+                affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
                 asker: llm::Asker::Main,
                 endpoint: llm::Endpoint(1),
                 model: call.prompt.model,
@@ -248,7 +249,8 @@ fn run(dialect: Provider, calls: bool) {
                 | IoRequest::Reject { .. }
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
-                | IoRequest::Signal { .. }) => panic!("unexpected io request: {other:?}"),
+                | IoRequest::Signal { .. }
+                | IoRequest::Usage { .. }) => panic!("unexpected io request: {other:?}"),
             }
         }
         if wire.server.received.len() > received {

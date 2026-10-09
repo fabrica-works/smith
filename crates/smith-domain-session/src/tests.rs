@@ -287,6 +287,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 
 fn spec() -> Spec {
     Spec {
+        affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
         endpoint: Endpoint(0),
         model: bytes(b"model"),
@@ -1237,7 +1238,7 @@ fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
     assert_eq!(
         h.step(Event::Failed {
             owner,
-            failure: Failure::TimedOut,
+            failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
             evidence: crate::llm::Evidence::Response,
             detail: Box::default(),
         }),

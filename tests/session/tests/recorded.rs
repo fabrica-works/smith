@@ -1071,3 +1071,74 @@ fn a_generic_yield_with_two_unstarted_wait_calls_restores_both_as_not_run() {
         if one.as_ref() == b"one" && two.as_ref() == b"two" && text.as_ref() == b"wake"));
     restored.close();
 }
+
+#[test]
+fn opening_affinity_is_fixed_and_the_recorded_window_overrides_a_fresh_spec() {
+    let affinity = llm::Affinity { key: [0x42; 16], thread: 3 };
+    let mut first = World::new(17, 256);
+    let mut fresh = opening(None, 100);
+    fresh.spec.affinity = affinity;
+    first.open(fresh);
+    assert_eq!(first.prompts[0].affinity, affinity);
+    first.complete(
+        Box::new([llm::Block::Text { text: b"answer".as_slice().into(), replay: None }]),
+        llm::Stop::EndTurn,
+        llm::Usage::ZERO,
+    );
+    assert_eq!(first.turns[0].kind, record::Kind::First { affinity });
+    assert!(first.turns[0].kind.opens_window());
+    first.close();
+    let mut resumed = World::new(18, 256);
+    let mut next = opening(Some(transcript(&first)), 100);
+    next.spec.affinity = llm::Affinity { key: [0x17; 16], thread: 99 };
+    resumed.open(next);
+    assert_eq!(resumed.prompts[0].affinity, affinity);
+    resumed.complete(
+        Box::new([llm::Block::Text { text: b"continued".as_slice().into(), replay: None }]),
+        llm::Stop::EndTurn,
+        llm::Usage::ZERO,
+    );
+    assert_eq!(resumed.turns[0].kind, record::Kind::Ordinary);
+    assert!(!resumed.turns[0].kind.opens_window());
+    resumed.close();
+}
+
+#[test]
+fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
+    let affinity = llm::Affinity { key: [0x25; 16], thread: 7 };
+    let messages = Box::new([llm::Message {
+        role: llm::Role::User,
+        content: Box::new([
+            llm::Block::Text { text: b"task".as_slice().into(), replay: None },
+            llm::Block::Text { text: b"summary".as_slice().into(), replay: None },
+        ]),
+    }]);
+    let window = record::Turn {
+        version: record::VERSION,
+        kind: record::Kind::Window { affinity },
+        endpoint: llm::Endpoint(7),
+        dialect: 23,
+        sequence: 19,
+        usage: llm::Usage::ZERO,
+        spent: 0,
+        messages: messages.clone(),
+    };
+    let history = record::Transcript {
+        version: record::VERSION,
+        endpoint: window.endpoint,
+        dialect: window.dialect,
+        turns: Box::new([window]),
+    };
+    let mut world = World::new(19, 256);
+    world.open(opening(Some(history), 100));
+    assert_eq!(world.prompts[0].affinity, affinity);
+    assert_eq!(world.prompts[0].messages[0], messages[0]);
+    world.complete(
+        Box::new([llm::Block::Text { text: b"continued".as_slice().into(), replay: None }]),
+        llm::Stop::EndTurn,
+        llm::Usage::ZERO,
+    );
+    assert_eq!(world.turns[0].sequence, 20);
+    assert_eq!(world.turns[0].kind, record::Kind::Ordinary);
+    world.close();
+}

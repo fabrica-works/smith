@@ -42,6 +42,7 @@ pub(crate) fn query(prompt: agent::Prompt, stated: &adapter::Stated) -> provider
         })
         .collect();
     provider::Query {
+        caching: provider::Caching::Scope(prompt.affinity.key),
         model: prompt.model,
         system: prompt.system,
         tools: tools.into(),

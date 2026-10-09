@@ -189,6 +189,9 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
     use smith_host_domain::{self as host, process};
     let (mut domain, env, mut out, owner) = spawned_chat_with_saved_hello();
     let turn = smith_domain::Turn {
+        kind: smith_domain::session::record::Kind::First {
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+        },
         version: smith_domain::session::record::VERSION,
         endpoint: smith_domain::session::llm::Endpoint(4),
         dialect: 1,

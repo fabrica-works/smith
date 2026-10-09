@@ -6,8 +6,8 @@
 
 use alloc::boxed::Box;
 
-use skein_json::{Document, Kind as JsonKind};
 use skein_json::writer::{self, Encoder};
+use skein_json::{Document, Kind as JsonKind};
 use skein_lib::List;
 use skein_llm::{DocumentError, Json};
 use smith_domain::{llm, run};
@@ -304,7 +304,8 @@ fn required_fields(document: &Document, object: Value) -> Result<Box<[run::outco
                 if kind(document, next) != Some(JsonKind::String) {
                     return Err(wrong_type(name));
                 }
-                fields.push(run::outcome::Field { name: name.into(), value: text(document, next)?.into() })
+                fields
+                    .push(run::outcome::Field { name: name.into(), value: text(document, next)?.into() })
                     .or(Err(llm::Problem::TooLarge))?;
                 cursor = next.checked_add(1).ok_or(llm::Problem::TooLarge)?;
             }
@@ -328,10 +329,12 @@ fn items(document: &Document, object: Value) -> Result<Box<[run::outcome::Item]>
             Some(JsonKind::ObjectStart) => {
                 let end = value_end(document, cursor, value.end).ok_or(llm::Problem::NotAnObject)?;
                 let one = Value { start: cursor, end };
-                items.push(run::outcome::Item {
-                    kind: required_string(document, one, b"kind")?,
-                    fields: required_fields(document, one)?,
-                }).or(Err(llm::Problem::TooLarge))?;
+                items
+                    .push(run::outcome::Item {
+                        kind: required_string(document, one, b"kind")?,
+                        fields: required_fields(document, one)?,
+                    })
+                    .or(Err(llm::Problem::TooLarge))?;
                 cursor = end;
             }
             Some(_) => return Err(wrong_type(b"items")),
@@ -382,8 +385,13 @@ fn value_end(document: &Document, start: u32, bound: u32) -> Option<u32> {
                             return index.checked_add(1);
                         }
                     }
-                    JsonKind::Key | JsonKind::String | JsonKind::Number | JsonKind::True
-                    | JsonKind::False | JsonKind::Null | JsonKind::Long => {}
+                    JsonKind::Key
+                    | JsonKind::String
+                    | JsonKind::Number
+                    | JsonKind::True
+                    | JsonKind::False
+                    | JsonKind::Null
+                    | JsonKind::Long => {}
                 }
             }
             None

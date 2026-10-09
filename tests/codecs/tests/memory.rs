@@ -138,6 +138,15 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
     let value = transcript::Turn::new(
         &limits,
         transcript::TurnParts {
+            kind: transcript::TurnKind::Ordinary,
+            affinity: if 1 == 1 {
+                Some(
+                    transcript::Affinity::new(&limits, transcript::AffinityParts { key: [0; 16], thread: 0 })
+                        .expect("fixture affinity"),
+                )
+            } else {
+                None
+            },
             endpoint: Box::from(&b""[..]),
             dialect: Box::from(&b""[..]),
             place: 1,

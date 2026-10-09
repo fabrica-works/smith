@@ -191,7 +191,8 @@ impl GitChild {
             | io::Event::Connecting { .. }
             | io::Event::Connected { .. }
             | io::Event::Output { .. }
-            | io::Event::Shutdown { .. } => unreachable!("only child and pipe events route to git"),
+            | io::Event::Shutdown { .. }
+            | io::Event::Usage { .. } => unreachable!("only child and pipe events route to git"),
         }
         self.advance(above, below);
     }
