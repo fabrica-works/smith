@@ -194,7 +194,7 @@ impl World {
                 self.seen.messages.extend(start.messages.iter().map(|message| message.name));
             }
             Input::Parent(parent::Event::Message { agent, name, .. })
-                if self.seen.agent == Some(*agent) && self.seen.gone.is_none() =>
+                if (self.seen.agent == Some(*agent) || self.seen.owner == Some(*agent)) && self.seen.gone.is_none() =>
             {
                 self.seen.messages.push(*name);
             }
@@ -580,6 +580,8 @@ impl Seen {
                     assert!(lower_settled, "Gone retains every lower terminal");
                     assert!(self.calls.is_empty(), "Gone retains every parent call");
                     assert!(self.turns.is_empty(), "Gone retains every told turn");
+                }
+                if self.agent.is_some() || self.owner.is_some() {
                     assert!(self.unread.is_some(), "the unread report precedes Gone");
                     assert!(self.messages.is_empty(), "every accepted message ended before Gone");
                 }
