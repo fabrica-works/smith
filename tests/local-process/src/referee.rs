@@ -123,7 +123,10 @@ impl Expectations for Meeting {
                 } else if matches!(self.ending, Ending::HostFailure) {
                     judge.check(self.activation.is_some() && !self.shown, "failed store owns the terminal failure");
                 } else if matches!(self.ending, Ending::Dropped) {
-                    judge.check(self.activation.is_some() && !self.answered && !self.shown, "dropped run never answered");
+                    judge.check(
+                        self.activation.is_some() && !self.answered && !self.shown,
+                        "dropped run never answered",
+                    );
                 } else if self.require_facts {
                     judge.check(self.shown && self.answered, "the invocation actually answered and showed it");
                 }
@@ -508,7 +511,10 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         }
     }
     fn next_deadline(&self) -> Option<Time> {
-        [self.next_act, self.drop_at, self.meeting.next_deadline(), self.end.filter(|_| !self.reviewed)].into_iter().flatten().min()
+        [self.next_act, self.drop_at, self.meeting.next_deadline(), self.end.filter(|_| !self.reviewed)]
+            .into_iter()
+            .flatten()
+            .min()
     }
     fn overdue(&self, now: Time) -> Option<String> {
         (self.end.is_some_and(|end| now >= end) && !self.reviewed)

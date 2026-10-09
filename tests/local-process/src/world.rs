@@ -334,7 +334,8 @@ impl World {
         world.scenario.ending = Ending::Dropped;
         world.scenario.commands = vec![
             Action::Send(b"hello\n".as_slice().into()),
-            Action::Wait(b"Run dropped".as_slice().into()), Action::Eof,
+            Action::Wait(b"Run dropped".as_slice().into()),
+            Action::Eof,
         ];
         world
     }

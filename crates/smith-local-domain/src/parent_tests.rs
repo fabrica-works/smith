@@ -51,12 +51,16 @@ fn the_first_drop_cause_survives_store_failure_and_the_childs_later_fault() {
         };
         assert_eq!(domain.end_cause(), Some(cause));
         parent_request(
-            &mut domain, &env,
-            parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Exited }, &mut out,
+            &mut domain,
+            &env,
+            parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Exited },
+            &mut out,
         );
         parent_request(
-            &mut domain, &env,
-            parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() }, &mut out,
+            &mut domain,
+            &env,
+            parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() },
+            &mut out,
         );
         assert_eq!(domain.end_cause(), Some(cause), "later child terminals cannot replace the cause");
         let mut status = None;

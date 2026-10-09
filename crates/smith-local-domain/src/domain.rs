@@ -51,7 +51,7 @@ pub struct Domain {
     held: Queue<Held>,
     stop_failed: bool,
     end_cause: Option<crate::EndCause>,
-    cancelling: bool,
+    cancel_requested: Option<Time>,
     agent_failed: bool,
     agent_life: AgentLife,
     show_bytes: u32,
@@ -171,7 +171,7 @@ impl Domain {
             held: Queue::with_capacity(1),
             stop_failed: false,
             end_cause: None,
-            cancelling: false,
+            cancel_requested: None,
             agent_failed: false,
             agent_life: AgentLife::Starting,
             show_bytes: limits.show_bytes,
@@ -561,7 +561,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.agent_life = AgentLife::Starting;
     domain.agent_failed = false;
     domain.end_cause = None;
-    domain.cancelling = false;
+    domain.cancel_requested = None;
     let source = RunStart {
         activation: domain.chat.state.activation,
         charter: charter(&domain.config),
@@ -690,7 +690,7 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
             out.push(Request::Exit { status: ExitStatus::Success });
         }
         Phase::Running => {
-            domain.cancelling = true;
+            domain.cancel_requested = Some(env.now);
             domain.chat.phase = Phase::Ending;
             domain.wall_deadline = None;
             if let Some(run) = domain.run {
@@ -882,7 +882,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
         parent::Request::Faulted { fault, .. } => {
             let dropped = match fault {
                 host::Fault::Exited => match env.limits.agent {
-                    AgentLimits::Inline(_) => domain.cancelling,
+                    AgentLimits::Inline(_) => domain.cancel_requested.is_some(),
                     AgentLimits::Spawned(_) => false,
                 },
                 host::Fault::Rules | host::Fault::TooLarge | host::Fault::NoProgress | host::Fault::WallTime => false,

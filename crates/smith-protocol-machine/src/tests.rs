@@ -344,7 +344,7 @@ fn cancelling_a_guide_open_waits_for_its_actual_file_terminal() {
             FromDomain::Read { owner, at, max: 3, deadline }
         };
         component.from_domain(&env(), request, &mut to_domain, &mut below);
-        assert!(matches!(below.pop(), Some(Below::OpenRead { .. })));
+        let Some(Below::OpenRead { .. }) = below.pop() else { panic!("expected an actual guide open") };
         component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
         assert_eq!(below.pop(), Some(Below::CancelFile { owner }));
         assert!(to_domain.is_empty(), "cancel request does not fabricate the guide's terminal");
@@ -355,7 +355,8 @@ fn cancelling_a_guide_open_waits_for_its_actual_file_terminal() {
             ToDomain::Read { owner, read: run::Read::Failed }
         };
         assert_eq!(to_domain.pop(), Some(expected));
-        assert!(component.is_empty());
+        // Installing a new workspace asserts that every retained operation has ended.
+        component.workspace(&run::Workspace { directories: Box::new([]) });
     }
 }
 
@@ -384,19 +385,23 @@ fn a_cancelled_guide_closes_its_open_descriptor_before_its_terminal() {
         &mut to_domain,
         &mut below,
     );
-    assert!(matches!(below.pop(), Some(Below::File { request: file::Request::ReadAt { .. }, .. })));
+    let Some(Below::File { request: file::Request::ReadAt { .. }, .. }) = below.pop() else {
+        panic!("expected an actual guide read");
+    };
     component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
     assert_eq!(below.pop(), Some(Below::CancelFile { owner }));
     component.from_below(&env(), BelowEvent::File(file::Event::Cancelled { owner }), &mut to_domain, &mut below);
-    assert!(
-        matches!(below.pop(), Some(Below::File { request: file::Request::Close { file, .. }, .. }) if file == descriptor)
-    );
+    let Some(Below::File { request: file::Request::Close { file, .. }, .. }) = below.pop() else {
+        panic!("expected an actual descriptor close");
+    };
+    assert_eq!(file, descriptor);
     component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
     assert!(below.is_empty(), "a repeated cancel leaves descriptor close to finish");
     assert!(to_domain.is_empty());
     component.from_below(&env(), BelowEvent::File(file::Event::Closed { owner }), &mut to_domain, &mut below);
     assert_eq!(to_domain.pop(), Some(ToDomain::Read { owner, read: run::Read::Failed }));
-    assert!(component.is_empty());
+    // Installing a new workspace asserts that every retained operation has ended.
+    component.workspace(&run::Workspace { directories: Box::new([]) });
 }
 
 #[test]

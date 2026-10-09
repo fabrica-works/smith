@@ -510,13 +510,21 @@ impl Host for Local {
                             domain::StoreFailure::Read => "read failed",
                             domain::StoreFailure::Write => "write failed",
                         };
-                        format!("run failed: chat {}: turn {turn} could not be kept: {reason}",
-                            String::from_utf8_lossy(self.service.chat_name()))
+                        format!(
+                            "run failed: chat {}: turn {turn} could not be kept: {reason}",
+                            String::from_utf8_lossy(self.service.chat_name())
+                        )
                     }
-                    Some(domain::EndCause::Host { turn: None, .. } | domain::EndCause::Agent)
-                    | Some(domain::EndCause::Cancelled) | None => "local chat ended with a failure".into(),
+                    Some(
+                        domain::EndCause::Host { turn: None, .. }
+                        | domain::EndCause::Agent
+                        | domain::EndCause::Cancelled,
+                    )
+                    | None => "local chat ended with a failure".into(),
                 }),
-                Some(Ok(domain::ExitStatus::Interrupted)) => Some("interrupted: the run was dropped before it answered".into()),
+                Some(Ok(domain::ExitStatus::Interrupted)) => {
+                    Some("interrupted: the run was dropped before it answered".into())
+                }
                 Some(Ok(domain::ExitStatus::Success)) | None => None,
             };
             if let Some(why) = failure {
@@ -600,11 +608,13 @@ impl Host for Local {
             && self.requests.is_empty()
     }
     fn exit(&self) -> Option<kernel::Exit> {
-        self.result().map(|result| kernel::Exit::Code(match result {
-            Ok(domain::ExitStatus::Success) => 0,
-            Ok(domain::ExitStatus::Failed) | Err(_) => 1,
-            Ok(domain::ExitStatus::Interrupted) => 130,
-        }))
+        self.result().map(|result| {
+            kernel::Exit::Code(match result {
+                Ok(domain::ExitStatus::Success) => 0,
+                Ok(domain::ExitStatus::Failed) | Err(_) => 1,
+                Ok(domain::ExitStatus::Interrupted) => 130,
+            })
+        })
     }
 
     fn worst_case(&self) -> u64 {
