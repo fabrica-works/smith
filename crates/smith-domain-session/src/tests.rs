@@ -1107,7 +1107,7 @@ fn opens_beyond_the_session_slots_are_refused_as_busy() {
             end: End::Busy,
             turns: 0,
             usage: Usage::ZERO,
-            reported: Usage::ZERO
+            reported: Usage::NONE
         })
     );
 }

@@ -180,8 +180,8 @@ struct Conversation {
     budget: Budget,
     turns: u32,
     usage: Usage,
-    /// Checked sums of reported counts only; every field is present, even when
-    /// the raw cumulative report is unavailable. Token budgets use these sums.
+    /// Checked sums of supplied counts; each stays absent until reported once.
+    /// Token budgets count these sums independently of missing reports.
     reported: Usage,
     /// When the time budget runs out.
     expires: Time,
@@ -1718,24 +1718,24 @@ fn sum_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>
     }
 }
 
-/// Numeric budget bookkeeping adds only supplied counts, including after gaps.
+/// Budget bookkeeping adds supplied counts across gaps, preserving absence.
 fn checked_reported(previous: Usage, received: Usage) -> Option<Usage> {
     Some(Usage {
-        input_tokens: add_reported_count(previous.input_tokens, received.input_tokens)?,
-        output_tokens: add_reported_count(previous.output_tokens, received.output_tokens)?,
-        cache_read_tokens: add_reported_count(previous.cache_read_tokens, received.cache_read_tokens)?,
-        cache_write_tokens: add_reported_count(previous.cache_write_tokens, received.cache_write_tokens)?,
-        reasoning_tokens: add_reported_count(previous.reasoning_tokens, received.reasoning_tokens)?,
+        input_tokens: add_reported_count(previous.input_tokens, received.input_tokens).ok()?,
+        output_tokens: add_reported_count(previous.output_tokens, received.output_tokens).ok()?,
+        cache_read_tokens: add_reported_count(previous.cache_read_tokens, received.cache_read_tokens).ok()?,
+        cache_write_tokens: add_reported_count(previous.cache_write_tokens, received.cache_write_tokens).ok()?,
+        reasoning_tokens: add_reported_count(previous.reasoning_tokens, received.reasoning_tokens).ok()?,
     })
 }
 
-fn add_reported_count(previous: Option<u64>, received: Option<u64>) -> Option<Option<u64>> {
+fn add_reported_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>, End> {
     match previous {
         Some(previous) => match received {
-            Some(received) => Some(Some(previous.checked_add(received)?)),
-            None => Some(Some(previous)),
+            Some(received) => Ok(Some(previous.checked_add(received).ok_or(End::UsageOverflow)?)),
+            None => Ok(Some(previous)),
         },
-        None => Some(received),
+        None => Ok(received),
     }
 }
 

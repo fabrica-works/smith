@@ -712,7 +712,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
             end: smith_domain_session::End::TranscriptRefused { reason: record::Refusal::TooLarge },
             turns: 0,
             usage: Usage::ZERO,
-            reported: Usage::ZERO,
+            reported: Usage::NONE,
         })
     );
     assert!(out.is_empty());

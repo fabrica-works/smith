@@ -145,8 +145,8 @@ pub struct Prices {
     pub unit: u32,
 }
 
-/// Exact charged activation accounting, independent of the budget. A failed
-/// addition leaves every field unchanged.
+/// Charged activation accounting with each supplied raw count, absent until
+/// any completion reports it. A failed addition leaves every field unchanged.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Spend {
     /// Actual completion count.
@@ -224,11 +224,11 @@ impl Spend {
     pub fn accumulate(self, increment: Spend) -> Option<Spend> {
         Some(Spend {
             turns: self.turns.checked_add(increment.turns)?,
-            input: add_count(self.input, increment.input)?,
-            output: add_count(self.output, increment.output)?,
-            cache_read: add_count(self.cache_read, increment.cache_read)?,
-            cache_write: add_count(self.cache_write, increment.cache_write)?,
-            reasoning: add_count(self.reasoning, increment.reasoning)?,
+            input: add_count(self.input, increment.input).ok()?,
+            output: add_count(self.output, increment.output).ok()?,
+            cache_read: add_count(self.cache_read, increment.cache_read).ok()?,
+            cache_write: add_count(self.cache_write, increment.cache_write).ok()?,
+            reasoning: add_count(self.reasoning, increment.reasoning).ok()?,
             units: self.units.checked_add(increment.units)?,
         })
     }
@@ -248,13 +248,13 @@ impl Spend {
     }
 }
 
-fn add_count(previous: Option<u64>, received: Option<u64>) -> Option<Option<u64>> {
+fn add_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>, Overflow> {
     match previous {
         Some(previous) => match received {
-            Some(received) => Some(Some(previous.checked_add(received)?)),
-            None => Some(Some(previous)),
+            Some(received) => Ok(Some(previous.checked_add(received).ok_or(Overflow::Usage)?)),
+            None => Ok(Some(previous)),
         },
-        None => Some(received),
+        None => Ok(received),
     }
 }
 
