@@ -438,8 +438,8 @@ pub enum Ask {
     /// Open a sub-agent: a conversation of its own on `brief`, with families
     /// of tools no wider than the asker's, on the LLM named `llm` among the
     /// charter's (the main conversation's if none is named), and a share of
-    /// the budget no larger than `share` (what the run has left, if none is
-    /// asked for). Its last message is the call's result.
+    /// the ordinary pool, clamped by `share` when a part is asked for.
+    /// Its last message is the call's result.
     SubAgent {
         /// Text supplied for the sub-agent, bounded by the receiving session's byte cap.
         brief: Box<[u8]>,
@@ -447,8 +447,7 @@ pub enum Ask {
         families: Families,
         /// Configured sub-agent model or main model when no override is requested.
         llm: Option<Box<[u8]>>,
-        /// Optional sub-agent usage ceiling, no larger than what the run has left.
-        share: Option<crate::Share>,
+        share: crate::Share,
     },
 }
 

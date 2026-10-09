@@ -337,7 +337,8 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
         let yielded = Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(100) };
         assert_eq!(step(yielded), [Asked::Other], "nudged");
         let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: false };
-        let ask = Ask::SubAgent { brief: bytes(10), families, llm: Some(bytes(1)), share: None };
+        let ask =
+            Ask::SubAgent { brief: bytes(10), families, llm: Some(bytes(1)), share: smith_domain_run::Share::UNASKED };
         let delegated = Event::Delegated {
             name: smith_domain_run::CallName { activation: 1, completion: 1, position: 0 },
             conversation,

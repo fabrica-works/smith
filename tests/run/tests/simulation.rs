@@ -175,7 +175,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
                     agents: false,
                 },
                 llm: None,
-                share: None,
+                share: run::Share::UNASKED,
             },
             deadline: Time::ZERO.saturating_add(Duration::from_secs(30)),
         },

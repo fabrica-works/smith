@@ -66,8 +66,8 @@ pub use boundary::{
     MessageRefusal, Opening, Place, Policy, Ran, Read, Refusal, Request, Returned, Stop, TranscriptRefusal, Window,
 };
 pub use budget::{
-    Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Overflow, Part, Prices, Rate, ReceivingLimit, Share,
-    Spend, admit, reserve_spend,
+    Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Granted, Overflow, Part, Prices, Rate, ReceivingLimit,
+    Set, Share, Spend, admit, reserve_spend,
 };
 pub use charter::{Brief, Charter, Conventions, Section};
 pub use domain::{

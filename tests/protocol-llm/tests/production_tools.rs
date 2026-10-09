@@ -133,7 +133,8 @@ fn wait_and_sub_agent_decode_into_run_asks() {
         &limits,
     );
     match decoded {
-        llm::Decoded::Served { ask: run::Ask::SubAgent { brief, families, llm, share: None } } => {
+        llm::Decoded::Served { ask: run::Ask::SubAgent { brief, families, llm, share } } => {
+            assert_eq!(share, run::Share::UNASKED);
             assert_eq!(brief.as_ref(), b"look");
             assert!(families.tools.inspect && families.tools.shell && !families.tools.modify && !families.agents);
             assert_eq!(llm.as_deref(), Some(b"small".as_slice()));
@@ -142,6 +143,54 @@ fn wait_and_sub_agent_decode_into_run_asks() {
             panic!("{other:?}");
         }
     }
+}
+
+#[test]
+fn optional_child_turns_and_seconds_decode_without_a_schema_maximum() {
+    use skein_lib::Duration;
+
+    let limits = limits();
+    for (input, turns, time) in [
+        (br#"{"brief":"look","tools":[],"max_turns":2,"max_seconds":3}"#.as_slice(), Some(2), Some(3)),
+        (br#"{"brief":"look","tools":[],"max_turns":4294967295}"#, Some(u32::MAX), None),
+        (br#"{"brief":"look","tools":[],"max_seconds":4294967295}"#, None, Some(u32::MAX)),
+        (br#"{"brief":"look","tools":[]}"#, None, None),
+    ] {
+        let decoded =
+            adapter::decode(b"sub_agent", input, grants(), &[llm::Served::SubAgent], llm::Asker::Main, &limits);
+        let llm::Decoded::Served { ask: run::Ask::SubAgent { share, .. } } = decoded else {
+            panic!("expected a child ask: {decoded:?}");
+        };
+        assert_eq!(share, run::Share { turns, time: time.map(|seconds| Duration::from_secs(u64::from(seconds))) });
+    }
+    for field in ["max_turns", "max_seconds"] {
+        for value in ["0", "-1", "1.5", "1e2", "4294967296"] {
+            let input = format!("{{\"brief\":\"look\",\"tools\":[],\"{field}\":{value}}}");
+            assert_eq!(
+                adapter::decode(
+                    b"sub_agent",
+                    input.as_bytes(),
+                    grants(),
+                    &[llm::Served::SubAgent],
+                    llm::Asker::Main,
+                    &limits
+                ),
+                llm::Decoded::Invalid { problem: llm::Problem::BadValue { field: field.as_bytes().into() } },
+                "{input}",
+            );
+        }
+    }
+    let schemas = adapter::schemas(&prompt(), &limits.stated);
+    let schema = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
+    let document = skein_llm::Json::from_bytes(&schema.schema, &limits.client.dialect).expect("bounded schema");
+    let keys: Vec<_> = document
+        .as_tokens()
+        .iter()
+        .filter_map(|token| if let skein_json::Token::Key(key) = token { Some(key.as_ref()) } else { None })
+        .collect();
+    assert!(keys.contains(&b"max_turns".as_slice()) && keys.contains(&b"max_seconds".as_slice()));
+    assert!(!keys.contains(&b"maximum".as_slice()));
+    assert!(schema.description.windows(b"finishing reserve".len()).any(|part| part == b"finishing reserve"));
 }
 
 #[test]

@@ -40,7 +40,7 @@ use skein_lib::bytes::copy_of;
 use skein_lib::{Duration, Id};
 
 use crate::boundary::{AskRefusal, End, Returned, Stop};
-use crate::budget::{Budget, Spend};
+use crate::budget::{Budget, Granted, Set, Share, Spend};
 use crate::call::{self, Withdrawal};
 use crate::charter::{Charter, Families, Llm};
 use crate::limits::Limits;
@@ -66,6 +66,7 @@ pub(crate) struct Plan {
     pub(crate) llm: Llm,
     pub(crate) families: Families,
     pub(crate) budget: Budget,
+    pub(crate) granted: Granted,
 }
 
 /// What a run has to open a sub-agent with: what it has spent, how many
@@ -87,7 +88,7 @@ pub(crate) fn plan(
     families: Families,
     wanted: Families,
     llm: Option<&[u8]>,
-    share: Option<crate::Share>,
+    share: Share,
     limits: &Limits,
 ) -> Result<Plan, AskRefusal> {
     if !families.agents || wanted.agents || !wanted.within(families) {
@@ -102,18 +103,27 @@ pub(crate) fn plan(
     };
     let reserve_spend =
         crate::budget::reserve_spend(charter.reserve, &charter.llm).expect("admission checked reserve spend");
-    let mut left = crate::budget::ordinary(&charter.budget, charter.reserve, reserve_spend, means.spent, means.left);
-    left.time = left.time.min(means.call_left);
-    let budget = match share {
-        None => left,
-        Some(share) => {
-            Budget { turns: share.turns.min(left.turns), spend: share.spend.min(left.spend), time: left.time }
-        }
+    let left = crate::budget::ordinary(&charter.budget, charter.reserve, reserve_spend, means.spent, means.left);
+    let (turns, turns_set) = match share.turns {
+        None => (left.turns, Set::Pool),
+        Some(turns) if turns <= left.turns => (turns, Set::Asked),
+        Some(_) => (left.turns, Set::Reserve),
     };
+    let (mut time, mut time_set) = match share.time {
+        None => (left.time, Set::Pool),
+        Some(time) if time <= left.time => (time, Set::Asked),
+        Some(_) => (left.time, Set::Reserve),
+    };
+    if means.call_left < time {
+        time = means.call_left;
+        time_set = Set::Deadline;
+    }
+    let granted = Granted { turns, time, spend: left.spend, turns_set, time_set };
+    let budget = Budget { turns, time, spend: granted.spend };
     if !budget.is_workable() {
         return Err(AskRefusal::Unworkable);
     }
-    Ok(Plan { llm, families: wanted, budget })
+    Ok(Plan { llm, families: wanted, budget, granted })
 }
 
 /// The child `child` of a call that just began.

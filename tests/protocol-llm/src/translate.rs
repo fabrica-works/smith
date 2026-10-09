@@ -185,7 +185,7 @@ pub(crate) fn decode(
             agents: false,
         };
         return agent::Decoded::Served {
-            ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: None },
+            ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: run::Share::UNASKED },
         };
     }
     let limits = adapter::Limits {

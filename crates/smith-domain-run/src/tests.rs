@@ -1485,7 +1485,12 @@ fn ask(
     llm: Option<Box<[u8]>>,
     share: Option<crate::Share>,
 ) -> Event {
-    let ask = Ask::SubAgent { brief: bytes(b"Find the parser."), families: wanted, llm, share };
+    let ask = Ask::SubAgent {
+        brief: bytes(b"Find the parser."),
+        families: wanted,
+        llm,
+        share: share.unwrap_or(crate::Share::UNASKED),
+    };
     Event::Delegated {
         name: crate::CallName { activation: 1, completion: 1, position: 0 },
         conversation,
@@ -1498,8 +1503,12 @@ fn ask(
 /// What `conversation` asks for a sub-agent that may inspect, as its call
 /// `call` due by `deadline`.
 fn ask_by(conversation: Token, call: u64, deadline: Time) -> Event {
-    let ask =
-        Ask::SubAgent { brief: bytes(b"Find it."), families: families(true, false, false), llm: None, share: None };
+    let ask = Ask::SubAgent {
+        brief: bytes(b"Find it."),
+        families: families(true, false, false),
+        llm: None,
+        share: crate::Share::UNASKED,
+    };
     Event::Delegated {
         name: crate::CallName { activation: 1, completion: 1, position: 0 },
         conversation,
@@ -1644,10 +1653,10 @@ fn a_sub_agent_runs_on_the_llm_named_for_it_among_the_charters() {
     let emitted = h.step(ask(main, 7, families(true, false, false), Some(bytes(b"model-b")), None));
     let [Request::Open { opening, .. }] = &*emitted else { panic!("expected the sub-agent to open") };
     assert_eq!(&opening.llm, &agents().models[0]);
-    let share = crate::Share { turns: 2, spend: 500 };
+    let share = crate::Share { turns: Some(2), time: Some(Duration::from_secs(30)) };
     let emitted = h.step(ask(main, 8, families(true, false, false), None, Some(share)));
     let [Request::Open { opening, .. }] = &*emitted else { panic!("expected the sub-agent to open") };
-    let budget = Budget { turns: 2, spend: 500, time: BUDGET.time };
+    let budget = Budget { turns: 2, spend: BUDGET.spend, time: Duration::from_secs(30) };
     assert_eq!(opening.budget, budget, "a share asked for, no larger than what is left");
 }
 
@@ -1660,6 +1669,59 @@ fn a_child_with_no_requested_share_gets_only_the_ordinary_pool() {
     drop(harness.step(Event::Used { conversation: main, spend: spend(100) }));
     let (_, opening) = harness.child(main, 7, families(true, false, false), 101);
     assert_eq!(opening.budget, Budget { turns: 7, spend: BUDGET.spend - 100, time: Duration::from_secs(540) });
+}
+
+#[test]
+fn asked_child_parts_are_clamped_independently_and_name_the_cause() {
+    use crate::{Granted, Set, Share};
+
+    let mut charter = agents();
+    charter.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
+    let ordinary = Duration::from_secs(540);
+    for (asked, call_left, turns, time, turns_set, time_set) in [
+        (Share::UNASKED, ordinary, 8, ordinary, Set::Pool, Set::Pool),
+        (
+            Share { turns: Some(3), time: Some(Duration::from_secs(4)) },
+            ordinary,
+            3,
+            Duration::from_secs(4),
+            Set::Asked,
+            Set::Asked,
+        ),
+        (Share { turns: Some(8), time: Some(ordinary) }, ordinary, 8, ordinary, Set::Asked, Set::Asked),
+        (Share { turns: Some(u32::MAX), time: Some(BUDGET.time) }, ordinary, 8, ordinary, Set::Reserve, Set::Reserve),
+        (Share { turns: Some(3), time: None }, ordinary, 3, ordinary, Set::Asked, Set::Pool),
+        (
+            Share { turns: None, time: Some(Duration::from_secs(4)) },
+            ordinary,
+            8,
+            Duration::from_secs(4),
+            Set::Pool,
+            Set::Asked,
+        ),
+        (Share::UNASKED, Duration::from_secs(1), 8, Duration::from_secs(1), Set::Pool, Set::Deadline),
+        (
+            Share { turns: Some(3), time: Some(Duration::from_secs(4)) },
+            Duration::from_secs(1),
+            3,
+            Duration::from_secs(1),
+            Set::Asked,
+            Set::Deadline,
+        ),
+    ] {
+        let plan = crate::agent::plan(
+            &charter,
+            crate::agent::Means { spent: Spend::ZERO, conversations: 1, left: BUDGET.time, call_left },
+            families(true, false, true),
+            families(true, false, false),
+            None,
+            asked,
+            &LIMITS,
+        )
+        .expect("positive ordinary pool");
+        assert_eq!(plan.granted, Granted { turns, time, spend: BUDGET.spend, turns_set, time_set });
+        assert_eq!(plan.budget, Budget { turns, time, spend: BUDGET.spend });
+    }
 }
 
 #[test]
@@ -1761,7 +1823,7 @@ fn an_ask_the_run_cannot_grant_returns_why_and_the_run_goes_on() {
         &[returned(9, refused(AskRefusal::UnknownLlm))]
     );
     // A share with no turn in it.
-    let none = crate::Share { turns: 0, spend: 10 };
+    let none = crate::Share { turns: Some(0), time: None };
     assert_eq!(
         &*h.step(ask(main, 10, families(true, false, false), None, Some(none))),
         &[returned(10, refused(AskRefusal::Unworkable))]

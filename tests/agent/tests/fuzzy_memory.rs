@@ -572,7 +572,9 @@ impl Driver {
 
                     agents: self.rng.chance(500),
                 };
-                return Decoded::Served { ask: Ask::SubAgent { brief: bytes(size), families, llm: None, share: None } };
+                return Decoded::Served {
+                    ask: Ask::SubAgent { brief: bytes(size), families, llm: None, share: run::Share::UNASKED },
+                };
             }
             _ => return Decoded::Invalid { problem: Problem::Missing { field: bytes(size.min(16)) } },
         };

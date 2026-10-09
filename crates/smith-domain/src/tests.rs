@@ -670,7 +670,7 @@ fn verdict(name: &[u8]) -> Ask {
 /// A sub-agent that may only read, and itself ask for sub-agents.
 fn sub_agent(brief: &[u8]) -> Ask {
     let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: false };
-    Ask::SubAgent { brief: bytes(brief), families, llm: None, share: None }
+    Ask::SubAgent { brief: bytes(brief), families, llm: None, share: run::Share::UNASKED }
 }
 
 fn served(id: &[u8], ask: Ask) -> Said {
@@ -1314,7 +1314,12 @@ fn an_ask_larger_than_the_session_may_hold_is_too_large() {
         brief.push(b'x').expect("room for the brief");
     }
     let brief = brief.into_boxed();
-    let ask = Ask::SubAgent { brief, families: Families { tools: TOOLS, agents: false }, llm: None, share: None };
+    let ask = Ask::SubAgent {
+        brief,
+        families: Families { tools: TOOLS, agents: false },
+        llm: None,
+        share: run::Share::UNASKED,
+    };
     assert!(h.answer(main, Box::new([served(b"a1", ask)])).is_empty());
     let (_, prompt) = completing(h.next());
     let [Block::ToolResult { id: _, result: Returned::Invalid { problem: Problem::TooLarge } }] = last(&prompt) else {

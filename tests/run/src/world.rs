@@ -481,7 +481,7 @@ struct Made {
     /// left as it took it.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
-    asked: Option<(Token, run::Budget)>,
+    asked: Option<(Token, run::Budget, run::Share, Duration)>,
 }
 
 /// A conversation's call, as the world tracks it.
@@ -609,7 +609,7 @@ pub struct World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     just_answered: Option<Token>,
-    asked: Option<(Token, run::Budget)>,
+    asked: Option<(Token, run::Budget, run::Share, Duration)>,
     child_of_call: BTreeMap<Token, Token>,
 
     stats: Stats,
@@ -846,12 +846,13 @@ impl World {
             let cancel = self.note(&event, run);
             // What the run has left as it takes an ask, before what else it
             // takes in this iteration is counted.
-            let asked = if let run::Event::Delegated { call, ask: run::Ask::SubAgent { .. }, .. } = &event {
-                let left = run.map(|run| self.views[&run].budget_left(self.now));
-                left.map(|left| (*call, left))
-            } else {
-                None
-            };
+            let asked =
+                if let run::Event::Delegated { call, ask: run::Ask::SubAgent { share, .. }, deadline, .. } = &event {
+                    let left = run.map(|run| self.views[&run].budget_left(self.now));
+                    left.map(|left| (*call, left, *share, deadline.saturating_since(self.now)))
+                } else {
+                    None
+                };
             let before = self.run_stage.out.len();
             run::step(&mut self.run, &self.run_stage.env, event, &mut self.run_stage.out);
             made.push(Made { run, requests: self.run_stage.out.len() - before, cancel, asked });
@@ -1399,11 +1400,14 @@ impl World {
                 assert!(view.main.is_none(), "a run opens main once, and sub-agents when asked");
                 view.main = Some(conversation);
             }
-            Some((call, left)) => {
+            Some((call, left, asked, call_left)) => {
                 // A sub-agent's share is within what its run had left as it
                 // took the ask.
                 let share = opening.budget;
-                self.share_seen.push((self.now, crate::share_referee::Seen { ordinary: left, effective: share }));
+                self.share_seen.push((
+                    self.now,
+                    crate::share_referee::Seen { ordinary: left, effective: share, asked, call_left },
+                ));
                 assert!(
                     share.turns <= left.turns && share.spend <= left.spend && share.time <= left.time,
                     "a sub-agent's share {share:?} is within what is left above the reserve, {left:?}"

@@ -7,6 +7,7 @@ use smith_protocol_llm_world::{Job, Settings, World, adapter, script, wire};
 
 #[test]
 fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
+    let mut crossed_old_document_cap = false;
     for configuration in wire::configurations() {
         let error_flag = configuration.error_flag;
         let mut scripts = script::all().into_vec();
@@ -30,6 +31,8 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
+        // The byte peer decodes the same complete native documents the client renders.
+        bounds.client.dialect.document_bytes = bounds.client.dialect.request_bytes;
         let mut settings = Settings { job: Job::Delegating, ..Settings::calm(704) };
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
@@ -43,6 +46,7 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
             world.answer(),
             world.wire_bindings().iter().map(|binding| binding.request.len()).collect::<Vec<_>>()
         );
+        crossed_old_document_cap |= check_document_bound(&world, &bounds, error_flag);
         let note = b"a sub-agent does its work itself";
         let feedback = world
             .prompts()
@@ -81,4 +85,33 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
                 if *is_error == error_flag && output.windows(note.len()).any(|bytes| bytes == note)))
         );
     }
+    assert!(crossed_old_document_cap, "a real native request witnesses the former peer-document refusal");
+}
+
+// Positive-first native document control: the larger application schema makes
+// the real final request exceed the former 8 KiB peer-document cap.
+fn check_document_bound(world: &World, bounds: &adapter::Limits, error_flag: bool) -> bool {
+    use skein_fake_llm_protocol::documents::{self, Provider};
+
+    let tape =
+        &world.wire_bindings().iter().max_by_key(|binding| binding.request.len()).expect("actual requests").request;
+    let head = tape.windows(4).position(|part| part == b"\r\n\r\n").expect("HTTP head");
+    let body = &tape[head + 4..];
+    let dialect = if error_flag { Provider::Anthropic } else { Provider::OpenAi };
+    let peer = skein_llm_world::fake::limits(&bounds.client);
+    assert!(
+        documents::request(dialect, body, &peer.documents).is_ok(),
+        "the actual complete request fits its configured document bound"
+    );
+    let mut small = peer.documents;
+    small.anthropic.document_bytes = 8192;
+    small.openai.document_bytes = 8192;
+    if body.len() <= 8192 {
+        return false;
+    }
+    assert!(
+        documents::request(dialect, body, &small).is_err(),
+        "lowering only the document cap rejects the same captured request"
+    );
+    true
 }

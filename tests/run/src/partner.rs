@@ -771,12 +771,12 @@ impl Partner {
             }
         }
         let share = if self.rng.chance(self.script.shares) {
-            Some(smith_domain_run::Share {
-                turns: u32::try_from(self.rng.between(1, 3)).expect("small"),
-                spend: self.rng.between(100, 4_000),
-            })
+            smith_domain_run::Share {
+                turns: Some(u32::try_from(self.rng.between(1, 3)).expect("small")),
+                time: Some(Duration::from_secs(self.rng.between(1, 4_000))),
+            }
         } else {
-            None
+            smith_domain_run::Share::UNASKED
         };
         let brief = b"Look into the parser, and say what you found."[..].into();
         Ask::SubAgent { brief, families, llm, share }

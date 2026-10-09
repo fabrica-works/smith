@@ -203,7 +203,16 @@ pub fn decode(
             agents: false,
         };
         return agent::Decoded::Served {
-            ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: None },
+            ask: run::Ask::SubAgent {
+                brief,
+                families,
+                llm: field(arguments, b"llm"),
+                share: run::Share {
+                    turns: quota(arguments, b"max_turns"),
+                    time: quota(arguments, b"max_seconds")
+                        .map(|seconds| skein_lib::Duration::from_secs(u64::from(seconds))),
+                },
+            },
         };
     }
     let (session_name, granted): (&[u8], bool) = match name {
@@ -278,6 +287,15 @@ fn finish(arguments: &[u8]) -> Option<run::outcome::Declared> {
 /// fixture language, never arbitrary JSON or production provider documents.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
+// The copied scripts supply unescaped positive decimal fields. This is a
+// finite fixture language; arbitrary provider input is tested in protocol-llm.
+fn quota(arguments: &[u8], name: &[u8]) -> Option<u32> {
+    let prefix = [b"\"", name, b"\":"].concat();
+    let start = arguments.windows(prefix.len()).position(|part| part == prefix)? + prefix.len();
+    let digits: Vec<u8> = arguments[start..].iter().copied().take_while(u8::is_ascii_digit).collect();
+    std::str::from_utf8(&digits).ok()?.parse().ok()
+}
+
 fn field(arguments: &[u8], name: &[u8]) -> Option<Box<[u8]>> {
     let prefix = [b"\"", name, b"\":\""].concat();
     let start = arguments.windows(prefix.len()).position(|part| part == prefix)? + prefix.len();

@@ -68,15 +68,49 @@ pub struct Budget {
     pub time: Duration,
 }
 
-/// Caller-selected scalar share, clamped to the enclosing run's remainder.
-/// Zero in either dimension refuses before opening.
+/// The share a `sub_agent` call asks for: each part optional, spend never asked.
+/// Contract: domain/run.md, section 5.3.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Share {
-    /// Child own Session completion allowance; delegated bills carry no turns.
+    pub turns: Option<u32>,
+
+    pub time: Option<Duration>,
+}
+
+impl Share {
+    /// Neither part asked for: the child receives the ordinary pool.
+    pub const UNASKED: Self = Self { turns: None, time: None };
+}
+
+/// A child's effective share and how each part was set (domain/run.md, section 5.3).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Granted {
     pub turns: u32,
 
-    /// Inclusive subtree host-unit allowance.
+    pub time: Duration,
+
+    /// All spend left above the finishing reserve when asked, never shown to the model.
     pub spend: u64,
+
+    pub turns_set: Set,
+
+    pub time_set: Set,
+}
+
+/// How the run set one part of a child's share.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Set {
+    /// As asked, within what was left above the reserve.
+    Asked,
+
+    /// Not asked: all of what was left above the reserve.
+    Pool,
+
+    /// Asked for more than was left above the reserve, and lowered to it.
+    Reserve,
+
+    /// Lowered to the asker's call deadline; time only.
+    Deadline,
 }
 
 /// Host-supplied model rates, interpreted only by Session. The price is the

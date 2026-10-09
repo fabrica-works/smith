@@ -152,7 +152,10 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
                 brief: required_string(tokens, b"brief")?,
                 families: families(tokens)?,
                 llm: optional_string(tokens, b"llm")?,
-                share: None,
+                share: run::Share {
+                    turns: optional_u32(tokens, b"max_turns")?,
+                    time: optional_seconds(tokens, b"max_seconds")?,
+                },
             },
         },
     };
@@ -240,6 +243,13 @@ fn optional_u32(tokens: &[Token], name: &[u8]) -> Result<Option<u32>, llm::Probl
             Ok(Some(number))
         }
         Some(_) => Err(wrong_type(name)),
+        None => Ok(None),
+    }
+}
+
+fn optional_seconds(tokens: &[Token], name: &[u8]) -> Result<Option<Duration>, llm::Problem> {
+    match optional_u32(tokens, name)? {
+        Some(seconds) => Ok(Some(Duration::from_secs(u64::from(seconds)))),
         None => Ok(None),
     }
 }

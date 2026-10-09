@@ -1660,7 +1660,7 @@ struct Wanted {
     brief: Box<[u8]>,
     families: Families,
     llm: Option<Box<[u8]>>,
-    share: Option<Share>,
+    share: Share,
 }
 
 /// Working: the conversation `asker` asked for a sub-agent as `made`. Open
@@ -1703,6 +1703,10 @@ fn sub_agent(
             return;
         }
     };
+    assert!(
+        plan.budget == crate::Budget { turns: plan.granted.turns, time: plan.granted.time, spend: plan.granted.spend },
+        "a child's opening budget is exactly its effective grant"
+    );
     if conversations.is_full() || calls.is_full() {
         out.push(Request::Return { spent: 0, call, result: Returned::Busy });
         return;

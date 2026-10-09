@@ -1,5 +1,5 @@
 //! Scalar activation bills through root/run/session/tools and actual Clients.
-//! The outside oracle prices the actual peer/SDK callbacks with its own literal
+//! The outside oracle prices the actual typed fake-provider callbacks with its own literal
 //! model table, and sums each callback once. Child-inclusive Turn bills and
 //! historical bills never supply that global expected total.
 //! Contract: domain/run.md, sections 9, 10, 13 and 14;
@@ -324,5 +324,39 @@ fn parallel_children_cannot_spend_the_last_ordinary_turn_twice_and_main_finishes
     assert_eq!(expected.turns, 3);
     assert_eq!(model_calls(&world, b"fake-2").len(), 1, "one actual child callback takes the last ordinary turn");
     assert_eq!(model_calls(&world, b"fake-1").len(), 2, "main takes a reserved turn to finish");
+    assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
+}
+
+#[test]
+fn a_real_child_session_reaches_its_requested_turn_share_and_ends() {
+    const QUOTA_INPUT: &[u8] =
+        br#"{"brief":"@budget-child own task","tools":["inspect"],"llm":"fake-2","max_turns":1,"max_seconds":30}"#;
+    let settings = settings(708, false, false);
+    let scripts = Box::new([
+        script(
+            b"@budget-main",
+            vec![calls(vec![call(b"sub_agent", QUOTA_INPUT)], 3), calls(vec![call(b"finish", REPORT)], 7)],
+        ),
+        script(
+            b"@budget-child",
+            vec![calls(vec![call(b"read", READ)], 5), says(b"This second completion must not start.", 11)],
+        ),
+    ]);
+    let mut world = typed_world(&settings, b"@budget-main MAIN-INSTRUCTIONS", &MODEL_RATES, scripts);
+    world.run(20_000);
+    let expected = conservation(&world, &MODEL_RATES);
+    assert_eq!(expected.turns, 3);
+    assert_eq!(model_calls(&world, b"fake-2").len(), 1, "actual child Session stops at its own turn quota");
+    assert_eq!(model_calls(&world, b"fake-1").len(), 2, "actual main Session receives the child terminal and finishes");
+    let resumed =
+        world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").nth(1).expect("main resumes");
+    assert!(
+        resumed
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .any(|part| { matches!(part, Part::ToolOutput { is_error: true, .. }) }),
+        "a quota terminal returns to the actual asker"
+    );
     assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
 }
