@@ -581,6 +581,9 @@ mod tests {
             &{
                 let mut profile = smith_agent_service::profile::standard();
                 profile.declared.memory = Some(u64::MAX);
+                profile.declared.tool_payload = 256;
+                profile.declared.read_window = 256;
+                profile.declared.calls_per_response = 2;
                 profile
             },
             &smith_agent_service::profile::Configuration {
@@ -642,9 +645,9 @@ mod tests {
             models: vec![Model {
                 endpoint: "main".into(),
                 name: "small".into(),
-                window: 8192,
-                output: 32,
-                reasoning_item: 2048,
+                window: 65_536,
+                output: 512,
+                reasoning_item: 64,
                 oversized_reasoning: None,
                 head: 60_000,
                 idle: 30_000,
@@ -709,14 +712,15 @@ mod tests {
             .expect("matching charter");
         assert!(!encoded.is_empty());
         let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, &endpoints).expect("version two charter");
-        assert_eq!((decoded.llm.window, decoded.llm.output), (8192, 32));
+        assert_eq!((decoded.llm.window, decoded.llm.output), (65_536, 512));
         assert_eq!(decoded.llm.prices.cache_write, settings.models[0].cache_write_price);
         assert!(!decoded.grants.agents);
         settings.sub_agents = true;
         assert_eq!(decoded.reserve, run::charter::Reserve { turns: 2, time: Duration::from_secs(300) });
         assert_sub_agent_grant(&settings, &endpoints, &agent_limits, &decoded);
         settings.directories = vec![Directory { name: "work".into(), path: ".".into(), writable: true, git: false }];
-        let prepared = policy(&settings, &endpoints, agent_limits).expect("relative host path remains usable");
+        let prepared = policy(&settings, &endpoints, agent_limits, vec![0; settings.models.len()].into())
+            .expect("relative host path remains usable");
         let mounted = prepared.config.workspace.as_ref().expect("workspace");
         assert_eq!(mounted.directories[0].host, prepared.paths[0]);
         assert_eq!(mounted.directories[0].host.first(), Some(&b'/'));

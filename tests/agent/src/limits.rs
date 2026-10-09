@@ -76,7 +76,7 @@ pub const LIMITS: Limits = Limits {
     session: session::Limits {
         sessions: 6,
         spend: 10_000,
-        protocol_allowance: 0,
+        protocol_allowance: 4096,
         history_blocks: u32::MAX,
         history_messages: 64,
         history_bytes: 33_554_432,
@@ -140,7 +140,7 @@ pub const TIGHT: Limits = Limits {
     session: session::Limits {
         sessions: 4,
         spend: 10_000,
-        protocol_allowance: 0,
+        protocol_allowance: 4096,
         history_blocks: u32::MAX,
         history_messages: 32,
         history_bytes: 33_554_432,

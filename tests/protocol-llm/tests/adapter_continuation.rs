@@ -18,7 +18,9 @@ use smith_protocol_llm_world::{
     wire::{self, Configuration, Observed},
 };
 
-const CODEX_REASONING: &[u8] = br#"{"id":"rs_c","type":"reasoning","encrypted_content":"exact-opaque","summary":[],"future":{"proof":[1,true,null]}}"#;
+// Codex retains known reasoning fields; unknown extensions are scanned and
+// skipped (skein llm.md, section 4.4). Anthropic thinking below stays whole.
+const CODEX_REASONING: &[u8] = br#"{"id":"rs_c","type":"reasoning","encrypted_content":"exact-opaque","summary":[]}"#;
 const CODEX_TEXT_REPLAY: &[u8] = br#"{"id":"msg_c","phase":"commentary"}"#;
 const CODEX_REFUSAL_REPLAY: &[u8] = br#"{"id":"msg_r"}"#;
 // The native stream retains unknown head fields before its assembled final
@@ -73,7 +75,7 @@ data: {"type":"message_stop"}
 
 "#;
 
-const CODEX_HISTORY: &[u8] = br#""input":[{"id":"rs_c","type":"reasoning","encrypted_content":"exact-opaque","summary":[],"future":{"proof":[1,true,null]}},{"type":"message","role":"assistant","id":"msg_c","phase":"commentary","content":[{"type":"output_text","text":"Reading"}]},{"type":"message","role":"assistant","id":"msg_r","content":[{"type":"refusal","refusal":"Cannot comply"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue."}]}]"#;
+const CODEX_HISTORY: &[u8] = br#""input":[{"id":"rs_c","type":"reasoning","encrypted_content":"exact-opaque","summary":[]},{"type":"message","role":"assistant","id":"msg_c","phase":"commentary","content":[{"type":"output_text","text":"Reading"}]},{"type":"message","role":"assistant","id":"msg_r","content":[{"type":"refusal","refusal":"Cannot comply"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue."}]}]"#;
 const ANTHROPIC_HISTORY: &[u8] = br#""messages":[{"role":"assistant","content":[{"type":"thinking","future":{"proof":[1,true,null]},"thinking":"Plan carefully","signature":"signed-opaque"},{"type":"redacted_thinking","data":"hidden-opaque"},{"type":"text","text":"Answer"}]},{"role":"user","content":[{"type":"text","text":"Continue.","cache_control":{"type":"ephemeral"}}]}]"#;
 
 fn limits() -> Limits {
@@ -222,7 +224,7 @@ fn codex_evidence(completion: &llm::Completion) -> bool {
         return false;
     };
     completion.stop == llm::Stop::Refusal
-        && envelope(bytes, *b"\x00\x01\x01\x00\x00\x00\x71", CODEX_REASONING)
+        && envelope(bytes, *b"\x00\x01\x01\x00\x00\x00\x50", CODEX_REASONING)
         && text.as_ref() == b"Reading"
         && envelope(&text_replay.bytes, *b"\x00\x01\x01\x00\x00\x00\x23", CODEX_TEXT_REPLAY)
         && refusal.as_ref() == b"Cannot comply"
@@ -305,7 +307,7 @@ fn codex_reasoning_refusal_and_message_identity_continue_exactly() {
     native_corruptions(
         &next,
         CODEX_HISTORY,
-        &[b"exact-opaque", b"proof", b"msg_c", b"commentary", b"msg_r", b"refusal", b"Cannot comply"],
+        &[b"exact-opaque", b"msg_c", b"commentary", b"msg_r", b"refusal", b"Cannot comply"],
     );
     close(&mut next);
 }
@@ -495,6 +497,7 @@ fn root_malformed_call_has_no_effect_and_corrected_call_runs_once() {
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("full translated reservation");
     settings.limits.session.completion_blocks = bounds.client.output_items;
+    settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     let mut world = World::with_wire(settings, None, configuration, bounds, correction_script());
     world.wall_at(Wall::from_nanos(9000));
     await_query(&mut world, 2);
@@ -747,7 +750,7 @@ fn a_reasoning_item_past_its_bound_fails_unless_the_model_drops_it() {
     let configuration = wire::configurations().into_iter().next().expect("Codex fixture");
     for enabled in [false, true] {
         let mut bounds = limits();
-        bounds.client.reasoning = u32::try_from(CODEX_REASONING.len() - 1).expect("fixture size");
+        bounds.client.reasoning = u32::try_from(b"exact-opaque".len() - 1).expect("fixture size");
         bounds.client.drop_reasoning = enabled;
         let source = response(200, "Content-Type: text/event-stream\r\n", &events(CODEX_RESPONSE), true);
         let (context, mut peer) = block_peer(&configuration, &bounds, source);
@@ -765,16 +768,19 @@ fn a_reasoning_item_past_its_bound_fails_unless_the_model_drops_it() {
             };
             assert_eq!(
                 completion.reasoning_dropped.as_ref(),
-                &[u64::try_from(CODEX_REASONING.len()).expect("fixture size")]
+                &[u64::try_from(b"exact-opaque".len()).expect("fixture size")]
             );
             assert_eq!(completion.content.len(), 2);
             assert!(completion.content.iter().all(|block| !matches!(block, llm::Said::Opaque { .. })));
             close(&mut peer);
         } else {
-            assert!(matches!(
-                terminal,
-                client::Event::Failed { failure: shared::Failure::Limit { which: shared::Cap::Reasoning, .. }, .. }
-            ));
+            assert!(
+                matches!(
+                    terminal,
+                    client::Event::Failed { failure: shared::Failure::Limit { which: shared::Cap::Reasoning, .. }, .. }
+                ),
+                "actual typed reasoning cap: {terminal:?}"
+            );
             peer.settle();
         }
     }

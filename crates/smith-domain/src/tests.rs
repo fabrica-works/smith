@@ -104,7 +104,7 @@ const LIMITS: Limits = Limits {
     session: session::Limits {
         sessions: 4,
         spend: 10_000,
-        protocol_allowance: 0,
+        protocol_allowance: 4096,
         history_blocks: u32::MAX,
         history_messages: 16,
         history_bytes: 2_097_152,

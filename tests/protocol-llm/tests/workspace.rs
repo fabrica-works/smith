@@ -184,6 +184,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual Client completion reservation");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let configuration = wire::configurations().into_iter().nth(index).expect("two native fixtures");
         let mut first =
             World::with_workspace_wire(settings, None, None, Checkout::new(), configuration, bounds, native_script());
@@ -476,6 +477,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("completion room");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let mut world =
             World::with_workspace_wire(settings, None, Some(workspace), disk, configuration, bounds, scripts);
         world.run(10_000);
@@ -563,6 +565,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes).expect("receiving");
         settings.limits.session.completion_blocks = client.output_items;
+        settings.limits.session.failure_bytes = client.detail_bytes;
         let scripts = Box::new([Script {
             cue: Box::new([]),
             turns: Box::new([calls(
@@ -647,6 +650,7 @@ fn namespace_descriptions_and_list_slash_reach_both_native_provider_dialects() {
                 adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes)
                     .expect("valid namespace fixture");
             settings.limits.session.completion_blocks = client.output_items;
+            settings.limits.session.failure_bytes = client.detail_bytes;
             let scripts = Box::new([Script {
                 cue: Box::new([]),
                 turns: Box::new([

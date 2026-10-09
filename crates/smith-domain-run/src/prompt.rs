@@ -75,10 +75,8 @@ fn render_fixed_budget(text: &mut Text) {
     let time = Duration::from_nanos(u64::MAX);
     let budget = Budget { turns: u32::MAX, spend: u64::MAX, time };
     let reserve = Reserve { turns: u32::MAX, time };
-    let granted = Granted {
-        turns: u32::MAX, time, spend: u64::MAX,
-        turns_set: crate::Set::Pool, time_set: crate::Set::Pool,
-    };
+    let granted =
+        Granted { turns: u32::MAX, time, spend: u64::MAX, turns_set: crate::Set::Pool, time_set: crate::Set::Pool };
     let mut main = Text::measuring();
     render_budget(&mut main, budget, reserve, true);
     let mut child = Text::measuring();
@@ -91,7 +89,9 @@ fn render_fixed_budget(text: &mut Text) {
 }
 
 fn render_answering(text: &mut Text) {
-    text.put(b"## Answering\n\nWhen you are done, end your turn with your answer. The run adds your usage to the result.\n");
+    text.put(
+        b"## Answering\n\nWhen you are done, end your turn with your answer. The run adds your usage to the result.\n",
+    );
 }
 
 /// The finish result says why the run returns to its queued messages.

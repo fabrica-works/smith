@@ -48,7 +48,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         world.env.limits = limits.domain.session;
         world.domain = session::Domain::new(&world.env.limits, 4606 + u64::from(window));
         world.out = Queue::with_capacity(session::max_out(&world.env.limits));
-        let mut start = opening(None, u64::MAX);
+        let mut start = opening(None, world.env.limits.spend);
         start.spec.delegated = Box::new([]);
         start.spec.budget = world.env.limits.budget;
         start.spec.output = 512;

@@ -37,6 +37,7 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("receiving bound");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let mut world = World::with_wire(settings, None, configuration, bounds, scripts.into_boxed_slice());
         world.run(100_000);
         assert!(

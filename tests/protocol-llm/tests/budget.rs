@@ -158,7 +158,7 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: rate.model.into(),
-        window: 8192,
+        window: 16_384,
         output: 4096,
         dialect: 1,
     };
@@ -262,6 +262,7 @@ fn bounds(settings: &mut Settings) -> Limits {
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("actual translated reservation");
     settings.limits.session.completion_blocks = bounds.client.output_items;
+    settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     bounds
 }
 

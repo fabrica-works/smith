@@ -66,7 +66,7 @@ fn the_startup_refusals_of_both_commands_are_observed_outside() {
     let path = scratch.path().join("agent-config.json");
     std::fs::write(
         &path,
-        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776},"policy":{"group_stop":10}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":32,"reasoning_item":2048,"head":1000,"idle":1000}]}],"environment":[]}"#,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"conversations":1,"calls_per_response":2,"tool_payload":256,"read_window":256},"policy":{"group_stop":10}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"head":1000,"idle":1000}]}],"environment":[]}"#,
     )
     .expect("valid agent fixture");
     let errors = support::refusal(&scratch, vec!["agent".into(), path.clone().into()]);

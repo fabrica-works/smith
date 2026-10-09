@@ -13,7 +13,7 @@ use smith_session_world::recorded::{World, opening};
 #[test]
 fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
     let declared = skein_llm::Declared {
-        window: 2048,
+        window: 512,
         output: 16,
         reasoning_item: 1,
         tool_payload: 16,
@@ -78,7 +78,7 @@ fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
         world.open(start);
         if extra == 1 {
             assert!(world.prompts.is_empty(), "past the history bound never sends a provider request");
-            assert_eq!(world.end, Some(session::End::TranscriptFull));
+            assert_eq!(world.end, Some(session::End::TranscriptRefused { reason: session::record::Refusal::TooLarge }));
             world.domain.reclaim();
             assert_eq!(world.domain.sessions(), 0);
             assert_eq!(world.domain.kits(), 0);

@@ -22,19 +22,23 @@ const RESUMED: &[u8] = b"Actual resumed activation.";
 const LAST: &[u8] = b"Second activation parked.";
 const PERSON: &[u8] = b"host: native wake";
 const WAITED: &[u8] = b"Messages arrived. Read them before continuing.";
-const CODEX_OPAQUE: &[u8] = br#"{"type":"reasoning","id":"opaque_root","encrypted_content":"encrypted-root","summary":[],"future":{"proof":[1,true,null],"nonce":"root-proof"}}"#;
+const CODEX_INPUT: &[u8] = br#"{"type":"reasoning","id":"opaque_root","encrypted_content":"encrypted-root","summary":[],"future":{"proof":[1,true,null],"nonce":"root-proof"}}"#;
+// Codex retains its known reasoning fields; the scripted future field is skipped.
+const CODEX_OPAQUE: &[u8] =
+    br#"{"type":"reasoning","id":"opaque_root","encrypted_content":"encrypted-root","summary":[]}"#;
 const ANTHROPIC_OPAQUE: &[u8] = br#"{"type":"thinking","future":{"proof":[1,true,null],"nonce":"root-proof"},"thinking":"Plan for parking","signature":"signed-root"}"#;
-const CODEX_ENVELOPE: &[u8] = b"\x00\x01\x01\x00\x00\x00\x8f{\"type\":\"reasoning\",\"id\":\"opaque_root\",\"encrypted_content\":\"encrypted-root\",\"summary\":[],\"future\":{\"proof\":[1,true,null],\"nonce\":\"root-proof\"}}";
+const CODEX_ENVELOPE: &[u8] = b"\x00\x01\x01\x00\x00\x00\x59{\"type\":\"reasoning\",\"id\":\"opaque_root\",\"encrypted_content\":\"encrypted-root\",\"summary\":[]}";
 const ANTHROPIC_ENVELOPE: &[u8] = b"\x00\x01\x02\x00\x00\x00\x81{\"type\":\"thinking\",\"future\":{\"proof\":[1,true,null],\"nonce\":\"root-proof\"},\"thinking\":\"Plan for parking\",\"signature\":\"signed-root\"}";
 const CALL_REPLAY: &[u8] = b"\x00\x01\x01\x00\x00\x00\x16{\"item_id\":\"item_1_1\"}";
 const TEXT_REPLAY: &[u8] = b"\x00\x01\x01\x00\x00\x00\x28{\"id\":\"item_1_0\",\"phase\":\"final_answer\"}";
 
 struct Fixture {
+    input: &'static [u8],
     opaque: &'static [u8],
     envelope: &'static [u8],
     call_replay: Option<&'static [u8]>,
     text_replay: Option<&'static [u8]>,
-    seal: &'static [u8],
+    markers: &'static [&'static [u8]],
     cache_write: bool,
     reasoning: Option<u64>,
 }
@@ -42,20 +46,22 @@ struct Fixture {
 fn fixtures() -> [Fixture; 2] {
     [
         Fixture {
+            input: CODEX_INPUT,
             opaque: CODEX_OPAQUE,
             envelope: CODEX_ENVELOPE,
             call_replay: Some(CALL_REPLAY),
             text_replay: Some(TEXT_REPLAY),
-            seal: b"encrypted-root",
+            markers: &[b"opaque_root", b"summary", b"type", b"encrypted-root"],
             cache_write: true,
             reasoning: Some(0),
         },
         Fixture {
+            input: ANTHROPIC_OPAQUE,
             opaque: ANTHROPIC_OPAQUE,
             envelope: ANTHROPIC_ENVELOPE,
             call_replay: None,
             text_replay: None,
-            seal: b"signed-root",
+            markers: &[b"root-proof", b"proof", b"type", b"signed-root"],
             cache_write: true,
             reasoning: None,
         },
@@ -96,7 +102,7 @@ fn text_turn(text: &[u8], tokens: u64) -> Turn {
 }
 
 fn scripts(fixture: &Fixture, tail: bool) -> Box<[Script]> {
-    let mut turns = vec![waiting_turn(fixture.opaque)];
+    let mut turns = vec![waiting_turn(fixture.input)];
     if !tail {
         turns.push(text_turn(FIRST, 3));
     }
@@ -129,7 +135,7 @@ fn settings(seed: u64, resume: bool, bounds: &Limits) -> Settings {
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("complete actual translated reservation before Start");
     settings.limits.session.completion_blocks = bounds.client.output_items;
-    assert!(bounds.client.detail_bytes <= settings.limits.session.failure_bytes);
+    settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     settings
 }
 
@@ -211,7 +217,7 @@ fn exact_prefix(query: &Query, expected: &[Message]) -> bool {
 
 fn prefix_corruptions(query: &Query, fixture: &Fixture, expected: &[Message]) {
     assert!(exact_prefix(query, expected), "whole positive actual native prefix: {query:?}");
-    for marker in [b"root-proof".as_slice(), b"proof", b"type", fixture.seal] {
+    for &marker in fixture.markers {
         let mut changed = query.clone();
         let Part::Opaque { bytes } = &mut changed.messages[1].parts[0] else { panic!("actual opaque") };
         let at = bytes.windows(marker.len()).position(|part| part == marker).expect("positive opaque metadata");

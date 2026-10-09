@@ -15,8 +15,8 @@ fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
             handshake: skein_lib::Duration::from_secs(1),
             models: Box::new([Model {
                 name: Box::from(b"fake".as_slice()),
-                window: 65_536,
-                output: 4096,
+                window: 2_097_152,
+                output: 65_536,
                 reasoning_item: 2048,
                 oversized_reasoning: OversizedReasoning::Fail,
                 head: skein_lib::Duration::from_secs(1),
@@ -63,8 +63,8 @@ fn priced_charter() -> smith_domain::run::Charter {
             account: 0,
             endpoint: run::charter::Endpoint(1),
             model: b"gpt-5".as_slice().into(),
-            window: 131_072,
-            output: 8192,
+            window: 2_097_152,
+            output: 65_536,
             dialect: 1,
         },
         models: Box::default(),
@@ -338,8 +338,6 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     profile.declared.memory = Some(u64::MAX);
     let limits = crate::profile::derive(&profile, &declarations(0)).expect("real model");
     let mut selected = priced_charter();
-    selected.llm.output = 4096;
-    selected.llm.window = 65_536;
     selected.outcome.report = Some(run::outcome::TextSpec { max: 32, fields: Box::default() });
     let mut domain = run::Domain::new(&limits.domain.run, 0);
     let mut out = Queue::with_capacity(run::MAX_OUT);

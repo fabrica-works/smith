@@ -129,6 +129,7 @@ fn root_story(configuration: Configuration, tool_name: &'static [u8]) {
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("complete actual translated reservation");
     settings.limits.session.completion_blocks = bounds.client.output_items;
+    settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     let expected_receiving = settings.limits;
     let mut world = World::with_wire(settings, None, configuration, bounds, scripts(tool_name));
     world.wall_at(Wall::from_nanos(9000));

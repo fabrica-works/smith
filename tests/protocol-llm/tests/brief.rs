@@ -75,7 +75,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        window: 8192,
+        window: 16_384,
         output: 4096,
     };
     run::Charter {
@@ -485,6 +485,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual receiving reservation");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let scripts = Box::new([Script {
             cue: b"@brief-native".as_slice().into(),
             turns: Box::new([
@@ -548,32 +549,41 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
 fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     const THINKING: &[u8] =
         br#"{"type":"thinking","thinking":"Inspect the whole batch.","signature":"fixture-signature"}"#;
-    let mut bounds = Limits {
-        client: skein_llm_world::limits(),
-        tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
-        stated: adapter::stated(),
+    let declared = skein_llm::Declared {
+        window: 342,
+        output: 4096,
+        reasoning_item: 2048,
+        tool_payload: 342,
+        calls_per_response: 16,
+        conversations: 1,
     };
-    bounds.client.http.request = 16384;
-    bounds.client.dialect.request_bytes = 16384;
-    bounds.client.dialect.document_bytes = 16384;
-    // This pin shares one parts bound between completion and replay history.
-    // Keep room for the measured sixteen-call turn and its concrete results.
-    bounds.client.dialect.parts = 64;
+    let mut client = skein_llm::Limits::derive(&declared).expect("native batch bounds").anthropic;
+    let pieces = skein_llm_world::limits();
+    client.http.request = pieces.http.request;
+    client.http.read = pieces.http.read;
+    client.http.send = pieces.http.send;
+    client.sse.chunk = pieces.sse.chunk;
+    let bounds = Limits { client, tool_bytes: 32768, rendered_result: client.strings, stated: adapter::stated() };
     let mut settings = Settings {
         job: Job::Waiting,
         waiting: Duration::from_secs(1),
         network: Span::millis(1, 1),
         ..Settings::calm(1104)
     };
-    settings.limits.decoded_call_bytes = u64::from(bounds.client.dialect.parts)
-        .checked_mul(u64::try_from(core::mem::size_of::<llm::Decoded>()).expect("bounded decoded cell"))
-        .and_then(|cells| cells.checked_add(settings.limits.decoded_call_bytes))
-        .expect("fallback cells plus the existing decoded payload allowance");
+    settings.limits.decoded_call_bytes = u64::from(declared.calls_per_response)
+        .checked_mul(u64::from(bounds.client.input))
+        .and_then(|payload| {
+            payload.checked_add(
+                u64::from(bounds.client.output_items)
+                    .checked_mul(u64::try_from(core::mem::size_of::<llm::Decoded>()).expect("decoded cell"))?,
+            )
+        })
+        .expect("actual batch inputs plus fallback cells");
     settings.limits.session.completion_bytes =
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("actual batch and history receiving reservation");
-    settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+    settings.limits.session.completion_blocks = bounds.client.output_items;
+    settings.limits.session.failure_bytes = bounds.client.detail_bytes;
     let batch = 16_usize;
     let read = || call(b"read", br#"{"path":"data.txt"}"#);
     let scripts = Box::new([Script {
@@ -740,6 +750,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("Client receiving reservation before original Start");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let (disk, mounted) = workspace();
         let roots = mounted.directories.iter().map(|directory| directory.root).collect::<Vec<_>>();
         let mut first = World::with_workspace_wire_charter(
@@ -837,6 +848,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual receiving reservation");
         settings.limits.session.completion_blocks = bounds.client.output_items;
+        settings.limits.session.failure_bytes = bounds.client.detail_bytes;
         let (disk, mounted) = workspace();
         let mut first = World::with_workspace_wire_charter(
             settings,
