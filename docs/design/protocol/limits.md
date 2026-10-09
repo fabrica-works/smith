@@ -332,13 +332,24 @@ For each model the configuration declares:
 - **smith's own part** is taken first: the run's sections at their
   largest, smith's tools' schemas, the opening's and the summary's
   instructions, and the prompt's allowance (3.2). smith's code fixes
-  them, and the service measures them at startup.
+  them, and the service measures them at startup. Only what is the same
+  whatever the charter says is smith's own. A number a section shows,
+  such as a budget's, counts at its largest.
 - **The rest is split in halves,** a factor of the derivation's own:
-  - **the host's part:** the charter's instructions, its brief and its
-    host tools' descriptions and schemas, beside a guide at `guide` for
-    each of the start's directories. A start whose charter, with its
-    directories' guides at their bound, passes it is refused at the
-    entrance. A sub-agent's brief takes the charter's place, and a
+  - **the host's part:** every byte that is there because of what the
+    charter chose, beside a guide at `guide` for each of the start's
+    directories. That includes:
+    - the charter's instructions, its brief, and its host tools'
+      descriptions and schemas;
+    - what smith renders from the charter's choices, in the system text
+      and in the schemas it generates for `finish` and `deliver`: the
+      contract's forms, fields, rules, verdict labels and items; the
+      workspace's directory names, conflicts and convention paths;
+      everything smith adds around each of them.
+
+    It is measured as rendered, at the entrance, never at the
+    vocabulary's maxima. A start whose charter, with its directories'
+    guides at their bound, passes it is refused at the entrance. A sub-agent's brief takes the charter's place, and a
     `sub_agent` call whose brief passes it is answered as too large
     (llm.md, section 4);
   - **the window's messages:** two offers (below). The task is the
