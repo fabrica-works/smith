@@ -783,3 +783,13 @@ durability policy directly. Its advertised turn credit fits the local save
 queue. Every parent variant has a unit case, and the existing spawned
 authentication, commit, resume, interrupt, replay and memory stories pass.
 Workspace focused and fuzzy budgets remain unchanged.
+
+Reliability inline increment 3.6 was measured through the serial heavy queue
+on 2026-10-09 with `measure -j 1`: the inline agent, host world, local domain,
+service and local and local-process worlds passed 197 focused tests in 4.069
+seconds, with no skips. Their five fuzzy stories passed in 2.309 seconds.
+Both local kinds use the common parent policy and durability boundary. The
+new failed-write story starts with durable history, releases held turns
+without an ACK, settles actual lower work, exits for the failed chat turn,
+and resumes from the unchanged durable prefix. These deterministic controls
+do not supply credentialed smoke evidence. Workspace budgets are unchanged.
