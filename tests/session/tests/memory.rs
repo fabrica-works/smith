@@ -71,7 +71,13 @@ const LIMITS: Limits = Limits {
     facts: 64,
     parallel_tools: 1,
     // Reads answer with the whole file loaded.
-    tools: smith_domain_tools::Limits { kits: 1, read_bytes: 1 << 20, file_bytes: 1 << 20, ..TOOLS },
+    tools: smith_domain_tools::Limits {
+        kits: 1,
+        read_bytes: 1 << 20,
+        file_bytes: 1 << 20,
+        tool_payload: 1 << 20,
+        ..TOOLS
+    },
 };
 
 /// What a step asked for last, without the payload.
@@ -731,6 +737,7 @@ fn restore_tail_tools() -> smith_domain_tools::Limits {
         host_path_bytes: 4096,
         known_files: 0,
         file_bytes: 16,
+        tool_payload: 16,
         read_bytes: 16,
         list_entries: 1,
         list_bytes: 4096,

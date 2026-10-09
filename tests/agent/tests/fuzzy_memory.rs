@@ -75,6 +75,7 @@ const LIMITS: Limits = Limits {
             kits: 4,
             calls: 2,
             file_bytes: 512,
+            tool_payload: 512,
             read_bytes: 256,
             list_entries: 8,
             list_bytes: 4096,

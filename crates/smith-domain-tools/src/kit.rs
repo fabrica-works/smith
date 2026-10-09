@@ -265,7 +265,7 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             }
             if let Some(filter) = &glob {
                 passable(filter)?;
-                if filter.len() > usize::try_from(limits.file_bytes).expect("u32 fits usize") {
+                if filter.len() > usize::try_from(limits.tool_payload).expect("u32 fits usize") {
                     return Err(Outcome::TooLarge { size: u64::try_from(filter.len()).unwrap_or(u64::MAX) });
                 }
             }
@@ -356,10 +356,10 @@ fn passable(bytes: &[u8]) -> Result<(), Outcome> {
     Ok(())
 }
 
-/// Refuses `content` if it is larger than the tools store.
+/// Refuses `content` if it is larger than one piece.
 fn fits(content: &[u8], limits: &Limits) -> Result<(), Outcome> {
     let size = u64::try_from(content.len()).unwrap_or(u64::MAX);
-    if size > u64::from(limits.file_bytes) {
+    if size > u64::from(limits.tool_payload) {
         return Err(Outcome::TooLarge { size });
     }
     Ok(())
@@ -370,7 +370,7 @@ fn file(place: &path::Place) -> Result<(), Outcome> {
     if place.path.is_empty() { Err(Outcome::NotFile) } else { Ok(()) }
 }
 
-/// The aggregate old/new buffers keep today's respective file-byte caps; the
+/// The aggregate old/new buffers keep the respective per-piece caps; the
 /// list cells also fit that bound. No semantic mismatch is decided before load.
 fn replacements_fit(edits: &[Replacement], limits: &Limits) -> Result<(), Outcome> {
     if edits.is_empty() {
@@ -388,7 +388,7 @@ fn replacements_fit(edits: &[Replacement], limits: &Limits) -> Result<(), Outcom
             .ok_or(Outcome::TooLarge { size: u64::MAX })?;
     }
     let size = old.max(new).max(cells);
-    if size > u64::from(limits.file_bytes) {
+    if size > u64::from(limits.tool_payload) {
         return Err(Outcome::TooLarge { size });
     }
     Ok(())

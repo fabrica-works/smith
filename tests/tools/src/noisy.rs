@@ -63,7 +63,7 @@ pub fn noisy_world(seed: u64) -> World {
     let think = Span { min: Duration::from_millis(1), max: millis(1, 500) };
     let mut rng = Rng::new(seed.wrapping_add(1));
     let mut pick = |low: u64, high: u64| u32::try_from(rng.between(low, high)).expect("small numbers");
-    let settings = Settings {
+    let mut settings = Settings {
         tools: Limits {
             kits: pick(1, 3),
             calls: pick(1, 4),
@@ -84,6 +84,7 @@ pub fn noisy_world(seed: u64) -> World {
         call_timeout,
         ..calm
     };
+    settings.tools.tool_payload = settings.tools.file_bytes;
     let fixture = Fixture::new();
     let mut rng = Rng::new(seed.wrapping_add(2));
     let mut authorities = Vec::new();

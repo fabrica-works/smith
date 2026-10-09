@@ -16,6 +16,7 @@ pub const LIMITS: Limits = Limits {
     host_path_bytes: 63,
     known_files: 4,
     file_bytes: 256,
+    tool_payload: 256,
     read_bytes: 64,
     list_entries: 4,
     list_bytes: 4096,

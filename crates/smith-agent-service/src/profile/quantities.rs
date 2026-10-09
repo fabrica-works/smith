@@ -27,6 +27,8 @@ pub struct Declared {
     pub conversations: u32,
     /// Bytes exchanged in one tool piece.
     pub tool_payload: u32,
+    /// Largest file the tools hold whole, in bytes.
+    pub file_bytes: u32,
     /// Tool calls one response may make.
     pub calls_per_response: u32,
     /// Default read window, in bytes.
@@ -146,6 +148,7 @@ pub const fn standard() -> Profile {
         declared: Declared {
             conversations: 6,
             tool_payload: 65_536,
+            file_bytes: 65_536,
             calls_per_response: 16,
             read_window: 4096,
             shell_output: 512,

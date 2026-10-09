@@ -32,6 +32,8 @@ pub enum Check {
     RenderInResult,
     /// The default read window fits one tool payload.
     ReadInPayload,
+    /// One tool piece fits a whole file.
+    PayloadInFile,
     /// The machine's bounds hold the tools' bounds.
     MachineHoldsTools,
     /// Environment names are valid and distinct.
@@ -66,6 +68,7 @@ impl Check {
             Self::TurnInChannel => "turn-in-channel",
             Self::RenderInResult => "render-in-result",
             Self::ReadInPayload => "read-in-payload",
+            Self::PayloadInFile => "payload-in-file",
             Self::MachineHoldsTools => "machine-holds-tools",
             Self::Environment => "environment",
             Self::RequestHead => "request-head",

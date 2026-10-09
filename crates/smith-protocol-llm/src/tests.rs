@@ -20,6 +20,7 @@ fn tools() -> tools::Limits {
         host_path_bytes: 4096,
         known_files: 1,
         file_bytes: 1024,
+        tool_payload: 1024,
         read_bytes: 64,
         list_entries: 8,
         list_bytes: 512,
@@ -208,6 +209,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         path_bytes: 37,
         read_window: 73,
         tool_payload: 257,
+        file_bytes: 257,
         call_input_bytes: 401,
         list_entries: 11,
         search_hits: 13,
@@ -218,7 +220,10 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         output_ceiling: 151,
     };
     let golden = [
-        ("Read lines; cuts are marked. Batch independent reads, lists and searches side by side.", 3_usize),
+        (
+            "Read lines; cuts are marked. Whole-file limit 257 bytes. Batch independent reads, lists and searches side by side.",
+            3_usize,
+        ),
         (
             "List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max 11 entries; omitted files and directories counted once. List / for directory names. Batch independent reads, lists and searches side by side.",
             3,
@@ -228,11 +233,11 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
             3,
         ),
         (
-            "Write a file; read its current version first. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
+            "Write a file; read its current version first. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
             2,
         ),
         (
-            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
+            "Apply ordered edits atomically; no earlier read. Each old must match once, or at least once with all. Whole-file limit 257 bytes. For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. Batch writes, edits and commands; run serially in call order.",
             5,
         ),
         (
@@ -310,6 +315,7 @@ fn path_descriptions_follow_the_actual_conversation_namespace() {
                 path_bytes: 256,
                 read_window: 1024,
                 tool_payload: 4096,
+                file_bytes: 4096,
                 call_input_bytes: 2048,
                 list_entries: 16,
                 search_hits: 8,

@@ -32,8 +32,10 @@ pub struct Limits {
     /// Files a kit remembers the LLM read. Past them, the one read longest
     /// ago is forgotten, and must be read again before a write.
     pub known_files: u32,
-    /// The largest file the tools load or store.
+    /// The largest file the tools load or store, independently of one piece.
     pub file_bytes: u32,
+    /// Maximum content and aggregate replacement snippets in one call, in bytes.
+    pub tool_payload: u32,
     /// The most content a read answers with.
     pub read_bytes: u32,
     /// The most entries a listing answers with.
@@ -87,7 +89,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Only running jobs hold a place, at most `calls` a kit; the slab has more
     // slots, for the jobs answered in an iteration.
     let running = u64::from(limits.kits).checked_mul(u64::from(limits.calls))?;
-    let jobs = Slab::<Job>::worst_case(job::slots(limits)?)?.checked_add(running.checked_mul(job::held(limits)?)?)?;
+    // Every write in flight reserves a whole file and its result independently.
+    let held = job::held(limits)?.checked_add(u64::from(limits.file_bytes).checked_mul(2)?)?;
+    let jobs = Slab::<Job>::worst_case(job::slots(limits)?)?.checked_add(running.checked_mul(held)?)?;
     // Facts own nothing beyond their queue.
     let facts = Queue::<Fact>::worst_case(limits.facts)?;
     // One call normalises a path at a time: flags for its raw components,
@@ -160,6 +164,7 @@ pub struct Derivation {
     pub conversations: u32,
     pub calls_per_response: u32,
     pub tool_payload: u32,
+    pub file_bytes: u32,
     pub read_window: u32,
     pub shell_head: u32,
     pub shell_tail: u32,
@@ -211,7 +216,8 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         path_bytes: 256,
         host_path_bytes: 4096,
         known_files: 16,
-        file_bytes: inputs.tool_payload,
+        file_bytes: inputs.file_bytes,
+        tool_payload: inputs.tool_payload,
         read_bytes: inputs.read_window,
         list_entries: inputs.list_entries,
         // A listing uses one default read window of ownership, with room for

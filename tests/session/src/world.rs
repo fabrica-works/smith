@@ -59,6 +59,7 @@ pub const TOOLS: tools::Limits = tools::Limits {
     host_path_bytes: 4096,
     known_files: 16,
     file_bytes: 1 << 16,
+    tool_payload: 1 << 16,
     read_bytes: 4096,
     list_entries: 64,
     list_bytes: 4096,

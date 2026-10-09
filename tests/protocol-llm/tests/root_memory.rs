@@ -147,6 +147,7 @@ fn bounds(messages: u32) -> Limits {
                 host_path_bytes: 4096,
                 known_files: 1,
                 file_bytes: 64,
+                tool_payload: 64,
                 read_bytes: 64,
                 list_entries: 1,
                 list_bytes: 4096,

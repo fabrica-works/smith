@@ -521,6 +521,6 @@ pub(crate) fn slots(limits: &Limits) -> Option<u32> {
 /// What a running job holds beyond its slot, or `None` past a `u64`: at most
 /// a place, and an edit's snippets.
 pub(crate) fn held(limits: &Limits) -> Option<u64> {
-    let cells = u64::try_from(size_of::<Replacement>()).ok()?.checked_mul(u64::from(limits.file_bytes))?;
-    u64::from(limits.file_bytes).checked_mul(2)?.checked_add(cells)?.checked_add(u64::from(limits.path_bytes))
+    let cells = u64::try_from(size_of::<Replacement>()).ok()?.checked_mul(u64::from(limits.tool_payload))?;
+    u64::from(limits.tool_payload).checked_mul(2)?.checked_add(cells)?.checked_add(u64::from(limits.path_bytes))
 }

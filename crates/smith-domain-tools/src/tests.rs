@@ -26,6 +26,7 @@ const LIMITS: Limits = Limits {
     host_path_bytes: 4096,
     known_files: 8,
     file_bytes: 1024,
+    tool_payload: 1024,
     read_bytes: 256,
     list_entries: 16,
     list_bytes: 4096,
@@ -905,7 +906,7 @@ fn ambiguous(count: u32, lines: &[u32]) -> Applied {
 
 #[test]
 fn an_edit_replaces_its_one_match_or_all_of_them() {
-    let small = Limits { file_bytes: 8, match_lines: 2, ..LIMITS };
+    let small = Limits { file_bytes: 8, tool_payload: 8, match_lines: 2, ..LIMITS };
     let table: [(&[u8], Edit, &Limits, Applied); 10] = [
         (b"a b a", snippet(b"b", b"c", false), &LIMITS, Ok(edited(b"a c a", 1))),
         (b"a b a", snippet(b"a", b"c", false), &LIMITS, ambiguous(2, &[1, 1])),
@@ -1668,4 +1669,25 @@ fn list_controls_cross_once_and_zero_depth_is_refused_before_io() {
         harness.call(kit, Call::List { path: path(b"src"), depth: crate::Depth::Levels(0), glob: None }),
         Outcome::Failed { fault: Fault::Other }
     );
+}
+
+#[test]
+fn an_edit_can_grow_to_the_whole_file_bound_and_refuses_one_byte_past_it() {
+    let limits = Limits { file_bytes: 128, tool_payload: 64, ..LIMITS };
+    let mut content = [b'a'; 125];
+    content[124] = b'x';
+    for (new, size) in [(b"bbbb".as_slice(), 128_u64), (b"bbbbb".as_slice(), 129_u64)] {
+        let result = edit::apply_edits(
+            content.as_slice().into(),
+            &[Edit { old: b"x".as_slice().into(), new: new.into(), occurrences: crate::Occurrences::Once }],
+            &limits,
+        );
+        if size == 128_u64 {
+            let (changed, count) = result.expect("whole-file ceiling");
+            assert_eq!(changed.len(), 128);
+            assert_eq!(count, 1);
+        } else {
+            assert_eq!(result, Err(Outcome::TooLarge { size: 129 }));
+        }
+    }
 }

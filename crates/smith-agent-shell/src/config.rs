@@ -61,6 +61,7 @@ struct ProfileDocument {
 struct DeclaredOverrides {
     conversations: Option<u32>,
     tool_payload: Option<u32>,
+    file_bytes: Option<u32>,
     calls_per_response: Option<u32>,
     read_window: Option<u32>,
     shell_output: Option<u32>,
@@ -445,6 +446,12 @@ fn apply_declared(profile: &mut service::profile::Profile, overrides: &DeclaredO
             return Err("profile.declared.tool_payload must be positive".into());
         }
         profile.declared.tool_payload = value;
+    }
+    if let Some(value) = overrides.file_bytes {
+        if value == 0 {
+            return Err("profile.declared.file_bytes must be positive".into());
+        }
+        profile.declared.file_bytes = value;
     }
     if let Some(value) = overrides.calls_per_response {
         if value == 0 {
@@ -933,7 +940,7 @@ mod tests {
             )
             .is_err()
         );
-        for field in ["request_bytes", "file_bytes", "unexpected"] {
+        for field in ["request_bytes", "unexpected"] {
             let mut document = shaped_document();
             document["profile"]["declared"][field] = 100.into();
             assert!(parse_value(&document).is_err(), "raw or unknown field {field}");
@@ -947,11 +954,21 @@ mod tests {
             document["endpoints"][0]["models"][0][field] = 0.into();
             assert!(parse_value(&document).is_err(), "zero model quantity {field}");
         }
-        for field in ["conversations", "tool_payload", "calls_per_response", "memory"] {
+        for field in ["conversations", "tool_payload", "file_bytes", "calls_per_response", "memory"] {
             let mut document = shaped_document();
             document["profile"]["declared"][field] = 0.into();
             assert!(parse_value(&document).is_err(), "zero deployment quantity {field}");
         }
+    }
+    #[test]
+    fn the_whole_file_declaration_is_independent_and_payload_checked() {
+        let mut document = shaped_document();
+        document["profile"]["declared"]["file_bytes"] = 1_048_576.into();
+        let configured = parse_value(&document).expect("explicit whole file ceiling");
+        assert_eq!(configured.profile.declared.file_bytes, 1_048_576);
+        document["profile"]["declared"]["file_bytes"] = 1.into();
+        let reason = parse_value(&document).err().expect("payload does not fit");
+        assert!(reason.starts_with("payload-in-file:"), "{reason}");
     }
     #[test]
     fn oversized_reasoning_defaults_to_fail_and_drop_requires_explicit_selection() {

@@ -67,6 +67,7 @@ impl Settings {
                 host_path_bytes: 4096,
                 known_files: 16,
                 file_bytes: 4096,
+                tool_payload: 4096,
                 read_bytes: 1024,
                 list_entries: 16,
                 list_bytes: 4096,

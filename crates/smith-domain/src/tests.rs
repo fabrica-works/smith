@@ -122,6 +122,7 @@ const LIMITS: Limits = Limits {
             host_path_bytes: 4096,
             known_files: 8,
             file_bytes: 65_536,
+            tool_payload: 65_536,
             read_bytes: 4096,
             list_entries: 16,
             list_bytes: 4096,

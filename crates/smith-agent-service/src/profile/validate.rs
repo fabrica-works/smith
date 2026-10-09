@@ -16,6 +16,11 @@ pub fn declarations(profile: &Profile, configuration: &Configuration) -> Result<
         bytes(Layer::Declared, "read_window", u64::from(profile.declared.read_window)),
         bytes(Layer::Declared, "tool_payload", u64::from(profile.declared.tool_payload)),
     )?;
+    at_most(
+        Check::PayloadInFile,
+        bytes(Layer::Declared, "tool_payload", u64::from(profile.declared.tool_payload)),
+        bytes(Layer::Declared, "file_bytes", u64::from(profile.declared.file_bytes)),
+    )?;
     policy_deadlines(profile)?;
     vocabulary(profile)?;
     for endpoint in &configuration.endpoints {

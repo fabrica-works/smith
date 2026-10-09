@@ -71,6 +71,14 @@ fn words(tool: Tool, stated: &Stated, output: &mut Text) {
         }
     }
     match tool {
+        Tool::Read | Tool::Write | Tool::Edit => {
+            output.put(b"Whole-file limit ");
+            output.number(u64::from(stated.file_bytes));
+            output.put(b" bytes. ");
+        }
+        Tool::List | Tool::Search | Tool::Shell => {}
+    }
+    match tool {
         Tool::Write | Tool::Edit => output.put(b"For a larger file, write its first part within the byte bound, then extend it with edits; put as many edits in one call as fit the bound. "),
         Tool::Read | Tool::List | Tool::Search | Tool::Shell => {}
     }
@@ -132,7 +140,7 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         }
         Tool::Write => {
             path(stated, namespace, output);
-            output.put(br#", "content":{"type":"string","description":"Whole file content; max "#);
+            output.put(br#", "content":{"type":"string","description":"Content for this write; max "#);
             payload(stated, output);
             output.put(br#""}},"required":["path","content"]}"#);
         }

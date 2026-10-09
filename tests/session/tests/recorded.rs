@@ -907,6 +907,9 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
 fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     use smith_domain_tools::{Authority, Call, Done, Grants, Name, Op, Outcome, Part, Path, Repo, Version};
     let mut world = World::new(62, 256);
+    world.env.limits.tools.tool_payload = 256;
+    world.env.limits.tools.file_bytes = 320;
+    world.domain = session::Domain::new(&world.env.limits, 62);
     let mut spec = opening(None, 100);
     let name = || Name::new(b"repo".as_slice().into()).expect("repository mount");
     spec.spec.authority = Authority {
@@ -1003,13 +1006,15 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
         llm::Stop::ToolUse,
         llm::Usage::ZERO,
     );
-    let [(owner, Op::Load { .. })] = world.operations.as_slice() else { panic!("the edit loads once") };
+    let [(owner, Op::Load { max, .. })] = world.operations.as_slice() else { panic!("the edit loads once") };
+    assert_eq!(*max, 320, "the edit loads at the whole-file cap");
     world.step(session::Event::Done {
         owner: *owner,
         done: Done::Loaded { content: initial.into(), version: first_version },
     });
     let expected = [vec![b'a'; 188], vec![b'b'; 64], vec![b'c'; 64], b"END!".to_vec()].concat();
-    assert!(expected.len() > 256, "the completed file exceeds one call's input bound");
+    assert!(expected.len() > usize::try_from(world.env.limits.tools.tool_payload).expect("payload"));
+    assert_eq!(expected.len(), usize::try_from(world.env.limits.tools.file_bytes).expect("whole file cap"));
     let [(owner, Op::Store { content, expect, .. })] = world.operations.as_slice() else {
         panic!("the whole edit batch stores once")
     };

@@ -197,6 +197,6 @@ fn random_done(limits: &Limits, rng: &mut Rng, asked: Asked) -> Done {
 fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_step() {
     for seed in 0..20 {
         churn(LIMITS, seed, 3_000);
-        churn(Limits { kits: 4, calls: 4, known_files: 8, file_bytes: 64, ..LIMITS }, seed, 3_000);
+        churn(Limits { kits: 4, calls: 4, known_files: 8, file_bytes: 64, tool_payload: 32, ..LIMITS }, seed, 3_000);
     }
 }

@@ -174,6 +174,7 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         tool_payload: declared.tool_payload,
+        file_bytes: declared.file_bytes,
         read_window: declared.read_window,
         shell_head: declared.shell_head,
         shell_tail: declared.shell_tail,

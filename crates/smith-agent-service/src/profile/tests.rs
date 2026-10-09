@@ -149,6 +149,7 @@ fn random_declarations_refuse_by_name_or_hold_the_checked_relationships() {
         let mut configuration = declarations();
         profile.declared.tool_payload = u32::try_from(rng.next_u64() % 4096 + 1).expect("payload");
         profile.declared.read_window = u32::try_from(rng.next_u64() % 8192 + 1).expect("read");
+        profile.declared.file_bytes = u32::try_from(rng.next_u64() % 8192 + 1).expect("whole file");
         let model = configuration.endpoints.get_mut(0).expect("one endpoint").models.get_mut(0).expect("one model");
         model.window = u32::try_from(rng.next_u64() % 8192 + 1).expect("window");
         model.output = u32::try_from(rng.next_u64() % 8192 + 1).expect("output");
@@ -157,10 +158,32 @@ fn random_declarations_refuse_by_name_or_hold_the_checked_relationships() {
         match super::derive(&profile, &configuration) {
             Ok(limits) => {
                 assert!(profile.declared.read_window <= profile.declared.tool_payload, "default read fits payload");
+                assert!(profile.declared.tool_payload <= profile.declared.file_bytes, "payload fits file");
                 assert!(output < window, "output fits window");
                 validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
             }
             Err(refusal) => assert!(refusal.check().is_some(), "smith refusals retain their relationship"),
         }
     }
+}
+
+#[test]
+fn a_tool_piece_must_fit_the_separately_declared_whole_file() {
+    let mut profile = profile();
+    profile.declared.read_window = 128;
+    profile.declared.tool_payload = 256;
+    profile.declared.file_bytes = 255;
+    let refusal = super::derive(&profile, &declarations()).expect_err("payload past file");
+    assert_eq!(refusal.check(), Some(Check::PayloadInFile));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"payload-in-file: declared.tool_payload=256 bytes; declared.file_bytes=255 bytes"
+    );
+    profile.declared.file_bytes = 256;
+    validate::declarations(&profile, &declarations()).expect("payload at file ceiling");
+    profile.declared.file_bytes = 1 << 20;
+    let limits = super::derive(&profile, &declarations()).expect("independent file declaration");
+    assert_eq!(limits.domain.session.tools.file_bytes, 1 << 20);
+    assert_eq!(limits.domain.session.tools.tool_payload, 256);
+    assert_eq!(limits.machine.file_bytes, 1 << 20);
 }
