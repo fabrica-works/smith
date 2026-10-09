@@ -604,7 +604,10 @@ answers as it was ending; the host has the delivery's own answer.
   cost from the run's budget: the input it sends and the output its
   `max_tokens` allows, at its model's prices. The input's maximum counts
   what the agent sends as at most one token per byte, plus an allowance
-  its limits give for what the protocol layer and the provider add. When
+  its limits give for what the protocol layer and the provider add. Each
+  input token is reserved at the highest of the input, cached and
+  cache-write rates, since the provider, not smith, decides which each
+  token is. No order among the rates is required. When
   the completion ends, the difference is returned. A completion whose
   maximum does not fit what is left to it is not made: ordinary work
   that does not fit above the reserve starts the wind-down (9.1), and a
@@ -621,7 +624,8 @@ answers as it was ending; the host has the delivery's own answer.
 - **The reserve** is the charter's `reserve { turns, time }`, which the
   product's presets give a default (`docs/design/shell.md`). Its spend is
   derived: its turns, each at the main model's maximum completion cost
-  (its window of input and its most output, at its prices). A budget that
+  (its window of input at its highest input rate, and its most output).
+  A budget that
   cannot hold its reserve is refused at the entrance.
 - **The ordinary pool** is what is left above the reserve, in each part
   of the budget. Main's ordinary work and every sub-agent's share draw
