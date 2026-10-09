@@ -1257,11 +1257,11 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
     let choice_cost = 2 * size(size_of::<Token>());
     let note_bytes = 8192;
-    let original = Limits { messages: 5, ..LIMITS };
+    let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole next-completion credit");
     let cap = spec_cost + block + choice_cost + note_bytes + credit;
     for extra in [0, 1] {
-        let limits = Limits { session_bytes: cap, ..original };
+        let limits = Limits { history_bytes: cap, ..original };
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();

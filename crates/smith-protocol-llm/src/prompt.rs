@@ -394,9 +394,7 @@ fn result_text(
             llm::NotRun::Stopped => Ok((bytes::copy_of(b"not run"), true)),
             llm::NotRun::OutsideChoice => Ok((outside_choice(choice, limits.rendered_result)?, true)),
         },
-        llm::Returned::Invalid { problem } => {
-            Ok((crate::failure::problem(problem, limits.rendered_result)?, true))
-        }
+        llm::Returned::Invalid { problem } => Ok((crate::failure::problem(problem, limits.rendered_result)?, true)),
         llm::Returned::Served { returned, error } => {
             let value = smith_domain::feedback(returned, u64::from(limits.rendered_result)).or(Err(Error::Limit))?;
             if value.error != error {

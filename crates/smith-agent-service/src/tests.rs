@@ -328,6 +328,7 @@ fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte
                 ..
             } => lower = middle + 1,
             other @ (run::Request::MessageRefused { .. }
+            | run::Request::CompletionReady { .. }
             | run::Request::Waiting { .. }
             | run::Request::Turn { .. }
             | run::Request::HostCall { .. }
@@ -390,6 +391,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     let Some(run::Request::Admitted { .. }) = out.pop() else { panic!("opening admitted") };
     let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
     let prompt = llm::Prompt {
+        choice: llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
