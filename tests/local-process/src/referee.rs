@@ -131,7 +131,7 @@ impl Expectations for Meeting {
                 );
                 let start = b"smith: local host started; worst case ";
                 let diagnostic = if matches!(self.ending, Ending::HostFailure) {
-                    errors.strip_suffix(b"smith: local chat ended with a failure\n")
+                    errors.strip_suffix(b"smith: run failed: chat main: turn 2 could not be kept: write failed\n")
                 } else {
                     Some(errors.as_slice())
                 };
