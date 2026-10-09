@@ -36,7 +36,7 @@ pub(crate) fn main(
         host_tools: charter.grants.host_tools.clone(),
         deliver: charter.grants.deliver.is_some(),
         llm: charter.llm.clone(),
-        system: prompt::system(charter, workspace, found),
+        system: prompt::system(charter, workspace, found, charter.budget.remainder(spent, left)),
         prompt: copy_of(prompt::BEGIN),
         tools: workspace::families(workspace, Families::of(&charter.grants)).tools,
         workspace: workspace.cloned(),

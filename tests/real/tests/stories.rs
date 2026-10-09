@@ -127,9 +127,18 @@ fn the_same_chat_runs_with_its_agent_in_process() {
     assert_eq!(spawned.shown, in_process.shown);
     let mut spawned_queries = spawned.queries.clone();
     let mut colocated_queries = in_process.queries.clone();
-    // The host's durable chat identity is introduced by 08.4. Until then,
-    // child kinds mint independently, while every other request field agrees.
-    for queries in [&mut spawned_queries, &mut colocated_queries] {
+    // Placement has its own run key and elapsed startup clock. Verify its
+    // exact fixed-at-open budget before comparing all remaining request bytes.
+    for (queries, seconds) in [(&mut spawned_queries, 3599), (&mut colocated_queries, 3600)] {
+        let opening_budget = format!("At open, you have 512 turns and {seconds} seconds of wall time.");
+        for query in queries.iter_mut() {
+            let text = core::str::from_utf8(&query.system).expect("native system is UTF-8");
+            assert!(text.contains(&opening_budget), "placement's actual open clock: {text}");
+            query.system = text
+                .replacen(&opening_budget, "At open, you have 512 turns and 3600 seconds of wall time.", 1)
+                .into_bytes()
+                .into();
+        }
         let key = match &queries.first().expect("actual native request").caching {
             skein_fake_llm_domain::api::Caching::Scope(key) => *key,
             skein_fake_llm_domain::api::Caching::Unscoped | skein_fake_llm_domain::api::Caching::Marks(_) => {

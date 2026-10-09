@@ -376,7 +376,7 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
         host_tools: charter().grants.host_tools,
         deliver: false,
         llm: charter().llm,
-        system: super::prompt::system(&charter(), Some(&workspace()), &found),
+        system: super::prompt::system(&charter(), Some(&workspace()), &found, BUDGET),
         prompt: bytes(super::prompt::BEGIN),
         tools: charter().grants.tools,
         workspace: Some(workspace()),
@@ -1164,7 +1164,10 @@ fn a_guide_that_is_not_text_is_not_there() {
     let run = h.prepare(1);
     let emitted = h.step(Event::Read { owner: run, read: Read::NotText });
     let [Request::Open { opening, .. }] = &*emitted else { panic!("expected main to open, got {emitted:?}") };
-    assert_eq!(opening.system, super::prompt::system(&charter(), Some(&workspace()), &Found::with_capacity(1)));
+    assert_eq!(
+        opening.system,
+        super::prompt::system(&charter(), Some(&workspace()), &Found::with_capacity(1), opening.budget)
+    );
 }
 
 #[test]
@@ -1598,7 +1601,13 @@ fn a_sub_agent_answers_with_its_last_message_once_it_has_ended() {
         Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"The parser is in src/parse.rs.") };
     assert_eq!(&*h.step(yielded), &[Request::Close { peer: Token::new(101) }], "a sub-agent that yields is done");
     let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
-    let answer = Returned::Answered { text: bytes(b"The parser is in"), cut: 14, stop: Stop::EndTurn };
+    let answer = Returned::Answered {
+        text: bytes(b"The parser is in"),
+        cut: 14,
+        stop: Stop::EndTurn,
+        used: crate::facts::Used { turns: 1, time: Duration::ZERO, spend: 50 },
+        left: Budget { turns: 8, spend: 9850, ..BUDGET },
+    };
     assert_eq!(
         &*emitted,
         &[Request::Return { call: Token::new(7), result: answer, spent: 50 }],
@@ -1896,7 +1905,17 @@ fn a_sub_agent_that_ends_without_answering_returns_how_it_ended() {
     let (_, main) = h.running_on(1, 100, agents());
     let (child, _) = h.child(main, 7, families(true, false, false), 101);
     let emitted = h.step(Event::Ended { conversation: child, end: End::Fault(Fault::Provider), spend: Spend::ZERO });
-    assert_eq!(&*emitted, &[returned(7, Returned::Unanswered { end: End::Fault(Fault::Provider) })]);
+    assert_eq!(
+        &*emitted,
+        &[returned(
+            7,
+            Returned::Unanswered {
+                end: End::Fault(Fault::Provider),
+                used: crate::facts::Used { turns: 0, time: Duration::ZERO, spend: 0 },
+                left: BUDGET
+            }
+        )]
+    );
     assert_eq!(h.step(end_turn(main)).len(), 1, "the run goes on: main is nudged");
 }
 
@@ -3035,8 +3054,21 @@ fn accepted_mixed_workspace_drives_discovery_opening_and_child_metadata() {
     {
         assert!(skein_lib::bytes::find(&opening.system, fragment).is_some());
     }
-    let child =
-        super::prompt::child(&charter(), Some(&mounted), &Found::with_capacity(0), b"Inspect", opening.families);
+    let child = super::prompt::child(
+        &charter(),
+        Some(&mounted),
+        &Found::with_capacity(0),
+        b"Inspect",
+        opening.families,
+        crate::Granted {
+            turns: 3,
+            time: Duration::from_secs(4),
+            spend: 100,
+            turns_set: crate::Set::Pool,
+            time_set: crate::Set::Pool,
+        },
+        LIMITS.answer_bytes,
+    );
     assert!(skein_lib::bytes::find(&child, b"initial merge conflicts: `src/merge.rs`").is_some());
     assert!(skein_lib::bytes::find(&child, b"`reference`, which you may only read").is_some());
 }

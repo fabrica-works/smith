@@ -1189,9 +1189,18 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
         if writing {
             run.lease.child_returned(asker);
         }
+        let reserve_spend =
+            crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm).expect("admitted reserve");
+        let left = crate::budget::ordinary(
+            &run.charter.budget,
+            run.charter.reserve,
+            reserve_spend,
+            run.spent,
+            run.deadline.saturating_since(facts.now()),
+        );
         let call = calls.get_mut(asker).expect("a sub-agent's call lives until it has ended");
         let result = match &mut call.work {
-            Work::Child(child) => agent::ended(child, end),
+            Work::Child(child) => agent::ended(child, end, used, left),
             Work::Landing(_) | Work::Host(_) => unreachable!("a sub-agent serves a sub-agent's call"),
         };
         crate::facts::child_returned(facts, run_id.token(), call.owner, &result, used);
@@ -1768,7 +1777,15 @@ fn sub_agent(
         wait: false,
         host_tools: Box::new([]),
         deliver: false,
-        system: prompt::child(&run.charter, run.workspace.as_ref(), &run.found, &wanted.brief, plan.families),
+        system: prompt::child(
+            &run.charter,
+            run.workspace.as_ref(),
+            &run.found,
+            &wanted.brief,
+            plan.families,
+            plan.granted,
+            env.limits.answer_bytes,
+        ),
         prompt: copy_of(prompt::BEGIN),
         tools: plan.families.tools,
         workspace: run.workspace.clone(),

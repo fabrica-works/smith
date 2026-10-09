@@ -2,14 +2,20 @@
 //! Contract: domain/run.md, sections 5.2, 7, 8 and 10;
 //! testing-strategy.md, section 7.
 
+use skein_lib::Duration;
 use smith_domain::{Feedback, FeedbackRefusal, feedback, run};
+
+const USED: run::facts::Used = run::facts::Used { turns: 0, time: Duration::ZERO, spend: 0 };
+const LEFT: run::Budget = run::Budget { turns: 0, time: Duration::ZERO, spend: 0 };
+const SUFFIX: &str =
+    "\n\nChild usage: used 0 turns and 0 seconds; stopped for budget: no; ordinary left 0 turns and 0 seconds.";
 
 fn bytes(text: &[u8]) -> Box<[u8]> {
     text.into()
 }
 
 #[test]
-fn host_and_ordinary_child_text_move_exactly_with_error_and_no_copy() {
+fn host_moves_without_copy_and_child_prefix_precedes_usage() {
     for error in [false, true] {
         let text = bytes("actual ✓\n".as_bytes());
         let pointer = text.as_ptr();
@@ -20,10 +26,9 @@ fn host_and_ordinary_child_text_move_exactly_with_error_and_no_copy() {
         assert_eq!(got.error, error);
     }
     let text = bytes(b"child\n");
-    let pointer = text.as_ptr();
-    let got = feedback(run::Returned::Answered { text, cut: 0, stop: run::Stop::EndTurn }, 64).expect("ordinary child");
-    assert_eq!(got.text.as_ref(), b"child\n");
-    assert_eq!(got.text.as_ptr(), pointer);
+    let got = feedback(run::Returned::Answered { text, cut: 0, stop: run::Stop::EndTurn, used: USED, left: LEFT }, 256)
+        .expect("ordinary child");
+    assert_eq!(got.text.as_ref(), format!("child\n{SUFFIX}").as_bytes());
     assert!(!got.error);
 }
 
@@ -37,13 +42,14 @@ fn child_cut_and_every_stop_survive_canonical_feedback() {
     ] {
         for cut in [0, u64::MAX] {
             let got =
-                feedback(run::Returned::Answered { text: bytes(b"child"), cut, stop }, 128).expect("compatible bound");
+                feedback(run::Returned::Answered { text: bytes(b"child"), cut, stop, used: USED, left: LEFT }, 256)
+                    .expect("compatible bound");
             let expected = if cut == 0 && stop == run::Stop::EndTurn {
                 "child".to_owned()
             } else {
                 format!("child\n[child-result cut={cut} stop={name}]")
             };
-            assert_eq!(got.text.as_ref(), expected.as_bytes());
+            assert_eq!(got.text.as_ref(), format!("{expected}{SUFFIX}").as_bytes());
             assert!(!got.error);
         }
     }
@@ -118,12 +124,72 @@ fn child_scalar_receiving_and_unknown_prefix_ends_remain_distinct_literal_feedba
         (run::End::Receiving(run::ReceivingLimit::CacheRead), "unanswered end=receiving:cache-read"),
         (run::End::Receiving(run::ReceivingLimit::CacheWrite), "unanswered end=receiving:cache-write"),
     ] {
-        let received = feedback(run::Returned::Unanswered { end }, 64).expect("literal terminal fits unchanged cap");
+        let budget = if expected.starts_with("unanswered end=budget:") { "yes" } else { "no" };
+        let expected = format!(
+            "{expected}\n\nChild usage: used 0 turns and 0 seconds; stopped for budget: {budget}; ordinary left 0 turns and 0 seconds."
+        );
+        let received = feedback(
+            run::Returned::Unanswered { end, used: USED, left: LEFT },
+            u64::try_from(expected.len()).expect("bounded bytes"),
+        )
+        .expect("exact complete cap");
         assert_eq!(received.text.as_ref(), expected.as_bytes());
         assert!(received.error);
         assert!(
-            feedback(run::Returned::Unanswered { end }, u64::try_from(expected.len() - 1).expect("short label"))
-                .is_err()
+            feedback(
+                run::Returned::Unanswered { end, used: USED, left: LEFT },
+                u64::try_from(expected.len() - 1).expect("short label")
+            )
+            .is_err()
         );
     }
+}
+
+#[test]
+fn child_usage_has_exact_scalar_values_flooring_and_complete_cap() {
+    let used = run::facts::Used { turns: 3, time: Duration::from_nanos(750_000_000), spend: 77 };
+    let left = run::Budget { turns: 5, time: Duration::from_nanos(1_999_000_000), spend: 89 };
+    let expected = b"answer\n[child-result cut=14 stop=end-turn]\n\nChild usage: used 3 turns and less than a second; stopped for budget: no; ordinary left 5 turns and 1 second.";
+    for cap in [expected.len(), expected.len() - 1] {
+        let got = feedback(
+            run::Returned::Answered { text: bytes(b"answer"), cut: 14, stop: run::Stop::EndTurn, used, left },
+            u64::try_from(cap).expect("fixture cap"),
+        );
+        if cap == expected.len() {
+            assert_eq!(got.expect("exact cap").text.as_ref(), expected);
+        } else {
+            assert_eq!(got, Err(FeedbackRefusal::TooLarge));
+        }
+    }
+    let expected = b"unanswered end=budget:time\n\nChild usage: used 3 turns and less than a second; stopped for budget: yes; ordinary left 5 turns and 1 second.";
+    assert_eq!(
+        feedback(
+            run::Returned::Unanswered { end: run::End::Budget(run::Exhausted::Time), used, left },
+            u64::try_from(expected.len()).expect("fixture cap")
+        )
+        .expect("exact terminal")
+        .text
+        .as_ref(),
+        expected
+    );
+}
+
+#[test]
+fn largest_usage_suffix_and_answer_fit_the_declared_feedback_bound() {
+    let mut limits = smith_agent_world::TIGHT.run;
+    limits.answer_bytes = 8192;
+    let cap = smith_domain::feedback_worst_case(&limits).expect("checked bound");
+    let used = run::facts::Used { turns: u32::MAX, time: Duration::from_nanos(u64::MAX), spend: u64::MAX };
+    let left = run::Budget { turns: u32::MAX, time: Duration::from_nanos(u64::MAX), spend: u64::MAX };
+    let answer = || run::Returned::Answered {
+        text: vec![b'x'; 8192].into_boxed_slice(),
+        cut: u64::MAX,
+        stop: run::Stop::MaxTokens,
+        used,
+        left,
+    };
+    let received = feedback(answer(), cap).expect("largest child fields fit bound");
+    assert!(received.text.ends_with(b"Child usage: used 4294967295 turns and 18446744073 seconds; stopped for budget: no; ordinary left 4294967295 turns and 18446744073 seconds."));
+    let measured = u64::try_from(received.text.len()).expect("bounded feedback");
+    assert_eq!(feedback(answer(), measured - 1), Err(FeedbackRefusal::TooLarge));
 }

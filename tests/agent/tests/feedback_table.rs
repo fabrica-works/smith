@@ -8,7 +8,23 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
     text.into()
 }
 
+fn unanswered(end: run::End) -> run::Returned {
+    run::Returned::Unanswered {
+        end,
+        used: run::facts::Used { turns: 0, time: Duration::ZERO, spend: 0 },
+        left: run::Budget { turns: 0, time: Duration::ZERO, spend: 0 },
+    }
+}
+
 fn rendered(returned: run::Returned, expected: &str, error: bool) {
+    let expected = if expected.starts_with("unanswered ") || expected == "child" {
+        let budget = if expected.starts_with("unanswered end=budget:") { "yes" } else { "no" };
+        format!(
+            "{expected}\n\nChild usage: used 0 turns and 0 seconds; stopped for budget: {budget}; ordinary left 0 turns and 0 seconds."
+        )
+    } else {
+        expected.to_owned()
+    };
     let result = feedback(returned, 4096).expect("bounded complete feedback");
     assert_eq!(result.text.as_ref(), expected.as_bytes());
     assert_eq!(result.error, error);
@@ -58,8 +74,18 @@ fn every_run_call_terminal_has_canonical_feedback() {
         (run::Returned::Cancelled, "cancelled", true),
         (run::Returned::TimedOut, "timed-out", true),
         (run::Returned::Busy, "busy", true),
-        (run::Returned::Answered { text: bytes(b"child"), cut: 0, stop: run::Stop::EndTurn }, "child", false),
-        (run::Returned::Unanswered { end: run::End::Closed }, "unanswered end=closed", true),
+        (
+            run::Returned::Answered {
+                text: bytes(b"child"),
+                cut: 0,
+                stop: run::Stop::EndTurn,
+                used: run::facts::Used { turns: 0, time: Duration::ZERO, spend: 0 },
+                left: run::Budget { turns: 0, time: Duration::ZERO, spend: 0 },
+            },
+            "child",
+            false,
+        ),
+        (unanswered(run::End::Closed), "unanswered end=closed", true),
         (run::Returned::Refused { refusal: run::AskRefusal::NotGranted }, "refused reason=not-granted", true),
     ];
     for (returned, expected, error) in rows {
@@ -178,7 +204,7 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
         (run::End::Budget(run::Exhausted::Time), "budget:time"),
     ];
     for (end, label) in rows {
-        rendered(run::Returned::Unanswered { end }, &format!("unanswered end={label}"), true);
+        rendered(unanswered(end), &format!("unanswered end={label}"), true);
     }
     for (reason, label) in [
         (run::TranscriptRefusal::Version, "version"),
@@ -189,7 +215,7 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
         (run::TranscriptRefusal::TooLarge, "too-large"),
     ] {
         rendered(
-            run::Returned::Unanswered { end: run::End::TranscriptRefused { reason } },
+            unanswered(run::End::TranscriptRefused { reason }),
             &format!("unanswered end=transcript-refused:{label}"),
             true,
         );
@@ -206,11 +232,7 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
         (run::Fault::Truncated, "truncated"),
         (run::Fault::Malformed, "malformed"),
     ] {
-        rendered(
-            run::Returned::Unanswered { end: run::End::Fault(fault) },
-            &format!("unanswered end=fault:{label}"),
-            true,
-        );
+        rendered(unanswered(run::End::Fault(fault)), &format!("unanswered end=fault:{label}"), true);
     }
     let cooldown = Duration::from_nanos(19);
     for (failure, label) in [
@@ -232,7 +254,7 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
             (run::CompletionEvidence::Response, "response"),
         ] {
             rendered(
-                run::Returned::Unanswered { end: run::End::Fault(run::Fault::Completion { failure, evidence }) },
+                unanswered(run::End::Fault(run::Fault::Completion { failure, evidence })),
                 &format!("unanswered end=fault:completion:{label} evidence={evidence_label}"),
                 true,
             );

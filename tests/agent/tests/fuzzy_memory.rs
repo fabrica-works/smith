@@ -819,3 +819,25 @@ fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() 
     assert!(seen[..7].iter().all(|count| *count > 10), "every kind of request was made: {seen:?}");
     assert!(seen[7..].iter().all(|count| *count > 0), "actual terminal and refusal classes occurred: {seen:?}");
 }
+
+#[test]
+fn longest_child_usage_feedback_stays_within_its_measured_reservation() {
+    let mut limits = LIMITS.run;
+    limits.answer_bytes = 8192;
+    let bound = smith_domain::feedback_worst_case(&limits).expect("checked receiving bound");
+    let used = run::facts::Used { turns: u32::MAX, time: Duration::from_nanos(u64::MAX), spend: u64::MAX };
+    let left = run::Budget { turns: u32::MAX, time: Duration::from_nanos(u64::MAX), spend: u64::MAX };
+    let meter = Meter::new();
+    let returned = run::Returned::Answered {
+        text: vec![b'x'; 8192].into_boxed_slice(),
+        cut: u64::MAX,
+        stop: run::Stop::MaxTokens,
+        used,
+        left,
+    };
+    meter.start();
+    let result = smith_domain::feedback(returned, bound).expect("largest complete result admitted");
+    let measured = meter.end();
+    meter.check(measured, bound, &limits);
+    assert!(result.text.ends_with(b"Child usage: used 4294967295 turns and 18446744073 seconds; stopped for budget: no; ordinary left 4294967295 turns and 18446744073 seconds."));
+}

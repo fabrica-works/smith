@@ -171,10 +171,10 @@ pub(crate) fn withdraw(call: &mut Child, why: Withdrawal) -> Option<Id<Conversat
 }
 
 /// The child ended as `end`: what the call returns.
-pub(crate) fn ended(call: &mut Child, end: End) -> Returned {
+pub(crate) fn ended(call: &mut Child, end: End, used: crate::facts::Used, left: Budget) -> Returned {
     match mem::replace(call, Child::Closed) {
-        Child::Working { child: _ } => Returned::Unanswered { end },
-        Child::Answering { child: _, text, cut, stop } => Returned::Answered { text, cut, stop },
+        Child::Working { child: _ } => Returned::Unanswered { end, used, left },
+        Child::Answering { child: _, text, cut, stop } => Returned::Answered { text, cut, stop, used, left },
         Child::Closing { child: _, why } => call::stopped(why),
         Child::Closed => unreachable!("a child ends once"),
     }

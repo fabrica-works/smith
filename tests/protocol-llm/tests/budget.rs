@@ -307,6 +307,55 @@ fn native_settled(world: &World) {
     }
 }
 
+// The fixture reserves no turns/time; count actual settled callbacks and the
+// injected admission/open/return clocks instead of copying a rendered result.
+fn child_result(world: &World, settings: &Settings) -> Vec<u8> {
+    let mut admission = None;
+    let mut opened = None;
+    let mut returned = None;
+    for entry in world.facts() {
+        let smith_domain::Fact::Run { fact } = entry else { continue };
+        if let run::facts::FactKind::Admitted { .. } = fact.kind {
+            admission = Some(fact.at);
+        }
+        if let run::facts::FactKind::Opened { kind: run::facts::Kind::Child { .. }, .. } = fact.kind {
+            opened = Some(fact.at);
+        }
+        if let run::facts::FactKind::Returned { result: run::facts::Return::Answered { .. }, .. } = fact.kind {
+            returned = Some(fact.at);
+        }
+    }
+    let admission = admission.expect("actual admission clock");
+    let opened = opened.expect("actual child opening");
+    let returned = returned.expect("actual settled child return");
+    let children = world.completions().iter().filter(|call| call.model.as_ref() == b"fake-2").count();
+    // The next main completion can end at the same injected clock as the
+    // return. Its request starts after this result, so count the causal
+    // callback prefix through the child's final completion instead.
+    let charged =
+        world.completions().iter().rposition(|call| call.model.as_ref() == b"fake-2").expect("actual child completion")
+            + 1;
+    assert!(world.completions()[..charged].iter().all(|call| call.terminal.is_some()));
+    let left = usize::try_from(settings.budget.turns).expect("fixture turns") - charged;
+    let elapsed = returned.saturating_since(admission);
+    let time_left = Duration::from_nanos(settings.budget.time.as_nanos() - elapsed.as_nanos());
+    let used_words = duration_words(returned.saturating_since(opened));
+    let left_words = duration_words(time_left);
+    let suffix = format!(
+        "\n\nChild usage: used {children} turns and {used_words}; stopped for budget: no; ordinary left {left} turns and {left_words}."
+    );
+    [CHILD, suffix.as_bytes()].concat()
+}
+
+fn duration_words(time: Duration) -> String {
+    let seconds = time.as_nanos() / 1_000_000_000;
+    match seconds {
+        0 if time != Duration::ZERO => "less than a second".into(),
+        1 => "1 second".into(),
+        _ => format!("{seconds} seconds"),
+    }
+}
+
 fn query_result(query: &Query, name: &[u8], input: &[u8], output: &[u8]) -> bool {
     query.messages.windows(2).any(|pair| {
         pair[0].role == Role::Assistant
@@ -383,7 +432,7 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
     assert_eq!(inclusive, expected.units);
     let main_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").collect::<Vec<_>>();
     let child_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-2").collect::<Vec<_>>();
-    assert!(query_result(main_queries[1], b"sub_agent", CHILD_INPUT, CHILD));
+    assert!(query_result(main_queries[1], b"sub_agent", CHILD_INPUT, &child_result(&world, &settings)));
     assert!(
         child_queries[1]
             .messages
@@ -564,7 +613,7 @@ fn wait_feedback() -> Part {
     Part::ToolOutput { id: b"call_0000000000000002".as_slice().into(), output: BEGIN.into(), is_error: false }
 }
 
-fn parked_prefix() -> Vec<Message> {
+fn parked_prefix(child_result: Vec<u8>) -> Vec<Message> {
     vec![
         message(Role::User, vec![text_part(BEGIN)]),
         message(
@@ -575,7 +624,7 @@ fn parked_prefix() -> Vec<Message> {
                 arguments: PARK_CHILD_INPUT.into(),
             }],
         ),
-        message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: CHILD.into(), is_error: false }]),
+        message(Role::User, vec![Part::ToolOutput { id: ID.into(), output: child_result.into(), is_error: false }]),
         message(Role::Assistant, vec![text_part(FIRST), wait_call()]),
         message(Role::User, vec![wait_feedback()]),
     ]
@@ -586,7 +635,8 @@ fn exact_history(query: &Query, expected: &[Message]) -> bool {
 }
 
 fn positive_history_controls(query: &Query, expected: &[Message]) {
-    assert!(exact_history(query, expected), "whole saved history and fresh activation wake");
+    assert_eq!(query.model.as_ref(), b"fake-1");
+    assert_eq!(query.messages.as_ref(), expected, "whole saved history and fresh activation wake");
     let mut changed = query.clone();
     changed.messages[2].parts = Box::new([]);
     assert!(!exact_history(&changed, expected), "dropping the actual child's result breaks the positive oracle");
@@ -658,7 +708,7 @@ fn parking_story(index: usize) {
         index,
     );
     resumed.run(100_000);
-    let expected_prefix = parked_prefix();
+    let expected_prefix = parked_prefix(child_result(&first, &settings(704, false, true)));
     positive_history_controls(&resumed.prompts()[0], &expected_prefix);
     assert_eq!(resumed.prompts().len(), 1, "the next wait remains withheld without another provider call");
     assert!(

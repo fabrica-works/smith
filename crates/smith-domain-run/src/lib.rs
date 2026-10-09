@@ -56,6 +56,7 @@ mod opening;
 pub mod outcome;
 mod prepare;
 mod prompt;
+pub use prompt::budget_prompt_bytes;
 mod run;
 #[cfg(test)]
 mod tests;

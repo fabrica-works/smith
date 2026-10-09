@@ -1,4 +1,4 @@
-//! Scalar activation bills through root/run/session/tools and actual Clients.
+//! Scalar activation bills through root/run/session/tools and a typed fake provider.
 //! The outside oracle prices the actual typed fake-provider callbacks with its own literal
 //! model table, and sums each callback once. Child-inclusive Turn bills and
 //! historical bills never supply that global expected total.
@@ -259,6 +259,75 @@ fn turn_usage(actual: llm::Usage) -> llm::Usage {
     actual
 }
 
+fn budget_prose(world: &World, settings: &Settings, child_bill: u64) {
+    let main_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").collect::<Vec<_>>();
+    let child_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-2").collect::<Vec<_>>();
+    let mut admitted_at = None;
+    let mut main_open = None;
+    let mut child_open = None;
+    let mut child_return = None;
+    for fact in world.facts() {
+        let smith_domain::Fact::Run { fact } = fact else { continue };
+        match fact.kind {
+            run::facts::FactKind::Admitted { .. } => admitted_at = Some(fact.at),
+            run::facts::FactKind::Opened { kind: run::facts::Kind::Main, .. } => main_open = Some(fact.at),
+            run::facts::FactKind::Opened { kind: run::facts::Kind::Child { granted, .. }, .. } => {
+                child_open = Some((fact.at, granted));
+            }
+            run::facts::FactKind::Returned { result: run::facts::Return::Answered { used }, .. } => {
+                child_return = Some((fact.at, used));
+            }
+            run::facts::FactKind::MessageRead { .. }
+            | run::facts::FactKind::MessageFence { .. }
+            | run::facts::FactKind::MessageUnread { .. }
+            | run::facts::FactKind::MessageReceived { .. }
+            | run::facts::FactKind::MessageRefused { .. }
+            | run::facts::FactKind::Prepared { .. }
+            | run::facts::FactKind::Budget { .. }
+            | run::facts::FactKind::Ended { .. }
+            | run::facts::FactKind::Called { .. }
+            | run::facts::FactKind::Returned { .. }
+            | run::facts::FactKind::CheckStarted { .. }
+            | run::facts::FactKind::CheckFinished { .. }
+            | run::facts::FactKind::Delivered { .. }
+            | run::facts::FactKind::Answered { .. } => {}
+        }
+    }
+    let admitted_at = admitted_at.expect("actual admission clock");
+    let main_at = main_open.expect("actual main opening clock");
+    let (child_at, grant) = child_open.expect("actual effective child opening");
+    let (returned_at, child_used) = child_return.expect("actual child terminal");
+    assert_eq!(child_used.turns, 3);
+    assert_eq!(child_used.spend, child_bill);
+    assert_eq!(child_used.time, returned_at.saturating_since(child_at));
+    let main_seconds =
+        (settings.budget.time.as_nanos() - main_at.saturating_since(admitted_at).as_nanos()) / 1_000_000_000;
+    let main_text = format!(
+        "## Budget\n\nAt open, you have 64 turns and {main_seconds} seconds of wall time. Spend is bounded too.\nKeep 0 turns and 0 seconds to finish."
+    );
+    assert!(main_queries.iter().all(|query| query.system == main_queries[0].system), "Budget stays fixed at open");
+    assert!(String::from_utf8_lossy(&main_queries[0].system).contains(&main_text));
+    assert_eq!(grant.turns, 63, "one actual main turn preceded delegation");
+    let child_left = settings.budget.time.as_nanos() - child_at.saturating_since(admitted_at).as_nanos();
+    assert_eq!(grant.time.as_nanos(), child_left, "unasked share is the actual ordinary pool at delegation");
+    assert_eq!(grant.time_set, run::Set::Pool);
+    let child_seconds = child_left / 1_000_000_000;
+    let child_text = format!(
+        "## Your share\n\nAt open, your share is 63 turns and {child_seconds} seconds. Your answer may hold at most {} bytes",
+        settings.limits.run.answer_bytes
+    );
+    assert!(child_queries.iter().all(|query| String::from_utf8_lossy(&query.system).contains(&child_text)));
+    let used_seconds = child_used.time.as_nanos() / 1_000_000_000;
+    assert!(used_seconds > 1, "actual child work advances the injected clock");
+    let left_seconds =
+        (settings.budget.time.as_nanos() - returned_at.saturating_since(admitted_at).as_nanos()) / 1_000_000_000;
+    let suffix = format!(
+        "\n\nChild usage: used 3 turns and {used_seconds} seconds; stopped for budget: no; ordinary left 60 turns and {left_seconds} seconds."
+    );
+    let result = [CHILD, suffix.as_bytes()].concat();
+    assert!(query_result(main_queries[1], b"sub_agent", CHILD_INPUT, &result));
+}
+
 #[test]
 fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() {
     let scripts = Box::new([
@@ -299,9 +368,8 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
         assert_eq!(world.turns()[index].usage, turn_usage(usage(actual)));
     }
     assert_eq!(inclusive, expected.units);
-    let main_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-1").collect::<Vec<_>>();
     let child_queries = world.prompts().iter().filter(|query| query.model.as_ref() == b"fake-2").collect::<Vec<_>>();
-    assert!(query_result(main_queries[1], b"sub_agent", CHILD_INPUT, CHILD));
+    budget_prose(&world, &settings, child_bill);
     assert!(
         child_queries[1]
             .messages

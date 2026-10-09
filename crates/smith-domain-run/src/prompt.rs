@@ -1,6 +1,7 @@
 //! Main receives literal host instructions, then ordered titled Brief sections;
 //! a child receives only its caller's raw task (domain/run.md, sections 3.1,
-//! 3.3 and 5.3). Both then receive existing selected guides and run mechanics.
+//! 3.3, 5.3 and 9.2). Both then receive selected guides, run mechanics and
+//! budget prose fixed at their actual opening.
 //! `opening` composes a main begin instruction and its bounded message offer.
 //! No prompt state is retained here; title/text meaning and authority are never
 //! inferred. `system` and `child` consume only admitted immutable source data;
@@ -11,7 +12,9 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::Writer;
+use crate::budget::{Budget, Granted};
+use crate::charter::Reserve;
+use skein_lib::{Duration, Writer};
 
 use crate::boundary::Stop;
 use crate::charter::{Charter, Families, Llm, Tools};
@@ -63,14 +66,16 @@ pub(crate) fn opening(brief: bool, messages: Option<Box<[u8]>>) -> Box<[u8]> {
 
 /// The system text of a run's main conversation, given what the run found in
 /// its checkout.
-pub(crate) fn system(charter: &Charter, mounted: Option<&Workspace>, found: &Found) -> Box<[u8]> {
+pub(crate) fn system(charter: &Charter, mounted: Option<&Workspace>, found: &Found, budget: Budget) -> Box<[u8]> {
     let families = workspace::families(mounted, Families::of(&charter.grants));
     let mut measured = Text::measuring();
     render_main_prefix(&mut measured, charter);
     render_system(&mut measured, charter, mounted, found, families, true);
+    render_budget(&mut measured, budget, charter.reserve, families.agents);
     let mut text = measured.writing();
     render_main_prefix(&mut text, charter);
     render_system(&mut text, charter, mounted, found, families, true);
+    render_budget(&mut text, budget, charter.reserve, families.agents);
     text.finish()
 }
 
@@ -81,14 +86,79 @@ pub(crate) fn child(
     found: &Found,
     brief: &[u8],
     families: Families,
+    granted: Granted,
+    answer_bytes: u32,
 ) -> Box<[u8]> {
     let mut measured = Text::measuring();
     render_child_prefix(&mut measured, brief);
     render_system(&mut measured, charter, mounted, found, families, false);
+    render_share(&mut measured, granted, answer_bytes);
     let mut text = measured.writing();
     render_child_prefix(&mut text, brief);
     render_system(&mut text, charter, mounted, found, families, false);
+    render_share(&mut text, granted, answer_bytes);
     text.finish()
+}
+
+/// Maximum new immutable budget/share prose, measured at scalar maxima without allocation.
+/// The profile adds this to its other fixed prompt bytes (domain/run.md, section 9.2).
+#[must_use]
+pub fn budget_prompt_bytes() -> Option<u64> {
+    let mut main = Text::measuring();
+    let time = Duration::from_nanos(u64::MAX);
+    render_budget(
+        &mut main,
+        Budget { turns: u32::MAX, spend: u64::MAX, time },
+        Reserve { turns: u32::MAX, time },
+        true,
+    );
+    let mut child = Text::measuring();
+    render_share(
+        &mut child,
+        Granted { turns: u32::MAX, time, spend: u64::MAX, turns_set: crate::Set::Pool, time_set: crate::Set::Pool },
+        u32::MAX,
+    );
+    u64::try_from(main.len.max(child.len)).ok()
+}
+
+fn render_budget(text: &mut Text, budget: Budget, reserve: Reserve, agents: bool) {
+    text.put(b"\n## Budget\n\nAt open, you have ");
+    text.put_decimal(budget.turns);
+    text.put(b" turns and ");
+    render_duration(text, budget.time);
+    text.put(b" of wall time. Spend is bounded too.\nKeep ");
+    text.put_decimal(reserve.turns);
+    text.put(b" turns and ");
+    render_duration(text, reserve.time);
+    text.put(b" to finish. When the ordinary budget is spent, live children close and you finish on that reserve.\n");
+    if agents {
+        text.put(b"Sub-agents share only what is above the reserve. Ask for focused turn or time shares; leaving a part unasked gives the child all of that part left.\n");
+    }
+}
+
+fn render_share(text: &mut Text, granted: Granted, answer_bytes: u32) {
+    text.put(b"\n## Your share\n\nAt open, your share is ");
+    text.put_decimal(granted.turns);
+    text.put(b" turns and ");
+    render_duration(text, granted.time);
+    text.put(b". Your answer may hold at most ");
+    text.put_decimal(answer_bytes);
+    text.put(
+        b" bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.\n",
+    );
+}
+
+fn render_duration(text: &mut Text, duration: Duration) {
+    let seconds = duration.as_nanos().checked_div(1_000_000_000).expect("positive seconds divisor");
+    if seconds == 0 && duration != Duration::ZERO {
+        text.put(b"less than a second");
+    } else {
+        text.put_count(seconds);
+        match seconds {
+            1 => text.put(b" second"),
+            _ => text.put(b" seconds"),
+        }
+    }
 }
 
 /// What a run says to an LLM that stopped for `stop` without finishing, in its
@@ -171,8 +241,7 @@ fn render_system(
             text.put(b" The host supplies receipts, nothing, named refusal, bounded failure or stale.\n");
         }
     } else {
-        text.put(b"## Answering\n\nWhen you are done, end your turn with your answer: your last message goes, as it ");
-        text.put(b"is, to the LLM that asked for you, and you are done.\n");
+        text.put(b"## Answering\n\nWhen you are done, end your turn with your answer. The run adds your usage to the result.\n");
     }
 }
 
@@ -181,7 +250,8 @@ fn render_agents(text: &mut Text, models: &[Llm]) {
     text.put(
         b"You can ask for a sub-agent: an LLM of its own, working on a brief you write, with tools no wider than ",
     );
-    text.put(b"yours and a share of the budget. Its last message comes back to you as the result. It runs on the ");
+    text.put(b"yours and a share of the ordinary budget above the reserve. Its last message comes back with usage.\n");
+    text.put(b"A child starts cold: give it a focused brief naming paths, decisions and scope. Inspect-only children may work side by side; a writing child works alone.\nIt runs on the ");
     if models.is_empty() {
         text.put(b"run's main LLM.\n");
         return;
@@ -411,19 +481,11 @@ impl Text {
 
     /// `n` in decimal digits.
     fn put_decimal(&mut self, n: u32) {
-        let mut digits = [b'0'; 10];
-        let mut rest = n;
-        // The first digit to put: the leftmost that is not a leading zero.
-        let mut first: usize = 9;
-        for (index, digit) in digits.iter_mut().enumerate().rev() {
-            let value = u8::try_from(rest.checked_rem(10).unwrap_or(0)).expect("a digit fits in a byte");
-            *digit = b'0'.saturating_add(value);
-            if value != 0 {
-                first = index;
-            }
-            rest = rest.checked_div(10).unwrap_or(0);
-        }
-        self.put(digits.get(first..).unwrap_or_default());
+        self.put_count(u64::from(n));
+    }
+
+    fn put_count(&mut self, n: u64) {
+        self.put(skein_lib::Decimal::of(n).as_bytes());
     }
 
     fn finish(self) -> Box<[u8]> {
@@ -456,6 +518,16 @@ mod tests {
         found
     }
 
+    fn share(nanos: u64) -> crate::Granted {
+        crate::Granted {
+            turns: 3,
+            time: skein_lib::Duration::from_nanos(nanos),
+            spend: 91,
+            turns_set: crate::Set::Asked,
+            time_set: crate::Set::Asked,
+        }
+    }
+
     fn fields(name: &[u8], max: u32) -> Box<[FieldRule]> {
         Box::new([FieldRule { name: bytes(name), max }])
     }
@@ -483,7 +555,7 @@ mod tests {
             },
             ..charter()
         };
-        let rendered = system(&charter, Some(&workspace()), &found());
+        let rendered = system(&charter, Some(&workspace()), &found(), charter.budget);
         let rendered = text(&rendered);
         let brief = rendered.find("Review the change.").expect("brief");
         let guide = rendered.find("## AGENTS.md").expect("guide");
@@ -513,7 +585,7 @@ mod tests {
         let mut charter = charter();
         charter.outcome.change = Some(ChangeSpec { checks_must_pass: false, fields: Box::new([]) });
         charter.grants.deliver = Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
-        let rendered = system(&charter, Some(&workspace()), &found());
+        let rendered = system(&charter, Some(&workspace()), &found(), charter.budget);
         assert!(skein_lib::bytes::find(&rendered, b"A failed check does not block delivery.").is_some());
         assert!(skein_lib::bytes::find(&rendered, b"a failing check does not block it.").is_some());
     }
@@ -535,7 +607,7 @@ mod tests {
             },
             ..charter()
         };
-        let rendered = system(&charter, None, &Found::with_capacity(0));
+        let rendered = system(&charter, None, &Found::with_capacity(0), charter.budget);
         let rendered = text(&rendered);
         assert!(rendered.contains("There is no checkout."));
         assert!(rendered.contains("Report: text up to 16 bytes, with these host-required fields:\n(none)"));
@@ -546,7 +618,7 @@ mod tests {
     fn a_sub_agent_is_told_its_brief_its_tools_its_checkout_and_how_to_answer() {
         let mut charter = charter();
         charter.models = Box::new([crate::charter::Llm { model: bytes(b"model-b"), ..charter.llm.clone() }]);
-        let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: true };
+        let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: false };
         let expected: &[u8] = b"Find where tabs are parsed.
 
 ## Tools
@@ -558,22 +630,92 @@ You can read, list and search the files in the checkout.
 Paths start in your working directory. Use `src/lib.rs`, without a directory-name prefix.
 - The working directory, which you may only read, a git working tree
 
-## Sub-agents
-
-You can ask for a sub-agent: an LLM of its own, working on a brief you write, with tools no wider than yours \
-and a share of the budget. Its last message comes back to you as the result. It runs on the run's main LLM \
-unless you name one of these: `model-b`.
-
 ## Answering
 
-When you are done, end your turn with your answer: your last message goes, as it is, to the LLM that asked for \
-you, and you are done.
+When you are done, end your turn with your answer. The run adds your usage to the result.
+
+## Your share
+
+At open, your share is 3 turns and less than a second. Your answer may hold at most 8192 bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.
 ";
         let found = Found::with_capacity(1);
         assert_eq!(
-            text(&child(&charter, Some(&workspace()), &found, b"Find where tabs are parsed.", families)),
+            text(&child(
+                &charter,
+                Some(&workspace()),
+                &found,
+                b"Find where tabs are parsed.",
+                families,
+                share(750_000_000),
+                8192
+            )),
             text(expected)
         );
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test-only literal golden fragments are joined without domain rendering"
+    )]
+    fn budget_text_has_exact_open_values_with_and_without_children() {
+        for agents in [false, true] {
+            let mut policy = charter();
+            policy.grants.agents = agents;
+            policy.reserve = crate::charter::Reserve { turns: 2, time: skein_lib::Duration::from_nanos(750_000_000) };
+            let budget = crate::Budget { turns: 7, time: skein_lib::Duration::from_nanos(1_999_000_000), spend: 123 };
+            let rendered = system(&policy, None, &Found::with_capacity(0), budget);
+            let expected = "\n## Budget\n\nAt open, you have 7 turns and 1 second of wall time. Spend is bounded too.\nKeep 2 turns and less than a second to finish. When the ordinary budget is spent, live children close and you finish on that reserve.\n";
+            let delegation = "Sub-agents share only what is above the reserve. Ask for focused turn or time shares; leaving a part unasked gives the child all of that part left.\n";
+            let expected = if agents { [expected, delegation].concat() } else { expected.into() };
+            assert!(text(&rendered).ends_with(&expected));
+            assert_eq!(text(&rendered).matches("## Budget").count(), 1);
+            assert_eq!(text(&rendered).contains("## Sub-agents"), agents);
+            if agents {
+                assert!(
+                    text(&rendered)
+                        .contains("A child starts cold: give it a focused brief naming paths, decisions and scope.")
+                );
+                assert!(
+                    text(&rendered)
+                        .contains("Inspect-only children may work side by side; a writing child works alone.")
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test-only literal golden fragments are joined without domain rendering"
+    )]
+    fn child_seconds_round_down_and_fixed_prose_measurement_covers_maxima() {
+        for (nanos, seconds) in [(750_000_000_u64, "less than a second"), (1_999_000_000, "1 second")] {
+            let rendered = child(
+                &charter(),
+                None,
+                &Found::with_capacity(0),
+                b"task",
+                Families { tools: Tools { inspect: false, modify: false, shell: false }, agents: false },
+                share(nanos),
+                8192,
+            );
+            let expected = ["\n## Your share\n\nAt open, your share is 3 turns and ", seconds, ". Your answer may hold at most 8192 bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.\n"].concat();
+            assert!(text(&rendered).ends_with(&expected));
+            assert!(!text(&rendered).contains("spend"));
+            assert!(
+                u64::try_from(expected.len()).expect("small prose")
+                    <= super::budget_prompt_bytes().expect("scalar bound")
+            );
+        }
+        let mut measured = Text::measuring();
+        super::render_budget(
+            &mut measured,
+            crate::Budget { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), spend: u64::MAX },
+            crate::charter::Reserve { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) },
+            true,
+        );
+        assert_eq!(u64::try_from(measured.len).ok(), super::budget_prompt_bytes());
     }
 
     #[test]
@@ -589,7 +731,7 @@ you, and you are done.
             },
             ..charter()
         };
-        let main = system(&selected, None, &Found::with_capacity(0));
+        let main = system(&selected, None, &Found::with_capacity(0), selected.budget);
         let prefix = b"literal role\n\n## Repeated\n\nparent first body\n\n## \n\n\n\n## Repeated\n\nparent last body\n\n## Tools\n\n";
         assert!(main.starts_with(prefix), "host bytes and exact paragraph delimiters: {}", text(&main));
         let child = child(
@@ -598,6 +740,8 @@ you, and you are done.
             &Found::with_capacity(0),
             b"own task\n",
             Families { tools: Tools { inspect: false, modify: false, shell: false }, agents: false },
+            share(1_999_000_000),
+            8192,
         );
         assert!(child.starts_with(b"own task\n\n## Tools\n\n"));
         for inherited in [b"literal role".as_slice(), b"Repeated", b"parent first body", b"parent last body"] {
@@ -611,14 +755,14 @@ you, and you are done.
     fn empty_role_and_brief_emit_no_prefix_but_empty_sections_are_still_rendered() {
         let selected =
             Charter { instructions: Box::new([]), brief: crate::Brief { sections: Box::new([]) }, ..charter() };
-        assert!(system(&selected, None, &Found::with_capacity(0)).starts_with(b"## Tools\n\n"));
+        assert!(system(&selected, None, &Found::with_capacity(0), selected.budget).starts_with(b"## Tools\n\n"));
         let selected = Charter {
             instructions: bytes(b"role without LF"),
             brief: crate::Brief { sections: Box::new([crate::Section { title: Box::new([]), text: Box::new([]) }]) },
             ..selected
         };
         assert!(
-            system(&selected, None, &Found::with_capacity(0))
+            system(&selected, None, &Found::with_capacity(0), selected.budget)
                 .starts_with(b"role without LF\n\n## \n\n\n\n## Tools\n\n")
         );
     }
@@ -658,7 +802,7 @@ you, and you are done.
         mounted.directories = Box::new([mounted.directories[0].clone()]);
         let mut found = Found::with_capacity(1);
         found.guides.push(Guide { repository: 0, text: bytes(b"Guide text."), whole: true }).unwrap();
-        let rendered = system(&charter, Some(&mounted), &found);
+        let rendered = system(&charter, Some(&mounted), &found, charter.budget);
         let rendered = text(&rendered);
         assert!(!rendered.contains(text(&mounted.directories[0].name)), "the one mount's name is hidden");
         assert!(rendered.contains("## AGENTS.md in the working directory\n\nGuide text."));
@@ -673,7 +817,7 @@ you, and you are done.
         other.name = bytes(b"docs");
         other.root = skein_lib::Token::new(901);
         mounted.directories = Box::new([mounted.directories[0].clone(), other]);
-        let rendered = system(&charter, Some(&mounted), &Found::with_capacity(0));
+        let rendered = system(&charter, Some(&mounted), &Found::with_capacity(0), charter.budget);
         let rendered = text(&rendered);
         assert!(rendered.contains("Your working directory is `temper`. Relative paths start there; reach the other directories as `/name/...`. Use `list /` to list their names."));
         for directory in &mounted.directories {

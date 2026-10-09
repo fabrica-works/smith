@@ -530,12 +530,18 @@ pub enum Returned {
         /// Bytes omitted outside the retained output window.
         cut: u64,
         stop: Stop,
+        used: crate::facts::Used,
+        /// The run's ordinary pool remaining above its finishing reserve.
+        left: Budget,
     },
     /// The sub-agent ended without an answer: refused at its entrance, its
     /// LLM failed, or its share of the budget ran out.
     Unanswered {
         /// Terminal classification after everything started beneath this entity has settled.
         end: End,
+        used: crate::facts::Used,
+        /// The run's ordinary pool remaining above its finishing reserve.
+        left: Budget,
     },
     /// The run refuses the requested authority or origin before an effect.
     Refused {

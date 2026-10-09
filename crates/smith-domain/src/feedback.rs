@@ -1,9 +1,9 @@
 //! Canonical provider-neutral application feedback, with no protocol callback.
 //! This module keeps no entity or terminal right. Its two checked passes measure
 //! then write one owning text, preserving all semantic fields and opaque bytes.
-//! Provider-attested host text and ordinary child text move verbatim; opaque
+//! Provider-attested host text moves verbatim; child text precedes its usage line; opaque
 //! evidence uses lossless quoted ASCII byte literals. Contract: domain/run.md,
-//! sections 7, 8, 10; programming-model.md, sections 4.5, 6.3 and 8.
+//! sections 7, 8, 9.2, 10; programming-model.md, sections 4.5, 6.3 and 8.
 
 use alloc::boxed::Box;
 
@@ -49,9 +49,7 @@ pub fn feedback(returned: Returned, max_bytes: u64) -> Result<Feedback, Feedback
             let (text, error) = answer.into_parts();
             return unchanged(text, error, max_bytes);
         }
-        Returned::Answered { text, cut: 0, stop: Stop::EndTurn }
-        | Returned::Crossed { text }
-        | Returned::Waited { text } => {
+        Returned::Crossed { text } | Returned::Waited { text } => {
             return unchanged(text, false, max_bytes);
         }
         Returned::Withheld => return Err(FeedbackRefusal::Withheld),
@@ -116,7 +114,15 @@ pub fn feedback_worst_case(limits: &run::Limits) -> Option<u64> {
         .checked_add(u64::try_from(run::DeliveryRefusal::CAPACITY).ok()?)?
         .checked_mul(4)?
         .checked_add(256)?;
-    let child = u64::from(limits.answer_bytes).checked_add(128)?;
+    let mut usage = Text { len: Some(0), writer: None };
+    render_usage(
+        &mut usage,
+        run::facts::Used { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), spend: u64::MAX },
+        run::Budget { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), spend: u64::MAX },
+        true,
+    );
+    let suffix = u64::try_from(usage.len?).ok()?;
+    let child = u64::from(limits.answer_bytes).checked_add(128)?.checked_add(suffix)?;
     Some(problems.max(checks).max(receipts).max(refusal).max(child).max(u64::from(limits.host_reply_bytes)).max(4096))
 }
 
@@ -169,10 +175,25 @@ fn render(text: &mut Text, returned: &Returned) {
         Returned::Cancelled => text.put(b"cancelled"),
         Returned::TimedOut => text.put(b"timed-out"),
         Returned::Busy => text.put(b"busy"),
-        Returned::Answered { text: answer, cut, stop } => render_child(text, answer, *cut, *stop),
-        Returned::Unanswered { end } => {
+        Returned::Answered { text: answer, cut, stop, used, left } => {
+            render_child(text, answer, *cut, *stop);
+            render_usage(text, *used, *left, false);
+        }
+        Returned::Unanswered { end, used, left } => {
             text.put(b"unanswered end=");
             render_end(text, *end);
+            let budget = match end {
+                run::End::Budget(_) => true,
+                run::End::PriceOverflow
+                | run::End::UsageOverflow
+                | run::End::Receiving(_)
+                | run::End::TranscriptRefused { .. }
+                | run::End::Closed
+                | run::End::Busy
+                | run::End::Invalid
+                | run::End::Fault(_) => false,
+            };
+            render_usage(text, *used, *left, budget);
         }
         Returned::Refused { refusal } => {
             text.put(b"refused reason=");
@@ -225,6 +246,9 @@ fn render_checks(text: &mut Text, repository: &[u8], ran: &run::Ran) {
 
 fn render_child(text: &mut Text, answer: &[u8], cut: u64, stop: Stop) {
     text.put(answer);
+    if cut == 0 && stop == Stop::EndTurn {
+        return;
+    }
     text.put(b"\n[child-result cut=");
     text.number(cut);
     text.put(b" stop=");
@@ -235,6 +259,37 @@ fn render_child(text: &mut Text, answer: &[u8], cut: u64, stop: Stop) {
         Stop::NoCalls => b"no-calls",
     });
     text.put(b"]");
+}
+
+fn render_usage(text: &mut Text, used: run::facts::Used, left: run::Budget, budget: bool) {
+    text.put(b"\n\nChild usage: used ");
+    text.number(u64::from(used.turns));
+    text.put(b" turns and ");
+    render_duration(text, used.time);
+    text.put(b"; stopped for budget: ");
+    if budget {
+        text.put(b"yes");
+    } else {
+        text.put(b"no");
+    }
+    text.put(b"; ordinary left ");
+    text.number(u64::from(left.turns));
+    text.put(b" turns and ");
+    render_duration(text, left.time);
+    text.put(b".");
+}
+
+fn render_duration(text: &mut Text, duration: skein_lib::Duration) {
+    let seconds = duration.as_nanos().checked_div(1_000_000_000).expect("positive seconds divisor");
+    if seconds == 0 && duration != skein_lib::Duration::ZERO {
+        text.put(b"less than a second");
+    } else {
+        text.number(seconds);
+        match seconds {
+            1 => text.put(b" second"),
+            _ => text.put(b" seconds"),
+        }
+    }
 }
 
 fn render_problem(text: &mut Text, problem: &Problem) {

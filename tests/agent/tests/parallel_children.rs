@@ -72,7 +72,7 @@ fn four_inspect_only_sub_agents_in_parallel_are_each_answered() {
     for index in 0..4 {
         let answer = format!("child {index} inspected");
         assert!(parent.messages.iter().flat_map(|message| &message.parts).any(|part| {
-            matches!(part, Part::ToolOutput { output, is_error: false, .. } if output.as_ref() == answer.as_bytes())
+            matches!(part, Part::ToolOutput { output, is_error: false, .. } if output.starts_with(answer.as_bytes()) && output.windows(b"\n\nChild usage: used 2 turns".len()).any(|bytes| bytes == b"\n\nChild usage: used 2 turns"))
         }));
     }
     assert_eq!(

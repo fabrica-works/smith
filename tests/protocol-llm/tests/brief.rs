@@ -43,7 +43,9 @@ Your working directory is `work`. Relative paths start there; reach the other di
 - `archive`, which you may only read, a plain directory\n\n\
 ## Sub-agents\n\n\
 You can ask for a sub-agent: an LLM of its own, working on a brief you write, with tools no wider than \
-yours and a share of the budget. Its last message comes back to you as the result. It runs on the \
+yours and a share of the ordinary budget above the reserve. Its last message comes back with usage.\n\
+A child starts cold: give it a focused brief naming paths, decisions and scope. Inspect-only children may work side by side; a writing child works alone.\n\
+It runs on the \
 run's main LLM unless you name one of these: `fake-2`.\n\n\
 Call `wait` when you need another message; its result is withheld until messages arrive and returns with them in one request.\n\n\
 ## Finishing\n\n\
@@ -52,6 +54,7 @@ typed feedback; fix it and call `finish` again. Stopping without `finish` does n
 Report: text up to 1024 bytes, with these host-required fields:\n\
 - `source`: nonempty, at most 128 bytes\n\
 Extra fields are allowed within the aggregate result byte limit; no field name may repeat.\n";
+const MAIN_BUDGET: &str = "\n## Budget\n\nAt open, you have 64 turns and 3599 seconds of wall time. Spend is bounded too.\nKeep 0 turns and 0 seconds to finish. When the ordinary budget is spent, live children close and you finish on that reserve.\nSub-agents share only what is above the reserve. Ask for focused turn or time shares; leaving a part unasked gives the child all of that part left.\n";
 const CHILD_MECHANICS: &str = "## Tools\n\n\
 You can read, list and search the files in the checkout.\n\n\
 ## Checkout\n\n\
@@ -59,8 +62,9 @@ Your working directory is `work`. Relative paths start there; reach the other di
 - `work`, which you may change, a git working tree, with checks (`.temper/pre-pr`)\n\
 - `archive`, which you may only read, a plain directory\n\n\
 ## Answering\n\n\
-When you are done, end your turn with your answer: your last message goes, as it is, to the LLM that asked for \
-you, and you are done.\n";
+When you are done, end your turn with your answer. The run adds your usage to the result.\n\n\
+## Your share\n\n\
+At open, your share is 60 turns and 3594 seconds. Your answer may hold at most 1024 bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.\n";
 
 fn charter(settings: &Settings, instructions: &str) -> run::Charter {
     use run::charter::{Brief, Endpoint, Grants, Llm, Section, Tools};
@@ -206,7 +210,7 @@ fn feedback_has(query: &Query, part: &[u8]) -> bool {
 }
 
 fn expected_main(instructions_literal: &str) -> Vec<u8> {
-    [instructions_literal, SECTIONS, GUIDES, MAIN_MECHANICS].concat().into_bytes()
+    [instructions_literal, SECTIONS, GUIDES, MAIN_MECHANICS, MAIN_BUDGET].concat().into_bytes()
 }
 
 fn typed_openings(world: &World) {
@@ -242,7 +246,7 @@ fn typed_openings(world: &World) {
     assert!(main.iter().any(|query| feedback_has(query, b"ReadOnly")));
     assert!(child.iter().any(|query| feedback_has(query, b"UnknownTool")));
     assert!(main[4].messages.iter().flat_map(|message| &message.parts).any(|part| {
-        matches!(part, Part::ToolOutput { output, is_error: false, .. } if output.as_ref() == CHILD_RESULT)
+        matches!(part, Part::ToolOutput { output, is_error: false, .. } if output.starts_with(CHILD_RESULT) && contains(output, b"\n\nChild usage: used 3 turns"))
     }));
 }
 
@@ -322,7 +326,7 @@ fn ordered_sections_and_instructions_reach_main_but_child_receives_only_its_own_
             .filter(|block| {
                 matches!(block, llm::Block::ToolResult { id, result: llm::Returned::Text {
                 text, error: false, replay: None
-            }} if id == child_call && text.as_ref() == CHILD_RESULT)
+            }} if id == child_call && text.starts_with(CHILD_RESULT) && contains(text, b"\n\nChild usage: used 3 turns"))
             })
             .count(),
         1,

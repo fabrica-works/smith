@@ -1148,7 +1148,7 @@ fn a_sub_agent_opens_a_child_session_whose_last_message_answers_the_call() {
         panic!("expected the child's answer, got {:?}", last(&prompt));
     };
     assert_eq!(&**id, b"a1");
-    assert_eq!(&**text, b"It is in main.rs.");
+    assert_eq!(&**text, b"It is in main.rs.\n\nChild usage: used 2 turns and 0 seconds; stopped for budget: no; ordinary left 7 turns and 600 seconds.");
     h.domain.reclaim();
     assert_eq!((h.domain.peers(), h.domain.flights(), h.domain.tickets()), (1, 0, 0));
 }
@@ -1213,6 +1213,7 @@ fn assert_no_provider_completion(emitted: &[Request]) {
 }
 
 #[test]
+#[expect(clippy::disallowed_methods, reason = "test assembles an independent literal result golden")]
 fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes() {
     // Find the exact receiving edge from admission/dispatch outputs.
     // C bounds provider content; D bounds each complete canonical child result.
@@ -1260,6 +1261,12 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
     let (mut world, run, emitted) = side_by_side_with(&limits, 256);
     let [first, second] = children(&emitted).expect("the complete batch was reserved");
     let answer = filler(limits.run.answer_bytes);
+    let expected = [
+        answer.as_ref(),
+        b"\n\nChild usage: used 1 turns and 0 seconds; stopped for budget: no; ordinary left 7 turns and 600 seconds.",
+    ]
+    .concat()
+    .into_boxed_slice();
     assert!(world.says(first, &answer).is_empty());
     assert!(world.says(second, &answer).is_empty());
     assert!(world.next().is_empty(), "actual child endings queue both owning results");
@@ -1281,7 +1288,7 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
                 .expect("one result per admitted child"),
             session::llm::Block::ToolResult {
                 id: bytes(id),
-                result: session::llm::Returned::Text { text: answer.clone(), error: false, replay: None }
+                result: session::llm::Returned::Text { text: expected.clone(), error: false, replay: None }
             }
         );
     }
