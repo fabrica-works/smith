@@ -3,10 +3,9 @@
 //! credentials or a run's charter. `derive` returns typed refusals.
 //! Contract: shell.md, section 2.1; protocol/agent.md, section 4.
 
-use skein_http as http;
 use skein_io as io;
 use skein_lib::Duration;
-use skein_llm::{self as shared, openai};
+use skein_llm as shared;
 use skein_llm_connection as connection;
 use skein_tls as tls;
 use smith_domain::{self as domain, run, session, tools};
@@ -68,7 +67,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         .ok_or(derived(Layer::Session, "decoded_call_bytes"))?
         .checked_add(
             u64::from(client.output_items)
-                .checked_mul(u64::try_from(core::mem::size_of::<domain::llm::Decoded>()).expect("cell fits u64"))
+                .checked_mul(u64::try_from(size_of::<domain::llm::Decoded>()).expect("cell fits u64"))
                 .ok_or(derived(Layer::Session, "decoded_call_bytes"))?,
         )
         .ok_or(derived(Layer::Session, "decoded_call_bytes"))?;
@@ -91,6 +90,9 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     let mut domain = derive_domain(profile, configuration, &path)?;
     domain.decoded_call_bytes = decoded_call_bytes;
     domain.session.completion_bytes = completion;
+    domain.session.delegated_result_bytes =
+        domain::feedback_worst_case(&domain.run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
+    validate::window_first(profile, configuration, &domain.session)?;
     // The result bound holds whole capped outcomes; native outgoing text has
     // no receiving-string cap. Cutting remains a safeguard at this layer.
     let rendered_result = llm::render_worst_case(
@@ -99,6 +101,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         domain.session.delegated_result_bytes,
     )
     .ok_or(derived(Layer::Render, "result"))?;
+    validate::render_in_result(rendered_result, rendered_result)?;
     let mut charter = smith_charter::CEILINGS;
     charter.charter_brief = policy.sections;
     charter.tools_host = policy.host_tools;
@@ -258,7 +261,7 @@ fn derive_domain(
             .checked_mul(u64::from(shared::ESCAPE))
             .ok_or(derived(Layer::Session, "history_bytes"))?,
         allowance: path.framing,
-        protocol_allowance: own.checked_add(parts.host).ok_or(derived(Layer::Session, "protocol_allowance"))?,
+        protocol_allowance: parts.own.checked_add(parts.host).ok_or(derived(Layer::Session, "protocol_allowance"))?,
         threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
         tools,
     }) {
@@ -296,7 +299,20 @@ fn component_limits(
         llm::Stated::from_tools(&domain.session.tools, client.input).ok_or(derived(Layer::Llm, "output_ceiling"))?;
     stated.host_part = domain.run.host_part;
     Ok(llm::ComponentLimits {
-        adapter: llm::Limits { client, tool_bytes: 32_768, rendered_result, stated },
+        adapter: llm::Limits {
+            client,
+            tool_bytes: domain
+                .session
+                .protocol_allowance
+                .checked_add(
+                    u64::from(profile.policy.host_tools.checked_add(10).ok_or(derived(Layer::Llm, "tool_bytes"))?)
+                        .checked_mul(u64::try_from(size_of::<domain::llm::Served>()).expect("cell fits u64"))
+                        .ok_or(derived(Layer::Llm, "tool_bytes"))?,
+                )
+                .ok_or(derived(Layer::Llm, "tool_bytes"))?,
+            rendered_result,
+            stated,
+        },
         connection: connection::Limits {
             endpoints: ENDPOINTS,
             connections: profile.declared.conversations,

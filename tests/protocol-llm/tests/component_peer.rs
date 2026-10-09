@@ -24,10 +24,11 @@ fn limits() -> ComponentLimits {
         adapter: adapter::Limits {
             client,
             tool_bytes: 32768,
-            rendered_result: client.dialect.string_bytes,
+            rendered_result: client.strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         },
         connection: skein_llm_connection::Limits {
+            memory: 1 << 40,
             endpoints: 1,
             connections: 1,
             calls: 1,
@@ -49,9 +50,9 @@ fn limits() -> ComponentLimits {
         },
         receiving: Receiving {
             max_completion_bytes: adapter::completion_worst_case(&client, decoded_call_bytes).expect("receiving bound"),
-            max_completion_blocks: client.dialect.parts,
+            max_completion_blocks: client.output_items,
             decoded_call_bytes,
-            max_failure_bytes: client.dialect.detail_bytes,
+            max_failure_bytes: client.detail_bytes,
         },
         contract_bytes: 4096,
         accounts: 1,

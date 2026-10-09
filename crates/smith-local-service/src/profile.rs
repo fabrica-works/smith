@@ -22,7 +22,7 @@ pub fn host_limits(
         charter_bytes: 262_144,
         transcript_bytes: 33_554_432,
         answered_bytes: 65_536,
-        message_bytes,
+        message_bytes: u64::from(message_bytes),
         messages: profile.policy.inbox,
         calls: profile.declared.calls_per_response,
         call_bytes: 65_536,

@@ -66,7 +66,7 @@ const LIMITS: Limits = Limits {
     },
     session: smith_domain::session::Limits {
         sessions: 4,
-        messages: 12,
+        history_messages: 12,
         history_bytes: 1_048_576,
         completion_bytes: 4096,
         completion_blocks: 16,
@@ -806,7 +806,7 @@ fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() 
         run: run::Limits { runs: 3, conversations: 8, run_conversations: 4, calls: 8, ..LIMITS.run },
         session: smith_domain::session::Limits {
             sessions: 8,
-            messages: 24,
+            history_messages: 24,
             history_bytes: 1_048_576,
             completion_bytes: 4096,
             completion_blocks: 16,

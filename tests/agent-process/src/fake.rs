@@ -61,11 +61,10 @@ pub fn configured_transport(
     config.latency_min = latency;
     config.latency_max = latency;
     let mut protocol = skein_llm_world::fake::limits(&skein_llm_world::limits());
-    protocol.documents.openai.request_bytes = 32_768;
-    protocol.documents.openai.document_bytes = 32_768;
-    protocol.documents.openai.string_bytes = 16_384;
+    protocol.documents.openai.request = 32_768;
+    protocol.documents.openai.strings = 16_384;
     protocol.documents.openai.tokens = 4096;
-    protocol.documents.openai.parts = 256;
+    protocol.documents.openai.output_items = 256;
     llm::Peer::new(
         (std::net::Ipv4Addr::LOCALHOST, if transport == Transport::Tls { 34_443 } else { 443 }).into(),
         transport,

@@ -18,6 +18,10 @@ skein-fake-checkout.workspace = true
 skein-fake-llm-domain.workspace = true
 skein-world.workspace = true
 
+[dev-dependencies]
+smith-agent-service.workspace = true
+skein-llm.workspace = true
+
 # Ordinary Rust (programming-model.md, section 10.2), so not the step crates' lints.
 # tests/clippy.toml bans what would make a run unrepeatable.
 [lints.rust]

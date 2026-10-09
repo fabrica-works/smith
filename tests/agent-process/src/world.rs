@@ -496,7 +496,7 @@ impl skein_world::Referee<Proc> for Referee {
                         if self.full_completion {
                             assert_eq!(
                                 fact.count(),
-                                u64::from(crate::limits().llm.adapter.client.dialect.parts),
+                                u64::from(crate::limits().llm.adapter.client.output_items),
                                 "all maximum provider parts decoded"
                             );
                         }
@@ -821,14 +821,14 @@ impl World {
                     Box::new([skein_fake_llm_domain::api::Script {
                         cue: Box::new([]),
                         turns: Box::new([skein_fake_llm_domain::api::Turn {
-                            lines: (0..crate::limits().llm.adapter.client.dialect.parts)
+                            lines: (0..crate::limits().llm.adapter.client.output_items)
                                 .map(|index| skein_fake_llm_domain::api::Line::Text {
                                     // First response metadata is item_1_<index> and final_answer.
                                     text: vec![
                                         b'x';
                                         usize::try_from(
-                                            crate::limits().llm.adapter.client.dialect.answer_bytes
-                                                / crate::limits().llm.adapter.client.dialect.parts
+                                            crate::limits().llm.adapter.client.answer
+                                                / crate::limits().llm.adapter.client.output_items
                                         )
                                         .expect("bounded text per part")
                                             - format!("item_1_{index}").len()
@@ -926,7 +926,7 @@ impl World {
                             bytes += text.text().len();
                             let metadata = skein_llm::Replay::from_bytes(
                                 text.replay().as_ref().expect("text replay").bytes(),
-                                &crate::limits().llm.adapter.client.dialect,
+                                &crate::limits().llm.adapter.client.native().document(),
                             )
                             .expect("provider metadata");
                             let document = metadata.value.document();

@@ -71,8 +71,8 @@ pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
             models: Box::new([Model {
                 name: Box::from(b"fake".as_slice()),
                 window: 65_536,
-                output: 4096,
-                reasoning_item: 2048,
+                output: 512,
+                reasoning_item: 64,
                 oversized_reasoning: OversizedReasoning::Fail,
                 head: skein_lib::Duration::from_secs(1),
                 idle: skein_lib::Duration::from_secs(1),
@@ -95,7 +95,7 @@ pub fn configured(
             service: configuration,
             memory: u64::MAX,
             trace: None,
-            profile: agent::profile::standard(),
+            profile: profile(),
             declarations: declarations(environment_bytes),
         },
         smith_agent_shell::Resources {
@@ -111,9 +111,9 @@ pub fn configured(
     .expect("configured shipped agent")
 }
 
-/// Bounded agent-process settings shared by its direct and hosted worlds.
+/// Tiny deployment declarations shared by direct and hosted process worlds.
 #[must_use]
-pub fn limits() -> agent::Limits {
+pub fn profile() -> agent::profile::Profile {
     let mut profile = agent::profile::standard();
     profile.declared.conversations = smith_agent_world::LIMITS.run.conversations;
     profile.declared.calls_per_response = smith_agent_world::LIMITS.run.calls;
@@ -131,25 +131,21 @@ pub fn limits() -> agent::Limits {
     profile.policy.inbox = 8;
     profile.policy.unacknowledged = 8;
     profile.policy.group_stop = Duration::from_millis(10);
+    profile
+}
+
+/// Bounded agent-process settings derived from the tiny deployment and model.
+#[must_use]
+pub fn limits() -> agent::Limits {
+    let profile = profile();
     let configuration = declarations(0);
     let mut limits = agent::profile::derive(&profile, &configuration).expect("tiny profile derives");
     // Worlds may lower or specialize a derived limit (protocol/limits.md2.2).
-    let mut client = skein_llm_world::limits();
-    client.dialect.document_bytes = 32_768;
-    client.dialect.tokens = 4096;
-    client.sse.line = 32_768;
-    client.sse.event = 65_536;
-    let completion = llm::completion_worst_case(&client, 4096).expect("receiving bound");
     limits.domain.configured_model_bytes = 4096;
-    limits.domain.session.completion_bytes = completion;
-    limits.llm.adapter.client = client;
-    limits.llm.adapter.rendered_result = client.dialect.string_bytes;
     limits.llm.connection.endpoints = 1;
     limits.llm.connection.connections = 2;
     limits.llm.connection.calls = 2;
     limits.llm.connection.per_endpoint = 2;
-    limits.llm.receiving.max_completion_bytes = completion;
-    limits.llm.receiving.max_completion_blocks = client.dialect.parts;
     limits.llm.accounts = 1;
     limits.llm.grant_value_bytes = 128;
     limits.machine.file_bytes = 16;
@@ -200,10 +196,16 @@ pub fn configuration() -> agent::Config {
         domain: smith_domain::Config {
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                protocol_allowance: agent::profile::endpoint_allowance(
+                    &profile(),
+                    &declarations(0).endpoints[0],
+                    &limits().domain.session.tools,
+                )
+                .expect("derived endpoint framing"),
                 endpoint: smith_domain::run::charter::Endpoint(0),
                 model: Box::from(&b"fake"[..]),
                 window: 65_536,
-                output: 4096,
+                output: 512,
                 head: Duration::from_secs(2),
                 idle: Duration::from_secs(3),
             }]),
@@ -347,8 +349,8 @@ pub fn charter() -> Box<[u8]> {
     .expect("outcome contract");
     let mut llm = parts.main.into_parts();
     llm.model = Box::from(*b"fake");
-    llm.window = 8192;
-    llm.output = 1024;
+    llm.window = declarations(0).endpoints[0].models[0].window;
+    llm.output = declarations(0).endpoints[0].models[0].output;
     llm.prices = smith_charter::Prices::new(
         &smith_charter::CEILINGS,
         smith_charter::PricesParts { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },

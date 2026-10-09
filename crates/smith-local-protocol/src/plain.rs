@@ -133,7 +133,9 @@ impl Plain {
             | file::Event::Closed { .. }
             | file::Event::Renamed { .. }
             | file::Event::Removed { .. }
-            | file::Event::Listed { .. } => unreachable!("scan or load terminal"),
+            | file::Event::Listed { .. }
+            | file::Event::Made { .. }
+            | file::Event::Refused { .. } => unreachable!("scan or load terminal"),
         }
         self.next = self.next.checked_add(1).expect("bounded tree position");
         self.request()

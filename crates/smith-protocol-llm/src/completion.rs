@@ -28,7 +28,7 @@ pub fn completion(
         return Err(Error::Invalid);
     }
     let shared::Completion { content, stop, usage } = completion;
-    let maximum = usize::try_from(context.receiving.max_completion_blocks.min(context.limits.client.dialect.parts))
+    let maximum = usize::try_from(context.receiving.max_completion_blocks.min(context.limits.client.output_items))
         .expect("u32 fits usize");
     if content.len() > maximum || resolved.len() > content.len() {
         return Err(Error::Limit);
@@ -134,7 +134,7 @@ fn block_value(
             Ok(llm::Said::Refusal { text, replay: encode_replay(replay, context)? })
         }
         shared::Block::Reasoning { replay } => {
-            let bytes = match replay.to_bytes(&context.limits.client.dialect) {
+            let bytes = match replay.to_bytes(&crate::limits::replay_limits(&context.limits.client)) {
                 Ok(bytes) => bytes,
                 Err(error) => return Err(Error::from_shared(error)),
             };
@@ -145,11 +145,9 @@ fn block_value(
             let call = receiving_call(call, decoded_bytes, context.receiving.decoded_call_bytes);
             Ok(llm::Said::ToolCall { id, name, input: arguments, call, replay: encode_replay(replay, context)? })
         }
-        shared::Block::Oversize { id, name, bytes } => Ok(invalid_call(
-            id,
-            name,
-            llm::Problem::Oversize { bytes, bound: context.limits.client.dialect.input_bytes },
-        )),
+        shared::Block::Oversize { id, name, bytes } => {
+            Ok(invalid_call(id, name, llm::Problem::Oversize { bytes, bound: context.limits.client.input }))
+        }
         shared::Block::Cut { id, name, arguments } => {
             let bytes = u64::try_from(arguments.len()).or(Err(Error::Limit))?;
             Ok(invalid_call(id, name, llm::Problem::CutOff { bytes }))
@@ -174,7 +172,7 @@ fn invalid_call(id: Box<[u8]>, name: Box<[u8]>, problem: llm::Problem) -> llm::S
 
 fn encode_replay(value: Option<shared::Replay>, context: &Context) -> Result<Option<llm::Replay>, Error> {
     match value {
-        Some(replay) => match replay.to_bytes(&context.limits.client.dialect) {
+        Some(replay) => match replay.to_bytes(&crate::limits::replay_limits(&context.limits.client)) {
             Ok(bytes) => Ok(Some(llm::Replay { bytes })),
             Err(error) => Err(Error::from_shared(error)),
         },

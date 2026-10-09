@@ -169,11 +169,11 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.request = 16384;
         let mut settings = Settings {
             job: Job::HostTools,
             waiting: Duration::from_secs(1),
@@ -183,7 +183,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual Client completion reservation");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let configuration = wire::configurations().into_iter().nth(index).expect("two native fixtures");
         let mut first =
             World::with_workspace_wire(settings, None, None, Checkout::new(), configuration, bounds, native_script());
@@ -464,7 +464,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
         // The native request includes the complete depth/glob schema inventory.
@@ -475,7 +475,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("completion room");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let mut world =
             World::with_workspace_wire(settings, None, Some(workspace), disk, configuration, bounds, scripts);
         world.run(10_000);
@@ -557,12 +557,12 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         let bounds = Limits {
             client,
             tool_bytes: 32768,
-            rendered_result: client.dialect.string_bytes,
-            stated: adapter::Stated::from_tools(caps, client.dialect.input_bytes).expect("actual numeric quantities"),
+            rendered_result: client.strings,
+            stated: adapter::Stated::from_tools(caps, client.input).expect("actual numeric quantities"),
         };
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes).expect("receiving");
-        settings.limits.session.completion_blocks = client.dialect.parts;
+        settings.limits.session.completion_blocks = client.output_items;
         let scripts = Box::new([Script {
             cue: Box::new([]),
             turns: Box::new([calls(
@@ -639,14 +639,14 @@ fn namespace_descriptions_and_list_slash_reach_both_native_provider_dialects() {
             let bounds = Limits {
                 client,
                 tool_bytes: 32768,
-                rendered_result: client.dialect.string_bytes,
-                stated: adapter::Stated::from_tools(&settings.limits.session.tools, client.dialect.input_bytes)
+                rendered_result: client.strings,
+                stated: adapter::Stated::from_tools(&settings.limits.session.tools, client.input)
                     .expect("valid namespace fixture"),
             };
             settings.limits.session.completion_bytes =
                 adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes)
                     .expect("valid namespace fixture");
-            settings.limits.session.completion_blocks = client.dialect.parts;
+            settings.limits.session.completion_blocks = client.output_items;
             let scripts = Box::new([Script {
                 cue: Box::new([]),
                 turns: Box::new([

@@ -314,6 +314,7 @@ fn path_descriptions_follow_the_actual_conversation_namespace() {
         for schema in crate::schemas(
             &prompt,
             &crate::Stated {
+                host_part: u64::MAX,
                 path_bytes: 256,
                 read_window: 1024,
                 tool_payload: 4096,

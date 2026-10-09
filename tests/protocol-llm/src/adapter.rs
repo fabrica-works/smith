@@ -77,14 +77,13 @@ pub fn prepare_for_contract(
     deliver: Option<&run::outcome::ChangeSpec>,
     limits: &Limits,
 ) -> Result<Prepared, Error> {
-    input.application =
-        schemas_for_contract(&input.prompt, &limits.stated, outcome, deliver, limits.client.dialect.document_bytes)?;
+    input.application = schemas_for_contract(&input.prompt, &limits.stated, outcome, deliver, limits.client.request)?;
     prepare(input, limits)
 }
 
 /// Effective fixture quantities shared by direct-client tests.
 #[must_use]
 pub fn stated() -> Stated {
-    Stated::from_tools(&crate::LIMITS.session.tools, skein_llm_world::limits().dialect.input_bytes)
+    Stated::from_tools(&crate::LIMITS.session.tools, skein_llm_world::limits().input)
         .expect("fixture numeric bounds fit")
 }

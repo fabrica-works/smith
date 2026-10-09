@@ -8,7 +8,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -49,7 +49,7 @@ fn production_schemas_cover_every_offered_workspace_and_run_tool() {
     ] {
         let schema = schemas.iter().find(|schema| schema.kind == kind).expect("offered schema");
         assert!(schema.description.len() > 20);
-        let document = skein_llm::Json::from_bytes(&schema.schema, &limits().client.dialect)
+        let document = skein_llm::Json::from_bytes(&schema.schema, &limits().client.native().request_document())
             .expect("production schema is bounded valid JSON");
         assert_eq!(document.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
     }
@@ -184,7 +184,8 @@ fn optional_child_turns_and_seconds_decode_without_a_schema_maximum() {
     }
     let schemas = adapter::schemas(&prompt(), &limits.stated);
     let schema = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
-    let document = skein_llm::Json::from_bytes(&schema.schema, &limits.client.dialect).expect("bounded schema");
+    let document = skein_llm::Json::from_bytes(&schema.schema, &limits.client.native().request_document())
+        .expect("bounded schema");
     let compact = document.document();
     let keys: Vec<_> = (0..compact.len())
         .filter_map(|index| compact.token(index))
@@ -224,7 +225,8 @@ fn nesting_is_refused_for_any_agents_field_and_any_child_sub_agent_call() {
     );
     let schemas = adapter::schemas(&prompt(), &limits.stated);
     let child = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
-    let document = skein_llm::Json::from_bytes(&child.schema, &limits.client.dialect).expect("valid schema");
+    let document =
+        skein_llm::Json::from_bytes(&child.schema, &limits.client.native().request_document()).expect("valid schema");
     let document = document.document();
     assert!(!(0..document.len()).any(|index| {
         let token = document.token(index).expect("within document");

@@ -262,7 +262,7 @@ fn build(document: Document) -> Result<Configuration, String> {
     };
     let limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
-    let endpoints = build_endpoints(document.endpoints, &limits.llm)?;
+    let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
         llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
     let mut models = Vec::new();
@@ -312,13 +312,19 @@ struct PreparedEndpoints {
     llm: Box<[llm::ConfiguredEndpoint]>,
 }
 
-fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> Result<PreparedEndpoints, String> {
+fn build_endpoints(
+    endpoints: Vec<Endpoint>,
+    limits: &llm::ComponentLimits,
+    profile: &service::profile::Profile,
+) -> Result<PreparedEndpoints, String> {
     let mut domain_endpoints = Vec::with_capacity(endpoints.len());
     let mut channel_endpoints = List::with_capacity(ENDPOINTS);
     let mut llm_endpoints = Vec::with_capacity(endpoints.len());
     let mut names = std::collections::BTreeSet::new();
     let mut numbers = std::collections::BTreeSet::new();
     for endpoint in endpoints {
+        let declared = build_models(&endpoint)?;
+        let mut client = service::profile::endpoint_client(profile, &declared).map_err(profile_refusal)?;
         if endpoint.name.is_empty()
             || endpoint.name.len()
                 > usize::try_from(smith_charter::CEILINGS.llm_endpoint).expect("endpoint name bound fits usize")
@@ -373,15 +379,18 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
                 account: endpoint.account,
             })
             .map_err(|_| "too many channel endpoints")?;
+        let credential = credential_limits(limits);
+        let head = shared::client::request_head(&llm_endpoint, &credential, &client)
+            .map_err(|error| profile_refusal(Refusal::Connection(connection::EndpointError::Client(error))))?;
+        service::profile::validate::request_head(endpoint.number, head, tls::client::MAX_PLAINTEXT)
+            .map_err(profile_refusal)?;
+        client.http.request = head;
+        let mut destination =
+            connection::Endpoint { address, transport, llm: llm_endpoint, limits: client, credential };
+        destination.pieces(&limits.connection);
         llm_endpoints.push(llm::ConfiguredEndpoint {
             name: domain::llm::Endpoint(endpoint.number),
-            destination: connection::Endpoint {
-                address,
-                transport,
-                llm: llm_endpoint,
-                limits: limits.adapter.client,
-                credential: credential_limits(limits),
-            },
+            destination,
             account: endpoint.account,
             connect: endpoint_duration(endpoint.connect, endpoint.number, "connect")?,
             handshake: endpoint_duration(endpoint.handshake, endpoint.number, "handshake")?,
@@ -660,16 +669,12 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Strin
         _ => return Err("endpoint provider must be codex or anthropic".into()),
     };
     let identity = endpoint_identity(endpoint.identity.as_deref())?;
-    let option_bytes = llm::endpoint_own(
-        endpoint.reasoning_effort.as_deref().map(str::as_bytes),
-        endpoint.cache_key.as_deref().map(str::as_bytes),
-        identity,
-    )
-    .map_err(|_| {
-        profile_refusal(Refusal::Derived {
-            limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
-        })
-    })?;
+    let option_bytes =
+        llm::endpoint_own(endpoint.reasoning_effort.as_deref().map(str::as_bytes), identity).map_err(|_| {
+            profile_refusal(Refusal::Derived {
+                limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
+            })
+        })?;
     if models.is_empty() {
         return Err(profile_refusal(Refusal::Field {
             limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(number) },

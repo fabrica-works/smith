@@ -355,6 +355,8 @@ pub enum Cap {
 /// The owner of a bounded value, sent in a terminal limit failure.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Limit {
+    /// The requested reservation exceeds the entire native connection pool.
+    Pool { reservation: u64 },
     /// The native provider path refused its named cap.
     Path(Cap),
     /// The session's retained window refused its history bound.

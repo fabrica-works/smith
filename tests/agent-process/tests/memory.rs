@@ -62,10 +62,7 @@ fn maximum_run_context_and_provider_completion_fit_each_process_at_every_iterati
     let client = limits().llm.adapter.client;
     assert_eq!(
         completion.provider_answer_shape(),
-        (
-            usize::try_from(client.dialect.parts).expect("parts"),
-            usize::try_from(client.dialect.answer_bytes).expect("payload")
-        ),
+        (usize::try_from(client.output_items).expect("parts"), usize::try_from(client.answer).expect("payload")),
         "both maximum parts and total provider answer bytes including actual ID/phase metadata reached the host transcript"
     );
     drop(completion);

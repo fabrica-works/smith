@@ -256,7 +256,7 @@ impl skein_world::Machine for Machine {
             let name = format!("git-{}", self.commands.len()).into_bytes();
             let temporary =
                 self.files.open(self.master, b".smith-test", How::Directory).expect("fake result namespace");
-            self.files.make_directory(temporary, &name).expect("fresh result directory");
+            self.files.make_directory(temporary, &name, 0o700).expect("fresh result directory");
             let root = self.files.open(temporary, &name, How::Directory).expect("result root");
             self.files.close(temporary);
             let file = self.files.open(root, b"result", How::Create { mode: 0o600 }).expect("result file");

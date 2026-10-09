@@ -32,13 +32,9 @@ pub enum OversizedReasoning {
 /// Measure actual endpoint options and provider identity for startup's own part.
 /// Field punctuation belongs to the separately measured provider framing.
 /// Contract: protocol/limits.md, sections 3.2 and 3.9.
-pub fn endpoint_own(
-    reasoning_effort: Option<&[u8]>,
-    cache_key: Option<&[u8]>,
-    identity: IdentityProfile,
-) -> Result<u64, crate::Error> {
+pub fn endpoint_own(reasoning_effort: Option<&[u8]>, identity: IdentityProfile) -> Result<u64, crate::Error> {
     let mut bytes = 0_u64;
-    for option in [reasoning_effort, cache_key] {
+    for option in [reasoning_effort] {
         if let Some(value) = option {
             if core::str::from_utf8(value).is_err() {
                 return Err(crate::Error::Invalid);
@@ -101,6 +97,8 @@ pub struct EndpointOptions {
     pub handshake: Duration,
     /// Dialect that owns replay and provider-specific request rules.
     pub provider: Provider,
+    /// Native per-endpoint bounds, including its transport pieces and measured head.
+    pub client: skein_llm::client::Limits,
     /// Configured reasoning option, when supported.
     pub reasoning_effort: Option<Box<[u8]>>,
     /// Optional provider system identity selected at startup.
@@ -171,6 +169,7 @@ impl Endpoints {
             if configured.identity == IdentityProfile::ClaudeCode && provider != Provider::Anthropic {
                 return Err(EndpointError::Identity);
             }
+            let client = configured.destination.limits;
             destinations.push(configured.destination).or(Err(EndpointError::TooMany))?;
             let option = EndpointOptions {
                 index,
@@ -178,6 +177,7 @@ impl Endpoints {
                 connect: configured.connect,
                 handshake: configured.handshake,
                 provider,
+                client,
                 reasoning_effort: configured.reasoning_effort,
                 identity: configured.identity,
                 models: configured.models,

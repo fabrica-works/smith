@@ -22,6 +22,8 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
             let configuration = Configuration {
                 environment_bytes: u32::try_from(rng.next_u64() % 128).expect("environment"),
                 endpoints: Box::new([Endpoint {
+                    provider: skein_llm::Provider::OpenAiCodex,
+                    option_bytes: 0,
                     number: 7,
                     connect: Duration::from_secs(2),
                     handshake: Duration::from_secs(3),
@@ -55,7 +57,10 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
                         .expect("machine holds tools");
                 }
                 Err(refusal) => {
-                    assert!(refusal.check().is_some(), "seed={seed}, case={case}: named smith check");
+                    assert!(
+                        refusal.check().is_some() || matches!(refusal, profile::Refusal::Llm { endpoint: 7, .. }),
+                        "seed={seed}, case={case}: named Smith check or native derivation violation"
+                    );
                     let words = profile::words(&refusal);
                     assert!(words.len() <= 512, "operator line bound");
                 }

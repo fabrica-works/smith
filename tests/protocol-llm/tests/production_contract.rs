@@ -10,7 +10,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -57,14 +57,14 @@ fn every_contract_form_yields_a_bounded_json_schema() {
         run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: all.failure.clone() },
     ];
     for specification in &forms {
-        let schema = adapter::finish_schema(specification, limits().client.dialect.document_bytes)
+        let schema = adapter::finish_schema(specification, limits().client.request)
             .expect("contract-derived schema fits the dialect");
-        let document = skein_llm::Json::from_bytes(&schema, &limits().client.dialect)
+        let document = skein_llm::Json::from_bytes(&schema, &limits().client.native().request_document())
             .expect("scripted peer accepts a complete JSON object schema");
         assert_eq!(document.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
         assert!(schema.windows(b"\"maxLength\"".len()).any(|part| part == b"\"maxLength\""));
     }
-    let all_schema = adapter::finish_schema(&all, limits().client.dialect.document_bytes).expect("four forms");
+    let all_schema = adapter::finish_schema(&all, limits().client.request).expect("four forms");
     for literal in [b"approve".as_slice(), b"observation", b"maxItems", b"minItems", b"source"] {
         assert!(all_schema.windows(literal.len()).any(|part| part == literal));
     }
@@ -134,9 +134,9 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
         };
         let receiving = adapter::Receiving {
             max_completion_bytes: adapter::completion_worst_case(&bounds.client, 4096).expect("bounded completion"),
-            max_completion_blocks: bounds.client.dialect.parts,
+            max_completion_blocks: bounds.client.output_items,
             decoded_call_bytes: 4096,
-            max_failure_bytes: bounds.client.dialect.detail_bytes,
+            max_failure_bytes: bounds.client.detail_bytes,
         };
         let prepared = adapter::prepare_for_contract(
             adapter::Input {
@@ -179,7 +179,7 @@ fn contract_schemas_reach_the_scripted_byte_peer_in_both_dialects() {
         let [query] = peer.queries.as_slice() else { panic!("one provider query") };
         assert_eq!(query.tools.len(), 2);
         for offered in &query.tools {
-            let schema = skein_llm::Json::from_bytes(&offered.parameters, &bounds.client.dialect)
+            let schema = skein_llm::Json::from_bytes(&offered.parameters, &bounds.client.native().request_document())
                 .expect("scripted peer accepts the whole schema document");
             assert_eq!(schema.document().token(0).map(|record| record.kind), Some(skein_json::Kind::ObjectStart));
         }

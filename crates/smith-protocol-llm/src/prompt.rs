@@ -39,13 +39,8 @@ pub(crate) fn prepare_component(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Context), Error> {
     worst_case(limits, &receiving).ok_or(Error::Limit)?;
-    let application = crate::tools::schemas_for_contract(
-        &prompt,
-        &limits.stated,
-        outcome,
-        deliver,
-        limits.client.dialect.document_bytes,
-    )?;
+    let application =
+        crate::tools::schemas_for_contract(&prompt, &limits.stated, outcome, deliver, limits.client.request)?;
     prepare_prompt(owner, prompt, application, receiving, limits)
 }
 
@@ -78,7 +73,9 @@ fn translate(
         messages,
         max_tokens,
     } = input;
-    let mut offered = List::with_capacity(limits.client.dialect.parts);
+    let mut offered = List::with_capacity(
+        u32::try_from(application.len().checked_add(served.len()).ok_or(Error::Limit)?).or(Err(Error::Limit))?,
+    );
     for descriptor in &served {
         match descriptor {
             llm::Served::Host(tool) => {
@@ -110,7 +107,7 @@ fn translate(
             shared::ToolChoice::Only(names.into_boxed())
         }
     };
-    let mut translated = List::with_capacity(limits.client.dialect.parts);
+    let mut translated = List::with_capacity(u32::try_from(messages.len()).or(Err(Error::Limit))?);
     for message in messages {
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
@@ -180,8 +177,10 @@ fn outside_choice(choice: &llm::ToolChoice, maximum: u32) -> Result<Box<[u8]>, E
 }
 
 fn inventory(input: &llm::Prompt, application: &[ToolSchema], limits: &Limits) -> Result<(), Error> {
-    let maximum = usize::try_from(limits.client.dialect.parts).expect("u32 fits usize");
-    if application.len() > maximum || input.messages.len() > maximum {
+    let maximum = usize::try_from(limits.client.tools).expect("u32 fits usize");
+    if application.len() > maximum
+        || input.messages.len() > usize::try_from(limits.client.history_items).expect("u32 fits usize")
+    {
         return Err(Error::Limit);
     }
     let mut count = application.len();
@@ -340,7 +339,7 @@ fn offered(kind: ToolKind, input: &llm::Prompt) -> bool {
 }
 
 fn history_admitted(messages: &[llm::Message], limits: &Limits) -> Result<(), Error> {
-    let maximum = usize::try_from(limits.client.dialect.parts).expect("u32 fits usize");
+    let maximum = usize::try_from(limits.client.history_items).expect("u32 fits usize");
     let mut blocks = 0_usize;
     for message in messages {
         blocks = blocks.checked_add(message.content.len()).ok_or(Error::Limit)?;
@@ -363,7 +362,7 @@ fn translate_block(
             Ok(shared::Block::Refusal { text, replay: replay_value(replay, limits)? })
         }
         llm::Block::Opaque { bytes } => {
-            let replay = match shared::Replay::from_bytes(&bytes, &limits.client.dialect) {
+            let replay = match shared::Replay::from_bytes(&bytes, &crate::limits::replay_limits(&limits.client)) {
                 Ok(replay) => replay,
                 Err(error) => return Err(Error::from_shared(error)),
             };
@@ -396,11 +395,10 @@ fn result_text(
             llm::NotRun::OutsideChoice => Ok((outside_choice(choice, limits.rendered_result)?, true)),
         },
         llm::Returned::Invalid { problem } => {
-            Ok((crate::failure::problem(problem, limits.client.dialect.string_bytes)?, true))
+            Ok((crate::failure::problem(problem, limits.rendered_result)?, true))
         }
         llm::Returned::Served { returned, error } => {
-            let value = smith_domain::feedback(returned, u64::from(limits.client.dialect.string_bytes))
-                .or(Err(Error::Limit))?;
+            let value = smith_domain::feedback(returned, u64::from(limits.rendered_result)).or(Err(Error::Limit))?;
             if value.error != error {
                 return Err(Error::Invalid);
             }
@@ -412,16 +410,22 @@ fn result_text(
 
 fn replay_value(replay: Option<llm::Replay>, limits: &Limits) -> Result<Option<shared::Replay>, Error> {
     match replay {
-        Some(replay) => match shared::Replay::from_bytes(&replay.bytes, &limits.client.dialect) {
-            Ok(replay) => Ok(Some(replay)),
-            Err(error) => Err(Error::from_shared(error)),
-        },
+        Some(replay) => {
+            match shared::Replay::from_bytes(&replay.bytes, &crate::limits::replay_limits(&limits.client)) {
+                Ok(replay) => Ok(Some(replay)),
+                Err(error) => Err(Error::from_shared(error)),
+            }
+        }
         None => Ok(None),
     }
 }
 
 pub(crate) fn object(data: &[u8], limits: &Limits) -> Result<shared::Json, Error> {
-    let value = match shared::Json::from_bytes(data, &limits.client.dialect) {
+    let bytes = u32::try_from(data.len()).or(Err(Error::Limit))?;
+    if bytes > limits.client.request {
+        return Err(Error::PathLimit { which: llm::Cap::Request, bound: u64::from(limits.client.request) });
+    }
+    let value = match shared::Json::from_bytes(data, &crate::limits::document_limits(&limits.client, bytes)) {
         Ok(value) => value,
         Err(error) => return Err(Error::from_shared(shared::document_error(error))),
     };

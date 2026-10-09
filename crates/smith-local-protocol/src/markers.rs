@@ -113,7 +113,9 @@ impl Markers {
             | file::Event::Closed { .. }
             | file::Event::Renamed { .. }
             | file::Event::Removed { .. }
-            | file::Event::Listed { .. } => unreachable!("marker loads have one whole-file terminal"),
+            | file::Event::Listed { .. }
+            | file::Event::Made { .. }
+            | file::Event::Refused { .. } => unreachable!("marker loads have one whole-file terminal"),
         }
         self.next = self.next.checked_add(1).expect("bounded original paths");
         self.request()

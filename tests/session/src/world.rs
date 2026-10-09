@@ -226,9 +226,6 @@ impl Settings {
                 tools: TOOLS,
             },
             provider: provider::Config {
-                cache_entries: 0,
-                cache_lifetime: Duration::from_secs(60),
-                unscoped_reads: 0,
                 calls: 16,
                 query_bytes: 1 << 20,
                 script_bytes: 1 << 20,

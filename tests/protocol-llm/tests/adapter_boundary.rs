@@ -21,7 +21,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32_768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -70,9 +70,9 @@ fn input(configuration: &Configuration) -> Input {
         receiving: Receiving {
             max_completion_bytes: adapter::completion_worst_case(&bounds.client, decoded_call_bytes)
                 .expect("compatible full completion receiving allowance"),
-            max_completion_blocks: bounds.client.dialect.parts,
+            max_completion_blocks: bounds.client.output_items,
             decoded_call_bytes,
-            max_failure_bytes: bounds.client.dialect.detail_bytes,
+            max_failure_bytes: bounds.client.detail_bytes,
         },
     }
 }

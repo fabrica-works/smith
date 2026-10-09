@@ -1736,7 +1736,7 @@ fn call_failed(
         | Failure::Overloaded
         | Failure::RateLimited { .. }
         | Failure::Unavailable
-        | Failure::TimedOut
+        | Failure::TimedOut { .. }
         | Failure::ContextTooLong
         | Failure::Invalid
         | Failure::Unauthorized
@@ -2172,7 +2172,8 @@ fn timed_out(failure: Failure) -> bool {
         | Failure::ContextTooLong
         | Failure::Invalid
         | Failure::Exhausted { .. }
-        | Failure::Limit
+        | Failure::Limit { .. }
+        | Failure::ApplicationLimit
         | Failure::Protocol
         | Failure::Cancelled => false,
     }

@@ -17,7 +17,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -27,9 +27,9 @@ fn receiving(bounds: &Limits) -> Receiving {
     Receiving {
         max_completion_bytes: adapter::completion_worst_case(&bounds.client, decoded_call_bytes)
             .expect("full translated completion reservation"),
-        max_completion_blocks: bounds.client.dialect.parts,
+        max_completion_blocks: bounds.client.output_items,
         decoded_call_bytes,
-        max_failure_bytes: bounds.client.dialect.detail_bytes,
+        max_failure_bytes: bounds.client.detail_bytes,
     }
 }
 
@@ -146,8 +146,10 @@ fn conveys(configuration: &Configuration, error: bool) {
         "independent literal observation retains the compact schema extension"
     );
     assert_eq!(
-        skein_llm::Json::from_bytes(&tool.parameters, &limits().client.dialect).expect("actual full schema"),
-        skein_llm::Json::from_bytes(SCHEMA, &limits().client.dialect).expect("independent complete expected schema")
+        skein_llm::Json::from_bytes(&tool.parameters, &limits().client.native().request_document())
+            .expect("actual full schema"),
+        skein_llm::Json::from_bytes(SCHEMA, &limits().client.native().request_document())
+            .expect("independent complete expected schema")
     );
     let Event::Completed { owner, completion } = terminal else {
         panic!("actual host call completion");
@@ -323,10 +325,13 @@ fn restored_result_metadata_has_explicit_unsupported_refusal_before_start() {
         assert!(positive.settle().is_empty());
         let opaque = skein_llm::Replay {
             provider: configuration.endpoint.provider,
-            value: skein_llm::Json::from_bytes(br#"{"caller-result-extension":"retained"}"#, &bounds.client.dialect)
-                .expect("bounded actual opaque object"),
+            value: skein_llm::Json::from_bytes(
+                br#"{"caller-result-extension":"retained"}"#,
+                &bounds.client.native().request_document(),
+            )
+            .expect("bounded actual opaque object"),
         }
-        .to_bytes(&bounds.client.dialect)
+        .to_bytes(&bounds.client.native().request_document())
         .expect("complete caller-owned durable envelope");
         assert!(
             matches!(
@@ -414,7 +419,7 @@ fn owned_completion(peer: &mut skein_llm_world::fake::Exchange) -> (Token, skein
 
 fn reservation_control(configuration: &Configuration, exact: bool) {
     let mut bounds = limits();
-    bounds.client.dialect.parts = 2;
+    bounds.client.output_items = 2;
     let cells = u64::try_from(core::mem::size_of::<llm::Decoded>()).expect("bounded fixed cell") * 2;
     let payload = u64::try_from(b"opaque_host".len() + BODY.len()).expect("bounded actual host payload");
     let decoded_call_bytes = cells + payload - u64::from(!exact);
@@ -423,7 +428,7 @@ fn reservation_control(configuration: &Configuration, exact: bool) {
             .expect("wrapper floor admitted before actual call"),
         max_completion_blocks: 2,
         decoded_call_bytes,
-        max_failure_bytes: bounds.client.dialect.detail_bytes,
+        max_failure_bytes: bounds.client.detail_bytes,
     };
     let (context, mut peer) = two_calls(configuration, &bounds, receiving);
     let (owner, actual_completion) = owned_completion(&mut peer);
@@ -489,13 +494,13 @@ fn oversized_first_decoding_retains_its_cell_before_exact_residual_host_admissio
 fn unknown_call_uses_its_full_secured_fallback_cell() {
     for configuration in &wire::configurations() {
         let mut bounds = limits();
-        bounds.client.dialect.parts = 1;
+        bounds.client.output_items = 1;
         let floor = u64::try_from(core::mem::size_of::<llm::Decoded>()).expect("fixed fallback cell");
         let secured = Receiving {
             max_completion_bytes: adapter::completion_worst_case(&bounds.client, floor).expect("full cell is secured"),
             max_completion_blocks: 1,
             decoded_call_bytes: floor,
-            max_failure_bytes: bounds.client.dialect.detail_bytes,
+            max_failure_bytes: bounds.client.detail_bytes,
         };
         let script = Box::new([Script {
             cue: b"@client-host".as_slice().into(),

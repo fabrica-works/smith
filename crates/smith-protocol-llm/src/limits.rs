@@ -43,6 +43,22 @@ pub struct Receiving {
     pub max_failure_bytes: u32,
 }
 
+/// A caller-owned JSON value is admitted by its encoded bytes and the native depth.
+/// Event string and token receiving bounds do not restrict outgoing schemas.
+pub(crate) const fn document_limits(client: &client::Limits, bytes: u32) -> skein_llm::DocumentLimits {
+    skein_llm::DocumentLimits { bytes, strings: bytes, tokens: bytes, depth: client.depth }
+}
+
+/// Durable replay receives either one reasoning item or one metadata envelope.
+pub(crate) fn replay_limits(client: &client::Limits) -> skein_llm::DocumentLimits {
+    skein_llm::DocumentLimits {
+        bytes: client.reasoning.max(client.metadata),
+        strings: client.strings,
+        tokens: client.tokens,
+        depth: client.depth,
+    }
+}
+
 /// Complete translated ownership for every completion admitted by the shared Client.
 /// Original text/IDs/arguments are under `answer_bytes`; each replay separately
 /// receives its full raw opaque allowance plus the exported envelope header.
@@ -52,60 +68,64 @@ pub struct Receiving {
 #[must_use]
 pub fn completion_worst_case(client_limits: &client::Limits, decoded_call_bytes: u64) -> Option<u64> {
     client::worst_case(client_limits)?;
-    let parts = u64::from(client_limits.dialect.parts);
+    let parts = u64::from(client_limits.output_items);
     let decoded_cells = parts.checked_mul(u64::try_from(size_of::<llm::Decoded>()).ok()?)?;
     if decoded_call_bytes < decoded_cells {
         return None;
     }
-    let replay = u64::from(skein_llm::replay_bytes(&client_limits.dialect)?).checked_mul(parts)?;
+    let replay = u64::from(skein_llm::replay_bytes(&replay_limits(client_limits))?).checked_mul(parts)?;
     let cell = size_of::<llm::Said>().max(size_of::<session::llm::Block>());
     let wrappers = u64::try_from(cell).ok()?.checked_mul(parts)?;
-    u64::from(client_limits.dialect.answer_bytes)
+    u64::from(client_limits.answer)
         .checked_add(replay)?
         .checked_add(wrappers)?
         .checked_add(parts.checked_mul(u64::try_from(size_of::<u64>()).ok()?)?)?
         .checked_add(decoded_call_bytes)
 }
 
-/// Protocol footprint, including one Client, its retained declaration context,
+/// Protocol footprint, including its retained declaration context,
 /// native prompt/schema/replay transit and simultaneous translated output.
+/// The connection pool separately owns the Client and its native preparation.
 /// Caller-owned root input, endpoint/credential grants, application decoder input
 /// and observation queues are priced separately by their owners. None means
 /// receiving incompatibility or arithmetic overflow; no Client is prepared.
 #[must_use]
 pub fn worst_case(limits: &Limits, receiving: &Receiving) -> Option<u64> {
-    if limits.rendered_result < crate::CUT_MARKER_BYTES || limits.rendered_result > limits.client.dialect.string_bytes {
+    if limits.rendered_result < crate::CUT_MARKER_BYTES {
         return None;
     }
     let completion = completion_worst_case(&limits.client, receiving.decoded_call_bytes)?;
     if completion > receiving.max_completion_bytes
-        || limits.client.dialect.parts > receiving.max_completion_blocks
-        || limits.client.dialect.detail_bytes > receiving.max_failure_bytes
+        || limits.client.output_items > receiving.max_completion_blocks
+        || limits.client.detail_bytes > receiving.max_failure_bytes
     {
         return None;
     }
-    let parts = limits.client.dialect.parts;
-    // Native schemas and restored history replays can both retain a full
-    // document before Client request admission, plus the Client's pure
-    // preparation copies. Canonical feedback can independently reach the
-    // string cap even when that exceeds the configured document cap.
-    let schema_tokens = u64::from(parts)
-        .checked_mul(u64::from(limits.client.dialect.tokens))?
-        .checked_mul(u64::try_from(size_of::<skein_json::Token>()).ok()?)?;
-    let slots = List::<Tool>::worst_case(parts)?
-        .checked_add(List::<Message>::worst_case(parts)?)?
-        .checked_add(List::<Block>::worst_case(parts)?)?
-        .checked_add(List::<ToolSchema>::worst_case(parts)?)?
+    let parts = limits.client.output_items;
+    // All outgoing JSON records together fit the encoded request. Compact
+    // records borrow their text by index; no token owns a second string.
+    let compact = u64::try_from(size_of::<skein_json::document::Compact>()).ok()?;
+    let documents = u64::from(limits.client.request)
+        .checked_div(u64::from(skein_llm::ESCAPE))?
+        .checked_add(limits.tool_bytes)?
+        .checked_mul(compact.checked_mul(4)?.checked_add(4)?)?;
+    let slots = List::<Tool>::worst_case(limits.client.tools)?
+        .checked_add(List::<Message>::worst_case(limits.client.history_items)?)?
+        .checked_add(List::<Block>::worst_case(limits.client.history_items)?)?
+        .checked_add(List::<ToolSchema>::worst_case(limits.client.tools)?)?
         .checked_add(List::<Option<ResolvedCall>>::worst_case(parts)?)?;
-    client::worst_case(&limits.client)?
-        .checked_add(u64::try_from(size_of::<Context>()).ok()?)?
+    // The connection's shared pool owns the Client and native preparation.
+    // This owner retains its context and one neutral prompt alongside it.
+    u64::try_from(size_of::<Context>())
+        .ok()?
         .checked_add(limits.tool_bytes.checked_mul(2)?)?
         .checked_add(slots.checked_mul(2)?)?
-        .checked_add(schema_tokens.checked_mul(4)?)?
-        .checked_add(u64::from(parts).checked_mul(u64::from(limits.client.dialect.document_bytes))?.checked_mul(4)?)?
-        .checked_add(u64::from(parts).checked_mul(u64::from(limits.client.dialect.string_bytes))?.checked_mul(2)?)?
-        .checked_add(u64::from(limits.client.dialect.request_bytes).checked_mul(2)?)?
-        .checked_add(skein_llm::replay_worst_case(&limits.client.dialect)?)?
+        .checked_add(documents)?
+        .checked_add(skein_llm::replay_worst_case(&document_limits(
+            &limits.client,
+            u32::try_from(limits.tool_bytes.max(u64::from(limits.client.input))).ok()?,
+        ))?)?
+        .checked_add(skein_llm::replay_worst_case(&replay_limits(&limits.client))?)?
         .checked_add(completion.checked_mul(2)?)?
         .checked_add(u64::from(receiving.max_failure_bytes))
 }

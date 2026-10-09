@@ -468,13 +468,13 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: adapter::stated(),
         };
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.request = 16384;
         // The actual expanded listing schema belongs to the native document too.
-        bounds.client.dialect.document_bytes = 16384;
+        bounds.client.document = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),
@@ -484,7 +484,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual receiving reservation");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let scripts = Box::new([Script {
             cue: b"@brief-native".as_slice().into(),
             turns: Box::new([
@@ -725,11 +725,11 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.request = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),
@@ -739,7 +739,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("Client receiving reservation before original Start");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let (disk, mounted) = workspace();
         let roots = mounted.directories.iter().map(|directory| directory.root).collect::<Vec<_>>();
         let mut first = World::with_workspace_wire_charter(
@@ -820,13 +820,13 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: adapter::stated(),
         };
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.request = 16384;
         // The native document retains the complete piecewise-write advice too.
-        bounds.client.dialect.document_bytes = 16384;
+        bounds.client.document = 16384;
         let mut settings = Settings {
             job: Job::Waiting,
             waiting: Duration::from_secs(1),
@@ -836,7 +836,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("actual receiving reservation");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let (disk, mounted) = workspace();
         let mut first = World::with_workspace_wire_charter(
             settings,

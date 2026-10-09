@@ -40,7 +40,13 @@ pub fn decode(
         b"sub_agent" if offered(served, Kind::SubAgent) => Kind::SubAgent,
         _ => return llm::Decoded::Invalid { problem: llm::Problem::UnknownTool },
     };
-    let document = match Json::from_bytes(input, &limits.client.dialect) {
+    let document = match Json::from_bytes(
+        input,
+        &crate::limits::document_limits(
+            &limits.client,
+            u32::try_from(input.len()).unwrap_or(u32::MAX).min(limits.client.input),
+        ),
+    ) {
         Ok(document) => document,
         Err(DocumentError::TooLarge { which: _, bound: _ }) => return invalid(llm::Problem::TooLarge),
         Err(DocumentError::Malformed | DocumentError::Missing | DocumentError::WrongType) => {

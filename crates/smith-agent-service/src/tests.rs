@@ -164,7 +164,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         assert!(machine.search_bytes >= tools.search_bytes);
         assert!(machine.path_bytes >= tools.path_bytes);
         assert_eq!(machine.env_bytes, configuration.environment_bytes);
-        let mut stated = smith_protocol_llm::Stated::from_tools(&tools, limits.llm.adapter.client.dialect.input_bytes)
+        let mut stated = smith_protocol_llm::Stated::from_tools(&tools, limits.llm.adapter.client.input)
             .expect("derived quantities fit");
         stated.host_part = limits.domain.run.host_part;
         assert_eq!(limits.llm.adapter.stated, stated);
@@ -364,6 +364,8 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     assert!(matches!(out.pop(), Some(run::Request::Admitted { .. })));
     let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
     let prompt = llm::Prompt {
+        namespace: smith_domain::tools::Namespace::One,
+        affinity: llm::Affinity { key: [0; 16], thread: 0 },
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(opening.llm.endpoint.0),
         model: opening.llm.model,
@@ -386,7 +388,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
             report: Some(run::outcome::TextSpec { max: 32, fields: Box::default() }),
         },
         None,
-        limits.llm.adapter.client.dialect.document_bytes,
+        limits.llm.adapter.client.request,
     )
     .expect("schemas");
     let mut translated =

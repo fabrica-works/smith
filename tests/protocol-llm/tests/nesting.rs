@@ -26,18 +26,17 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
         let mut bounds = adapter::Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
-            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
         bounds.client.http.request = 16384;
-        bounds.client.dialect.request_bytes = 16384;
+        bounds.client.request = 16384;
         // The byte peer decodes the same complete native documents the client renders.
-        bounds.client.dialect.document_bytes = bounds.client.dialect.request_bytes;
         let mut settings = Settings { job: Job::Delegating, ..Settings::calm(704) };
         settings.limits.session.completion_bytes =
             adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
                 .expect("receiving bound");
-        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        settings.limits.session.completion_blocks = bounds.client.output_items;
         let mut world = World::with_wire(settings, None, configuration, bounds, scripts.into_boxed_slice());
         world.run(100_000);
         assert!(
@@ -104,8 +103,8 @@ fn check_document_bound(world: &World, bounds: &adapter::Limits, error_flag: boo
         "the actual complete request fits its configured document bound"
     );
     let mut small = peer.documents;
-    small.anthropic.document_bytes = 8192;
-    small.openai.document_bytes = 8192;
+    small.anthropic.request = 8192;
+    small.openai.request = 8192;
     if body.len() <= 8192 {
         return false;
     }

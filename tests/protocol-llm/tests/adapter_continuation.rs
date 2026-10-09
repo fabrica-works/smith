@@ -80,7 +80,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -88,9 +88,9 @@ fn limits() -> Limits {
 fn receiving(bounds: &Limits) -> Receiving {
     Receiving {
         max_completion_bytes: adapter::completion_worst_case(&bounds.client, 4096).expect("full receiving contract"),
-        max_completion_blocks: bounds.client.dialect.parts,
+        max_completion_blocks: bounds.client.output_items,
         decoded_call_bytes: 4096,
-        max_failure_bytes: bounds.client.dialect.detail_bytes,
+        max_failure_bytes: bounds.client.detail_bytes,
     }
 }
 
@@ -488,13 +488,13 @@ fn root_malformed_call_has_no_effect_and_corrected_call_runs_once() {
     let configuration = wire::configurations().into_iter().next().expect("raw-string Codex fixture");
     let mut bounds = limits();
     bounds.client.http.request = 16384;
-    bounds.client.dialect.request_bytes = 16384;
+    bounds.client.request = 16384;
     let mut settings =
         Settings { job: Job::HostTools, writable: false, network: Span::millis(1, 1), ..Settings::calm(71) };
     settings.limits.session.completion_bytes =
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("full translated reservation");
-    settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+    settings.limits.session.completion_blocks = bounds.client.output_items;
     let mut world = World::with_wire(settings, None, configuration, bounds, correction_script());
     world.wall_at(Wall::from_nanos(9000));
     await_query(&mut world, 2);
@@ -676,7 +676,7 @@ const BLOCK_RESPONSE: &[&str] = &[
 fn an_oversized_call_beside_an_ordinary_one_completes_with_a_fixable_error() {
     let configuration = wire::configurations().into_iter().next().expect("Codex fixture");
     let mut bounds = limits();
-    bounds.client.dialect.input_bytes = 16;
+    bounds.client.input = 16;
     let source = response(200, "Content-Type: text/event-stream\r\n", &events(BLOCK_RESPONSE), true);
     let (context, mut peer) = block_peer(&configuration, &bounds, source);
     let actual = completed(context, &mut peer, Token::new(71));
@@ -747,7 +747,7 @@ fn a_reasoning_item_past_its_bound_fails_unless_the_model_drops_it() {
     let configuration = wire::configurations().into_iter().next().expect("Codex fixture");
     for enabled in [false, true] {
         let mut bounds = limits();
-        bounds.client.dialect.opaque_bytes = u32::try_from(CODEX_REASONING.len() - 1).expect("fixture size");
+        bounds.client.reasoning = u32::try_from(CODEX_REASONING.len() - 1).expect("fixture size");
         bounds.client.drop_reasoning = enabled;
         let source = response(200, "Content-Type: text/event-stream\r\n", &events(CODEX_RESPONSE), true);
         let (context, mut peer) = block_peer(&configuration, &bounds, source);
@@ -773,7 +773,7 @@ fn a_reasoning_item_past_its_bound_fails_unless_the_model_drops_it() {
         } else {
             assert!(matches!(
                 terminal,
-                client::Event::Failed { failure: shared::Failure::Limit { which: shared::Cap::Opaque, .. }, .. }
+                client::Event::Failed { failure: shared::Failure::Limit { which: shared::Cap::Reasoning, .. }, .. }
             ));
             peer.settle();
         }

@@ -11,6 +11,9 @@ use super::{
 fn profile() -> super::Profile {
     let mut profile = standard();
     profile.declared.memory = Some(u64::MAX);
+    profile.declared.tool_payload = 256;
+    profile.declared.read_window = 256;
+    profile.declared.calls_per_response = 2;
     profile
 }
 
@@ -25,8 +28,8 @@ fn declarations() -> Configuration {
             handshake: Duration::from_secs(3),
             models: Box::new([Model {
                 name: Box::from(b"one".as_slice()),
-                window: 8192,
-                output: 32,
+                window: 65_536,
+                output: 512,
                 reasoning_item: 2048,
                 oversized_reasoning: OversizedReasoning::Fail,
                 head: Duration::from_secs(5),
@@ -52,7 +55,9 @@ fn read_past_payload_retains_both_names_values_and_units() {
 #[test]
 fn output_at_the_window_names_the_actual_endpoint_and_model() {
     let mut configuration = declarations();
-    configuration.endpoints.get_mut(0).expect("one endpoint").models.get_mut(0).expect("one model").output = 8192;
+    let model = configuration.endpoints.get_mut(0).expect("one endpoint").models.get_mut(0).expect("one model");
+    model.window = 8192;
+    model.output = 8192;
     let refusal = super::derive(&profile(), &configuration).expect_err("output must be below window");
     let per = Per::Model { endpoint: 7, model: 0 };
     assert_eq!(
@@ -115,7 +120,7 @@ fn composed_machine_refuses_a_file_cap_below_the_tools() {
     assert_eq!(refusal.check(), Some(Check::MachineHoldsTools));
     assert_eq!(
         words(&refusal).as_ref(),
-        b"machine-holds-tools: tools.file_bytes=65536 bytes; machine.file_bytes=65535 bytes"
+        b"machine-holds-tools: tools.file_bytes=256 bytes; machine.file_bytes=255 bytes"
     );
 }
 
@@ -167,6 +172,7 @@ fn random_declarations_refuse_by_name_or_hold_the_checked_relationships() {
                 assert!(output < window, "output fits window");
                 validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
             }
+            Err(Refusal::Llm { endpoint, violation: _ }) => assert_eq!(endpoint, 7, "native refusal retains its scope"),
             Err(refusal) => assert!(refusal.check().is_some(), "smith refusals retain their relationship"),
         }
     }
@@ -200,4 +206,39 @@ fn zero_child_wrap_up_is_a_named_deadline_refusal() {
     let refusal = super::derive(&selected, &declarations()).expect_err("zero child wrap-up");
     assert_eq!(refusal.check(), Some(Check::Deadlines));
     assert_eq!(words(&refusal).as_ref(), b"deadlines: policy.wrap_up=0 ns; policy.deadline_minimum=0 ns");
+}
+
+#[test]
+fn window_first_refuses_each_history_dimension_by_its_name() {
+    let profile = profile();
+    let configuration = declarations();
+    let original = super::derive(&profile, &configuration).expect("coherent tiny declarations").domain.session;
+    for field in ["history_bytes", "history_messages", "history_blocks"] {
+        let mut limits = original;
+        match field {
+            "history_bytes" => limits.history_bytes = 1,
+            "history_messages" => limits.history_messages = 1,
+            "history_blocks" => limits.history_blocks = 1,
+            _ => unreachable!(),
+        }
+        let refusal = validate::window_first(&profile, &configuration, &limits).expect_err("too small before window");
+        match refusal {
+            Refusal::Broken { check: Check::WindowFirst, right, .. } => {
+                assert_eq!(right.name.field, field);
+                assert_eq!(right.name.per, Per::Model { endpoint: 7, model: 0 });
+            }
+            refusal => panic!("unexpected refusal: {refusal:?}"),
+        }
+    }
+}
+
+#[test]
+fn request_head_and_uncut_rendering_keep_the_actual_byte_sides() {
+    validate::request_head(7, 100, 100).expect("head exactly fits");
+    let refusal = validate::request_head(7, 101, 100).expect_err("head exceeds transport piece");
+    assert_eq!(refusal.check(), Some(Check::RequestHead));
+    assert!(words(&refusal).ends_with(b"llm.request_piece[endpoint=7]=100 bytes"));
+    validate::render_in_result(100, 100).expect("whole result fits");
+    let refusal = validate::render_in_result(101, 100).expect_err("cut cannot satisfy startup");
+    assert_eq!(words(&refusal).as_ref(), b"render-in-result: render.uncut_result=101 bytes; render.result=100 bytes");
 }

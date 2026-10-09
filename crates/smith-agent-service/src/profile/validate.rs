@@ -3,6 +3,8 @@
 //! `declarations` and `machine` return the first failed relationship.
 //! Contract: protocol/limits.md, section 4.
 
+use core::mem::size_of;
+
 use skein_lib::Duration;
 use smith_domain::tools;
 use smith_protocol_machine as machine;
@@ -288,4 +290,83 @@ fn at_most(check: Check, left: Limit, right: Limit) -> Result<(), Refusal> {
         }
     };
     if smaller { Ok(()) } else { Err(Refusal::Broken { check, left, right }) }
+}
+
+/// The actual configured head, with credential and affinity maxima, fits one transport piece.
+/// Startup supplies the native measurement before constructing the connection component.
+pub fn request_head(endpoint: u32, required: u32, available: u32) -> Result<(), Refusal> {
+    at_most(
+        Check::RequestHead,
+        LimitName { layer: Layer::Llm, field: "request_head", per: Per::Endpoint(endpoint) }
+            .value(Value::Bytes(u64::from(required))),
+        LimitName { layer: Layer::Llm, field: "request_piece", per: Per::Endpoint(endpoint) }
+            .value(Value::Bytes(u64::from(available))),
+    )
+}
+
+/// Every model reaches its threshold while a provider terminal still fits the history.
+/// Byte-as-token pricing includes the input's fixed cells, so the same threshold
+/// divided by each smallest cell bounds the represented message and block counts.
+pub fn window_first(
+    profile: &Profile,
+    configuration: &Configuration,
+    limits: &smith_domain::session::Limits,
+) -> Result<(), Refusal> {
+    let reserve = smith_domain::session::completion_reserve(limits)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "completion_reserve") })?;
+    for endpoint in &configuration.endpoints {
+        for (index, model) in endpoint.models.iter().enumerate() {
+            let per = Per::Model { endpoint: endpoint.number, model: u32::try_from(index).expect("bounded models") };
+            let threshold = u64::from(model.window)
+                .checked_mul(u64::from(profile.policy.compaction_threshold.numerator))
+                .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "window_threshold", per } })?
+                .checked_div(u64::from(profile.policy.compaction_threshold.denominator))
+                .ok_or(Refusal::Derived {
+                    limit: LimitName { layer: Layer::Session, field: "window_threshold", per },
+                })?;
+            let bytes = threshold
+                .checked_add(reserve)
+                .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "history_bytes", per } })?;
+            at_most(
+                Check::WindowFirst,
+                LimitName { layer: Layer::Session, field: "window_receiving", per }.value(Value::Bytes(bytes)),
+                LimitName { layer: Layer::Session, field: "history_bytes", per }
+                    .value(Value::Bytes(limits.history_bytes)),
+            )?;
+            let messages = threshold
+                .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Message>()).expect("cell fits"))
+                .expect("nonzero cell")
+                .checked_add(2)
+                .ok_or(Refusal::Derived {
+                    limit: LimitName { layer: Layer::Session, field: "history_messages", per },
+                })?;
+            let blocks = threshold
+                .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Block>()).expect("cell fits"))
+                .expect("nonzero cell")
+                .checked_add(u64::from(limits.completion_blocks).checked_mul(2).expect("u32 twice fits u64"))
+                .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "history_blocks", per } })?;
+            at_most(
+                Check::WindowFirst,
+                LimitName { layer: Layer::Session, field: "window_messages", per }.value(Value::Count(messages)),
+                LimitName { layer: Layer::Session, field: "history_messages", per }
+                    .value(Value::Count(u64::from(limits.history_messages))),
+            )?;
+            at_most(
+                Check::WindowFirst,
+                LimitName { layer: Layer::Session, field: "window_blocks", per }.value(Value::Count(blocks)),
+                LimitName { layer: Layer::Session, field: "history_blocks", per }
+                    .value(Value::Count(u64::from(limits.history_blocks))),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Capped outcomes render whole; the marker remains an independent safeguard.
+pub fn render_in_result(required: u32, available: u32) -> Result<(), Refusal> {
+    at_most(
+        Check::RenderInResult,
+        bytes(Layer::Render, "uncut_result", u64::from(required)),
+        bytes(Layer::Render, "result", u64::from(available)),
+    )
 }

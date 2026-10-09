@@ -514,7 +514,9 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     | file::Request::SyncDirectory { .. }
                     | file::Request::Rename { .. }
                     | file::Request::Remove { .. }
-                    | file::Request::List { .. }) => panic!("unexpected file request: {other:?}"),
+                    | file::Request::List { .. }
+                    | file::Request::MakeDirectory { .. }
+                    | file::Request::OpenPrivate { .. }) => panic!("unexpected file request: {other:?}"),
                 },
                 Below::OpenRead { path, .. } | Below::OpenDirectory { path, .. } => assert_eq!(path.as_ref(), expected),
                 Below::Spawn { spawn, .. } => {

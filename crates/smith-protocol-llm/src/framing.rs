@@ -44,7 +44,7 @@ pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, too
         max_output_tokens: None,
     };
     prompt.output_ceiling(provider, client.declared_output_tokens).or(Err(Error::Invalid))?;
-    let account_id = match provider {
+    let account_id: Box<[u8]> = match provider {
         shared::Provider::OpenAiCodex => Box::from(b"a".as_slice()),
         shared::Provider::Anthropic => Box::new([]),
     };

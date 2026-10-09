@@ -108,11 +108,11 @@ fn bounds() -> Limits {
     let mut bounds = Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
-        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        rendered_result: skein_llm_world::limits().strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     };
     bounds.client.http.request = 16384;
-    bounds.client.dialect.request_bytes = 16384;
+    bounds.client.request = 16384;
     bounds
 }
 
@@ -128,8 +128,8 @@ fn settings(seed: u64, resume: bool, bounds: &Limits) -> Settings {
     settings.limits.session.completion_bytes =
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("complete actual translated reservation before Start");
-    settings.limits.session.completion_blocks = bounds.client.dialect.parts;
-    assert!(bounds.client.dialect.detail_bytes <= settings.limits.session.failure_bytes);
+    settings.limits.session.completion_blocks = bounds.client.output_items;
+    assert!(bounds.client.detail_bytes <= settings.limits.session.failure_bytes);
     settings
 }
 

@@ -245,7 +245,13 @@ pub fn decode_deliver(input: &[u8], _change: &run::outcome::ChangeSpec, limits: 
 }
 
 fn object(input: &[u8], limits: &Limits) -> Result<Json, llm::Problem> {
-    let document = match Json::from_bytes(input, &limits.client.dialect) {
+    let document = match Json::from_bytes(
+        input,
+        &crate::limits::document_limits(
+            &limits.client,
+            u32::try_from(input.len()).unwrap_or(u32::MAX).min(limits.client.input),
+        ),
+    ) {
         Ok(document) => document,
         Err(DocumentError::TooLarge { which: _, bound: _ }) => return Err(llm::Problem::TooLarge),
         Err(DocumentError::Malformed | DocumentError::Missing | DocumentError::WrongType) => {

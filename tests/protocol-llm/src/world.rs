@@ -1133,7 +1133,7 @@ impl World {
                         calls.open(owner, (prompt.tools, prompt.served.clone(), prompt.asker));
                         let stated = crate::adapter::Stated::from_tools(
                             &self.settings.limits.session.tools,
-                            skein_llm_world::limits().dialect.input_bytes,
+                            skein_llm_world::limits().input,
                         )
                         .expect("fixture numeric bounds fit");
                         let query = translate::query(prompt, &stated);

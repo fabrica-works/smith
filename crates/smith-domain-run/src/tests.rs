@@ -4401,7 +4401,7 @@ mod room_controls {
                     brief: vec![b'x'; usize::try_from(bound + extra).expect("small test bound")].into(),
                     families: families(true, false, false),
                     llm: None,
-                    share: None,
+                    share: crate::Share::UNASKED,
                 },
                 deadline: EXPIRY,
             });

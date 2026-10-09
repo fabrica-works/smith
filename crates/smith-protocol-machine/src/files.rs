@@ -135,7 +135,9 @@ pub(crate) fn terminal(kind: Kind, event: file::Event) -> tools::Done {
         | file::Event::Closed { .. }
         | file::Event::Renamed { .. }
         | file::Event::Removed { .. }
-        | file::Event::Listed { .. } => unreachable!("machine asks io only for whole-file operations"),
+        | file::Event::Listed { .. }
+        | file::Event::Made { .. }
+        | file::Event::Refused { .. } => unreachable!("machine asks io only for whole-file operations"),
     }
 }
 

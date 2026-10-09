@@ -77,14 +77,9 @@ fn observation_limits(limits: &adapter::Limits) -> ObservationLimits {
         events: skein_llm::client::MAX_OUT.above,
         event_bytes: 32768,
         queries: 1,
-        query_bytes: u64::from(limits.client.dialect.request_bytes),
+        query_bytes: u64::from(limits.client.request),
         pending: 0,
-        request_bytes: limits
-            .client
-            .http
-            .request
-            .checked_add(limits.client.dialect.request_bytes)
-            .expect("whole request tape"),
+        request: limits.client.http.request.checked_add(limits.client.request).expect("whole request tape"),
         response_bytes: 4096,
     }
 }
@@ -132,7 +127,7 @@ fn bounds(messages: u32) -> Limits {
         },
         session: session::Limits {
             sessions: 1,
-            messages,
+            history_messages: messages,
             // Source generation has independent room for maximum provider and
             // delegate receiving credit plus context. Restore replaces this
             // allowance with the separately observed exact payload/credit cap.
@@ -274,16 +269,16 @@ fn scripts(cycles: u32) -> Box<[Script]> {
 fn wire_limits() -> adapter::Limits {
     let mut client = skein_llm_world::limits();
     client.http.request = 32_768;
-    client.dialect.parts = 64;
-    client.dialect.request_bytes = 32_768;
-    client.dialect.document_bytes = 32_768;
-    client.dialect.string_bytes = 16_384;
-    client.dialect.tokens = 4096;
-    client.dialect.answer_bytes = 256;
+    client.output_items = 64;
+    client.request = 32_768;
+    client.request = 32_768;
+    client.strings = 16_384;
+    client.tokens = 4096;
+    client.answer = 256;
     adapter::Limits {
         client,
         tool_bytes: 16_384,
-        rendered_result: client.dialect.string_bytes,
+        rendered_result: client.strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
@@ -791,9 +786,8 @@ impl Counted {
         let queue_bytes = Queue::<Request>::worst_case(root::max_out(limits)).expect("output container fits");
         meter.check(measured, root::worst_case(limits).expect("compatible root limits") + queue_bytes, limits);
         let mut native_limits = wire_limits();
-        native_limits.stated =
-            adapter::Stated::from_tools(&limits.session.tools, native_limits.client.dialect.input_bytes)
-                .expect("actual root numeric quantities fit");
+        native_limits.stated = adapter::Stated::from_tools(&limits.session.tools, native_limits.client.input)
+            .expect("actual root numeric quantities fit");
         Self {
             meter,
             domain: Some(domain),
@@ -1600,7 +1594,7 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     // HTTP request-head and dialect request/document caps stay 32,768, matching
     // the shared peer's fixed HTTP body/intake bounds. Original history/count/
     // completion/refusal tests keep wire_limits() unchanged; root caps stay fixed.
-    counted.native_limits.client.dialect.string_bytes = 32_768;
+    counted.native_limits.client.strings = 32_768;
     let configuration = counted.configuration();
     let mut caller = maximum_convention_charter();
     let mounted = Some(maximum_workspace(&receiving.run));

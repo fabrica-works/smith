@@ -113,7 +113,19 @@ impl Component {
     /// Validate the configured endpoint and pool bounds before the loop.
     pub fn new(limits: &ComponentLimits, endpoints: Endpoints) -> Result<Component, ComponentError> {
         for endpoint in endpoints.destinations() {
-            if endpoint.limits != limits.adapter.client {
+            let native = endpoint.limits;
+            let maximum = limits.adapter.client;
+            let completion_fits = match crate::completion_worst_case(&native, limits.receiving.decoded_call_bytes) {
+                Some(bytes) => bytes <= limits.receiving.max_completion_bytes,
+                None => false,
+            };
+            if native.request > maximum.request
+                || native.tools > maximum.tools
+                || native.history_items > maximum.history_items
+                || native.output_items > maximum.output_items
+                || native.detail_bytes > maximum.detail_bytes
+                || !completion_fits
+            {
                 return Err(ComponentError::ClientLimits);
             }
         }
@@ -254,20 +266,15 @@ impl Component {
                 return;
             }
         };
-        let (mut translated, context) = match crate::prompt::prepare_component(
-            owner,
-            prompt,
-            &outcome,
-            deliver.as_ref(),
-            bounds,
-            &self.limits.adapter,
-        ) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
-                return;
-            }
-        };
+        let adapter = crate::Limits { client: options.client, ..self.limits.adapter };
+        let (mut translated, context) =
+            match crate::prompt::prepare_component(owner, prompt, &outcome, deliver.as_ref(), bounds, &adapter) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
+                    return;
+                }
+            };
         translated.reasoning_effort.clone_from(&options.reasoning_effort);
         match options.identity {
             IdentityProfile::Plain => {}
@@ -332,6 +339,15 @@ impl Component {
                         None => 0,
                     };
                     let error = match why {
+                        connection::Refusal::Memory { reservation, bound } => {
+                            Self::local_failure(
+                                call,
+                                llm::Failure::Limit { which: llm::Limit::Pool { reservation }, bound },
+                                maximum,
+                                to_domain,
+                            );
+                            continue;
+                        }
                         connection::Refusal::Endpoint => Error::Invalid,
                         connection::Refusal::Calls { bound: _ } | connection::Refusal::Closed => Error::Limit,
                         connection::Refusal::Client(error) => Error::from_shared(error),
@@ -358,12 +374,9 @@ impl Component {
                             let resolved = self.resolve(&completion, &active);
                             match crate::completion(active.context, call, completion, resolved) {
                                 Ok(event) => Self::domain_event(event, to_domain),
-                                Err(error) => Self::refusal(
-                                    call,
-                                    error,
-                                    self.limits.adapter.client.dialect.detail_bytes,
-                                    to_domain,
-                                ),
+                                Err(error) => {
+                                    Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain)
+                                }
                             }
                         }
                         None => {}
@@ -375,7 +388,7 @@ impl Component {
                         Some(active) => match crate::failed(active.context, call, failure, evidence, detail) {
                             Ok(event) => Self::domain_event(event, to_domain),
                             Err(error) => {
-                                Self::refusal(call, error, self.limits.adapter.client.dialect.detail_bytes, to_domain);
+                                Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                             }
                         },
                         None => {}
@@ -387,7 +400,7 @@ impl Component {
                         Some(active) => match crate::cancelled(active.context, call) {
                             Ok(event) => Self::domain_event(event, to_domain),
                             Err(error) => {
-                                Self::refusal(call, error, self.limits.adapter.client.dialect.detail_bytes, to_domain);
+                                Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                             }
                         },
                         None => {}
@@ -398,7 +411,7 @@ impl Component {
     }
 
     fn resolve(&self, completion: &shared::Completion, active: &Active) -> Box<[crate::ResolvedCall]> {
-        let mut resolved = List::with_capacity(self.limits.adapter.client.dialect.parts);
+        let mut resolved = List::with_capacity(self.limits.adapter.client.output_items);
         for (position, block) in completion.content.iter().enumerate() {
             let shared::Block::ToolCall { name, arguments, .. } = block else {
                 continue;

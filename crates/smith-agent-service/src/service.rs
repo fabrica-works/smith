@@ -2018,14 +2018,12 @@ mod tests {
                 adapter: llm::Limits {
                     client,
                     tool_bytes: 32_768,
-                    rendered_result: client.dialect.string_bytes,
-                    stated: llm::Stated::from_tools(
-                        &smith_agent_world::LIMITS.session.tools,
-                        client.dialect.input_bytes,
-                    )
-                    .expect("test effective quantities fit"),
+                    rendered_result: client.strings,
+                    stated: llm::Stated::from_tools(&smith_agent_world::LIMITS.session.tools, client.input)
+                        .expect("test effective quantities fit"),
                 },
                 connection: skein_llm_connection::Limits {
+                    memory: 1 << 40,
                     endpoints: 1,
                     connections: 2,
                     calls: 2,
@@ -2037,9 +2035,9 @@ mod tests {
                 receiving: llm::Receiving {
                     max_completion_bytes: llm::completion_worst_case(&client, decoded_call_bytes)
                         .expect("receiving bound"),
-                    max_completion_blocks: client.dialect.parts,
+                    max_completion_blocks: client.output_items,
                     decoded_call_bytes,
-                    max_failure_bytes: client.dialect.detail_bytes,
+                    max_failure_bytes: client.detail_bytes,
                 },
                 contract_bytes: 4096,
                 accounts: 1,

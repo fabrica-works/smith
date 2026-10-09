@@ -113,13 +113,16 @@ fn random_declared_rooms_refuse_by_name_or_hold_a_largest_fresh_window() {
 fn fixed_own_measurement_is_checked_and_real_declared_models_leave_room() {
     let mut profile = standard();
     profile.declared.memory = Some(u64::MAX);
-    let declarations = declarations(65_536, 32);
+    profile.declared.tool_payload = 256;
+    profile.declared.read_window = 256;
+    profile.declared.calls_per_response = 2;
+    let declarations = declarations(65_536, 512);
     let limits = crate::profile::derive(&profile, &declarations).expect("declared profile");
     let tools = limits.domain.session.tools;
-    let own = super::own_part(&tools, limits.llm.adapter.client.dialect.input_bytes, 0).expect("fixed own measurement");
+    let own = super::own_part(&tools, limits.llm.adapter.client.input, 0).expect("fixed own measurement");
     assert!(own > smith_domain::run::fixed_prompt_bytes().expect("fixed text"));
     assert!(room(&profile, &declarations, own, 0).expect("real model fits measured own").host > 0);
-    assert_eq!(super::own_part(&tools, limits.llm.adapter.client.dialect.input_bytes, u64::MAX), None);
+    assert_eq!(super::own_part(&tools, limits.llm.adapter.client.input, u64::MAX), None);
 }
 
 #[test]
