@@ -429,7 +429,21 @@ component and skein's client against scripted byte peers, in each dialect.
   - one affinity per conversation, distinct threads for distinct
     conversations;
   - within a window, each request's system text and tools byte-identical
-    to the one before, and its history extending the one before.
+    to the one before, and its history extending the one before, byte
+    for byte;
+  - one exception, Anthropic's tail marker. skein moves that cache
+    marker to the newest message's last eligible block on every request
+    (skein's `llm.md`, 4.7), and the provider's cache does not hash the
+    marker. So the referee:
+    - removes from each request's messages the one marker the dialect
+      placed there, exactly the bytes the dialect writes. Since a quote
+      inside a JSON string is always escaped, those bytes cannot occur
+      in a string's content;
+    - compares every other byte;
+    - checks apart that the marker sits where the dialect puts it.
+
+    A marker anywhere else, or a second one, fails. The system's marker
+    does not move, and is compared with the system text.
 
 All run in virtual time, in milliseconds each, within the focused suite.
 
