@@ -285,17 +285,24 @@ fn head_for(bytes: usize) -> Vec<u8> {
     format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {bytes}\r\n\r\n").into_bytes()
 }
 
-const HEARTBEAT: &[u8] = b": progress\n\n";
+// Real provider progress crosses native read demand and dispatches an SSE
+// message. Comments alone do not refresh the response-event idle deadline.
+fn progress_event() -> Vec<u8> {
+    let mut bytes = br#"data: {"type":"response.in_progress","response":{"status":"in_progress"},"extra":""#.to_vec();
+    bytes.extend_from_slice(&[b' '; 513]);
+    bytes.extend_from_slice(b"\"}\n\n");
+    bytes
+}
 
 #[test]
 fn a_response_streaming_past_any_fixed_bound_completes() {
     let mut peer = Peer::new();
     peer.start(1, 60, 60, 900);
-    peer.bytes(100, head_for(body().len() + 9 * HEARTBEAT.len()));
+    peer.bytes(100, head_for(body().len() + 9 * progress_event().len()));
     for seconds in (50..=450).step_by(50) {
         peer.advance(seconds);
-        assert!(peer.terminals.is_empty(), "progress remains within the declared idle duration");
-        peer.bytes(100, HEARTBEAT.to_vec());
+        assert!(peer.terminals.is_empty(), "progress remains within the declared idle duration: {:?}", peer.terminals);
+        peer.bytes(100, progress_event());
     }
     peer.advance(451);
     peer.bytes(100, body());
@@ -325,11 +332,11 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     let mut peer = Peer::new();
     peer.start(1, 30, 30, 90);
     peer.start(2, 120, 120, 300);
-    peer.bytes(100, head_for(body().len() + 4 * HEARTBEAT.len()));
+    peer.bytes(100, head_for(body().len() + 4 * progress_event().len()));
     peer.bytes(101, head_for(body().len()));
     for seconds in [20, 40, 60, 80] {
         peer.advance(seconds);
-        peer.bytes(100, HEARTBEAT.to_vec());
+        peer.bytes(100, progress_event());
     }
     assert!(peer.terminals.is_empty());
     peer.advance(90);

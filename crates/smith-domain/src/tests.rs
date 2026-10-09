@@ -1958,6 +1958,43 @@ fn each_main_or_child_model_quantity_is_checked_before_admission() {
     }
 }
 
+#[test]
+fn the_selected_model_progress_reaches_the_original_root_completion() {
+    for selected in 0..4 {
+        let mut harness = Harness::new();
+        for (index, model) in harness.domain.config.models.iter_mut().enumerate() {
+            let index = u64::try_from(index).expect("four declarations");
+            model.head = Duration::from_secs(11 + index);
+            model.idle = Duration::from_secs(21 + index);
+        }
+        let declared = harness.domain.config.models[selected].clone();
+        let mut requested = charter();
+        requested.llm.endpoint = declared.endpoint;
+        requested.llm.model = declared.model;
+        requested.conventions = None;
+        let emitted = harness.step(Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(7)),
+            host_run: Token::new(7),
+            activation: 1,
+            window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
+            charter: requested,
+            workspace: Some(workspace()),
+            grants: Box::new([crate::Grant {
+                name: crate::GrantName { account: 0, generation: 0 },
+                valid: Duration::from_secs(100_000),
+            }]),
+            transcript: None,
+            answered: Box::default(),
+        });
+        let [Request::Admitted { .. }, Request::Complete { deadlines, .. }] = emitted.as_ref() else {
+            panic!("original root completion: {emitted:?}");
+        };
+        assert_eq!((deadlines.head, deadlines.idle), (declared.head, declared.idle));
+        assert_eq!(deadlines.whole, harness.env.now.saturating_add(BUDGET.time));
+    }
+}
+
 fn awaiting_start(transcript: Option<session::record::Transcript>, answered: Box<[crate::AnsweredCall]>) -> Event {
     Event::Start {
         messages: Box::default(),

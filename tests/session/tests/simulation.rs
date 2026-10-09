@@ -210,7 +210,7 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
 }
 
 #[test]
-fn a_session_out_of_time_cancels_its_call_in_flight() {
+fn a_session_out_of_time_ends_once_at_the_whole_call_deadline() {
     let calm = Settings::calm(7);
     let settings = Settings {
         provider: Config {
@@ -226,7 +226,7 @@ fn a_session_out_of_time_cancels_its_call_in_flight() {
 
     assert_eq!(end(&world, opener), out_of(Dimension::Time));
     let stats = world.stats();
-    assert_eq!((stats.cancels, stats.late_answers), (1, 1));
+    assert_eq!((stats.timeouts, stats.late_answers, stats.cancels), (1, 1, 0));
 }
 
 #[test]

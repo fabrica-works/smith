@@ -1234,15 +1234,7 @@ fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
         Some(ended(OUT_OF_TIME, 0))
     );
     assert_eq!(h.domain.next_deadline(), None, "no retry or expiry remains");
-    assert_eq!(
-        h.step(Event::Failed {
-            owner,
-            failure: Failure::TimedOut,
-            evidence: crate::llm::Evidence::Response,
-            detail: Box::default(),
-        }),
-        None
-    );
+    assert_eq!(h.step(Event::Close { session: owner }), None, "the closed session has no further terminal");
 }
 
 #[test]
