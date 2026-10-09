@@ -342,7 +342,12 @@ fn value_usage(_name: &str, _spelling: &str) -> Usage {
 }
 
 fn value_budget(_name: &str, _spelling: &str) -> Budget {
-    Budget { turns: u64::MAX, spend: u64::MAX, time_ms: u64::MAX }
+    Budget {
+        turns: u64::MAX,
+        spend: u64::MAX,
+        time_ms: u64::MAX,
+        reserve: smith_events::Reserve { turns: u64::MAX, time_ms: u64::MAX, spend: u64::MAX },
+    }
 }
 
 fn value_tools(name: &str, spelling: &str) -> Tools {
@@ -449,6 +454,7 @@ fn value_run_started(name: &str, spelling: &str) -> RunStarted {
 fn value_run_completed(name: &str, spelling: &str) -> RunCompleted {
     RunCompleted {
         run: u64::MAX,
+        wind_down: false,
         status: value_status(name, spelling),
         failure: Some(value_answer_failure(name, spelling)),
         result: Some(value_run_result(name, spelling)),

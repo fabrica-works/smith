@@ -390,7 +390,7 @@ fn invalid(id: &[u8], problem: Problem) -> Block {
         id: bytes(id),
         name: bytes(b"tool"),
         input: bytes(b"{"),
-        call: Decoded::Invalid { problem },
+        call: Decoded::Invalid { descriptor: None, problem },
         replay: None,
     }
 }
@@ -646,7 +646,13 @@ fn an_invalid_call_is_answered_with_its_problem_and_nothing_runs_for_it() {
     assert_eq!(&*prompt.messages[2].content, &results, "every call gets its result, in call order");
 
     let opener = Token::new(1);
-    let started = Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 };
+    let started = Fact::CompletionStarted {
+        opener,
+        attempt: 0,
+        messages: 1,
+        max_tokens: 1024,
+        choice: crate::facts::Choice::Auto,
+    };
     let kit = Fact::Tools { opener, fact: tools::FactKind::Opened { session: owner } };
     let opening = [pop_kind(&mut h), pop_kind(&mut h), pop_kind(&mut h)];
     assert_eq!(opening, [Some(Fact::Opened { opener }), Some(started), Some(kit)]);
@@ -935,7 +941,13 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
     let read = tools::Tool::Read;
     h.told(&[
         Fact::Opened { opener },
-        Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
+        Fact::CompletionStarted {
+            opener,
+            attempt: 0,
+            messages: 1,
+            max_tokens: 1024,
+            choice: crate::facts::Choice::Auto,
+        },
         by_tools(opener, tools::FactKind::Opened { session: owner }),
         Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 3, calls: 2, invalid: 0 },
         Fact::Used { opener, usage: USAGE },
@@ -1087,7 +1099,13 @@ fn delegated_calls_are_told_as_they_start_and_end() {
     drop(h.step(answer_cancelled(runs.as_slice()[1])));
     h.told(&[
         Fact::Opened { opener },
-        Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
+        Fact::CompletionStarted {
+            opener,
+            attempt: 0,
+            messages: 1,
+            max_tokens: 1024,
+            choice: crate::facts::Choice::Auto,
+        },
         Fact::Tools { opener, fact: tools::FactKind::Opened { session: owner } },
         Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 2, calls: 2, invalid: 0 },
         Fact::Used { opener, usage: USAGE },
@@ -1681,7 +1699,13 @@ fn a_session_tells_what_happens_as_facts() {
     let (owner, _) = h.open(1);
     h.told(&[
         Fact::Opened { opener },
-        Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
+        Fact::CompletionStarted {
+            opener,
+            attempt: 0,
+            messages: 1,
+            max_tokens: 1024,
+            choice: crate::facts::Choice::Auto,
+        },
         by_tools(opener, tools::FactKind::Opened { session: owner }),
     ]);
 
@@ -1694,7 +1718,13 @@ fn a_session_tells_what_happens_as_facts() {
     drop(calling(h.step(ran(run, b"main.rs"))));
     let verdict = tools::Verdict::Read;
     h.told(&[
-        Fact::CompletionStarted { opener, attempt: 0, messages: 3, max_tokens: 1024 },
+        Fact::CompletionStarted {
+            opener,
+            attempt: 0,
+            messages: 3,
+            max_tokens: 1024,
+            choice: crate::facts::Choice::Auto,
+        },
         by_tools(opener, tools::FactKind::Answered { session: owner, tool: tools::Tool::Read, verdict, bytes: 7 }),
     ]);
     drop(yielded(h.step(Event::Completed { owner, completion: done() })));
@@ -1725,7 +1755,13 @@ fn retries_cancels_and_refusals_are_told_too() {
         None
     );
     let retry = h.domain.next_deadline().expect("a retry is armed");
-    let started = Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 };
+    let started = Fact::CompletionStarted {
+        opener,
+        attempt: 0,
+        messages: 1,
+        max_tokens: 1024,
+        choice: crate::facts::Choice::Auto,
+    };
     let delay = retry.saturating_since(Time::ZERO);
     h.told(&[
         Fact::Opened { opener },
@@ -1736,7 +1772,13 @@ fn retries_cancels_and_refusals_are_told_too() {
     ]);
     h.env.now = retry;
     drop(calling(h.fire()));
-    h.told(&[Fact::CompletionStarted { opener, attempt: 1, messages: 1, max_tokens: 1024 }]);
+    h.told(&[Fact::CompletionStarted {
+        opener,
+        attempt: 1,
+        messages: 1,
+        max_tokens: 1024,
+        choice: crate::facts::Choice::Auto,
+    }]);
 
     let refused = Token::new(2);
     drop(h.step(Event::Open { opener: refused, opening: opening(spec()) }));
@@ -2384,4 +2426,31 @@ fn a_narrowing_note_follows_a_yielded_session_waking_message() {
     assert_eq!(&after.messages[..before.messages.len()], before.messages.as_ref());
     assert_eq!(after.messages.last().unwrap().content.as_ref(), &[text(b"Finish now.")]);
     assert_eq!(h.turns, 1);
+}
+
+#[test]
+fn an_allowed_descriptor_keeps_its_argument_problem_during_narrowing() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    drop(calling(h.step(Event::Narrowed {
+        owner,
+        note: bytes(b"Finish now."),
+        choice: crate::llm::ToolChoice::Only(Box::new([FINISH.ticket])),
+    })));
+    let problem = Problem::Missing { field: bytes(b"report") };
+    let call = Block::ToolCall {
+        id: bytes(b"allowed-invalid"),
+        name: bytes(b"finish"),
+        input: bytes(b"{}"),
+        replay: None,
+        call: Decoded::Invalid { descriptor: Some(FINISH.ticket), problem: problem.clone() },
+    };
+    assert_eq!(h.step(Event::Completed { owner, completion: completion(Box::new([call]), Stop::ToolUse) }), None);
+    h.domain.reclaim();
+    let Some(Request::Complete { prompt, .. }) = h.resume() else { panic!("the typed problem reasks") };
+    assert_eq!(
+        prompt.messages.last().unwrap().content.as_ref(),
+        &[Block::ToolResult { id: bytes(b"allowed-invalid"), result: Returned::Invalid { problem } }]
+    );
+    assert_eq!(h.domain.runs(), 0, "a malformed allowed call still starts no operation");
 }

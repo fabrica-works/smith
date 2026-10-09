@@ -33,8 +33,11 @@
 //! Waiting      labelled message                  Working     Waited; yield then Say
 //! Waiting      idle alarm                         Winding     Withheld, close main
 //! Working      finish or other ending             Winding     close main
-//! Working      budget failure                     Over        await main yield
-//! Over         main yield                          Winding     close main
+//! Working      ordinary turns/time spent           Working     close children one per resume
+//! Working      last child terminal                 Working     final permit, note once, Only finish/deliver
+//! Working      final allowance spent               Winding     fail budget after current turn
+//! Waiting      ordinary time spent                 Winding     Withheld, close main, park
+//! Awaiting     ordinary time spent                 Closed      park without session
 //! Winding      main and pending calls settled     Closed      Answer
 //! ```
 //!
@@ -100,6 +103,10 @@ use crate::{opening, prompt};
 
 #[derive(Debug)]
 pub(crate) struct Run {
+    /// The budget phase stays known through an accepted terminal.
+    wind_down: Option<crate::wind_down::WindDown>,
+    /// Exact retained children; closures are emitted one per resume.
+    children: skein_lib::Set<Id<Conversation>>,
     identity: crate::Identity,
     /// Next never-reused child ordinal; main is zero.
     next_ordinal: u32,
@@ -157,8 +164,6 @@ enum State {
     Working { reply_to: ReplyTo, main: Id<Conversation> },
     /// Main wait remains unanswered; wall and idle timers remain distinct.
     Waiting { reply_to: ReplyTo, main: Id<Conversation>, call: Token, until: Time },
-    /// Its scalar budget is exhausted, and main keeps its turn in flight.
-    Over { reply_to: ReplyTo, main: Id<Conversation>, exhausted: Exhausted },
     /// It ends with `ending` once its main conversation has ended.
     Winding { reply_to: ReplyTo, ending: Ending },
     /// Terminal: holds nothing.
@@ -188,6 +193,8 @@ pub(crate) struct Conversation {
     subtree_spent: u64,
     /// The one provider completion this conversation has reserved with the run.
     reservation: Option<(Token, u64)>,
+    /// A budget close keeps its cause through the actual session terminal.
+    budget_close: Option<Exhausted>,
     /// Its calls to the run in flight.
     calls: u32,
     phase: Phase,
@@ -255,7 +262,7 @@ pub(crate) struct Start {
 pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &mut Queue<Request>) {
     let Start { reply_to, host_run, activation, identity, window, messages, charter, workspace, transcript, resumed } =
         start;
-    let Domain { rng, runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng, runs, conversations, calls: _, alarms, facts, ready: budget_ready } = domain;
     // A charter that can never fit is invalid, room or not: busy invites a
     // retry.
     if activation == 0 {
@@ -299,6 +306,8 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
     // A run is stored before its main conversation, which names it, and starts
     // once main has a name too: main's slot is the run's from its admission.
     let run = Run {
+        wind_down: None,
+        children: skein_lib::Set::with_capacity(env.limits.run_conversations.saturating_sub(1)),
         identity,
         next_ordinal: 1,
         started_at: env.now,
@@ -337,6 +346,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         spent: Spend::ZERO,
         subtree_spent: 0,
         reservation: None,
+        budget_close: None,
         calls: 0,
         phase: Phase::Pending,
     };
@@ -348,7 +358,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         Some(step) => look(run, id, reply_to, main, step, env, out),
         None => ready(run, conversations, reply_to, main, env, facts, out),
     };
-    follow(runs, alarms, facts, id);
+    follow(runs, alarms, facts, budget_ready, id);
 }
 
 /// Admit a named, labelled host message or emit its typed refusal.
@@ -367,7 +377,10 @@ pub(crate) fn message(
         return;
     };
     let entrance = match run.state {
-        State::Stopping { .. } | State::Over { .. } | State::Winding { .. } | State::Closed => Entrance::Ending,
+        State::Stopping { .. } | State::Winding { .. } | State::Closed => Entrance::Ending,
+        State::Working { .. } if run.wind_down.is_some() || run.charter.budget.exhausted(run.spent).is_some() => {
+            Entrance::Ending
+        }
         State::Awaiting { .. } | State::Preparing { .. } | State::Working { .. } | State::Waiting { .. } => {
             Entrance::Open
         }
@@ -392,11 +405,11 @@ pub(crate) fn message(
             State::Working { reply_to, main }
         }
         state @ (State::Preparing { .. } | State::Working { .. }) => state,
-        State::Stopping { .. } | State::Over { .. } | State::Winding { .. } | State::Closed => {
+        State::Stopping { .. } | State::Winding { .. } | State::Closed => {
             unreachable!("checked active run")
         }
     };
-    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, id);
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, id);
 }
 
 fn continue_messages(
@@ -474,17 +487,16 @@ pub(crate) fn park(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
         State::Preparing { .. }
         | State::Stopping { .. }
         | State::Working { .. }
-        | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => {
             unreachable!("idle alarm belongs only to a retained wait or unopened awaiting main")
         }
     };
-    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, id);
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, id);
 }
 
 pub(crate) fn read(domain: &mut Domain, env: &Env<Limits>, owner: Token, read: Read, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts, ready } = domain;
     let id = Id::<Run>::from_token(owner);
     facts.about(owner);
     let run = runs.get_mut(id).expect("a run lives until its look in flight has ended");
@@ -498,17 +510,16 @@ pub(crate) fn read(domain: &mut Domain, env: &Env<Limits>, owner: Token, read: R
         State::Awaiting { .. }
         | State::Working { .. }
         | State::Waiting { .. }
-        | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => {
             unreachable!("a run reads only while it prepares")
         }
     };
-    follow(runs, alarms, facts, id);
+    follow(runs, alarms, facts, ready, id);
 }
 
 pub(crate) fn probed(domain: &mut Domain, env: &Env<Limits>, owner: Token, executable: bool, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts, ready } = domain;
     let id = Id::<Run>::from_token(owner);
     facts.about(owner);
     let run = runs.get_mut(id).expect("a run lives until its look in flight has ended");
@@ -522,17 +533,16 @@ pub(crate) fn probed(domain: &mut Domain, env: &Env<Limits>, owner: Token, execu
         State::Awaiting { .. }
         | State::Working { .. }
         | State::Waiting { .. }
-        | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => {
             unreachable!("a run probes only while it prepares")
         }
     };
-    follow(runs, alarms, facts, id);
+    follow(runs, alarms, facts, ready, id);
 }
 
 pub(crate) fn cancel(domain: &mut Domain, run: Token, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts, ready } = domain;
     let id = Id::<Run>::from_token(run);
     // A cancel travels down, so it may name a run that has answered and gone.
     let Some(run) = runs.get_mut(id) else {
@@ -550,16 +560,14 @@ pub(crate) fn cancel(domain: &mut Domain, run: Token, out: &mut Queue<Request>) 
             out.push(Request::Return { spent: 0, call, result: Returned::Cancelled });
             wind_down(conversations, reply_to, main, cancelled, out)
         }
-        State::Working { reply_to, main } | State::Over { reply_to, main, exhausted: _ } => {
-            wind_down(conversations, reply_to, main, cancelled, out)
-        }
+        State::Working { reply_to, main } => wind_down(conversations, reply_to, main, cancelled, out),
         // How the run ends is decided already.
         State::Stopping { reply_to, main, failure } => State::Stopping { reply_to, main, failure },
         State::Winding { reply_to, ending } => State::Winding { reply_to, ending },
         // It answered in this iteration, and is retired already.
         State::Closed => return,
     };
-    follow(runs, alarms, facts, id);
+    follow(runs, alarms, facts, ready, id);
 }
 
 pub(crate) fn started(domain: &mut Domain, conversation: Token, peer: Token, out: &mut Queue<Request>) {
@@ -584,7 +592,7 @@ pub(crate) fn yielded(
     text: &[u8],
     out: &mut Queue<Request>,
 ) {
-    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts, ready } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let conversation = conversations.get(id).expect("a conversation lives until it has ended");
     facts.about(conversation.run.token());
@@ -615,7 +623,14 @@ pub(crate) fn yielded(
         State::Working { reply_to, main } => {
             assert!(main == id, "a conversation with no asker is main");
             assert!(conversation.calls == 0, "a main yield follows every actual call terminal");
-            if run.inbox.has_queued() {
+            if run.wind_down.is_some() {
+                match final_remaining(run, env.now) {
+                    Ok(()) => say(reply_to, main, peer, prompt::finish_now(), out),
+                    Err(exhausted) => {
+                        wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
+                    }
+                }
+            } else if run.inbox.has_queued() {
                 continue_messages(run, reply_to, main, peer, &env.limits, out)
             } else {
                 match nudge(run, stop, &env.limits) {
@@ -624,9 +639,7 @@ pub(crate) fn yielded(
                 }
             }
         }
-        State::Over { reply_to, main, exhausted } => {
-            wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
-        }
+
         State::Awaiting { .. }
         | State::Preparing { .. }
         | State::Stopping { .. }
@@ -636,7 +649,7 @@ pub(crate) fn yielded(
             unreachable!("main yields only while its run works: it is closed when the run winds down")
         }
     };
-    follow(runs, alarms, facts, run_id);
+    follow(runs, alarms, facts, ready, run_id);
 }
 
 /// Session own prices are monotonic activation totals. Stale names are inert;
@@ -682,14 +695,17 @@ pub(crate) fn priced(domain: &mut Domain, conversation: Token, own: u64, subtree
             Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)),
             out,
         );
-        follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
+        follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
         return;
     };
     conversation.spent.units = own;
     conversation.subtree_spent = subtree;
     run.spent = total;
-    account_state(run);
-    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
+    if account_state(run, &mut domain.ready, run_id, domain.facts.now()) {
+        domain.facts.about(run_id.token());
+        domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, domain.facts.now()) });
+    }
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
 }
 
 pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: &mut Queue<Request>) {
@@ -713,32 +729,64 @@ pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: 
             Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)),
             out,
         );
-        follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
+        follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
         return;
     };
     conversation.spent = conversation_total;
     run.spent = run_total;
+    account_state(run, &mut domain.ready, run_id, domain.facts.now());
     domain.facts.about(run_id.token());
     domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, domain.facts.now()) });
-    account_state(run);
-    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
 }
 
-fn account_state(run: &mut Run) {
-    let state = mem::replace(&mut run.state, State::Closed);
-    run.state = match state {
-        State::Working { reply_to, main } => match run.charter.budget.exhausted(run.spent) {
-            Some(exhausted) => State::Over { reply_to, main, exhausted },
-            None => State::Working { reply_to, main },
-        },
-        state @ (State::Awaiting { .. }
+fn account_state(run: &mut Run, ready: &mut crate::wind_down::Ready, id: Id<Run>, now: Time) -> bool {
+    match run.state {
+        State::Working { .. } => {}
+        State::Awaiting { .. }
         | State::Preparing { .. }
         | State::Stopping { .. }
         | State::Waiting { .. }
-        | State::Over { .. }
         | State::Winding { .. }
-        | State::Closed) => state,
+        | State::Closed => return false,
+    }
+    let ordinary = ordinary_left(run, now);
+    let exhausted = if ordinary.turns == 0 {
+        Some(Exhausted::Turns)
+    } else if ordinary.time == Duration::ZERO {
+        Some(Exhausted::Time)
+    } else {
+        None
     };
+    match exhausted {
+        Some(exhausted) => begin_wind_down(run, ready, id, exhausted),
+        None => false,
+    }
+}
+
+fn ordinary_left(run: &Run, now: Time) -> crate::Budget {
+    let reserved_spend =
+        crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm).expect("admission checked reserve spend");
+    crate::budget::ordinary(
+        &run.charter.budget,
+        run.charter.reserve,
+        reserved_spend,
+        run.spent,
+        run.deadline.saturating_since(now),
+    )
+}
+
+fn begin_wind_down(run: &mut Run, ready: &mut crate::wind_down::Ready, id: Id<Run>, exhausted: Exhausted) -> bool {
+    match run.wind_down {
+        Some(_) => false,
+        None => {
+            run.wind_down = Some(crate::wind_down::WindDown::new(run.children.len(), exhausted));
+            if !run.children.is_empty() {
+                ready.keep(id);
+            }
+            true
+        }
+    }
 }
 
 fn hard_stop(
@@ -748,9 +796,7 @@ fn hard_stop(
     out: &mut Queue<Request>,
 ) -> State {
     match state {
-        State::Working { reply_to, main } | State::Over { reply_to, main, .. } => {
-            wind_down(conversations, reply_to, main, Ending::Failed(failure), out)
-        }
+        State::Working { reply_to, main } => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
         State::Waiting { reply_to, main, call, .. } => {
             out.push(Request::Return { spent: 0, call, result: Returned::Cancelled });
             wind_down(conversations, reply_to, main, Ending::Failed(failure), out)
@@ -780,8 +826,8 @@ fn hard_ending(ending: Ending, failure: Failure) -> Ending {
     }
 }
 
-/// Pure completion gate; no leases, prompt copies or external effects.
-pub(crate) fn completion_permit(domain: &Domain, conversation: Token, now: Time) -> CompletionPermit {
+/// Admit unsent work, starting the finishing phase before any provider effect.
+pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: Time) -> CompletionPermit {
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = domain.conversations.get(id) else {
         return CompletionPermit::Closing;
@@ -792,67 +838,105 @@ pub(crate) fn completion_permit(domain: &Domain, conversation: Token, now: Time)
             return CompletionPermit::Closing;
         }
     }
-    let run = domain.runs.get(conversation.run).expect("conversation retains run");
-    let working = match &run.state {
-        State::Working { .. } => true,
-        State::Over { .. }
-        | State::Awaiting { .. }
-        | State::Preparing { .. }
-        | State::Stopping { .. }
-        | State::Waiting { .. }
-        | State::Winding { .. }
-        | State::Closed => false,
-    };
-    if working && conversation.asker.is_some() {
-        let reserve_spend = crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm)
-            .expect("admission checked reserve spend");
-        let ordinary = crate::budget::ordinary(
-            &run.charter.budget,
-            run.charter.reserve,
-            reserve_spend,
-            run.spent,
-            run.deadline.saturating_since(now),
-        );
-        if ordinary.turns <= run.reserved_turns {
-            return CompletionPermit::Denied(Exhausted::Turns);
-        }
-        if ordinary.spend <= run.reserved {
-            return CompletionPermit::Denied(Exhausted::Spend);
-        }
-        if ordinary.time == Duration::ZERO {
-            return CompletionPermit::Denied(Exhausted::Time);
-        }
-    }
-    match &run.state {
-        State::Working { .. } => match run.charter.budget.exhausted(run.spent) {
-            Some(exhausted) => CompletionPermit::Denied(exhausted),
-            None => {
-                let pending = run.turns.checked_sub(run.acknowledged).expect("acknowledged prefix never exceeds turns");
-                let next_bytes = match u64::from(pending).checked_add(1) {
-                    Some(count) => count.checked_mul(run.window.largest_turn),
-                    None => None,
-                };
-                if conversation.asker.is_none()
-                    && (pending >= run.window.turns
-                        || match next_bytes {
-                            Some(bytes) => bytes > run.window.bytes,
-                            None => true,
-                        })
-                {
-                    CompletionPermit::Held
-                } else {
-                    CompletionPermit::Allowed
-                }
-            }
-        },
-        State::Over { exhausted, .. } => CompletionPermit::Denied(*exhausted),
+    let run_id = conversation.run;
+    let child = conversation.asker.is_some();
+    let run = domain.runs.get_mut(run_id).expect("conversation retains run");
+    match run.state {
+        State::Working { .. } => {}
         State::Waiting { .. }
         | State::Winding { .. }
         | State::Awaiting { .. }
         | State::Preparing { .. }
         | State::Stopping { .. }
-        | State::Closed => CompletionPermit::Closing,
+        | State::Closed => return CompletionPermit::Closing,
     }
+    let ordinary = ordinary_left(run, now);
+    let changed = if ordinary.turns <= run.reserved_turns {
+        begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Turns)
+    } else if ordinary.time == Duration::ZERO {
+        begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Time)
+    } else {
+        false
+    };
+    if changed {
+        domain.facts.begin(now);
+        domain.facts.about(run_id.token());
+        domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, now) });
+    }
+    let permit = working_permit(run, child, now);
+    if child && permit == CompletionPermit::Closing {
+        let exhausted = run.wind_down.as_ref().expect("closing child is winding down").exhausted();
+        domain.conversations.get_mut(id).expect("live child").budget_close = Some(exhausted);
+    }
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
+    permit
+}
+
+fn working_permit(run: &mut Run, child: bool, now: Time) -> CompletionPermit {
+    if child && run.wind_down.is_some() {
+        return CompletionPermit::Closing;
+    }
+    if now >= run.deadline {
+        return CompletionPermit::Denied(Exhausted::Time);
+    }
+    if child && ordinary_left(run, now).spend <= run.reserved {
+        return CompletionPermit::Denied(Exhausted::Spend);
+    }
+    if let Some(exhausted) = run.charter.budget.exhausted(run.spent) {
+        return CompletionPermit::Denied(exhausted);
+    }
+    if !child && completion_held(run) {
+        return CompletionPermit::Held;
+    }
+    match &mut run.wind_down {
+        Some(crate::wind_down::WindDown::Settling { .. }) => CompletionPermit::Held,
+        Some(crate::wind_down::WindDown::Finishing { used, noted, .. }) => {
+            if *used >= run.charter.reserve.turns {
+                return CompletionPermit::Denied(Exhausted::Turns);
+            }
+            let note = if *noted {
+                None
+            } else {
+                *noted = true;
+                Some(prompt::wind_down_note(charter::Reserve {
+                    time: run.charter.reserve.time.min(run.deadline.saturating_since(now)),
+                    ..run.charter.reserve
+                }))
+            };
+            CompletionPermit::Final { note }
+        }
+        None => CompletionPermit::Allowed,
+    }
+}
+
+fn final_remaining(run: &Run, now: Time) -> Result<(), Exhausted> {
+    if let Some(exhausted) = run.charter.budget.exhausted(run.spent) {
+        return Err(exhausted);
+    }
+    if now >= run.deadline {
+        return Err(Exhausted::Time);
+    }
+    match &run.wind_down {
+        Some(crate::wind_down::WindDown::Finishing { used, .. }) if *used >= run.charter.reserve.turns => {
+            Err(Exhausted::Turns)
+        }
+        Some(crate::wind_down::WindDown::Finishing { .. } | crate::wind_down::WindDown::Settling { .. }) | None => {
+            Ok(())
+        }
+    }
+}
+
+fn completion_held(run: &Run) -> bool {
+    let pending = run.turns.checked_sub(run.acknowledged).expect("acknowledged prefix never exceeds turns");
+    let next_bytes = match u64::from(pending).checked_add(1) {
+        Some(count) => count.checked_mul(run.window.largest_turn),
+        None => None,
+    };
+    pending >= run.window.turns
+        || match next_bytes {
+            Some(bytes) => bytes > run.window.bytes,
+            None => true,
+        }
 }
 
 /// Reserve one completion against the run's shared unspent ceiling before the
@@ -864,7 +948,17 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
     let run = domain.runs.get_mut(conversation.run).expect("conversation retains run");
     let committed = run.spent.units.checked_add(run.reserved).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
     let total = committed.checked_add(most).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
-    if conversation.asker.is_some() {
+    let final_turn = match &run.wind_down {
+        Some(crate::wind_down::WindDown::Finishing { used, .. }) if conversation.asker.is_none() => {
+            if *used >= run.charter.reserve.turns {
+                return Err(Exhausted::Turns);
+            }
+            true
+        }
+        Some(_) => return Err(Exhausted::Turns),
+        None => false,
+    };
+    if !final_turn {
         let turn_ceiling = run.charter.budget.turns.checked_sub(run.charter.reserve.turns).expect("admitted reserve");
         let next_turn = match run.spent.turns.checked_add(run.reserved_turns) {
             Some(turns) => turns.checked_add(1),
@@ -877,6 +971,14 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
     }
     if total > run.charter.budget.spend {
         return Err(Exhausted::Spend);
+    }
+    if final_turn {
+        match &mut run.wind_down {
+            Some(crate::wind_down::WindDown::Finishing { used, .. }) => {
+                *used = used.checked_add(1).expect("bounded final completions");
+            }
+            Some(crate::wind_down::WindDown::Settling { .. }) | None => unreachable!("final turn admitted"),
+        }
     }
     run.reserved = run.reserved.checked_add(most).expect("checked with total above");
     run.reserved_turns = run.reserved_turns.checked_add(1).expect("one bounded reservation per conversation");
@@ -911,7 +1013,7 @@ pub(crate) fn delegated(
     deadline: Time,
     out: &mut Queue<Request>,
 ) {
-    let Domain { rng: _, runs, conversations, calls: _, alarms: _, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms: _, facts, ready: _ } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let conversation = conversations.get(id).expect("a conversation lives until it has ended");
     let closing = match &conversation.phase {
@@ -945,23 +1047,19 @@ pub(crate) fn delegated(
             State::Winding { reply_to, ending }
         }
         State::Working { reply_to, main } => {
-            let serving = Serving { reply_to, main, conversation: id, over: None, made };
+            let serving = Serving { reply_to, main, conversation: id, made };
             serve(domain, env, run_id, serving, ask, out)
         }
-        State::Over { reply_to, main, exhausted } => {
-            let serving = Serving { reply_to, main, conversation: id, over: Some(exhausted), made };
-            serve(domain, env, run_id, serving, ask, out)
-        }
+
         State::Waiting { reply_to, main, call, until } => {
             assert!(id != main, "a withheld wait blocks main's next call");
-            let serving = Serving { reply_to, main, conversation: id, over: None, made };
+            let serving = Serving { reply_to, main, conversation: id, made };
             match serve(domain, env, run_id, serving, ask, out) {
                 State::Working { reply_to, main } => State::Waiting { reply_to, main, call, until },
                 State::Preparing { .. }
                 | State::Awaiting { .. }
                 | State::Stopping { .. }
                 | State::Waiting { .. }
-                | State::Over { .. }
                 | State::Winding { .. }
                 | State::Closed => {
                     unreachable!("a child's ordinary call cannot finish or park main")
@@ -973,7 +1071,7 @@ pub(crate) fn delegated(
         }
     };
     domain.runs.get_mut(run_id).expect("the served call retains its run").state = next;
-    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, run_id);
+    follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
 }
 
 /// Current completion-local call context; scalar crossing keeps these calls
@@ -982,7 +1080,6 @@ struct Serving {
     reply_to: ReplyTo,
     main: Id<Conversation>,
     conversation: Id<Conversation>,
-    over: Option<Exhausted>,
     made: Asking,
 }
 
@@ -994,20 +1091,20 @@ fn serve(
     ask: Ask,
     out: &mut Queue<Request>,
 ) -> State {
-    let Domain { rng: _, runs, conversations, calls, alarms, facts: _ } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts: _, ready: _ } = domain;
     let run = runs.get_mut(run_id).expect("the served call retains its run");
-    let Serving { reply_to, main, conversation, over, made } = serving;
+    let Serving { reply_to, main, conversation, made } = serving;
     match ask {
         Ask::Wait => {
             let result = if main != conversation || !run.charter.grants.wait {
                 Returned::Refused { refusal: AskRefusal::NotGranted }
-            } else if over.is_some() {
+            } else if run.charter.budget.exhausted(run.spent).is_some() && run.wind_down.is_none() {
                 Returned::Refused { refusal: AskRefusal::Over }
             } else if run.inbox.has_queued() {
                 Returned::Waited { text: prompt::waited() }
             } else {
                 out.push(Request::Waiting { host_run: run.host_name, read: run.inbox.fence() });
-                if run.charter.waiting == Duration::ZERO {
+                if run.charter.waiting == Duration::ZERO || run.wind_down.is_some() {
                     out.push(Request::Return { spent: 0, call: made.call, result: Returned::Withheld });
                     return wind_down(conversations, reply_to, main, Ending::Parked, out);
                 }
@@ -1029,26 +1126,14 @@ fn serve(
         }
         Ask::Finish { outcome } => {
             assert!(main == conversation, "only main is offered finish");
-            return finish(run, run_id, conversations, calls, alarms, reply_to, main, over, made, outcome, env, out);
+            return finish(run, run_id, conversations, calls, alarms, reply_to, main, made, outcome, env, out);
         }
-        Ask::SubAgent { brief, families, llm, share } => match over {
-            Some(_) => {
-                out.push(Request::Return {
-                    spent: 0,
-                    call: made.call,
-                    result: Returned::Refused { refusal: AskRefusal::Over },
-                });
-            }
-            None => {
-                let wanted = Wanted { brief, families, llm, share };
-                sub_agent(run, run_id, conversations, calls, alarms, conversation, made, wanted, env, out);
-            }
-        },
+        Ask::SubAgent { brief, families, llm, share } => {
+            let wanted = Wanted { brief, families, llm, share };
+            sub_agent(run, run_id, conversations, calls, alarms, conversation, made, wanted, env, out);
+        }
     }
-    match over {
-        None => State::Working { reply_to, main },
-        Some(exhausted) => State::Over { reply_to, main, exhausted },
-    }
+    State::Working { reply_to, main }
 }
 
 pub(crate) fn withdraw(domain: &mut Domain, conversation: Token, call: Token, out: &mut Queue<Request>) {
@@ -1062,7 +1147,6 @@ pub(crate) fn withdraw(domain: &mut Domain, conversation: Token, call: Token, ou
             | State::Awaiting { .. }
             | State::Stopping { .. }
             | State::Working { .. }
-            | State::Over { .. }
             | State::Winding { .. }
             | State::Closed => false,
         };
@@ -1132,8 +1216,34 @@ pub(crate) fn delivered(domain: &mut Domain, owner: Token, delivery: Delivery, o
     settle(domain, id, settled, out);
 }
 
+fn child_ready(run: &Run, out: &mut Queue<Request>) {
+    match run.state {
+        State::Working { main, .. } => out.push(Request::CompletionReady { conversation: main.token() }),
+        State::Preparing { .. }
+        | State::Awaiting { .. }
+        | State::Stopping { .. }
+        | State::Waiting { .. }
+        | State::Winding { .. }
+        | State::Closed => {}
+    }
+}
+
+fn terminal_failure(end: End) -> Option<Failure> {
+    match end {
+        End::PriceOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend))),
+        End::UsageOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage))),
+        End::Receiving(_)
+        | End::TranscriptRefused { .. }
+        | End::Closed
+        | End::Busy
+        | End::Invalid
+        | End::Fault(_)
+        | End::Budget(_) => None,
+    }
+}
+
 pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: Spend, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts, ready } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = conversations.get_mut(id) else {
         return;
@@ -1155,6 +1265,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     let writing = conversation.families.tools.modify || conversation.families.tools.shell;
     let (run_id, asker) = (conversation.run, conversation.asker);
     let bill = conversation.subtree_spent;
+    let budget_close = conversation.budget_close;
     let used = crate::facts::Used {
         turns: spend.turns.max(conversation.spent.turns),
         time: facts.now().saturating_since(conversation.opened_at),
@@ -1165,20 +1276,11 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     conversations.retire(id);
     let run = runs.get_mut(run_id).expect("a run lives until its conversations have ended");
     run.spent = run.spent.accumulate(unaccounted).expect("terminal usage was checked before it was reported");
-    if unaccounted.turns > 0 {
+    let changed = account_state(run, ready, run_id, facts.now());
+    if unaccounted.turns > 0 || changed {
         facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, facts.now()) });
     }
-    let failure = match end {
-        End::PriceOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend))),
-        End::UsageOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage))),
-        End::Receiving(_)
-        | End::TranscriptRefused { .. }
-        | End::Closed
-        | End::Busy
-        | End::Invalid
-        | End::Fault(_)
-        | End::Budget(_) => None,
-    };
+    let failure = terminal_failure(end);
     if let (Some(failure), Some(_)) = (failure, asker) {
         let state = mem::replace(&mut run.state, State::Closed);
         run.state = hard_stop(state, conversations, failure, out);
@@ -1186,6 +1288,11 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     run.conversations = run.conversations.checked_sub(1).expect("a run counts its conversations");
     // A sub-agent's end is its call's return.
     if let Some(asker) = asker {
+        assert!(run.children.remove(&id), "a child is retained until its terminal");
+        let finishing = match &mut run.wind_down {
+            Some(phase) => phase.child_ended(),
+            None => false,
+        };
         if writing {
             run.lease.child_returned(asker);
         }
@@ -1200,19 +1307,26 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
         );
         let call = calls.get_mut(asker).expect("a sub-agent's call lives until it has ended");
         let result = match &mut call.work {
-            Work::Child(child) => agent::ended(child, end, used, left),
+            Work::Child(child) => {
+                let end = match budget_close {
+                    Some(exhausted) if end == End::Closed => End::Budget(exhausted),
+                    Some(_) | None => end,
+                };
+                agent::ended(child, end, used, left)
+            }
             Work::Landing(_) | Work::Host(_) => unreachable!("a sub-agent serves a sub-agent's call"),
         };
         crate::facts::child_returned(facts, run_id.token(), call.owner, &result, used);
         out.push(Request::Return { spent: bill, call: call.owner, result });
         retire_call(calls, alarms, conversations, asker);
+        if finishing {
+            child_ready(run, out);
+        }
         return;
     }
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
-        State::Working { reply_to, main }
-        | State::Waiting { reply_to, main, call: _, until: _ }
-        | State::Over { reply_to, main, exhausted: _ } => {
+        State::Working { reply_to, main } | State::Waiting { reply_to, main, call: _, until: _ } => {
             assert!(main == id, "a conversation with no asker is main");
             answer(reply_to, ending(end, run.spent, run.turns), run.inbox.fence(), out)
         }
@@ -1227,14 +1341,14 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
             unreachable!("a run's conversation ends only once the run has opened it")
         }
     };
-    follow(runs, alarms, facts, run_id);
+    follow(runs, alarms, facts, ready, run_id);
 }
 
 pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts, ready } = domain;
     let run = runs.get_mut(id).expect("an alarm is cancelled before its run closes");
     facts.about(id.token());
-    let failure = Failure::Budget(Exhausted::Time);
+    let failure = Failure::Budget(run.charter.budget.exhausted(run.spent).unwrap_or(Exhausted::Time));
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
         State::Awaiting { reply_to, main, until: _ } => {
@@ -1245,16 +1359,20 @@ pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request
             wind_down(conversations, reply_to, main, Ending::Parked, out)
         }
         State::Preparing { reply_to, main, step: _ } => State::Stopping { reply_to, main, failure },
-        State::Working { reply_to, main } => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
+        State::Working { reply_to, main } => match run.wind_down {
+            None if facts.now() < run.deadline => {
+                begin_wind_down(run, ready, id, Exhausted::Time);
+                facts.push(FactKind::Budget { run: id.token(), standing: standing(run, facts.now()) });
+                State::Working { reply_to, main }
+            }
+            None | Some(_) => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
+        },
         // It was past its budget first.
-        State::Over { reply_to, main, exhausted } => {
-            wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
-        }
         State::Stopping { .. } | State::Winding { .. } | State::Closed => {
             unreachable!("the deadline alarm runs only while a run prepares or works")
         }
     };
-    follow(runs, alarms, facts, id);
+    follow(runs, alarms, facts, ready, id);
 }
 
 /// Child parentage copied from its owned call for the actual opening fact.
@@ -1264,8 +1382,10 @@ pub(crate) fn opened(conversations: &Slab<Conversation>, conversation: Token) ->
 
 fn standing(run: &Run, now: Time) -> crate::facts::Standing {
     crate::facts::Standing {
-        // The transition to the finishing stage is introduced with the wind-down.
-        stage: crate::Stage::Ordinary,
+        stage: match run.wind_down {
+            Some(_) => crate::Stage::WindDown,
+            None => crate::Stage::Ordinary,
+        },
         turns: run.spent.turns,
         turns_limit: run.charter.budget.turns,
         spend: run.spent.units,
@@ -1278,16 +1398,29 @@ fn standing(run: &Run, now: Time) -> crate::facts::Standing {
     }
 }
 
+fn ordinary_deadline(run: &Run) -> Time {
+    Time::from_nanos(run.deadline.as_nanos().saturating_sub(run.charter.reserve.time.as_nanos()))
+}
+
 /// What a run's state implies, applied after every transition: whether its
 /// deadline alarm runs, and whether it is retired.
-fn follow(runs: &mut Slab<Run>, alarms: &mut Deadlines<Alarm>, facts: &mut Facts, id: Id<Run>) {
+fn follow(
+    runs: &mut Slab<Run>,
+    alarms: &mut Deadlines<Alarm>,
+    facts: &mut Facts,
+    ready: &mut crate::wind_down::Ready,
+    id: Id<Run>,
+) {
     let run = runs.get_mut(id).expect("a run lives until it is retired");
     let (deadline, closed) = match &run.state {
-        State::Awaiting { .. }
-        | State::Preparing { .. }
-        | State::Working { .. }
-        | State::Waiting { .. }
-        | State::Over { .. } => (Some(run.deadline), false),
+        State::Awaiting { .. } | State::Working { .. } | State::Waiting { .. } => {
+            let at = match run.wind_down {
+                Some(_) => run.deadline,
+                None => ordinary_deadline(run),
+            };
+            (Some(at), false)
+        }
+        State::Preparing { .. } => (Some(run.deadline), false),
         State::Stopping { .. } | State::Winding { .. } => (None, false),
         State::Closed => (None, true),
     };
@@ -1309,22 +1442,22 @@ fn follow(runs: &mut Slab<Run>, alarms: &mut Deadlines<Alarm>, facts: &mut Facts
         State::Preparing { .. }
         | State::Stopping { .. }
         | State::Working { .. }
-        | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => {
             alarms.cancel(park);
         }
     }
     if closed {
+        ready.remove(id);
         runs.retire(id);
     }
 }
 
-/// Whether a run in `state` may still finish: it works, or is over its budget
+/// Whether a working run may still finish, including its final completion
 /// with main's turn in flight.
 fn may_finish(state: &State) -> bool {
     match state {
-        State::Working { .. } | State::Over { .. } => true,
+        State::Working { .. } => true,
         State::Awaiting { .. }
         | State::Preparing { .. }
         | State::Stopping { .. }
@@ -1337,7 +1470,7 @@ fn may_finish(state: &State) -> bool {
 /// The landing of the call `id` has settled, as `settled` says: the run goes
 /// on, or finishes.
 fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<Request>) {
-    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts, ready } = domain;
     if settled == Settled::Going {
         return;
     }
@@ -1347,10 +1480,8 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match settled {
         Settled::MidDelivered => match state {
-            State::Working { reply_to, main } => State::Working { reply_to, main },
-            State::Over { reply_to, main, exhausted } => {
-                wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
-            }
+            State::Working { reply_to, main } => working_again(run, conversations, reply_to, main, facts.now(), out),
+
             State::Winding { reply_to, ending } => State::Winding { reply_to, ending },
             State::Awaiting { .. }
             | State::Preparing { .. }
@@ -1361,7 +1492,7 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
             }
         },
         Settled::Finished(change) => match state {
-            State::Working { reply_to, main } | State::Over { reply_to, main, exhausted: _ } => {
+            State::Working { reply_to, main } => {
                 wind_down(conversations, reply_to, main, Ending::Accepted(Declared::Change(change)), out)
             }
             // The host landed the checked state, whatever the run was winding down
@@ -1380,10 +1511,10 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
         Settled::Refused => {
             run.rejected = run.rejected.saturating_add(1);
             match state {
-                State::Over { reply_to, main, exhausted } => {
-                    wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
+                State::Working { reply_to, main } => {
+                    working_again(run, conversations, reply_to, main, facts.now(), out)
                 }
-                state @ (State::Working { .. } | State::Winding { .. }) => state,
+                state @ State::Winding { .. } => state,
                 State::Awaiting { .. }
                 | State::Preparing { .. }
                 | State::Stopping { .. }
@@ -1394,7 +1525,7 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
             }
         }
         Settled::Stale => match state {
-            State::Working { reply_to, main } | State::Over { reply_to, main, exhausted: _ } => {
+            State::Working { reply_to, main } => {
                 wind_down(conversations, reply_to, main, Ending::Failed(Failure::Stale), out)
             }
             state @ State::Winding { .. } => state,
@@ -1408,7 +1539,7 @@ fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<R
         },
         Settled::Going | Settled::Cancelled => state,
     };
-    follow(runs, alarms, facts, run_id);
+    follow(runs, alarms, facts, ready, run_id);
 }
 
 // Cell handlers: each takes the source state's data by value and returns the
@@ -1463,7 +1594,7 @@ fn ready(
         return open(run, conversations, reply_to, main, env, out);
     }
     out.push(Request::Waiting { host_run: run.host_name, read: None });
-    if run.charter.waiting == Duration::ZERO {
+    if run.charter.waiting == Duration::ZERO || run.wind_down.is_some() {
         return unopened(run, conversations, reply_to, main, finished(Ending::Parked, run.spent, run.turns), out);
     }
     State::Awaiting { reply_to, main, until: env.now.saturating_add(run.charter.waiting) }
@@ -1536,7 +1667,7 @@ fn unopened(
     answer(reply_to, terminal, run.inbox.fence(), out)
 }
 
-/// Working, or over the budget's `over` part: main called `finish` as
+/// Working in the ordinary or finishing phase: main called `finish` as
 /// `made`. A refused outcome is returned at once; an accepted verdict ends the
 /// run; a change lands, by the call's deadline, and the run goes on meanwhile.
 #[expect(clippy::too_many_arguments, reason = "a cell handler takes the fields it touches")]
@@ -1548,7 +1679,6 @@ fn finish(
     alarms: &mut Deadlines<Alarm>,
     reply_to: ReplyTo,
     main: Id<Conversation>,
-    over: Option<Exhausted>,
     made: Asking,
     declared: Declared,
     env: &Env<Limits>,
@@ -1559,10 +1689,7 @@ fn finish(
     assert!(conversation.calls == 0, "a finish is a write, which a conversation runs alone");
     if run.charter.grants.wait && run.inbox.has_queued() {
         out.push(Request::Return { spent: 0, call, result: Returned::Crossed { text: prompt::crossed() } });
-        return match over {
-            None => State::Working { reply_to, main },
-            Some(exhausted) => State::Over { reply_to, main, exhausted },
-        };
+        return State::Working { reply_to, main };
     }
     let max = env.limits.outcome_bytes;
     let judged = match outcome::owned_bytes(&declared) {
@@ -1572,12 +1699,7 @@ fn finish(
     if let Err(problems) = judged {
         out.push(Request::Return { spent: 0, call, result: Returned::Rejected { problems } });
         run.rejected = run.rejected.saturating_add(1);
-        return match over {
-            None => State::Working { reply_to, main },
-            Some(exhausted) => {
-                wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
-            }
-        };
+        return working_again(run, conversations, reply_to, main, env.now, out);
     }
     match declared {
         completed @ (Declared::Verdict(_) | Declared::Report(_) | Declared::Failure(_)) => {
@@ -1587,24 +1709,15 @@ fn finish(
         Declared::Change(change) => {
             if name.activation != run.activation || name.completion == 0 {
                 out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::Name } });
-                return match over {
-                    None => State::Working { reply_to, main },
-                    Some(exhausted) => State::Over { reply_to, main, exhausted },
-                };
+                return State::Working { reply_to, main };
             }
             if deadline <= env.now {
                 out.push(Request::Return { spent: 0, call, result: Returned::TimedOut });
-                return match over {
-                    None => State::Working { reply_to, main },
-                    Some(exhausted) => State::Over { reply_to, main, exhausted },
-                };
+                return State::Working { reply_to, main };
             }
             if calls.is_full() {
                 out.push(Request::Return { spent: 0, call, result: Returned::Busy });
-                return match over {
-                    None => State::Working { reply_to, main },
-                    Some(exhausted) => State::Over { reply_to, main, exhausted },
-                };
+                return State::Working { reply_to, main };
             }
             let work = Work::Landing(land::landing(change, name, deadline, true));
             let id = begin_call(calls, alarms, Call { run: run_id, conversation: main, owner: call, work }, deadline);
@@ -1615,10 +1728,7 @@ fn finish(
             }
             let conversation = conversations.get_mut(main).expect("main lives while its run works");
             conversation.calls = conversation.calls.saturating_add(1);
-            match over {
-                None => State::Working { reply_to, main },
-                Some(exhausted) => State::Over { reply_to, main, exhausted },
-            }
+            State::Working { reply_to, main }
         }
     }
 }
@@ -1713,6 +1823,10 @@ fn sub_agent(
         left,
         call_left: deadline.saturating_since(env.now),
     };
+    if run.wind_down.is_none() && run.charter.budget.exhausted(run.spent).is_some() {
+        out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::Over } });
+        return;
+    }
     let planned = agent::plan(
         &run.charter,
         means,
@@ -1760,10 +1874,12 @@ fn sub_agent(
         spent: Spend::ZERO,
         subtree_spent: 0,
         reservation: None,
+        budget_close: None,
         calls: 0,
         phase: Phase::Opening,
     };
     let child = conversations.insert(child).expect("checked for room above");
+    run.children.insert(child).expect("admitted child count fits run slots");
     calls.get_mut(id).expect("inserted above").work = Work::Child(agent::working(child));
     let asking = conversations.get_mut(asker).expect("a conversation lives until it has ended");
     asking.calls = asking.calls.saturating_add(1);
@@ -1846,6 +1962,20 @@ fn retire_call(
     run
 }
 
+fn working_again(
+    run: &Run,
+    conversations: &mut Slab<Conversation>,
+    reply_to: ReplyTo,
+    main: Id<Conversation>,
+    now: Time,
+    out: &mut Queue<Request>,
+) -> State {
+    match final_remaining(run, now) {
+        Ok(()) => State::Working { reply_to, main },
+        Err(exhausted) => wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out),
+    }
+}
+
 /// Working, an ending decided: close main, and wait for it to end.
 fn wind_down(
     conversations: &mut Slab<Conversation>,
@@ -1858,17 +1988,18 @@ fn wind_down(
     State::Winding { reply_to, ending }
 }
 
-/// Closes the conversation `id`, which its owner closes once: at once, or
+/// Closes the conversation `id` once, retaining an already closing phase: at once, or
 /// once it starts. A closing conversation withdraws its own calls.
 fn close(conversations: &mut Slab<Conversation>, id: Id<Conversation>, out: &mut Queue<Request>) {
     let conversation = conversations.get_mut(id).expect("a conversation lives until it has ended");
     let phase = mem::replace(&mut conversation.phase, Phase::Closed);
     conversation.phase = match phase {
-        // It is closed once it starts, or ends refused.
-        Phase::Opening => Phase::Unwanted,
         Phase::Running { peer } => closing(peer, out),
-        Phase::Pending | Phase::Unwanted | Phase::Closing | Phase::Closed => {
-            unreachable!("a conversation is closed once it is opened, once")
+        // It closes once it starts. A budget close and withdrawal may cross.
+        Phase::Opening | Phase::Unwanted => Phase::Unwanted,
+        Phase::Closing => Phase::Closing,
+        Phase::Pending | Phase::Closed => {
+            unreachable!("only an opened live conversation is closed")
         }
     };
 }
@@ -2136,7 +2267,6 @@ fn host_active(state: &State) -> bool {
         | State::Preparing { .. }
         | State::Stopping { .. }
         | State::Waiting { .. }
-        | State::Over { .. }
         | State::Winding { .. }
         | State::Closed => false,
     }
@@ -2219,6 +2349,41 @@ fn host_recover(
     };
     relay.stage = HostStage::Backoff { attempt: next, at };
     None
+}
+
+/// Drain one deferred budget close; actual child terminals unlock main.
+pub(crate) fn resume(domain: &mut Domain, out: &mut Queue<Request>) {
+    let Some(id) = domain.ready.pop() else {
+        return;
+    };
+    let run = domain.runs.get(id).expect("ready run is retained until its answer");
+    let exhausted = match &run.wind_down {
+        Some(crate::wind_down::WindDown::Settling { exhausted, .. }) => *exhausted,
+        Some(crate::wind_down::WindDown::Finishing { .. }) | None => return,
+    };
+    match run.state {
+        State::Working { .. } => {}
+        State::Preparing { .. }
+        | State::Awaiting { .. }
+        | State::Stopping { .. }
+        | State::Waiting { .. }
+        | State::Winding { .. }
+        | State::Closed => return,
+    }
+    domain.facts.about(id.token());
+    for child in &run.children {
+        let conversation = domain.conversations.get_mut(*child).expect("retained child");
+        match conversation.phase {
+            Phase::Opening | Phase::Running { .. } => {
+                conversation.budget_close = Some(exhausted);
+                close(&mut domain.conversations, *child, out);
+                domain.ready.keep(id);
+                return;
+            }
+            Phase::Unwanted | Phase::Closing | Phase::Closed => {}
+            Phase::Pending => unreachable!("a child is opened at admission"),
+        }
+    }
 }
 
 /// History presence is kept after its handle moves to the main opening.

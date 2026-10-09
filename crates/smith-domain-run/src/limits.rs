@@ -138,6 +138,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         return None;
     }
     let runs = Slab::<Run>::worst_case(limits.runs)?;
+    let ready = crate::wind_down::Ready::worst_case(limits.runs)?;
     let conversations = Slab::<Conversation>::worst_case(limits.conversations)?;
     // A deadline per run, and two per call.
     let alarms =
@@ -151,6 +152,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // A winding run holds the outcome it accepted.
     let run = limits
         .run_bytes
+        .checked_add(skein_lib::Set::<skein_lib::Id<Conversation>>::worst_case(
+            limits.run_conversations.saturating_sub(1),
+        )?)?
         .checked_add(Queue::<crate::inbox::Queued>::worst_case(limits.messages)?)?
         .checked_add(Queue::<skein_lib::Token>::worst_case(limits.messages)?)?
         .checked_add(u64::from(limits.offer_bytes))?
@@ -164,7 +168,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let call = limits.outcome_bytes.max(u64::from(limits.answer_bytes)).max(host);
     let calls = Calls::worst_case(limits.calls)?.checked_add(u64::from(limits.calls).checked_mul(call)?)?;
     let facts = Queue::<Fact>::worst_case(limits.facts)?;
-    runs.checked_add(conversations)?.checked_add(alarms)?.checked_add(held)?.checked_add(calls)?.checked_add(facts)
+    runs.checked_add(ready)?
+        .checked_add(conversations)?
+        .checked_add(alarms)?
+        .checked_add(held)?
+        .checked_add(calls)?
+        .checked_add(facts)
 }
 
 /// Numeric declarations needed by this layer's transitional derivation.

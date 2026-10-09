@@ -219,7 +219,7 @@ fn failure(error: provider::Error) -> agent::Failure {
 pub fn decode(name: &[u8], arguments: &[u8]) -> agent::Decoded {
     match call(name, arguments) {
         Ok(call) => agent::Decoded::Owned { call },
-        Err(problem) => agent::Decoded::Invalid { problem },
+        Err(problem) => agent::Decoded::Invalid { descriptor: None, problem },
     }
 }
 

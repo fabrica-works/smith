@@ -60,6 +60,7 @@ pub use prompt::budget_prompt_bytes;
 mod run;
 #[cfg(test)]
 mod tests;
+mod wind_down;
 mod workspace;
 
 pub use boundary::{
@@ -72,7 +73,7 @@ pub use budget::{
 };
 pub use charter::{Brief, Charter, Conventions, Section};
 pub use domain::{
-    Domain, MAX_OUT, completion_overflow, completion_permit, fire, host_name, max_facts, owner, reserve,
+    Domain, MAX_OUT, completion_overflow, completion_permit, fire, host_name, max_facts, owner, reserve, resume,
     settle_reservation, step,
 };
 pub use identity::Identity;

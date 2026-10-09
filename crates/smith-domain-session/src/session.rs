@@ -144,7 +144,8 @@ use crate::domain::Domain;
 use crate::facts::{FactKind, Facts};
 use crate::limits::Limits;
 use crate::llm::{
-    Block, Completion, Decoded, Descriptor, Endpoint, Failure, Message, Problem, Prompt, Returned, Role, Stop, Usage,
+    Block, Completion, Decoded, Descriptor, Endpoint, Failure, Message, Problem, Prompt, Returned, Role, Stop,
+    ToolChoice, Usage,
 };
 
 #[derive(Debug)]
@@ -167,7 +168,7 @@ struct Conversation {
     tools: Grants,
     namespace: tools::Namespace,
     delegated: Box<[Descriptor]>,
-    choice: crate::llm::ToolChoice,
+    choice: ToolChoice,
     output: u32,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
@@ -640,7 +641,7 @@ pub(crate) fn narrowed(
     env: &Env<Limits>,
     owner: Token,
     note: Box<[u8]>,
-    choice: crate::llm::ToolChoice,
+    choice: ToolChoice,
     out: &mut Queue<Request>,
 ) {
     let Some(id) = addressed(&domain.sessions, owner) else {
@@ -667,7 +668,7 @@ pub(crate) fn narrowed(
     let old = choice_bytes(&conversation.choice);
     let new = choice_bytes(&choice);
     conversation.bytes = conversation.bytes.checked_sub(old).expect("retained choice counted");
-    conversation.choice = crate::llm::ToolChoice::Auto;
+    conversation.choice = ToolChoice::Auto;
     let cost = match new.checked_add(u64::try_from(size_of::<Block>()).expect("block cell fits")) {
         Some(cost) => cost.checked_add(u64::try_from(note.len()).expect("note length fits")),
         None => None,
@@ -683,11 +684,11 @@ pub(crate) fn narrowed(
     conclude(domain, env, id, out, mark);
 }
 
-fn valid_choice(choice: &crate::llm::ToolChoice, offered: &[Descriptor]) -> bool {
+fn valid_choice(choice: &ToolChoice, offered: &[Descriptor]) -> bool {
     match choice {
-        crate::llm::ToolChoice::Auto | crate::llm::ToolChoice::None => true,
-        crate::llm::ToolChoice::Only(tickets) => {
-            if tickets.len() > offered.len() {
+        ToolChoice::Auto | ToolChoice::None => true,
+        ToolChoice::Only(tickets) => {
+            if tickets.is_empty() || tickets.len() > offered.len() {
                 return false;
             }
             for (index, ticket) in tickets.iter().enumerate() {
@@ -706,10 +707,10 @@ fn valid_choice(choice: &crate::llm::ToolChoice, offered: &[Descriptor]) -> bool
     }
 }
 
-fn choice_bytes(choice: &crate::llm::ToolChoice) -> u64 {
+fn choice_bytes(choice: &ToolChoice) -> u64 {
     match choice {
-        crate::llm::ToolChoice::Auto | crate::llm::ToolChoice::None => 0,
-        crate::llm::ToolChoice::Only(tickets) => u64::try_from(tickets.len())
+        ToolChoice::Auto | ToolChoice::None => 0,
+        ToolChoice::Only(tickets) => u64::try_from(tickets.len())
             .expect("bounded descriptors")
             .checked_mul(u64::try_from(size_of::<Token>()).expect("token cell fits"))
             .expect("admitted descriptor bound fits"),
@@ -1160,6 +1161,15 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Que
     }
 }
 
+/// The logical tool selection without retaining descriptor tickets in a fact.
+fn choice_kind(choice: &ToolChoice) -> crate::facts::Choice {
+    match choice {
+        ToolChoice::Auto => crate::facts::Choice::Auto,
+        ToolChoice::None => crate::facts::Choice::None,
+        ToolChoice::Only(_) => crate::facts::Choice::Only,
+    }
+}
+
 /// What a transition tells, derived from the requests it made: a fact for
 /// each but the cancels and the tools' operations, which the tools tell.
 fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Request>, mark: u32) {
@@ -1182,7 +1192,13 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
                 max_failure_bytes: _,
             } => {
                 let (messages, max_tokens) = (count(prompt.messages.len()), prompt.max_tokens);
-                FactKind::CompletionStarted { opener, attempt: attempt(&session.state), messages, max_tokens }
+                FactKind::CompletionStarted {
+                    opener,
+                    attempt: attempt(&session.state),
+                    messages,
+                    max_tokens,
+                    choice: choice_kind(&prompt.choice),
+                }
             }
             Request::Delegate { owner, opener: _, call: _, deadline: _, origin: _ } => {
                 let run = runs.get(Id::from_token(*owner)).expect("a run lives while its call is asked for");
@@ -1487,7 +1503,7 @@ fn advance(
                 started = started.saturating_add(1);
                 batch = Some(*effect);
             }
-            Block::ToolCall { id: call, name: _, input: _, call: Decoded::Invalid { problem }, .. } => {
+            Block::ToolCall { id: call, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
                 // Its answer was counted when the message was recorded.
                 let answer = Returned::Invalid { problem: problem.clone() };
                 let result = Block::ToolResult { id: call.clone(), result: answer };
@@ -1876,7 +1892,7 @@ fn admit(
         tools: spec.authority.grants,
         namespace: spec.authority.namespace(),
         delegated: spec.delegated,
-        choice: crate::llm::ToolChoice::Auto,
+        choice: ToolChoice::Auto,
         output: spec.output,
         transcript,
         bytes,
@@ -1927,14 +1943,18 @@ fn answer_unchosen(conversation: &Conversation, block: &Block, index: u32, slots
     true
 }
 
-fn chosen(choice: &crate::llm::ToolChoice, block: &Block) -> bool {
+fn chosen(choice: &ToolChoice, block: &Block) -> bool {
     match block {
         Block::ToolCall { call, .. } => match choice {
-            crate::llm::ToolChoice::Auto => true,
-            crate::llm::ToolChoice::None => false,
-            crate::llm::ToolChoice::Only(tickets) => match call {
+            ToolChoice::Auto => true,
+            ToolChoice::None => false,
+            ToolChoice::Only(tickets) => match call {
                 Decoded::Delegated { descriptor, .. } => tickets.contains(descriptor),
-                Decoded::Owned { .. } | Decoded::Invalid { .. } | Decoded::Historical => false,
+                Decoded::Invalid { descriptor, .. } => match descriptor {
+                    Some(descriptor) => tickets.contains(descriptor),
+                    None => false,
+                },
+                Decoded::Owned { .. } | Decoded::Historical => false,
             },
         },
         Block::Text { .. } | Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolResult { .. } => true,
@@ -2283,7 +2303,7 @@ fn held(content: &[Block], calls: u32) -> Option<u64> {
     let mut cost = content_cost(content)?.checked_add(slots)?;
     for block in content {
         match block {
-            Block::ToolCall { id, name: _, input: _, call: Decoded::Invalid { problem }, .. } => {
+            Block::ToolCall { id, name: _, input: _, call: Decoded::Invalid { problem, .. }, .. } => {
                 cost = cost.checked_add(len(id)?)?.checked_add(problem_cost(problem)?)?;
             }
             Block::ToolCall {
@@ -2327,7 +2347,7 @@ fn payload_cost(block: &Block) -> Option<u64> {
             let decoded = match call {
                 Decoded::Owned { call } => call_cost(call)?,
                 Decoded::Delegated { .. } | Decoded::Historical => 0,
-                Decoded::Invalid { problem } => problem_cost(problem)?,
+                Decoded::Invalid { problem, .. } => problem_cost(problem)?,
             };
             len(id)?
                 .checked_add(len(name)?)?

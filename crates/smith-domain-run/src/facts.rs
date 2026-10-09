@@ -285,7 +285,8 @@ pub(crate) fn tell(
                 FactKind::CheckStarted { run, deadline: *deadline }
             }
             Request::Answer { to: _, answer, read: _ } => FactKind::Answered { run, answer: answered(answer) },
-            Request::MessageRefused { .. }
+            Request::CompletionReady { .. }
+            | Request::MessageRefused { .. }
             | Request::Waiting { .. }
             | Request::Turn { .. }
             | Request::HostCall { .. }

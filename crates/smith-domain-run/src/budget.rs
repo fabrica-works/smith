@@ -2,6 +2,8 @@
 //! sections 9 and 10). Sessions price usage; the run never reprices it.
 
 use crate::charter::{Llm, Reserve};
+use alloc::boxed::Box;
+
 use skein_lib::Duration;
 
 /// A part of a run's budget supplied by its host (domain/run.md, section 9).
@@ -393,15 +395,18 @@ pub(crate) fn ordinary(budget: &Budget, reserve: Reserve, reserve_spend: u64, sp
     }
 }
 
-/// Pure root admission decision before any Client effect. Closing has its
+/// Root admission decision before any Client effect. Closing has its
 /// existing terminal right and must never be reported as scalar exhaustion.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum CompletionPermit {
     /// Live conversation with remaining global allowance.
     Allowed,
 
     /// The main awaits durable acknowledgement credit before its unsent completion.
     Held,
+
+    /// Main's final completion, with its note once before any provider reservation.
+    Final { note: Option<Box<[u8]>> },
 
     /// Live conversation prevented by a scalar ceiling.
     Denied(

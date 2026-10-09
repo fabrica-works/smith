@@ -56,7 +56,12 @@ fn max_usage(_limits: &smith_events::Limits) -> Usage {
 }
 
 fn max_budget(_limits: &smith_events::Limits) -> Budget {
-    Budget { turns: u64::MAX, spend: u64::MAX, time_ms: u64::MAX }
+    Budget {
+        turns: u64::MAX,
+        spend: u64::MAX,
+        time_ms: u64::MAX,
+        reserve: Reserve { turns: u64::MAX, time_ms: u64::MAX, spend: u64::MAX },
+    }
 }
 
 fn max_tools(limits: &smith_events::Limits) -> Tools {
@@ -169,6 +174,7 @@ fn max_run_started(limits: &smith_events::Limits) -> RunStarted {
 fn max_run_completed(limits: &smith_events::Limits) -> RunCompleted {
     RunCompleted {
         run: u64::MAX,
+        wind_down: false,
         status: Status::Unknown(payload(limits.string)),
         failure: Some(max_answer_failure(limits)),
         result: Some(max_run_result(limits)),

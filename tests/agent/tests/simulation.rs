@@ -164,7 +164,7 @@ fn the_shared_budget_ends_the_run_after_every_conversation_settles() {
     let Answer::Failed { failure: Failure::Budget(Exhausted::Turns), spent, .. } = world.answer() else {
         panic!("the run spends its shared turns")
     };
-    assert_eq!(spent.turns, 8, "pending children reserve the last shared turn before it is sent");
+    assert_eq!(spent.turns, 7, "wind-down closes the pending ordinary attempt before its callback reports usage");
     assert_eq!(count(&world, |fact| matches!(fact, run::facts::FactKind::Opened { .. })), 3);
     assert!(world.landed().is_empty());
 }

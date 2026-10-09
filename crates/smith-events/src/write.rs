@@ -489,6 +489,8 @@ fn write_budget(json: &mut Encoder, value: &Budget, _capture: &Capture) {
     json.unsigned(value.spend);
     json.key(b"time_ms");
     json.unsigned(value.time_ms);
+    json.key(b"reserve");
+    write_reserve(json, &value.reserve);
     json.object_end();
 }
 
@@ -1430,6 +1432,8 @@ fn encode_run_started(json: &mut Encoder, value: &RunStarted, capture: &Capture)
 }
 
 fn encode_run_completed(json: &mut Encoder, value: &RunCompleted, capture: &Capture) {
+    json.key(b"wind_down");
+    json.boolean(value.wind_down);
     json.key(b"run");
     json.unsigned(value.run);
     json.key(b"status");

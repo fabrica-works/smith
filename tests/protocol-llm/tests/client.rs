@@ -566,3 +566,60 @@ fn actual_requests_render_the_run_key_and_thread_only_for_codex() {
         }
     }
 }
+
+#[test]
+fn only_uses_automatic_wire_choice_and_keeps_all_definitions_and_not_run_feedback() {
+    for configuration in &wire::configurations() {
+        let mut ordinary = prompt();
+        ordinary.tools.inspect = true;
+        let (auto, _) = run_wire(ordinary, configuration, 801);
+        let mut final_prompt = prompt();
+        final_prompt.tools.inspect = true;
+        let descriptor = final_prompt.served[0].clone();
+        final_prompt.choice = llm::ToolChoice::Only(Box::new([descriptor]));
+        final_prompt.messages = Box::new([
+            final_prompt.messages.into_vec().remove(0),
+            llm::Message {
+                role: llm::Role::Assistant,
+                content: Box::new([llm::Block::ToolCall {
+                    id: b"outside-call".as_slice().into(),
+                    name: b"read".as_slice().into(),
+                    input: br#"{"path":"data.txt"}"#.as_slice().into(),
+                    replay: None,
+                }]),
+            },
+            llm::Message {
+                role: llm::Role::User,
+                content: Box::new([llm::Block::ToolResult {
+                    id: b"outside-call".as_slice().into(),
+                    result: llm::Returned::NotRun { why: llm::NotRun::OutsideChoice },
+                }]),
+            },
+        ]);
+        let (only, _) = run_wire(final_prompt, configuration, 802);
+        let ordinary = smith_protocol_llm_world::referee::NativeRequest::from_http(&auto.peer.requests);
+        let narrowed = smith_protocol_llm_world::referee::NativeRequest::from_http(&only.peer.requests);
+        assert_eq!(ordinary.tools, narrowed.tools, "narrowing never changes actual native definitions");
+        let choice = |wire: &Wire| {
+            let body = wire.peer.requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("HTTP body");
+            let body: serde_json::Value = serde_json::from_slice(&wire.peer.requests[body + 4..]).expect("JSON");
+            body.get("tool_choice").cloned()
+        };
+        let automatic = choice(&auto);
+        assert_eq!(choice(&only), automatic, "Only renders the exact same provider selection as Auto");
+        assert!(
+            automatic.is_none()
+                || automatic == Some(serde_json::json!("auto"))
+                || automatic == Some(serde_json::json!({"type":"auto"})),
+            "the automatic provider mode may be its omitted default"
+        );
+        let [query] = only.peer.queries.as_slice() else { panic!("one actual request") };
+        assert!(
+            query.messages.iter().flat_map(|message| &message.parts).any(|part| {
+                matches!(part, Part::ToolOutput { id, output, .. }
+                if id.as_ref() == b"outside-call" && output.windows(b"not run: allowed calls now: opaque_host".len()).any(|part| part == b"not run: allowed calls now: opaque_host"))
+            }),
+            "actual replay tells the disallowed call which unchanged descriptor is permitted"
+        );
+    }
+}

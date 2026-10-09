@@ -766,6 +766,7 @@ fn read_budget(tokens: &[Token], _limits: &Limits) -> Result<Budget, Error> {
         turns: unsigned(required(tokens, b"turns")?)?,
         spend: unsigned(required(tokens, b"spend")?)?,
         time_ms: unsigned(required(tokens, b"time_ms")?)?,
+        reserve: read_reserve(required(tokens, b"reserve")?)?,
     })
 }
 
@@ -992,6 +993,7 @@ fn read_run_started(tokens: &[Token], limits: &Limits) -> Result<RunStarted, Err
 fn read_run_completed(tokens: &[Token], limits: &Limits) -> Result<RunCompleted, Error> {
     object(tokens)?;
     Ok(RunCompleted {
+        wind_down: boolean(required(tokens, b"wind_down")?)?,
         run: unsigned(required(tokens, b"run")?)?,
         status: read_status(required(tokens, b"status")?, limits)?,
         failure: match field(tokens, b"failure")? {

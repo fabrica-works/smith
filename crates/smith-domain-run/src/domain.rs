@@ -1,8 +1,9 @@
 //! The run child domain's state and its entry points (domain/run.md, sections
 //! 3, 5, 6 and 10; programming-model.md, sections 4.5 and 6.3). [`Domain`]
 //! retains seeded admission randomness, runs, conversations, delegated calls,
-//! alarms and bounded facts.
-//! [`step`] accepts parent events and [`fire`] handles due alarms; both emit
+//! alarms, deferred child closures and bounded facts.
+//! [`step`] accepts parent events, [`fire`] handles due alarms and [`resume`]
+//! settles deferred child closures after a reclaim point. All three emit
 //! bounded requests. This module never knows provider syntax, credential
 //! secrets, host policy or the contents of a delivered receipt.
 
@@ -37,6 +38,7 @@ pub struct Domain {
     pub(crate) calls: Calls,
     pub(crate) alarms: Deadlines<Alarm>,
     pub(crate) facts: Facts,
+    pub(crate) ready: crate::wind_down::Ready,
 }
 
 impl Domain {
@@ -52,7 +54,14 @@ impl Domain {
                 limits.runs.saturating_mul(2).saturating_add(limits.calls.saturating_mul(2)),
             ),
             facts: Facts::with_capacity(limits.facts),
+            ready: crate::wind_down::Ready::with_capacity(limits.runs),
         }
+    }
+
+    /// Child closures that may go on after a reclaim point.
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.ready.is_ready()
     }
 
     /// Runs present, closed ones included until they are reclaimed.
@@ -106,6 +115,7 @@ impl Domain {
         self.runs.reclaim();
         self.conversations.reclaim();
         self.calls.reclaim();
+        self.ready.promote();
     }
 }
 
@@ -196,10 +206,19 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
 }
 
-/// Root asks before publishing a completion. A denial has no effects and names
-/// the exhausted global scalar dimension. Stale/closing conversations deny.
+/// Emits one deferred child close, preserving the entrance's fixed output bound.
+pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+    assert!(domain.facts_room() >= max_facts(&env.limits), "parent reserved fact resume output");
+    domain.facts.begin(env.now);
+    let mark = out.len();
+    run::resume(domain, out);
+    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
+}
+
+/// Root asks before publishing a completion. This may record the finishing
+/// stage and keep deferred child closures; it never starts provider work.
 #[must_use]
-pub fn completion_permit(domain: &Domain, conversation: Token, now: Time) -> crate::CompletionPermit {
+pub fn completion_permit(domain: &mut Domain, conversation: Token, now: Time) -> crate::CompletionPermit {
     run::completion_permit(domain, conversation, now)
 }
 

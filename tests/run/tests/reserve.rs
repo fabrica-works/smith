@@ -104,13 +104,21 @@ fn actual_facts_tell_child_shares_and_budget_without_deciding_work() {
         })
         .collect();
     assert!(!budgets.is_empty());
-    assert_eq!(budgets.len(), world.charges_seen().len());
-    let observed: Vec<_> = budgets
+    assert!(budgets.len() >= world.charges_seen().len(), "stage changes also tell standing");
+    let observed: Vec<_> = world
+        .charges_seen()
         .iter()
-        .zip(world.charges_seen())
-        .map(|((at, run, standing), (charged_at, charged_run, charged))| {
-            assert_eq!((at, run), (charged_at, charged_run));
-            (*at, Seen { charged: *charged, standing: *standing })
+        .map(|(charged_at, charged_run, charged)| {
+            let (_, _, standing) = budgets
+                .iter()
+                .find(|(at, run, standing)| {
+                    at == charged_at
+                        && run == charged_run
+                        && standing.turns == charged.spent.turns
+                        && standing.spend == charged.spent.units
+                })
+                .expect("every actual charge has a standing fact");
+            (*charged_at, Seen { charged: *charged, standing: *standing })
         })
         .collect();
     assert_eq!(judge(&observed), Verdict::Passed);
@@ -124,6 +132,37 @@ fn actual_facts_tell_child_shares_and_budget_without_deciding_work() {
         }
         assert!(matches!(judge(&bad), Verdict::Failed(_)), "budget part {part}");
     }
+    check_child_returns(&world);
+    let mut tight = World::new(Settings {
+        run: smith_domain_run::Limits { facts: smith_domain_run::max_facts(&settings.run), ..settings.run },
+        ..settings
+    });
+    tight.run(1_000_000);
+    // The iterator batches input before submitting output. Drain pressure may
+    // change their same-clock interleaving, but never either boundary's sequence.
+    for face in ["run <-", "run ->", "run alarm"] {
+        let tight_face: Vec<_> = tight.trace().iter().filter(|line| line.contains(face)).collect();
+        let roomy_face: Vec<_> = world.trace().iter().filter(|line| line.contains(face)).collect();
+        if tight_face != roomy_face {
+            let index = tight_face
+                .iter()
+                .zip(&roomy_face)
+                .position(|(a, b)| a != b)
+                .unwrap_or(tight_face.len().min(roomy_face.len()));
+            let a: String = tight_face.get(index).map_or("missing", |s| s.as_str()).chars().take(240).collect();
+            let b: String = roomy_face.get(index).map_or("missing", |s| s.as_str()).chars().take(240).collect();
+            panic!(
+                "fact drains preserve {face}: difference at {index} of {}/{}: tight={a}, roomy={b}",
+                tight_face.len(),
+                roomy_face.len()
+            );
+        }
+    }
+    assert_eq!(tight.facts_seen(), world.facts_seen(), "every larger fact is retained in order");
+}
+
+fn check_child_returns(world: &World) {
+    use smith_domain_run::facts::{FactKind, Kind};
     let mut returns = 0_u32;
     for fact in world.facts_seen() {
         let FactKind::Returned { call, result, .. } = fact.kind else { continue };
@@ -149,17 +188,4 @@ fn actual_facts_tell_child_shares_and_budget_without_deciding_work() {
         returns += 1;
     }
     assert!(returns > 0, "the story actually settles a child result");
-    let mut tight = World::new(Settings {
-        run: smith_domain_run::Limits { facts: smith_domain_run::max_facts(&settings.run), ..settings.run },
-        ..settings
-    });
-    tight.run(1_000_000);
-    // The iterator batches input before submitting output. Drain pressure may
-    // change their same-clock interleaving, but never either boundary's sequence.
-    for face in ["run <-", "run ->", "run alarm"] {
-        let tight_face: Vec<_> = tight.trace().iter().filter(|line| line.contains(face)).collect();
-        let roomy_face: Vec<_> = world.trace().iter().filter(|line| line.contains(face)).collect();
-        assert_eq!(tight_face, roomy_face, "fact drains preserve {face} and its original clock");
-    }
-    assert_eq!(tight.facts_seen(), world.facts_seen(), "every larger fact is retained in order");
 }

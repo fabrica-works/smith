@@ -55,7 +55,7 @@ fn transcript_refusals_precede_tools_and_completions() {
                 let llm::Block::ToolCall { call, .. } = &mut t.turns[0].messages[1].content[1] else {
                     panic!("the saved scenario contains the provider call");
                 };
-                *call = llm::Decoded::Invalid { problem: llm::Problem::UnknownTool };
+                *call = llm::Decoded::Invalid { descriptor: None, problem: llm::Problem::UnknownTool };
             }),
         ),
         (
@@ -944,7 +944,10 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
             id: b"large".as_slice().into(),
             name: b"write".as_slice().into(),
             input: b"{}".as_slice().into(),
-            call: llm::Decoded::Invalid { problem: llm::Problem::Oversize { bytes: 1024, bound: 256 } },
+            call: llm::Decoded::Invalid {
+                descriptor: None,
+                problem: llm::Problem::Oversize { bytes: 1024, bound: 256 },
+            },
             replay: None,
         }]),
         llm::Stop::ToolUse,

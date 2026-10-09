@@ -275,7 +275,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
                 };
             }
             Route::Invalid => {
-                let call = Decoded::Invalid { problem: Problem::Missing { field: bytes(field) } };
+                let call = Decoded::Invalid { descriptor: None, problem: Problem::Missing { field: bytes(field) } };
                 let content =
                     Box::new([Block::ToolCall { id: bytes(1), name: bytes(1), input: bytes(1), call, replay: None }]);
                 let completion = received(content, Stop::ToolUse);
@@ -1123,6 +1123,21 @@ fn the_original_maximum_parallel_width_has_live_result_rights() {
     assert_eq!(domain.runs(), width, "ended runs remain present until the reclaim point");
 }
 
+fn missing_completion(field: u64) -> Completion {
+    Completion {
+        reasoning_dropped: Box::default(),
+        content: Box::new([Block::ToolCall {
+            id: bytes(1),
+            name: bytes(1),
+            input: bytes(1),
+            replay: None,
+            call: Decoded::Invalid { descriptor: None, problem: Problem::Missing { field: bytes(field) } },
+        }]),
+        stop: Stop::ToolUse,
+        usage: Usage::ZERO,
+    }
+}
+
 #[test]
 fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
     let original = Limits { messages: 4, ..LIMITS };
@@ -1171,21 +1186,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
                     &mut out,
                     &meter,
                     bound,
-                    Event::Completed {
-                        owner,
-                        completion: Completion {
-                            reasoning_dropped: Box::default(),
-                            content: Box::new([Block::ToolCall {
-                                id: bytes(1),
-                                name: bytes(1),
-                                input: bytes(1),
-                                replay: None,
-                                call: Decoded::Invalid { problem: Problem::Missing { field: bytes(field) } },
-                            }]),
-                            stop: Stop::ToolUse,
-                            usage: Usage::ZERO,
-                        },
-                    },
+                    Event::Completed { owner, completion: missing_completion(field) },
                 );
                 assert!(seen.complete.is_none() && seen.end.is_none());
                 domain.reclaim();
@@ -1233,5 +1234,54 @@ fn run_call(ticket: u64, effect: Effect) -> Decoded {
         source: smith_domain_session::ToolSource::Run,
         ticket: Token::new(ticket),
         effect,
+    }
+}
+
+#[test]
+fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() {
+    let block = size(size_of::<Block>());
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let choice_cost = 2 * size(size_of::<Token>());
+    let note_bytes = 8192;
+    let original = Limits { messages: 5, ..LIMITS };
+    let credit = smith_domain_session::completion_reserve(&original).expect("whole next-completion credit");
+    let cap = spec_cost + block + choice_cost + note_bytes + credit;
+    for extra in [0, 1] {
+        let limits = Limits { session_bytes: cap, ..original };
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        let mut out = Queue::with_capacity(max_out(&limits));
+        let meter = Meter::new();
+        let mut domain = Domain::new(&limits, 31);
+        let bound = worst_case(&limits).expect("checked note/choice bound");
+        let opened = measured_step(
+            &mut domain,
+            &env,
+            &mut out,
+            &meter,
+            bound,
+            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+        );
+        let narrowed = measured_step(
+            &mut domain,
+            &env,
+            &mut out,
+            &meter,
+            bound,
+            Event::Narrowed {
+                owner: opened.complete.expect("unsent prompt"),
+                note: bytes(note_bytes + extra),
+                choice: smith_domain_session::llm::ToolChoice::Only(Box::new([Token::new(1), Token::new(2)])),
+            },
+        );
+        if extra == 0 {
+            assert!(
+                narrowed.complete.is_some(),
+                "maximum fitting retained note and all descriptors admit the next request"
+            );
+            assert!(narrowed.end.is_none());
+        } else {
+            assert!(narrowed.complete.is_none(), "one byte beyond the admitted payload publishes no request");
+            assert_eq!(narrowed.end, Some(smith_domain_session::End::TranscriptFull));
+        }
     }
 }

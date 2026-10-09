@@ -14,6 +14,8 @@
 
 use core::mem::size_of;
 
+use alloc::boxed::Box;
+
 use skein_lib::{List, Map, Token};
 use smith_domain_run::{self as run, Ask};
 use smith_domain_session::{self as session, llm as sllm};
@@ -64,6 +66,12 @@ impl Peer {
         self.offered.finish
     }
 
+    pub(crate) fn final_choice(&self) -> sllm::ToolChoice {
+        assert!(self.offered.finish, "only main receives finishing turns");
+        let tickets = if self.offered.deliver { Box::from([FINISH, DELIVER]) } else { Box::from([FINISH]) };
+        sllm::ToolChoice::Only(tickets)
+    }
+
     /// The tickets it holds.
     pub(crate) fn tickets(&self) -> u32 {
         self.asks.len()
@@ -105,9 +113,12 @@ impl Peer {
                     let call = match total {
                         Some(bytes) if bytes <= limit => {
                             decoded_bytes = bytes;
-                            self.decoded(call, limit)
+                            self.decoded(call, &name, limit)
                         }
-                        Some(_) | None => sllm::Decoded::Invalid { problem: sllm::Problem::TooLarge },
+                        Some(_) | None => sllm::Decoded::Invalid {
+                            descriptor: self.named_descriptor(&name),
+                            problem: sllm::Problem::TooLarge,
+                        },
                     };
                     sllm::Block::ToolCall { id, name, input, call, replay }
                 }
@@ -139,10 +150,33 @@ impl Peer {
         unreachable!("decoded host ask was offered")
     }
 
-    fn decoded(&mut self, call: Decoded, limit: u64) -> sllm::Decoded {
+    fn named_descriptor(&self, name: &[u8]) -> Option<Token> {
+        if name == b"finish" && self.offered.finish {
+            return Some(FINISH);
+        }
+        if name == b"deliver" && self.offered.deliver {
+            return Some(DELIVER);
+        }
+        if name == b"wait" && self.offered.wait {
+            return Some(WAIT);
+        }
+        if name == b"sub_agent" && self.offered.agents {
+            return Some(SUB_AGENT);
+        }
+        for declaration in &self.offered.host_tools {
+            if declaration.name.as_ref() == name {
+                return Some(self.host_descriptor(name));
+            }
+        }
+        None
+    }
+
+    fn decoded(&mut self, call: Decoded, name: &[u8], limit: u64) -> sllm::Decoded {
         let ask = match call {
             Decoded::Owned { call } => return sllm::Decoded::Owned { call },
-            Decoded::Invalid { problem } => return sllm::Decoded::Invalid { problem },
+            Decoded::Invalid { problem } => {
+                return sllm::Decoded::Invalid { descriptor: self.named_descriptor(name), problem };
+            }
             Decoded::Served { ask } => ask,
         };
         let offered = match &ask {
@@ -153,7 +187,7 @@ impl Peer {
             Ask::SubAgent { .. } => self.offered.agents,
         };
         if !offered {
-            return sllm::Decoded::Invalid { problem: sllm::Problem::UnknownTool };
+            return sllm::Decoded::Invalid { descriptor: None, problem: sllm::Problem::UnknownTool };
         }
         let held = match ask_cost(&ask) {
             Some(cost) => self.held.checked_add(cost),
@@ -161,7 +195,12 @@ impl Peer {
         };
         let held = match held {
             Some(held) if held <= limit && self.asks.len() < self.asks.capacity() => held,
-            Some(_) | None => return sllm::Decoded::Invalid { problem: sllm::Problem::TooLarge },
+            Some(_) | None => {
+                return sllm::Decoded::Invalid {
+                    descriptor: self.named_descriptor(name),
+                    problem: sllm::Problem::TooLarge,
+                };
+            }
         };
         let source = match &ask {
             Ask::Host { .. } => session::ToolSource::Host,

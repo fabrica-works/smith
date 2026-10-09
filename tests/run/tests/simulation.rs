@@ -568,7 +568,11 @@ fn a_check_deadline_terminal_returns_feedback_without_submitting_to_host() {
     let settings = finishing(18);
     let world = settled(&Settings {
         run: Limits { check_timeout: Duration::from_millis(3_999), ..settings.run },
-        host: host::Script { time: Span::millis(4_000, 4_000), ..settings.host },
+        host: host::Script {
+            reserve: smith_domain_run::charter::Reserve { turns: 1, time: Duration::from_millis(3_999) },
+            time: Span::millis(4_000, 4_000),
+            ..settings.host
+        },
         partner: Script { changes: 1000, finishes: 1000, turn: Span::millis(100, 100), ..settings.partner },
         checkout: Checkouts {
             check: Span::millis(8_000, 8_000),

@@ -6,7 +6,7 @@
 //!
 //! - An opening is refused (`Ended` as busy or invalid, with no `Started`) or
 //!   started at once.
-//! - A started conversation requests a pure run completion permit before each
+//! - A started conversation requests a run completion permit before each
 //!   actual turn. After its latency, the turn emits its cumulative own/subtree
 //!   `Priced` and exact single-completion `Used`. After each, the script draws what the LLM does next: fail
 //!   (`Ended` with a fault), call `finish` (`Delegated`, then wait for its
@@ -345,6 +345,12 @@ pub struct Partner {
 /// A started conversation.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Choice {
+    Auto,
+    Finishing,
+}
+
 struct Talk {
     /// The run's name for it.
     ///
@@ -354,6 +360,7 @@ struct Talk {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     finish: bool,
+    choice: Choice,
     wait: bool,
     deliver: bool,
     host_tools: Vec<(Box<[u8]>, HostEffect)>,
@@ -484,6 +491,7 @@ impl Partner {
         let talk = Talk {
             conversation,
             finish: opening.finish,
+            choice: Choice::Auto,
             wait: opening.wait,
             deliver: opening.deliver,
             host_tools: opening.host_tools.iter().map(|tool| (tool.name.clone(), tool.effect)).collect(),
@@ -667,8 +675,13 @@ impl Partner {
         self.spend(peer, out);
         let talk = self.talks.get(&peer).expect("a turn is of a live conversation");
         let over = overspent(&talk.budget, talk.spent);
-        let (finish, agents, wait, deliver, host_tools) =
-            (talk.finish, talk.families.agents, talk.wait, talk.deliver, !talk.host_tools.is_empty());
+        let (finish, agents, wait, deliver, host_tools) = (
+            talk.finish,
+            talk.families.agents && talk.choice == Choice::Auto,
+            talk.wait && talk.choice == Choice::Auto,
+            talk.deliver,
+            !talk.host_tools.is_empty() && talk.choice == Choice::Auto,
+        );
         let roll = u32::try_from(self.rng.below(1000)).expect("below 1000");
         let Script { faults, finishes, asks, host_calls, deliveries, waits, yields, .. } = self.script;
         let finishing = faults.saturating_add(finishes);
@@ -923,6 +936,10 @@ impl Partner {
                 return;
             }
             smith_domain_run::CompletionPermit::Allowed => {}
+            smith_domain_run::CompletionPermit::Final { note } => {
+                drop(note);
+                self.talks.get_mut(&peer).expect("a final main completion").choice = Choice::Finishing;
+            }
             smith_domain_run::CompletionPermit::Held => return,
         }
         let latency = self.draw(self.script.turn);

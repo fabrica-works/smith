@@ -107,6 +107,8 @@ pub enum Decoded {
     /// A call that is no call: the session answers it with its problem, and
     /// runs nothing.
     Invalid {
+        /// Offered delegated descriptor, retained even when its arguments are invalid.
+        descriptor: Option<Token>,
         /// Typed reason a call could not become an admitted tool operation.
         problem: Problem,
     },

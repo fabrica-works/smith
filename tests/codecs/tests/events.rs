@@ -740,3 +740,31 @@ fn conversation_thread_and_response_window_are_required_exact_metadata_under_eve
         }
     }
 }
+
+#[test]
+fn entrance_reserve_and_terminal_wind_down_are_required_metadata_in_every_capture() {
+    let started = r#"{"v":1,"type":"run.started","t_ms":0,"run":1,"resumed":false,"messages":1,"main":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"budget":{"turns":4,"spend":8,"time_ms":1000,"reserve":{"turns":2,"time_ms":750,"spend":3}},"tools":{"families":[],"wait":false,"deliver":false,"host":[]},"contract":[]}"#;
+    let completed = r#"{"v":1,"type":"run.completed","t_ms":0,"run":1,"wind_down":false,"status":"parked","turns":2,"spent":3,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"read":null,"unread":0,"duration_ms":750}"#;
+    for wire in [started.to_owned(), completed.to_owned(), completed.replace("false", "true")] {
+        let record = read(wire.as_bytes(), &limits()).expect("independent wire").expect("run event");
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let encoded = write(&record, &capture, &limits()).expect("metadata").expect("always recorded");
+            assert_eq!(read(&encoded, &limits()).expect("metadata").expect("run"), record);
+            if let Event::RunStarted(run) = &record.event {
+                assert_eq!(run.budget.reserve, smith_events::Reserve { turns: 2, time_ms: 750, spend: 3 });
+            } else if let Event::RunCompleted(run) = &record.event {
+                assert_eq!(run.wind_down, wire.contains("\"wind_down\":true"));
+            } else {
+                panic!("run event");
+            }
+        }
+    }
+    for invalid in [
+        started.replace(",\"reserve\":{\"turns\":2,\"time_ms\":750,\"spend\":3}", ""),
+        completed.replace("\"wind_down\":false,", ""),
+        completed.replace("\"wind_down\":false", "\"wind_down\":null"),
+        completed.replace("\"wind_down\":false", "\"wind_down\":0"),
+    ] {
+        assert!(read(invalid.as_bytes(), &limits()).is_err(), "required typed field");
+    }
+}

@@ -469,8 +469,10 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         }
         session::Request::Ended { opener, end, turns, usage: _, reported } => {
             let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
-            domain.pending.remove(&run);
             let id = peer(domain, opener);
+            if domain.peers.get(id).expect("session retains peer").is_main() {
+                domain.pending.remove(&run);
+            }
             free(domain, id);
             run::Event::Ended {
                 conversation: opener,
@@ -525,6 +527,13 @@ fn delegated(
 /// One of the run's requests: out to the protocol layer, or to the sessions.
 fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: &mut Queue<Request>) {
     let event = match request {
+        run::Request::CompletionReady { conversation } => {
+            let run = run::owner(&domain.run, conversation).expect("main retains its run");
+            if let Some(pending) = domain.pending.remove(&run) {
+                complete(domain, env, pending, out);
+            }
+            return;
+        }
         run::Request::HostCall { host_run, relay, name, tool, effect, input, deadline } => {
             return out.push(Request::HostCall { host_run, relay, name, tool, effect, input, deadline });
         }
@@ -629,14 +638,30 @@ pub(crate) struct PendingCompletion {
     max_failure_bytes: u32,
 }
 
+fn denied_budget(exhausted: run::Exhausted) -> session::BudgetDenial {
+    match exhausted {
+        run::Exhausted::Turns => session::BudgetDenial::Turns,
+        run::Exhausted::Spend => session::BudgetDenial::Spend,
+        run::Exhausted::Time => session::BudgetDenial::Time,
+        run::Exhausted::Tokens(_) | run::Exhausted::Overflow(_) => {
+            unreachable!("receiving and overflow failures close the run")
+        }
+    }
+}
+
 fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, out: &mut Queue<Request>) {
     let owner = pending.owner;
     let id = *domain.sessions.get(&owner).expect("a session asks for completions once it has opened");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     // Admission precedes grant lookup, prompt cloning, lease retention
     // and every Client effect. This completion is still unsent.
-    match run::completion_permit(&domain.run, conversation, env.now) {
-        run::CompletionPermit::Allowed => {}
+    match run::completion_permit(&mut domain.run, conversation, env.now) {
+        run::CompletionPermit::Allowed | run::CompletionPermit::Final { note: None } => {}
+        run::CompletionPermit::Final { note: Some(note) } => {
+            drop(pending);
+            let choice = domain.peers.get(id).expect("session retains peer").final_choice();
+            return session_step(domain, env, session::Event::Narrowed { owner, note, choice });
+        }
         run::CompletionPermit::Held => {
             let run = run::owner(&domain.run, conversation).expect("main remains live while held");
             let old = domain.pending.insert(run, pending).expect("one held completion per run");
@@ -644,14 +669,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             return;
         }
         run::CompletionPermit::Denied(exhausted) => {
-            let reason = match exhausted {
-                run::Exhausted::Turns => session::BudgetDenial::Turns,
-                run::Exhausted::Spend => session::BudgetDenial::Spend,
-                run::Exhausted::Time => session::BudgetDenial::Time,
-                run::Exhausted::Tokens(_) | run::Exhausted::Overflow(_) => {
-                    unreachable!("receiving and overflow failures close the run")
-                }
-            };
+            let reason = denied_budget(exhausted);
             return session_step(domain, env, session::Event::BudgetDenied { owner, reason });
         }
         run::CompletionPermit::Closing => {

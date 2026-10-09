@@ -55,6 +55,10 @@ fn usage(observation: &CompletionObservation) -> llm::Usage {
 }
 
 fn total(observations: &[CompletionObservation], rates: &[Rate]) -> run::Spend {
+    let observations: Vec<_> = observations
+        .iter()
+        .filter(|observation| matches!(observation.terminal, Some((_, CompletionTerminal::Completed(_)))))
+        .collect();
     let mut expected = run::Spend {
         input: observations
             .iter()
@@ -411,8 +415,9 @@ fn parallel_children_cannot_spend_the_last_ordinary_turn_twice_and_main_finishes
     let mut world = World::with_workspace_scripts_charter(settings, None, Some(workspace), disk, scripts, charter);
     world.run(20_000);
     let expected = conservation(&world, &MODEL_RATES);
-    assert_eq!(expected.turns, 3);
-    assert_eq!(model_calls(&world, b"fake-2").len(), 1, "one actual child callback takes the last ordinary turn");
+    assert_eq!(expected.turns, 2);
+    assert_eq!(model_calls(&world, b"fake-2").len(), 1, "the admitted child attempt is closed before main finishes");
+    assert!(matches!(model_calls(&world, b"fake-2")[0].terminal, Some((_, CompletionTerminal::Cancelled))));
     assert_eq!(model_calls(&world, b"fake-1").len(), 2, "main takes a reserved turn to finish");
     assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
 }
@@ -449,4 +454,64 @@ fn a_real_child_session_reaches_its_requested_turn_share_and_ends() {
         "a quota terminal returns to the actual asker"
     );
     assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
+}
+
+#[test]
+fn main_final_turns_keep_definitions_append_one_note_and_skip_outside_workspace_calls() {
+    let mut settings = settings(711, true, false);
+    settings.budget.turns = 4;
+    settings.limits.run.budget.turns = 4;
+    let (disk, workspace) = workspace(true);
+    let root = workspace.directories[0].root;
+    let mut charter = charter(&settings, b"@final-main", &MODEL_RATES);
+    charter.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(300) };
+    let scripts = Box::new([script(
+        b"@final-main",
+        vec![
+            calls(vec![call(b"read", READ)], 3),
+            calls(vec![call(b"read", READ)], 3),
+            calls(
+                vec![call(b"edit", br#"{"path":"data.txt","old":"before","new":"AFTER"}"#), call(b"finish", b"{}")],
+                3,
+            ),
+            calls(vec![call(b"finish", REPORT)], 7),
+        ],
+    )]);
+    let mut world = World::with_workspace_scripts_charter(settings, None, Some(workspace), disk, scripts, charter);
+    world.run(20_000);
+    assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
+    assert_eq!(world.completions().len(), 4, "two ordinary and two actual final completions");
+    assert_eq!(world.disk().load(root.raw(), b"data.txt", u64::MAX).expect("actual disk").0, b"before\n");
+    let queries = world.prompts();
+    for query in queries {
+        assert_eq!(query.tools, queries[0].tools, "offered definitions stay fixed");
+    }
+    let final_query = queries.last().expect("finish request");
+    assert!(final_query.messages.iter().flat_map(|message| &message.parts).any(|part| {
+        matches!(part, Part::ToolOutput { output, .. } if output.windows(b"OutsideChoice".len()).any(|part| part == b"OutsideChoice"))
+    }));
+    assert!(final_query.messages.iter().flat_map(|message| &message.parts).any(|part| {
+        matches!(part, Part::ToolOutput { output, .. } if output.windows(b"UnknownTool".len()).any(|part| part == b"UnknownTool"))
+    }), "an allowed malformed finish preserves its actual argument problem");
+    let note = |query: &Query| {
+        query.messages.iter().flat_map(|message| &message.parts).filter(|part| {
+        matches!(part, Part::Text { text } if text.windows(b"budget is spent".len()).any(|part| part == b"budget is spent"))
+    }).count()
+    };
+    assert_eq!(note(&queries[0]), 0);
+    assert_eq!(note(&queries[1]), 0);
+    assert_eq!(note(&queries[2]), 1);
+    assert_eq!(note(&queries[3]), 1, "the note is appended once and retained after the concrete not-run result");
+    let choices: Vec<_> = world
+        .facts()
+        .iter()
+        .filter_map(|fact| {
+            let smith_domain::Fact::Session { fact } = fact else { return None };
+            let smith_domain::session::FactKind::CompletionStarted { choice, .. } = fact.kind else {
+                return None;
+            };
+            Some(choice)
+        })
+        .collect();
+    assert!(choices.contains(&smith_domain::session::Choice::Only));
 }

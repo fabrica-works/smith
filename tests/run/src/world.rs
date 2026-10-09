@@ -510,6 +510,7 @@ struct Pushing {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 pub struct World {
     lease_seen: Vec<(Time, Token, crate::lease_referee::Seen)>,
+    wind_down_seen: Vec<(Time, Token, crate::wind_down_referee::Seen)>,
     share_seen: Vec<(Time, crate::share_referee::Seen)>,
     workspace_of_call: BTreeMap<Token, Token>,
     now: Time,
@@ -522,6 +523,7 @@ pub struct World {
     host: Host,
     partner: Partner,
     permits: Vec<(Token, Token)>,
+    held_permits: BTreeMap<Token, Token>,
 
     /// Deliveries in flight.
     ///
@@ -637,6 +639,7 @@ impl World {
             rng,
             settings,
             lease_seen: Vec::new(),
+            wind_down_seen: Vec::new(),
             share_seen: Vec::new(),
             workspace_of_call: BTreeMap::new(),
             run: run::Domain::new(&settings.run, settings.seed),
@@ -644,6 +647,7 @@ impl World {
             host,
             partner,
             permits: Vec::new(),
+            held_permits: BTreeMap::new(),
             wire: Schedule::new(),
             lanes: [Time::ZERO; 4],
             starts: BTreeMap::new(),
@@ -755,6 +759,12 @@ impl World {
     #[must_use]
     pub fn reserve_progress(&self) -> (u32, u32) {
         (self.child_completions, self.main_in_reserve)
+    }
+
+    /// Admitted reserves, actual final provider starts and answers, observed outside the run.
+    #[must_use]
+    pub fn wind_down_seen(&self) -> &[(Time, Token, crate::wind_down_referee::Seen)] {
+        &self.wind_down_seen
     }
 
     /// Actual user opening bytes at the conversation boundary.
@@ -903,6 +913,15 @@ impl World {
             made.push(Made { run, requests: self.run_stage.out.len() - before, cancel: None, asked: None });
         }
 
+        if !self.run_stage.has_events()
+            && self.run.is_ready()
+            && self.run_stage.has_room()
+            && self.run.facts_room() >= run::max_facts(&self.run_stage.env.limits)
+        {
+            let before = self.run_stage.out.len();
+            run::resume(&mut self.run, &self.run_stage.env, &mut self.run_stage.out);
+            made.push(Made { run: None, requests: self.run_stage.out.len() - before, cancel: None, asked: None });
+        }
         if self.run.facts_room() < run::max_facts(&self.run_stage.env.limits)
             && (self.run_stage.has_events() || self.run.is_due(self.now))
         {
@@ -962,6 +981,22 @@ impl World {
     /// returned.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
+    fn completion_ready(&mut self, conversation: Token) {
+        if let Some(peer) = self.held_permits.remove(&conversation) {
+            self.permits.push((peer, conversation));
+        }
+    }
+
+    fn close_conversation(&mut self, peer: Token) {
+        let conversation = self.conversation_of_peer[&peer];
+        let run = self.run_of_conversation[&conversation];
+        if self.views[&run].main == Some(conversation) {
+            self.views.get_mut(&run).expect("a run outlives its conversations").decided = true;
+        }
+        self.stats.closes += 1;
+        self.send(Lane::Conversations, Delivery::Close { peer });
+    }
+
     fn run_request(&mut self, request: run::Request, current: Option<Token>) -> Option<Token> {
         self.log(&format!("run -> {request:?}"));
         let mut current = current;
@@ -969,6 +1004,7 @@ impl World {
             run::Request::Turn { host_run, number, position: _, read, spent, opens_window: _, record: _ } => {
                 current = Some(self.observed_turn(host_run, number, read, spent));
             }
+            run::Request::CompletionReady { conversation } => self.completion_ready(conversation),
             run::Request::MessageRefused { .. } => {}
             run::Request::Waiting { host_run, read } => {
                 current = Some(self.observed_waiting(host_run, read));
@@ -1000,13 +1036,7 @@ impl World {
                 self.stats.says += 1;
                 self.send(Lane::Conversations, Delivery::Say { peer });
             }
-            run::Request::Close { peer } => {
-                let conversation = self.conversation_of_peer[&peer];
-                let run = self.run_of_conversation[&conversation];
-                self.views.get_mut(&run).expect("a run outlives its conversations").decided = true;
-                self.stats.closes += 1;
-                self.send(Lane::Conversations, Delivery::Close { peer });
-            }
+            run::Request::Close { peer } => self.close_conversation(peer),
             run::Request::Return { call, result, spent } => {
                 let ledger = self.calls.get_mut(&call).expect("a return is of a call that was made");
                 assert!(!ledger.returned, "a call returns once");
@@ -1105,8 +1135,8 @@ impl World {
                 continue;
             }
             assert_eq!(self.conversation_of_peer.get(&peer), Some(&conversation), "Started really stepped first");
-            let mut permit = run::completion_permit(&self.run, conversation, self.now);
-            if permit == run::CompletionPermit::Allowed {
+            let mut permit = run::completion_permit(&mut self.run, conversation, self.now);
+            if matches!(permit, run::CompletionPermit::Allowed | run::CompletionPermit::Final { .. }) {
                 let owner = self.run_of_conversation[&conversation];
                 let view = &self.views[&owner];
                 let pending = self
@@ -1118,6 +1148,16 @@ impl World {
                 let ordinary_turns = view.budget.turns.saturating_sub(view.reserve.turns);
                 match run::reserve(&mut self.run, conversation, conversation, 0) {
                     Ok(()) => {
+                        if matches!(permit, run::CompletionPermit::Final { .. }) {
+                            self.wind_down_seen.push((
+                                self.now,
+                                owner,
+                                crate::wind_down_referee::Seen::Final {
+                                    main: !child,
+                                    live_children: view.live.saturating_sub(1),
+                                },
+                            ));
+                        }
                         if child && !view.decided {
                             assert!(
                                 u64::from(view.spent.turns) + u64::try_from(pending).expect("bounded pending turns")
@@ -1132,6 +1172,9 @@ impl World {
                     }
                     Err(exhausted) => permit = run::CompletionPermit::Denied(exhausted),
                 }
+            }
+            if permit == run::CompletionPermit::Held {
+                self.held_permits.insert(conversation, peer);
             }
             let mut out = Vec::new();
             self.partner.permitted(self.now, peer, permit, &mut out);
@@ -1166,6 +1209,7 @@ impl World {
             peak: 0,
             answered: None,
         };
+        self.wind_down_seen.push((self.now, run, crate::wind_down_referee::Seen::Admitted { reserve: reserve.turns }));
         self.views.insert(run, view);
         self.run_of_owner.insert(host_run, run);
     }
@@ -1289,6 +1333,7 @@ impl World {
             | run::Request::Check { .. }
             | run::Request::Checking { .. }
             | run::Request::ChecksEnded { .. }
+            | run::Request::CompletionReady { .. }
             | run::Request::Deliver { .. } => unreachable!("not one of io's requests"),
         }
     }
@@ -1531,6 +1576,21 @@ impl World {
                 assert!(of != run || self.opens[conversation].ended, "no conversation outlives its run");
             }
             self.lease_seen.push((self.now, *run, crate::lease_referee::Seen::Answer));
+            self.wind_down_seen.push((
+                self.now,
+                *run,
+                crate::wind_down_referee::Seen::Answer {
+                    turns_failure: matches!(
+                        answer,
+                        run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Turns), .. }
+                    ),
+                    time_failure: matches!(
+                        answer,
+                        run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Time), .. }
+                    ),
+                    time_expired: self.now >= self.views[run].deadline,
+                },
+            ));
         }
         start.answer = Some(answer);
         self.send(Lane::Host, Delivery::Answered { host_run: owner });
@@ -2037,6 +2097,7 @@ impl World {
     fn has_work_now(&self) -> bool {
         !self.permits.is_empty()
             || self.run_stage.has_events()
+            || self.run.is_ready()
             || self.run.is_due(self.now)
             || self.host.is_due(self.now)
             || self.wire.is_due(self.now)
@@ -2050,6 +2111,13 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn assert_settled(&self) {
+        assert!(
+            crate::wind_down_referee::judge(&self.wind_down_seen)
+                .iter()
+                .all(|verdict| *verdict == skein_world::domain::Verdict::Passed),
+            "final requests follow the independent admitted reserve: {:?}",
+            crate::wind_down_referee::judge(&self.wind_down_seen)
+        );
         assert_eq!(crate::share_referee::judge(&self.share_seen), skein_world::domain::Verdict::Passed);
         assert!(self.reservations.is_empty(), "every pending provider turn settled");
         assert!(

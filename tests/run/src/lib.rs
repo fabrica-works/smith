@@ -26,6 +26,7 @@ pub mod messages_referee;
 mod noisy;
 pub mod partner;
 pub mod share_referee;
+pub mod wind_down_referee;
 mod world;
 
 pub use noisy::noisy;

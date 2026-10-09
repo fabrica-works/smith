@@ -27,6 +27,17 @@ pub struct Fact {
     pub response: Option<ResponseInfo>,
 }
 
+/// Content-free tool selection on the actual session completion request (protocol/llm.md, section 5).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Choice {
+    /// Any offered tool may be called.
+    Auto,
+    /// No tool may be called.
+    None,
+    /// Only the selected offered descriptors may be called.
+    Only,
+}
+
 /// Something that happened in the session opened for `opener`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FactKind {
@@ -42,6 +53,8 @@ pub enum FactKind {
         messages: u32,
         /// Maximum output tokens requested for one completion.
         max_tokens: u32,
+        /// Logical selection; provider rendering may use its ordinary automatic mode.
+        choice: Choice,
     },
     /// The completion came back with an answer of `blocks` blocks, `calls` of
     /// them tool calls, of which `invalid` could not be decoded.

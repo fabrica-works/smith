@@ -192,7 +192,7 @@ fn decoded_batch_reserves_refusal_cells_before_any_payload() {
         }
     }
     match calls.get(0).expect("first call") {
-        session::llm::Decoded::Invalid { problem } => assert_eq!(problem, &Problem::TooLarge),
+        session::llm::Decoded::Invalid { problem, .. } => assert_eq!(problem, &Problem::TooLarge),
         session::llm::Decoded::Owned { .. }
         | session::llm::Decoded::Delegated { .. }
         | session::llm::Decoded::Historical => unreachable!("oversized payload is refused"),

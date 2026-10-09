@@ -311,7 +311,7 @@ impl Domain {
     /// events.
     #[must_use]
     pub fn is_ready(&self) -> bool {
-        self.session.is_ready() || self.ready.is_ready()
+        self.run.is_ready() || self.session.is_ready() || self.ready.is_ready()
     }
 
     /// The oldest fact not drained yet, the run's or the sessions' (which the
@@ -385,7 +385,10 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
 /// iteration.
 pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     assert!(domain.facts_room() >= max_facts(&env.limits), "owner reserved composed fact output");
-    if domain.session.is_ready() {
+    if domain.run.is_ready() {
+        run::resume(&mut domain.run, &route::run_env(env), &mut domain.run_out);
+        gather(domain, &env.limits);
+    } else if domain.session.is_ready() {
         session::resume(&mut domain.session, &route::session_env(env), &mut domain.session_out);
         gather(domain, &env.limits);
     } else if let Some(handoff) = domain.ready.pop() {

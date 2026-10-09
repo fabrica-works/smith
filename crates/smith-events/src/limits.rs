@@ -524,6 +524,8 @@ fn size_budget(_capture: &Capture, _limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;
+    // The reserve has three u64 scalars and the same object shape as this budget.
+    length = length.checked_add(11)?.checked_add(91)?;
     Some(length)
 }
 
@@ -670,6 +672,7 @@ fn size_run_started(capture: &Capture, limits: &Limits) -> Option<u64> {
 
 fn size_run_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
+    length = length.checked_add(13)?.checked_add(5_u64)?;
     length = length.checked_add(7)?.checked_add(20_u64)?;
     length = length.checked_add(10)?.checked_add(size_status(capture, limits)?)?;
     length = length.checked_add(11)?.checked_add(size_answer_failure(capture, limits)?)?;

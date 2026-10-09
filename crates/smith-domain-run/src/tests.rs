@@ -131,6 +131,13 @@ impl Harness {
         self.drain()
     }
 
+    fn resume(&mut self) -> Box<[Request]> {
+        self.keep_facts();
+        self.domain.reclaim();
+        crate::resume(&mut self.domain, &self.env, &mut self.out);
+        self.drain()
+    }
+
     fn drain(&mut self) -> Box<[Request]> {
         let mut requests = List::with_capacity(MAX_OUT);
         for _ in 0..MAX_OUT {
@@ -139,7 +146,8 @@ impl Harness {
                 Request::ChecksEnded { .. } => {
                     self.checks_ended = self.checks_ended.checked_add(1).expect("bounded checks");
                 }
-                request @ (Request::MessageRefused { .. }
+                request @ (Request::CompletionReady { .. }
+                | Request::MessageRefused { .. }
                 | Request::Waiting { .. }
                 | Request::Turn { .. }
                 | Request::HostCall { .. }
@@ -1820,32 +1828,75 @@ fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
     let owner = Token::new(701);
     assert_eq!(crate::reserve(&mut harness.domain, first, owner, 1), Ok(()));
     assert_eq!(
-        crate::completion_permit(&harness.domain, second, harness.env.now),
-        crate::CompletionPermit::Denied(Exhausted::Turns)
+        crate::completion_permit(&mut harness.domain, second, harness.env.now),
+        crate::CompletionPermit::Closing
     );
     assert_eq!(crate::reserve(&mut harness.domain, second, Token::new(702), 1), Err(Exhausted::Turns));
+    assert_eq!(crate::completion_permit(&mut harness.domain, main, harness.env.now), crate::CompletionPermit::Held);
     assert!(crate::settle_reservation(&mut harness.domain, first, owner, 1));
     drop(harness.step(Event::Used { conversation: first, spend: spend(1) }));
+    assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(101) }]);
+    assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(102) }]);
+    let second_return = harness.step(Event::Ended { conversation: second, end: End::Closed, spend: Spend::ZERO });
+    let [Request::Return { call, result: Returned::Unanswered { end, .. }, .. }] = second_return.as_ref() else {
+        panic!("one settled child return: {second_return:?}");
+    };
+    assert_eq!((*call, *end), (Token::new(8), End::Budget(Exhausted::Turns)));
+    let first_return = harness.step(Event::Ended { conversation: first, end: End::Closed, spend: spend(1) });
+    let [
+        Request::Return { call, result: Returned::Unanswered { end, .. }, .. },
+        Request::CompletionReady { conversation },
+    ] = first_return.as_ref()
+    else {
+        panic!("last child releases main: {first_return:?}");
+    };
+    assert_eq!((*call, *end, *conversation), (Token::new(7), End::Budget(Exhausted::Turns), main));
+    let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 1, time: Duration::ZERO });
     assert_eq!(
-        crate::completion_permit(&harness.domain, second, harness.env.now),
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
+        crate::CompletionPermit::Final { note: Some(note) }
+    );
+    assert_eq!(
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
+        crate::CompletionPermit::Final { note: None }
+    );
+    assert_eq!(crate::reserve(&mut harness.domain, main, Token::new(703), 1), Ok(()));
+    assert!(crate::settle_reservation(&mut harness.domain, main, Token::new(703), 1));
+    drop(harness.step(Event::Used { conversation: main, spend: spend(1) }));
+    assert_eq!(
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
         crate::CompletionPermit::Denied(Exhausted::Turns)
     );
-    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
 }
 
 #[test]
-fn ordinary_time_denies_a_childs_next_completion_and_main_can_still_finish() {
+fn ordinary_time_closes_a_child_then_main_receives_its_final_permit() {
     let mut harness = Harness::new(LIMITS);
     let mut charter = agents();
     charter.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
     let (_, main) = harness.running_on(1, 100, charter);
     let (child, _) = harness.child(main, 7, families(true, false, false), 101);
     harness.env.now = Time::ZERO.saturating_add(Duration::from_secs(540));
+    assert_eq!(harness.fire().as_ref(), &[]);
+    assert_eq!(crate::completion_permit(&mut harness.domain, main, harness.env.now), crate::CompletionPermit::Held);
+    assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(101) }]);
+    let returned = harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let [Request::Return { result: Returned::Unanswered { end, .. }, .. }, Request::CompletionReady { conversation }] =
+        returned.as_ref()
+    else {
+        panic!("last child releases main: {returned:?}");
+    };
+    assert_eq!((*end, *conversation), (End::Budget(Exhausted::Time), main));
+    let note = super::prompt::wind_down_note(crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) });
     assert_eq!(
-        crate::completion_permit(&harness.domain, child, harness.env.now),
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
+        crate::CompletionPermit::Final { note: Some(note) }
+    );
+    harness.env.now = EXPIRY;
+    assert_eq!(
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
         crate::CompletionPermit::Denied(Exhausted::Time)
     );
-    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
 }
 
 #[test]
@@ -3329,7 +3380,7 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
     let (_, main) = harness.running(1, 100);
     assert!(harness.step(priced(main, BUDGET.spend, BUDGET.spend)).is_empty());
     assert_eq!(
-        crate::completion_permit(&harness.domain, main, harness.env.now),
+        crate::completion_permit(&mut harness.domain, main, harness.env.now),
         crate::CompletionPermit::Denied(Exhausted::Spend)
     );
     let wait = Event::Delegated {
@@ -3397,13 +3448,13 @@ fn completion_gate_distinguishes_child_withdrawal_from_budget_denial() {
     let mut harness = Harness::new(LIMITS);
     let (_, main) = harness.running_on(1, 100, agents());
     let (child, _) = harness.child(main, 7, families(true, false, false), 101);
-    assert_eq!(crate::completion_permit(&harness.domain, child, harness.env.now), crate::CompletionPermit::Allowed);
+    assert_eq!(crate::completion_permit(&mut harness.domain, child, harness.env.now), crate::CompletionPermit::Allowed);
     assert_eq!(
         harness.step(Event::Withdraw { conversation: main, call: Token::new(7) }).as_ref(),
         &[Request::Close { peer: Token::new(101) }]
     );
-    assert_eq!(crate::completion_permit(&harness.domain, child, harness.env.now), crate::CompletionPermit::Closing);
-    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
+    assert_eq!(crate::completion_permit(&mut harness.domain, child, harness.env.now), crate::CompletionPermit::Closing);
+    assert_eq!(crate::completion_permit(&mut harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
     assert_eq!(
         harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }).as_ref(),
         &[returned(7, Returned::Cancelled)]
@@ -4088,4 +4139,103 @@ fn workspace_host_paths_fit_their_receiving_bound_and_normalized_absolute_shape(
     }
     mounted.directories[0].host = bytes(b"/");
     assert_eq!(crate::workspace::check(Some(&mounted), &LIMITS), Ok(()));
+}
+
+#[test]
+fn final_turns_ignore_ordinary_nudges_and_fail_once_only_after_the_last() {
+    let mut harness = Harness::new(Limits { nudges: 0, ..LIMITS });
+    let mut selected = charter();
+    selected.budget.turns = 4;
+    selected.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(10) };
+    let (_, main) = harness.running_on(1, 100, selected);
+    drop(harness.step(Event::Used { conversation: main, spend: Spend { turns: 2, ..spend(1) } }));
+    assert_eq!(
+        harness.step(end_turn(main)).as_ref(),
+        &[Request::Say { peer: Token::new(100), text: super::prompt::finish_now() }]
+    );
+    let first = crate::completion_permit(&mut harness.domain, main, harness.env.now);
+    let crate::CompletionPermit::Final { note: Some(note) } = first else {
+        panic!("first final permit");
+    };
+    assert_eq!(note.as_ref(), b"The ordinary budget is spent. Finish now with what you have. You have at most 2 final completions and 10 seconds to finish. Use only finish, or deliver when offered.");
+    for index in 0..2 {
+        assert_eq!(
+            crate::completion_permit(&mut harness.domain, main, harness.env.now),
+            crate::CompletionPermit::Final { note: None }
+        );
+        let owner = Token::new(500 + index);
+        assert_eq!(crate::reserve(&mut harness.domain, main, owner, 1), Ok(()));
+        assert!(crate::settle_reservation(&mut harness.domain, main, owner, 1));
+        drop(harness.step(Event::Used { conversation: main, spend: spend(1) }));
+        let requests = harness.step(end_turn(main));
+        if index == 0 {
+            assert_eq!(requests.as_ref(), &[Request::Say { peer: Token::new(100), text: super::prompt::finish_now() }]);
+        } else {
+            assert_eq!(requests.as_ref(), &[Request::Close { peer: Token::new(100) }]);
+        }
+    }
+    let actual = Spend {
+        turns: 4,
+        input: Some(3),
+        output: Some(30),
+        cache_read: Some(0),
+        cache_write: Some(0),
+        reasoning: None,
+        units: 3,
+    };
+    let (_, answer) = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: actual }));
+    assert_eq!(answer, failed(Failure::Budget(Exhausted::Turns), actual));
+}
+
+#[test]
+fn a_report_accepted_in_main_final_work_remains_accepted_once() {
+    let mut harness = Harness::new(LIMITS);
+    let mut selected = text_charter(false);
+    selected.budget.turns = 4;
+    selected.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(10) };
+    let (run, main) = harness.running_on(1, 100, selected);
+    drop(harness.step(Event::Used { conversation: main, spend: Spend { turns: 2, ..Spend::ZERO } }));
+    let permit = crate::completion_permit(&mut harness.domain, main, harness.env.now);
+    let crate::CompletionPermit::Final { note: Some(_) } = permit else {
+        panic!("the accepted report is in actual final work");
+    };
+    assert_eq!(crate::reserve(&mut harness.domain, main, Token::new(500), 1), Ok(()));
+    assert!(crate::settle_reservation(&mut harness.domain, main, Token::new(500), 0));
+    drop(harness.step(Event::Used { conversation: main, spend: Spend { turns: 1, ..Spend::ZERO } }));
+    assert_eq!(
+        harness.step(finish(main, 7, report())).as_ref(),
+        &[returned(7, Returned::Accepted), Request::Close { peer: Token::new(100) }]
+    );
+    let actual = Spend { turns: 3, ..Spend::ZERO };
+    assert_eq!(
+        answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: actual })).1,
+        Answer::Accepted { outcome: report(), spent: actual, turns: 0 }
+    );
+    assert!(harness.step(Event::Cancel { run }).is_empty(), "no second answer after acceptance");
+}
+
+#[test]
+fn ordinary_time_exhaustion_parks_a_wait_and_withholds_its_actual_call() {
+    let mut harness = Harness::new(Limits { waiting: Duration::from_secs(600), ..LIMITS });
+    let mut selected = charter();
+    selected.grants.wait = true;
+    selected.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
+    selected.waiting = Duration::from_secs(600);
+    let (_, main) = harness.running_on(1, 100, selected);
+    assert_eq!(
+        harness
+            .step(Event::Delegated {
+                conversation: main,
+                call: Token::new(91),
+                name: crate::CallName { activation: 1, completion: 1, position: 0 },
+                ask: Ask::Wait,
+                deadline: EXPIRY
+            })
+            .as_ref(),
+        &[Request::Waiting { host_run: Token::new(1), read: None }]
+    );
+    harness.env.now = Time::ZERO.saturating_add(Duration::from_secs(540));
+    assert_eq!(harness.fire().as_ref(), &[returned(91, Returned::Withheld), Request::Close { peer: Token::new(100) }]);
+    let (_, answer) = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO }));
+    assert_eq!(answer, Answer::Parked { spent: Spend::ZERO, turns: 0 });
 }

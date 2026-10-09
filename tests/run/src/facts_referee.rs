@@ -3,7 +3,7 @@
 
 use skein_lib::{Duration, Time};
 use skein_world::domain::{Expectations, Judge, Referee, Verdict};
-use smith_domain_run::{Budget, Spend, Stage, charter::Reserve, facts::Standing};
+use smith_domain_run::{Budget, Spend, charter::Reserve, facts::Standing};
 
 /// A host allowance and cumulative actual callback accounting, observed outside the domain.
 #[derive(Clone, Copy, Debug)]
@@ -44,10 +44,7 @@ impl Expectations for Meeting {
                 && got.reserve == outside.reserve,
             "budget facts reproduce the admitted host ceiling and reserve",
         );
-        judge.check(
-            got.stage == Stage::Ordinary && got.reserve_spend == 0,
-            "the finishing stage and spend reserve are introduced by their own increments",
-        );
+        judge.check(got.reserve_spend == 0, "the derived spend reserve is introduced by its own increment");
     }
 }
 

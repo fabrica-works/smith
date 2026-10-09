@@ -19,6 +19,25 @@ fn answers(world: &World) -> Vec<&Answer> {
     world.answers().map(|answer| answer.expect("every start is answered")).collect()
 }
 
+fn time_pressure() -> Settings {
+    let mut settings = Settings::calm(34);
+    settings.host.jobs = 1;
+    settings.host.agents = 1000;
+    settings.host.writable = 0;
+    settings.host.reports = 1000;
+    settings.host.verdicts = 0;
+    settings.host.host_tools = 0;
+    settings.host.turns_min = 20;
+    settings.host.turns_max = 20;
+    settings.host.time = smith_run_world::Span::millis(3000, 3000);
+    settings.host.reserve = smith_domain_run::charter::Reserve { turns: 2, time: Duration::from_secs(1) };
+    settings.partner.turn = smith_run_world::Span::millis(1800, 1800);
+    settings.partner.asks = 1000;
+    settings.partner.yields = 0;
+    settings.partner.changes = 0;
+    settings
+}
+
 /// Hundreds of worlds with random limits, scripts, faults and schedules: each
 /// settles with its invariants holding (checked by `World::run`) and reaches
 /// the listed endings. A dedicated focused story covers stale as a final answer.
@@ -28,8 +47,11 @@ fn random_worlds_settle_with_every_start_answered_once() {
     let (mut cancels, mut races, mut stale) = (0, 0, 0);
     let (mut waited, mut delivered, mut host_answered) = (0, 0, 0);
     let (mut busy, mut lost, mut answered) = (0, 0, 0);
-    for seed in 0..300 {
-        let world = settled(&noisy(seed));
+    // Ordinary expiry now starts wind-down or parks. Retain the noisy corpus
+    // and add a long child turn that actually crosses the full run deadline.
+    for seed in 0..301 {
+        let settings = if seed == 300 { time_pressure() } else { noisy(seed) };
+        let world = settled(&settings);
         let stats = world.stats();
         cancels += stats.cancels;
         races += stats.partner.races;

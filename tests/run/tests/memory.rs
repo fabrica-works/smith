@@ -259,6 +259,7 @@ fn observed_request(request: Request, selected: Option<&smith_domain_run::Conven
         | Request::Checking { .. }
         | Request::ChecksEnded { .. }
         | Request::Deliver { .. }
+        | Request::CompletionReady { .. }
         | Request::Return { .. } => Asked::Other,
     }
 }
@@ -524,7 +525,8 @@ fn delivery_memory_step(
             | Request::Checking { .. }
             | Request::ChecksEnded { .. }
             | Request::Close { .. } => {}
-            unexpected @ (Request::HostCall { .. }
+            unexpected @ (Request::CompletionReady { .. }
+            | Request::HostCall { .. }
             | Request::WithdrawHost { .. }
             | Request::Answer { .. }
             | Request::Return { .. }
@@ -728,7 +730,8 @@ fn host_memory_take(
             | Request::WithdrawHost { .. }
             | Request::Close { .. }
             | Request::Answer { .. } => {}
-            unexpected @ (Request::Return { .. }
+            unexpected @ (Request::CompletionReady { .. }
+            | Request::Return { .. }
             | Request::Say { .. }
             | Request::Abort { .. }
             | Request::Check { .. }
@@ -894,6 +897,91 @@ fn an_awaiting_run_retains_its_full_charter_without_allocating_a_session() {
     assert_eq!(opened, None, "preparation awaits without a session opening");
     assert!(meter.held() >= limits.run_bytes, "the full charter remains owned while awaiting");
     host_memory_take(&mut domain, &env, &mut out, &meter, Some(Event::Cancel { run }));
+    domain.reclaim();
+    assert_eq!((domain.runs(), domain.conversations(), domain.calls()), (0, 0, 0));
+}
+
+#[test]
+fn a_run_at_scalar_maxima_emits_its_largest_final_note_within_its_ownership_bound() {
+    let budget = Budget { turns: u32::MAX, spend: u64::MAX, time: Duration::from_nanos(u64::MAX) };
+    let limits = Limits { budget, ..LIMITS };
+    let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(MAX_OUT);
+    let meter = Meter::new();
+    let mut domain = Domain::new(&limits, 77);
+    let bound = worst_case(&limits).expect("maximum scalar budget fits the ownership bound");
+    let mut input = charter(limits.run_bytes);
+    input.budget = budget;
+    input.reserve =
+        smith_domain_run::charter::Reserve { turns: u32::MAX - 1, time: Duration::from_nanos(u64::MAX - 1) };
+    let mut take = |domain: &mut Domain, env: &Env<Limits>, event: Event| {
+        meter.start();
+        while domain.pop_fact().is_some() {}
+        smith_domain_run::step(domain, env, event, &mut out);
+        let measured = meter.end();
+        let mut requests = Vec::new();
+        while let Some(request) = out.pop() {
+            requests.push(observed_request(request, None));
+        }
+        meter.check(measured, bound, &limits);
+        requests
+    };
+    let start = take(
+        &mut domain,
+        &env,
+        Event::Start {
+            resumed: false,
+            messages: Box::default(),
+            workspace: Some(workspace()),
+            reply_to: ReplyTo::new(Token::new(77)),
+            host_run: Token::new(78),
+            identity: None,
+            activation: 1,
+            window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter: input,
+            transcript: None,
+        },
+    );
+    let run = start
+        .iter()
+        .find_map(|request| match request {
+            Asked::Read { owner } => Some(*owner),
+            Asked::Probe { .. } | Asked::Check { .. } | Asked::Open { .. } | Asked::Answer { .. } | Asked::Other => {
+                None
+            }
+        })
+        .expect("guide read");
+    let probed = take(&mut domain, &env, Event::Read { owner: run, read: Read::Missing });
+    let probe = probed
+        .iter()
+        .find_map(|request| match request {
+            Asked::Probe { owner } => Some(*owner),
+            Asked::Read { .. } | Asked::Check { .. } | Asked::Open { .. } | Asked::Answer { .. } | Asked::Other => None,
+        })
+        .expect("checks probe");
+    let opened = take(&mut domain, &env, Event::Probed { owner: probe, executable: false });
+    let conversation = opened
+        .iter()
+        .find_map(|request| match request {
+            Asked::Open { conversation } => Some(*conversation),
+            Asked::Read { .. } | Asked::Probe { .. } | Asked::Check { .. } | Asked::Answer { .. } | Asked::Other => {
+                None
+            }
+        })
+        .expect("main opening");
+    take(&mut domain, &env, Event::Started { conversation, peer: Token::new(79) });
+    env.now = Time::from_nanos(1);
+    while domain.pop_fact().is_some() {}
+    meter.start();
+    let permit = smith_domain_run::completion_permit(&mut domain, conversation, env.now);
+    let measured = meter.end();
+    let smith_domain_run::CompletionPermit::Final { note: Some(note) } = permit else { panic!("maximum note") };
+    assert!(note.windows(b"4294967294".len()).any(|bytes| bytes == b"4294967294"));
+    assert!(note.windows(b"18446744073".len()).any(|bytes| bytes == b"18446744073"));
+    drop(note); // The completion receiver owns this output, as it owns Open and Say.
+    meter.check(measured, bound, &limits);
+    take(&mut domain, &env, Event::Cancel { run });
+    take(&mut domain, &env, Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
     domain.reclaim();
     assert_eq!((domain.runs(), domain.conversations(), domain.calls()), (0, 0, 0));
 }

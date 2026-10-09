@@ -64,6 +64,28 @@ pub(crate) fn opening(brief: bool, messages: Option<Box<[u8]>>) -> Box<[u8]> {
     }
 }
 
+/// The first final completion receives this appended after the latest results.
+pub(crate) fn wind_down_note(reserve: Reserve) -> Box<[u8]> {
+    let mut measured = Text::measuring();
+    render_wind_down(&mut measured, reserve);
+    let mut text = measured.writing();
+    render_wind_down(&mut text, reserve);
+    text.finish()
+}
+
+/// A final completion that yields without finishing asks again within its cap.
+pub(crate) fn finish_now() -> Box<[u8]> {
+    skein_lib::bytes::copy_of(b"Finish now with what you have. Use finish, or deliver when offered.")
+}
+
+fn render_wind_down(text: &mut Text, reserve: Reserve) {
+    text.put(b"The ordinary budget is spent. Finish now with what you have. You have at most ");
+    text.put_decimal(reserve.turns);
+    text.put(b" final completions and ");
+    render_duration(text, reserve.time);
+    text.put(b" to finish. Use only finish, or deliver when offered.");
+}
+
 /// The system text of a run's main conversation, given what the run found in
 /// its checkout.
 pub(crate) fn system(charter: &Charter, mounted: Option<&Workspace>, found: &Found, budget: Budget) -> Box<[u8]> {

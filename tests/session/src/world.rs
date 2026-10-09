@@ -1352,7 +1352,7 @@ impl World {
                                 panic!("an owned call retains its actual owned result or never ran")
                             }
                         },
-                        Decoded::Invalid { problem } => match result {
+                        Decoded::Invalid { problem, .. } => match result {
                             Returned::Invalid { problem: actual } => assert_eq!(actual, problem),
                             Returned::NotRun { .. } => {}
                             Returned::Text { .. } | Returned::Owned { .. } | Returned::Withdrawn => {

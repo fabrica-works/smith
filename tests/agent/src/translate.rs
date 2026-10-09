@@ -230,7 +230,7 @@ pub fn decode(
     }
     match smith_session_world::translate::decode(session_name, arguments) {
         smith_domain::session::llm::Decoded::Owned { call } => agent::Decoded::Owned { call },
-        smith_domain::session::llm::Decoded::Invalid { problem } => agent::Decoded::Invalid { problem },
+        smith_domain::session::llm::Decoded::Invalid { problem, .. } => agent::Decoded::Invalid { problem },
         smith_domain::session::llm::Decoded::Delegated { .. } => {
             unreachable!("the component fixture decoder owns only checkout tools")
         }

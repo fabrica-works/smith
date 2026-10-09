@@ -251,6 +251,8 @@ pub enum MessageRefusal {
 #[derive(PartialEq, Eq, Debug)]
 #[expect(clippy::large_enum_variant, reason = "bounded diagnostics stay inline and are included in worst_case")]
 pub enum Request {
+    /// Internal notice after the last child settles; the root may release a held main completion.
+    CompletionReady { conversation: Token },
     /// A host message refused at ingress; this is its one terminal.
     MessageRefused { host_run: Token, name: Token, reason: MessageRefusal },
 

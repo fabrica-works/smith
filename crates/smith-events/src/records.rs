@@ -457,6 +457,7 @@ pub struct Budget {
     pub turns: u64,
     pub spend: u64,
     pub time_ms: u64,
+    pub reserve: Reserve,
 }
 
 /// Optional child allowances requested by the model, sent in opening metadata.
@@ -675,6 +676,7 @@ pub struct RunStarted {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RunCompleted {
     pub run: u64,
+    pub wind_down: bool,
     pub status: Status,
     pub failure: Option<AnswerFailure>,
     pub result: Option<RunResult>,

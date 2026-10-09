@@ -194,6 +194,7 @@ fn written_text_and_mechanical_feedback_keep_their_error_flags() {
 fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
     for name in [b"write".as_slice(), b"edit"] {
         let history = llm::Prompt {
+            choice: smith_domain::llm::ToolChoice::Auto,
             namespace: tools::Namespace::One,
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
             asker: llm::Asker::Main,
