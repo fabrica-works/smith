@@ -149,6 +149,18 @@ fn reads_and_listings_are_bounded() {
 }
 
 #[test]
+fn reads_and_edits_refuse_files_past_the_independent_whole_file_bound() {
+    let calm = Settings::calm(61);
+    let settings = Settings { tools: Limits { tool_payload: 64, read_bytes: 64, ..calm.tools }, ..calm };
+    assert_eq!(settings.tools.file_bytes, 4096);
+    let script = vec![Step::Calls(vec![read(b"big.txt"), edit(b"big.txt", b"x", b"y", true)])];
+    let (answers, world) = run(settings, MODIFY, script);
+    assert_eq!(answers, vec![Outcome::TooLarge { size: 5000 }, Outcome::TooLarge { size: 5000 }]);
+    assert_eq!(world.checkout().content(b"work/temper/big.txt"), Some([b'x'; 5000].as_slice()));
+    assert_eq!(world.stats().ops, 2, "both loads refuse before any store");
+}
+
+#[test]
 fn listing_byte_credit_keeps_the_exact_name_order_prefix_and_omitted_count() {
     let cell = u64::try_from(core::mem::size_of::<Entry>()).expect("entry size");
     let first = cell + 6;

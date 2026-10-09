@@ -909,6 +909,7 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     let mut world = World::new(62, 256);
     world.env.limits.tools.tool_payload = 256;
     world.env.limits.tools.file_bytes = 320;
+    world.env.limits.tools.read_bytes = 128;
     world.domain = session::Domain::new(&world.env.limits, 62);
     let mut spec = opening(None, 100);
     let name = || Name::new(b"repo".as_slice().into()).expect("repository mount");

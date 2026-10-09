@@ -181,9 +181,9 @@ fn a_tool_piece_must_fit_the_separately_declared_whole_file() {
     );
     profile.declared.file_bytes = 256;
     validate::declarations(&profile, &declarations()).expect("payload at file ceiling");
-    profile.declared.file_bytes = 1 << 20;
+    profile.declared.file_bytes = 1_u32 << 20_u32;
     let limits = super::derive(&profile, &declarations()).expect("independent file declaration");
-    assert_eq!(limits.domain.session.tools.file_bytes, 1 << 20);
+    assert_eq!(limits.domain.session.tools.file_bytes, 1_u32 << 20_u32);
     assert_eq!(limits.domain.session.tools.tool_payload, 256);
-    assert_eq!(limits.machine.file_bytes, 1 << 20);
+    assert_eq!(limits.machine.file_bytes, 1_u32 << 20_u32);
 }
