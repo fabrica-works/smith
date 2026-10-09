@@ -558,9 +558,13 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
         network: Span::millis(1, 1),
         ..Settings::calm(1104)
     };
+    settings.limits.decoded_call_bytes = u64::from(bounds.client.dialect.parts)
+        .checked_mul(u64::try_from(core::mem::size_of::<llm::Decoded>()).expect("bounded decoded cell"))
+        .and_then(|cells| cells.checked_add(settings.limits.decoded_call_bytes))
+        .expect("fallback cells plus the existing decoded payload allowance");
     settings.limits.session.completion_bytes =
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
-            .expect("actual full-batch receiving reservation");
+            .expect("actual batch and history receiving reservation");
     settings.limits.session.completion_blocks = bounds.client.dialect.parts;
     let batch = 16_usize;
     let read = || call(b"read", br#"{"path":"data.txt"}"#);
