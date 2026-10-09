@@ -8,6 +8,8 @@ use smith_channel_world::{Observation, World};
 use smith_domain::{self as agent, Event as AgentEvent, Request as AgentRequest};
 use smith_host_domain::{self as host, Down, Up};
 
+mod long;
+
 #[test]
 #[expect(
     clippy::too_many_lines,

@@ -121,6 +121,7 @@ pub struct World {
     pub content: Vec<(Token, smith::Content)>,
     pub observations: Vec<inline::Fact>,
     pub trace: Trace,
+    pub long_notices: Vec<(Time, Option<(host::Operation, Duration)>)>,
     pub lower: Ledger<Token, (Token, Token)>,
     provider: provider::Domain,
     provider_env: Env<provider::Config>,
@@ -154,6 +155,7 @@ impl World {
             content: Vec::new(),
             observations: Vec::new(),
             trace,
+            long_notices: Vec::new(),
             lower: Ledger::new("inline native provider terminal"),
             provider: smith_agent_world::scripted_provider(&configuration, seed),
             provider_env: Env { now: Time::ZERO, wall: skein_lib::Wall::EPOCH, limits: configuration },
@@ -199,6 +201,14 @@ impl World {
     pub fn scripts(&mut self, scripts: Box<[provider::api::Script]>) {
         assert_eq!(self.provider.calls(), 0);
         self.provider = provider::Domain::scripted(&self.provider_env.limits, 1, scripts);
+    }
+
+    /// Hold native provider replies for an exact virtual span, before any call.
+    pub fn provider_latency(&mut self, span: Duration) {
+        assert_eq!(self.provider.calls(), 0);
+        self.provider_env.limits.latency_min = span;
+        self.provider_env.limits.latency_max = span;
+        self.provider = smith_agent_world::scripted_provider(&self.provider_env.limits, 1);
     }
 
     /// Return the generation-safe parent handle learned from Started.
@@ -307,6 +317,10 @@ impl World {
         assert!(self.schedule.is_empty());
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "diagnostic captures long notices while the exhaustive shared parent referee owns all requests"
+    )]
     fn outputs(&mut self) {
         while let Some(request) = self.stage.out.pop() {
             self.trace.log(self.stage.env.now, format!("down {request:?}"));
@@ -344,6 +358,13 @@ impl World {
                     }
                     let lower_settled = !self.bindings.values().any(|binding| Some(binding.agent) == seen.agent)
                         && !self.pending_machine.iter().any(|(agent, _, _)| Some(*agent) == seen.agent);
+                    match &request {
+                        parent::Request::Long { operation, span, .. } => {
+                            self.long_notices.push((self.stage.env.now, Some((*operation, *span))));
+                        }
+                        parent::Request::LongDone { .. } => self.long_notices.push((self.stage.env.now, None)),
+                        _ => {}
+                    }
                     seen.observe_parent(request, lower_settled, lower_settled);
                 }
                 Output::Lower { agent, request } => match request {

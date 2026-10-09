@@ -280,8 +280,11 @@ fn checks_are_long_operations_for_either_kind() {
     world.scripts(workspace_script(&[(b"finish", br#"{"title":"checked","body":"change"}"#)]));
     world.event(parent::Event::Spawn { client: Token::new(1), start: workspace_start(82) });
     world.run();
-    assert_eq!(world.trace.lines().iter().filter(|request| request.contains("Parent(Long {")).count(), 1);
-    assert_eq!(world.trace.lines().iter().filter(|request| request.contains("Parent(LongDone {")).count(), 1);
+    assert_eq!(world.trace.lines().iter().filter(|request| request.contains("operation: Checks")).count(), 1);
+    assert_eq!(
+        world.long_notices.iter().filter(|(_, span)| span.is_some()).count(),
+        world.long_notices.iter().filter(|(_, span)| span.is_none()).count()
+    );
     world.settled();
     let mut spawned = Spawned::new(82, smith_host_world::limits());
     spawned.live();
@@ -367,4 +370,37 @@ fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
     world.machine_replies();
     world.run();
     world.settled();
+}
+
+#[test]
+fn a_real_completion_stretches_the_spawned_watchdog_past_no_progress() {
+    use skein_lib::{Duration, Time};
+    let mut native = World::new(95, inline::limits());
+    native.provider_latency(Duration::from_secs(20));
+    spawn(&mut native, 1, Job::HostTools);
+    let [(_, Some((operation, span)))] = native.long_notices.as_slice() else {
+        panic!("actual provider issuance reports one span: {:?}", native.long_notices);
+    };
+    assert_eq!(*operation, host::Operation::Completion);
+    let mut bounds = smith_host_world::limits();
+    bounds.long_span = *span;
+    let mut spawned = Spawned::new(95, bounds);
+    spawned.live();
+    spawned.up(host::Up::Long { operation: *operation, span: *span });
+    native.at(Time::ZERO.saturating_add(Duration::from_secs(11)));
+    spawned.at(11);
+    assert_eq!(spawned.seen.fault, None, "actual completion outlasts no_progress");
+    assert_eq!(native.long_notices.len(), 1, "actual provider has not ended");
+    native.event(parent::Event::Stop { agent: native.handle(Token::new(1)) });
+    assert_eq!(native.long_notices.len(), 1, "cancel alone does not end the completion");
+    native.run();
+    native.settled();
+    assert_eq!(native.long_notices.len(), 2);
+    assert_eq!(native.long_notices[1].1, None);
+    spawned.at(20);
+    spawned.up(host::Up::LongDone);
+    assert_eq!(spawned.seen.fault, None);
+    spawned.up(host::Up::Answer { answer: host::Answer { read: None, turns: 0, spent: 0, result: RunResult::Parked } });
+    spawned.cleanup();
+    spawned.settled();
 }

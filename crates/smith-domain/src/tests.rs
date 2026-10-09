@@ -2233,3 +2233,41 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         assert!(observed);
     }
 }
+
+#[test]
+fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
+    let mut h = Harness::new();
+    let mut requested = charter();
+    requested.grants.tools.shell = true;
+    let (run, owner, _) = h.admit(7, requested);
+    assert_eq!(h.long.as_slice(), &[Some(crate::Operation::Completion)]);
+    let emitted = h.answer(
+        owner,
+        Box::new([owned(
+            b"command",
+            Call::Shell { command: bytes(b"sleep 12"), timeout: Some(Duration::from_secs(30)) },
+        )]),
+    );
+    let [Request::Io { owner: command, op: Op::Spawn { .. }, .. }] = emitted.as_ref() else {
+        panic!("actual shell IO: {emitted:?}");
+    };
+    let command = *command;
+    assert_eq!(h.long.as_slice(), &[Some(crate::Operation::Completion), None, Some(crate::Operation::Command)]);
+    assert_eq!(h.domain.commands.len(), 1);
+    h.env.now = Time::ZERO.saturating_add(Duration::from_secs(11));
+    assert!(h.step(Event::Cancel { run }).is_empty());
+    assert_eq!(h.next().as_ref(), &[Request::CancelIo { owner: command }]);
+    assert_eq!(h.domain.commands.len(), 1, "cancellation leaves actual IO outstanding");
+    assert_eq!(h.long.len(), 3, "no long terminal before actual IO settlement");
+    h.step(Event::Done { owner: command, done: tools::Done::Cancelled });
+    assert_eq!(h.domain.commands.len(), 0);
+    assert_eq!(h.long.as_slice(), &[Some(crate::Operation::Completion), None, Some(crate::Operation::Command), None]);
+    let ended = h.next();
+    assert!(
+        matches!(
+            ended.as_ref(),
+            [Request::Answer { answer: run::Answer::Failed { failure: run::Failure::Cancelled, .. }, .. }]
+        ),
+        "{ended:?}"
+    );
+}
