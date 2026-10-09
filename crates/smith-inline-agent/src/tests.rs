@@ -92,6 +92,18 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
     for _ in 0..crate::max_out(&env.limits) {
         out.pop();
     }
+    step(
+        &mut agent,
+        &env,
+        Input::Parent(parent::Event::Message {
+            agent: handle,
+            name: Token::new(42),
+            label: Box::default(),
+            text: b"read me".as_slice().into(),
+        }),
+        &mut out,
+    );
+    while out.pop().is_some() {}
     let turn = smith::session::record::Turn {
         version: smith::session::record::VERSION,
         endpoint: smith::session::llm::Endpoint(0),
@@ -259,6 +271,11 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
         handles[usize::try_from(client - 1).expect("two slots")] = agent;
         while out.pop().is_some() {}
     }
+    // The native queue is beneath message entrance: full ingress now refuses
+    // without entering the root. Drive its public entry point to produce actual
+    // accepted/refused-message facts; no observer cells are filled artificially.
+    let native_env = Env { now: env.now, wall: env.wall, limits: env.limits.smith };
+    let mut native_out = Queue::with_capacity(smith::max_out(&native_env.limits));
     let mut blocked = false;
     for name in 1_u64..5000 {
         let input = Input::Parent(parent::Event::Message {
@@ -271,8 +288,19 @@ fn native_fact_backpressure_holds_one_slot_until_its_owner_drains_it() {
             blocked = true;
             break;
         }
-        step(&mut domain, &env, input, &mut out);
-        while out.pop().is_some() {}
+        let slot = domain.slots.get_mut(Id::from_token(handles[0])).expect("actual native slot");
+        smith::step(
+            &mut slot.root,
+            &native_env,
+            smith::Event::Message {
+                run: slot.run.expect("admitted native run"),
+                name: Token::new(name),
+                label: Box::default(),
+                text: b"held".as_slice().into(),
+            },
+            &mut native_out,
+        );
+        while native_out.pop().is_some() {}
     }
     assert!(blocked, "the real native fact queue eventually holds its producer");
     let input = Input::Parent(parent::Event::Message {
