@@ -101,7 +101,7 @@ pub fn configuration_with_tools(
     let lower = lower_configuration_with(tls);
     let mut source = serde_json::json!({
         "agent": {}, "chat": "main", "instructions": "@local-shell Assist",
-        "models": [{"endpoint": "", "name": "fake", "window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000,
+        "models": [{"endpoint": "", "name": "fake", "window":1_048_576,"output":512,"reasoning_item":64,"head":60000,"idle":30000,
             "input_price": 1_250_000, "cached_price": 125_000, "output_price": 10_000_000, "price_unit": 1_000_000}],
         "budget": {"turns": 512, "spend": 25_000_000, "seconds": 3600}, "waiting_seconds": 30,
         "contract": {"form": "report", "max": 128}

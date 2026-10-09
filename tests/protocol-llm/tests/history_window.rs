@@ -12,6 +12,20 @@ use smith_session_world::recorded::{World, opening};
 
 #[test]
 fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
+    for provider in [skein_llm::Provider::OpenAiCodex, skein_llm::Provider::Anthropic] {
+        history_edge(provider);
+    }
+}
+
+struct Fixture {
+    declared: skein_llm::Declared,
+    client: skein_llm::client::Limits,
+    limits: session::Limits,
+    decoded: u64,
+    allowance: u64,
+}
+
+fn fixture(provider: skein_llm::Provider) -> Fixture {
     let declared = skein_llm::Declared {
         window: 512,
         output: 16,
@@ -20,14 +34,13 @@ fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
         calls_per_response: 1,
         conversations: 1,
     };
-    let mut client = skein_llm::Limits::derive(&declared).expect("tiny actual model").codex;
+    let mut client = skein_llm::Limits::derive(&declared).expect("tiny actual model").dialect(provider);
     client.http.request = 4096;
     client.http.read = 256;
     client.http.send = 256;
     client.sse.chunk = 256;
     let tools = smith_protocol_llm_world::LIMITS.session.tools;
-    let allowance = smith_protocol_llm::prompt_allowance(skein_llm::Provider::OpenAiCodex, &client, 0)
-        .expect("measured native framing");
+    let allowance = smith_protocol_llm::prompt_allowance(provider, &client, 0).expect("measured native framing");
     let mut limits = session::derive(&session::Derivation {
         conversations: 1,
         calls_per_response: 1,
@@ -51,17 +64,18 @@ fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
     let decoded = u64::from(client.input)
         + u64::from(client.output_items) * u64::try_from(size_of::<llm::Decoded>()).expect("decoded cell");
     limits.completion_bytes = adapter::completion_worst_case(&client, decoded).expect("native completion ownership");
-    let reserve = session::completion_reserve(&limits).expect("whole receiving credit");
+    Fixture { declared, client, limits, decoded, allowance }
+}
+
+fn history_edge(provider: skein_llm::Provider) {
+    let Fixture { declared, client, limits, decoded, allowance } = fixture(provider);
+    let tools = smith_protocol_llm_world::LIMITS.session.tools;
+    let configuration = match provider {
+        skein_llm::Provider::OpenAiCodex => 0,
+        skein_llm::Provider::Anthropic => 1,
+    };
     let system = b"@history-window";
-    let payload = limits
-        .history_bytes
-        .checked_sub(reserve)
-        .and_then(|bytes| {
-            bytes.checked_sub(
-                u64::try_from(system.len() + 1 + size_of::<session::llm::Block>()).expect("fixed ownership"),
-            )
-        })
-        .expect("model holds one maximum history and receiving credit");
+    let payload = payload_at_edge(&limits, system);
     for extra in [0, 1] {
         let mut world = World::new(4800 + extra, 256);
         world.env.limits = limits;
@@ -119,16 +133,9 @@ fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
             Token::new(48),
             prompt,
             receiving,
-            &wire::configurations()[0],
+            &wire::configurations()[configuration],
             &adapter_limits,
-            Box::new([Script {
-                cue: system.as_slice().into(),
-                turns: Box::new([Turn {
-                    lines: Box::new([Line::Text { text: b"done".as_slice().into() }]),
-                    finish: Finish::Stop,
-                    tokens: 1,
-                }]),
-            }]),
+            scripts(system),
         )
         .expect("admitted history prepares the actual Client");
         let mut terminals = connection.start();
@@ -153,4 +160,28 @@ fn a_derived_history_at_its_bound_is_sent_and_one_byte_more_is_refused_typed() {
         assert!(connection.close().is_empty());
         assert!(connection.settle().is_empty());
     }
+}
+
+fn scripts(system: &[u8]) -> Box<[Script]> {
+    Box::new([Script {
+        cue: system.into(),
+        turns: Box::new([Turn {
+            lines: Box::new([Line::Text { text: b"done".as_slice().into() }]),
+            finish: Finish::Stop,
+            tokens: 1,
+        }]),
+    }])
+}
+
+fn payload_at_edge(limits: &session::Limits, system: &[u8]) -> u64 {
+    let reserve = session::completion_reserve(limits).expect("whole receiving credit");
+    limits
+        .history_bytes
+        .checked_sub(reserve)
+        .and_then(|bytes| {
+            bytes.checked_sub(
+                u64::try_from(system.len() + 1 + size_of::<session::llm::Block>()).expect("fixed ownership"),
+            )
+        })
+        .expect("model holds one maximum history and receiving credit")
 }

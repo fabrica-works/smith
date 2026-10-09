@@ -292,6 +292,15 @@ fn at_most(check: Check, left: Limit, right: Limit) -> Result<(), Refusal> {
     if smaller { Ok(()) } else { Err(Refusal::Broken { check, left, right }) }
 }
 
+/// The transcript vocabulary holds the largest completion or result message.
+pub fn calls_in_transcript(required: u32, available: u32) -> Result<(), Refusal> {
+    at_most(
+        Check::CallsInTranscript,
+        LimitName::deployment(Layer::Session, "message_blocks").value(Value::Count(u64::from(required))),
+        LimitName::deployment(Layer::Transcript, "message_blocks").value(Value::Count(u64::from(available))),
+    )
+}
+
 /// The actual configured head, with credential and affinity maxima, fits one transport piece.
 /// Startup supplies the native measurement before constructing the connection component.
 pub fn request_head(endpoint: u32, required: u32, available: u32) -> Result<(), Refusal> {

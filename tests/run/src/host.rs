@@ -585,7 +585,7 @@ impl Host {
             account: 0,
             endpoint: Endpoint(0),
             model: Box::from(model),
-            window: 8192,
+            window: 65_536,
             output: script.max_tokens,
             dialect: 1,
         };

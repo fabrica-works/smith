@@ -279,7 +279,7 @@ fn observed_request(request: Request, selected: Option<&smith_domain_run::Conven
 /// down with the change, while its landing, returned, still holds its copy
 /// until the reclaim point. The peak of the heap in every step is checked
 /// against the worst case.
-fn fill(limits: Limits) {
+fn fill(limits: &Limits) {
     fill_selected(limits, None);
 }
 
@@ -300,12 +300,12 @@ fn selected_charter(run_bytes: u64, selected: Option<&smith_domain_run::Conventi
     charter
 }
 
-fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions>) {
-    let bound = worst_case(&limits).expect("the test limits fit");
-    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+fn fill_selected(limits: &Limits, selected: Option<&smith_domain_run::Conventions>) {
+    let bound = worst_case(limits).expect("the test limits fit");
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits, 0);
+    let mut domain = Domain::new(limits, 0);
     // The requests are the parent's to route and their receivers' to count:
     // each is dropped, keeping only what it asked for, and the step's peak
     // checked less them.
@@ -318,7 +318,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
         while let Some(request) = out.pop() {
             asked.push(observed_request(request, selected));
         }
-        meter.check(measured, bound, &limits);
+        meter.check(measured, bound, limits);
         asked
     };
     let spend = Spend {
@@ -406,9 +406,9 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
 }
 
 /// The positive full-cap run above precedes this exact one-byte-over control.
-fn refuse_oversized_charter(limits: Limits, env: &Env<Limits>, out: &mut Queue<Request>) {
+fn refuse_oversized_charter(limits: &Limits, env: &Env<Limits>, out: &mut Queue<Request>) {
     // A byte more is refused.
-    let mut domain = Domain::new(&Limits { runs: 1, conversations: 2, ..limits }, 0);
+    let mut domain = Domain::new(&Limits { runs: 1, conversations: 2, ..*limits }, 0);
     let host_run = Token::new(0);
     let start = Event::Start {
         messages: Box::default(),
@@ -430,9 +430,9 @@ fn refuse_oversized_charter(limits: Limits, env: &Env<Limits>, out: &mut Queue<R
 
 #[test]
 fn a_domain_with_every_run_full_stays_within_its_worst_case() {
-    fill(LIMITS);
-    fill(Limits { runs: 64, conversations: 128, calls: 128, run_bytes: 65_536, guide_bytes: 32_768, ..LIMITS });
-    fill(Limits { runs: 1000, conversations: 2000, calls: 2000, run_bytes: 2048, guide_bytes: 16, ..LIMITS });
+    fill(&LIMITS);
+    fill(&Limits { runs: 64, conversations: 128, calls: 128, run_bytes: 65_536, guide_bytes: 32_768, ..LIMITS });
+    fill(&Limits { runs: 1000, conversations: 2000, calls: 2000, run_bytes: 2048, guide_bytes: 16, ..LIMITS });
 }
 
 fn full_change(outcome_bytes: u64) -> Change {
@@ -563,7 +563,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
     let mut domain = Domain::new(&limits, 0);
-    let charter = full_delivery_charter(limits);
+    let charter = full_delivery_charter(&limits);
     let host_run = Token::new(10);
     let (owner, _) = delivery_memory_step(
         &mut domain,
@@ -656,7 +656,7 @@ fn full_delivery_workspace() -> Workspace {
     Workspace { directories }
 }
 
-fn full_delivery_charter(limits: Limits) -> Charter {
+fn full_delivery_charter(limits: &Limits) -> Charter {
     let parts = u64::from(smith_domain_run::MAX_DIRECTORIES)
         * (size(size_of::<Directory>()) + 1 + size(b"/host".len()))
         + 1
@@ -861,7 +861,7 @@ fn maximum_selected_read_probe_and_check_paths_attain_the_full_run_ownership_bou
         guide: vec![b'g'; capacity].into_boxed_slice(),
         checks: vec![b'c'; capacity].into_boxed_slice(),
     };
-    fill_selected(Limits { run_bytes: 16_384, ..LIMITS }, Some(&selected));
+    fill_selected(&Limits { run_bytes: 16_384, ..LIMITS }, Some(&selected));
 }
 
 #[test]

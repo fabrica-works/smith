@@ -62,10 +62,10 @@ pub const CEILINGS: Limits = Limits {
     field_problem_field: 64,
     said_text: 1_048_576,
     tool_result_id: 256,
-    message_blocks: 16,
+    message_blocks: 64,
     turn_endpoint: 64,
     turn_dialect: 32,
-    turn_messages: 64,
+    turn_messages: 16,
 };
 
 /// A field or tag that caused a codec problem.
@@ -8892,8 +8892,8 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Message::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(16, true))).expect("field at ceiling");
-        let problem = Message::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(17, false))).expect_err("field past ceiling");
+        Message::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
+        let problem = Message::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::MessageBlocks, skein_codec::Reason::Bound));
     }
 
@@ -8952,8 +8952,8 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
+        Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(16, true))).expect("field at ceiling");
+        let problem = Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(17, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::TurnMessages, skein_codec::Reason::Bound));
     }
 

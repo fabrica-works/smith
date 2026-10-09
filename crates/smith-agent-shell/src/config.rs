@@ -780,7 +780,12 @@ mod tests {
         Document {
             profile: ProfileDocument {
                 name: "standard".into(),
-                declared: DeclaredOverrides { memory: Some(u64::MAX), ..DeclaredOverrides::default() },
+                declared: DeclaredOverrides {
+                    memory: Some(u64::MAX),
+                    tool_payload: Some(256),
+                    read_window: Some(256),
+                    ..DeclaredOverrides::default()
+                },
                 policy: PolicyOverrides::default(),
             },
             endpoints: serde_json::from_value(shaped_document()["endpoints"].clone()).expect("tiny endpoint"),
@@ -835,9 +840,9 @@ mod tests {
             handshake: 10_000,
             models: vec![ModelDocument {
                 name: "test".into(),
-                window: 65536,
-                output: 32,
-                reasoning_item: 2048,
+                window: 65_536,
+                output: 512,
+                reasoning_item: 64,
                 oversized_reasoning: None,
                 head: 60_000,
                 idle: 30_000,
@@ -865,7 +870,7 @@ mod tests {
     fn affinity_header_names_and_static_cache_keys_are_refused_in_configuration() {
         for name in ["session-id", "SESSION-ID", "thread-id", "ThReAd-Id"] {
             let json = format!(
-                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},"endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext","headers":[{{"name":"{name}","value":"host override"}}]}}],"environment":[]}}"#
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},"endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext","headers":[{{"name":"{name}","value":"host override"}}]}}],"environment":[]}}"#
             );
             assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("invalid endpoint HTTP header"));
         }
@@ -877,18 +882,18 @@ mod tests {
     fn plaintext_configuration_names_its_transport_and_admits_only_loopback() {
         for address in ["127.0.0.1:8080", "[::1]:8080"] {
             let json = format!(
-                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             let configuration = parse(json.as_bytes()).expect("loopback plaintext configuration");
             service::Service::new(configuration.service, 1).expect("loopback plaintext service");
         }
         for address in ["192.0.2.1:8080", "[2001:db8::1]:8080"] {
             let json = format!(
-                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("plaintext endpoint address must be loopback"));
         }
@@ -903,9 +908,9 @@ mod tests {
             r#""transport":"tls""#,
         ] {
             let json = format!(
-                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776}},"policy":{{"group_stop":10}}}},
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
+                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
             );
             assert!(parse(json.as_bytes()).is_err(), "invalid transport {extra}");
         }
@@ -941,10 +946,10 @@ mod tests {
 
     fn shaped_document() -> serde_json::Value {
         serde_json::json!({
-            "profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64}},
+            "profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64,"tool_payload":256,"read_window":256}},
             "endpoints":[{"name":"local","number":0,"dialect":0,"account":0,"provider":"codex",
                 "address":"127.0.0.1:8080","transport":"plaintext","connect":10000,"handshake":10000,
-                "models":[{"name":"test","window":65536,"output":32,"reasoning_item":2048,"head":60000,"idle":30000}]}],
+                "models":[{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}]}],
             "environment":[]
         })
     }

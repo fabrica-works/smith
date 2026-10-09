@@ -229,12 +229,9 @@ fn call(name: &[u8], arguments: &[u8]) -> Result<Call, agent::Problem> {
     let limits = smith_protocol_llm::Limits {
         client,
         tool_bytes: 32768,
-        rendered_result: client.dialect.string_bytes,
-        stated: smith_protocol_llm::Stated::from_tools(
-            &smith_tools_world::Settings::calm(0).tools,
-            client.dialect.answer_bytes,
-        )
-        .expect("fixture numbers"),
+        rendered_result: client.strings,
+        stated: smith_protocol_llm::Stated::from_tools(&smith_tools_world::Settings::calm(0).tools, client.input)
+            .expect("fixture numbers"),
     };
     match smith_protocol_llm::decode(
         name,

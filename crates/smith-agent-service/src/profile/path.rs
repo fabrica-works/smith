@@ -56,10 +56,8 @@ pub(super) fn path(profile: &Profile, configuration: &Configuration) -> Result<P
         largest.output = largest.output.max(declared.output);
         largest.reasoning_item = largest.reasoning_item.max(declared.reasoning_item);
     }
-    let limits = match shared::Limits::derive(&largest) {
-        Ok(limits) => limits,
-        Err(_) => return Err(Refusal::Derived { limit: LimitName::deployment(Layer::Llm, "receiving_maxima") }),
-    };
+    let limits = shared::Limits::derive(&largest)
+        .or(Err(Refusal::Derived { limit: LimitName::deployment(Layer::Llm, "receiving_maxima") }))?;
     let mut client = limits.codex;
     // Codex has the larger fixed response head, event records and metadata;
     // Anthropic's smaller tool spelling permits more represented tools.

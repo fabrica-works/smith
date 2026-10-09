@@ -50,6 +50,10 @@ pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, too
     };
     let credential = shared::Credential { access_token: Box::from(b"a".as_slice()), account_id };
     let mut limits = *client;
+    // Only these actual fixed records participate in this measurement.
+    // Runtime history/tool maxima do not belong to its temporary wrappers.
+    limits.tools = tools;
+    limits.history_items = 2;
     limits.http.request = skein_tls::client::MAX_PLAINTEXT;
     limits.http.read = 4096;
     limits.http.send = skein_tls::client::MAX_PLAINTEXT;

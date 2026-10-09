@@ -16,6 +16,7 @@ pub(super) struct Tracing {
     submissions: Queue<Submit>,
     closing: u32,
     result: Option<bool>,
+    memory: u64,
     pub(super) facts: Vec<smith_domain::Fact>,
     pub(super) channel_loss: u64,
     pub(super) trace_loss: u64,
@@ -24,6 +25,15 @@ pub(super) struct Tracing {
 impl Tracing {
     pub(super) fn new(configuration: agent::Config, inherited: &skein_world::Inherited) -> Self {
         let queue = configuration.limits.queue;
+        let memory = agent::worst_case(&configuration.limits, &configuration.llm_endpoints)
+            .expect("bounded actual service")
+            .checked_add(
+                u64::try_from(size_of::<smith_domain::Fact>() * 256 + size_of::<Self>()).expect("observer cells"),
+            )
+            .and_then(|bound| bound.checked_add(Queue::<Complete>::worst_case(queue)?))
+            .and_then(|bound| bound.checked_add(Queue::<Submit>::worst_case(queue)?))
+            .and_then(|bound| bound.checked_add(64))
+            .expect("observer ownership");
         let mut service = Service::new(configuration, 7).expect("bounded observed service");
         let pipe = |child| inherited.pipes.iter().find(|(number, _)| *number == child).expect("inherited pipe").1;
         service.adopt_streams(pipe(0), pipe(1), inherited.signal).expect("service streams");
@@ -35,6 +45,7 @@ impl Tracing {
             submissions: Queue::with_capacity(queue),
             closing: 0,
             result: None,
+            memory,
             facts: Vec::new(),
             channel_loss: 0,
             trace_loss: 0,
@@ -115,7 +126,7 @@ impl Host for Tracing {
     }
 
     fn worst_case(&self) -> u64 {
-        134_217_728
+        self.memory
     }
 
     fn operations(&self) -> u32 {

@@ -85,37 +85,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Aborted { owner } => run::Event::Aborted { owner },
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
         Event::Failed { owner, failure, evidence, detail } => {
-            let grant = crate::operation::completion_done(domain, owner);
-            let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
-            let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
-            assert!(
-                run::settle_reservation(&mut domain.run, conversation, owner, 0),
-                "failed call held its reservation"
-            );
-            match failure {
-                crate::llm::Failure::Unauthorized => {
-                    if let Some(held) = domain.grants.get_mut(&grant.account)
-                        && !was_rejected(held, grant.generation)
-                    {
-                        held.rejected = Some(grant.generation);
-                        domain.notices.push(Request::Rejected { grant });
-                    }
-                }
-                crate::llm::Failure::Exhausted { retry_after } => {
-                    domain.notices.push(Request::Exhausted { account: grant.account, retry_after });
-                }
-                crate::llm::Failure::Overloaded
-                | crate::llm::Failure::RateLimited { .. }
-                | crate::llm::Failure::Unavailable
-                | crate::llm::Failure::TimedOut { .. }
-                | crate::llm::Failure::ContextTooLong
-                | crate::llm::Failure::Invalid
-                | crate::llm::Failure::Limit { .. }
-                | crate::llm::Failure::ApplicationLimit
-                | crate::llm::Failure::Protocol
-                | crate::llm::Failure::Cancelled => {}
-            }
-            return session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail });
+            return failed(domain, env, owner, failure, evidence, detail);
         }
         Event::Cancelled { owner } => {
             crate::operation::completion_done(domain, owner);
@@ -136,6 +106,45 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         }
     };
     run_step(domain, env, event);
+}
+
+/// Settle a failed completion's lease and zero charge before applying failure policy.
+fn failed(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    owner: Token,
+    failure: crate::llm::Failure,
+    evidence: crate::llm::Evidence,
+    detail: Box<[u8]>,
+) {
+    let grant = crate::operation::completion_done(domain, owner);
+    let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
+    let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
+    assert!(run::settle_reservation(&mut domain.run, conversation, owner, 0), "failed call held its reservation");
+    match failure {
+        crate::llm::Failure::Unauthorized => {
+            if let Some(held) = domain.grants.get_mut(&grant.account)
+                && !was_rejected(held, grant.generation)
+            {
+                held.rejected = Some(grant.generation);
+                domain.notices.push(Request::Rejected { grant });
+            }
+        }
+        crate::llm::Failure::Exhausted { retry_after } => {
+            domain.notices.push(Request::Exhausted { account: grant.account, retry_after });
+        }
+        crate::llm::Failure::Overloaded
+        | crate::llm::Failure::RateLimited { .. }
+        | crate::llm::Failure::Unavailable
+        | crate::llm::Failure::TimedOut { .. }
+        | crate::llm::Failure::ContextTooLong
+        | crate::llm::Failure::Invalid
+        | crate::llm::Failure::Limit { .. }
+        | crate::llm::Failure::ApplicationLimit
+        | crate::llm::Failure::Protocol
+        | crate::llm::Failure::Cancelled => {}
+    }
+    session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail });
 }
 
 /// Resume the one unsent main completion when its host has kept enough turns.

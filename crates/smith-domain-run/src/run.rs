@@ -1905,10 +1905,16 @@ fn sub_agent(
     asking.calls = asking.calls.saturating_add(1);
     run.conversations = run.conversations.saturating_add(1);
     run.next_ordinal = next_ordinal;
-    let opening = Opening {
+    let opening = child_opening(run, &wanted.brief, plan, ordinal, env.limits.answer_bytes, env.limits.wrap_up);
+    out.push(Request::Open { conversation: child.token(), opening });
+}
+
+/// Render an admitted child's immutable opening from its effective grant.
+fn child_opening(run: &Run, brief: &[u8], plan: agent::Plan, ordinal: u32, answer_bytes: u32, wrap_up: Duration) -> Opening {
+    Opening {
         final_turn: Some(crate::FinalTurn {
             note: prompt::child_final_note(),
-            allowance: agent::final_allowance(plan.budget.time, env.limits.wrap_up),
+            allowance: agent::final_allowance(plan.budget.time, wrap_up),
         }),
         generated_schema_bytes: 0,
         identity: run.identity,
@@ -1922,10 +1928,10 @@ fn sub_agent(
             &run.charter,
             run.workspace.as_ref(),
             &run.found,
-            &wanted.brief,
+            brief,
             plan.families,
             plan.granted,
-            env.limits.answer_bytes,
+            answer_bytes,
         ),
         prompt: copy_of(prompt::BEGIN),
         tools: plan.families.tools,
@@ -1934,8 +1940,7 @@ fn sub_agent(
         finish: false,
         families: plan.families,
         llm: plan.llm,
-    };
-    out.push(Request::Open { conversation: child.token(), opening });
+    }
 }
 
 /// Stores `call`, there being room, and arms its deadline.

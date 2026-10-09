@@ -475,7 +475,7 @@ impl skein_world::Referee<Proc> for Referee {
             if matches!(self.tracing, Some((TraceCase::Refused, _))) {
                 assert!(!parent.admitted(), "an entrance refusal has no admission");
             } else {
-                assert!(parent.admitted(), "the host observed admission");
+                assert!(parent.admitted(), "the host observed admission; answer={:?}", parent.peer.observed());
             }
             let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
             if matches!(self.tracing, Some((TraceCase::Parked, _))) {
@@ -829,6 +829,11 @@ impl World {
                                         usize::try_from(
                                             crate::limits().llm.adapter.client.answer
                                                 / crate::limits().llm.adapter.client.output_items
+                                                + u32::from(
+                                                    index
+                                                        < crate::limits().llm.adapter.client.answer
+                                                            % crate::limits().llm.adapter.client.output_items
+                                                )
                                         )
                                         .expect("bounded text per part")
                                             - format!("item_1_{index}").len()

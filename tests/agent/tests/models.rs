@@ -43,7 +43,7 @@ fn a_charter_naming_an_undeclared_model_is_refused_at_the_entrance() {
 fn a_window_above_its_declaration_is_refused() {
     let settings = Settings { job: Job::Reporting, ..Settings::calm(1402) };
     let mut requested = scripted_charter(&settings);
-    requested.llm.window = 8193;
+    requested.llm.window = 65_537;
     let mut world = world(&settings, requested);
     world.run(2000);
     assert_eq!(world.answer(), &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Llm)));

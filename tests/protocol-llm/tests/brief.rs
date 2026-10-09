@@ -628,15 +628,8 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
         message(Role::User, (2..batch + 2).map(read_result).collect()),
     ]);
     prefixes.push(history);
-    native_accounting(
-        &world,
-        &expected_main("@brief-native PARENT-INSTRUCTIONS: native first activation.\n\n"),
-        &prefixes,
-        &[2, 3, 5],
-        0,
-        true,
-        None,
-    );
+    let expected = expected_main("@brief-native PARENT-INSTRUCTIONS: native first activation.\n\n");
+    native_accounting(&world, &expected, &prefixes, &[2, 3, 5], 0, true, None);
     let turns = world.turns();
     let largest = turns
         .iter()

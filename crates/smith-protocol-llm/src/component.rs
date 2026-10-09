@@ -375,7 +375,7 @@ impl Component {
                             match crate::completion(active.context, call, completion, resolved) {
                                 Ok(event) => Self::domain_event(event, to_domain),
                                 Err(error) => {
-                                    Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain)
+                                    Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                                 }
                             }
                         }

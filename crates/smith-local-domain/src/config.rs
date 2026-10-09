@@ -186,14 +186,6 @@ impl Config {
                 return Err(Invalid::Accounts);
             }
         }
-        if self.protocol_allowances.len() != self.models.len() {
-            return Err(Invalid::Models);
-        }
-        for allowance in &self.protocol_allowances {
-            if *allowance > limits.smith.session.protocol_allowance {
-                return Err(Invalid::Models);
-            }
-        }
         self.check_models(limits)?;
         if crate::worst_case(limits).is_none() {
             return Err(Invalid::Limits);
@@ -225,6 +217,14 @@ impl Config {
 
     #[expect(clippy::manual_let_else, reason = "strict subset keeps checked construction exhaustive")]
     fn check_models(&self, limits: &Limits) -> Result<(), Invalid> {
+        if self.protocol_allowances.len() != self.models.len() {
+            return Err(Invalid::Models);
+        }
+        for allowance in &self.protocol_allowances {
+            if *allowance > limits.smith.session.protocol_allowance {
+                return Err(Invalid::Models);
+            }
+        }
         let mut model_bytes = 0_u64;
         for (index, model) in self.models.iter().enumerate() {
             match model.prices.check() {

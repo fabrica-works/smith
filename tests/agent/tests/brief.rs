@@ -64,7 +64,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        window: 8192,
+        window: 65_536,
         output: 4096,
     };
     run::Charter {

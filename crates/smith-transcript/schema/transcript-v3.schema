@@ -65,7 +65,9 @@ enum Returned { outcome: OwnedOutcome, said: Said, invalid: Invalid, not_run, wi
 record ToolResult { id: text 256 returned: Returned }
 enum Block { text: Text, refusal: Text, call: Call, result: ToolResult, opaque: Opaque }
 enum Role { user, assistant }
-record Message { role: Role blocks: list 16 Block }
+# The standard native completion holds 34 blocks; actual receiving limits
+# derive the smaller completion/results/opening count under this ceiling.
+record Message { role: Role blocks: list 64 Block }
 
 # Transcript admission also checks common version, endpoint, dialect and
 # consecutive place, and its aggregate byte and message limits.
@@ -79,5 +81,7 @@ versioned record Turn {
     place: u32
     usage: Usage
     spent: u64
-    messages: list 64 Message
+    # One completion plus its surrounding messages; window openings use one.
+    # Keeping this envelope separate from whole-window history preserves u32.
+    messages: list 16 Message
 }

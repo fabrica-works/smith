@@ -18,6 +18,10 @@ use crate::workspace::{self, Workspace};
 /// checkout, what it has spent and the time it has left. What it holds is
 /// rendered from the charter or copied: the run keeps the charter (copy at
 /// emission).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one opening copies the admitted charter, identity, findings, budget and schema measurements"
+)]
 pub(crate) fn main(
     charter: &Charter,
     activation: u64,
@@ -33,15 +37,12 @@ pub(crate) fn main(
         .expect("admitted contract schema arithmetic")
         .checked_add(costs.finish_text)
         .expect("admitted contract schema text arithmetic");
-    match &charter.grants.deliver {
-        Some(change) => {
-            generated_schema_bytes = generated_schema_bytes
-                .checked_add(costs.deliver(change).expect("admitted delivery schema arithmetic"))
-                .expect("admitted schema aggregate")
-                .checked_add(costs.deliver_text)
-                .expect("admitted schema text aggregate");
-        }
-        None => {}
+    if let Some(change) = &charter.grants.deliver {
+        generated_schema_bytes = generated_schema_bytes
+            .checked_add(costs.deliver(change).expect("admitted delivery schema arithmetic"))
+            .expect("admitted schema aggregate")
+            .checked_add(costs.deliver_text)
+            .expect("admitted schema text aggregate");
     }
     Opening {
         final_turn: None,

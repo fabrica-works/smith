@@ -65,6 +65,7 @@ pub fn configured_transport(
     protocol.documents.openai.strings = 16_384;
     protocol.documents.openai.tokens = 4096;
     protocol.documents.openai.output_items = 256;
+    protocol.documents.anthropic.output_items = 256;
     llm::Peer::new(
         (std::net::Ipv4Addr::LOCALHOST, if transport == Transport::Tls { 34_443 } else { 443 }).into(),
         transport,

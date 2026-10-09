@@ -117,7 +117,7 @@ fn connection(output: &mut List<u8>, error: EndpointError) {
         EndpointError::HttpSendIoOutput { demand, cap } => pair(output, "http-send-io-output", demand, cap),
         EndpointError::SseChunkHttpRead { demand, cap } => pair(output, "sse-chunk-http-read", demand, cap),
         EndpointError::TokenizerDemandSseChunk { demand, cap } => {
-            pair(output, "tokenizer-demand-sse-chunk", demand, cap)
+            pair(output, "tokenizer-demand-sse-chunk", demand, cap);
         }
         EndpointError::MemoryLargestCall { memory, call } => {
             text(output, "memory-largest-call: memory=");

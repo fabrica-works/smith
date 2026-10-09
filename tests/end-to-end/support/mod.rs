@@ -256,11 +256,11 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) {
         serde_json::json!({"number":account.number,"account_id":account.account_id,"oauth":oauth})
     }).collect();
     let mut source = serde_json::json!({
-        "agent":{"profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64,"llm_pool":1_099_511_627_776_u64},"policy":{"group_stop":10}},
+        "agent":{"profile":{"name":"standard","declared":{"memory":8_796_093_022_208_u64,"llm_pool":1_099_511_627_776_u64},"policy":{"group_stop":10}},
             "endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","connect":10000,"handshake":10000,"address":"127.0.0.1:34443","server_name":"skein.test","trust_der":trust,"identity":"plain"}],
             "environment":[],"trace":{"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"}},
         "chat":"chat","instructions":"@local-shell Assist",
-        "models":[{"endpoint":"fake","name":"fake","window":2097152,"output":65536,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
+        "models":[{"endpoint":"fake","name":"fake","window":2_097_152,"output":65536,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
         "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30,
         "contract":{"form":"report","max":128},"token_directory":scenario.launch.token_directory,
         "accounts":accounts
@@ -282,6 +282,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) {
         .expect("settings fixture");
 }
 
+#[must_use]
 pub fn run(scratch: &Scratch, scenario: Scenario) -> Seen {
     run_with_provider(scratch, scenario, None)
 }

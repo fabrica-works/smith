@@ -1,5 +1,12 @@
 //! Profile construction stays with the service whose limits it selects.
 
+#![allow(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "programming-model.md section10.2: deterministic test harnesses use ordinary Rust"
+)]
+
 use alloc::boxed::Box;
 use skein_lib::List;
 
@@ -280,7 +287,7 @@ fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte
         charter.instructions = instructions.into();
         charter.outcome.report = Some(run::outcome::TextSpec {
             max: 32,
-            fields: (0..20)
+            fields: (0_u32..20)
                 .map(|index| run::outcome::FieldRule {
                     name: format!("long_contract_field_{index:02}").into_bytes().into(),
                     max: 32,
@@ -311,7 +318,7 @@ fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte
     };
     let mut lower = 0;
     let mut upper = receiving.host_part;
-    assert!(matches!(enter(upper, b"base"), run::Request::Admitted { .. }));
+    let run::Request::Admitted { .. } = enter(upper, b"base") else { panic!("upper edge admits") };
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         match enter(middle, b"base") {
@@ -320,14 +327,35 @@ fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte
                 answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::HostPart { .. })),
                 ..
             } => lower = middle + 1,
-            other => panic!("unexpected entrance: {other:?}"),
+            other @ (run::Request::MessageRefused { .. }
+            | run::Request::Waiting { .. }
+            | run::Request::Turn { .. }
+            | run::Request::HostCall { .. }
+            | run::Request::WithdrawHost { .. }
+            | run::Request::Answer { .. }
+            | run::Request::Open { .. }
+            | run::Request::Say { .. }
+            | run::Request::Close { .. }
+            | run::Request::Read { .. }
+            | run::Request::Probe { .. }
+            | run::Request::Check { .. }
+            | run::Request::Abort { .. }
+            | run::Request::Checking { .. }
+            | run::Request::ChecksEnded { .. }
+            | run::Request::Deliver { .. }
+            | run::Request::Return { .. }) => panic!("unexpected entrance: {other:?}"),
         }
     }
     assert!(lower > 2000, "the contract carries substantial rendered schemas and text");
-    assert!(matches!(enter(lower, b"base"), run::Request::Admitted { .. }));
-    assert!(matches!(enter(lower, b"basex"), run::Request::Answer {
-        answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::HostPart { bound })), ..
-    } if bound == lower));
+    let run::Request::Admitted { .. } = enter(lower, b"base") else { panic!("exact edge admits") };
+    let run::Request::Answer {
+        answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::HostPart { bound })),
+        ..
+    } = enter(lower, b"basex")
+    else {
+        panic!("one byte over refuses host part")
+    };
+    assert_eq!(bound, lower);
 }
 
 #[test]
@@ -359,7 +387,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
         },
         &mut out,
     );
-    assert!(matches!(out.pop(), Some(run::Request::Admitted { .. })));
+    let Some(run::Request::Admitted { .. }) = out.pop() else { panic!("opening admitted") };
     let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
     let prompt = llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,

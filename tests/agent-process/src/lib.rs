@@ -70,7 +70,7 @@ pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
             handshake: skein_lib::Duration::from_secs(1),
             models: Box::new([Model {
                 name: Box::from(b"fake".as_slice()),
-                window: 65_536,
+                window: 1_048_576,
                 output: 512,
                 reasoning_item: 64,
                 oversized_reasoning: OversizedReasoning::Fail,
@@ -126,6 +126,7 @@ pub fn profile() -> agent::profile::Profile {
     profile.declared.list_entries = 2;
     profile.declared.guide = 128;
     profile.declared.memory = Some(1_u64 << 40_u32);
+    profile.declared.llm_pool = 1_u64 << 30_u32;
     profile.policy.max_turns = 512;
     profile.policy.max_time = Duration::from_secs(3600);
     profile.policy.inbox = 8;
@@ -204,7 +205,7 @@ pub fn configuration() -> agent::Config {
                 .expect("derived endpoint framing"),
                 endpoint: smith_domain::run::charter::Endpoint(0),
                 model: Box::from(&b"fake"[..]),
-                window: 65_536,
+                window: 1_048_576,
                 output: 512,
                 head: Duration::from_secs(2),
                 idle: Duration::from_secs(3),

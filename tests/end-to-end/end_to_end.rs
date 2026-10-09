@@ -108,7 +108,7 @@ fn smith_agent_names_a_broken_relationship_and_exits_1_before_its_channel_opens(
     let scratch = Scratch::new();
     let path = scratch.path().join("read-past-payload.json");
     std::fs::write(&path,
-        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"read_window":1025,"tool_payload":1024}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":32,"reasoning_item":2048,"head":1000,"idle":1000}]}],"environment":[]}"#,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"read_window":1025,"tool_payload":1024}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"head":1000,"idle":1000}]}],"environment":[]}"#,
     ).expect("broken relationship fixture");
     let errors =
         support::refusal_program(std::path::Path::new(env!("CARGO_BIN_EXE_smith-agent")), &scratch, vec![path.into()]);
@@ -123,7 +123,7 @@ fn smith_agent_names_a_repeated_environment_entry_before_its_channel_opens() {
     let scratch = Scratch::new();
     let path = scratch.path().join("repeated-environment.json");
     std::fs::write(&path,
-        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":32,"reasoning_item":2048,"head":1000,"idle":1000}]}],"environment":[{"name":"A","value":"one"},{"name":"A","value":"two"}]}"#,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"tool_payload":256,"read_window":256}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"head":1000,"idle":1000}]}],"environment":[{"name":"A","value":"one"},{"name":"A","value":"two"}]}"#,
     ).expect("repeated environment fixture");
     let errors =
         support::refusal_program(std::path::Path::new(env!("CARGO_BIN_EXE_smith-agent")), &scratch, vec![path.into()]);
@@ -139,7 +139,7 @@ fn smith_agent_refuses_empty_endpoints_by_name_before_its_channel_opens() {
     let path = scratch.path().join("empty-endpoints.json");
     std::fs::write(
         &path,
-        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776}},"endpoints":[],"environment":[]}"#,
+        br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"tool_payload":256,"read_window":256}},"endpoints":[],"environment":[]}"#,
     )
     .expect("empty endpoints fixture");
     let errors =
@@ -166,7 +166,7 @@ fn standard_profile_runs_a_large_coding_write_and_the_following_checks() {
     for (name, arguments) in [
         ("read", r#"{"path":"result.txt"}"#),
         ("read", r#"{"path":"original.txt"}"#),
-        ("edit", r#"{"path":"original.txt","old":"original","new":"edited"}"#),
+        ("edit", r#"{"path":"original.txt","edits":[{"old":"original","new":"edited"}]}"#),
         ("write", r#"{"path":"result.txt","content":"new\n"}"#),
         ("shell", r#"{"command":"printf 'ran\n' > command.txt"}"#),
         (

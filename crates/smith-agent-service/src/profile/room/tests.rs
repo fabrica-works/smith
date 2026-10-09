@@ -1,5 +1,12 @@
 //! Independent arithmetic properties for declared model windows.
 
+#![allow(
+    clippy::disallowed_macros,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "programming-model.md section10.2: deterministic test harnesses use ordinary Rust"
+)]
+
 use super::room;
 use crate::profile::{
     Check, Configuration, Endpoint, Fraction, Layer, LimitName, Model, OversizedReasoning, Refusal, standard,
@@ -78,7 +85,7 @@ fn overflow_and_missing_declarations_are_typed_without_a_neutral_window() {
 #[test]
 fn random_declared_rooms_refuse_by_name_or_hold_a_largest_fresh_window() {
     let mut random = Rng::new(46_006);
-    for _ in 0..512 {
+    for _ in 0_u32..512 {
         let window = u32::try_from(random.next_u64() % 100_000 + 1).expect("bounded window");
         let output = u32::try_from(random.next_u64() % 10_000 + 1).expect("bounded output");
         let own = random.next_u64() % 10_000;
@@ -104,7 +111,10 @@ fn random_declared_rooms_refuse_by_name_or_hold_a_largest_fresh_window() {
                         <= u64::from(window) - within
                 );
             }
-            Err(refusal) => assert!(matches!(refusal.check(), Some(Check::FreshWindow | Check::CompactionHeadroom))),
+            Err(refusal) => {
+                let Some(check) = refusal.check() else { panic!("unnamed refusal: {refusal:?}") };
+                assert!(check == Check::FreshWindow || check == Check::CompactionHeadroom);
+            }
         }
     }
 }

@@ -56,6 +56,7 @@ fn maximum_run_context_and_provider_completion_fit_each_process_at_every_iterati
     drop(context);
     let mut completion = World::new(7, &charter());
     completion.full_completion();
+    completion.observe_facts(smith_agent_process_world::TraceCase::Accepted, 4);
     completion.check_memory();
     assert!(completion.settle());
     assert!(completion.peer_replied(), "the actual maximum completion was emitted");
@@ -63,7 +64,9 @@ fn maximum_run_context_and_provider_completion_fit_each_process_at_every_iterati
     assert_eq!(
         completion.provider_answer_shape(),
         (usize::try_from(client.output_items).expect("parts"), usize::try_from(client.answer).expect("payload")),
-        "both maximum parts and total provider answer bytes including actual ID/phase metadata reached the host transcript"
+        "both maximum parts and total provider answer bytes including actual ID/phase metadata reached the host transcript; answer={:?}; facts={:?}",
+        completion.answer(),
+        completion.facts()
     );
     drop(completion);
 }

@@ -40,22 +40,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let agent_bytes = local_settings::agent_document(&settings)?;
     let agent_config = config::parse(&agent_bytes)?;
     let endpoints = agent_config.service.channel_endpoints.clone();
-    let mut protocol_allowances = Vec::with_capacity(settings.models.len());
-    for model in &settings.models {
-        let endpoint = endpoints.resolve(model.endpoint.as_bytes()).ok_or("local model endpoint is absent")?;
-        let configured = agent_config
-            .service
-            .domain
-            .models
-            .iter()
-            .find(|configured| {
-                configured.endpoint.0 == endpoint.number && configured.model.as_ref() == model.name.as_bytes()
-            })
-            .ok_or("local model declaration is absent")?;
-        protocol_allowances.push(configured.protocol_allowance);
-    }
-    let mut prepared =
-        local_settings::policy(&settings, &endpoints, agent_config.service.limits.domain, protocol_allowances.into())?;
+    let mut prepared = policy(&settings, &agent_config.service)?;
     fs::create_dir_all(state_root).map_err(|error| format!("state directory: {error}"))?;
     let agent_path = state_root.join("agent.json");
     save_agent_config(&agent_path, &agent_bytes)?;
@@ -113,11 +98,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     };
     let signals =
         skein_shell::open_termination_signals().map_err(|error| format!("local signals failed (errno {error})"))?;
-    let mut oauth_entropy = [0_u8; 32];
-    for part in oauth_entropy.chunks_exact_mut(8) {
-        let seed = skein_shell::seed().map_err(|error| format!("OAuth entropy failed (errno {error})"))?;
-        part.copy_from_slice(&seed.to_be_bytes());
-    }
+    let oauth_entropy = oauth_entropy()?;
     let lower = settings.in_process.then_some(agent_config.service);
     let mut local_service = Local::within_memory(
         local_config,
@@ -141,6 +122,38 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
         .map_err(|error| format!("local kernel: {error}"))?;
     Ok(drive(&mut kernel, &Clock::new(), &mut local_service))
+}
+
+/// Collect the fixed startup entropy required by the OAuth composition.
+fn oauth_entropy() -> Result<[u8; 32], String> {
+    let mut entropy = [0_u8; 32];
+    for part in entropy.chunks_exact_mut(8) {
+        let seed = skein_shell::seed().map_err(|error| format!("OAuth entropy failed (errno {error})"))?;
+        part.copy_from_slice(&seed.to_be_bytes());
+    }
+    Ok(entropy)
+}
+
+/// Carry each actual model's startup framing measurement into local admission.
+fn policy(
+    settings: &local_settings::Settings,
+    agent: &smith_agent_service::Config,
+) -> Result<local_settings::Prepared, String> {
+    let endpoints = &agent.channel_endpoints;
+    let mut protocol_allowances = Vec::with_capacity(settings.models.len());
+    for model in &settings.models {
+        let endpoint = endpoints.resolve(model.endpoint.as_bytes()).ok_or("local model endpoint is absent")?;
+        let configured = agent
+            .domain
+            .models
+            .iter()
+            .find(|configured| {
+                configured.endpoint.0 == endpoint.number && configured.model.as_ref() == model.name.as_bytes()
+            })
+            .ok_or("local model declaration is absent")?;
+        protocol_allowances.push(configured.protocol_allowance);
+    }
+    local_settings::policy(settings, &agent.channel_endpoints, agent.limits.domain, protocol_allowances.into())
 }
 
 /// Bound the common local IO and the selected child before constructing either.

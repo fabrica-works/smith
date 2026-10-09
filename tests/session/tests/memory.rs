@@ -1158,11 +1158,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
         let (mut limits, _, output, field) = pressure_limits(original, route, original.history_messages);
         limits.history_messages = original.history_messages;
-        assert_eq!(
-            limits.history_messages - 3,
-            1,
-            "the original held transcript leaves one cell, below the two-cell promise"
-        );
+        assert_eq!(limits.history_messages - 3, 1, "one cell cannot hold an assistant and its results");
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();

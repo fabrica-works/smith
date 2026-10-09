@@ -32,17 +32,18 @@ pub enum OversizedReasoning {
 /// Measure actual endpoint options and provider identity for startup's own part.
 /// Field punctuation belongs to the separately measured provider framing.
 /// Contract: protocol/limits.md, sections 3.2 and 3.9.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the protocol validates configured endpoint option text before measuring it"
+)]
 pub fn endpoint_own(reasoning_effort: Option<&[u8]>, identity: IdentityProfile) -> Result<u64, crate::Error> {
     let mut bytes = 0_u64;
-    for option in [reasoning_effort] {
-        if let Some(value) = option {
-            if core::str::from_utf8(value).is_err() {
-                return Err(crate::Error::Invalid);
-            }
-            bytes = bytes
-                .checked_add(u64::try_from(value.len()).or(Err(crate::Error::Limit))?)
-                .ok_or(crate::Error::Limit)?;
+    if let Some(value) = reasoning_effort {
+        if core::str::from_utf8(value).is_err() {
+            return Err(crate::Error::Invalid);
         }
+        bytes =
+            bytes.checked_add(u64::try_from(value.len()).or(Err(crate::Error::Limit))?).ok_or(crate::Error::Limit)?;
     }
     match identity {
         IdentityProfile::Plain => {}

@@ -4360,16 +4360,16 @@ mod room_controls {
         let receiving = Limits { host_part: edge, ..receiving };
         let mut admitted = Harness::new(receiving);
         let requests = admitted.start_workspace(1, selected, None);
-        assert!(
-            matches!(requests.first(), Some(Request::Admitted { .. })),
-            "large contract exactly at the edge: {requests:?}"
-        );
+        let Some(Request::Admitted { .. }) = requests.first() else { panic!("exact edge: {requests:?}") };
         let selected = large_host_charter(b"basex");
         let mut refused = Harness::new(receiving);
         let requests = refused.start_workspace(1, selected, None);
-        assert!(
-            matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::HostPart { bound })), .. }] if *bound == edge)
-        );
+        let [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::HostPart { bound })), .. }] =
+            &requests[..]
+        else {
+            panic!("one byte over: {requests:?}")
+        };
+        assert_eq!(*bound, edge);
     }
 
     #[test]
@@ -4381,9 +4381,12 @@ mod room_controls {
         let receiving = Limits { room: room + 1, ..LIMITS };
         let mut refused = Harness::new(receiving);
         let requests = refused.start(1, selected);
-        assert!(
-            matches!(&requests[..], [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::Room { bound })), .. }] if *bound == room + 1)
-        );
+        let [Request::Answer { answer: Answer::Refused(Refusal::Invalid(Invalid::Room { bound })), .. }] =
+            &requests[..]
+        else {
+            panic!("room refusal: {requests:?}")
+        };
+        assert_eq!(*bound, room + 1);
     }
 
     #[test]
@@ -4405,12 +4408,18 @@ mod room_controls {
                 },
                 deadline: EXPIRY,
             });
-            assert!(
-                matches!(&requests[..], [Request::Return {
-            call, result: Returned::Refused { refusal: AskRefusal::TooLarge { bound: actual } }, spent: 0,
-        }] if *call == Token::new(7) && *actual == bound),
-                "no child opens: {requests:?}"
-            );
+            let [
+                Request::Return {
+                    call,
+                    result: Returned::Refused { refusal: AskRefusal::TooLarge { bound: actual } },
+                    spent: 0,
+                },
+            ] = &requests[..]
+            else {
+                panic!("no child opens: {requests:?}")
+            };
+            assert_eq!(*call, Token::new(7));
+            assert_eq!(*actual, bound);
         }
     }
 }

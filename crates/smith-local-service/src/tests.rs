@@ -422,12 +422,16 @@ fn colocated_config() -> Config {
     let lower = smith_agent_process_world::configuration();
     let mut config = config();
     config.limits.local.smith = lower.limits.domain;
+    config.limits.local.line_bytes =
+        local::max_line_bytes(lower.limits.domain.run.message_bytes).expect("line allowance");
     config.limits.local.endpoints = lower.domain.endpoints.clone();
     config.local.accounts = Box::new([0]);
     config.local.models[0].account = 0;
     config.local.models[0].endpoint = Endpoint(0);
     config.local.models[0].prices = run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 };
-    config.local.models[0].output = 1024;
+    config.local.models[0].window = lower.domain.models[0].window;
+    config.local.models[0].output = lower.domain.models[0].output;
+    config.local.protocol_allowances[0] = lower.domain.models[0].protocol_allowance;
     config.local.budget.turns = 1;
     config.local.budget.spend = 1000;
     config.local.models[0].model = Box::from(b"fake".as_slice());
@@ -446,6 +450,8 @@ fn the_local_start_window_admits_the_standard_agents_largest_turn() {
         &{
             let mut profile = smith_agent_service::profile::standard();
             profile.declared.memory = Some(u64::MAX);
+            profile.declared.tool_payload = 256;
+            profile.declared.read_window = 256;
             profile
         },
         &smith_agent_process_world::declarations(0),

@@ -227,7 +227,12 @@ fn window_first_refuses_each_history_dimension_by_its_name() {
                 assert_eq!(right.name.field, field);
                 assert_eq!(right.name.per, Per::Model { endpoint: 7, model: 0 });
             }
-            refusal => panic!("unexpected refusal: {refusal:?}"),
+            refusal @ (Refusal::Field { .. }
+            | Refusal::Broken { .. }
+            | Refusal::Derived { .. }
+            | Refusal::Environment { .. }
+            | Refusal::Connection(_)
+            | Refusal::Llm { .. }) => panic!("unexpected refusal: {refusal:?}"),
         }
     }
 }
@@ -241,4 +246,18 @@ fn request_head_and_uncut_rendering_keep_the_actual_byte_sides() {
     validate::render_in_result(100, 100).expect("whole result fits");
     let refusal = validate::render_in_result(101, 100).expect_err("cut cannot satisfy startup");
     assert_eq!(words(&refusal).as_ref(), b"render-in-result: render.uncut_result=101 bytes; render.result=100 bytes");
+}
+
+#[test]
+fn transcript_blocks_hold_the_largest_completion_or_name_the_ceiling() {
+    let profile = profile();
+    let limits = super::derive(&profile, &declarations()).expect("coherent declarations");
+    assert!(limits.channel.transcript.message_blocks >= limits.domain.session.completion_blocks);
+    assert_eq!(limits.channel.transcript.turn_messages, 3);
+    let refusal = validate::calls_in_transcript(65, 64).expect_err("one beyond the vocabulary");
+    assert_eq!(refusal.check(), Some(Check::CallsInTranscript));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"calls-in-transcript: session.message_blocks=65 items; transcript.message_blocks=64 items"
+    );
 }

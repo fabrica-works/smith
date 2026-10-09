@@ -70,7 +70,12 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
         };
         match case {
             TraceCase::Accepted => {
-                assert!(matches!(answer.result(), RunResult::Accepted(_)));
+                assert!(
+                    matches!(answer.result(), RunResult::Accepted(_)),
+                    "answer={:?}; facts={:?}",
+                    answer.result(),
+                    world.facts()
+                );
                 assert_eq!(ended, Some(Answered::Accepted));
             }
             TraceCase::Failed => {

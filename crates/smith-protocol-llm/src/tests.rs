@@ -415,7 +415,7 @@ fn drawn_contract_schema_costs_equal_every_rendered_byte() {
     let costs = crate::schema_costs().expect("startup renderer costs");
     let mut rng = Rng::new(46_106);
     let words = [b"plain".as_slice(), b"\\\"", b"\n\t\x01", "é😀".as_bytes()];
-    for _ in 0..512 {
+    for _ in 0_u32..512 {
         let mut fields = || {
             (0..rng.next_u64() % 5)
                 .map(|_| FieldRule {
@@ -447,9 +447,9 @@ fn drawn_contract_schema_costs_equal_every_rendered_byte() {
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let outcome = OutcomeSpec {
-            change: (rng.next_u64() % 2 == 0).then_some(change.clone()),
-            report: (rng.next_u64() % 2 == 0).then_some(report),
-            failure: (rng.next_u64() % 2 == 0).then_some(failure),
+            change: (rng.next_u64().is_multiple_of(2)).then_some(change.clone()),
+            report: (rng.next_u64().is_multiple_of(2)).then_some(report),
+            failure: (rng.next_u64().is_multiple_of(2)).then_some(failure),
             verdicts,
         };
         assert_eq!(

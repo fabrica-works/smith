@@ -2724,13 +2724,7 @@ fn validate_transcript(
         }
         let mut assistants = 0_u32;
         for message in &turn.messages {
-            blocks = blocks
-                .checked_add(u32::try_from(message.content.len()).or(Err(Refusal::TooLarge))?)
-                .ok_or(Refusal::TooLarge)?;
-            let reserved = limits.completion_blocks.checked_mul(2).ok_or(Refusal::TooLarge)?;
-            if blocks.checked_add(reserved).ok_or(Refusal::TooLarge)? > limits.history_blocks {
-                return Err(Refusal::TooLarge);
-            }
+            blocks = recorded_blocks(blocks, message, limits)?;
             count = count.checked_add(1).ok_or(Refusal::TooLarge)?;
             if count >= limits.history_messages {
                 return Err(Refusal::TooLarge);
@@ -2784,6 +2778,19 @@ fn validate_transcript(
     }
     let resumed = resumed_tail(tail, withheld);
     Ok((sequence, bytes, resumed))
+}
+
+/// Every recorded block leaves receiving credit for an assistant and its results.
+fn recorded_blocks(blocks: u32, message: &Message, limits: &Limits) -> Result<u32, crate::record::Refusal> {
+    use crate::record::Refusal;
+    let blocks = blocks
+        .checked_add(u32::try_from(message.content.len()).or(Err(Refusal::TooLarge))?)
+        .ok_or(Refusal::TooLarge)?;
+    let reserved = limits.completion_blocks.checked_mul(2).ok_or(Refusal::TooLarge)?;
+    if blocks.checked_add(reserved).ok_or(Refusal::TooLarge)? > limits.history_blocks {
+        return Err(Refusal::TooLarge);
+    }
+    Ok(blocks)
 }
 
 fn validate_answers(

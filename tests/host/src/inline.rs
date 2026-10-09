@@ -46,7 +46,7 @@ pub fn configuration() -> smith::Config {
                 protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: model.into(),
-                window: 8192,
+                window: 65_536,
                 output: 4096,
                 head: Duration::from_secs(60),
                 idle: Duration::from_secs(30),
