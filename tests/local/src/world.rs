@@ -128,6 +128,7 @@ enum Goal {
 enum Scenario {
     Chat,
     Workspace,
+    Delegating,
     PlainChange,
     PlainNothing,
     GitChange,
@@ -208,6 +209,7 @@ pub struct World {
     exit: Option<ExitStatus>,
     completions: u32,
     prompt_assistants: Vec<usize>,
+    child_prompts: Vec<(tools::Grants, Box<[agent::llm::Served]>)>,
     prompt_texts: Vec<Vec<u8>>,
     tool_results: Vec<Vec<u8>>,
     activation_turns: u32,
@@ -233,6 +235,12 @@ impl World {
     #[must_use]
     pub fn new(seed: u64) -> World {
         Self::with_store(seed, Store::default())
+    }
+
+    /// A workspace chat whose main conversation may delegate a read-only reading.
+    #[must_use]
+    pub fn with_delegation(seed: u64) -> World {
+        Self::with_capacity(seed, Store::default(), true, 2, 64, Scenario::Delegating)
     }
 
     /// Same chat with no observation capacity; domain behavior must agree.
@@ -416,6 +424,7 @@ impl World {
             Scenario::Chat => meeting,
             Scenario::SecondFails => meeting.writable(&[0, 1], &[1, 2]),
             Scenario::Workspace
+            | Scenario::Delegating
             | Scenario::PlainChange
             | Scenario::PlainNothing
             | Scenario::GitChange
@@ -549,7 +558,9 @@ impl World {
                 | Scenario::PushLands
                 | Scenario::PushStale
         );
-        let instructions: &[u8] = if scenario == Scenario::TwoDeliveries {
+        let instructions: &[u8] = if scenario == Scenario::Delegating {
+            b"@local-delegate Delegate a reading, then answer."
+        } else if scenario == Scenario::TwoDeliveries {
             b"@local-two-deliveries Deliver twice, then report."
         } else if scenario == Scenario::MidReport {
             b"@midreport Deliver then report."
@@ -599,6 +610,7 @@ impl World {
                 window: 8192,
                 output: 256,
             }]),
+            sub_agents: scenario == Scenario::Delegating,
             budget: agent_world::BUDGET,
             conventions: None,
             contract,
@@ -659,6 +671,7 @@ impl World {
             exit: None,
             completions: 0,
             prompt_assistants: Vec::new(),
+            child_prompts: Vec::new(),
             prompt_texts: Vec::new(),
             tool_results: Vec::new(),
             activation_turns: 0,
@@ -829,6 +842,12 @@ impl World {
     #[must_use]
     pub fn completions(&self) -> u32 {
         self.completions
+    }
+
+    /// Actual child completion prompts, with their workspace authority and served tools.
+    #[must_use]
+    pub fn child_prompts(&self) -> &[(tools::Grants, Box<[agent::llm::Served]>)] {
+        &self.child_prompts
     }
 
     /// Number of assistant messages in each provider request.
@@ -1351,12 +1370,20 @@ impl World {
                                 } => {
                                     self.tool_results.push(text.to_vec());
                                 }
+                                agent::llm::Block::ToolResult {
+                                    result:
+                                        agent::llm::Returned::Owned { outcome: tools::Outcome::Read { content, .. } },
+                                    ..
+                                } => self.tool_results.push(content.to_vec()),
                                 _ => {}
                             }
                         }
                     }
                 }
                 self.prompt_texts.push(user_text);
+                if !prompt.served.contains(&agent::llm::Served::Finish) {
+                    self.child_prompts.push((prompt.tools, prompt.served.clone()));
+                }
                 let grants = prompt.tools;
                 let served = prompt.served.clone();
                 if matches!(self.first_failure, FirstFailure::Exhaust) {

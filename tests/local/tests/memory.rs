@@ -39,6 +39,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
             window: 8192,
             output: 256,
         }]),
+        sub_agents: true,
         budget: smith_agent_world::BUDGET,
         conventions: None,
         contract: Contract::Report(outcome::TextSpec { max: 2048, fields: Box::new([]) }),

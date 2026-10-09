@@ -1,5 +1,5 @@
 //! Local choices translated into one agent charter (domain/host.md,
-//! sections 5 and 8; domain/run.md, section 3.1). Configuration owns text,
+//! sections 5 and 8; domain/run.md, sections 3.1 and 5.3). Configuration owns text,
 //! model names and result policy, but neither credential secrets nor files.
 //! `charter` copies those choices without consulting time or the workspace.
 
@@ -38,6 +38,8 @@ pub struct Config {
     pub brief: charter::Brief,
     /// Main model first, followed by models available to sub-agents.
     pub models: Box<[charter::Llm]>,
+    /// Whether main may open sub-agents; children cannot delegate.
+    pub sub_agents: bool,
     /// Declared deadlines in the same order as `models`, kept outside charters.
     pub progress: Box<[smith_domain::session::Progress]>,
     /// Activation budget in the host's unit.
@@ -283,7 +285,7 @@ pub fn charter(config: &Config) -> charter::Charter {
             wait: true,
             deliver: config.deliver.clone(),
             tools: charter::Tools { inspect: workspace.is_some(), modify: writable, shell: workspace.is_some() },
-            agents: false,
+            agents: config.sub_agents,
             host_tools: Box::new([]),
         },
         outcome: outcome::OutcomeSpec { change, verdicts: Box::new([]), report, failure: None },

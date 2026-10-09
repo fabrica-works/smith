@@ -98,6 +98,9 @@ pub struct Settings {
     pub chat: String,
     pub instructions: String,
     pub models: Vec<Model>,
+    /// Whether main may delegate; omitted settings keep children disabled.
+    #[serde(default)]
+    pub sub_agents: bool,
     pub budget: Budget,
     pub waiting_seconds: u64,
     #[serde(default)]
@@ -257,6 +260,7 @@ pub fn policy(
         instructions: settings.instructions.as_bytes().into(),
         brief: run::charter::Brief { sections: brief.into() },
         models: models.into(),
+        sub_agents: settings.sub_agents,
         progress: settings
             .models
             .iter()
@@ -482,11 +486,15 @@ mod tests {
             &mut document,
             serde_json::json!({"instructions":"workspace", "agent":{"profile":{"declared":{"memory":99}}}}),
         );
-        let settings: Settings = serde_json::from_value(document).expect("merged settings");
+        let settings: Settings = serde_json::from_value(document.clone()).expect("merged settings");
+        assert!(!settings.sub_agents, "omitted settings do not grant sub-agents");
         assert_eq!(settings.instructions, "workspace");
         assert_eq!(settings.agent["profile"]["name"], "standard");
         assert_eq!(settings.agent["profile"]["declared"]["memory"], 99);
         assert_eq!(settings.models[0].name, "small");
+        merge(&mut document, serde_json::json!({"sub_agents":true}));
+        let enabled: Settings = serde_json::from_value(document).expect("enabled sub-agent setting");
+        assert!(enabled.sub_agents);
     }
 
     #[test]
@@ -549,6 +557,21 @@ mod tests {
         .domain
     }
 
+    fn assert_sub_agent_grant(
+        settings: &Settings,
+        endpoints: &channel::Endpoints,
+        limits: &domain::Limits,
+        previous: &run::charter::Charter,
+    ) {
+        let enabled = policy(settings, endpoints, *limits).expect("enabled sub-agent policy");
+        let encoded = channel::encode_charter(&local::charter(&enabled.config), &wire::CEILINGS, endpoints)
+            .expect("enabled charter");
+        let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, endpoints).expect("enabled wire grant");
+        assert!(decoded.grants.agents);
+        assert_eq!(decoded.llm, previous.llm);
+        assert!(decoded.models.is_empty(), "an unnamed child uses main's model");
+    }
+
     #[test]
     fn priced_local_policy_round_trips_through_the_child_charter() {
         let mut entries = List::with_capacity(1);
@@ -556,7 +579,7 @@ mod tests {
             .push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 7, dialect: 1, account: 0 })
             .expect("one endpoint");
         let endpoints = channel::Endpoints::new(entries);
-        let settings = Settings {
+        let mut settings = Settings {
             agent: serde_json::json!({}),
             chat: "one".into(),
             instructions: "Assist".into(),
@@ -574,6 +597,7 @@ mod tests {
                 output_price: 10_000_000,
                 price_unit: 1_000_000,
             }],
+            sub_agents: false,
             budget: Budget { turns: 512, spend: 25_000_000, seconds: 3600 },
             waiting_seconds: 30,
             brief: vec![],
@@ -623,5 +647,8 @@ mod tests {
         assert!(!encoded.is_empty());
         let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, &endpoints).expect("version two charter");
         assert_eq!((decoded.llm.window, decoded.llm.output), (8192, 32));
+        assert!(!decoded.grants.agents);
+        settings.sub_agents = true;
+        assert_sub_agent_grant(&settings, &endpoints, &agent_limits, &decoded);
     }
 }

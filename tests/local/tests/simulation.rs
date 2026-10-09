@@ -3,6 +3,41 @@ use smith_local_domain::ExitStatus;
 use smith_local_world::{Cut, StoreFault, World};
 
 #[test]
+fn a_chat_granted_sub_agents_delegates_a_reading_and_answers() {
+    let mut world = World::with_delegation(702);
+    world.line(b"Read the answer with a child");
+    world.drive(400);
+    assert_eq!(world.child_prompts().len(), 2, "child reads, then answers its caller");
+    for (grants, served) in world.child_prompts() {
+        assert!(grants.inspect && !grants.modify && !grants.shell);
+        assert!(served.is_empty(), "the child cannot delegate or use main's served tools");
+    }
+    assert!(
+        world.tool_results().iter().any(|text| text
+            .windows(b"The answer is in src/lib.rs".len())
+            .any(|part| part == b"The answer is in src/lib.rs")),
+        "main receives the child's reading"
+    );
+    assert!(
+        world
+            .tool_results()
+            .iter()
+            .any(|text| text.windows(b"pub fn answer()".len()).any(|part| part == b"pub fn answer()")),
+        "the child receives the actual file read"
+    );
+    assert!(world.shown().iter().any(|text| text.as_ref() == b"The delegated reading found the answer."));
+    assert_eq!(world.saved_turns(), 2, "main's delegate and final answer are durable");
+    let (source, _) = world.disk().load(1, b"src/lib.rs", 4096).expect("source kept");
+    assert_eq!(source, b"pub fn answer() -> u32 { 42 }\n");
+    assert_replays(702, 703, |seed| {
+        let mut world = World::with_delegation(seed);
+        world.line(b"Read the answer with a child");
+        world.drive(400);
+        (world.trace().to_vec(), world.shown().to_vec())
+    });
+}
+
+#[test]
 fn a_question_is_answered_and_the_chat_waits_for_the_next() {
     let mut world = World::new(17);
     world.line(b"What can you do?");

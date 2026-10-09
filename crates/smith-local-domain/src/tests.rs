@@ -48,6 +48,7 @@ pub(super) fn config() -> Config {
             window: 8192,
             output: 128,
         }]),
+        sub_agents: false,
         budget: run::Budget { turns: 8, spend: 1, time: Duration::from_secs(60) },
         conventions: Some(run::Conventions { guide: Box::from(&b"GUIDE.md"[..]), checks: Box::from(&b"check"[..]) }),
         contract: Contract::Report(outcome::TextSpec { max: 256, fields: Box::new([]) }),
@@ -91,10 +92,12 @@ fn change_and_second_model_map_to_distinct_charter_choices() {
     second.model = Box::from(&b"large"[..]);
     config.models = Box::new([config.models[0].clone(), second.clone()]);
     config.contract = Contract::Change(outcome::ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
+    config.sub_agents = true;
     config.resume = false;
     config.waiting = Duration::ZERO;
     let charter = charter(&config);
     assert_eq!(charter.models.as_ref(), &[second]);
+    assert!(charter.grants.agents, "the configured grant permits native sub-agent calls");
     assert!(!charter.resume, "fresh run was configured");
     assert_eq!(charter.waiting, Duration::ZERO);
     assert!(charter.outcome.report.is_none(), "report was not selected");

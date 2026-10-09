@@ -150,6 +150,13 @@ pub fn all() -> Box<[Script]> {
         script(b"@coding", coding()),
         script(b"@review", review()),
         script(b"@report", reporting()),
+        script(
+            b"@local-delegate",
+            vec![
+                calls(vec![sub_agent("@explore Read the answer.", "inspect", "")]),
+                calls(vec![call("finish", r#"{"report":"The delegated reading found the answer."}"#)]),
+            ],
+        ),
         script(b"@local-workspace", local_workspace()),
         script(b"@local-change", local_change()),
         script(b"@local-nothing", local_nothing()),

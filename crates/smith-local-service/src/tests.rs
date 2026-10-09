@@ -68,6 +68,7 @@ fn config() -> Config {
                 window: 8192,
                 output: 128,
             }]),
+            sub_agents: false,
             budget: run::Budget { turns: 8, spend: 1, time: Duration::from_secs(60) },
             conventions: None,
             contract: local::Contract::Report(outcome::TextSpec { max: 256, fields: Box::new([]) }),

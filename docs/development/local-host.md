@@ -64,6 +64,7 @@ while inheriting the global agent, model, budget and account settings:
 | `chat` | Required nonempty directory name beneath `STATE_DIR`; no slash, backslash, NUL, `.` or `..`. |
 | `instructions` | Required instruction text for each activation. |
 | `models` | Required nonempty array of priced models, described below. |
+| `sub_agents` | Offer main the native `sub_agent` tool; default `false`. Children share the workspace and run budget and cannot delegate. |
 | `budget` | Required positive `{ "turns", "spend", "seconds" }`. The usual run uses 512 turns, 25,000,000 micro-dollars ($25) and 3,600 seconds. Each part must fit the agent's ceiling; standard admits 4,096 turns, 1,000,000,000 micro-dollars and 86,400 seconds. |
 | `waiting_seconds` | Required positive waiting interval, in seconds. |
 | `brief` | Ordered `{ "title", "text" }` context sections; default `[]`. |
@@ -116,6 +117,11 @@ each declared quantity or policy can be overridden by name. `memory` remains
 required while memory-pool derivation is being introduced. Policy durations,
 including `group_stop`, are milliseconds. Raw derived limits and the former
 `memory_bytes` and `grace_ms` keys are refused.
+
+With `sub_agents` enabled, an unnamed child uses the main model and endpoint.
+Models after the first are the choices a child may name explicitly; repeat the
+main model there to allow selecting it by name. A child's workspace tools stay
+within the requested families, and children cannot open more sub-agents.
 
 The agent configuration's `environment` is an array of `{ "name", "value" }`
 for agent commands. It is separate from the host's `delivery_environment`.
