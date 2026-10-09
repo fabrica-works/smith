@@ -352,7 +352,7 @@ fn tool_budget_and_command_exit_metadata_survive_every_capture_policy() {
             assert_eq!(read(&encoded, &limits()).expect("valid metadata"), Some(record.clone()), "{name}");
             assert!(
                 u64::try_from(encoded.len()).expect("size")
-                    <= smith_events::largest_size(&record.event, &capture, &limits()).expect("bound")
+                    <= u64::from(smith_events::largest_size(&record.event, &capture, &limits()).expect("bound"))
             );
         }
     }
