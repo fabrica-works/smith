@@ -10,7 +10,6 @@ use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
 use skein_lib::{List, Token, Writer};
 
-use crate::boundary::Root;
 use crate::call::{Call, Outcome};
 use crate::limits::Limits;
 use crate::path::{self, Name, Namespace, Path, Place, Resolved};
@@ -91,8 +90,6 @@ pub(crate) struct Checkout {
     pub(crate) cwd: Box<[Name]>,
     pub(crate) mounts: Box<[Mount]>,
     pub(crate) grants: Grants,
-    /// The repositories' roots, and which a command may write.
-    pub(crate) roots: Box<[Root]>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
@@ -140,7 +137,6 @@ pub(crate) fn admit(authority: Authority, limits: &Limits) -> Option<Checkout> {
         return None;
     }
     let mut mounts: List<Mount> = List::with_capacity(repos);
-    let mut roots = List::with_capacity(repos);
     for repo in &authority.repos {
         if u32::try_from(repo.mount.len()).ok()? > names {
             return None;
@@ -159,16 +155,8 @@ pub(crate) fn admit(authority: Authority, limits: &Limits) -> Option<Checkout> {
         let host = path::join(path::refs(&repo.host)?.as_slice(), limits.host_path_bytes)?;
         let mount = Mount { at, host, root: repo.root, writable: repo.writable };
         mounts.push(mount).expect("room for every repository");
-        // A command writes only where a write may.
-        let writable = repo.writable && authority.grants.modify;
-        roots.push(Root { root: repo.root, writable }).expect("room for every repository");
     }
-    Some(Checkout {
-        cwd: authority.cwd,
-        mounts: mounts.into_boxed(),
-        grants: authority.grants,
-        roots: roots.into_boxed(),
-    })
+    Some(Checkout { cwd: authority.cwd, mounts: mounts.into_boxed(), grants: authority.grants })
 }
 
 /// Whether `grants` cover `call`.

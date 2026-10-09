@@ -185,7 +185,7 @@ impl World {
                     search_bytes: 65_536,
                     search_line_bytes: 65_536,
                     env_bytes: 65_536,
-                    stop_grace: Duration::from_millis(1),
+                    group_stop: Duration::from_millis(1),
                 },
             ),
             machine_trace: Vec::new(),

@@ -1,4 +1,4 @@
-//! Plain child execution until skein supplies contained trees
+//! Process-group execution until skein supplies contained trees
 //! (protocol/agent.md, sections 2 and 3; domain/tools.md, section 5).
 //! A call is answered only after exit, both pipe closures and child closure.
 
@@ -36,11 +36,26 @@ pub(crate) fn sees(purpose: Purpose) -> Sees {
     }
 }
 
+/// The outstanding process-group stop stage (protocol/agent.md, section 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stop {
-    None,
-    Terminating { kill_at: Time, cancelled: bool },
-    Killing { cancelled: bool },
+    /// Running, or naturally exited while IO settles it.
+    Running,
+    /// Terminate sent; Kill at the next deadline.
+    Terminating { next: Time, why: Why },
+    /// Kill sent; IO Close at the next deadline.
+    Killing { next: Time, why: Why },
+    /// IO kills what remains, reaps the leader and closes the child.
+    Closing { why: Why },
+}
+
+/// The first request that started this process's stop ladder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Why {
+    /// The domain's absolute deadline passed.
+    Deadline,
+    /// The domain cancelled or aborted the operation.
+    Cancel,
 }
 
 /// Bounded first and last bytes of a process's combined output.
@@ -127,7 +142,7 @@ impl Process {
             child_closed: false,
             exit: None,
             failed: false,
-            stop: Stop::None,
+            stop: Stop::Running,
             output: Capture::new(head, tail),
             search,
         }
@@ -153,20 +168,23 @@ impl Process {
             }));
         }
         match self.stop {
-            Stop::None => {}
+            Stop::Running => {}
             Stop::Terminating { .. } => {
                 below.push(Below::Process(io::Request::Signal {
                     child,
-                    to: kernel::Target::Child,
+                    to: kernel::Target::Group,
                     signal: kernel::Signal::Terminate,
                 }));
             }
             Stop::Killing { .. } => {
                 below.push(Below::Process(io::Request::Signal {
                     child,
-                    to: kernel::Target::Child,
+                    to: kernel::Target::Group,
                     signal: kernel::Signal::Kill,
                 }));
+            }
+            Stop::Closing { .. } => {
+                below.push(Below::Process(io::Request::Close { entity: child }));
             }
         }
     }
@@ -190,8 +208,18 @@ impl Process {
         self.failed = true;
     }
 
-    pub(crate) fn exited(&mut self, exit: kernel::Exit) {
+    pub(crate) fn exited(&mut self, exit: kernel::Exit, below: &mut Queue<Below>) {
         self.exit = Some(exit);
+        match self.stop {
+            Stop::Running => {
+                // A natural leader exit can leave descendants holding its pipes.
+                // Close kills its group before waiting for those pipe terminals.
+                if let Some(child) = self.child {
+                    below.push(Below::Process(io::Request::Close { entity: child }));
+                }
+            }
+            Stop::Terminating { .. } | Stop::Killing { .. } | Stop::Closing { .. } => {}
+        }
     }
 
     pub(crate) fn ready(&self) -> bool {
@@ -200,74 +228,83 @@ impl Process {
                 || (*self.pipe_closed.first().expect("pipe slot") && *self.pipe_closed.get(1).expect("pipe slot")))
     }
 
-    pub(crate) fn stop(&mut self, now: Time, grace: Duration, cancelled: bool, below: &mut Queue<Below>) {
+    pub(crate) fn stop(&mut self, now: Time, grace: Duration, why: Why, below: &mut Queue<Below>) {
         match self.stop {
-            Stop::None => {
+            Stop::Running => {
                 if self.exit.is_some() || self.child_closed {
                     return;
                 }
-                self.stop = Stop::Terminating { kill_at: now.saturating_add(grace), cancelled };
+                self.stop = Stop::Terminating { next: now.saturating_add(grace), why };
                 if let Some(child) = self.child {
                     below.push(Below::Process(io::Request::Signal {
                         child,
-                        to: kernel::Target::Child,
+                        to: kernel::Target::Group,
                         signal: kernel::Signal::Terminate,
                     }));
                 }
             }
-            Stop::Terminating { .. } | Stop::Killing { .. } => {}
+            Stop::Terminating { .. } | Stop::Killing { .. } | Stop::Closing { .. } => {}
         }
     }
 
-    pub(crate) fn kill_due(&self, now: Time) -> bool {
-        match self.stop {
-            Stop::Terminating { kill_at, .. } => now >= kill_at && self.exit.is_none(),
-            Stop::None | Stop::Killing { .. } => false,
+    pub(crate) fn fire(&mut self, now: Time, grace: Duration, below: &mut Queue<Below>) {
+        if self.child_closed {
+            return;
         }
-    }
-
-    pub(crate) fn kill(&mut self, below: &mut Queue<Below>) {
         match self.stop {
-            Stop::Terminating { cancelled, .. } => {
-                self.stop = Stop::Killing { cancelled };
-                if let Some(child) = self.child {
-                    below.push(Below::Process(io::Request::Signal {
-                        child,
-                        to: kernel::Target::Child,
-                        signal: kernel::Signal::Kill,
-                    }));
+            Stop::Running => {
+                if now >= self.deadline {
+                    self.stop(now, grace, Why::Deadline, below);
                 }
             }
-            Stop::None | Stop::Killing { .. } => {}
+            Stop::Terminating { next, why } => {
+                if now >= next {
+                    self.stop = Stop::Killing { next: now.saturating_add(grace), why };
+                    if let Some(child) = self.child {
+                        below.push(Below::Process(io::Request::Signal {
+                            child,
+                            to: kernel::Target::Group,
+                            signal: kernel::Signal::Kill,
+                        }));
+                    }
+                }
+            }
+            Stop::Killing { next, why } => {
+                if now >= next {
+                    self.stop = Stop::Closing { why };
+                    if let Some(child) = self.child {
+                        below.push(Below::Process(io::Request::Close { entity: child }));
+                    }
+                }
+            }
+            Stop::Closing { .. } => {}
         }
-    }
-
-    pub(crate) fn due(&self, now: Time) -> bool {
-        self.exit.is_none() && !self.child_closed && now >= self.deadline && self.stop == Stop::None
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Time> {
-        if self.exit.is_some() || self.child_closed {
+        if self.child_closed {
             return None;
         }
         match self.stop {
-            Stop::None => Some(self.deadline),
-            Stop::Terminating { kill_at, .. } => Some(kill_at),
-            Stop::Killing { .. } => None,
+            Stop::Running => {
+                if self.exit.is_none() {
+                    Some(self.deadline)
+                } else {
+                    None
+                }
+            }
+            Stop::Terminating { next, .. } | Stop::Killing { next, .. } => Some(next),
+            Stop::Closing { .. } => None,
         }
     }
 
     pub(crate) fn answer(self, owner: Token) -> ToDomain {
-        let timed_out = match self.stop {
-            Stop::Terminating { cancelled: false, .. } | Stop::Killing { cancelled: false } => {
-                matches_signal(self.exit)
-            }
-            Stop::None | Stop::Terminating { cancelled: true, .. } | Stop::Killing { cancelled: true } => false,
+        let why = match self.stop {
+            Stop::Running => None,
+            Stop::Terminating { why, .. } | Stop::Killing { why, .. } | Stop::Closing { why } => Some(why),
         };
-        let cancelled = match self.stop {
-            Stop::Terminating { cancelled: true, .. } | Stop::Killing { cancelled: true } => matches_signal(self.exit),
-            Stop::None | Stop::Terminating { cancelled: false, .. } | Stop::Killing { cancelled: false } => false,
-        };
+        let timed_out = why == Some(Why::Deadline);
+        let cancelled = why == Some(Why::Cancel);
         let (head, tail, dropped) = self.output.finish();
         match self.purpose {
             Purpose::Shell => {
@@ -304,13 +341,6 @@ impl Process {
                 }
             }
         }
-    }
-}
-
-fn matches_signal(exit: Option<kernel::Exit>) -> bool {
-    match exit {
-        Some(kernel::Exit::Signal(_)) => true,
-        Some(kernel::Exit::Code(_)) | None => false,
     }
 }
 

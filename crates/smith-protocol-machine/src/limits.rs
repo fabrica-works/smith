@@ -38,7 +38,7 @@ pub struct Limits {
     /// Maximum configured command environment bytes.
     pub env_bytes: u32,
     /// Grace between a polite signal and a kill.
-    pub stop_grace: Duration,
+    pub group_stop: Duration,
 }
 
 /// The most records one step can emit into each queue.
@@ -171,6 +171,6 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
             .checked_add(256)
             .ok_or(Field::SearchLineBytes)?,
         env_bytes: inputs.environment_bytes,
-        stop_grace: inputs.group_stop,
+        group_stop: inputs.group_stop,
     })
 }

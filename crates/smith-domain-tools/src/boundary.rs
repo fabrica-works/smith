@@ -162,41 +162,26 @@ pub enum Op {
         /// Expected file version or absence checked before the atomic replacement.
         expect: Expect,
     },
-    /// Run `command` with the shell, in the directory at `cwd`, as a process
-    /// tree contained by io, which enforces what it may write (with
-    /// read-only bind mounts, say):
-    ///
-    /// - It sees the repositories in `roots`, and may write only those marked
-    ///   writable, which are the ones the kit may write, and only if it was
-    ///   granted modify. io mounts the rest read-only, a repository mounted
-    ///   inside another over it, so that what a process may write beneath a
-    ///   root is decided by the deepest root that holds it.
-    /// - In every root, writable or not, the git directory (`.git`, in any
-    ///   ASCII case) is read-only: the worker commits the tree the checks
-    ///   passed on, so the LLM never needs to write it.
-    ///
-    /// The machine supplies the configured environment. Its output, standard output
-    /// and standard error together, is captured: the first `head` bytes, the
-    /// last `tail`, and a count of those dropped between.
-    /// At the deadline io kills the whole tree and ends it as `Exited`, timed
-    /// out, with what it captured. Ends in `Exited`, `Missing` or
-    /// `NotDirectory` (for `cwd`), `Escapes`, `Failed` (it could not start),
-    /// or `Cancelled` (killed by a cancel).
+    /// Run `command` with `sh` in `cwd`, leading its own process group. The
+    /// machine signals the whole group on a deadline or cancel, but the command
+    /// is not contained: it has the agent user's permissions and filesystem.
+    /// The configured environment is supplied by the machine. Kept output is
+    /// the first `head` bytes, the last `tail`, and bytes dropped between them.
+    /// Ends in `Exited`, `Missing`, `NotDirectory`, `Escapes`, `Failed` or
+    /// `Cancelled`, once the leader is reaped and both output pipes close.
     Spawn {
         /// IO-confined working directory supplied with explicit root authority.
         cwd: Place,
-        /// Owned shell command interpreted only by the contained process layer.
+        /// Owned shell command interpreted by the process-group layer.
         command: Box<[u8]>,
-        /// Explicit repository roots and effective write permissions for the process.
-        roots: Box<[Root]>,
         /// First output bytes retained under the caller's cap.
         head: u32,
         /// Last output bytes retained under the caller's cap.
         tail: u32,
     },
     /// Search the files at and beneath `at` for lines matching `pattern`, in
-    /// those whose names match `glob` if given, with rg run as a contained
-    /// process, invoked as
+    /// those whose names match `glob` if given, with rg leading its own
+    /// process group, invoked as
     ///
     /// ```text
     /// rg --no-config --json --regexp=PATTERN [--glob=GLOB] -- PATH
@@ -220,7 +205,7 @@ pub enum Op {
     /// or a common terminal.
     Search {
         at: Place,
-        /// Search expression passed as data to the contained search process.
+        /// Search expression passed as data to the process-group search.
         pattern: Box<[u8]>,
         /// Optional search filename filter, passed as data rather than an option.
         glob: Option<Box<[u8]>>,
@@ -229,16 +214,6 @@ pub enum Op {
         /// Owned payload bytes charged against the enclosing session limit.
         bytes: u32,
     },
-}
-
-/// A repository a command sees: io's name for its root, and whether the
-/// command may write in it (but never in its git directory).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Root {
-    /// IO-issued repository root token, stored and echoed without interpreting it.
-    pub root: Token,
-    /// Whether this mount permits modification; protected git paths remain unwritable.
-    pub writable: bool,
 }
 
 /// What a `Store` expects to replace.
@@ -302,7 +277,7 @@ pub enum Done {
         hits: Box<[Hit]>,
         /// Problems or matches omitted after the retained bound.
         more: u64,
-        /// Whether IO ended the contained process or search at its deadline.
+        /// Whether IO ended the process or search at its deadline.
         timed_out: bool,
     },
     /// Load, Scan: nothing is at the place.

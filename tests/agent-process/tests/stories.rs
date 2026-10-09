@@ -15,6 +15,7 @@ fn an_answered_agent_exits_0_with_no_signal_from_its_host() {
     assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
     assert!(!world.signalled(), "answered process exits without a host signal");
     assert!(!String::from_utf8(world.errors()).expect("diagnostic UTF-8").contains("could not answer"));
+    assert!(world.errors().starts_with(b"smith: commands run in process groups and are not contained\n"));
     world.assert_agent_clean();
 }
 
@@ -53,9 +54,13 @@ fn an_agent_whose_host_hangs_up_before_its_answer_says_so_and_exits_1() {
     assert!(world.answer().is_none());
     assert!(!world.signalled());
     let errors = String::from_utf8(world.errors()).expect("diagnostic UTF-8");
-    assert!(errors.starts_with("smith: agent started; worst case "));
+    assert!(
+        errors.starts_with(
+            "smith: commands run in process groups and are not contained\nsmith: agent started; worst case "
+        )
+    );
     assert_eq!(errors.lines().last(), Some("smith: the run could not answer: Some(ChannelEnded)"));
-    assert_eq!(errors.lines().count(), 2, "startup and failure each appear once");
+    assert_eq!(errors.lines().count(), 3, "containment, startup and failure each appear once");
     world.assert_agent_clean();
 }
 

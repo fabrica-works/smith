@@ -30,7 +30,6 @@ fn declared_read_search_shell_and_check_bounds_reach_the_machine() {
             op: tools::Op::Spawn {
                 cwd: tools::Place { root, path: b".".as_slice().into() },
                 command: b"printf ran".as_slice().into(),
-                roots: Box::new([]),
                 head: tool_limits.shell_head,
                 tail: tool_limits.shell_tail,
             },

@@ -34,7 +34,7 @@ fn machine_limits() -> Limits {
         search_bytes: 128,
         search_line_bytes: 512,
         env_bytes: 256,
-        stop_grace: Duration::from_millis(1),
+        group_stop: Duration::from_millis(1),
     }
 }
 
@@ -177,7 +177,12 @@ impl World {
 
     /// Run one admitted request through its terminal and descriptor settlement.
     pub fn request(&mut self, request: FromDomain) -> ToDomain {
-        self.run(&Job::Request(request))
+        self.run(&Job::Request(request, false))
+    }
+
+    /// Stop the issued native process after it has acquired its output pipes.
+    pub fn cancelled_request(&mut self, request: FromDomain) -> ToDomain {
+        self.run(&Job::Request(request, true))
     }
 
     /// Preserve the bounded child-event flood fixture at the component seam.
@@ -221,14 +226,14 @@ impl Drop for World {
 }
 
 enum Job {
-    Request(FromDomain),
+    Request(FromDomain, bool),
     Flood { owner: Token, bytes: Box<[u8]>, head: u32, tail: u32 },
 }
 
 impl Job {
     fn owner(&self) -> Token {
         match self {
-            Self::Request(request) => match request {
+            Self::Request(request, _) => match request {
                 FromDomain::Op { owner, .. }
                 | FromDomain::Cancel { owner }
                 | FromDomain::Read { owner, .. }
@@ -241,22 +246,25 @@ impl Job {
     }
     fn copy(&self) -> Self {
         match self {
-            Self::Request(request) => Self::Request(match request {
-                FromDomain::Op { owner, op, deadline } => {
-                    FromDomain::Op { owner: *owner, op: op.clone(), deadline: *deadline }
-                }
-                FromDomain::Cancel { owner } => FromDomain::Cancel { owner: *owner },
-                FromDomain::Read { owner, at, max, deadline } => {
-                    FromDomain::Read { owner: *owner, at: at.clone(), max: *max, deadline: *deadline }
-                }
-                FromDomain::Probe { owner, at, deadline } => {
-                    FromDomain::Probe { owner: *owner, at: at.clone(), deadline: *deadline }
-                }
-                FromDomain::Check { owner, program, deadline, tail } => {
-                    FromDomain::Check { owner: *owner, program: program.clone(), deadline: *deadline, tail: *tail }
-                }
-                FromDomain::Abort { owner } => FromDomain::Abort { owner: *owner },
-            }),
+            Self::Request(request, cancel) => Self::Request(
+                match request {
+                    FromDomain::Op { owner, op, deadline } => {
+                        FromDomain::Op { owner: *owner, op: op.clone(), deadline: *deadline }
+                    }
+                    FromDomain::Cancel { owner } => FromDomain::Cancel { owner: *owner },
+                    FromDomain::Read { owner, at, max, deadline } => {
+                        FromDomain::Read { owner: *owner, at: at.clone(), max: *max, deadline: *deadline }
+                    }
+                    FromDomain::Probe { owner, at, deadline } => {
+                        FromDomain::Probe { owner: *owner, at: at.clone(), deadline: *deadline }
+                    }
+                    FromDomain::Check { owner, program, deadline, tail } => {
+                        FromDomain::Check { owner: *owner, program: program.clone(), deadline: *deadline, tail: *tail }
+                    }
+                    FromDomain::Abort { owner } => FromDomain::Abort { owner: *owner },
+                },
+                *cancel,
+            ),
             Self::Flood { owner, bytes, head, tail } => {
                 Self::Flood { owner: *owner, bytes: bytes.clone(), head: *head, tail: *tail }
             }
@@ -338,7 +346,11 @@ impl skein_world::Machine for Adapter {
         match &call.ask {
             Ask::Spawn { program, args, .. } if program.as_ref() == b"/bin/sh" => {
                 let command = args.get(1).expect("shell -c command");
-                let fixture = if command.as_ref() == b"hang" {
+                let fixture = if command.as_ref() == b"fork" {
+                    Program::Fork { exit_leader: false }
+                } else if command.as_ref() == b"fork-exit" {
+                    Program::Fork { exit_leader: true }
+                } else if command.as_ref() == b"hang" {
                     Program::Never
                 } else if command.as_ref() == b"fail" {
                     Program::Exit(1)
@@ -386,6 +398,7 @@ struct Application {
     root_closed: bool,
     offset: Time,
     job: Option<Job>,
+    cancel_after_spawn: Option<Token>,
     machine_env: Env<Limits>,
     process_env: Env<io::Limits>,
     below: Queue<Below>,
@@ -437,6 +450,7 @@ impl Application {
             root_closed: false,
             offset,
             job: Some(job),
+            cancel_after_spawn: None,
             machine_env: Env { now: offset, wall: Wall::EPOCH, limits },
             process_env: Env { now: offset, wall: Wall::EPOCH, limits: io_limits() },
             below: Queue::with_capacity(64),
@@ -461,7 +475,6 @@ impl Application {
                 op: tools::Op::Spawn {
                     cwd: tools::Place { root: self.root, path: Box::new([]) },
                     command: Box::from(&b"flood"[..]),
-                    roots: Box::new([]),
                     head,
                     tail,
                 },
@@ -502,6 +515,7 @@ impl Application {
             &mut self.to_domain,
             &mut self.below,
         );
+        assert_eq!(self.below.pop(), Some(Below::Process(io::Request::Close { entity: Token::new(8000) })));
         for pipe in [stdout, stderr] {
             self.component.from_below(
                 &self.machine_env,
@@ -605,12 +619,22 @@ impl Application {
             self.component.from_below(&self.machine_env, BelowEvent::File(event), &mut self.to_domain, &mut self.below);
         }
         while let Some(event) = self.process_events.pop() {
+            let spawned = if let io::Event::Spawned { owner, .. } = &event { Some(*owner) } else { None };
             self.component.from_below(
                 &self.machine_env,
                 BelowEvent::Process(event),
                 &mut self.to_domain,
                 &mut self.below,
             );
+            if spawned.is_some() && spawned == self.cancel_after_spawn {
+                let owner = self.cancel_after_spawn.take().expect("issued stop owner");
+                self.component.from_domain(
+                    &self.machine_env,
+                    FromDomain::Cancel { owner },
+                    &mut self.to_domain,
+                    &mut self.below,
+                );
+            }
         }
         while let Some(event) = self.to_domain.pop() {
             self.terminals.push(event);
@@ -653,7 +677,17 @@ impl Host for Application {
         self.process_env.wall = wall;
         if let Some(job) = self.job.take() {
             match job {
-                Job::Request(request) => {
+                Job::Request(request, cancel) => {
+                    if cancel {
+                        self.cancel_after_spawn = Some(match &request {
+                            FromDomain::Op { owner, .. }
+                            | FromDomain::Cancel { owner }
+                            | FromDomain::Read { owner, .. }
+                            | FromDomain::Probe { owner, .. }
+                            | FromDomain::Check { owner, .. }
+                            | FromDomain::Abort { owner } => *owner,
+                        });
+                    }
                     self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
                 }
                 Job::Flood { owner, bytes, head, tail } => {

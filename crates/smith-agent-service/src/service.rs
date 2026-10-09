@@ -2046,7 +2046,7 @@ mod tests {
                 search_bytes: 256,
                 search_line_bytes: 512,
                 env_bytes: 512,
-                stop_grace: Duration::from_millis(10),
+                group_stop: Duration::from_millis(10),
             },
             io,
             file_slots: 4,

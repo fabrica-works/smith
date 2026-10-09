@@ -1520,8 +1520,8 @@ impl World {
             Work::Ending(Done::Failed { fault: Fault::Other })
         } else {
             match op {
-                Op::Spawn { cwd, command, roots, head, tail } => {
-                    match io::spawn(&self.checkout, &cwd, &command, &[], &roots, (head, tail)) {
+                Op::Spawn { cwd, command, head, tail } => {
+                    match io::spawn(&self.checkout, &cwd, &command, &[], (head, tail)) {
                         Ok(started) => Work::Command(started),
                         Err(done) => Work::Ending(done),
                     }
@@ -1579,7 +1579,7 @@ impl World {
         let done = match pending.work {
             Work::File(op) => io::perform(&mut self.checkout, op),
             Work::Command(started) => {
-                self.checkout.finish(&started.process);
+                io::finish(&mut self.checkout, &started.process);
                 let program = &started.process.program;
                 io::exited(Some(program.exit), &program.output, started.head, started.tail)
             }

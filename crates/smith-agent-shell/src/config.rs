@@ -914,7 +914,7 @@ mod tests {
         assert_eq!(limits.domain.run.messages, 3);
         assert_eq!(limits.domain.run.budget.turns, 9);
         assert_eq!(limits.channel.turns, 2);
-        assert_eq!(limits.machine.stop_grace, Duration::from_millis(7));
+        assert_eq!(limits.machine.group_stop, Duration::from_millis(7));
         assert_eq!(limits.domain.session.tools.shell_tail, 64);
         assert_eq!(limits.domain.run.check_tail, 64);
         assert_eq!(limits.domain.session.tool_timeout, configured.profile.policy.tool_deadline);

@@ -21,7 +21,7 @@ fn limits() -> Limits {
         search_bytes: 256,
         search_line_bytes: 512,
         env_bytes: 512,
-        stop_grace: Duration::from_millis(10),
+        group_stop: Duration::from_millis(10),
     }
 }
 
@@ -347,13 +347,7 @@ fn command_output_waits_for_both_pipes_and_child_close() {
         &env(),
         FromDomain::Op {
             owner,
-            op: tools::Op::Spawn {
-                cwd: place(b"."),
-                command: Box::from(&b"printf abcdef"[..]),
-                roots: Box::new([]),
-                head: 2,
-                tail: 2,
-            },
+            op: tools::Op::Spawn { cwd: place(b"."), command: Box::from(&b"printf abcdef"[..]), head: 2, tail: 2 },
             deadline: Time::from_nanos(100),
         },
         &mut to_domain,
@@ -389,6 +383,8 @@ fn command_output_waits_for_both_pipes_and_child_close() {
         &mut to_domain,
         &mut below,
     );
+    assert_eq!(below.pop(), Some(Below::Process(skein_io::Request::Close { entity: Token::new(42) })));
+    assert!(to_domain.is_empty(), "natural exit still awaits pipe closure and reap");
     for pipe in [Token::new(43), Token::new(44)] {
         component.from_below(&env(), BelowEvent::Process(Event::Closed { owner: pipe }), &mut to_domain, &mut below);
     }
@@ -409,7 +405,7 @@ fn command_output_waits_for_both_pipes_and_child_close() {
 }
 
 #[test]
-fn deadline_sends_term_then_kill_and_answers_after_reap() {
+fn deadline_sends_group_term_kill_close_and_answers_after_reap() {
     use skein_io::Event;
     let mut component = component();
     let mut to_domain = Queue::with_capacity(1);
@@ -450,7 +446,7 @@ fn deadline_sends_term_then_kill_and_answers_after_reap() {
         below.pop(),
         Some(Below::Process(skein_io::Request::Signal {
             child: Token::new(45),
-            to: kernel::Target::Child,
+            to: kernel::Target::Group,
             signal: kernel::Signal::Terminate
         }))
     );
@@ -460,10 +456,19 @@ fn deadline_sends_term_then_kill_and_answers_after_reap() {
         below.pop(),
         Some(Below::Process(skein_io::Request::Signal {
             child: Token::new(45),
-            to: kernel::Target::Child,
+            to: kernel::Target::Group,
             signal: kernel::Signal::Kill
         }))
     );
+    assert_eq!(component.next_deadline(), Some(Time::from_nanos(20_000_102)));
+    later.now = Time::from_nanos(20_000_101);
+    component.fire(&later, &mut to_domain, &mut below);
+    assert!(below.is_empty(), "each stage receives its complete group grace");
+    later.now = Time::from_nanos(20_000_102);
+    component.fire(&later, &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(Below::Process(skein_io::Request::Close { entity: Token::new(45) })));
+    assert_eq!(component.next_deadline(), None);
+    assert!(to_domain.is_empty(), "Close issuance is not reaping evidence");
     component.from_below(
         &later,
         BelowEvent::Process(Event::Exited { owner, exit: kernel::Exit::Signal(9) }),
@@ -501,13 +506,7 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                 }
                 3 => FromDomain::Op {
                     owner,
-                    op: tools::Op::Spawn {
-                        cwd: place(path),
-                        command: Box::from(&b"true"[..]),
-                        roots: Box::new([]),
-                        head: 4,
-                        tail: 4,
-                    },
+                    op: tools::Op::Spawn { cwd: place(path), command: Box::from(&b"true"[..]), head: 4, tail: 4 },
                     deadline,
                 },
                 4 => FromDomain::Op {
@@ -590,13 +589,7 @@ fn configured_variables_are_encoded_once_for_commands_and_checks_and_absent_for_
                 0 => FromDomain::Op {
                     owner,
                     deadline,
-                    op: tools::Op::Spawn {
-                        cwd: place(b""),
-                        command: Box::from(&b"true"[..]),
-                        roots: Box::new([]),
-                        head: 4,
-                        tail: 4,
-                    },
+                    op: tools::Op::Spawn { cwd: place(b""), command: Box::from(&b"true"[..]), head: 4, tail: 4 },
                 },
                 1 => FromDomain::Check {
                     owner,
@@ -661,4 +654,68 @@ fn environment_encoding_refuses_invalid_names_duplicates_and_excess_bytes() {
         crate::Environment::encode(&variables, &limits).unwrap_err(),
         crate::Unencodable::TooLarge { bytes: 6, bound: 3 }
     );
+}
+
+#[test]
+fn a_cancel_before_spawn_reaches_group_close_and_waits_for_every_terminal() {
+    use skein_io::Event;
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(3);
+    let owner = Token::new(94);
+    component.from_domain(
+        &env(),
+        FromDomain::Op {
+            owner,
+            op: tools::Op::Spawn { cwd: place(b""), command: b"hang".as_slice().into(), head: 4, tail: 4 },
+            deadline: Time::from_nanos(u64::MAX),
+        },
+        &mut to_domain,
+        &mut below,
+    );
+    assert!(below.pop().is_some());
+    component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
+    let mut later = env();
+    later.now = Time::from_nanos(10_000_000);
+    component.fire(&later, &mut to_domain, &mut below);
+    later.now = Time::from_nanos(20_000_000);
+    component.fire(&later, &mut to_domain, &mut below);
+    assert!(below.is_empty(), "spawn is still pending");
+    component.from_below(
+        &later,
+        BelowEvent::Process(Event::Spawned {
+            owner,
+            child: Token::new(95),
+            pipes: Box::new([Token::new(96), Token::new(97)]),
+        }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert!(below.pop().is_some());
+    assert!(below.pop().is_some());
+    assert_eq!(below.pop(), Some(Below::Process(skein_io::Request::Close { entity: Token::new(95) })));
+    component.from_below(
+        &later,
+        BelowEvent::Process(Event::Exited { owner, exit: kernel::Exit::Code(0) }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert!(to_domain.is_empty(), "a polite successful exit still owes closure");
+    component.from_below(
+        &later,
+        BelowEvent::Process(Event::Closed { owner: Token::new(96) }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert!(to_domain.is_empty());
+    component.from_below(&later, BelowEvent::Process(Event::Closed { owner }), &mut to_domain, &mut below);
+    assert!(to_domain.is_empty(), "second pipe remains outstanding");
+    component.from_below(
+        &later,
+        BelowEvent::Process(Event::Closed { owner: Token::new(97) }),
+        &mut to_domain,
+        &mut below,
+    );
+    assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
+    assert!(to_domain.is_empty());
 }

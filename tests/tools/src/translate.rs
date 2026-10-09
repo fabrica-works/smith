@@ -5,7 +5,7 @@
 
 use skein_fake_checkout as fake;
 use skein_lib::Token;
-use smith_domain_tools::{Done, Entry, Exit, Expect, Fault, Hit, Kind, Name, Op, Part, Path, Place, Root, Version};
+use smith_domain_tools::{Done, Entry, Exit, Expect, Fault, Hit, Kind, Name, Op, Part, Path, Place, Version};
 
 /// The path the LLM wrote, split at its slashes, as the protocol layer does.
 ///
@@ -96,13 +96,22 @@ pub fn spawn(
     cwd: &Place,
     command: &[u8],
     env: &[(Vec<u8>, Vec<u8>)],
-    roots: &[Root],
     (head, tail): (u32, u32),
 ) -> Result<Started, Done> {
-    let roots: Vec<(u64, bool)> = roots.iter().map(|seen| (seen.root.raw(), seen.writable)).collect();
-    match checkout.spawn(root(cwd.root), &cwd.path, command, env, &roots) {
+    match checkout.spawn(root(cwd.root), &cwd.path, command, env, &[]) {
         Ok(process) => Ok(Started { process, head, tail }),
         Err(failure) => Err(done(failure)),
+    }
+}
+
+/// Apply this world's plain-command fixture changes. File-tool grants do not
+/// confine commands before contained trees exist (protocol/agent.md, section 3).
+pub fn finish(checkout: &mut fake::Checkout, process: &fake::Process) {
+    for (path, content) in &process.program.changes {
+        match content {
+            Some(content) => drop(checkout.write(path, content)),
+            None => checkout.remove(path),
+        }
     }
 }
 

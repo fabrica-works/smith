@@ -1235,8 +1235,8 @@ impl World {
                     Flight { key: None, cancelled: false, completion_message: None, completion_index: None },
                 );
                 let delivery = match op {
-                    tools::Op::Spawn { cwd, command, roots, head, tail } => {
-                        match io::spawn(&self.disk, &cwd, &command, &[], &roots, (head, tail)) {
+                    tools::Op::Spawn { cwd, command, head, tail } => {
+                        match io::spawn(&self.disk, &cwd, &command, &[], (head, tail)) {
                             Ok(started) => {
                                 let duration = Duration::from_nanos(
                                     u64::try_from(started.process.program.duration.as_nanos())
@@ -1547,7 +1547,7 @@ impl World {
             }
             Delivery::Command { owner, process, head, tail, timed_out } => {
                 if !timed_out {
-                    self.disk.finish(&process);
+                    io::finish(&mut self.disk, &process);
                 }
                 let exit = if timed_out { None } else { Some(process.program.exit) };
                 let done = io::exited(exit, &process.program.output, head, tail);

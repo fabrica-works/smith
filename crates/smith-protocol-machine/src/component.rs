@@ -93,7 +93,7 @@ impl Component {
                 if self.pending.contains_key(&owner) {
                     below.push(Below::CancelFile { owner });
                 } else if let Some(process) = self.processes.get_mut(&owner) {
-                    process.stop(env.now, env.limits.stop_grace, true, below);
+                    process.stop(env.now, env.limits.group_stop, crate::process::Why::Cancel, below);
                 }
             }
             FromDomain::Read { owner, at, max, deadline } => {
@@ -145,7 +145,7 @@ impl Component {
             }
             FromDomain::Abort { owner } => {
                 if let Some(process) = self.processes.get_mut(&owner) {
-                    process.stop(env.now, env.limits.stop_grace, true, below);
+                    process.stop(env.now, env.limits.group_stop, crate::process::Why::Cancel, below);
                 }
             }
         }
@@ -176,7 +176,7 @@ impl Component {
                     Err(done) => to_domain.push(ToDomain::Done { owner, done }),
                 }
             }
-            tools::Op::Spawn { cwd, command, roots: _, head, tail } => {
+            tools::Op::Spawn { cwd, command, head, tail } => {
                 let admissible = crate::files::check(&self.roots, &env.limits, cwd.root, &cwd.path, false);
                 self.start_tool(
                     owner,
@@ -312,7 +312,7 @@ impl Component {
             io::Event::Spawned { child, pipes, .. } => {
                 process.spawned(child, pipes, &mut self.routes, process_owner, below);
             }
-            io::Event::Exited { exit, .. } => process.exited(exit),
+            io::Event::Exited { exit, .. } => process.exited(exit, below),
             io::Event::Stream { owner: pipe, up } => crate::process::stream(process, pipe, up, below),
             io::Event::Failed { owner: failed, .. } => {
                 process.failed();
@@ -341,7 +341,7 @@ impl Component {
         }
     }
 
-    /// Advance expired child deadlines, first terminating then killing.
+    /// Advance the group deadline, termination, kill and close stages.
     pub fn fire(&mut self, env: &Env<Limits>, _to_domain: &mut Queue<ToDomain>, below: &mut Queue<Below>) {
         let mut owners = List::with_capacity(self.processes.capacity());
         for (owner, _) in &self.processes {
@@ -349,11 +349,7 @@ impl Component {
         }
         for owner in &owners {
             let process = self.processes.get_mut(owner).expect("retained process");
-            if process.due(env.now) {
-                process.stop(env.now, env.limits.stop_grace, false, below);
-            } else if process.kill_due(env.now) {
-                process.kill(below);
-            }
+            process.fire(env.now, env.limits.group_stop, below);
         }
     }
 

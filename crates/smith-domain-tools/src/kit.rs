@@ -315,8 +315,7 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             let here = Path { absolute: false, parts: Box::new([]) };
             let located = place(&kit.checkout, &here, limits.path_bytes)?;
             let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
-            let roots = kit.checkout.roots.clone();
-            Work::Shell { cwd: located.place, command, timeout, roots }
+            Work::Shell { cwd: located.place, command, timeout }
         }
     };
     ready(kit, deadline, env)?;

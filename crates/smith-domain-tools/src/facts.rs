@@ -69,7 +69,7 @@ pub enum Verdict {
     Read,
     /// The directory listing completed.
     Listed,
-    /// The contained search completed with bounded matches.
+    /// The search completed with bounded matches.
     Found,
     /// The version-aware write completed.
     Written {
@@ -81,7 +81,7 @@ pub enum Verdict {
         /// Number of edit occurrences successfully replaced.
         replaced: u32,
     },
-    /// The contained process ended with its classified exit.
+    /// The process ended with its classified exit.
     Exited {
         /// Terminal process classification; only a zero exit code passes checks.
         exit: Exit,

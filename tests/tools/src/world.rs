@@ -606,7 +606,7 @@ impl World {
                         }
                         Work::File(op) => self.perform(owner, op),
                         Work::Command { started, since: _ } => {
-                            self.checkout.finish(&started.process);
+                            self.perform_command(&started.process);
                             self.assert_untouched();
                             let program = &started.process.program;
                             translate::exited(Some(program.exit), &program.output, started.head, started.tail)
@@ -656,7 +656,7 @@ impl World {
     fn start(&mut self, owner: Token, op: Op) -> (Work, Time) {
         let latency = self.now.saturating_add(self.settings.io.draw(&mut self.rng));
         match op {
-            Op::Spawn { cwd, command, roots, head, tail } => {
+            Op::Spawn { cwd, command, head, tail } => {
                 self.stats.commands += 1;
                 let started = if self.rng.chance(self.settings.faults) {
                     self.stats.faults += 1;
@@ -667,7 +667,6 @@ impl World {
                         &cwd,
                         &command,
                         &[(b"PATH".to_vec(), b"/usr/bin:/bin".to_vec()), (b"HOME".to_vec(), b"/home/agent".to_vec())],
-                        &roots,
                         (head, tail),
                     )
                 };
@@ -706,7 +705,7 @@ impl World {
         }
         match work {
             Work::File(op) => drop(translate::perform(&mut self.checkout, op)),
-            Work::Command { started, since: _ } => self.checkout.finish(&started.process),
+            Work::Command { started, since: _ } => self.perform_command(&started.process),
             Work::Ending(_) => return,
         }
         self.assert_untouched();
@@ -882,6 +881,16 @@ impl World {
     }
 
     /// The files of the repositories no kit may write.
+    /// Apply this world's plain command fixture effects, independent of tool
+    /// grants. Commands are not contained until Skein's later trees exist.
+    fn perform_command(&mut self, process: &skein_fake_checkout::Process) {
+        self.assert_untouched();
+        translate::finish(&mut self.checkout, process);
+        // These command effects are outside file-tool authority, like the
+        // world's external writer. File tools still compare the next baseline.
+        self.untouched = Some(self.read_only());
+    }
+
     /// The files nothing but the world may change: those of the repositories
     /// no kit may write, and those in any git directory.
     ///

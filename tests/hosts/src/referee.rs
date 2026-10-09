@@ -112,12 +112,18 @@ pub fn review(observations: &[Observation]) -> Referee<Meeting> {
 pub fn review_agent_errors(errors: &[u8], tail: &[u8], answered: bool) {
     assert_eq!(tail, errors, "Gone retains exactly the agent's written diagnostic bytes");
     let text = core::str::from_utf8(errors).expect("agent diagnostic UTF-8");
-    assert!(text.starts_with("smith: agent started; worst case "), "the shipped adapter supplied startup");
+    assert!(
+        text.starts_with(
+            "smith: commands run in process groups and are not contained\nsmith: agent started; worst case "
+        ),
+        "the shipped adapter supplied startup"
+    );
     if answered {
         assert!(!text.contains("could not answer"), "the answer and observed writer agree on success");
     }
     assert!(
-        text.lines().all(|line| line.starts_with("smith: agent started; worst case ")
+        text.lines().all(|line| line == "smith: commands run in process groups and are not contained"
+            || line.starts_with("smith: agent started; worst case ")
             || line.starts_with("smith: the run could not answer: ")
             || line.ends_with(" observations were dropped")),
         "only the shipped agent's words are observed"

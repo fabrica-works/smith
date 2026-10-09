@@ -65,7 +65,7 @@ use core::mem;
 use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
 
 use crate::authority::{self, Checkout};
-use crate::boundary::{Done, Expect, Op, Request, Root};
+use crate::boundary::{Done, Expect, Op, Request};
 use crate::call::{Outcome, Tool};
 use crate::domain::Domain;
 use crate::edit::{self, Edit};
@@ -155,12 +155,11 @@ pub(crate) enum Work {
         place: Place,
         edit: Edit,
     },
-    /// Runs `command` in `cwd` for at most `timeout`, seeing its `roots`: copies of the kit's, made for the request.
+    /// Runs `command` in `cwd` for at most `timeout`, in an uncontained process group.
     Shell {
         cwd: Place,
         command: Box<[u8]>,
         timeout: Duration,
-        roots: Box<[Root]>,
     },
     Search {
         place: Place,
@@ -221,9 +220,9 @@ pub(crate) fn start(
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
             (State::Editing { reply_to, editing: Editing { place, edit, deadline: call_deadline } }, op)
         }
-        Work::Shell { cwd, command, timeout: _, roots } => {
+        Work::Shell { cwd, command, timeout: _ } => {
             let place = cwd.clone();
-            let op = Op::Spawn { cwd, command, roots, head: limits.shell_head, tail: limits.shell_tail };
+            let op = Op::Spawn { cwd, command, head: limits.shell_head, tail: limits.shell_tail };
             (State::Running { reply_to, place }, op)
         }
         Work::Search { place, pattern, glob } => {

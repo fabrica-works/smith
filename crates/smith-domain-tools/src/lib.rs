@@ -53,7 +53,7 @@ mod tests;
 mod window;
 
 pub use authority::{Authority, Grants, Repo};
-pub use boundary::{Done, Event, Expect, Op, Refusal, Request, Root, Version};
+pub use boundary::{Done, Event, Expect, Op, Refusal, Request, Version};
 pub use call::{Call, Effect, Entry, Exit, Fault, Hit, Kind, Outcome, Tool, effect, tool};
 pub use domain::{Domain, max_facts, max_out, step};
 pub use facts::{CallInfo, Fact, FactKind, Verdict};

@@ -13,7 +13,7 @@ use crate::path;
 use crate::window::{self, Span};
 use crate::{
     Authority, Call, Domain, Done, Effect, Entry, Event, Exit, Expect, Fault, Grants, Hit, Kind, Limits, Name, Op,
-    Outcome, Part, Path, Place, Refusal, Repo, Request, Root, Version, effect, max_out, step, worst_case,
+    Outcome, Part, Path, Place, Refusal, Repo, Request, Version, effect, max_out, step, worst_case,
 };
 use crate::{FactKind as Fact, Tool, Verdict};
 
@@ -1075,19 +1075,13 @@ fn at(secs: u64) -> Time {
 }
 
 #[test]
-fn a_command_runs_in_the_working_directory_with_the_kits_roots() {
+fn a_command_runs_in_the_working_directory_with_the_kits_output_bounds() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
     let (owner, op, deadline) = spawned(&mut h, kit, None);
-    let roots: Box<[Root]> = Box::new([
-        Root { root: Token::new(1), writable: true },
-        Root { root: Token::new(2), writable: false },
-        Root { root: Token::new(3), writable: false },
-    ]);
     let expected = Op::Spawn {
         cwd: place(1, b""),
         command: bytes(b"cargo test"),
-        roots,
         head: LIMITS.shell_head,
         tail: LIMITS.shell_tail,
     };
@@ -1297,16 +1291,15 @@ fn the_last_cancelled_operation_fills_the_complete_two_fact_reserve() {
 }
 
 #[test]
-fn a_command_of_a_kit_without_modify_sees_every_repository_read_only() {
+fn a_command_grant_does_not_depend_on_a_file_modify_grant() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(Grants { inspect: true, modify: false, shell: true }));
     let (_, op, _) = spawned(&mut h, kit, None);
     match op {
-        Op::Spawn { roots, .. } => {
-            assert_eq!(roots.len(), 3);
-            for root in &roots {
-                assert!(!root.writable, "{root:?}");
-            }
+        Op::Spawn { cwd, command, head, tail } => {
+            assert_eq!(cwd, place(1, b""));
+            assert_eq!(command, bytes(b"cargo test"));
+            assert_eq!((head, tail), (LIMITS.shell_head, LIMITS.shell_tail));
         }
         op @ (Op::Load { .. } | Op::Scan { .. } | Op::Store { .. } | Op::Search { .. }) => {
             panic!("expected a spawn, not {op:?}")

@@ -1326,6 +1326,8 @@ dependencies = [
  "skein-lib",
  "skein-world",
  "smith-domain-tools",
+ "smith-machine-world",
+ "smith-protocol-machine",
 ]
 
 [[package]]

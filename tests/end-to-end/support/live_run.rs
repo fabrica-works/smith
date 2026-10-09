@@ -61,7 +61,8 @@ impl Referee<Process> for Judge {
                     std::str::from_utf8(binary.stderr()).is_ok_and(|text| text
                         .lines()
                         .all(|line| line.starts_with("smith: local host started; worst case ")
-                            || line.starts_with("smith: agent started; worst case "))),
+                            || line.starts_with("smith: agent started; worst case ")
+                            || line == "smith: commands run in process groups and are not contained")),
                     "live Smith emitted an unexpected diagnostic; credential-bearing bytes are withheld"
                 );
             }

@@ -9,8 +9,8 @@
 //! cancellation race; the service routes `Below::File` with `down_until`,
 //! `Below::CancelFile` with `cancel`, and seeds randomness before stores.
 //!
-//! Containment is partial until skein's contained process trees exist:
-//! searches, commands and checks use plain children. Their writes have only
+//! Until Skein's contained process trees exist, searches, commands and checks
+//! lead plain process groups. Their writes have only
 //! the permissions of the machine process (protocol/agent.md, section 3;
 //! protocol plan `later.md`).
 

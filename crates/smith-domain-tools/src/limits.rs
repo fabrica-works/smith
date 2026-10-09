@@ -6,7 +6,6 @@
 use skein_lib::{Duration, Id, List, Map, Queue, Set, Slab};
 
 use crate::authority::Mount;
-use crate::boundary::Root;
 use crate::call::{Call, Entry, Hit};
 use crate::facts::Fact;
 use crate::job::{self, Job};
@@ -56,7 +55,7 @@ pub struct Limits {
     pub shell_timeout_max: Duration,
     /// How much of a command's output is kept: its first bytes, and its last.
     pub shell_head: u32,
-    /// Last output bytes retained from a contained shell process.
+    /// Last output bytes retained from a shell process.
     pub shell_tail: u32,
     /// The most lines a search answers with, and the most text in them.
     pub search_hits: u32,
@@ -146,8 +145,7 @@ fn authority(limits: &Limits) -> Option<u64> {
     let mount_bytes = u64::from(limits.repos).checked_mul(path_bytes)?;
     let hosts = u64::from(limits.repos).checked_mul(u64::from(limits.host_path_bytes))?;
     let mounts = List::<Mount>::worst_case(limits.repos)?.checked_add(mount_bytes)?.checked_add(hosts)?;
-    let roots = List::<Root>::worst_case(limits.repos)?;
-    cwd.checked_add(mounts)?.checked_add(roots)
+    cwd.checked_add(mounts)
 }
 
 /// Numeric declarations needed by this layer's transitional derivation.

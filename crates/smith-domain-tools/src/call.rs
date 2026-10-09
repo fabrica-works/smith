@@ -36,7 +36,7 @@ pub enum Call {
     /// expression as rg reads it, in those whose names match `glob` if given.
     Search {
         path: Path,
-        /// Search expression passed as data to the contained search process.
+        /// Search expression passed as data to the process-group search.
         pattern: Box<[u8]>,
         /// Optional search filename filter, passed as data rather than an option.
         glob: Option<Box<[u8]>>,
@@ -61,9 +61,9 @@ pub enum Call {
     /// Run `command` with the shell, in the working directory, for at most
     /// `timeout` if given and within the tools' own limit.
     Shell {
-        /// Owned shell command interpreted only by the contained process layer.
+        /// Owned shell command interpreted only by the process-group layer.
         command: Box<[u8]>,
-        /// Maximum time allowed for this completion or contained command.
+        /// Maximum time allowed for this completion or command.
         timeout: Option<Duration>,
     },
 }
@@ -153,7 +153,7 @@ pub enum Outcome {
         hits: Box<[Hit]>,
         /// Problems or matches omitted after the retained bound.
         more: u64,
-        /// Whether IO ended the contained process or search at its deadline.
+        /// Whether IO ended the process or search at its deadline.
         timed_out: bool,
     },
     /// The file holds what was written; it was `created` if there was none.
@@ -288,7 +288,7 @@ pub enum Exit {
     Code { code: u8 },
     /// A signal killed it.
     Signal {
-        /// Signal number which ended the contained process.
+        /// Signal number which ended the process.
         signal: u8,
     },
     /// It ran past its deadline, and io killed it, with every process it

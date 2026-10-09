@@ -25,7 +25,7 @@ fn saturated_searches_and_pipe_routes_stay_within_the_machine_bound() {
         search_bytes: 256,
         search_line_bytes: 256,
         env_bytes: 128,
-        stop_grace: Duration::from_millis(1),
+        group_stop: Duration::from_millis(1),
     };
     let bound = machine::worst_case(&limits).expect("representable machine bound");
     let workspace = run::Workspace {
@@ -158,7 +158,7 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
             search_bytes: 0,
             search_line_bytes: 0,
             env_bytes: 128,
-            stop_grace: Duration::from_millis(1),
+            group_stop: Duration::from_millis(1),
         };
         let variables = if many {
             (0_u8..64)
@@ -202,7 +202,6 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
                     op: tools::Op::Spawn {
                         cwd: tools::Place { root: Token::new(1), path: Box::new([]) },
                         command: b"true".as_slice().into(),
-                        roots: Box::new([]),
                         head: 0,
                         tail: 0,
                     },

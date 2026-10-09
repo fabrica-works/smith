@@ -119,13 +119,7 @@ fn a_command_that_hangs_is_stopped_at_its_deadline_and_answered_once_gone() {
     let root = world.root();
     let done = world.request(FromDomain::Op {
         owner: Token::new(30),
-        op: tools::Op::Spawn {
-            cwd: place(root, b""),
-            command: Box::from(&b"hang"[..]),
-            roots: Box::new([]),
-            head: 4,
-            tail: 4,
-        },
+        op: tools::Op::Spawn { cwd: place(root, b""), command: Box::from(&b"hang"[..]), head: 4, tail: 4 },
         deadline: Time::from_nanos(1_000_000),
     });
     assert_eq!(
@@ -283,7 +277,6 @@ fn the_configured_environment_is_seen_by_commands_and_checks_and_none_by_searche
             op: tools::Op::Spawn {
                 cwd: place(world.root(), b""),
                 command: b"true".as_slice().into(),
-                roots: Box::new([]),
                 head: 8,
                 tail: 8,
             },
@@ -321,5 +314,62 @@ fn the_configured_environment_is_seen_by_commands_and_checks_and_none_by_searche
     }
     assert_eq!(observed[3].program.as_ref(), b"/usr/bin/rg");
     assert!(observed[3].environment.is_empty());
+    world.settle();
+}
+
+#[test]
+fn a_deadline_stops_both_the_leader_and_its_pipe_holding_group_child() {
+    let mut world = World::new(98, &[]);
+    let done = world.request(FromDomain::Op {
+        owner: Token::new(80),
+        op: tools::Op::Spawn {
+            cwd: place(world.root(), b""),
+            command: Box::from(b"fork".as_slice()),
+            head: 4,
+            tail: 4,
+        },
+        deadline: Time::from_nanos(1_000_000),
+    });
+    assert!(matches!(done, ToDomain::Done { done: tools::Done::Exited { exit: tools::Exit::TimedOut, .. }, .. }));
+    assert!(world.trace().iter().any(|entry| entry.contains("to: Group")), "actual native group signal");
+    world.settle();
+}
+
+#[test]
+fn a_stop_reaches_the_group_and_settles_both_output_pipes_before_cancelled() {
+    let mut world = World::new(99, &[]);
+    let done = world.cancelled_request(FromDomain::Op {
+        owner: Token::new(81),
+        op: tools::Op::Spawn {
+            cwd: place(world.root(), b""),
+            command: Box::from(b"fork".as_slice()),
+            head: 4,
+            tail: 4,
+        },
+        deadline: far(),
+    });
+    assert_eq!(done, ToDomain::Done { owner: Token::new(81), done: tools::Done::Cancelled });
+    assert!(world.trace().iter().any(|entry| entry.contains("to: Group")), "cancel targets the group");
+    world.settle();
+}
+
+#[test]
+fn a_naturally_exited_leader_closes_the_group_while_its_child_still_holds_the_pipes() {
+    let mut world = World::new(100, &[]);
+    let done = world.request(FromDomain::Op {
+        owner: Token::new(82),
+        op: tools::Op::Spawn {
+            cwd: place(world.root(), b""),
+            command: Box::from(b"fork-exit".as_slice()),
+            head: 4,
+            tail: 4,
+        },
+        deadline: far(),
+    });
+    assert!(matches!(
+        done,
+        ToDomain::Done { done: tools::Done::Exited { exit: tools::Exit::Code { code: 0 }, .. }, .. }
+    ));
+    assert!(world.now() < far(), "group cleanup does not wait for the command deadline");
     world.settle();
 }
