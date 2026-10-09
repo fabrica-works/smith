@@ -196,9 +196,9 @@ impl World {
             Input::Parent(parent::Event::Message { agent, name, .. })
                 if self.seen.agent == Some(*agent) && self.seen.gone.is_none() =>
             {
-                self.seen.messages.push(*name)
+                self.seen.messages.push(*name);
             }
-            _ => {}
+            Input::Parent(_) | Input::Process(_) => {}
         }
         self.observe_terminal(&event);
         self.trace.log(self.stage.env.now, format!("up {event:?}"));
@@ -390,12 +390,12 @@ impl World {
                     self.lower.open(Lower::Send, owner);
                     match &message {
                         Down::Start { start, .. } => {
-                            self.seen.sent_messages.extend(start.messages.iter().map(|message| message.name))
+                            self.seen.sent_messages.extend(start.messages.iter().map(|message| message.name));
                         }
                         Down::Message { name, .. } => {
                             self.seen.sent_messages.insert(*name);
                         }
-                        _ => {}
+                        Down::Answer { .. } | Down::Acknowledge { .. } | Down::Grant { .. } | Down::Cancel => {}
                     }
                     self.seen.down.push(message);
                 }
