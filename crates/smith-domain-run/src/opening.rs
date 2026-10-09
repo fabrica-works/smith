@@ -21,12 +21,15 @@ use crate::workspace::{self, Workspace};
 pub(crate) fn main(
     charter: &Charter,
     activation: u64,
+    identity: crate::Identity,
     workspace: Option<&Workspace>,
     found: &Found,
     spent: Spend,
     left: Duration,
 ) -> Opening {
     Opening {
+        identity,
+        ordinal: 0,
         activation,
         transcript: None,
         wait: charter.grants.wait,

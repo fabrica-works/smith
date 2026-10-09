@@ -141,6 +141,7 @@ pub fn start() -> Start {
     Start {
         messages: Box::default(),
         logical_run: Token::new(7),
+        identity: None,
         activation: 1,
         workspace: None,
         charter: charter_value(7),

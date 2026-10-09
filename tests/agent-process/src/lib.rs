@@ -238,6 +238,7 @@ pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> sk
         &limits,
         smith_channel::StartParts {
             messages: skein_lib::List::with_capacity(0),
+            identity: None,
             activation: 1,
             charter: Box::from(charter),
             workspace: if workspace {

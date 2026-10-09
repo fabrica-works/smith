@@ -134,6 +134,7 @@ fn start() -> host::Start {
     host::Start {
         messages: Box::default(),
         logical_run: Token::new(1),
+        identity: None,
         activation: 1,
         workspace: None,
         charter: host::Charter::new(

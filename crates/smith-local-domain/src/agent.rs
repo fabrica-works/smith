@@ -82,6 +82,7 @@ pub(crate) fn prepare_start(source: RunStart, limits: &host::Limits) -> Result<h
     Ok(host::Start {
         messages: Box::default(),
         logical_run: skein_lib::Token::new(1),
+        identity: None,
         activation: source.activation,
         workspace,
         charter,

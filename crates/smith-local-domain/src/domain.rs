@@ -570,6 +570,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
                 answered: answered.into_boxed(),
                 reply_to: ReplyTo::new(Token::new(domain.chat.state.activation)),
                 host_run: Token::new(1),
+                identity: None,
                 activation: domain.chat.state.activation,
                 window: agent::Window { turns: 1, bytes: u64::MAX },
                 charter: charter(&domain.config),

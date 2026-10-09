@@ -181,6 +181,8 @@ pub enum Path {
     MessageText,
     /// Bytes after `Message`.
     MessageTail,
+    /// The `identity` field of `Start`.
+    StartIdentity,
     /// The `activation` field of `Start`.
     StartActivation,
     /// The `charter` field of `Start`.
@@ -1816,6 +1818,8 @@ impl Message {
 /// Movable fields of `Start`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StartParts {
+    /// The `identity` field.
+    pub identity: Option<[u8; 16]>,
     /// The `activation` field.
     pub activation: u64,
     /// The `charter` field.
@@ -1837,6 +1841,7 @@ pub struct StartParts {
 /// `Start` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Start {
+    identity: Option<[u8; 16]>,
     activation: u64,
     charter: Box<[u8]>,
     workspace: Option<Workspace>,
@@ -1850,11 +1855,15 @@ pub struct Start {
 impl Start {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: StartParts) -> Result<Self, Problem> {
-        let StartParts { activation, charter, workspace, transcript, answered, grants, window, messages } = parts;
-        let value = Self { activation, charter, workspace, transcript, answered, grants, window, messages };
+        let StartParts { identity, activation, charter, workspace, transcript, answered, grants, window, messages } = parts;
+        let value = Self { identity, activation, charter, workspace, transcript, answered, grants, window, messages };
         value.check(limits)?;
         Ok(value)
     }
+
+    /// Reads the `identity` field.
+    #[must_use]
+    pub fn identity(&self) -> &Option<[u8; 16]> { &self.identity }
 
     /// Reads the `activation` field.
     #[must_use]
@@ -1890,7 +1899,7 @@ impl Start {
 
     /// Moves the fields out without copying.
     #[must_use]
-    pub fn into_parts(self) -> StartParts { StartParts { activation: self.activation, charter: self.charter, workspace: self.workspace, transcript: self.transcript, answered: self.answered, grants: self.grants, window: self.window, messages: self.messages } }
+    pub fn into_parts(self) -> StartParts { StartParts { identity: self.identity, activation: self.activation, charter: self.charter, workspace: self.workspace, transcript: self.transcript, answered: self.answered, grants: self.grants, window: self.window, messages: self.messages } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
@@ -6411,6 +6420,11 @@ impl Start {
     #[must_use]
     pub fn measure(&self) -> u32 {
         let mut size = 0_u32;
+        let field_identity = &self.identity;
+        size = size.checked_add(1).expect("schema ceilings fit u32");
+        if field_identity.is_some() {
+        size = size.checked_add(16).expect("schema ceilings fit u32");
+        }
         size = size.checked_add(8).expect("schema ceilings fit u32");
         let field_charter = &self.charter;
         size = size.checked_add(4).expect("schema ceilings fit u32");
@@ -6448,6 +6462,14 @@ impl Start {
 
     /// Writes into a writer with room for the measured bytes.
     pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_identity = &self.identity;
+        match field_identity {
+            Some(some_0) => {
+                writer.put(&[1_u8])?;
+        writer.put(some_0)?;
+            }
+            None => writer.put(&[0_u8])?,
+        }
         let field_activation = &self.activation;
         writer.put(&field_activation.to_be_bytes())?;
         let field_charter = &self.charter;
@@ -6495,6 +6517,7 @@ impl Start {
     }
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_identity = match reader.u8().ok_or(Problem { path: Path::StartIdentity, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some({ let bytes = reader.bytes(16).ok_or(Problem { path: Path::StartIdentity, reason: skein_codec::Reason::Short })?; bytes.try_into().expect("fixed length checked") }), _ => return Err(Problem { path: Path::StartIdentity, reason: skein_codec::Reason::Tag }) };
         let decoded_activation = reader.u64().ok_or(Problem { path: Path::StartActivation, reason: skein_codec::Reason::Short })?;
         let decoded_charter = { let length = match skein_codec::read_len(reader, limits.start_charter.min(CEILINGS.start_charter)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::StartCharter, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Short })?) };
         let decoded_workspace = match reader.u8().ok_or(Problem { path: Path::StartWorkspace, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(Workspace::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::StartWorkspace, reason: skein_codec::Reason::Tag }) };
@@ -6503,7 +6526,7 @@ impl Start {
         let decoded_grants = { let count = match skein_codec::read_count(reader, limits.start_grants.min(CEILINGS.start_grants)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::StartGrants, reason }), }; if count > reader.remaining() / 24 { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Grant::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_window = Window::decode_from(limits, reader)?;
         let decoded_messages = { let count = match skein_codec::read_count(reader, limits.start_messages.min(CEILINGS.start_messages)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::StartMessages, reason }), }; if count > reader.remaining() / 16 { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Message::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, StartParts { activation: decoded_activation, charter: decoded_charter, workspace: decoded_workspace, transcript: decoded_transcript, answered: decoded_answered, grants: decoded_grants, window: decoded_window, messages: decoded_messages })
+        Self::new(limits, StartParts { identity: decoded_identity, activation: decoded_activation, charter: decoded_charter, workspace: decoded_workspace, transcript: decoded_transcript, answered: decoded_answered, grants: decoded_grants, window: decoded_window, messages: decoded_messages })
     }
 }
 
@@ -9015,6 +9038,7 @@ impl Start {
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut size = 0_u64;
+        size = size.checked_add(1_u64.checked_add(u64::from(16_u32))?)?;
         size = size.checked_add(8_u64)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.start_charter))?)?;
         size = size.checked_add(1_u64.checked_add(Workspace::worst_case_bytes(limits)?)?)?;
@@ -9031,6 +9055,7 @@ impl Start {
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(u64::from(limits.start_charter))?;
         heap = heap.checked_add(Workspace::worst_case_heap(limits)?)?;
@@ -11180,8 +11205,8 @@ mod golden_tests {
 
     #[test]
     fn record_start_smallest() {
-        let value = Start::new(&CEILINGS, StartParts { activation: 0_u64, charter: Box::from([].as_slice()), workspace: None, transcript: skein_lib::List::with_capacity(0), answered: skein_lib::List::with_capacity(0), grants: skein_lib::List::with_capacity(0), window: Window::new(&CEILINGS, WindowParts { turns: 0_u32, bytes: 0_u64 }).expect("golden within ceilings"), messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = Start::new(&CEILINGS, StartParts { identity: None, activation: 0_u64, charter: Box::from([].as_slice()), workspace: None, transcript: skein_lib::List::with_capacity(0), answered: skein_lib::List::with_capacity(0), grants: skein_lib::List::with_capacity(0), window: Window::new(&CEILINGS, WindowParts { turns: 0_u32, bytes: 0_u64 }).expect("golden within ceilings"), messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -11190,8 +11215,8 @@ mod golden_tests {
 
     #[test]
     fn record_start_full() {
-        let value = Start::new(&CEILINGS, StartParts { activation: u64::MAX, charter: Box::from([0_u8, 127_u8, 255_u8].as_slice()), workspace: Some(Workspace::new(&CEILINGS, WorkspaceParts { directories: { let mut items = skein_lib::List::with_capacity(1); items.push(Directory::new(&CEILINGS, DirectoryParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), path: Box::from([97_u8, 98_u8, 99_u8].as_slice()), writable: true, git: true, conflicts: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([97_u8, 98_u8, 99_u8].as_slice())).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), transcript: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([0_u8, 127_u8, 255_u8].as_slice())).expect("one slot"); items }, answered: { let mut items = skein_lib::List::with_capacity(1); items.push(AnsweredCall::new(&CEILINGS, AnsweredCallParts { name: CallName::new(&CEILINGS, CallNameParts { activation: u64::MAX, completion: u32::MAX, position: u32::MAX }).expect("golden within ceilings"), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()), reply: SavedReply::Host(HostReply::new(&CEILINGS, HostReplyParts { error: true, text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings")).expect("one slot"); items }, grants: { let mut items = skein_lib::List::with_capacity(1); items.push(Grant::new(&CEILINGS, GrantParts { account: u32::MAX, generation: u64::MAX, valid: skein_lib::Duration::from_nanos(u64::MAX), value: GrantValue::new(&CEILINGS, GrantValueParts { credential: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, window: Window::new(&CEILINGS, WindowParts { turns: u32::MAX, bytes: u64::MAX }).expect("golden within ceilings"), messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { name: u64::MAX, label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
+        let value = Start::new(&CEILINGS, StartParts { identity: Some([165_u8; 16]), activation: u64::MAX, charter: Box::from([0_u8, 127_u8, 255_u8].as_slice()), workspace: Some(Workspace::new(&CEILINGS, WorkspaceParts { directories: { let mut items = skein_lib::List::with_capacity(1); items.push(Directory::new(&CEILINGS, DirectoryParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), path: Box::from([97_u8, 98_u8, 99_u8].as_slice()), writable: true, git: true, conflicts: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([97_u8, 98_u8, 99_u8].as_slice())).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), transcript: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([0_u8, 127_u8, 255_u8].as_slice())).expect("one slot"); items }, answered: { let mut items = skein_lib::List::with_capacity(1); items.push(AnsweredCall::new(&CEILINGS, AnsweredCallParts { name: CallName::new(&CEILINGS, CallNameParts { activation: u64::MAX, completion: u32::MAX, position: u32::MAX }).expect("golden within ceilings"), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()), reply: SavedReply::Host(HostReply::new(&CEILINGS, HostReplyParts { error: true, text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings")).expect("one slot"); items }, grants: { let mut items = skein_lib::List::with_capacity(1); items.push(Grant::new(&CEILINGS, GrantParts { account: u32::MAX, generation: u64::MAX, valid: skein_lib::Duration::from_nanos(u64::MAX), value: GrantValue::new(&CEILINGS, GrantValueParts { credential: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, window: Window::new(&CEILINGS, WindowParts { turns: u32::MAX, bytes: u64::MAX }).expect("golden within ceilings"), messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { name: u64::MAX, label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
+        let golden: &[u8] = &[1, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14182,10 +14207,10 @@ mod golden_tests {
     fn bound_start_charter() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
+            let header = 9_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(29_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
@@ -14202,10 +14227,10 @@ mod golden_tests {
     fn bound_start_transcript() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(4).expect("schema ceiling");
-            let header = 13_usize.checked_add(4).expect("header size");
+            let header = 14_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(24_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0]).expect("item room"); }
@@ -14222,10 +14247,10 @@ mod golden_tests {
     fn bound_start_answered() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(26).expect("schema ceiling");
-            let header = 17_usize.checked_add(4).expect("header size");
+            let header = 18_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(20_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
@@ -14242,10 +14267,10 @@ mod golden_tests {
     fn bound_start_grants() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(24).expect("schema ceiling");
-            let header = 21_usize.checked_add(4).expect("header size");
+            let header = 22_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(16_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
@@ -14262,10 +14287,10 @@ mod golden_tests {
     fn bound_start_messages() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(16).expect("schema ceiling");
-            let header = 37_usize.checked_add(4).expect("header size");
+            let header = 38_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }

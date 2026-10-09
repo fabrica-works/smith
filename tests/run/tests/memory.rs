@@ -289,7 +289,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits);
+    let mut domain = Domain::new(&limits, 0);
     // The requests are the parent's to route and their receivers' to count:
     // each is dropped, keeping only what it asked for, and the step's peak
     // checked less them.
@@ -314,6 +314,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
             workspace: Some(workspace()),
             reply_to: ReplyTo::new(host_run),
             host_run,
+            identity: None,
             activation: 1,
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter: selected_charter(limits.run_bytes, selected),
@@ -382,13 +383,14 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
 /// The positive full-cap run above precedes this exact one-byte-over control.
 fn refuse_oversized_charter(limits: Limits, env: &Env<Limits>, out: &mut Queue<Request>) {
     // A byte more is refused.
-    let mut domain = Domain::new(&Limits { runs: 1, conversations: 2, ..limits });
+    let mut domain = Domain::new(&Limits { runs: 1, conversations: 2, ..limits }, 0);
     let host_run = Token::new(0);
     let start = Event::Start {
         messages: Box::default(),
         workspace: Some(workspace()),
         reply_to: ReplyTo::new(host_run),
         host_run,
+        identity: None,
         activation: 1,
         window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
         charter: charter(limits.run_bytes + 1),
@@ -529,7 +531,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits);
+    let mut domain = Domain::new(&limits, 0);
     let charter = full_delivery_charter(limits);
     let host_run = Token::new(10);
     let (owner, _) = delivery_memory_step(
@@ -542,6 +544,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
             workspace: Some(full_delivery_workspace()),
             reply_to: ReplyTo::new(host_run),
             host_run,
+            identity: None,
             activation: 1,
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,
@@ -721,7 +724,7 @@ fn complete_declaration_and_maximum_opaque_input_answer_retries_reach_the_measur
     let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits);
+    let mut domain = Domain::new(&limits, 0);
     let mut charter = charter(limits.run_bytes);
     let mut mounted = Some(workspace());
     mounted.as_mut().expect("explicit host fixture workspace").directories[0].writable = false;
@@ -750,6 +753,7 @@ fn complete_declaration_and_maximum_opaque_input_answer_retries_reach_the_measur
             workspace: mounted,
             reply_to: ReplyTo::new(Token::new(88)),
             host_run: Token::new(91),
+            identity: None,
             activation: 1,
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,
@@ -831,7 +835,7 @@ fn an_awaiting_run_retains_its_full_charter_without_allocating_a_session() {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT);
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits);
+    let mut domain = Domain::new(&limits, 0);
     let mut charter = charter(limits.run_bytes);
     let context = context_bytes(&charter);
     charter.instructions = bytes(context);
@@ -847,6 +851,7 @@ fn an_awaiting_run_retains_its_full_charter_without_allocating_a_session() {
             workspace: Some(workspace()),
             reply_to: ReplyTo::new(Token::new(88)),
             host_run: Token::new(91),
+            identity: None,
             activation: 1,
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,

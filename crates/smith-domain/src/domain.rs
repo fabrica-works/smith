@@ -215,14 +215,16 @@ impl Domain {
     pub fn new(limits: &Limits, config: Config, seed: u64) -> Domain {
         assert!(config.valid(limits), "configured endpoints and models fit their limits and are unique");
         let mut rng = Rng::new(seed);
+        let session_seed = rng.next_u64();
+        let run_seed = rng.next_u64();
         let peers = limits.run.conversations;
         let flights = limits::flights(limits).expect("worst_case accepted the limits");
         let handoffs = limits::handoffs(limits).expect("worst_case accepted the limits");
         let facts = limits::facts(limits).expect("worst_case accepted the limits");
         Domain {
             config,
-            run: run::Domain::new(&limits.run),
-            session: session::Domain::new(&limits.session, rng.next_u64()),
+            run: run::Domain::new(&limits.run, run_seed),
+            session: session::Domain::new(&limits.session, session_seed),
             peers: Slab::with_capacity(peers),
             starts: Slab::with_capacity(limits.run.runs),
             turns: Slab::with_capacity(limits::session_out(limits)),

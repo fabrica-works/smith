@@ -67,6 +67,7 @@ pub(crate) fn start(client: Token, source: host::Start, limits: &Limits) -> Resu
         reply_to: ReplyTo::new(client),
         host_run: source.logical_run,
         activation: source.activation,
+        identity: source.identity,
         window: limits.window,
         messages: messages.into_boxed(),
         charter: source.charter.into_value(),

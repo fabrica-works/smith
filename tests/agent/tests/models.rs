@@ -12,6 +12,7 @@ fn world(settings: &Settings, charter: run::Charter) -> World {
             messages: Box::default(),
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
+            identity: None,
             activation: 1,
             window: Window { turns: u32::MAX, bytes: u64::MAX },
             charter,

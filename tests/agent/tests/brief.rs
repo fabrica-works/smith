@@ -351,6 +351,7 @@ fn the_first_provider_request_contains_the_carried_messages_with_the_briefs_inst
             ]),
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
+            identity: None,
             activation: 1,
             window: smith_domain::Window { turns: 100, bytes: u64::MAX },
             charter,
@@ -566,6 +567,7 @@ fn a_wait_withheld_through_a_park_is_supplied_on_resuming() {
     let start = smith_domain::Event::Start {
         reply_to: ReplyTo::new(Token::new(1)),
         host_run: Token::new(1),
+        identity: None,
         activation: 2,
         window: smith_domain::Window { turns: u32::MAX, bytes: u64::MAX },
         charter: charter(&resumed, "@parked-wait"),

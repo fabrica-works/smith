@@ -117,6 +117,8 @@ pub enum Event {
         host_run: Token,
         /// Host-supplied positive number, unique for each activation of `host_run`.
         activation: u64,
+        /// Host identity across activations, or absent to draw one at admission.
+        identity: Option<run::Identity>,
         /// Credit for turns awaiting durable host acknowledgement.
         window: Window,
         /// Triggering messages admitted before any later live input.

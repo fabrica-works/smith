@@ -49,6 +49,7 @@ impl CrashHost {
             reply_to: skein_lib::ReplyTo::new(Token::new(88)),
             host_run: Token::new(91),
             activation,
+            identity: None,
             window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter: run::Charter { resume: true, ..charter },
             workspace,
@@ -137,7 +138,7 @@ fn a_completion_whose_maximum_does_not_fit_is_not_made_and_the_run_ends_for_its_
     let limits = Settings::calm(606).run;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(run::MAX_OUT);
-    let mut domain = run::Domain::new(&limits);
+    let mut domain = run::Domain::new(&limits, 0);
     let (_, main) = crash_open(&mut domain, &env, &mut out, reserved_start(&mut host, 100), 1);
     assert_eq!(run::reserve(&mut domain, main, Token::new(801), 101), Err(Exhausted::Spend));
     let ended = crash_take(
@@ -157,7 +158,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
     let limits = Settings::calm(606).run;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(run::MAX_OUT);
-    let mut domain = run::Domain::new(&limits);
+    let mut domain = run::Domain::new(&limits, 0);
     let (_, main) = crash_open(&mut domain, &env, &mut out, reserved_start(&mut host, 100), 1);
     let asked = crash_take(
         &mut domain,
@@ -243,7 +244,7 @@ fn answered_host_call_before_turn_crash_wakes_as_host_text_with_new_call_namespa
     let limits = Settings::calm(606).run;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(run::MAX_OUT);
-    let mut first = run::Domain::new(&limits);
+    let mut first = run::Domain::new(&limits, 0);
     let (_, conversation) = crash_open(&mut first, &env, &mut out, host.start(1), 1);
     let old_name = run::CallName { activation: 1, completion: 1, position: 0 };
     let called = crash_take(
@@ -269,7 +270,7 @@ fn answered_host_call_before_turn_crash_wakes_as_host_text_with_new_call_namespa
     assert!(!returned.iter().any(|request| matches!(request, run::Request::Turn { .. })));
     drop(first);
 
-    let mut resumed = run::Domain::new(&limits);
+    let mut resumed = run::Domain::new(&limits, 0);
     let (run, conversation) = crash_open(&mut resumed, &env, &mut out, host.start(2), 2);
     let notice = host.waking_text();
     assert!(

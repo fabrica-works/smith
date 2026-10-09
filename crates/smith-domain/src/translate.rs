@@ -69,6 +69,8 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         deliver,
         families,
         wait,
+        identity: _,
+        ordinal: _,
         activation: _,
         transcript: _,
     } = opening;

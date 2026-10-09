@@ -1,11 +1,12 @@
 //! The run child domain's state and its entry points (domain/run.md, sections
 //! 3, 5, 6 and 10; programming-model.md, sections 4.5 and 6.3). [`Domain`]
-//! retains runs, conversations, delegated calls, alarms and bounded facts.
+//! retains seeded admission randomness, runs, conversations, delegated calls,
+//! alarms and bounded facts.
 //! [`step`] accepts parent events and [`fire`] handles due alarms; both emit
 //! bounded requests. This module never knows provider syntax, credential
 //! secrets, host policy or the contents of a delivered receipt.
 
-use skein_lib::{Deadlines, Env, Queue, Slab, Time, Token};
+use skein_lib::{Deadlines, Env, Queue, Rng, Slab, Time, Token};
 
 use crate::boundary::{Event, Request};
 use crate::call::Calls;
@@ -29,6 +30,7 @@ pub const fn max_facts(limits: &Limits) -> u32 {
 /// The run child domain's state.
 #[derive(Debug)]
 pub struct Domain {
+    pub(crate) rng: Rng,
     pub(crate) runs: Slab<Run>,
     pub(crate) conversations: Slab<Conversation>,
     /// Calls of conversations to the run.
@@ -38,10 +40,11 @@ pub struct Domain {
 }
 
 impl Domain {
-    /// A domain with room for `limits`.
+    /// A domain with room for `limits`, drawing absent identities from `seed`.
     #[must_use]
-    pub fn new(limits: &Limits) -> Domain {
+    pub fn new(limits: &Limits, seed: u64) -> Domain {
         Domain {
+            rng: Rng::new(seed),
             runs: Slab::with_capacity(limits.runs),
             conversations: Slab::with_capacity(limits.conversations),
             calls: Calls::with_capacity(limits.calls),
@@ -118,7 +121,18 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
 fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
     match event {
         Event::HostReturned { relay, reply } => run::host_returned(domain, env, relay, reply, out),
-        Event::Start { reply_to, host_run, activation, window, messages, charter, workspace, transcript, resumed } => {
+        Event::Start {
+            reply_to,
+            host_run,
+            activation,
+            identity,
+            window,
+            messages,
+            charter,
+            workspace,
+            transcript,
+            resumed,
+        } => {
             run::start(
                 domain,
                 env,
@@ -126,6 +140,7 @@ fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Re
                     reply_to,
                     host_run,
                     activation,
+                    identity,
                     window,
                     messages,
                     charter,

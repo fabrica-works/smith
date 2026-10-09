@@ -493,6 +493,16 @@ impl World {
 
     /// Send a Start carrying saved turn bytes, if present.
     pub fn send_start_with_turns(&mut self, charter: Box<[u8]>, transcript: Option<Box<[Box<[u8]>]>>) {
+        self.send_start_with_identity(charter, transcript, None);
+    }
+
+    /// Send saved turn bytes and the host's optional stable run identity.
+    pub fn send_start_with_identity(
+        &mut self,
+        charter: Box<[u8]>,
+        transcript: Option<Box<[Box<[u8]>]>>,
+        identity: Option<smith_domain::run::Identity>,
+    ) {
         let typed_charter = typed_charter(&charter);
         let typed_transcript = agent::decode_transcript(
             transcript.as_deref().unwrap_or(&[]),
@@ -506,6 +516,7 @@ impl World {
         let start = smith_host_domain::channel::Start {
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
+            identity,
             activation: 1,
             workspace: None,
             charter: typed_charter,
@@ -568,6 +579,7 @@ impl World {
         let start = smith_host_domain::channel::Start {
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
+            identity: None,
             activation: 7,
             workspace: Some(skein_lib::Token::new(2)),
             charter: typed_charter,

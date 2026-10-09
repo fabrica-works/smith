@@ -427,6 +427,7 @@ impl Host {
                     messages: Box::default(),
                     reply_to: ReplyTo::new(job),
                     host_run: job,
+                    identity: None,
                     activation: 1,
                     window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
                     charter,

@@ -48,6 +48,7 @@ record AnsweredCall { name: CallName tool: text 64 reply: SavedReply }
 # exact opaque versioned turn bytes told on earlier activations.
 record Message { name: u64 label: text 1024 text: text 1048576 }
 record Start {
+    identity: option fixed 16
     activation: u64
     charter: bytes 67108864
     workspace: option Workspace

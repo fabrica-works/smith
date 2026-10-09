@@ -28,6 +28,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
     let start = channel::Start {
         messages: Box::default(),
         logical_run: Token::new(2),
+        identity: Some(smith_domain::run::Identity::new(*b"stable-chat-name")),
         activation: 3,
         workspace: Some(Token::new(4)),
         charter: smith_host_world::charter_value(7),
@@ -62,6 +63,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
     let mut reader = Reader::new(&frame.bytes()[8..]);
     let start = smith_channel::Start::decode(&limits.bodies, &mut reader).expect("Start decodes");
     assert_eq!(start.activation(), 3);
+    assert_eq!(start.identity(), &Some(*b"stable-chat-name"));
     assert_eq!(
         smith_protocol_channel::decode_charter(start.charter(), &limits.charter, &endpoints()).expect("typed charter"),
         smith_host_world::charter_value(7).into_value()

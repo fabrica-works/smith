@@ -90,6 +90,8 @@ pub enum Event {
         host_run: Token,
         /// Host-supplied positive activation number, unique within `host_run` across starts.
         activation: u64,
+        /// Host identity kept across activations, or absent to draw one at admission.
+        identity: Option<crate::Identity>,
         /// Bounded acknowledgement credit for this activation.
         window: Window,
         /// Triggering messages admitted together, before later relayed messages.
@@ -547,7 +549,7 @@ pub enum AskRefusal {
     /// The asker lacks this mid-run delivery or sub-agent grant, or asked for families of tools
     /// it does not have itself.
     NotGranted,
-    /// The run has as many conversations as it may have at once.
+    /// The run reached its live-conversation ceiling or exhausted its ordinals.
     TooMany,
     /// The charter has no LLM of that name for sub-agents.
     UnknownLlm,
@@ -619,6 +621,10 @@ pub enum Read {
 /// What a conversation is opened with.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Opening {
+    /// The run identity shared by all its conversations.
+    pub identity: crate::Identity,
+    /// Unique conversation ordinal within this activation; main is zero.
+    pub ordinal: u32,
     /// Host-supplied activation shared by this run's main and child sessions.
     pub activation: u64,
 

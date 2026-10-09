@@ -54,7 +54,7 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
         },
         models: Box::default(),
     };
-    let mut domain = run::Domain::new(&limits.run);
+    let mut domain = run::Domain::new(&limits.run, 0);
     let mut out = Queue::with_capacity(run::MAX_OUT);
     run::step(
         &mut domain,
@@ -63,6 +63,7 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
             messages: Box::default(),
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
+            identity: None,
             activation: 1,
             window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,

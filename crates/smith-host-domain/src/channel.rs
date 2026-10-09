@@ -19,6 +19,8 @@ pub struct Message {
 /// Parent start moved to the first channel Send; process spawn has its own deadline.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Start {
+    /// Run identity retained across activations, or absent for agent admission to draw.
+    pub identity: Option<smith_domain::run::Identity>,
     /// At most the inbox, each fitting the rendered message bound.
     pub messages: Box<[Message]>,
     /// Stable parent run identity across restart, uninterpreted here.

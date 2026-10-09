@@ -18,6 +18,7 @@ fn maximum_start(limits: Limits) -> Start {
     Start {
         messages: Box::default(),
         logical_run: Token::new(7),
+        identity: None,
         activation: 1,
         workspace: (limits.directories > 0).then_some(Token::new(8)),
         charter: smith_host_world::charter_value(limits.charter_bytes),

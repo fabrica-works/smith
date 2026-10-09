@@ -67,6 +67,7 @@ pub fn start(seed: u64, job: smith_agent_world::Job) -> host::Start {
     host::Start {
         messages: Box::default(),
         logical_run: Token::new(seed),
+        identity: None,
         activation: 1,
         workspace: None,
         charter: host::Charter::new(charter, settings.limits.run.run_bytes).expect("bounded script charter"),

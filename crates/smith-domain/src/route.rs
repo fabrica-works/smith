@@ -40,6 +40,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
             reply_to,
             host_run,
             activation,
+            identity,
             window,
             messages,
             charter,
@@ -68,7 +69,8 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                 granted(domain, env, grant);
             }
             return start(
-                domain, env, reply_to, host_run, activation, window, messages, charter, workspace, transcript, answered,
+                domain, env, reply_to, host_run, activation, identity, window, messages, charter, workspace,
+                transcript, answered,
             );
         }
         Event::Acknowledge { run, turn } => return acknowledge(domain, env, run, turn),
@@ -232,6 +234,7 @@ fn start(
     reply_to: ReplyTo,
     host_run: Token,
     activation: u64,
+    identity: Option<run::Identity>,
     window: crate::Window,
     messages: Box<[run::Message]>,
     charter: run::Charter,
@@ -289,6 +292,7 @@ fn start(
             reply_to: ReplyTo::new(id.token()),
             host_run,
             activation,
+            identity,
             messages,
             window: run::Window { turns: window.turns, bytes: window.bytes, largest_turn },
             charter,

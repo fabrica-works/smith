@@ -1,6 +1,7 @@
 //! Run admission, main and child lifetimes, shared spend and terminal rights
 //! (domain/run.md, sections 3, 7, 8 and 10). State retains the charter, prepared
-//! guides/checks, conversation bindings, call ownership and one pending ending.
+//! guides/checks, run identity, never-reused child ordinals, conversation bindings,
+//! call ownership and one pending ending.
 //! Entrances below act only through bounded queues, slabs and injected time.
 //! The run knows no host policy, forge, receipt encoding, authentication or
 //! provider syntax. Generic final forms are judged before effects; delivery is
@@ -99,6 +100,9 @@ use crate::{opening, prompt};
 
 #[derive(Debug)]
 pub(crate) struct Run {
+    identity: crate::Identity,
+    /// Next never-reused child ordinal; main is zero.
+    next_ordinal: u32,
     pub(crate) charter: Charter,
     pub(crate) workspace: Option<Workspace>,
     /// What it found in its checkout as it prepared.
@@ -225,6 +229,7 @@ pub(crate) struct Start {
     pub(crate) host_run: Token,
     /// Host-supplied positive activation number.
     pub(crate) activation: u64,
+    pub(crate) identity: Option<crate::Identity>,
     pub(crate) window: Window,
     pub(crate) messages: Box<[crate::Message]>,
 
@@ -241,8 +246,9 @@ pub(crate) struct Start {
 }
 
 pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &mut Queue<Request>) {
-    let Start { reply_to, host_run, activation, window, messages, charter, workspace, transcript, resumed } = start;
-    let Domain { runs, conversations, calls: _, alarms, facts } = domain;
+    let Start { reply_to, host_run, activation, identity, window, messages, charter, workspace, transcript, resumed } =
+        start;
+    let Domain { rng, runs, conversations, calls: _, alarms, facts } = domain;
     // A charter that can never fit is invalid, room or not: busy invites a
     // retry.
     if activation == 0 {
@@ -277,11 +283,17 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         out.push(Request::Answer { to: reply_to, answer: Answer::Refused(Refusal::Busy), read: None });
         return;
     }
+    let identity = match identity {
+        Some(identity) => identity,
+        None => crate::Identity::draw(rng),
+    };
     let deadline = env.now.saturating_add(charter.budget.time);
     let found = Found::with_capacity(count(workspace::directories(workspace.as_ref()).len()));
     // A run is stored before its main conversation, which names it, and starts
     // once main has a name too: main's slot is the run's from its admission.
     let run = Run {
+        identity,
+        next_ordinal: 1,
         charter,
         workspace,
         found,
@@ -452,7 +464,7 @@ pub(crate) fn park(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
 }
 
 pub(crate) fn read(domain: &mut Domain, env: &Env<Limits>, owner: Token, read: Read, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
     let id = Id::<Run>::from_token(owner);
     facts.about(owner);
     let run = runs.get_mut(id).expect("a run lives until its look in flight has ended");
@@ -476,7 +488,7 @@ pub(crate) fn read(domain: &mut Domain, env: &Env<Limits>, owner: Token, read: R
 }
 
 pub(crate) fn probed(domain: &mut Domain, env: &Env<Limits>, owner: Token, executable: bool, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
     let id = Id::<Run>::from_token(owner);
     facts.about(owner);
     let run = runs.get_mut(id).expect("a run lives until its look in flight has ended");
@@ -500,7 +512,7 @@ pub(crate) fn probed(domain: &mut Domain, env: &Env<Limits>, owner: Token, execu
 }
 
 pub(crate) fn cancel(domain: &mut Domain, run: Token, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
     let id = Id::<Run>::from_token(run);
     // A cancel travels down, so it may name a run that has answered and gone.
     let Some(run) = runs.get_mut(id) else {
@@ -552,7 +564,7 @@ pub(crate) fn yielded(
     text: &[u8],
     out: &mut Queue<Request>,
 ) {
-    let Domain { runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let conversation = conversations.get(id).expect("a conversation lives until it has ended");
     facts.about(conversation.run.token());
@@ -840,7 +852,7 @@ pub(crate) fn delegated(
     deadline: Time,
     out: &mut Queue<Request>,
 ) {
-    let Domain { runs, conversations, calls: _, alarms: _, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms: _, facts } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let conversation = conversations.get(id).expect("a conversation lives until it has ended");
     let closing = match &conversation.phase {
@@ -923,7 +935,7 @@ fn serve(
     ask: Ask,
     out: &mut Queue<Request>,
 ) -> State {
-    let Domain { runs, conversations, calls, alarms, facts: _ } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts: _ } = domain;
     let run = runs.get_mut(run_id).expect("the served call retains its run");
     let Serving { reply_to, main, conversation, over, made } = serving;
     match ask {
@@ -1062,7 +1074,7 @@ pub(crate) fn delivered(domain: &mut Domain, owner: Token, delivery: Delivery, o
 }
 
 pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: Spend, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = conversations.get_mut(id) else {
         return;
@@ -1138,7 +1150,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
 }
 
 pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls: _, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls: _, alarms, facts } = domain;
     let run = runs.get_mut(id).expect("an alarm is cancelled before its run closes");
     facts.about(id.token());
     let failure = Failure::Budget(Exhausted::Time);
@@ -1238,7 +1250,7 @@ fn may_finish(state: &State) -> bool {
 /// The landing of the call `id` has settled, as `settled` says: the run goes
 /// on, or finishes.
 fn settle(domain: &mut Domain, id: Id<Call>, settled: Settled, out: &mut Queue<Request>) {
-    let Domain { runs, conversations, calls, alarms, facts } = domain;
+    let Domain { rng: _, runs, conversations, calls, alarms, facts } = domain;
     if settled == Settled::Going {
         return;
     }
@@ -1389,6 +1401,7 @@ fn open(
     let mut opening = opening::main(
         &run.charter,
         run.activation,
+        run.identity,
         run.workspace.as_ref(),
         &run.found,
         run.spent,
@@ -1625,6 +1638,14 @@ fn sub_agent(
         out.push(Request::Return { spent: 0, call, result: Returned::Busy });
         return;
     }
+    let ordinal = run.next_ordinal;
+    let next_ordinal = match ordinal.checked_add(1) {
+        Some(next) => next,
+        None => {
+            out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::TooMany } });
+            return;
+        }
+    };
     // A call is stored before its child, which names it, and holds the child
     // once the child has a name too.
     let unnamed = Call { run: run_id, conversation: asker, owner: call, work: Work::Child(Child::Closed) };
@@ -1644,7 +1665,10 @@ fn sub_agent(
     let asking = conversations.get_mut(asker).expect("a conversation lives until it has ended");
     asking.calls = asking.calls.saturating_add(1);
     run.conversations = run.conversations.saturating_add(1);
+    run.next_ordinal = next_ordinal;
     let opening = Opening {
+        identity: run.identity,
+        ordinal,
         activation: run.activation,
         transcript: None,
         wait: false,

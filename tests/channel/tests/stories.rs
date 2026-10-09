@@ -407,7 +407,7 @@ fn a_run_resumed_from_a_transcript_restores_the_calls_answered_after_its_last_tu
 
 #[test]
 #[expect(clippy::wildcard_enum_match_arm, reason = "the story selects each activation's one forwarded turn")]
-fn a_run_parked_resumed_and_parked_again_numbers_turns_per_activation() {
+fn a_run_parked_resumed_and_parked_again_keeps_its_identity_and_numbers_turns_per_activation() {
     use smith_domain_session::{llm, record};
 
     let charter: Box<[u8]> =
@@ -429,8 +429,11 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_per_activation() {
     };
     let mut one = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     one.settle();
-    one.send_start(charter.clone());
+    let identity = smith_domain::run::Identity::new(*b"stable-chat-name");
+    one.send_start_with_identity(charter.clone(), None, Some(identity));
     one.settle();
+    let first_start = one.take_agent_start().expect("first decoded activation");
+    assert_eq!(first_start.identity, Some(identity));
     one.agent_admits();
     one.settle();
     one.agent_tells_turn(1, Some(skein_lib::Token::new(99)), &first);
@@ -461,6 +464,7 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_per_activation() {
         smith_host_domain::Start {
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
+            identity: Some(identity),
             activation: 2,
             workspace: None,
             charter: smith_channel_world::typed_charter(&charter),
@@ -473,6 +477,9 @@ fn a_run_parked_resumed_and_parked_again_numbers_turns_per_activation() {
         smith_host_protocol::Values { paths: Box::default(), credentials: Box::default() },
     );
     two.settle();
+    let resumed = two.take_agent_start().expect("resumed decoded activation");
+    assert_eq!(resumed.identity, Some(identity), "both channel halves preserve the same exact sixteen bytes");
+    assert_eq!(resumed.activation, 2);
     assert!(two.observations().contains(&Observation::AgentHistory { turns: 1, place: 1 }));
     two.agent_admits();
     two.settle();
@@ -862,6 +869,7 @@ fn a_host_tool_answered_as_the_channel_is_lost_is_asked_again_under_its_name() {
         smith_host_domain::Start {
             messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
+            identity: None,
             activation: 2,
             workspace: None,
             charter: smith_channel_world::typed_charter(&charter),

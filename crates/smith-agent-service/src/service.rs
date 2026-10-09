@@ -672,6 +672,7 @@ impl Service {
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
             activation: start.activation,
+            identity: start.identity,
             window: start.window,
             charter: start.charter,
             workspace,

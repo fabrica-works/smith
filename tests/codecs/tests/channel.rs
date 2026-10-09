@@ -54,3 +54,19 @@ fn message_refusal_goldens_keep_each_typed_reason() {
         assert_eq!(u32::try_from(bytes.len()).expect("golden length fits"), value.measure());
     }
 }
+
+#[test]
+fn channel_start_goldens_seal_the_optional_fixed_sixteen_byte_identity() {
+    let absent = Start::decode(
+        &CEILINGS,
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v2/record_start_smallest.bin")),
+    )
+    .expect("absent identity golden");
+    assert_eq!(absent.identity(), &None);
+    let present = Start::decode(
+        &CEILINGS,
+        &mut Reader::new(include_bytes!("../../../crates/smith-channel/golden/v2/record_start_full.bin")),
+    )
+    .expect("present identity golden");
+    assert_eq!(present.identity(), &Some([165; 16]));
+}

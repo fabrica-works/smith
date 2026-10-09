@@ -494,6 +494,7 @@ impl World {
             answered,
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
+            identity: None,
             activation: if settings.resume { 2 } else { 1 },
             charter,
             workspace,

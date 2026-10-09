@@ -96,7 +96,7 @@ impl Harness {
     fn new(limits: Limits) -> Harness {
         Harness {
             observed: Queue::with_capacity(4096),
-            domain: Domain::new(&limits),
+            domain: Domain::new(&limits, 0),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             out: Queue::with_capacity(MAX_OUT),
             prices: alloc::collections::BTreeMap::new(),
@@ -182,6 +182,7 @@ impl Harness {
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             reply_to,
             host_run: Token::new(call),
+            identity: None,
             activation: 1,
             charter,
             workspace,
@@ -358,6 +359,8 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
     let mut found = Found::with_capacity(1);
     found.guides.push(Guide { repository: 0, text: bytes(b"Run the tests."), whole: true }).expect("room");
     let expected = Opening {
+        identity: opening.identity,
+        ordinal: 0,
         activation: 1,
         host_tools: charter().grants.host_tools,
         deliver: false,
@@ -713,6 +716,7 @@ fn zero_activation_has_its_own_refusal_before_admission() {
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
         reply_to: ReplyTo::new(Token::new(81)),
         host_run: Token::new(81),
+        identity: None,
         activation: 0,
         charter: charter(),
         workspace: Some(workspace()),
@@ -3262,6 +3266,7 @@ fn delayed_facts_keep_activation_history_and_child_parentage() {
             messages: Box::default(),
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
+            identity: None,
             activation: 1,
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter: agents(),
@@ -3309,6 +3314,7 @@ fn carried_start(charter: Charter, messages: Box<[crate::Message]>, workspace: O
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
         reply_to: ReplyTo::new(Token::new(1)),
         host_run: Token::new(1),
+        identity: None,
         activation: 1,
         charter,
         workspace,
@@ -3581,4 +3587,68 @@ fn a_finish_crossing_a_message_continues_only_with_wait_authority() {
         }
         assert_eq!((read, unread), if wait { (1, 0) } else { (0, 1) });
     }
+}
+
+fn identity_open(harness: &mut Harness, identity: Option<crate::Identity>) -> (Token, Token, Opening) {
+    let emitted = harness.step(Event::Start {
+        identity,
+        messages: Box::default(),
+        window: crate::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+        reply_to: ReplyTo::new(Token::new(1)),
+        host_run: Token::new(1),
+        activation: 1,
+        charter: agents(),
+        workspace: None,
+        transcript: None,
+        resumed: false,
+    });
+    let Ok(pair) = Box::<[Request; 2]>::try_from(emitted) else { panic!("admission and main opening") };
+    let [Request::Admitted { run, .. }, Request::Open { conversation, opening }] = *pair else {
+        panic!("admission and main opening");
+    };
+    drop(harness.step(Event::Started { conversation, peer: Token::new(100) }));
+    (run, conversation, opening)
+}
+
+#[test]
+fn a_supplied_identity_reaches_main_and_children_with_ordinals_never_reused() {
+    let identity = crate::Identity::new([0; 16]);
+    let mut harness = Harness::new(LIMITS);
+    let (_, main, opening) = identity_open(&mut harness, Some(identity));
+    assert_eq!((opening.identity, opening.ordinal), (identity, 0));
+    assert_eq!(identity.bytes(), [0; 16]);
+    let (first, opening) = harness.child(main, 7, families(true, false, false), 101);
+    assert_eq!((opening.identity, opening.ordinal), (identity, 1));
+    drop(harness.step(Event::Ended { conversation: first, end: End::Closed, spend: Spend::ZERO }));
+    harness.domain.reclaim();
+    let (_, second) = harness.child(main, 8, families(true, false, false), 102);
+    assert_eq!((second.identity, second.ordinal), (identity, 2), "ended children never free their ordinal");
+    assert_eq!(harness.domain.calls(), 1);
+}
+
+#[test]
+fn absent_identities_draw_deterministically_only_for_admitted_unspecified_starts() {
+    let mut first = Harness::new(LIMITS);
+    first.domain = Domain::new(&LIMITS, 91);
+    let (_, _, first_opening) = identity_open(&mut first, None);
+    let mut same = Harness::new(LIMITS);
+    same.domain = Domain::new(&LIMITS, 91);
+    let mut invalid = charter();
+    invalid.budget.turns = 0;
+    let refused = same.step(carried_start(invalid, Box::default(), None));
+    assert_eq!(refused.len(), 1);
+    assert_eq!(same.domain.runs(), 0, "a refused start admits no run or identity");
+    let (_, _, same_opening) = identity_open(&mut same, None);
+    assert_eq!(first_opening.identity, same_opening.identity, "a refused start does not consume randomness");
+    let mut supplied = Harness::new(LIMITS);
+    supplied.domain = Domain::new(&LIMITS, 91);
+    let (_, _, opening) = identity_open(&mut supplied, Some(crate::Identity::new([255; 16])));
+    assert_eq!(opening.identity.bytes(), [255; 16]);
+    let (_, _, opening) = identity_open(&mut supplied, None);
+    assert_eq!(opening.identity, first_opening.identity, "a host identity consumes no admission randomness");
+    let (_, _, next) = identity_open(&mut first, None);
+    assert_ne!(next.identity, first_opening.identity, "successive admissions draw independent opaque bytes");
+    let mut different = Harness::new(LIMITS);
+    different.domain = Domain::new(&LIMITS, 92);
+    assert_ne!(identity_open(&mut different, None).2.identity, first_opening.identity);
 }

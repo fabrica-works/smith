@@ -33,6 +33,8 @@ pub struct Grant {
 /// Start context after channel and charter decoding, before io root attachment.
 #[derive(Debug)]
 pub struct DecodedStart {
+    /// Opaque host identity preserved through framing and charter decoding.
+    pub identity: Option<run::Identity>,
     pub messages: Box<[run::Message]>,
     pub activation: u64,
     pub charter: run::Charter,
@@ -87,6 +89,10 @@ pub fn start_context(
         }
     }
     Ok(DecodedStart {
+        identity: match parts.identity {
+            Some(bytes) => Some(run::Identity::new(bytes)),
+            None => None,
+        },
         messages: messages.into_boxed(),
         activation: parts.activation,
         charter,

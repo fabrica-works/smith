@@ -94,6 +94,10 @@ pub fn encode_start(
         wire::StartParts {
             messages,
             activation: start.activation,
+            identity: match start.identity {
+                Some(identity) => Some(identity.bytes()),
+                None => None,
+            },
             charter,
             workspace,
             transcript,
