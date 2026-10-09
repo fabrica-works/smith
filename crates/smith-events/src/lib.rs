@@ -19,10 +19,11 @@ pub use records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
-    SharePart, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
+    MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
+    Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
+    RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
+    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 pub use write::write;
 

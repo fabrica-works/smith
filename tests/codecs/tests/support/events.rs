@@ -437,6 +437,7 @@ fn value_run_started(name: &str, spelling: &str) -> RunStarted {
     RunStarted {
         run: u64::MAX,
         resumed: true,
+        messages: u64::MAX,
         main: value_model(name, spelling),
         budget: value_budget(name, spelling),
         tools: value_tools(name, spelling),
@@ -453,6 +454,8 @@ fn value_run_completed(name: &str, spelling: &str) -> RunCompleted {
         turns: u64::MAX,
         spent: u64::MAX,
         usage: value_usage(name, spelling),
+        read: Some(u64::MAX),
+        unread: u64::MAX,
         duration_ms: u64::MAX,
     }
 }
@@ -1523,6 +1526,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         Capture::Everything,
     ));
     samples.extend(budget_samples());
+    samples.extend(message_samples());
     samples.extend(samples_0());
     samples.extend(samples_1());
     samples.extend(samples_2());
@@ -1704,4 +1708,88 @@ fn child_terminal(name: &'static str, stop: smith_events::ChildStop) -> (&'stati
         },
         Capture::Everything,
     )
+}
+
+fn message_samples() -> Vec<(&'static str, Record, Capture)> {
+    use smith_events::{MessageRead, MessageReceived, MessageRefusal, MessageUnread};
+    let mut samples = Vec::new();
+    for (name, capture) in [
+        ("message_received_none", Capture::None),
+        ("message_received_calls", Capture::Calls),
+        ("message_received_everything", Capture::Everything),
+    ] {
+        samples.push((
+            name,
+            Record {
+                t_ms: u64::MAX,
+                event: Event::MessageReceived(MessageReceived {
+                    run: u64::MAX,
+                    name: u64::MAX,
+                    bytes: u64::MAX,
+                    refused: None,
+                    label: Some(Box::from("label\n\"🌍".as_bytes())),
+                    text: Some(Box::from("text\n\"🌍".as_bytes())),
+                }),
+            },
+            capture,
+        ));
+    }
+    for (name, refused) in [
+        ("message_refusal_too_large", MessageRefusal::TooLarge),
+        ("message_refusal_inbox_full", MessageRefusal::InboxFull),
+        ("message_refusal_name_in_use", MessageRefusal::NameInUse),
+        ("message_refusal_ending", MessageRefusal::Ending),
+        ("message_refusal_start_refused", MessageRefusal::StartRefused),
+        ("message_refusal_unknown", MessageRefusal::Unknown(Box::from("future🌍".as_bytes()))),
+    ] {
+        samples.push((
+            name,
+            Record {
+                t_ms: u64::MAX,
+                event: Event::MessageReceived(MessageReceived {
+                    run: u64::MAX,
+                    name: u64::MAX,
+                    bytes: u64::MAX,
+                    refused: Some(refused),
+                    label: None,
+                    text: None,
+                }),
+            },
+            Capture::Everything,
+        ));
+    }
+    for (name, capture) in [
+        ("message_read_none", Capture::None),
+        ("message_read_calls", Capture::Calls),
+        ("message_read_everything", Capture::Everything),
+    ] {
+        samples.push((
+            name,
+            Record {
+                t_ms: u64::MAX,
+                event: Event::MessageRead(MessageRead { run: u64::MAX, name: u64::MAX, turn: u64::MAX }),
+            },
+            capture,
+        ));
+    }
+    for (name, capture) in [
+        ("message_unread_none", Capture::None),
+        ("message_unread_calls", Capture::Calls),
+        ("message_unread_everything", Capture::Everything),
+    ] {
+        samples.push((
+            name,
+            Record { t_ms: u64::MAX, event: Event::MessageUnread(MessageUnread { run: u64::MAX, name: u64::MAX }) },
+            capture,
+        ));
+    }
+    let mut completed = value_run_completed("", "");
+    completed.read = None;
+    completed.unread = 0;
+    samples.push((
+        "run_completed_no_read",
+        Record { t_ms: u64::MAX, event: Event::RunCompleted(completed) },
+        Capture::Everything,
+    ));
+    samples
 }

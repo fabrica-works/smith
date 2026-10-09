@@ -5,10 +5,11 @@ use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
-    SharePart, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
+    MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
+    Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
+    RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
+    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -33,6 +34,9 @@ pub fn write(record: &Record, capture: &Capture, limits: &Limits) -> Result<Opti
         | Event::ToolCompleted(_)
         | Event::CheckStarted(_)
         | Event::CheckCompleted(_)
+        | Event::MessageReceived(_)
+        | Event::MessageRead(_)
+        | Event::MessageUnread(_)
         | Event::Notice(_) => {}
     }
     validate_record(record, limits)?;
@@ -82,6 +86,9 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
         Event::ToolCompleted(_) => json.string(b"tool.completed"),
         Event::CheckStarted(_) => json.string(b"check.started"),
         Event::CheckCompleted(_) => json.string(b"check.completed"),
+        Event::MessageReceived(_) => json.string(b"message.received"),
+        Event::MessageRead(_) => json.string(b"message.read"),
+        Event::MessageUnread(_) => json.string(b"message.unread"),
         Event::Notice(_) => json.string(b"notice"),
     }
     json.key(b"t_ms");
@@ -101,6 +108,9 @@ fn encode(json: &mut Encoder, record: &Record, capture: &Capture) {
         Event::ToolCompleted(value) => encode_tool_completed(json, value, capture),
         Event::CheckStarted(value) => encode_check_started(json, value, capture),
         Event::CheckCompleted(value) => encode_check_completed(json, value, capture),
+        Event::MessageReceived(value) => encode_message_received(json, value, capture),
+        Event::MessageRead(value) => encode_message_read(json, value),
+        Event::MessageUnread(value) => encode_message_unread(json, value),
         Event::Notice(value) => encode_notice(json, value, capture),
     }
     json.object_end();
@@ -736,7 +746,8 @@ fn validate_record(record: &Record, limits: &Limits) -> Result<(), Error> {
         Event::TextDelta(value) => validate_text_delta(value, limits),
         Event::ToolStarted(value) => validate_tool_started(value, limits),
         Event::ToolCompleted(value) => validate_tool_completed(value, limits),
-        Event::CheckStarted(_) | Event::CheckCompleted(_) => Ok(()),
+        Event::CheckStarted(_) | Event::CheckCompleted(_) | Event::MessageRead(_) | Event::MessageUnread(_) => Ok(()),
+        Event::MessageReceived(value) => validate_message_received(value, limits),
         Event::Notice(value) => validate_notice(value, limits),
     }
 }
@@ -1185,6 +1196,26 @@ fn validate_tool_completed(value: &ToolCompleted, limits: &Limits) -> Result<(),
     Ok(())
 }
 
+fn validate_message_received(value: &MessageReceived, limits: &Limits) -> Result<(), Error> {
+    if let Some(refusal) = &value.refused {
+        match refusal {
+            MessageRefusal::TooLarge
+            | MessageRefusal::InboxFull
+            | MessageRefusal::NameInUse
+            | MessageRefusal::Ending
+            | MessageRefusal::StartRefused => {}
+            MessageRefusal::Unknown(text) => check_text(text, limits.string)?,
+        }
+    }
+    if let Some(label) = &value.label {
+        check_text(label, limits.string)?;
+    }
+    if let Some(text) = &value.text {
+        check_text(text, limits.content)?;
+    }
+    Ok(())
+}
+
 fn validate_notice(value: &Notice, limits: &Limits) -> Result<(), Error> {
     validate_level(&value.level, limits)?;
     validate_notice_kind(&value.kind, limits)?;
@@ -1371,6 +1402,8 @@ fn encode_run_started(json: &mut Encoder, value: &RunStarted, capture: &Capture)
     json.unsigned(value.run);
     json.key(b"resumed");
     json.boolean(value.resumed);
+    json.key(b"messages");
+    json.unsigned(value.messages);
     json.key(b"main");
     write_model(json, &value.main, capture);
     json.key(b"budget");
@@ -1400,6 +1433,13 @@ fn encode_run_completed(json: &mut Encoder, value: &RunCompleted, capture: &Capt
     json.unsigned(value.spent);
     json.key(b"usage");
     write_usage(json, &value.usage, capture);
+    json.key(b"read");
+    match value.read {
+        Some(name) => json.unsigned(name),
+        None => json.null(),
+    }
+    json.key(b"unread");
+    json.unsigned(value.unread);
     json.key(b"duration_ms");
     json.unsigned(value.duration_ms);
 }
@@ -1682,6 +1722,52 @@ fn encode_check_completed(json: &mut Encoder, value: &CheckCompleted, capture: &
     json.boolean(value.passed);
     json.key(b"duration_ms");
     json.unsigned(value.duration_ms);
+}
+
+fn encode_message_received(json: &mut Encoder, value: &MessageReceived, capture: &Capture) {
+    json.key(b"run");
+    json.unsigned(value.run);
+    json.key(b"name");
+    json.unsigned(value.name);
+    json.key(b"bytes");
+    json.unsigned(value.bytes);
+    if let Some(refusal) = &value.refused {
+        json.key(b"refused");
+        match refusal {
+            MessageRefusal::TooLarge => json.string(b"too_large"),
+            MessageRefusal::InboxFull => json.string(b"inbox_full"),
+            MessageRefusal::NameInUse => json.string(b"name_in_use"),
+            MessageRefusal::Ending => json.string(b"ending"),
+            MessageRefusal::StartRefused => json.string(b"start_refused"),
+            MessageRefusal::Unknown(text) => json.string(text),
+        }
+    }
+    if *capture == Capture::Everything {
+        if let Some(label) = &value.label {
+            json.key(b"label");
+            json.string(label);
+        }
+        if let Some(text) = &value.text {
+            json.key(b"text");
+            json.string(text);
+        }
+    }
+}
+
+fn encode_message_read(json: &mut Encoder, value: &MessageRead) {
+    json.key(b"run");
+    json.unsigned(value.run);
+    json.key(b"name");
+    json.unsigned(value.name);
+    json.key(b"turn");
+    json.unsigned(value.turn);
+}
+
+fn encode_message_unread(json: &mut Encoder, value: &MessageUnread) {
+    json.key(b"run");
+    json.unsigned(value.run);
+    json.key(b"name");
+    json.unsigned(value.name);
 }
 
 fn encode_notice(json: &mut Encoder, value: &Notice, capture: &Capture) {

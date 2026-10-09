@@ -34,6 +34,9 @@ pub fn largest_size(event: &Event, capture: &Capture, limits: &Limits) -> Option
         Event::ToolCompleted(_) => size_tool_completed(capture, limits)?.checked_add(67)?,
         Event::CheckStarted(_) => size_check_started(capture, limits)?.checked_add(66)?,
         Event::CheckCompleted(_) => size_check_completed(capture, limits)?.checked_add(68)?,
+        Event::MessageReceived(_) => size_message_received(capture, limits)?.checked_add(69)?,
+        Event::MessageRead(_) => size_message_read()?.checked_add(65)?,
+        Event::MessageUnread(_) => size_message_unread()?.checked_add(67)?,
         Event::Notice(_) => size_notice(capture, limits)?.checked_add(59)?,
     };
     u32::try_from(length).ok()
@@ -57,6 +60,9 @@ pub fn largest_record(limits: &Limits) -> Option<u32> {
     length = length.max(size_tool_completed(capture, limits)?.checked_add(67)?);
     length = length.max(size_check_started(capture, limits)?.checked_add(66)?);
     length = length.max(size_check_completed(capture, limits)?.checked_add(68)?);
+    length = length.max(size_message_received(capture, limits)?.checked_add(69)?);
+    length = length.max(size_message_read()?.checked_add(65)?);
+    length = length.max(size_message_unread()?.checked_add(67)?);
     length = length.max(size_notice(capture, limits)?.checked_add(59)?);
     u32::try_from(length).ok()
 }
@@ -86,6 +92,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     record = record.max(heap_tool_started(limits)?);
     record = record.max(heap_tool_completed(limits)?);
     record = record.max(heap_check_completed(limits)?);
+    record = record.max(u64::from(limits.string).checked_mul(2)?.checked_add(u64::from(limits.content))?);
     record = record.max(heap_notice(limits)?);
     record
         .checked_add(List::<skein_json::Token>::worst_case(length)?)?
@@ -649,6 +656,7 @@ fn size_run_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
     length = length.checked_add(7)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(5_u64)?;
+    length = length.checked_add(12)?.checked_add(20_u64)?;
     length = length.checked_add(8)?.checked_add(size_model(capture, limits)?)?;
     length = length.checked_add(10)?.checked_add(size_budget(capture, limits)?)?;
     length = length.checked_add(9)?.checked_add(size_tools(capture, limits)?)?;
@@ -667,6 +675,8 @@ fn size_run_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_usage(capture, limits)?)?;
+    length = length.checked_add(8)?.checked_add(20_u64)?;
+    length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(15)?.checked_add(20_u64)?;
     Some(length)
 }
@@ -807,6 +817,27 @@ fn size_check_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(10)?.checked_add(5_u64)?;
     length = length.checked_add(15)?.checked_add(20_u64)?;
     Some(length)
+}
+
+fn size_message_received(capture: &Capture, limits: &Limits) -> Option<u64> {
+    let mut length = 2_u64;
+    length = length.checked_add(7)?.checked_add(20)?;
+    length = length.checked_add(8)?.checked_add(20)?;
+    length = length.checked_add(9)?.checked_add(20)?;
+    length = length.checked_add(11)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(14))?;
+    if *capture == Capture::Everything {
+        length = length.checked_add(9)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
+        length = length.checked_add(8)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
+    }
+    Some(length)
+}
+
+fn size_message_read() -> Option<u64> {
+    size_message_unread()?.checked_add(8)?.checked_add(20)
+}
+
+fn size_message_unread() -> Option<u64> {
+    2_u64.checked_add(7)?.checked_add(20)?.checked_add(8)?.checked_add(20)
 }
 
 fn size_notice(capture: &Capture, limits: &Limits) -> Option<u64> {

@@ -650,6 +650,7 @@ pub struct SessionEnded {
 pub struct RunStarted {
     pub run: u64,
     pub resumed: bool,
+    pub messages: u64,
     pub main: Model,
     pub budget: Budget,
     pub tools: Tools,
@@ -666,6 +667,9 @@ pub struct RunCompleted {
     pub turns: u64,
     pub spent: u64,
     pub usage: Usage,
+    /// Final told-turn message fence; None is encoded as null when no message was read.
+    pub read: Option<u64>,
+    pub unread: u64,
     pub duration_ms: u64,
 }
 
@@ -820,6 +824,50 @@ pub struct CheckCompleted {
     pub duration_ms: u64,
 }
 
+/// The message admission or sole refusal terminal the producer records (protocol/events.md, section 3.7).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct MessageReceived {
+    pub run: u64,
+    pub name: u64,
+    /// Rendered message size in bytes, retained under every capture policy.
+    pub bytes: u64,
+    pub refused: Option<MessageRefusal>,
+    pub label: Option<Box<[u8]>>,
+    pub text: Option<Box<[u8]>>,
+}
+
+/// A message admission refusal the producer records as its sole terminal.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum MessageRefusal {
+    /// The rendered message exceeded the receiving bound.
+    TooLarge,
+    /// The receiving inbox had no room.
+    InboxFull,
+    /// The receiving inbox already owned this name.
+    NameInUse,
+    /// The run had already ended message admission.
+    Ending,
+    /// The start carrying this message was refused at the entrance.
+    StartRefused,
+    /// A value this reader does not know, retained as bounded UTF-8.
+    Unknown(Box<[u8]>),
+}
+
+/// The message read terminal the producer sends for the told turn covering its name.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct MessageRead {
+    pub run: u64,
+    pub name: u64,
+    pub turn: u64,
+}
+
+/// The message unread terminal the producer sends when the run answers without reading it.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct MessageUnread {
+    pub run: u64,
+    pub name: u64,
+}
+
 /// An operator notice the service records for an account or a dropped reasoning item.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Notice {
@@ -892,6 +940,12 @@ pub enum Event {
     CheckStarted(CheckStarted),
     /// The `check.completed` record.
     CheckCompleted(CheckCompleted),
+    /// The message admission or sole refusal terminal.
+    MessageReceived(MessageReceived),
+    /// The told-turn message read terminal.
+    MessageRead(MessageRead),
+    /// The answered-run message unread terminal.
+    MessageUnread(MessageUnread),
     /// The `notice` record.
     Notice(Notice),
 }

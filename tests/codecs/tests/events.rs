@@ -51,6 +51,9 @@ fn capture_filters_only_content_fields_and_live_text() {
                     | Event::ToolCompleted(_)
                     | Event::CheckStarted(_)
                     | Event::CheckCompleted(_)
+                    | Event::MessageReceived(_)
+                    | Event::MessageRead(_)
+                    | Event::MessageUnread(_)
                     | Event::Notice(_) => panic!("response"),
                 }
             }
@@ -66,6 +69,9 @@ fn capture_filters_only_content_fields_and_live_text() {
             | Event::ToolCompleted(_)
             | Event::CheckStarted(_)
             | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
             | Event::Notice(_) => {
                 let line = String::from_utf8(none.expect("metadata").into_vec()).expect("UTF-8");
                 for key in ["\"prompt\":", "\"input\":", "\"text\":", "\"fields\":"] {
@@ -108,7 +114,10 @@ fn unknown_types_fields_and_listed_values_are_tolerated_within_this_version() {
         | Event::ToolStarted(_)
         | Event::ToolCompleted(_)
         | Event::CheckStarted(_)
-        | Event::CheckCompleted(_) => panic!("notice"),
+        | Event::CheckCompleted(_)
+        | Event::MessageReceived(_)
+        | Event::MessageRead(_)
+        | Event::MessageUnread(_) => panic!("notice"),
     }
     assert_eq!(read(b"{\"v\":99,\"type\":\"future\",\"t_ms\":0}", &limits), Err(Error::Version(99)));
 }
@@ -405,6 +414,171 @@ fn command_exit_requires_exactly_one_code_or_unsigned_signal() {
         {
             let valid = text.replace("{\"signal\":18446744073709551615}", replacement);
             assert!(read(valid.as_bytes(), &limits()).expect("valid exit").is_some());
+        }
+    }
+}
+
+fn received(refused: Option<smith_events::MessageRefusal>, label: &[u8], text: &[u8]) -> smith_events::Record {
+    smith_events::Record {
+        t_ms: u64::MAX,
+        event: Event::MessageReceived(smith_events::MessageReceived {
+            run: u64::MAX,
+            name: 9_007_199_254_740_993,
+            bytes: u64::MAX,
+            refused,
+            label: Some(label.into()),
+            text: Some(text.into()),
+        }),
+    }
+}
+
+#[test]
+fn message_capture_keeps_identity_size_and_refusal_and_removes_only_label_and_text() {
+    use smith_events::MessageRefusal;
+    for refused in [
+        None,
+        Some(MessageRefusal::TooLarge),
+        Some(MessageRefusal::InboxFull),
+        Some(MessageRefusal::NameInUse),
+        Some(MessageRefusal::Ending),
+        Some(MessageRefusal::StartRefused),
+        Some(MessageRefusal::Unknown(Box::from("future🌍".as_bytes()))),
+    ] {
+        let record = received(refused, b"label", b"private text");
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = write(&record, &capture, &limits()).expect("bounded message").expect("always recorded");
+            let mut expected = record.clone();
+            let Event::MessageReceived(message) = &mut expected.event else { panic!("message") };
+            if capture != Capture::Everything {
+                message.label = None;
+                message.text = None;
+            }
+            assert_eq!(read(&line, &limits()).expect("message reads"), Some(expected));
+            let line = std::str::from_utf8(&line).expect("UTF8");
+            assert_eq!(line.contains("\"label\":"), capture == Capture::Everything);
+            assert_eq!(line.contains("\"text\":"), capture == Capture::Everything);
+            assert!(line.contains("9007199254740993"), "message name remains an exact integer");
+        }
+    }
+}
+
+#[test]
+fn message_label_text_and_unknown_refusal_obey_their_separate_bounds() {
+    let limits = Limits { string: 4, content: 5, items: 0 };
+    // Known refusal spellings are vocabulary, not caller metadata.
+    let record = received(Some(smith_events::MessageRefusal::StartRefused), b"1234", b"12345");
+    let line = write(&record, &Capture::Everything, &limits).expect("exact bounds").expect("message");
+    assert_eq!(read(&line, &Limits { string: 32, ..limits }).expect("known type"), Some(record));
+    for (label, text, refused) in [
+        (b"12345".as_slice(), b"12345".as_slice(), None),
+        (b"1234", b"123456", None),
+        (b"1234", b"12345", Some(smith_events::MessageRefusal::Unknown(Box::from(b"12345".as_slice())))),
+    ] {
+        let record = received(refused, label, text);
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            assert_eq!(write(&record, &capture, &limits), Err(Error::Limits));
+        }
+    }
+    for record in [received(None, &[0xff], b"text"), received(None, b"label", &[0xff])] {
+        assert_eq!(write(&record, &Capture::Everything, &self::limits()), Err(Error::Text));
+    }
+    let limits = Limits { string: 32, content: 5, items: 0 };
+    let record = received(Some(smith_events::MessageRefusal::Unknown(vec![b'r'; 32].into())), &[b'l'; 32], b"12345");
+    let line = write(&record, &Capture::Everything, &limits).expect("exact bounds").expect("message");
+    assert_eq!(read(&line, &limits).expect("bounded text"), Some(record));
+    let line = std::str::from_utf8(&line).expect("UTF8");
+    for changed in [
+        line.replace(&"l".repeat(32), &"l".repeat(33)),
+        line.replace("12345", "123456"),
+        line.replace(&"r".repeat(32), &"r".repeat(33)),
+    ] {
+        assert!(read(changed.as_bytes(), &limits).is_err());
+    }
+}
+
+#[test]
+fn message_shapes_reject_missing_null_duplicate_and_inexact_fields() {
+    let line = br#"{"v":1,"type":"message.received","t_ms":0,"run":1,"name":2,"bytes":3}"#;
+    let line = std::str::from_utf8(line).expect("UTF8");
+    for changed in [
+        line.replace("\"name\":2,", ""),
+        line.replace("\"run\":1", "\"run\":null"),
+        line.replace("\"name\":2", "\"name\":-2"),
+        line.replace("\"name\":2", "\"name\":2.5"),
+        line.replace("\"name\":2", "\"name\":18446744073709551616"),
+        line.replace("\"bytes\":3", "\"bytes\":3,\"refused\":null"),
+        line.replace("\"bytes\":3", "\"bytes\":3,\"label\":null"),
+        line.replace("\"bytes\":3", "\"bytes\":3,\"text\":null"),
+        line.replace("\"name\":2", "\"name\":2,\"name\":2"),
+    ] {
+        assert!(read(changed.as_bytes(), &limits()).is_err(), "{changed}");
+    }
+    let future = line.replace("\"bytes\":3", "\"bytes\":3,\"future\":{\"name\":4}");
+    assert_eq!(read(future.as_bytes(), &limits()), read(line.as_bytes(), &limits()));
+    for malformed in [
+        br#"{"v":1,"type":"message.read","t_ms":0,"run":1,"name":2}"#.as_slice(),
+        br#"{"v":1,"type":"message.read","t_ms":0,"run":1,"name":2,"turn":null}"#,
+        br#"{"v":1,"type":"message.unread","t_ms":0,"run":1,"name":null}"#,
+    ] {
+        assert_eq!(read(malformed, &limits()), Err(Error::Shape));
+    }
+}
+
+#[test]
+fn chunked_message_records_preserve_the_independent_terminal_vocabulary() {
+    let lines: [&[u8]; 4] = [
+        b"{\"v\":1,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":3}\n",
+        b"{\"v\":1,\"type\":\"message.read\",\"t_ms\":1,\"run\":1,\"name\":2,\"turn\":4}\n",
+        b"{\"v\":1,\"type\":\"message.unread\",\"t_ms\":2,\"run\":1,\"name\":3}\n",
+        b"{\"v\":1,\"type\":\"message.received\",\"t_ms\":3,\"run\":2,\"name\":4,\"bytes\":5,\"refused\":\"start_refused\"}\n",
+    ];
+    let mut reader = smith_events::Reader::new(&limits()).expect("bounded reader");
+    for line in lines {
+        let expected = read(line, &limits()).expect("independent wire fixture").expect("message record");
+        for chunk in line.chunks(3) {
+            let result = reader.feed(chunk).expect("chunked record");
+            assert_eq!(result.consumed, chunk.len());
+            if result.complete {
+                assert_eq!(result.record, Some(expected.clone()));
+            } else {
+                assert!(result.record.is_none());
+            }
+        }
+    }
+    reader.finish().expect("all records ended");
+}
+
+#[test]
+fn run_message_counts_and_nullable_final_fence_are_required_exact_fields() {
+    for (_, record, capture) in fixtures::samples().into_iter().filter(|(name, _, _)| {
+        matches!(*name, "run_started_everything" | "run_completed_everything" | "run_completed_no_read")
+    }) {
+        for capture in [capture, Capture::None, Capture::Calls] {
+            let line = write(&record, &capture, &limits()).expect("bounded run").expect("record");
+            let decoded = read(&line, &limits()).expect("run").expect("known record");
+            match (&record.event, &decoded.event) {
+                (Event::RunStarted(expected), Event::RunStarted(actual)) => {
+                    assert_eq!(actual.messages, expected.messages);
+                }
+                (Event::RunCompleted(expected), Event::RunCompleted(actual)) => {
+                    assert_eq!(actual.read, expected.read);
+                    assert_eq!(actual.unread, expected.unread);
+                }
+                _ => panic!("run fixture"),
+            }
+            let text = std::str::from_utf8(&line).expect("UTF8");
+            for key in ["messages", "read", "unread"] {
+                let field = if key == "read" && text.contains("\"read\":null") {
+                    "\"read\":null,".to_owned()
+                } else {
+                    format!("\"{key}\":18446744073709551615,")
+                };
+                if text.contains(&field) {
+                    assert_eq!(read(text.replace(&field, "").as_bytes(), &limits()), Err(Error::Shape));
+                    let malformed = text.replace(&field, &format!("\"{key}\":-1,"));
+                    assert!(read(malformed.as_bytes(), &limits()).is_err());
+                }
+            }
         }
     }
 }

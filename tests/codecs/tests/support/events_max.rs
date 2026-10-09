@@ -157,6 +157,7 @@ fn max_run_started(limits: &smith_events::Limits) -> RunStarted {
     RunStarted {
         run: u64::MAX,
         resumed: false,
+        messages: u64::MAX,
         main: max_model(limits),
         budget: max_budget(limits),
         tools: max_tools(limits),
@@ -173,6 +174,8 @@ fn max_run_completed(limits: &smith_events::Limits) -> RunCompleted {
         turns: u64::MAX,
         spent: u64::MAX,
         usage: max_usage(limits),
+        read: Some(u64::MAX),
+        unread: u64::MAX,
         duration_ms: u64::MAX,
     }
 }
@@ -410,5 +413,24 @@ pub fn largest_samples(limits: &smith_events::Limits) -> Vec<Record> {
         Record { t_ms: u64::MAX, event: Event::CheckStarted(max_check_started(limits)) },
         Record { t_ms: u64::MAX, event: Event::CheckCompleted(max_check_completed(limits)) },
         Record { t_ms: u64::MAX, event: Event::Notice(max_notice(limits)) },
+        Record {
+            t_ms: u64::MAX,
+            event: Event::MessageReceived(smith_events::MessageReceived {
+                run: u64::MAX,
+                name: u64::MAX,
+                bytes: u64::MAX,
+                refused: Some(smith_events::MessageRefusal::Unknown(payload(limits.string))),
+                label: Some(payload(limits.string)),
+                text: Some(payload(limits.content)),
+            }),
+        },
+        Record {
+            t_ms: u64::MAX,
+            event: Event::MessageRead(smith_events::MessageRead { run: u64::MAX, name: u64::MAX, turn: u64::MAX }),
+        },
+        Record {
+            t_ms: u64::MAX,
+            event: Event::MessageUnread(smith_events::MessageUnread { run: u64::MAX, name: u64::MAX }),
+        },
     ]
 }

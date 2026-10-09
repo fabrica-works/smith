@@ -5,10 +5,11 @@ use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
-    SharePart, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
+    MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
+    Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
+    RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
+    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -88,6 +89,9 @@ pub fn read(line: &[u8], limits: &Limits) -> Result<Option<Record>, Error> {
         b"tool.completed" => Event::ToolCompleted(read_tool_completed(tokens, limits)?),
         b"check.started" => Event::CheckStarted(read_check_started(tokens, limits)?),
         b"check.completed" => Event::CheckCompleted(read_check_completed(tokens, limits)?),
+        b"message.received" => Event::MessageReceived(read_message_received(tokens, limits)?),
+        b"message.read" => Event::MessageRead(read_message_read(tokens)?),
+        b"message.unread" => Event::MessageUnread(read_message_unread(tokens)?),
         b"notice" => Event::Notice(read_notice(tokens, limits)?),
         _ => return Ok(None),
     };
@@ -961,6 +965,7 @@ fn read_run_started(tokens: &[Token], limits: &Limits) -> Result<RunStarted, Err
     Ok(RunStarted {
         run: unsigned(required(tokens, b"run")?)?,
         resumed: boolean(required(tokens, b"resumed")?)?,
+        messages: unsigned(required(tokens, b"messages")?)?,
         main: read_model(required(tokens, b"main")?, limits)?,
         budget: read_budget(required(tokens, b"budget")?, limits)?,
         tools: read_tools(required(tokens, b"tools")?, limits)?,
@@ -984,6 +989,11 @@ fn read_run_completed(tokens: &[Token], limits: &Limits) -> Result<RunCompleted,
         turns: unsigned(required(tokens, b"turns")?)?,
         spent: unsigned(required(tokens, b"spent")?)?,
         usage: read_usage(required(tokens, b"usage")?, limits)?,
+        read: match required(tokens, b"read")? {
+            [Token::Null] => None,
+            item => Some(unsigned(item)?),
+        },
+        unread: unsigned(required(tokens, b"unread")?)?,
         duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
     })
 }
@@ -1203,6 +1213,58 @@ fn read_check_completed(tokens: &[Token], limits: &Limits) -> Result<CheckComple
         passed: boolean(required(tokens, b"passed")?)?,
         duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
     })
+}
+
+fn read_message_received(tokens: &[Token], limits: &Limits) -> Result<MessageReceived, Error> {
+    object(tokens)?;
+    Ok(MessageReceived {
+        run: unsigned(required(tokens, b"run")?)?,
+        name: unsigned(required(tokens, b"name")?)?,
+        bytes: unsigned(required(tokens, b"bytes")?)?,
+        refused: match field(tokens, b"refused")? {
+            Some(item) => Some(read_message_refusal(item, limits)?),
+            None => None,
+        },
+        label: match field(tokens, b"label")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        text: match field(tokens, b"text")? {
+            Some(item) => Some(text(item, limits.content)?),
+            None => None,
+        },
+    })
+}
+
+fn read_message_refusal(tokens: &[Token], limits: &Limits) -> Result<MessageRefusal, Error> {
+    let value = text(tokens, limits.string.max(12))?;
+    Ok(match value.as_ref() {
+        b"too_large" => MessageRefusal::TooLarge,
+        b"inbox_full" => MessageRefusal::InboxFull,
+        b"name_in_use" => MessageRefusal::NameInUse,
+        b"ending" => MessageRefusal::Ending,
+        b"start_refused" => MessageRefusal::StartRefused,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            MessageRefusal::Unknown(value)
+        }
+    })
+}
+
+fn read_message_read(tokens: &[Token]) -> Result<MessageRead, Error> {
+    object(tokens)?;
+    Ok(MessageRead {
+        run: unsigned(required(tokens, b"run")?)?,
+        name: unsigned(required(tokens, b"name")?)?,
+        turn: unsigned(required(tokens, b"turn")?)?,
+    })
+}
+
+fn read_message_unread(tokens: &[Token]) -> Result<MessageUnread, Error> {
+    object(tokens)?;
+    Ok(MessageUnread { run: unsigned(required(tokens, b"run")?)?, name: unsigned(required(tokens, b"name")?)? })
 }
 
 fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
