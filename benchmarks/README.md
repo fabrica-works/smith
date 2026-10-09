@@ -175,17 +175,34 @@ replace root turn aggregates; identical repeats count once. A child without
 native parent evidence has an unavailable `unlinked-child` scope, making totals
 lower bounds. Missing response fields remain unavailable rather than zero.
 
-Verification on installed codex-cli 0.160.0 remains incomplete: arbitrary-root
-trust and native child links require the first credentialed attempts. The
-command renders `projects."<workspace>".trust_level="trusted"`; its spelling and
-the default `agents.max_threads = 6` follow the [pinned configuration source](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/config/mod.rs).
-These source checks and offline controls do not establish live acceptance.
-The first child, repeated-usage and unknown-model failure recordings are pending;
-the previous explicitly synthetic fixtures remain until they can be replaced.
+Installed codex-cli 0.160.0 accepts the arbitrary-root trust key as
+`projects={"<workspace>"={trust_level="trusted"}}`. A quoted dotted-key
+spelling was ignored because the [pinned override parser](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/config/src/overrides.rs)
+splits dots literally. The whole-table value preserves paths containing dots.
+The [pinned configuration source](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/core/src/config/mod.rs)
+sets the default `agents.max_threads = 6`, now explicitly pinned.
 
-Instruction parity uses the attempt-owned home required by the designer decision
-in smith `95a9807` and the plan's Credentials section. First credentialed
-verification must establish access-only authentication without refresh, no
-user global instructions/skills/memories in the attempt rollout, and unchanged
-source auth digests. These live checks remain pending; refusal must stop further
-inference without falling back to the user's home.
+Actual run `smith00-codex-isolation-20261009-1733/isolation-02` authenticated
+from the private access-only home at gpt-6-luna/low. Its source auth digests
+match, private refresh remains empty, auth is removed after settlement, and
+its rollout contains only frozen seed instructions and four Codex built-in
+skills rooted inside that attempt. No user instruction, skill, plugin, memory
+or credential markers appear. These built-ins are installed by Codex itself.
+
+Run `smith00-codex-child-20261009-1740/child-03` completed with one native linked
+child, six immutable responses, and observed output totals 145 root + 41 child
+= 186. A child's rollout includes its own parent-linked metadata followed by
+inherited ancestor metadata; collection retains ownership from its own header.
+Run `smith00-codex-failure-20261009-1757/failure-01` is the planned native
+unknown-model failure. Both preserved auth digests, removed private auth and
+scratch, and produced no stderr. Their actual stdout and projected usage
+rollouts replace the synthetic failure and repeated-terminal fixtures, with
+credential scan and exact source/destination digests in the fixture manifest.
+The per-response/turn/thread usage fields provide actual repeated usage;
+identical SDK terminals are repeated only by explicit parser mutations.
+
+The child-01 and child-02 attempts exposed parser faults before the successful
+child-03 control. Child-01 lost malformed rollout bytes; child-02 and subsequent
+attempts retain bounded raw files before decoding and archive them on failure.
+These controls establish adapter behavior, not calibrated reliability probes
+or the pending runtime smoke backfill for other increments.

@@ -341,8 +341,8 @@ fn a_childs_inherited_parent_header_never_replaces_the_childs_ownership() {
 
 #[test]
 fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope() {
-    let root = "01a121c7-2504-79f3-8b18-d5138543b056";
-    let child = "01a121c7-3931-7cd1-a1e8-b2a0fd214b88";
+    let root = "01a121d2-5c3c-74b1-865b-66d8c6f41c3a";
+    let child = "01a121d2-6e5a-7e30-abd0-133d08c8c960";
     let (_, responses) =
         parse_rollout(include_bytes!("recorded/codex/live-root-rollout.jsonl"), root).expect("actual root");
     let (link, child_responses) = parse_rollout(include_bytes!("recorded/codex/live-child-rollout.jsonl"), child)
@@ -358,7 +358,7 @@ fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope()
     let tokens = collected.token_records(root).expect("actual scope totals");
     assert!(matches!(
         tokens.iter().find(|r| r.role == ScopeKind::Total).expect("total").usage.output,
-        Measure::Observed { .. }
+        Measure::Observed { value: 186 }
     ));
     assert_eq!(collected.response_count(), Measure::Observed { value: 6 });
 }

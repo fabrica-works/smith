@@ -14,7 +14,7 @@ fn observed(stream: &str) -> Observer {
     observer
 }
 
-fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
+fn archived_streams_preserve_root_only_evidence_and_real_failure() {
     let completed = observed(COMPLETED);
     assert_eq!(completed.classify(Exit::Code(0), Forced::No).end, End::Completed);
     let native = smith_bench::agent::codex::parse_rollout(REPEATED.as_bytes(), "01a121bc-04a8-75c2-8fba-d2694fa1ad22")
@@ -38,7 +38,9 @@ fn archived_and_explicitly_synthetic_streams_preserve_root_only_evidence() {
         serde_json::from_str(include_str!("recorded/codex/manifest.json")).expect("manifest");
     for record in manifest["records"].as_array().expect("records") {
         let file = record["file"].as_str().expect("file");
-        assert_eq!(record["provenance"], if file == "failed.jsonl" { "synthetic" } else { "archived" });
+        assert_eq!(record["provenance"], "archived");
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/codex").join(file);
+        assert_eq!(smith_bench::arm::binary_digest(&path).expect("record digest"), record["sha256"]);
     }
 }
 
@@ -99,7 +101,7 @@ fn latest_turn_exit_deadline_and_fatal_error_decide_the_end() {
 // Recorded parser and classification stories share startup overhead.
 #[test]
 fn codex_recordings_shapes_and_terminals() {
-    archived_and_explicitly_synthetic_streams_preserve_root_only_evidence();
+    archived_streams_preserve_root_only_evidence_and_real_failure();
     known_shapes_and_conflicting_usage_fail_with_named_evidence();
     latest_turn_exit_deadline_and_fatal_error_decide_the_end();
 }

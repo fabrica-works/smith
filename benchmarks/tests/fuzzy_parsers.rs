@@ -85,23 +85,26 @@ fn legacy_lines_survive_seeded_truncations_corruptions_and_repetition() {
 #[test]
 fn named_rollouts_survive_seeded_truncation_corruption_and_response_repetition() {
     use smith_bench::agent::codex::parse_rollout;
-    let mut rng = Rng::new(0xc0de_0010);
-    let metadata = serde_json::json!({"type":"session_meta","payload":{"id":"root"}});
-    let response = serde_json::json!({"type":"token_usage_record","payload":{"thread_id":"root","response_id":"response",
-        "usage":{"input_tokens":20,"cached_input_tokens":5,"cache_write_input_tokens":0,"output_tokens":8,
-            "reasoning_output_tokens":3,"total_tokens":28}}});
-    let stream = format!("{metadata}\n{response}\n");
-    for end in 0..stream.len() {
-        let _ = parse_rollout(&stream.as_bytes()[..end], "root");
+    let mut rng = skein_lib::Rng::new(0xc0de_0010);
+    for (thread, stream) in [
+        ("01a121d2-5c3c-74b1-865b-66d8c6f41c3a", include_str!("recorded/codex/live-root-rollout.jsonl")),
+        ("01a121d2-6e5a-7e30-abd0-133d08c8c960", include_str!("recorded/codex/live-child-rollout.jsonl")),
+        ("01a121bc-04a8-75c2-8fba-d2694fa1ad22", include_str!("recorded/codex/repeated-rollout.jsonl")),
+    ] {
+        let original = parse_rollout(stream.as_bytes(), thread).expect("actual rollout");
+        for end in 0..stream.len() {
+            if stream.is_char_boundary(end) {
+                let _ = parse_rollout(&stream.as_bytes()[..end], thread);
+            }
+        }
+        for _ in 0..512 {
+            let mut bytes = stream.as_bytes().to_vec();
+            let index = usize::try_from(rng.below(u64::try_from(bytes.len()).expect("length"))).expect("index");
+            bytes[index] = u8::try_from(rng.below(128)).expect("ASCII");
+            let _ = parse_rollout(&bytes, thread);
+        }
+        let response = stream.lines().find(|line| line.contains("token_usage_record")).expect("actual usage");
+        let repeated = format!("{stream}{}", format!("{response}\n").repeat(128));
+        assert_eq!(parse_rollout(repeated.as_bytes(), thread).expect("immutable repeats"), original);
     }
-    for _ in 0..512 {
-        let mut bytes = stream.as_bytes().to_vec();
-        let index = usize::try_from(rng.below(u64::try_from(bytes.len()).expect("bounded stream"))).expect("index");
-        bytes[index] = u8::try_from(rng.below(256)).expect("byte");
-        let _ = parse_rollout(&bytes, "root");
-    }
-    let (_, before) = parse_rollout(stream.as_bytes(), "root").expect("pinned shape");
-    let repeated = format!("{stream}{}", format!("{response}\n").repeat(128));
-    let (_, after) = parse_rollout(repeated.as_bytes(), "root").expect("immutable repeats");
-    assert_eq!(before, after);
 }
