@@ -3314,12 +3314,50 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
 }
 
 #[test]
+fn raw_run_counts_keep_absence_distinct_from_reported_zero_across_gaps() {
+    let zero = Spend { turns: 1, input: Some(0), reasoning: Some(0), ..Spend::ZERO };
+    assert_eq!(Spend::ZERO.accumulate(zero), Some(zero));
+    let gap = Spend { turns: 1, ..Spend::ZERO };
+    let known = zero.accumulate(gap).expect("one gap has no reported counts");
+    assert_eq!(known, Spend { turns: 2, ..zero });
+    let next = Spend { turns: 1, output: Some(3), cache_write: Some(2), reasoning: Some(1), ..Spend::ZERO };
+    let total = known.accumulate(next).expect("reported fields remain separate");
+    assert_eq!(
+        total,
+        Spend {
+            turns: 3,
+            input: Some(0),
+            output: Some(3),
+            cache_read: None,
+            cache_write: Some(2),
+            reasoning: Some(1),
+            units: 0,
+        }
+    );
+    assert_eq!(
+        total.unreported(known),
+        Spend {
+            turns: 1,
+            input: Some(0),
+            output: Some(3),
+            cache_read: None,
+            cache_write: Some(2),
+            reasoning: Some(1),
+            units: 0,
+        }
+    );
+    assert_eq!(Spend::ZERO.accumulate(gap), Some(gap), "no reported count stays absent");
+}
+
+#[test]
 fn checked_spend_addition_rejects_the_whole_increment() {
     let known = Spend { turns: 2, input: Some(4), output: Some(u64::MAX), units: 10, ..Spend::ZERO };
     let next = Spend { turns: 1, input: Some(3), output: Some(1), units: 11, ..Spend::ZERO };
     assert_eq!(known.accumulate(next), None);
     let known = Spend { units: u64::MAX, ..Spend::ZERO };
     assert_eq!(known.accumulate(next), None);
+    let known = Spend { reasoning: Some(u64::MAX), ..Spend::ZERO };
+    assert_eq!(known.accumulate(Spend { reasoning: Some(1), ..Spend::ZERO }), None);
 }
 
 #[test]

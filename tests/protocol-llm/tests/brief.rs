@@ -667,8 +667,8 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         native_accounting(&restored, &restored_system, &[waited], &[11], 1, true);
         native_settled(&restored, &settings, &roots);
         recorded_wait(&restored.turns()[0], true);
-        assert_eq!(first.turn_metadata()[0].2.output, 17);
-        assert_eq!(restored.turn_metadata()[0].2.output, 11, "new activation charges only its actual completion");
+        assert_eq!(first.turn_metadata()[0].2.output, Some(17));
+        assert_eq!(restored.turn_metadata()[0].2.output, Some(11), "new activation charges only its actual completion");
     }
 }
 

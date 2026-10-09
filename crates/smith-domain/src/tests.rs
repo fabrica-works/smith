@@ -2194,8 +2194,9 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
 )]
 fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() {
     for raw in [
-        Usage { output_tokens: Some(2), ..Usage::NONE },
+        Usage { output_tokens: Some(2), cache_write_tokens: Some(0), reasoning_tokens: Some(1), ..Usage::NONE },
         Usage { input_tokens: Some(0), reasoning_tokens: Some(0), ..Usage::NONE },
+        Usage::NONE,
     ] {
         let mut harness = Harness::with(&scalar_limits());
         let selected = scalar_charter();
@@ -2231,6 +2232,11 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         assert_eq!(
             (spent.units, spent.turns, spent.input, spent.output, *turns),
             (31, 1, raw.input_tokens, raw.output_tokens, 1)
+        );
+        assert_eq!(
+            [spent.input, spent.output, spent.cache_read, spent.cache_write, spent.reasoning],
+            [raw.input_tokens, raw.output_tokens, raw.cache_read_tokens, raw.cache_write_tokens, raw.reasoning_tokens],
+            "the terminal preserves every count's presence, and reasoning is not charged twice"
         );
         let turn = harness.turns.iter().next().expect("one saved turn");
         assert_eq!((turn.usage, turn.spent), (raw, 31));

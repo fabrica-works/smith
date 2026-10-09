@@ -22,7 +22,7 @@ fn every_session_yield_and_usage_counter_maps_to_the_run() {
         output_tokens: Some(3),
         cache_read_tokens: Some(5),
         cache_write_tokens: Some(7),
-        reasoning_tokens: None,
+        reasoning_tokens: Some(2),
     };
     assert_eq!(
         translate::spend(11, usage),
