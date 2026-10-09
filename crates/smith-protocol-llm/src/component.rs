@@ -228,7 +228,7 @@ impl Component {
             || bounds.decoded_call_bytes > self.limits.receiving.decoded_call_bytes
             || bounds.max_failure_bytes > self.limits.receiving.max_failure_bytes
         {
-            Self::local_failure(owner, llm::Failure::Limit, bounds.max_failure_bytes, to_domain);
+            Self::local_failure(owner, llm::Failure::ApplicationLimit, bounds.max_failure_bytes, to_domain);
             return;
         }
         if self.active.contains_key(&owner) {
@@ -287,7 +287,7 @@ impl Component {
         match self.active.insert(owner, Active { context, outcome, deliver }) {
             Ok(None) => {}
             Ok(Some(_)) | Err(_) => {
-                Self::local_failure(owner, llm::Failure::Limit, bounds.max_failure_bytes, to_domain);
+                Self::local_failure(owner, llm::Failure::ApplicationLimit, bounds.max_failure_bytes, to_domain);
                 return;
             }
         }

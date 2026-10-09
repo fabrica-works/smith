@@ -1724,6 +1724,23 @@ fn call_failed(
     rng: &mut Rng,
     env: &Env<Limits>,
 ) -> State {
+    let failure = match failure {
+        Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Request), bound: _ } => {
+            Failure::ContextTooLong
+        }
+        Failure::Limit { .. }
+        | Failure::ApplicationLimit
+        | Failure::Protocol
+        | Failure::Cancelled
+        | Failure::Overloaded
+        | Failure::RateLimited { .. }
+        | Failure::Unavailable
+        | Failure::TimedOut
+        | Failure::ContextTooLong
+        | Failure::Invalid
+        | Failure::Unauthorized
+        | Failure::Exhausted { .. } => failure,
+    };
     match backoff(failure, attempt, &env.limits, rng) {
         Some(delay) => State::Backoff { attempt: attempt.saturating_add(1), until: env.now.saturating_add(delay) },
         None => finish(End::Failed { failure, evidence }),
@@ -2166,7 +2183,8 @@ fn backoff(failure: Failure, attempt: u32, limits: &Limits, rng: &mut Rng) -> Op
         Failure::ContextTooLong
         | Failure::Invalid
         | Failure::Exhausted { .. }
-        | Failure::Limit
+        | Failure::Limit { .. }
+        | Failure::ApplicationLimit
         | Failure::Protocol
         | Failure::Cancelled => return None,
     };

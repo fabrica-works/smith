@@ -640,7 +640,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
 
 #[test]
 fn exact_failure_classes_and_transport_evidence_survive_policy_without_diagnostic_retention() {
-    for failure in [llm::Failure::Limit, llm::Failure::Protocol, llm::Failure::Cancelled] {
+    for failure in [llm::Failure::ApplicationLimit, llm::Failure::Protocol, llm::Failure::Cancelled] {
         for evidence in [llm::Evidence::Unsent, llm::Evidence::Unknown, llm::Evidence::Response] {
             for closing in [false, true] {
                 let mut world = World::new(104, 256);

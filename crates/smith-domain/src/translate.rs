@@ -260,7 +260,7 @@ pub(crate) const fn host_effect(effect: run::HostEffect) -> Effect {
 /// Lossless small sibling translation; no provider parsing or retry policy.
 fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
     match failure {
-        llm::Failure::Limit => run::CompletionFailure::Limit,
+        llm::Failure::Limit { .. } | llm::Failure::ApplicationLimit => run::CompletionFailure::Limit,
         llm::Failure::Protocol => run::CompletionFailure::Protocol,
         llm::Failure::Cancelled => run::CompletionFailure::Cancelled,
         llm::Failure::Overloaded => run::CompletionFailure::Overloaded,

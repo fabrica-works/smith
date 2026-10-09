@@ -2586,3 +2586,24 @@ fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
     assert_eq!(crate::derive(&crate::Derivation { history_items: 12, ..inputs }), Err(crate::Field::HistoryItems));
     assert_eq!(crate::derive(&crate::Derivation { allowance: u64::MAX, ..inputs }), Err(crate::Field::Allowance));
 }
+
+#[test]
+fn a_native_request_limit_is_context_too_long_without_retry() {
+    use crate::llm::{Cap, Limit};
+    for cap in [Cap::Request, Cap::Retained] {
+        let mut harness = Harness::new(LIMITS);
+        let (owner, _) = harness.open(1);
+        let failure = Failure::Limit { which: Limit::Path(cap), bound: 8123 };
+        let expected = if cap == Cap::Request { Failure::ContextTooLong } else { failure };
+        assert_eq!(
+            harness.step(Event::Failed {
+                owner,
+                failure,
+                evidence: crate::llm::Evidence::Unsent,
+                detail: Box::default(),
+            }),
+            Some(ended(End::Failed { failure: expected, evidence: crate::llm::Evidence::Unsent }, 0))
+        );
+        assert_eq!(harness.domain.next_deadline(), None);
+    }
+}

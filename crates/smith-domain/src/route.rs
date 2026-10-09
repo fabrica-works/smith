@@ -110,7 +110,8 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                 | crate::llm::Failure::TimedOut { .. }
                 | crate::llm::Failure::ContextTooLong
                 | crate::llm::Failure::Invalid
-                | crate::llm::Failure::Limit
+                | crate::llm::Failure::Limit { .. }
+                | crate::llm::Failure::ApplicationLimit
                 | crate::llm::Failure::Protocol
                 | crate::llm::Failure::Cancelled => {}
             }

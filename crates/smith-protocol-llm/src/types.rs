@@ -18,6 +18,9 @@ pub enum Error {
     /// A local application or shared-client bound refused the value; no call starts.
     Limit,
 
+    /// Native preparation refused an exact path cap, preserved for session policy.
+    PathLimit { which: llm::Cap, bound: u64 },
+
     /// The shared dialect cannot represent the value; no call starts.
     Unsupported,
 }
@@ -29,7 +32,7 @@ impl Error {
     pub const fn from_shared(error: skein_llm::Error) -> Self {
         match error {
             skein_llm::Error::Invalid => Self::Invalid,
-            skein_llm::Error::Limit { which: _, bound: _ } => Self::Limit,
+            skein_llm::Error::Limit { which, bound } => Self::PathLimit { which: crate::failure::cap(which), bound },
             skein_llm::Error::Unsupported => Self::Unsupported,
         }
     }

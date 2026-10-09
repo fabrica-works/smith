@@ -87,7 +87,7 @@ fn every_transcript_refusal_keeps_its_reason() {
 fn every_completion_failure_and_transport_evidence_maps_without_inference() {
     let cooldown = Duration::from_nanos(23);
     let failures = [
-        (llm::Failure::Limit, run::CompletionFailure::Limit),
+        (llm::Failure::ApplicationLimit, run::CompletionFailure::Limit),
         (llm::Failure::Protocol, run::CompletionFailure::Protocol),
         (llm::Failure::Cancelled, run::CompletionFailure::Cancelled),
         (llm::Failure::Overloaded, run::CompletionFailure::Overloaded),

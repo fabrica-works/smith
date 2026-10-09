@@ -44,7 +44,7 @@ pub fn failed(
         shared::Failure::Invalid => llm::Failure::Invalid,
         shared::Failure::Unauthorized => llm::Failure::Unauthorized,
         shared::Failure::Exhausted { retry_after } => llm::Failure::Exhausted { retry_after },
-        shared::Failure::Limit { which: _, bound: _ } => llm::Failure::Limit,
+        shared::Failure::Limit { which, bound } => llm::Failure::Limit { which: llm::Limit::Path(cap(which)), bound },
         shared::Failure::Protocol => llm::Failure::Protocol,
         shared::Failure::Cancelled => llm::Failure::Cancelled,
     };
@@ -70,7 +70,11 @@ pub fn cancelled(context: Context, owner: Token) -> Result<Event, Error> {
 #[must_use]
 pub fn refusal(owner: Token, error: Error, max_failure_bytes: u32) -> Event {
     let (failure, text): (llm::Failure, &[u8]) = match error {
-        Error::Limit => (llm::Failure::Limit, b"shared Client preparation exceeds receiving limits"),
+        Error::Limit => (llm::Failure::ApplicationLimit, b"shared Client preparation exceeds receiving limits"),
+        Error::PathLimit { which, bound } => (
+            llm::Failure::Limit { which: llm::Limit::Path(which), bound },
+            b"native Client preparation exceeds its named path bound",
+        ),
         Error::Invalid => (llm::Failure::Invalid, b"invalid application prompt or configured call"),
         Error::Unsupported => (llm::Failure::Invalid, b"unsupported replay or configured call"),
     };
@@ -167,4 +171,30 @@ fn call_size_problem(bytes: u64, bound: Option<u32>, maximum: u32) -> Result<Box
     }
     output.put(suffix).expect("measured remedy");
     Ok(output.finish())
+}
+
+pub(crate) const fn cap(which: shared::Cap) -> llm::Cap {
+    match which {
+        shared::Cap::Request => llm::Cap::Request,
+        shared::Cap::RequestHead => llm::Cap::RequestHead,
+        shared::Cap::ResponseHead => llm::Cap::ResponseHead,
+        shared::Cap::ResponseFields => llm::Cap::ResponseFields,
+        shared::Cap::Skip => llm::Cap::Skip,
+        shared::Cap::Field => llm::Cap::Field,
+        shared::Cap::Retained => llm::Cap::Retained,
+        shared::Cap::Tokens => llm::Cap::Tokens,
+        shared::Cap::Depth => llm::Cap::Depth,
+        shared::Cap::Strings => llm::Cap::Strings,
+        shared::Cap::Number => llm::Cap::Number,
+        shared::Cap::Reasoning => llm::Cap::Reasoning,
+        shared::Cap::OutputItems => llm::Cap::OutputItems,
+        shared::Cap::Metadata => llm::Cap::Metadata,
+        shared::Cap::Tools => llm::Cap::Tools,
+        shared::Cap::HistoryItems => llm::Cap::HistoryItems,
+        shared::Cap::Output => llm::Cap::Output,
+        shared::Cap::Answer => llm::Cap::Answer,
+        shared::Cap::ErrorBody => llm::Cap::ErrorBody,
+        shared::Cap::AccessToken => llm::Cap::AccessToken,
+        shared::Cap::AccountId => llm::Cap::AccountId,
+    }
 }

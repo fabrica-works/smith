@@ -216,7 +216,9 @@ fn decode(
         }
         let attested = match crate::prompt::object(input, &context.limits) {
             Ok(value) => value,
-            Err(Error::Limit) => return Ok(llm::Decoded::Invalid { problem: llm::Problem::TooLarge }),
+            Err(Error::Limit | Error::PathLimit { .. }) => {
+                return Ok(llm::Decoded::Invalid { problem: llm::Problem::TooLarge });
+            }
             Err(Error::Invalid | Error::Unsupported) => {
                 return Ok(llm::Decoded::Invalid { problem: llm::Problem::NotAnObject });
             }
@@ -258,7 +260,9 @@ fn take_resolution(
 fn host(declaration: &run::HostTool, input: &[u8], context: &Context, remaining: u64) -> llm::Decoded {
     let attested = match crate::prompt::object(input, &context.limits) {
         Ok(value) => value,
-        Err(Error::Limit) => return llm::Decoded::Invalid { problem: llm::Problem::TooLarge },
+        Err(Error::Limit | Error::PathLimit { .. }) => {
+            return llm::Decoded::Invalid { problem: llm::Problem::TooLarge };
+        }
         Err(Error::Invalid | Error::Unsupported) => {
             return llm::Decoded::Invalid { problem: llm::Problem::NotAnObject };
         }

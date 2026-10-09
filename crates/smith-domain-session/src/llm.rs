@@ -303,6 +303,66 @@ pub struct Completion {
     pub usage: Usage,
 }
 
+/// A native LLM path cap, sent by the protocol in a terminal failure.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Cap {
+    /// The configured bound on encoded request body.
+    Request,
+    /// The configured bound on encoded request head.
+    RequestHead,
+    /// The configured bound on response head.
+    ResponseHead,
+    /// The configured bound on HTTP header field count.
+    ResponseFields,
+    /// Scanned wire bytes of one event.
+    Skip,
+    /// The configured bound on an SSE event type or identifier.
+    Field,
+    /// The configured bound on retained decoded text.
+    Retained,
+    /// The configured bound on retained JSON tokens.
+    Tokens,
+    /// The configured bound on JSON nesting depth.
+    Depth,
+    /// The configured bound on retained string.
+    Strings,
+    /// The fixed tokenizer bound on a numeral.
+    Number,
+    /// The configured bound on provider reasoning replay.
+    Reasoning,
+    /// The configured bound on completion items.
+    OutputItems,
+    /// The configured bound on other replay metadata.
+    Metadata,
+    /// The configured bound on offered tools.
+    Tools,
+    /// The configured bound on history messages and blocks.
+    HistoryItems,
+    /// The endpoint model's declared completion ceiling in tokens.
+    Output,
+    /// The configured bound on completion answer.
+    Answer,
+    /// The configured bound on provider error body.
+    ErrorBody,
+    /// The configured bound on access token.
+    AccessToken,
+    /// The configured bound on account identifier.
+    AccountId,
+}
+
+/// The owner of a bounded value, sent in a terminal limit failure.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Limit {
+    /// The native provider path refused its named cap.
+    Path(Cap),
+    /// The session's retained window refused its history bound.
+    History,
+    /// One received tool call refused its argument bound.
+    Call,
+    /// One injected message refused its receiving bound.
+    Message,
+}
+
 /// Why the LLM stopped.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Stop {
@@ -383,7 +443,10 @@ pub enum Phase {
 pub enum Failure {
     /// The shared client's bounded receiving allowance was exceeded.
     /// This terminal is nonretryable; it is distinct from provider rejection.
-    Limit,
+    Limit { which: Limit, bound: u64 },
+
+    /// Application translation refused its existing aggregate contract before native admission.
+    ApplicationLimit,
 
     /// The peer response violated the shared protocol contract, nonretryably.
     Protocol,

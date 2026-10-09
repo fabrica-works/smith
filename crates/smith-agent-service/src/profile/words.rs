@@ -116,6 +116,16 @@ fn connection(output: &mut List<u8>, error: EndpointError) {
         EndpointError::HttpReadIoIntake { demand, cap } => pair(output, "http-read-io-intake", demand, cap),
         EndpointError::HttpSendIoOutput { demand, cap } => pair(output, "http-send-io-output", demand, cap),
         EndpointError::SseChunkHttpRead { demand, cap } => pair(output, "sse-chunk-http-read", demand, cap),
+        EndpointError::TokenizerDemandSseChunk { demand, cap } => {
+            pair(output, "tokenizer-demand-sse-chunk", demand, cap)
+        }
+        EndpointError::MemoryLargestCall { memory, call } => {
+            text(output, "memory-largest-call: memory=");
+            number(output, memory);
+            text(output, " bytes; call=");
+            number(output, call);
+            text(output, " bytes");
+        }
         EndpointError::PlaintextAddress => text(output, "plaintext-address: must be loopback"),
     }
 }
@@ -146,18 +156,20 @@ fn cap_name(cap: Cap) -> &'static str {
     match cap {
         Cap::Request => "request",
         Cap::RequestHead => "request-head",
-        Cap::Head => "response-head",
-        Cap::Headers => "headers",
-        Cap::Line => "sse-line",
-        Cap::Event => "sse-event",
-        Cap::Field => "sse-field",
-        Cap::Document => "document",
+        Cap::ResponseHead => "response-head",
+        Cap::ResponseFields => "response-fields",
+        Cap::Skip => "skip",
+        Cap::Field => "field",
+        Cap::Retained => "retained",
         Cap::Tokens => "tokens",
         Cap::Depth => "depth",
-        Cap::String => "string",
+        Cap::Strings => "strings",
         Cap::Number => "number",
-        Cap::Opaque => "opaque",
-        Cap::Parts => "parts",
+        Cap::Reasoning => "reasoning",
+        Cap::OutputItems => "output-items",
+        Cap::Metadata => "metadata",
+        Cap::Tools => "tools",
+        Cap::HistoryItems => "history-items",
         Cap::Output => "output",
         Cap::Answer => "answer",
         Cap::ErrorBody => "error-body",
