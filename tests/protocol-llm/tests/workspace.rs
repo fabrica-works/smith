@@ -153,8 +153,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
             rendered_result: skein_llm_world::limits().dialect.string_bytes,
-            shell_default: skein_lib::Duration::from_secs(120),
-            shell_maximum: skein_lib::Duration::from_secs(1200),
+            stated: smith_protocol_llm_world::adapter::stated(),
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
@@ -423,8 +422,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
             rendered_result: skein_llm_world::limits().dialect.string_bytes,
-            shell_default: Duration::from_secs(120),
-            shell_maximum: Duration::from_secs(1200),
+            stated: smith_protocol_llm_world::adapter::stated(),
         };
         let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1013) };
         settings.limits.session.completion_bytes =
@@ -475,5 +473,82 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
         assert!(world.prompts()[2].messages.iter().flat_map(|message| &message.parts).any(|part|
             matches!(part, Part::ToolOutput { output, is_error: false, .. } if contains(output, b"replaced 1 occurrence(s)"))
         ), "one successful edit result was rendered to the native peer");
+    }
+}
+
+#[test]
+fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() {
+    for configuration in wire::configurations() {
+        let mut disk = Checkout::new();
+        disk.mkdir(b"work");
+        let root = Token::new(disk.root(b"work"));
+        let workspace = run::Workspace {
+            directories: Box::new([run::Directory {
+                name: b"work".as_slice().into(),
+                root,
+                writable: true,
+                git: false,
+                conflicts: Box::new([]),
+            }]),
+        };
+        let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1094) };
+        let caps = &mut settings.limits.session.tools;
+        caps.path_bytes = 37;
+        caps.read_bytes = 73;
+        caps.file_bytes = 257;
+        caps.list_entries = 11;
+        caps.search_hits = 13;
+        caps.search_bytes = 127;
+        caps.shell_head = 71;
+        caps.shell_tail = 80;
+        caps.shell_timeout = Duration::from_secs(12);
+        caps.shell_timeout_max = Duration::from_secs(43);
+        settings.limits.run.directory_name_bytes = 37;
+        let client = skein_llm_world::limits();
+        let bounds = Limits {
+            client,
+            tool_bytes: 32768,
+            rendered_result: client.dialect.string_bytes,
+            stated: adapter::Stated::from_tools(caps, client.dialect.input_bytes).expect("actual numeric quantities"),
+        };
+        settings.limits.session.completion_bytes =
+            adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes).expect("receiving");
+        settings.limits.session.completion_blocks = client.dialect.parts;
+        let scripts = Box::new([Script {
+            cue: Box::new([]),
+            turns: Box::new([calls(
+                vec![call(b"finish", br#"{"report":"Descriptions observed.","source":"schema"}"#)],
+                1,
+            )]),
+        }]);
+        let mut world =
+            World::with_workspace_wire(settings, None, Some(workspace), disk, configuration, bounds, scripts);
+        world.run(10_000);
+        assert!(
+            matches!(world.answer(), run::Answer::Accepted { .. }),
+            "actual native descriptions terminal: {:?}",
+            world.answer()
+        );
+        let offered = &world.prompts()[0].tools;
+        for (name, parameters, detail) in [
+            (b"read".as_slice(), 3, b"max 73 bytes".as_slice()),
+            (b"list", 1, b"max 37 bytes"),
+            (b"search", 3, b"Search pattern"),
+            (b"write", 2, b"max 257 bytes"),
+            (b"edit", 4, b"max 257 bytes"),
+            (b"shell", 2, b"43000 ms"),
+        ] {
+            let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("actual offered tool");
+            let schema = std::str::from_utf8(&tool.parameters).expect("native schema text");
+            assert_eq!(schema.matches("\"description\"").count(), parameters);
+            assert!(contains(schema.as_bytes(), detail));
+            assert!(!contains(&tool.description, b"runs alone"));
+        }
+        let list = offered.iter().find(|tool| tool.name.as_ref() == b"list").expect("native list declaration");
+        assert!(contains(&list.description, b"11 entries"));
+        let search = offered.iter().find(|tool| tool.name.as_ref() == b"search").expect("native search declaration");
+        assert!(contains(&search.description, b"13 matches and 127 bytes"));
+        let shell = offered.iter().find(|tool| tool.name.as_ref() == b"shell").expect("native shell declaration");
+        assert!(contains(&shell.description, b"151 output bytes"));
     }
 }

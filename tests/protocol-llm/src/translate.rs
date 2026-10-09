@@ -10,9 +10,9 @@ use crate::adapter;
 use skein_fake_llm_domain::api as provider;
 use smith_domain::{llm as agent, run, tools};
 
-pub(crate) fn query(prompt: agent::Prompt) -> provider::Query {
+pub(crate) fn query(prompt: agent::Prompt, stated: &adapter::Stated) -> provider::Query {
     let mut tools = Vec::new();
-    for specification in adapter::schemas(&prompt) {
+    for specification in adapter::schemas(&prompt, stated) {
         tools.push(provider::ToolSpec {
             name: specification.name,
             description: specification.description,
@@ -192,8 +192,7 @@ pub(crate) fn decode(
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
         rendered_result: skein_llm_world::limits().dialect.string_bytes,
-        shell_default: skein_lib::Duration::from_secs(120),
-        shell_maximum: skein_lib::Duration::from_secs(1200),
+        stated: crate::adapter::stated(),
     };
     adapter::decode(name, arguments, grants, served, asker, &limits)
 }

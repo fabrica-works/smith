@@ -113,7 +113,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
             fact_reserve_bytes: 128,
             grants: 8,
         },
-        llm: component_limits(profile, client, io, &domain, rendered_result),
+        llm: component_limits(profile, client, io, &domain, rendered_result)?,
         machine: derive_machine(profile, configuration, &domain)?,
         io,
         file_slots: 32,
@@ -243,15 +243,11 @@ fn component_limits(
     io: io::Limits,
     domain: &domain::Limits,
     rendered_result: u32,
-) -> llm::ComponentLimits {
-    llm::ComponentLimits {
-        adapter: llm::Limits {
-            client,
-            tool_bytes: 32_768,
-            rendered_result,
-            shell_default: profile.policy.shell_timeout,
-            shell_maximum: profile.policy.tool_deadline,
-        },
+) -> Result<llm::ComponentLimits, Refusal> {
+    let stated = llm::Stated::from_tools(&domain.session.tools, client.dialect.input_bytes)
+        .ok_or(derived(Layer::Llm, "output_ceiling"))?;
+    Ok(llm::ComponentLimits {
+        adapter: llm::Limits { client, tool_bytes: 32_768, rendered_result, stated },
         connection: connection::Limits {
             endpoints: ENDPOINTS,
             connections: profile.declared.conversations,
@@ -270,7 +266,7 @@ fn component_limits(
         contract_bytes: 4096,
         accounts: ACCOUNTS,
         grant_value_bytes: 2048,
-    }
+    })
 }
 
 fn derived(layer: Layer, field: &'static str) -> Refusal {

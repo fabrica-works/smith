@@ -9,8 +9,7 @@ fn limits() -> Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
         rendered_result: skein_llm_world::limits().dialect.string_bytes,
-        shell_default: skein_lib::Duration::from_secs(120),
-        shell_maximum: skein_lib::Duration::from_secs(1200),
+        stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
 
@@ -33,7 +32,7 @@ fn prompt() -> llm::Prompt {
 
 #[test]
 fn production_schemas_cover_every_offered_workspace_and_run_tool() {
-    let schemas = adapter::schemas(&prompt());
+    let schemas = adapter::schemas(&prompt(), &limits().stated);
     assert_eq!(schemas.len(), 8);
     for kind in [
         ToolKind::Owned(tools::Tool::Read),
@@ -170,7 +169,7 @@ fn nesting_is_refused_for_any_agents_field_and_any_child_sub_agent_call() {
         adapter::decode(b"sub_agent", b"{}", grants(), &[], llm::Asker::Main, &limits),
         llm::Decoded::Invalid { problem: llm::Problem::UnknownTool },
     );
-    let schemas = adapter::schemas(&prompt());
+    let schemas = adapter::schemas(&prompt(), &limits.stated);
     let child = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
     let document = skein_llm::Json::from_bytes(&child.schema, &limits.client.dialect).expect("valid schema");
     assert!(

@@ -39,9 +39,13 @@ pub(crate) fn prepare_component(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Context), Error> {
     worst_case(limits, &receiving).ok_or(Error::Limit)?;
-    let application =
-        crate::tools::schemas_for_contract(&prompt, outcome, deliver, limits.client.dialect.document_bytes)?;
-    let application = crate::tools::with_shell_deadlines(application, limits.shell_default, limits.shell_maximum);
+    let application = crate::tools::schemas_for_contract(
+        &prompt,
+        &limits.stated,
+        outcome,
+        deliver,
+        limits.client.dialect.document_bytes,
+    )?;
     prepare_prompt(owner, prompt, application, receiving, limits)
 }
 

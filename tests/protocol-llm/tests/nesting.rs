@@ -26,8 +26,7 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
             rendered_result: skein_llm_world::limits().dialect.string_bytes,
-            shell_default: skein_lib::Duration::from_secs(120),
-            shell_maximum: skein_lib::Duration::from_secs(1200),
+            stated: smith_protocol_llm_world::adapter::stated(),
         };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
@@ -38,7 +37,11 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
         settings.limits.session.completion_blocks = bounds.client.dialect.parts;
         let mut world = World::with_wire(settings, None, configuration, bounds, scripts.into_boxed_slice());
         world.run(100_000);
-        assert!(matches!(world.answer(), run::Answer::Accepted { .. }));
+        assert!(
+            matches!(world.answer(), run::Answer::Accepted { .. }),
+            "actual native nesting terminal: {:?}",
+            world.answer()
+        );
         let note = b"a sub-agent does its work itself";
         let feedback = world
             .prompts()

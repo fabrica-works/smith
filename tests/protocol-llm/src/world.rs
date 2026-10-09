@@ -1126,7 +1126,12 @@ impl World {
                     }
                     Backend::Typed { stage, calls, .. } => {
                         calls.open(owner, (prompt.tools, prompt.served.clone(), prompt.asker));
-                        let query = translate::query(prompt);
+                        let stated = crate::adapter::Stated::from_tools(
+                            &self.settings.limits.session.tools,
+                            skein_llm_world::limits().dialect.input_bytes,
+                        )
+                        .expect("fixture numeric bounds fit");
+                        let query = translate::query(prompt, &stated);
                         self.messages_seen
                             .push((self.now, crate::messages_referee::Seen::Prompt { query: query.clone() }));
                         self.prompts.push(query.clone());

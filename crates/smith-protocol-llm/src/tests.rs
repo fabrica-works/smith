@@ -180,3 +180,107 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
         assert!(!error);
     }
 }
+
+fn described_prompt() -> smith_domain::llm::Prompt {
+    use smith_domain::llm;
+    llm::Prompt {
+        asker: llm::Asker::Main,
+        endpoint: llm::Endpoint(1),
+        model: b"test".as_slice().into(),
+        system: Box::new([]),
+        tools: tools::Grants { inspect: true, modify: true, shell: true },
+        served: Box::new([]),
+        messages: Box::new([]),
+        max_tokens: 16,
+    }
+}
+
+#[test]
+fn golden_descriptions_state_batching_and_every_effective_parameter() {
+    let stated = crate::Stated {
+        path_bytes: 37,
+        read_window: 73,
+        tool_payload: 257,
+        call_input_bytes: 401,
+        list_entries: 11,
+        search_hits: 13,
+        search_bytes: 127,
+        shell_timeout: Duration::from_secs(12),
+        tool_deadline: Duration::from_secs(43),
+        shell_output: 151,
+        output_ceiling: 151,
+    };
+    let golden = [
+        (
+            "Read lines; output is cut and marked. Batch independent reads, listings and searches; they run side by side.",
+            3_usize,
+        ),
+        (
+            "List a directory; at most 11 entries; omitted entries are counted. Batch independent reads, listings and searches; they run side by side.",
+            1,
+        ),
+        (
+            "Search files; at most 13 matches and 127 bytes; cuts are marked. Batch independent reads, listings and searches; they run side by side.",
+            3,
+        ),
+        (
+            "Write a file; read its current version first. Batch writes, edits and commands; one at a time, in call order.",
+            2,
+        ),
+        (
+            "Edit a file already read; old must match once, or at least once with all. Batch writes, edits and commands; one at a time, in call order.",
+            4,
+        ),
+        (
+            "Run a command; files may change. Keep at most 151 output bytes; cuts are marked. Batch writes, edits and commands; one at a time, in call order.",
+            2,
+        ),
+    ];
+    let schemas = crate::schemas(&described_prompt(), &stated);
+    assert_eq!(schemas.len(), golden.len());
+    for (schema, (words, parameters)) in schemas.iter().zip(golden) {
+        assert_eq!(schema.description.as_ref(), words.as_bytes());
+        let text = core::str::from_utf8(&schema.schema).unwrap();
+        assert_eq!(
+            text.matches("\"description\"").count(),
+            parameters,
+            "{}",
+            core::str::from_utf8(&schema.name).unwrap()
+        );
+        assert!(!text.contains("runs alone"));
+        match schema.name.as_ref() {
+            b"read" => assert!(
+                text.contains("max 37 bytes") && text.contains("max 73 bytes") && text.contains("counting from 1")
+            ),
+            b"list" => assert!(text.contains("max 37 bytes")),
+            b"search" => assert!(text.contains("max 37 bytes") && text.matches("max 401 bytes").count() == 2),
+            b"write" => assert!(text.contains("max 257 bytes") && text.contains("max 401 bytes")),
+            b"edit" => assert_eq!(text.matches("max 257 bytes").count(), 2),
+            b"shell" => assert!(
+                text.contains("Seconds")
+                    && text.contains("12000 ms")
+                    && text.contains("43000 ms")
+                    && text.contains("max 401 bytes")
+            ),
+            _ => panic!("only the six workspace tools"),
+        }
+    }
+    assert_eq!(schemas, crate::schemas(&described_prompt(), &stated));
+}
+
+#[test]
+fn stated_quantities_copy_effective_limits_and_refuse_capture_overflow() {
+    let limits = tools();
+    let stated = crate::Stated::from_tools(&limits, 401).unwrap();
+    assert_eq!(stated.path_bytes, 32);
+    assert_eq!(stated.tool_payload, 1024);
+    assert_eq!(stated.read_window, 64);
+    assert_eq!(stated.search_hits, 8);
+    assert_eq!(stated.search_bytes, 128);
+    assert_eq!(stated.output_ceiling, 128);
+    assert_eq!(stated.shell_output, 128);
+    assert_eq!(stated.shell_timeout, Duration::from_secs(30));
+    assert_eq!(stated.tool_deadline, Duration::from_secs(120));
+    let excessive = tools::Limits { shell_head: u32::MAX, shell_tail: 1, ..limits };
+    assert!(crate::Stated::from_tools(&excessive, 401).is_none());
+}

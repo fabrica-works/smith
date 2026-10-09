@@ -18,8 +18,7 @@ fn limits() -> Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
         rendered_result: skein_llm_world::limits().dialect.string_bytes,
-        shell_default: skein_lib::Duration::from_secs(120),
-        shell_maximum: skein_lib::Duration::from_secs(1200),
+        stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
 
@@ -350,7 +349,7 @@ fn two_calls(
 ) -> (adapter::Context, skein_llm_world::fake::Exchange) {
     let mut input = prompt();
     input.served = Box::new([input.served[0].clone(), llm::Served::Finish]);
-    let application = wire::schemas(&input);
+    let application = wire::schemas(&input, &bounds.stated);
     let endpoint = configuration.endpoint.clone();
     let credential = skein_llm::Credential {
         access_token: configuration.credential.access_token.clone(),

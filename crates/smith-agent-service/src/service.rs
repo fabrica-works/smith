@@ -1992,8 +1992,11 @@ mod tests {
                     client,
                     tool_bytes: 32_768,
                     rendered_result: client.dialect.string_bytes,
-                    shell_default: skein_lib::Duration::from_secs(120),
-                    shell_maximum: skein_lib::Duration::from_secs(1200),
+                    stated: llm::Stated::from_tools(
+                        &smith_agent_world::LIMITS.session.tools,
+                        client.dialect.input_bytes,
+                    )
+                    .expect("test effective quantities fit"),
                 },
                 connection: skein_llm_connection::Limits {
                     endpoints: 1,

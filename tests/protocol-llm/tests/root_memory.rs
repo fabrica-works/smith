@@ -274,8 +274,7 @@ fn wire_limits() -> adapter::Limits {
         client,
         tool_bytes: 16_384,
         rendered_result: client.dialect.string_bytes,
-        shell_default: skein_lib::Duration::from_secs(120),
-        shell_maximum: skein_lib::Duration::from_secs(1200),
+        stated: smith_protocol_llm_world::adapter::stated(),
     }
 }
 
@@ -772,6 +771,10 @@ impl Counted {
         let measured = meter.end();
         let queue_bytes = Queue::<Request>::worst_case(root::max_out(limits)).expect("output container fits");
         meter.check(measured, root::worst_case(limits).expect("compatible root limits") + queue_bytes, limits);
+        let mut native_limits = wire_limits();
+        native_limits.stated =
+            adapter::Stated::from_tools(&limits.session.tools, native_limits.client.dialect.input_bytes)
+                .expect("actual root numeric quantities fit");
         Self {
             meter,
             domain: Some(domain),
@@ -781,7 +784,7 @@ impl Counted {
             configuration_bytes: 0,
             caller_charter: None,
             caller_workspace: None,
-            native_limits: wire_limits(),
+            native_limits,
             records: Vec::new(),
             prefix: None,
             saved: None,
@@ -1036,7 +1039,7 @@ impl Counted {
     fn schema_constructor(&self, prompt: &llm::Prompt) -> u64 {
         let before = self.meter.held();
         self.meter.start();
-        let schemas = wire::schemas(prompt);
+        let schemas = wire::schemas(prompt, &self.native_limits.stated);
         let owned = schemas_bytes(&schemas);
         // The production inventory uses a ten-cell bounded List before the
         // final boxed slice. Price both arrays if reboxing overlaps them.

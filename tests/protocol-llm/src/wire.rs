@@ -342,7 +342,7 @@ impl Wire {
         scripts: Box<[skein_fake_llm_domain::api::Script]>,
     ) -> Result<Self, adapter::Error> {
         let endpoint_name = prompt.endpoint;
-        let application = schemas(&prompt);
+        let application = schemas(&prompt, &limits.stated);
         let endpoint = configuration.endpoint.clone();
         let peer_endpoint = endpoint.clone();
         let credential = shared::Credential {

@@ -25,8 +25,7 @@ fn limits() -> ComponentLimits {
             client,
             tool_bytes: 32768,
             rendered_result: client.dialect.string_bytes,
-            shell_default: skein_lib::Duration::from_secs(120),
-            shell_maximum: skein_lib::Duration::from_secs(1200),
+            stated: smith_protocol_llm_world::adapter::stated(),
         },
         connection: skein_llm_connection::Limits {
             endpoints: 1,

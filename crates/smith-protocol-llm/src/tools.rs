@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Decimal, Duration, List, Writer};
+use skein_lib::List;
 use smith_domain::run;
 use smith_domain::{llm, tools};
 
@@ -14,52 +14,19 @@ use crate::{Error, ToolKind, ToolSchema};
 /// The bounded inventory of Smith tools offered for this prompt.
 /// Host tools are supplied separately by the charter and retain their bytes.
 #[must_use]
-pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
+pub fn schemas(prompt: &llm::Prompt, stated: &crate::Stated) -> Box<[ToolSchema]> {
     let mut descriptors = List::with_capacity(10);
     if prompt.tools.inspect {
-        add(&mut descriptors, descriptor(
-            ToolKind::Owned(tools::Tool::Read),
-            b"read",
-            b"Read a workspace file. Read a file before changing it; paths stay within the workspace.",
-            br#"{"type":"object","properties":{"path":{"type":"string"},"first_line":{"type":"integer","minimum":1},"lines":{"type":"integer","minimum":1}},"required":["path"]}"#,
-        ));
-        add(
-            &mut descriptors,
-            descriptor(
-                ToolKind::Owned(tools::Tool::List),
-                b"list",
-                b"List entries of a directory within the workspace.",
-                br#"{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"#,
-            ),
-        );
-        add(&mut descriptors, descriptor(
-            ToolKind::Owned(tools::Tool::Search),
-            b"search",
-            b"Search workspace files for a pattern, optionally within one path or glob.",
-            br#"{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"}},"required":["pattern"]}"#,
-        ));
+        add(&mut descriptors, owned(tools::Tool::Read, b"read", stated));
+        add(&mut descriptors, owned(tools::Tool::List, b"list", stated));
+        add(&mut descriptors, owned(tools::Tool::Search, b"search", stated));
     }
     if prompt.tools.modify {
-        add(&mut descriptors, descriptor(
-            ToolKind::Owned(tools::Tool::Write),
-            b"write",
-            b"Write a workspace file. Read an existing file before changing it. A write runs alone.",
-            br#"{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"#,
-        ));
-        add(&mut descriptors, descriptor(
-            ToolKind::Owned(tools::Tool::Edit),
-            b"edit",
-            b"Replace text in a workspace file already read. A write runs alone.",
-            br#"{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"all":{"type":"boolean"}},"required":["path","old","new"]}"#,
-        ));
+        add(&mut descriptors, owned(tools::Tool::Write, b"write", stated));
+        add(&mut descriptors, owned(tools::Tool::Edit, b"edit", stated));
     }
     if prompt.tools.shell {
-        add(&mut descriptors, descriptor(
-            ToolKind::Owned(tools::Tool::Shell),
-            b"shell",
-            b"Run a command in the workspace, within its deadline. It may change files and runs alone.",
-            br#"{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","minimum":1}},"required":["command"]}"#,
-        ));
+        add(&mut descriptors, owned(tools::Tool::Shell, b"shell", stated));
     }
     for offered in &prompt.served {
         match offered {
@@ -98,12 +65,13 @@ pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
 /// mid-run tool was granted.
 pub fn schemas_for_contract(
     prompt: &llm::Prompt,
+    stated: &crate::Stated,
     outcome: &run::outcome::OutcomeSpec,
     deliver: Option<&run::outcome::ChangeSpec>,
     maximum: u32,
 ) -> Result<Box<[ToolSchema]>, Error> {
     let mut inventory = List::with_capacity(10);
-    for mut descriptor in schemas(prompt) {
+    for mut descriptor in schemas(prompt, stated) {
         match descriptor.kind {
             ToolKind::Finish => descriptor.schema = crate::contract::finish_schema(outcome, maximum)?,
             ToolKind::Deliver => {
@@ -125,43 +93,11 @@ fn descriptor(kind: ToolKind, name: &[u8], description: &[u8], schema: &[u8]) ->
     ToolSchema { kind, name: name.into(), description: description.into(), schema: schema.into() }
 }
 
-/// State the deployment's effective command deadlines in its offered inventory.
-pub(crate) fn with_shell_deadlines(
-    mut inventory: Box<[ToolSchema]>,
-    default: Duration,
-    maximum: Duration,
-) -> Box<[ToolSchema]> {
-    for descriptor in &mut inventory {
-        match descriptor.kind {
-            ToolKind::Owned(tool) => match tool {
-                tools::Tool::Shell => descriptor.description = shell_description(default, maximum),
-                tools::Tool::Read
-                | tools::Tool::List
-                | tools::Tool::Search
-                | tools::Tool::Write
-                | tools::Tool::Edit => {}
-            },
-            ToolKind::Finish | ToolKind::Deliver | ToolKind::SubAgent | ToolKind::Wait => {}
-        }
+fn owned(tool: tools::Tool, name: &[u8], stated: &crate::Stated) -> ToolSchema {
+    ToolSchema {
+        kind: ToolKind::Owned(tool),
+        name: name.into(),
+        description: crate::descriptions::description(tool, stated),
+        schema: crate::descriptions::schema(tool, stated),
     }
-    inventory
-}
-
-fn shell_description(default: Duration, maximum: Duration) -> Box<[u8]> {
-    let opening = b"Run a command in the workspace. It may change files and runs alone. timeout is seconds; the default deadline is ";
-    let between = b" ms; the effective maximum is ";
-    let ending = b" ms, also bounded by this session's remaining time.";
-    let default = Decimal::of(default.as_nanos() / 1_000_000);
-    let maximum = Decimal::of(maximum.as_nanos() / 1_000_000);
-    let bytes = opening.len().checked_add(between.len()).expect("fixed words fit");
-    let bytes = bytes.checked_add(ending.len()).expect("fixed words fit");
-    let bytes = bytes.checked_add(default.as_bytes().len()).expect("one u64 decimal fits");
-    let bytes = bytes.checked_add(maximum.as_bytes().len()).expect("two u64 decimals fit");
-    let mut output = Writer::new(bytes);
-    output.put(opening).expect("description room");
-    output.put(default.as_bytes()).expect("description room");
-    output.put(between).expect("description room");
-    output.put(maximum.as_bytes()).expect("description room");
-    output.put(ending).expect("description room");
-    output.finish()
 }

@@ -23,12 +23,14 @@ mod completion;
 mod component;
 mod contract;
 mod decode;
+mod descriptions;
 mod endpoints;
 mod failure;
 mod grants;
 mod limits;
 mod prompt;
 mod render;
+mod stated;
 mod tools;
 mod types;
 
@@ -45,6 +47,7 @@ pub use grants::{GrantError, Grants};
 pub use limits::{Limits, Receiving, completion_worst_case, render_worst_case, worst_case};
 pub use prompt::{prepare_prompt, prompt};
 pub use render::{CUT_MARKER_BYTES, render_outcome};
+pub use stated::Stated;
 pub use tools::{schemas, schemas_for_contract};
 pub use types::{Context, Error, ResolvedCall, ToolKind, ToolSchema};
 

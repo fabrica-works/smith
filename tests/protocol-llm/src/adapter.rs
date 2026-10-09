@@ -7,7 +7,7 @@ use smith_domain::{llm, run};
 pub use smith_protocol_llm::{
     Below, BelowEvent, Component, ComponentError, ComponentLimits, ConfiguredEndpoint, Context, EndpointError,
     EndpointOptions, Endpoints, Error, FromDomain, GrantError, Grants, IdentityProfile, Limits, MAX_OUT, MaxOut,
-    Receiving, ResolvedCall, ToDomain, ToolKind, ToolSchema, cancelled, completion, completion_worst_case,
+    Receiving, ResolvedCall, Stated, ToDomain, ToolKind, ToolSchema, cancelled, completion, completion_worst_case,
     component_worst_case, decode, decode_deliver, decode_finish, deliver_schema, failed, finish_schema, prompt,
     refusal, render_outcome, render_worst_case, schemas, schemas_for_contract, worst_case,
 };
@@ -77,6 +77,14 @@ pub fn prepare_for_contract(
     deliver: Option<&run::outcome::ChangeSpec>,
     limits: &Limits,
 ) -> Result<Prepared, Error> {
-    input.application = schemas_for_contract(&input.prompt, outcome, deliver, limits.client.dialect.document_bytes)?;
+    input.application =
+        schemas_for_contract(&input.prompt, &limits.stated, outcome, deliver, limits.client.dialect.document_bytes)?;
     prepare(input, limits)
+}
+
+/// Effective fixture quantities shared by direct-client tests.
+#[must_use]
+pub fn stated() -> Stated {
+    Stated::from_tools(&crate::LIMITS.session.tools, skein_llm_world::limits().dialect.input_bytes)
+        .expect("fixture numeric bounds fit")
 }

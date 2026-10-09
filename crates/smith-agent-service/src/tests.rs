@@ -139,6 +139,11 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         assert!(machine.search_bytes >= tools.search_bytes);
         assert!(machine.path_bytes >= tools.path_bytes);
         assert_eq!(machine.env_bytes, configuration.environment_bytes);
+        assert_eq!(
+            limits.llm.adapter.stated,
+            smith_protocol_llm::Stated::from_tools(&tools, limits.llm.adapter.client.dialect.input_bytes,)
+                .expect("derived effective quantities fit")
+        );
     }
     let mut profile = crate::profile::standard();
     profile.declared.memory = Some(u64::MAX);
