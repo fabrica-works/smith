@@ -56,6 +56,7 @@ fn four_inspect_only_sub_agents_in_parallel_are_each_answered() {
     disk.write(b"work/README.md", b"Inspect this exact file.");
     let workspace = run::Workspace {
         directories: Box::new([run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: b"work".as_slice().into(),
             root: Token::new(disk.root(b"work")),
             writable: false,

@@ -30,6 +30,7 @@ fn saturated_searches_and_pipe_routes_stay_within_the_machine_bound() {
     let bound = machine::worst_case(&limits).expect("representable machine bound");
     let workspace = run::Workspace {
         directories: Box::new([run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: Box::from(&b"repo"[..]),
             root: Token::new(1),
             writable: false,
@@ -169,6 +170,7 @@ fn saturated_configured_environments_and_command_check_copies_fit_the_machine_bo
         let bound = machine::worst_case(&limits).expect("bounded saturated environment");
         let workspace = run::Workspace {
             directories: Box::new([run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"repo".as_slice().into(),
                 root: Token::new(1),
                 writable: false,

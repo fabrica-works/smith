@@ -33,6 +33,7 @@ const TOOLS: tools::Limits = tools::Limits {
     calls: 8,
     repos: 2,
     path_bytes: 64,
+    host_path_bytes: 4096,
     known_files: 8,
     file_bytes: 65_536,
     read_bytes: 4096,
@@ -313,7 +314,7 @@ fn authority(repos: u8) -> Authority {
             Some(other) => Box::new([named(b"other"), named(&[b'a'.checked_add(other).expect("few")])]),
         };
         let root = Token::new(ROOT.raw().checked_add(u64::from(repo)).expect("few"));
-        mounted.push(Repo { mount, root, writable: true }).expect("room for each");
+        mounted.push(Repo { host: Box::new([named(b"host")]), mount, root, writable: true }).expect("room for each");
     }
     Authority {
         cwd: Box::new([named(b"work")]),

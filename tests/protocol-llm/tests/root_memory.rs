@@ -108,6 +108,7 @@ fn bounds(messages: u32) -> Limits {
             brief_sections: 4,
             directories: 1,
             directory_name_bytes: 64,
+            host_path_bytes: 4096,
             conflicts: 64,
             conflict_path_bytes: 4096,
             host_tools: 0,
@@ -143,6 +144,7 @@ fn bounds(messages: u32) -> Limits {
                 calls: 1,
                 repos: 1,
                 path_bytes: 64,
+                host_path_bytes: 4096,
                 known_files: 1,
                 file_bytes: 64,
                 read_bytes: 64,
@@ -165,6 +167,7 @@ fn bounds(messages: u32) -> Limits {
 fn workspace() -> run::Workspace {
     run::Workspace {
         directories: Box::new([run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: b"work".as_slice().into(),
             root: Token::new(7),
             writable: false,
@@ -224,6 +227,7 @@ fn workspace_bytes(workspace: Option<&run::Workspace>) -> u64 {
             sum(workspace.directories.iter().map(|directory| {
                 sum([
                     len(&directory.name),
+                    len(&directory.host),
                     cells::<Box<[u8]>>(directory.conflicts.len()),
                     sum(directory.conflicts.iter().map(|path| len(path))),
                 ])
@@ -1452,6 +1456,13 @@ fn maximum_workspace(limits: &run::Limits) -> run::Workspace {
     let mounted = run::Workspace {
         directories: Box::new([
             run::Directory {
+                host: format!(
+                    "/{:h<width$}",
+                    "",
+                    width = usize::try_from(limits.host_path_bytes - 1).expect("positive host cap")
+                )
+                .into_bytes()
+                .into(),
                 name: vec![b'w'; 64].into_boxed_slice(),
                 root: Token::new(7),
                 writable: true,
@@ -1471,6 +1482,13 @@ fn maximum_workspace(limits: &run::Limits) -> run::Workspace {
                     .collect(),
             },
             run::Directory {
+                host: format!(
+                    "/{:h<width$}",
+                    "",
+                    width = usize::try_from(limits.host_path_bytes - 1).expect("positive host cap")
+                )
+                .into_bytes()
+                .into(),
                 name: vec![b'r'; 64].into_boxed_slice(),
                 root: Token::new(8),
                 writable: false,
@@ -1556,8 +1574,10 @@ fn maximum_convention_charter() -> run::Charter {
 fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     let path_bytes = run::Conventions::PATH_CAPACITY;
     let mut receiving = bounds(16);
-    receiving.run.run_bytes = 16_384;
     receiving.run.directories = 2;
+    // Host alias metadata is retained independently of the unchanged maximum
+    // Brief/convention text; give this attained fixture its additional bytes.
+    receiving.run.run_bytes = 16_384 + u64::from(receiving.run.directories) * u64::from(receiving.run.host_path_bytes);
     receiving.session.tools.repos = 2;
     // The receiving root must retain every rendered actual run result. Select
     // the public checked feedback bound exactly, rather than widening the

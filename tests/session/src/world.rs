@@ -56,6 +56,7 @@ pub const TOOLS: tools::Limits = tools::Limits {
     calls: 4,
     repos: 1,
     path_bytes: 256,
+    host_path_bytes: 4096,
     known_files: 16,
     file_bytes: 1 << 16,
     read_bytes: 4096,
@@ -270,7 +271,12 @@ impl Settings {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn spec(prompt: &[u8]) -> agent::Spec {
-    let repo = Repo { mount: io::names(b"/work"), root: Token::new(0), writable: true };
+    let repo = Repo {
+        host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
+        mount: io::names(b"/work"),
+        root: Token::new(0),
+        writable: true,
+    };
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {

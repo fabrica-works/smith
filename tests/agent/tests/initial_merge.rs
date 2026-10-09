@@ -189,6 +189,7 @@ fn setup() -> Fixture {
     let workspace = run::Workspace {
         directories: Box::new([
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"work".as_slice().into(),
                 root: roots[0],
                 writable: true,
@@ -196,6 +197,7 @@ fn setup() -> Fixture {
                 conflicts: actual_conflicts.iter().map(|path| path.as_slice().into()).collect(),
             },
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"archive".as_slice().into(),
                 root: roots[1],
                 writable: false,
@@ -203,6 +205,7 @@ fn setup() -> Fixture {
                 conflicts: Box::new([b"other-conflict.txt".as_slice().into()]),
             },
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"notes".as_slice().into(),
                 root: roots[2],
                 writable: true,
@@ -210,6 +213,7 @@ fn setup() -> Fixture {
                 conflicts: Box::new([]),
             },
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"reference".as_slice().into(),
                 root: roots[3],
                 writable: false,

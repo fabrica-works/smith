@@ -13,6 +13,7 @@ pub const LIMITS: Limits = Limits {
     calls: 3,
     repos: 2,
     path_bytes: 63,
+    host_path_bytes: 63,
     known_files: 4,
     file_bytes: 256,
     read_bytes: 64,
@@ -54,10 +55,20 @@ pub fn authority(limits: &Limits) -> Authority {
     let len = usize::try_from(limits.path_bytes).expect("a small limit");
     let names = len.div_ceil(2);
     let cwd: Box<[Name]> = (0..names).map(|_| name(b"a")).collect();
-    let mut repos = vec![Repo { mount: Box::new([]), root: Token::new(0), writable: true }];
+    let mut repos = vec![Repo {
+        host: Box::new([name(&vec![b'h'; usize::try_from(limits.host_path_bytes).expect("bounded host path")])]),
+        mount: Box::new([]),
+        root: Token::new(0),
+        writable: true,
+    }];
     for repo in 1..limits.repos {
         let mount = format!("{repo:0>len$}");
-        repos.push(Repo { mount: Box::new([name(mount.as_bytes())]), root: Token::new(repo.into()), writable: false });
+        repos.push(Repo {
+            host: Box::new([name(&vec![b'h'; usize::try_from(limits.host_path_bytes).expect("bounded host path")])]),
+            mount: Box::new([name(mount.as_bytes())]),
+            root: Token::new(repo.into()),
+            writable: false,
+        });
     }
     Authority { cwd, repos: repos.into(), grants: GRANTS }
 }

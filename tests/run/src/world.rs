@@ -198,6 +198,7 @@ const fn calm_run_limits() -> run::Limits {
         brief_sections: 4,
         directories: 4,
         directory_name_bytes: 256,
+        host_path_bytes: 4096,
         conflicts: 64,
         conflict_path_bytes: 4096,
         host_tools: 4,

@@ -1,5 +1,6 @@
 //! Host-owned Start data becomes one checked channel frame (protocol/channel.md, section 3).
-//! The host service supplies paths and credential values; the host domain never keeps them.
+//! The host service supplies opening paths and credential values; the host domain
+//! retains alias metadata and never credential values.
 use alloc::boxed::Box;
 use skein_channel::{Frame, frame_writer};
 use skein_lib::{List, Writer};

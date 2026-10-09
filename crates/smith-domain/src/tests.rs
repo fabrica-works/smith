@@ -64,6 +64,7 @@ const LIMITS: Limits = Limits {
         brief_sections: 4,
         directories: 2,
         directory_name_bytes: 64,
+        host_path_bytes: 4096,
         conflicts: 64,
         conflict_path_bytes: 4096,
         host_tools: 2,
@@ -118,6 +119,7 @@ const LIMITS: Limits = Limits {
             calls: 4,
             repos: 2,
             path_bytes: 64,
+            host_path_bytes: 4096,
             known_files: 8,
             file_bytes: 65_536,
             read_bytes: 4096,
@@ -451,6 +453,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 fn workspace() -> Workspace {
     Workspace {
         directories: Box::new([Directory {
+            host: Box::from(b"/host".as_slice()),
             name: bytes(b"temper"),
             root: Token::new(900),
             writable: true,
@@ -931,6 +934,7 @@ fn an_unsafe_workspace_mount_refuses_start_before_discovery() {
     let mut h = Harness::new();
     let checkout = Workspace {
         directories: Box::new([Directory {
+            host: Box::from(b"/host".as_slice()),
             name: bytes(b"ai/temper"),
             root: Token::new(900),
             writable: true,
@@ -1458,6 +1462,7 @@ fn convention_workspace() -> Workspace {
     Workspace {
         directories: Box::new([
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"work"),
                 root: Token::new(900),
                 writable: true,
@@ -1465,6 +1470,7 @@ fn convention_workspace() -> Workspace {
                 conflicts: Box::new([]),
             },
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"reference"),
                 root: Token::new(901),
                 writable: false,
@@ -1779,6 +1785,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
             workspace: Some(Workspace {
                 directories: Box::new([
                     Directory {
+                        host: Box::from(b"/host".as_slice()),
                         name: bytes(b"work"),
                         root: Token::new(900),
                         writable: false,
@@ -1786,6 +1793,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
                         conflicts: Box::new([]),
                     },
                     Directory {
+                        host: Box::from(b"/host".as_slice()),
                         name: bytes(b"reference"),
                         root: Token::new(901),
                         writable: false,

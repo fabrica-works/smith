@@ -420,6 +420,7 @@ impl Application {
         );
         component.workspace(&run::Workspace {
             directories: Box::new([run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"repo".as_slice().into(),
                 root,
                 writable,

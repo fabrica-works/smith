@@ -40,6 +40,7 @@ pub use limits::{Error, Limits, MaxOut, max_out, worst_case};
 pub use result::decode_declared;
 pub use transcript::{decode_transcript, decode_turn};
 pub use translate::{
-    DecodedStart, Endpoint, Endpoints, Grant, Mount, answer_record, decode_charter, encode_result, start_context,
+    DecodedStart, Endpoint, Endpoints, Grant, Mount, answer_record, decode_charter, encode_result, host_path,
+    start_context,
 };
 pub use turn::encode_turn;

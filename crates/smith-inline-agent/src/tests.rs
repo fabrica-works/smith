@@ -423,6 +423,7 @@ fn directories_move_the_exact_io_root_into_the_run() {
     let workspace = crate::workspace::start(
         Some(Token::new(10)),
         Box::from([host::Directory {
+            host: Box::from(b"/host".as_slice()),
             root: Token::new(900),
             name: b"mounted".as_slice().into(),
             writable: false,

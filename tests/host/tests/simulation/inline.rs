@@ -228,6 +228,7 @@ fn workspace_start(seed: u64) -> smith_host_domain::Start {
         smith_host_domain::Charter::new(charter, settings.limits.run.run_bytes).expect("workspace charter");
     source.workspace = Some(Token::new(9));
     source.directories = Box::from([smith_host_domain::Directory {
+        host: Box::from(b"/host".as_slice()),
         name: b"work".as_slice().into(),
         root: Token::new(1),
         writable: true,

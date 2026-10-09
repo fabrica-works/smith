@@ -298,6 +298,7 @@ fn a_delivery_call_keeps_its_fields_owner_and_deadline_in_local_policy() {
     });
     config.workspace = Some(run::Workspace {
         directories: Box::from([run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: b"work".as_slice().into(),
             root: Token::new(9),
             writable: true,

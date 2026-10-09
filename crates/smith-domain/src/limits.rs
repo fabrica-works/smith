@@ -77,6 +77,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         || run_limits.conversations > session_limits.sessions
         || run_limits.directories > session_limits.tools.repos
         || run_limits.directory_name_bytes > session_limits.tools.path_bytes
+        || run_limits.host_path_bytes > session_limits.tools.host_path_bytes
         || u64::from(run_limits.answered_bytes) > session_limits.session_bytes
     {
         return None;
@@ -133,7 +134,14 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Moving directory names into tools authority overlaps its receiving Repo
     // cells and one allocated Name mount per directory with the source array;
     // cwd additionally clones the first Name and its payload.
+    let host_names = run_limits.host_path_bytes.checked_add(1)? / 2;
+    let host_cells = directories
+        .checked_mul(u64::from(host_names))?
+        .checked_mul(u64::try_from(size_of::<smith_domain_tools::Name>()).ok()?)?;
+    let host_copy = directories.checked_mul(u64::from(run_limits.host_path_bytes))?.min(run_limits.run_bytes);
     let authority_cells = skein_lib::List::<smith_domain_tools::Repo>::worst_case(run_limits.directories)?
+        .checked_add(host_cells)?
+        .checked_add(host_copy)?
         .checked_add(
             directories.checked_add(1)?.checked_mul(u64::try_from(size_of::<smith_domain_tools::Name>()).ok()?)?,
         )?

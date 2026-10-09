@@ -371,7 +371,9 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
         .checked_add(u64::from(limits.machine.env_bytes))?
         .checked_mul(u64::from(limits.machine.processes))?;
     let pipe_routes = Map::<Token, Token>::worst_case(limits.machine.processes.checked_mul(2)?)?;
+    let host_bytes = u64::from(limits.machine.roots).checked_mul(u64::from(limits.domain.run.host_path_bytes))?;
     let roots = List::<run::Directory>::worst_case(limits.machine.roots)?
+        .checked_add(host_bytes)?
         .checked_add(List::<Token>::worst_case(limits.machine.roots)?)?;
     domain::worst_case(&limits.domain)?
         .checked_add(channel::worst_case(&limits.channel)?)?
@@ -564,9 +566,15 @@ impl Service {
         }
     }
 
+    /// Receiving ceiling for absolute host metadata at root attachment.
+    #[must_use]
+    pub fn host_path_bytes(&self) -> u32 {
+        self.limits.domain.run.host_path_bytes
+    }
+
     /// Attach one opened mount in Start order, or refuse the Start if the
-    /// shell could not open it. Root paths never enter the domain.
-    pub fn root_opened(&mut self, root: Result<kernel::Fd, ()>) {
+    /// shell could not open it. Absolute host metadata is retained for aliases.
+    pub fn root_opened(&mut self, root: Result<kernel::Fd, ()>, host: Box<[u8]>) {
         match root {
             Ok(fd) => match self.files.adopt_root(fd) {
                 Some(token) => {
@@ -578,6 +586,7 @@ impl Service {
                     let mount = mounts.get(index).expect("one mount requested at a time");
                     self.directories
                         .push(run::Directory {
+                            host,
                             name: mount.name.clone(),
                             root: token,
                             writable: mount.writable,

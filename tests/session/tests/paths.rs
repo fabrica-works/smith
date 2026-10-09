@@ -13,9 +13,17 @@ fn a_resolved_missing_path_reaches_the_llm_in_the_fixed_conversation_namespace()
         let mut opening = recorded::opening(None, u64::MAX);
         opening.spec.delegated = Box::new([]);
         let name = Name::new(b"work".as_slice().into()).expect("working name");
-        let mut repos = vec![Repo { mount: Box::new([name.clone()]), root: Token::new(10), writable: true }];
+        let mut repos = vec![Repo {
+            host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
+            mount: Box::new([name.clone()]),
+            root: Token::new(10),
+            writable: true,
+        }];
         if several {
             repos.push(Repo {
+                host: Box::new([
+                    smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")
+                ]),
                 mount: Box::new([Name::new(b"docs".as_slice().into()).expect("other name")]),
                 root: Token::new(11),
                 writable: false,

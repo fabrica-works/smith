@@ -1056,12 +1056,16 @@ fn paths_in_one_directory_and_in_several() {
     for several in [false, true] {
         let fixture = Fixture::new();
         let mut repos = vec![tools::Repo {
+            host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
             mount: Box::new([Name::new(b"work-hidden".as_slice().into()).expect("valid namespace fixture")]),
             root: fixture.repos[0].root,
             writable: true,
         }];
         if several {
             repos.push(tools::Repo {
+                host: Box::new([
+                    smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")
+                ]),
                 mount: Box::new([Name::new(b"docs".as_slice().into()).expect("valid namespace fixture")]),
                 root: fixture.repos[2].root,
                 writable: false,
@@ -1117,12 +1121,16 @@ fn a_directory_name_written_as_a_prefix_fails_with_the_path_it_resolved_to() {
     for several in [false, true] {
         let fixture = Fixture::new();
         let mut repos = vec![tools::Repo {
+            host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
             mount: Box::new([Name::new(b"work".as_slice().into()).expect("working directory")]),
             root: fixture.repos[0].root,
             writable: true,
         }];
         if several {
             repos.push(tools::Repo {
+                host: Box::new([
+                    smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")
+                ]),
                 mount: Box::new([Name::new(b"docs".as_slice().into()).expect("other directory")]),
                 root: fixture.repos[2].root,
                 writable: false,
@@ -1153,4 +1161,43 @@ fn a_directory_name_written_as_a_prefix_fails_with_the_path_it_resolved_to() {
         assert_eq!(world.answers(session), expected.iter().collect::<Vec<_>>());
         assert_eq!(world.stats().ops, 4);
     }
+}
+
+#[test]
+fn a_host_alias_reaches_the_same_file() {
+    let fixture = Fixture::new();
+    let mut authority = fixture.authority(MODIFY);
+    authority.repos[0].host = smith_tools_world::translate::names(b"/tmp/real-work");
+    authority.repos[1].host = smith_tools_world::translate::names(b"/tmp/real-vendor");
+    authority.repos[2].host = smith_tools_world::translate::names(b"/tmp/real-docs");
+    let mut world = World::new(Settings::calm(9109), fixture.checkout);
+    let session = world.session(
+        Time::ZERO,
+        authority,
+        vec![
+            Step::Calls(vec![
+                read(b"src/lib.rs"),
+                read(b"/tmp/real-work/src/lib.rs"),
+                read(b"/tmp/real-work/src/../src/lib.rs"),
+                read(b"/tmp/real-work/escape"),
+                write(b"/tmp/real-docs/guide.md", b"changed"),
+            ]),
+            Step::Calls(vec![write(b"/tmp/real-work/src/lib.rs", LIB)]),
+            Step::Calls(vec![read(b"src/lib.rs")]),
+        ],
+    );
+    world.run(ITERATIONS);
+    assert_eq!(
+        world.answers(session),
+        vec![
+            &read_of(LIB, 0, 3, 3),
+            &read_of(LIB, 0, 3, 3),
+            &read_of(LIB, 0, 3, 3),
+            &Outcome::Outside { path: tools::Resolved::Working { path: b"temper/escape".as_slice().into() } },
+            &Outcome::ReadOnly { path: tools::Resolved::Working { path: b"docs/guide.md".as_slice().into() } },
+            &Outcome::Written { created: false },
+            &read_of(LIB, 0, 3, 3),
+        ]
+    );
+    assert_eq!(world.stats().ops, 6);
 }

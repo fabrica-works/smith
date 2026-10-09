@@ -27,6 +27,9 @@ pub struct Directory {
     /// unchanged without domain decoding or replacement.
     pub name: Box<[u8]>,
 
+    /// Normalized absolute host path, supplied at root attachment and bounded by `host_path_bytes`.
+    pub host: Box<[u8]>,
+
     /// Unique opaque lower IO root, carrying no filesystem knowledge here.
     pub root: Token,
 
@@ -70,7 +73,8 @@ pub(crate) fn admit(workspace: Option<&Workspace>, limits: &Limits) -> Result<()
     }
     // All receiving count and byte limits precede pairwise work.
     for directory in mounted {
-        if exceeds(directory.name.len(), limits.directory_name_bytes)
+        if exceeds(directory.host.len(), limits.host_path_bytes)
+            || exceeds(directory.name.len(), limits.directory_name_bytes)
             || exceeds(directory.conflicts.len(), limits.conflicts)
         {
             return Err(Invalid::Workspace);
@@ -88,7 +92,10 @@ pub(crate) fn check(workspace: Option<&Workspace>, limits: &Limits) -> Result<()
     admit(workspace, limits)?;
     let mounted = directories(workspace);
     for (position, directory) in mounted.iter().enumerate() {
-        if !safe_name(&directory.name) || (!directory.git && !directory.conflicts.is_empty()) {
+        if !absolute_path(&directory.host)
+            || !safe_name(&directory.name)
+            || (!directory.git && !directory.conflicts.is_empty())
+        {
             return Err(Invalid::Workspace);
         }
         for earlier in mounted.get(..position).expect("enumerated directory") {
@@ -135,10 +142,20 @@ pub(crate) fn cost(workspace: Option<&Workspace>) -> Option<u64> {
     let cell = u64::try_from(size_of::<Directory>()).ok()?;
     let path_cell = u64::try_from(size_of::<Box<[u8]>>()).ok()?;
     for directory in directories(workspace) {
-        cost = cost.checked_add(cell)?.checked_add(len(&directory.name)?)?;
+        cost = cost.checked_add(cell)?.checked_add(len(&directory.name)?)?.checked_add(len(&directory.host)?)?;
         for path in &directory.conflicts {
             cost = cost.checked_add(path_cell)?.checked_add(len(path)?)?;
         }
     }
     Some(cost)
+}
+
+fn absolute_path(path: &[u8]) -> bool {
+    let Some(relative) = path.strip_prefix(b"/") else {
+        return false;
+    };
+    if relative.is_empty() {
+        return true;
+    }
+    delivery::relative_path(relative)
 }

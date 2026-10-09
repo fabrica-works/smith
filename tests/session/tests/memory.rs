@@ -28,7 +28,12 @@ fn name() -> Name {
 fn authority() -> Authority {
     Authority {
         cwd: Box::new([name()]),
-        repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(1), writable: false }]),
+        repos: Box::new([Repo {
+            host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
+            mount: Box::new([name()]),
+            root: Token::new(1),
+            writable: false,
+        }]),
         grants: Grants { inspect: true, modify: false, shell: false },
     }
 }
@@ -723,6 +728,7 @@ fn restore_tail_tools() -> smith_domain_tools::Limits {
         kits: 1,
         calls: 1,
         path_bytes: 16,
+        host_path_bytes: 4096,
         known_files: 0,
         file_bytes: 16,
         read_bytes: 16,
@@ -921,6 +927,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
                 // This control attains read payload credit; its possible failure
                 // path fits beneath that credit as well.
                 path_bytes: 3,
+                host_path_bytes: 4096,
                 ..base.tools
             },
             ..base

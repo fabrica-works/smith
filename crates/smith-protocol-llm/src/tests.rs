@@ -17,6 +17,7 @@ fn tools() -> tools::Limits {
         calls: 1,
         repos: 1,
         path_bytes: 32,
+        host_path_bytes: 4096,
         known_files: 1,
         file_bytes: 1024,
         read_bytes: 64,

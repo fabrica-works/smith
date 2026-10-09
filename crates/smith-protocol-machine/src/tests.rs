@@ -40,6 +40,7 @@ fn configured_component(variables: &[crate::Variable]) -> Component {
     );
     component.workspace(&run::Workspace {
         directories: Box::new([run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: Box::from(&b"code"[..]),
             root: Token::new(10),
             writable: true,

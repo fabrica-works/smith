@@ -34,6 +34,7 @@ fn maximum_start(limits: Limits) -> Start {
         },
         directories: (0..limits.directories)
             .map(|at| Directory {
+                host: Box::from(b"/host".as_slice()),
                 root: Token::new(u64::from(at) + 1),
                 name: vec![
                     b'a' + u8::try_from(at).expect("few dirs");

@@ -39,6 +39,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
             reply: channel::SavedReply::Host { error: false, body: Box::from(*b"ok") },
         }]),
         directories: Box::from([channel::Directory {
+            host: Box::from(b"/host".as_slice()),
             root: Token::new(1),
             name: Box::from(*b"src"),
             writable: true,

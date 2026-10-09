@@ -147,6 +147,7 @@ fn an_actual_command_crosses_the_channel_and_outlasts_no_progress_until_its_term
         answered: Box::default(),
         workspace: Some(agent::run::Workspace {
             directories: Box::from([agent::run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"work".as_slice().into(),
                 root: Token::new(900),
                 writable: true,

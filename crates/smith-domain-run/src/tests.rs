@@ -38,6 +38,7 @@ pub(crate) const LIMITS: Limits = Limits {
     brief_sections: 4,
     directories: 2,
     directory_name_bytes: 256,
+    host_path_bytes: 4096,
     conflicts: 64,
     conflict_path_bytes: 4096,
     host_tools: 2,
@@ -261,6 +262,7 @@ pub(crate) fn rule(name: &[u8], min: u32, max: u32) -> VerdictRule {
 pub(crate) fn workspace() -> Workspace {
     Workspace {
         directories: Box::new([Directory {
+            host: Box::from(b"/host".as_slice()),
             name: bytes(b"temper"),
             root: Token::new(900),
             writable: false,
@@ -386,6 +388,7 @@ fn a_run_looks_for_checks_in_writable_repositories_when_a_change_must_pass_them(
     let checkout = Workspace {
         directories: Box::new([
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"temper"),
                 root: Token::new(900),
                 writable: true,
@@ -393,6 +396,7 @@ fn a_run_looks_for_checks_in_writable_repositories_when_a_change_must_pass_them(
                 conflicts: Box::new([]),
             },
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"docs"),
                 root: Token::new(901),
                 writable: false,
@@ -674,7 +678,14 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
 }
 
 fn repository(name: &[u8]) -> Directory {
-    Directory { name: bytes(name), root: Token::new(1), writable: true, git: true, conflicts: Box::new([]) }
+    Directory {
+        host: Box::from(b"/host".as_slice()),
+        name: bytes(name),
+        root: Token::new(1),
+        writable: true,
+        git: true,
+        conflicts: Box::new([]),
+    }
 }
 
 fn spec(verdicts: Box<[VerdictRule]>) -> OutcomeSpec {
@@ -892,6 +903,7 @@ fn coding_workspace() -> Workspace {
     Workspace {
         directories: Box::new([
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"temper"),
                 root: Token::new(900),
                 writable: true,
@@ -899,6 +911,7 @@ fn coding_workspace() -> Workspace {
                 conflicts: Box::new([]),
             },
             Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: bytes(b"docs"),
                 root: Token::new(901),
                 writable: true,
@@ -2954,7 +2967,14 @@ fn workspace_directory(name: &[u8], root: u64, writable: bool, git: bool, confli
     for path in conflicts {
         paths.push(bytes(path)).expect("bounded fixture conflict count");
     }
-    Directory { name: bytes(name), root: Token::new(root), writable, git, conflicts: paths.into_boxed() }
+    Directory {
+        host: Box::from(b"/host".as_slice()),
+        name: bytes(name),
+        root: Token::new(root),
+        writable,
+        git,
+        conflicts: paths.into_boxed(),
+    }
 }
 
 fn mixed_workspace() -> Workspace {
@@ -3131,7 +3151,7 @@ fn exact_workspace_limits_and_aggregate_price_include_every_owner() {
     let mounted = mixed_workspace();
     let directory_cells = 2 * u64::try_from(size_of::<Directory>()).unwrap();
     let conflict_cell = u64::try_from(size_of::<Box<[u8]>>()).unwrap();
-    let owned = directory_cells + 4 + 9 + conflict_cell + 12;
+    let owned = directory_cells + 4 + 9 + 10 + conflict_cell + 12;
     assert_eq!(crate::workspace::cost(Some(&mounted)), Some(owned));
     assert_eq!(crate::workspace::cost(None), Some(0));
     let policy = charter();
@@ -3949,4 +3969,23 @@ fn absent_identities_draw_deterministically_only_for_admitted_unspecified_starts
     let mut different = Harness::new(LIMITS);
     different.domain = Domain::new(&LIMITS, 92);
     assert_ne!(identity_open(&mut different, None).2.identity, first_opening.identity);
+}
+
+#[test]
+fn workspace_host_paths_fit_their_receiving_bound_and_normalized_absolute_shape() {
+    let mut mounted = workspace();
+    let exact = u32::try_from(mounted.directories[0].host.len()).unwrap();
+    assert_eq!(crate::workspace::check(Some(&mounted), &Limits { host_path_bytes: exact, ..LIMITS }), Ok(()));
+    assert_eq!(
+        crate::workspace::check(Some(&mounted), &Limits { host_path_bytes: exact - 1, ..LIMITS }),
+        Err(Invalid::Workspace)
+    );
+    for host in
+        [b"relative".as_slice(), b"/a/../b".as_slice(), b"/a//b".as_slice(), b"/a/".as_slice(), b"/a\0b".as_slice()]
+    {
+        mounted.directories[0].host = bytes(host);
+        assert_eq!(crate::workspace::check(Some(&mounted), &LIMITS), Err(Invalid::Workspace));
+    }
+    mounted.directories[0].host = bytes(b"/");
+    assert_eq!(crate::workspace::check(Some(&mounted), &LIMITS), Ok(()));
 }

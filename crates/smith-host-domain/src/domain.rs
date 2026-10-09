@@ -550,7 +550,8 @@ fn valid_start(start: &Start, limits: &Limits) -> Option<Invalid> {
         return Some(Invalid::Directories);
     }
     for directory in &start.directories {
-        if !within(&directory.name, u64::from(limits.name_bytes))
+        if !within(&directory.host, u64::from(limits.path_bytes))
+            || !within(&directory.name, u64::from(limits.name_bytes))
             || directory.conflicts.len() > usize::try_from(limits.conflicts).expect("u32 fits usize")
         {
             return Some(Invalid::Directories);

@@ -72,6 +72,7 @@ pub(crate) fn start(
             for directory in directories {
                 mounted
                     .push(run::Directory {
+                        host: directory.host,
                         name: directory.name,
                         root: directory.root,
                         writable: directory.writable,

@@ -64,6 +64,7 @@ impl Settings {
                 calls: 8,
                 repos: 4,
                 path_bytes: 256,
+                host_path_bytes: 4096,
                 known_files: 16,
                 file_bytes: 4096,
                 read_bytes: 1024,
@@ -964,7 +965,12 @@ fn session_of(fact: &tools::Fact) -> Token {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 pub fn repo(checkout: &mut Checkout, mount: &[u8], writable: bool) -> Repo {
     let root = checkout.root(mount.strip_prefix(b"/").expect("a mount is absolute"));
-    Repo { mount: translate::names(mount), root: translate::token(root), writable }
+    Repo {
+        host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
+        mount: translate::names(mount),
+        root: translate::token(root),
+        writable,
+    }
 }
 
 /// An authority whose relative paths start at `cwd`; the fake machine owns

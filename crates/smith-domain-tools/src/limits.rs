@@ -28,6 +28,8 @@ pub struct Limits {
     /// joined by `/`: a path a call names, a mount, the working directory.
     /// A call's spelling before normalisation must also fit, including dots.
     pub path_bytes: u32,
+    /// Longest joined absolute host alias, independent of a tool call spelling.
+    pub host_path_bytes: u32,
     /// Files a kit remembers the LLM read. Past them, the one read longest
     /// ago is forgotten, and must be read again before it is changed.
     pub known_files: u32,
@@ -93,12 +95,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // references to those and the working directory, then the joined path
     // and its copy beneath the chosen repository.
     let parts = limits.path_bytes.checked_add(1)? / 2;
+    let host_refs = List::<&Name>::worst_case(limits.host_path_bytes.checked_add(1)? / 2)?;
     let scratch = List::<bool>::worst_case(parts)?
         .checked_add(List::<&Name>::worst_case(parts.checked_mul(2)?)?)?
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?;
     // A pure namespace listing borrows and sorts at most one name per mount.
     let names = List::<&[u8]>::worst_case(limits.repos)?;
-    kits.checked_add(jobs)?.checked_add(facts)?.checked_add(scratch)?.checked_add(names)
+    kits.checked_add(jobs)?.checked_add(facts)?.checked_add(scratch)?.checked_add(names)?.checked_add(host_refs)
 }
 
 /// Maximum dynamic ownership of this call's outcome, excluding its
@@ -141,7 +144,8 @@ fn authority(limits: &Limits) -> Option<u64> {
     let cwd_names = limits.path_bytes.checked_add(1)? / 2;
     let cwd = List::<Name>::worst_case(cwd_names)?.checked_add(path_bytes)?;
     let mount_bytes = u64::from(limits.repos).checked_mul(path_bytes)?;
-    let mounts = List::<Mount>::worst_case(limits.repos)?.checked_add(mount_bytes)?;
+    let hosts = u64::from(limits.repos).checked_mul(u64::from(limits.host_path_bytes))?;
+    let mounts = List::<Mount>::worst_case(limits.repos)?.checked_add(mount_bytes)?.checked_add(hosts)?;
     let roots = List::<Root>::worst_case(limits.repos)?;
     cwd.checked_add(mounts)?.checked_add(roots)
 }
@@ -202,6 +206,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         calls: inputs.calls_per_response.min(4),
         repos: 2,
         path_bytes: 256,
+        host_path_bytes: 4096,
         known_files: 16,
         file_bytes: inputs.tool_payload,
         read_bytes: inputs.read_window,

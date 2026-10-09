@@ -171,6 +171,7 @@ fn workspace(writable: bool) -> (Checkout, run::Workspace) {
         disk,
         run::Workspace {
             directories: Box::new([run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"work".as_slice().into(),
                 root,
                 writable,

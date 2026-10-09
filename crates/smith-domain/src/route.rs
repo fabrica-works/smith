@@ -267,6 +267,7 @@ fn start(
     if !compatible
         || env.limits.run.directories > env.limits.session.tools.repos
         || env.limits.run.directory_name_bytes > env.limits.session.tools.path_bytes
+        || env.limits.run.host_path_bytes > env.limits.session.tools.host_path_bytes
     {
         domain.notices.push(Request::Answer {
             read: None,

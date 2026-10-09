@@ -80,6 +80,8 @@ pub struct Directory {
     /// Unique safe single component bounded by `Limits::name_bytes`; the host
     /// attests text encoding, and bytes move unchanged.
     pub name: Box<[u8]>,
+    /// Absolute host path retained for inline workspace aliases, within `Limits::path_bytes`.
+    pub host: Box<[u8]>,
     /// Parent write authority for the mount.
     pub writable: bool,
     /// Parent declares a git working tree; plain directories have no conflicts

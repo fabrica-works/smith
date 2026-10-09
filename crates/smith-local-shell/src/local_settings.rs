@@ -241,8 +241,16 @@ pub fn policy(
             .map_err(|_| "too many workspace directories")?
             .checked_add(1)
             .ok_or("directory token overflow")?;
-        paths.push(directory.path.as_bytes().into());
+        let absolute =
+            std::path::absolute(Path::new(&directory.path)).map_err(|_| "workspace host path is unavailable")?;
+        let host = smith_protocol_channel::host_path(
+            absolute.as_os_str().as_encoded_bytes(),
+            agent_limits.run.host_path_bytes,
+        )
+        .ok_or("workspace host path exceeds its bound")?;
+        paths.push(host.clone());
         directories.push(run::Directory {
+            host,
             name: directory.name.as_bytes().into(),
             root: Token::new(number),
             writable: directory.writable,
@@ -697,5 +705,10 @@ mod tests {
         settings.sub_agents = true;
         assert_eq!(decoded.reserve, run::charter::Reserve { turns: 2, time: Duration::from_secs(300) });
         assert_sub_agent_grant(&settings, &endpoints, &agent_limits, &decoded);
+        settings.directories = vec![Directory { name: "work".into(), path: ".".into(), writable: true, git: false }];
+        let prepared = policy(&settings, &endpoints, agent_limits).expect("relative host path remains usable");
+        let mounted = prepared.config.workspace.as_ref().expect("workspace");
+        assert_eq!(mounted.directories[0].host, prepared.paths[0]);
+        assert_eq!(mounted.directories[0].host.first(), Some(&b'/'));
     }
 }

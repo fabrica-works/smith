@@ -68,7 +68,10 @@ impl Host for Tracing {
         while self.service.pop_trace_content().is_some() {}
         drop(self.service.pop_trace_prompt());
         while self.service.root_to_open().is_some() {
-            self.service.root_opened(self.roots.next().ok_or(()));
+            let path = self.service.root_to_open().expect("pending root");
+            let host =
+                smith_protocol_channel::host_path(path, self.service.host_path_bytes()).expect("absolute fixture path");
+            self.service.root_opened(self.roots.next().ok_or(()), host);
         }
         self.channel_loss = self.service.lost_channel_facts();
         self.trace_loss = self.service.lost_trace_facts();

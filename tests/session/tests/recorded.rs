@@ -346,7 +346,14 @@ fn owned_io_cancellation_keeps_terminal_results_in_the_turn() {
         let name = || Name::new(b"repo".as_slice().into()).expect("a repository mount");
         spec.spec.authority = Authority {
             cwd: Box::new([name()]),
-            repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(7), writable: false }]),
+            repos: Box::new([Repo {
+                host: Box::new([
+                    smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")
+                ]),
+                mount: Box::new([name()]),
+                root: Token::new(7),
+                writable: false,
+            }]),
             grants: Grants { inspect: true, modify: false, shell: false },
         };
         world.open(spec);
@@ -683,7 +690,14 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
             let mount = || Name::new(b"repo".as_slice().into()).expect("mount");
             spec.spec.authority = Authority {
                 cwd: Box::new([mount()]),
-                repos: Box::new([Repo { mount: Box::new([mount()]), root: Token::new(7), writable: true }]),
+                repos: Box::new([Repo {
+                    host: Box::new([
+                        smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")
+                    ]),
+                    mount: Box::new([mount()]),
+                    root: Token::new(7),
+                    writable: true,
+                }]),
                 grants: Grants { inspect: true, modify: true, shell: true },
             };
             fill_initial(&mut spec, world.env.limits.session_bytes - skeleton - credit + u64::from(short));
@@ -895,7 +909,12 @@ fn a_write_refused_as_too_large_is_made_in_pieces_and_accepted() {
     let name = || Name::new(b"repo".as_slice().into()).expect("repository mount");
     spec.spec.authority = Authority {
         cwd: Box::new([name()]),
-        repos: Box::new([Repo { mount: Box::new([name()]), root: Token::new(7), writable: true }]),
+        repos: Box::new([Repo {
+            host: Box::new([smith_domain_tools::Name::new(Box::from(b"host".as_slice())).expect("fixture host name")]),
+            mount: Box::new([name()]),
+            root: Token::new(7),
+            writable: true,
+        }]),
         grants: Grants { inspect: true, modify: true, shell: false },
     };
     world.open(spec);

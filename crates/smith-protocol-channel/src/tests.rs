@@ -320,3 +320,13 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
     let second = crate::encode_turn(&second, &limits, &endpoints).expect("second window bytes");
     assert_eq!(crate::decode_transcript(&[first, second], &limits, &endpoints), Err(record::Refusal::Malformed));
 }
+
+#[test]
+fn attached_host_paths_are_normalized_before_copying_and_stay_bounded() {
+    assert_eq!(crate::host_path(b"/tmp/work/./src/../", 32), Some(Box::from(b"/tmp/work".as_slice())));
+    assert_eq!(crate::host_path(b"/../../", 32), Some(Box::from(b"/".as_slice())));
+    assert_eq!(crate::host_path(b"/abc", 4), Some(Box::from(b"/abc".as_slice())));
+    assert_eq!(crate::host_path(b"/abc", 3), None);
+    assert_eq!(crate::host_path(b"relative", 32), None);
+    assert_eq!(crate::host_path(b"/a\0b", 32), None);
+}

@@ -581,6 +581,7 @@ impl World {
         let root = fixture::seed(&mut disk);
         let workspace = Some(run::Workspace {
             directories: Box::new([run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"work".as_slice().into(),
                 root: Token::new(root),
                 writable: settings.writable,

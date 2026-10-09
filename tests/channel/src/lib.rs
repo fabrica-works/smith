@@ -591,6 +591,7 @@ impl World {
                 reply,
             }]),
             directories: Box::from([smith_host_domain::channel::Directory {
+                host: Box::from(b"/host".as_slice()),
                 root: Token::new(1),
                 name: Box::from(*b"src"),
                 writable: true,

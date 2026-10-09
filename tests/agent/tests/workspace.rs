@@ -41,7 +41,14 @@ fn mixed_disk() -> (Checkout, run::Workspace) {
             disk.write(&[name, b"/.git/HEAD"].concat(), b"host-owned");
         }
         let root = Token::new(disk.root(name));
-        directories.push(run::Directory { name: name.into(), root, writable, git, conflicts: Box::new([]) });
+        directories.push(run::Directory {
+            host: Box::from(b"/host".as_slice()),
+            name: name.into(),
+            root,
+            writable,
+            git,
+            conflicts: Box::new([]),
+        });
     }
     (disk, run::Workspace { directories: directories.into() })
 }
@@ -105,6 +112,7 @@ fn a_delivery_to_three_directories_failing_in_the_second_names_that_directory() 
         disk.write(&[name, b"/.temper/pre-pr"].concat(), b"#!checks");
         disk.write(&[name, b"/src/lib.rs"].concat(), b"pub fn answer() -> u32 { 43 }\n");
         directories.push(run::Directory {
+            host: Box::from(b"/host".as_slice()),
             name: name.into(),
             root: Token::new(disk.root(name)),
             writable: true,

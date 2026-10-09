@@ -135,6 +135,7 @@ fn workspace() -> (Checkout, run::Workspace) {
     let mounted = run::Workspace {
         directories: Box::new([
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"work".as_slice().into(),
                 root: Token::new(disk.root(b"work")),
                 writable: true,
@@ -142,6 +143,7 @@ fn workspace() -> (Checkout, run::Workspace) {
                 conflicts: Box::new([]),
             },
             run::Directory {
+                host: Box::from(b"/host".as_slice()),
                 name: b"archive".as_slice().into(),
                 root: Token::new(disk.root(b"archive")),
                 writable: false,

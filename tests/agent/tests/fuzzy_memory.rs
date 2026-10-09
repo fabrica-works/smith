@@ -94,6 +94,7 @@ const LIMITS: Limits = Limits {
 /// change that passes its checks, a verdict, report or declared failure.
 fn workspace() -> Workspace {
     let repository = Directory {
+        host: Box::from(b"/host".as_slice()),
         name: (*b"temper").into(),
         root: Token::new(1),
         writable: true,

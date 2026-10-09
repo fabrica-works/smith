@@ -59,6 +59,8 @@ impl Authority {
 /// A repository of the checkout.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Repo {
+    /// Absolute host path components; whole-component prefixes alias this root.
+    pub host: Box<[Name]>,
     /// Where it is: the absolute path of its root, as names. A repository
     /// mounted inside another holds what is beneath its own mount.
     pub mount: Box<[Name]>,
@@ -95,6 +97,7 @@ pub(crate) struct Checkout {
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub(crate) struct Mount {
+    pub(crate) host: Box<[u8]>,
     /// The repository's mount, its names joined by `/`.
     pub(crate) at: Box<[u8]>,
     pub(crate) root: Token,
@@ -149,7 +152,12 @@ pub(crate) fn admit(authority: Authority, limits: &Limits) -> Option<Checkout> {
                 return None;
             }
         }
-        let mount = Mount { at, root: repo.root, writable: repo.writable };
+        let host_names = limits.host_path_bytes.checked_add(1)? / 2;
+        if u32::try_from(repo.host.len()).ok()? > host_names {
+            return None;
+        }
+        let host = path::join(path::refs(&repo.host)?.as_slice(), limits.host_path_bytes)?;
+        let mount = Mount { at, host, root: repo.root, writable: repo.writable };
         mounts.push(mount).expect("room for every repository");
         // A command writes only where a write may.
         let writable = repo.writable && authority.grants.modify;
@@ -181,6 +189,35 @@ pub(crate) fn locate(checkout: &Checkout, path: &Path, max: u32) -> Result<Targe
     };
     if path.absolute && at.is_empty() {
         return Ok(Target::Directories);
+    }
+    if path.absolute {
+        let mut chosen = None;
+        let mut longest = 0;
+        for (index, mount) in checkout.mounts.iter().enumerate() {
+            if beneath(&mount.host, &at).is_some() && (chosen.is_none() || mount.host.len() > longest) {
+                chosen = Some(index);
+                longest = mount.host.len();
+            }
+        }
+        if let Some(index) = chosen {
+            let mount = checkout.mounts.get(index).expect("chosen host alias");
+            let start = beneath(&mount.host, &at).expect("alias holds this path");
+            let path = copy_of(at.get(start..).expect("alias tail"));
+            // Failure paths are reconstructed in the namespace, so that alias
+            // spelling never widens the normalized result bound.
+            let namespace_bytes =
+                match mount.at.len().checked_add(usize::from(!mount.at.is_empty() && !path.is_empty())) {
+                    Some(bytes) => bytes.checked_add(path.len()),
+                    None => None,
+                };
+            let Some(namespace_bytes) = namespace_bytes else {
+                return Err(Outcome::TooLong);
+            };
+            if namespace_bytes > usize::try_from(max).expect("u32 path bound") {
+                return Err(Outcome::TooLong);
+            }
+            return Ok(Target::Place(Located { place: Place { root: mount.root, path }, writable: mount.writable }));
+        }
     }
     let Some(index) = choose(&checkout.mounts, &at) else {
         return Err(Outcome::Outside { path: Resolved::Outside { path: at } });

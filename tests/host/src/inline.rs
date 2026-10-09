@@ -92,6 +92,7 @@ pub fn workspace_start(seed: u64, job: smith_agent_world::Job) -> host::Start {
     source.charter = host::Charter::new(charter, settings.limits.run.run_bytes).expect("bounded workspace charter");
     source.workspace = Some(Token::new(9));
     source.directories = Box::from([host::Directory {
+        host: Box::from(b"/host".as_slice()),
         name: b"work".as_slice().into(),
         root: Token::new(1),
         writable: true,

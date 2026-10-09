@@ -54,6 +54,9 @@ pub struct Limits {
     /// Maximum opaque safe mount component bytes, checked before pairwise admission.
     pub directory_name_bytes: u32,
 
+    /// Longest absolute host path retained for workspace aliases.
+    pub host_path_bytes: u32,
+
     /// Maximum initial conflict paths per git directory, checked before comparisons.
     pub conflicts: u32,
 
@@ -220,6 +223,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         brief_sections: inputs.sections,
         directories: 2,
         directory_name_bytes: 256,
+        host_path_bytes: 4096,
         conflicts: 64,
         conflict_path_bytes: 4096,
         host_tools: inputs.host_tools,

@@ -262,7 +262,7 @@ fn render_checkout(text: &mut Text, repositories: &[Directory], checks: &[u32], 
         }
     }
     let mut index: u32 = 0;
-    for Directory { name, root: _, writable, git, conflicts } in repositories {
+    for Directory { name, host: _, root: _, writable, git, conflicts } in repositories {
         if repositories.len() == 1 {
             text.put(b"- The working directory");
         } else {

@@ -95,6 +95,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         u64::try_from(size_of::<Directory>())
             .ok()?
             .checked_add(u64::from(limits.name_bytes))?
+            .checked_add(u64::from(limits.path_bytes))?
             .checked_add(u64::from(limits.conflicts).checked_mul(
                 u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_add(u64::from(limits.path_bytes))?,
             )?)?,

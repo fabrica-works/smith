@@ -59,6 +59,7 @@ const LIMITS: Limits = Limits {
     brief_sections: 4,
     directories: 1,
     directory_name_bytes: 64,
+    host_path_bytes: 63,
     conflicts: 1,
     conflict_path_bytes: 64,
     host_tools: 1,
@@ -98,6 +99,13 @@ const LIMITS: Limits = Limits {
 fn workspace() -> Workspace {
     Workspace {
         directories: Box::new([Directory {
+            host: format!(
+                "/{:h<width$}",
+                "",
+                width = usize::try_from(LIMITS.host_path_bytes - 1).expect("positive host cap")
+            )
+            .into_bytes()
+            .into(),
             name: bytes(u64::from(LIMITS.directory_name_bytes)),
             root: Token::new(1),
             writable: true,
@@ -110,6 +118,7 @@ fn workspace() -> Workspace {
 fn charter(held: u64) -> Charter {
     let parts = (size(size_of::<Directory>())
         + u64::from(LIMITS.directory_name_bytes)
+        + u64::from(LIMITS.host_path_bytes)
         + size(size_of::<Box<[u8]>>())
         + u64::from(LIMITS.conflict_path_bytes))
         + (size(size_of::<HostTool>()) + 14)
@@ -524,6 +533,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
     let limits = Limits {
         directories: smith_domain_run::MAX_DIRECTORIES,
         directory_name_bytes: 256,
+        host_path_bytes: 4096,
         conflicts: 64,
         conflict_path_bytes: 4096,
         run_bytes: 65_536,
@@ -616,6 +626,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
 fn full_delivery_workspace() -> Workspace {
     let directories: Box<[Directory]> = (0..smith_domain_run::MAX_DIRECTORIES)
         .map(|directory| Directory {
+            host: Box::from(b"/host".as_slice()),
             name: Box::new([u8::try_from(directory + 64).expect("64 distinct names")]),
             root: Token::new(u64::from(directory)),
             writable: true,
@@ -627,7 +638,8 @@ fn full_delivery_workspace() -> Workspace {
 }
 
 fn full_delivery_charter(limits: Limits) -> Charter {
-    let parts = u64::from(smith_domain_run::MAX_DIRECTORIES) * (size(size_of::<Directory>()) + 1)
+    let parts = u64::from(smith_domain_run::MAX_DIRECTORIES)
+        * (size(size_of::<Directory>()) + 1 + size(b"/host".len()))
         + 1
         + size(b"AGENTS.md".len() + b".temper/pre-pr".len());
     let (instructions, brief) = context(limits.run_bytes - parts);

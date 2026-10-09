@@ -127,9 +127,9 @@ fn authority(workspace: Option<Workspace>, tools: Tools) -> Option<Authority> {
     };
     let count = u32::try_from(mounted.len()).ok()?;
     let mut repos = List::with_capacity(count);
-    for Directory { name, root, writable, git: _, conflicts: _ } in mounted {
+    for Directory { name, host, root, writable, git: _, conflicts: _ } in mounted {
         let name = Name::new(name)?;
-        let repo = Repo { mount: Box::new([name]), root, writable };
+        let repo = Repo { host: host_names(&host)?, mount: Box::new([name]), root, writable };
         repos.push(repo).expect("room for every repository");
     }
     let repos = repos.into_boxed();
@@ -286,4 +286,26 @@ const fn transcript_refusal(reason: session::record::Refusal) -> run::Transcript
         session::record::Refusal::Unresolved => run::TranscriptRefusal::Unresolved,
         session::record::Refusal::TooLarge => run::TranscriptRefusal::TooLarge,
     }
+}
+
+fn host_names(host: &[u8]) -> Option<Box<[Name]>> {
+    let relative = host.strip_prefix(b"/")?;
+    if relative.is_empty() {
+        return Some(Box::new([]));
+    }
+    let mut count = 1_u32;
+    for byte in relative {
+        if *byte == b'/' {
+            count = count.checked_add(1)?;
+        }
+    }
+    let mut names = List::with_capacity(count);
+    let mut start = 0_usize;
+    for end in 0..=relative.len() {
+        if end == relative.len() || relative.get(end) == Some(&b'/') {
+            names.push(Name::new(Box::from(relative.get(start..end)?))?).ok()?;
+            start = end.checked_add(1)?;
+        }
+    }
+    Some(names.into_boxed())
 }

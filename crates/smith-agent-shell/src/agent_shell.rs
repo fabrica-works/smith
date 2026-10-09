@@ -219,6 +219,19 @@ impl Host for Agent {
             trace.prompt(owner, &prompt, now.as_nanos());
         }
         while let Some(path) = self.service.root_to_open() {
+            let host = std::str::from_utf8(path)
+                .ok()
+                .and_then(|path| std::path::absolute(Path::new(path)).ok())
+                .and_then(|path| {
+                    smith_protocol_channel::host_path(
+                        path.as_os_str().as_encoded_bytes(),
+                        self.service.host_path_bytes(),
+                    )
+                });
+            let Some(host) = host else {
+                self.service.root_opened(Err(()), Box::new([]));
+                continue;
+            };
             let root = match &mut self.roots {
                 Some(roots) => roots.next().ok_or(()),
                 None => match std::str::from_utf8(path) {
@@ -226,7 +239,7 @@ impl Host for Agent {
                     Err(_) => Err(()),
                 },
             };
-            self.service.root_opened(root);
+            self.service.root_opened(root, host);
         }
         if let Some(answered) = service::done(&self.service) {
             self.finish(answered);
