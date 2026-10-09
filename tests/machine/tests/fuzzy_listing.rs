@@ -80,8 +80,8 @@ fn seeded_selected_paths_keep_the_exact_tree_prefix_and_omitted_count_within_mem
         let meter = Meter::new();
         meter.start();
         let mut listing = Listing::new(maximum, bytes, depth, 256);
-        for byte in output {
-            listing.push(byte);
+        for byte in &output {
+            listing.push(*byte);
         }
         let actual = listing.finish(Some(skein_io::kernel::Exit::Code(0)), false);
         let peak = meter.check(meter.end(), bound, &seed);

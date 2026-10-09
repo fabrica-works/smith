@@ -64,7 +64,6 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Installing a new workspace temporarily coexists with the old root list.
     let roots = List::<Root>::worst_case(limits.roots)?.checked_mul(2)?;
     let operations = Map::<Token, Pending>::worst_case(limits.operations)?;
-    let scan = u64::from(limits.entries).checked_mul(u64::try_from(size_of::<smith_domain::tools::Entry>()).ok()?)?;
     let guides = Map::<Token, crate::guide::Guide>::worst_case(limits.operations)?
         .checked_add(u64::from(limits.file_bytes).checked_mul(u64::from(limits.operations))?)?;
     let listing = List::<Option<smith_domain::tools::Entry>>::worst_case(limits.entries)?
@@ -108,8 +107,6 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let scratch = List::<Token>::worst_case(limits.processes)?.checked_add(u64::from(window))?.checked_add(parse)?;
     roots
         .checked_add(operations)?
-        .checked_add(scan)?
-        .checked_add(limits.entry_bytes)?
         .checked_add(guides)?
         .checked_add(processes)?
         .checked_add(pipes)?
