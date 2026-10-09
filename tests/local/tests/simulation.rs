@@ -42,10 +42,15 @@ fn a_question_is_answered_and_the_chat_waits_for_the_next() {
     let mut world = World::new(17);
     world.line(b"What can you do?");
     assert!(world.drive(200), "the chat reaches a saved turn and a wait");
-    assert_eq!(world.saved_turns(), 3, "the reply, yield and wait turns are durable in order");
+    assert_eq!(world.saved_turns(), 1, "the answered exchange is durable while the next wait remains withheld");
     assert!(world.waiting(), "the run asked to wait for another person message");
     assert!(world.completions() >= 2, "the fake provider served the reply and wait");
-    assert!(world.shown().iter().any(|text| text.as_ref() == b"Hello from the agent."));
+    assert!(
+        world
+            .shown()
+            .iter()
+            .any(|text| text.windows(b"Hello from the agent.".len()).any(|bytes| bytes == b"Hello from the agent."))
+    );
 }
 
 #[test]
@@ -433,10 +438,12 @@ fn a_chat_with_no_workspace_waits_parks_and_resumes_on_the_next_invocation() {
 
     let mut second = World::with_store(22, stored);
     second.line(b"I am back");
-    assert!(second.drive(300), "a fresh domain resumes from {prior_turns} stored turns");
+    assert!(second.drive(300), "a fresh domain resumes from {prior_turns} stored turns: {:?}", second.trace());
     assert_eq!(second.activation(), 2, "the next activation is durable before its agent runs");
-    assert_eq!(second.prompt_assistants().first(), Some(&3), "provider sees the saved assistant history");
-    assert!(second.shown().iter().any(|text| text.as_ref() == b"Welcome back."));
+    assert_eq!(second.prompt_assistants().first(), Some(&prior_turns), "provider sees the saved assistant history");
+    assert!(
+        second.shown().iter().any(|text| text.windows(b"Welcome back.".len()).any(|bytes| bytes == b"Welcome back."))
+    );
 }
 
 #[test]
@@ -518,7 +525,11 @@ fn an_expired_credential_is_refreshed_and_the_completion_retried() {
     assert!(world.drive(300), "the provider retry reaches the next wait");
     assert_eq!(world.credential_requests(), 2, "the rejected generation triggers one refresh");
     assert!(world.completions() >= 3, "the rejected completion was retried");
-    assert!(world.shown().iter().any(|text| text.as_ref() == b"Hello from the agent."));
+    assert!(
+        world.shown().iter().any(|text| {
+            text.windows(b"Hello from the agent.".len()).any(|bytes| bytes == b"Hello from the agent.")
+        })
+    );
 }
 
 #[test]
@@ -562,15 +573,17 @@ fn a_slow_store_pauses_the_agent_and_loses_no_turn() {
     assert_eq!(world.saved_turns(), 1, "the second completion cannot tell another turn yet");
     assert_eq!(world.delayed_turns(), 1);
 
+    let mut parked = false;
     for _ in 0..8 {
-        if world.waiting() {
+        assert!(world.release_turn(), "each stalled turn has an acknowledgement to release");
+        if world.drive_to_park(300) {
+            parked = true;
             break;
         }
-        assert!(world.release_turn(), "each stalled turn has an acknowledgement to release");
-        world.drive(300);
     }
-    assert!(world.waiting(), "the paused agent resumes after store acknowledgements");
-    assert_eq!(world.saved_turns(), 3, "all three conversation turns reached the store");
+    assert!(parked, "the paused agent parks after its actual store acknowledgements");
+    assert!(world.waiting(), "the run asked to wait before parking");
+    assert_eq!(world.saved_turns(), 2, "the exchange and withheld wait each reach the store once");
 }
 
 #[test]

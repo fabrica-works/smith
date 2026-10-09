@@ -117,6 +117,10 @@ pub fn all() -> Box<[Script]> {
                 calls(vec![Line::Text { text: b"Hello from the agent.".as_slice().into() }, call("wait", "{}")]),
                 calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
                 calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
             ],
         ),
         script(
