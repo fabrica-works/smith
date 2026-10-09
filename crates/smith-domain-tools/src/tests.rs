@@ -1024,6 +1024,7 @@ fn edit_shape_bounds_are_refused_before_io_but_semantics_follow_the_loaded_bytes
             (1, Outcome::EditFailed { edit: 1, why })
         );
     }
+    h.domain.reclaim();
     let big = Call::Edit { path: path(b"src/lib.rs"), edits: Box::new([snippet(b"a", &[b'x'; 1025], false)]) };
     assert_eq!(h.call(kit, big), Outcome::TooLarge { size: 1025 });
     assert_eq!(

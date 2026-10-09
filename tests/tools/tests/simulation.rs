@@ -612,7 +612,7 @@ fn an_edit_matches_current_bytes_and_refuses_a_change_between_load_and_store() {
     let seconds = Duration::from_secs;
     // Another kit edits the file between this one's read and its edit; then,
     // with io slow, an outsider changes it between the edit's load (done by
-    // 6s) and its store (done by 11s).
+    // about 8s) and its store (about 13s).
     let editor = world.session(
         Time::ZERO,
         editor,
@@ -632,7 +632,7 @@ fn an_edit_matches_current_bytes_and_refuses_a_change_between_load_and_store() {
             Step::Sleep(seconds(1)),
             Step::Calls(vec![read(b"src/lib.rs")]),
             Step::Calls(vec![edit(b"src/lib.rs", b"fn three", b"fn tres", false)]),
-            Step::Sleep(seconds(6)),
+            Step::Sleep(seconds(10)),
             Step::Change(Box::new(|checkout: &mut Checkout| {
                 checkout.write(b"work/temper/src/lib.rs", b"theirs\n");
             })),
@@ -681,13 +681,13 @@ fn an_edit_that_timed_out_may_have_happened_and_the_next_one_finds_out() {
         Step::Calls(vec![edit(b"src/lib.rs", b"fn two", b"fn dos", false)]),
     ];
     let (answers, world) = run(settings, MODIFY, script);
-    let uno = b"pub fn uno() {}\npub fn two() {}\npub fn three() {}\n";
+    let uno_dos = b"pub fn uno() {}\npub fn dos() {}\npub fn three() {}\n";
     let expected = vec![
         read_of(LIB, 0, 3, 3),
         Outcome::TimedOut,
-        Outcome::Stale,
-        read_of(uno, 0, 3, 3),
         Outcome::Edited { replaced: 1 },
+        read_of(uno_dos, 0, 3, 3),
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
     ];
     assert_eq!(answers, expected);
     assert_eq!((world.stats().timeouts, world.stats().late_effects), (1, 1));
@@ -848,16 +848,16 @@ fn a_command_that_changes_a_file_its_llm_read_makes_the_next_write_stale() {
         Step::Calls(vec![edit(b"src/lib.rs", b"fn one", b"fn uno", false)]),
     ];
     let (answers, world) = run(Settings::calm(62), ALL, script);
+    let uno = b"pub fn uno() {}\n\npub fn two() {}\n\npub fn three() {}\n";
     let expected = vec![
         read_of(LIB, 0, 3, 3),
         exited(tools::Exit::Code { code: 0 }, b"", b"", 0),
         Outcome::Stale,
-        Outcome::Stale,
-        read_of(FORMATTED, 0, 5, 5),
         Outcome::Edited { replaced: 1 },
+        read_of(uno, 0, 5, 5),
+        Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
     ];
     assert_eq!(answers, expected);
-    let uno = b"pub fn uno() {}\n\npub fn two() {}\n\npub fn three() {}\n";
     assert_eq!(world.checkout().content(b"work/temper/src/lib.rs"), Some(&uno[..]));
 }
 
