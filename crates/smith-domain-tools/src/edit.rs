@@ -32,7 +32,11 @@ pub(crate) fn apply(
     if matches == 0 {
         return Err(Outcome::EditFailed { edit: number, why: Mismatch::NoMatch });
     }
-    if matches > 1 && edit.occurrences == Occurrences::Once {
+    let once = match edit.occurrences {
+        Occurrences::Once => true,
+        Occurrences::All => false,
+    };
+    if matches > 1 && once {
         return Err(Outcome::EditFailed {
             edit: number,
             why: Mismatch::Ambiguous { count: matches, lines: lines(content, &edit.old, limits.match_lines) },

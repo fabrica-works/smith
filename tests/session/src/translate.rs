@@ -215,7 +215,7 @@ fn call(name: &[u8], arguments: &[u8]) -> Result<Call, agent::Problem> {
         tool_bytes: 32768,
         rendered_result: client.dialect.string_bytes,
         stated: smith_protocol_llm::Stated::from_tools(
-            &smith_tools_world::Settings::default().tools,
+            &smith_tools_world::Settings::calm(0).tools,
             client.dialect.answer_bytes,
         )
         .expect("fixture numbers"),
