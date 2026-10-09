@@ -310,8 +310,14 @@ section 6).
   gets, no wider than the asker's; the LLM it runs on; and the turns and
   seconds it asks for. Its effective share is what it asked, each part
   clamped to what is left above the reserve when it asks (9.1), or all of
-  that when it asked for none. Its spend share is derived the same way,
-  and never asked for or shown: the host's unit means nothing to a model.
+  that when it asked for none. Its spend share follows the same rule:
+  never asked for, so all of the spend left above the reserve when it
+  asks, and never shown, since the host's unit means nothing to a model.
+  No formula ties spend to the turns or seconds asked:
+  - asked turns already bound a child's spend, since each completion
+    reserves its maximum cost (section 9);
+  - children open at once share the ordinary pool, and every completion
+    reserves from the run's one budget, so together they never pass it.
   The brief takes the charter's place in the child's window, so a brief
   larger than a window's host part is answered as too large, and no child
   opens (protocol/limits.md, section 3.9).

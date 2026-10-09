@@ -52,8 +52,8 @@ A versioned record (skein's `codec.md`, section 3):
   - the families granted: inspect, modify, shell, sub-agents. A
     sub-agent's share is not the charter's: the `sub_agent` call asks for
     `max_turns` and `max_seconds`, each clamped to what is left above the
-    reserve, and its spend share is derived from them, never asked for
-    (domain/run.md, 5.3; llm.md, section 3);
+    reserve; its spend share is the spend left above the reserve, never
+    asked for (domain/run.md, 5.3; llm.md, section 3);
   - whether `wait` is granted;
   - whether `deliver` is granted mid-run, with a change's contract (2.1);
   - the host tools, each declared with:

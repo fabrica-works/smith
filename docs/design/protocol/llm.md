@@ -148,8 +148,8 @@ A completion's prompt is built from what the domain gives:
   no maximum in the schema; the run clamps each to what is left above
   its reserve (domain/run.md, 5.3). The child is shown its effective
   share in its system text, and every sub-agent's result ends with a
-  usage line. Spend is derived from the share, never asked
-  for and never shown. There is no `agents` field: a sub-agent never
+  usage line. Its spend share is the spend left above the reserve,
+  never asked for and never shown (domain/run.md, 5.3). There is no `agents` field: a sub-agent never
   opens sub-agents (section 4). The brief is the child's text in its
   window's host part, and its schema states that bound: a brief past it
   is invalid, too large (limits.md, 3.9).
