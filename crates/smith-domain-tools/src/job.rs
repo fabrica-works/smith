@@ -64,6 +64,7 @@ use core::mem;
 
 use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
 
+use crate::authority::{self, Checkout};
 use crate::boundary::{Done, Expect, Op, Request, Root};
 use crate::call::{Outcome, Tool};
 use crate::domain::Domain;
@@ -102,15 +103,15 @@ enum State {
     /// Loading the file at `place`, to answer with a window of it.
     Reading { reply_to: ReplyTo, place: Place, span: Span },
     /// Scanning a directory.
-    Listing { reply_to: ReplyTo },
+    Listing { reply_to: ReplyTo, place: Place },
     /// Loading the file to edit.
     Editing { reply_to: ReplyTo, editing: Editing },
     /// Storing the file at `place`, for `change`.
     Storing { reply_to: ReplyTo, place: Place, change: Change },
     /// Running a command.
-    Running { reply_to: ReplyTo },
+    Running { reply_to: ReplyTo, place: Place },
     /// Searching files.
-    Searching { reply_to: ReplyTo },
+    Searching { reply_to: ReplyTo, place: Place },
     /// Terminal: answered, holds nothing.
     Done,
 }
@@ -205,7 +206,7 @@ pub(crate) fn start(
             (State::Reading { reply_to, place, span }, op)
         }
         Work::List { place } => (
-            State::Listing { reply_to },
+            State::Listing { reply_to, place: place.clone() },
             Op::Scan { at: place, max: limits.list_entries, max_bytes: limits.list_bytes },
         ),
         Work::Write { place, content, expect } => {
@@ -221,12 +222,14 @@ pub(crate) fn start(
             (State::Editing { reply_to, editing: Editing { place, edit, deadline: call_deadline } }, op)
         }
         Work::Shell { cwd, command, timeout: _, roots } => {
+            let place = cwd.clone();
             let op = Op::Spawn { cwd, command, roots, head: limits.shell_head, tail: limits.shell_tail };
-            (State::Running { reply_to }, op)
+            (State::Running { reply_to, place }, op)
         }
         Work::Search { place, pattern, glob } => {
-            let op = Op::Search { at: place, pattern, glob, hits: limits.search_hits, bytes: limits.search_bytes };
-            (State::Searching { reply_to }, op)
+            let op =
+                Op::Search { at: place.clone(), pattern, glob, hits: limits.search_hits, bytes: limits.search_bytes };
+            (State::Searching { reply_to, place }, op)
         }
     };
     // Room: a kit has at most `calls` jobs, and the slab twice that many slots
@@ -254,13 +257,15 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
     let state = mem::replace(&mut job.state, State::Done);
     let next = match state {
         State::Reading { reply_to, place, span } => {
-            loaded(&mut kit.knowledge, reply_to, place, span, done, &env.limits)
+            loaded(&kit.checkout, &mut kit.knowledge, reply_to, place, span, done, &env.limits)
         }
-        State::Listing { reply_to } => scanned(reply_to, done),
-        State::Searching { reply_to } => found(reply_to, done),
+        State::Listing { reply_to, place } => scanned(&kit.checkout, reply_to, place, done),
+        State::Searching { reply_to, place } => found(&kit.checkout, reply_to, place, done),
         State::Editing { reply_to, editing } => to_edit(kit, id, reply_to, editing, done, env, out),
-        State::Storing { reply_to, place, change } => stored(&mut kit.knowledge, reply_to, place, change, done),
-        State::Running { reply_to } => exited(reply_to, done),
+        State::Storing { reply_to, place, change } => {
+            stored(&kit.checkout, &mut kit.knowledge, reply_to, place, change, done)
+        }
+        State::Running { reply_to, place } => exited(&kit.checkout, reply_to, place, done),
         State::Done => unreachable!("a job that has answered has nothing in flight"),
     };
     job.state = settle(next, kit::session(kit), job.tool, job.observation, facts, out);
@@ -309,7 +314,15 @@ fn follow(kits: &mut Slab<Kit>, jobs: &mut Slab<Job>, facts: &mut Facts, id: Id<
 // comes next.
 
 /// Reading, ended: answer with the window, and know the version read.
-fn loaded(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, span: Span, done: Done, limits: &Limits) -> Next {
+fn loaded(
+    checkout: &Checkout,
+    knowledge: &mut Knowledge,
+    reply_to: ReplyTo,
+    place: Place,
+    span: Span,
+    done: Done,
+    limits: &Limits,
+) -> Next {
     let outcome = match done {
         Done::Loaded { content, version } => {
             knowledge.record(place, version);
@@ -317,12 +330,12 @@ fn loaded(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, span: Span
         }
         Done::Missing => {
             knowledge.forget(&place);
-            Outcome::NotFound
+            Outcome::NotFound { path: authority::resolved(checkout, &place) }
         }
         Done::NotFile => Outcome::NotFile,
-        Done::NotDirectory => Outcome::NotDirectory,
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
         Done::TooLarge { size } => Outcome::TooLarge { size },
-        Done::Escapes => Outcome::Outside,
+        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -337,12 +350,12 @@ fn loaded(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, span: Span
 }
 
 /// Listing, ended: answer with the entries.
-fn scanned(reply_to: ReplyTo, done: Done) -> Next {
+fn scanned(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
     let outcome = match done {
         Done::Scanned { entries, more } => Outcome::Listed { entries, more },
-        Done::Missing => Outcome::NotFound,
-        Done::NotDirectory => Outcome::NotDirectory,
-        Done::Escapes => Outcome::Outside,
+        Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
+        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -359,13 +372,13 @@ fn scanned(reply_to: ReplyTo, done: Done) -> Next {
 }
 
 /// Searching, ended: answer with the lines found, or how rg failed.
-fn found(reply_to: ReplyTo, done: Done) -> Next {
+fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
     let outcome = match done {
         Done::Found { hits, more, timed_out } => Outcome::Found { hits, more, timed_out },
         Done::Exited { exit, head, tail, dropped } => Outcome::Exited { exit, head, tail, dropped },
-        Done::Missing => Outcome::NotFound,
-        Done::NotDirectory => Outcome::NotDirectory,
-        Done::Escapes => Outcome::Outside,
+        Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
+        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -415,12 +428,12 @@ fn to_edit(
         }
         Done::Missing => {
             kit.knowledge.forget(&place);
-            Outcome::NotFound
+            Outcome::NotFound { path: authority::resolved(&kit.checkout, &place) }
         }
         Done::NotFile => Outcome::NotFile,
-        Done::NotDirectory => Outcome::NotDirectory,
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(&kit.checkout, &place) },
         Done::TooLarge { size } => Outcome::TooLarge { size },
-        Done::Escapes => Outcome::Outside,
+        Done::Escapes => Outcome::Outside { path: authority::resolved(&kit.checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -435,7 +448,14 @@ fn to_edit(
 }
 
 /// Storing, ended: answer, and know the version written.
-fn stored(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, change: Change, done: Done) -> Next {
+fn stored(
+    checkout: &Checkout,
+    knowledge: &mut Knowledge,
+    reply_to: ReplyTo,
+    place: Place,
+    change: Change,
+    done: Done,
+) -> Next {
     let creating = change == Change::Create;
     let outcome = match done {
         Done::Stored { version } => {
@@ -456,8 +476,8 @@ fn stored(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, change: Ch
         }
         Done::NotFile => Outcome::NotFile,
         Done::Linked => Outcome::Linked,
-        Done::NotDirectory => Outcome::NotDirectory,
-        Done::Escapes => Outcome::Outside,
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
+        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -472,13 +492,13 @@ fn stored(knowledge: &mut Knowledge, reply_to: ReplyTo, place: Place, change: Ch
 }
 
 /// Running, ended: answer with how the command ended and what it wrote.
-fn exited(reply_to: ReplyTo, done: Done) -> Next {
+fn exited(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
     let outcome = match done {
         Done::Exited { exit, head, tail, dropped } => Outcome::Exited { exit, head, tail, dropped },
         // The working directory.
-        Done::Missing => Outcome::NotFound,
-        Done::NotDirectory => Outcome::NotDirectory,
-        Done::Escapes => Outcome::Outside,
+        Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
+        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,

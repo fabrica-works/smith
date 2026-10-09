@@ -344,10 +344,16 @@ fn a_path_is_in_the_repository_with_the_longest_mount_that_holds_it() {
         (b"vendor/lib/../lib2", Ok(located(1, b"vendor/lib2", true))),
         (b"vendor/library/x.rs", Ok(located(1, b"vendor/library/x.rs", true))),
         (b"../docs/guide.md", Ok(located(3, b"guide.md", false))),
-        (b"..", Err(Outcome::Outside)),
-        (b"../temperance/x", Err(Outcome::Outside)),
-        (b"/etc/passwd", Err(Outcome::Outside)),
-        (b"../../../../etc/passwd", Err(Outcome::Outside)),
+        (b"..", Err(Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } })),
+        (
+            b"../temperance/x",
+            Err(Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work/temperance/x") } }),
+        ),
+        (b"/etc/passwd", Err(Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc/passwd") } })),
+        (
+            b"../../../../etc/passwd",
+            Err(Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc/passwd") } }),
+        ),
         (b"a/very/long/path/that/does/not/fit/in/the/sixty/four/bytes/allowed", Err(Outcome::TooLong)),
     ];
     for (text, expected) in table {
@@ -438,17 +444,41 @@ fn calls_are_refused_at_the_entrance() {
         (inspect, write(b"src/lib.rs", 1), Outcome::NotGranted),
         (inspect, edit(b"src/lib.rs"), Outcome::NotGranted),
         (inspect, shell.clone(), Outcome::NotGranted),
-        (inspect, read(b"/etc/passwd"), Outcome::Outside),
-        (inspect, Call::List { path: path(b"..") }, Outcome::Outside),
-        (modify, write(b"../../tmp/x", 1), Outcome::Outside),
-        (modify, write(b"../docs/guide.md", 1), Outcome::ReadOnly),
-        (modify, edit(b"vendor/lib/x.rs"), Outcome::ReadOnly),
+        (
+            inspect,
+            read(b"/etc/passwd"),
+            Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc/passwd") } },
+        ),
+        (
+            inspect,
+            Call::List { path: path(b"..") },
+            Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } },
+        ),
+        (
+            modify,
+            write(b"../../tmp/x", 1),
+            Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"tmp/x") } },
+        ),
+        (
+            modify,
+            write(b"../docs/guide.md", 1),
+            Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"docs/guide.md") } },
+        ),
+        (
+            modify,
+            edit(b"vendor/lib/x.rs"),
+            Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } },
+        ),
         (modify, write(b"src/big.rs", 1025), Outcome::TooLarge { size: 1025 }),
         (modify, write(b".git/config", 1), Outcome::Protected),
         (modify, write(b"src/../.git/hooks/pre-commit", 1), Outcome::Protected),
         (modify, edit(b".git/HEAD"), Outcome::Protected),
         // A repository mounted inside another has its own .git.
-        (modify, write(b"vendor/lib/.git/config", 1), Outcome::ReadOnly),
+        (
+            modify,
+            write(b"vendor/lib/.git/config", 1),
+            Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/.git/config") } },
+        ),
         (inspect, read(b"a/very/long/path/that/does/not/fit/in/the/sixty/four/bytes/allowed"), Outcome::TooLong),
         // What passes the entrance does not run yet.
         (ALL, edit(b"src/lib.rs"), Outcome::NotRead),
@@ -561,7 +591,10 @@ fn a_read_of_nothing_is_not_found_and_the_kit_knows_it() {
     let (owner, _) = h.start(kit, 1, read(b"src/lib.rs"));
     drop(h.end(owner, Done::Loaded { content: bytes(b""), version: version(5) }));
     let (owner, _) = h.start(kit, 2, read(b"src/lib.rs"));
-    assert_eq!(h.end(owner, Done::Missing), (2, Outcome::NotFound));
+    assert_eq!(
+        h.end(owner, Done::Missing),
+        (2, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper/src/lib.rs") } })
+    );
     assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), None);
 }
 
@@ -569,9 +602,9 @@ fn a_read_of_nothing_is_not_found_and_the_kit_knows_it() {
 fn every_other_end_of_a_load_answers_for_itself() {
     let table = [
         (Done::NotFile, Outcome::NotFile),
-        (Done::NotDirectory, Outcome::NotDirectory),
+        (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
         (Done::TooLarge { size: 4096 }, Outcome::TooLarge { size: 4096 }),
-        (Done::Escapes, Outcome::Outside),
+        (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
         (Done::Failed { fault: Fault::Denied }, Outcome::Failed { fault: Fault::Denied }),
         (Done::TimedOut, Outcome::TimedOut),
         (Done::Cancelled, Outcome::Cancelled),
@@ -596,9 +629,9 @@ fn a_listing_scans_the_directory() {
     assert_eq!(outcome, Outcome::Listed { entries, more: 3 });
 
     let table = [
-        (Done::Missing, Outcome::NotFound),
-        (Done::NotDirectory, Outcome::NotDirectory),
-        (Done::Escapes, Outcome::Outside),
+        (Done::Missing, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper/src") } }),
+        (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper/src") } }),
+        (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper/src") } }),
         (Done::Failed { fault: Fault::Other }, Outcome::Failed { fault: Fault::Other }),
         (Done::TimedOut, Outcome::TimedOut),
         (Done::Cancelled, Outcome::Cancelled),
@@ -748,8 +781,8 @@ fn every_other_end_of_a_store_answers_for_itself() {
     let table = [
         (Done::NotFile, Outcome::NotFile),
         (Done::Linked, Outcome::Linked),
-        (Done::NotDirectory, Outcome::NotDirectory),
-        (Done::Escapes, Outcome::Outside),
+        (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
+        (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
         (Done::Failed { fault: Fault::NoSpace }, Outcome::Failed { fault: Fault::NoSpace }),
         (Done::TimedOut, Outcome::TimedOut),
         (Done::Cancelled, Outcome::Cancelled),
@@ -856,7 +889,10 @@ fn an_edit_of_a_file_changed_since_it_was_read_is_stale() {
     assert_eq!(h.end(owner, Done::Conflict { now: Some(version(6)) }), (3, Outcome::Stale));
     // Removed since: not found, and forgotten.
     let (owner, _) = h.start(kit, 4, change(b"src/lib.rs", b"one", b"uno"));
-    assert_eq!(h.end(owner, Done::Missing), (4, Outcome::NotFound));
+    assert_eq!(
+        h.end(owner, Done::Missing),
+        (4, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper/src/lib.rs") } })
+    );
     assert_eq!(h.call(kit, change(b"src/lib.rs", b"one", b"uno")), Outcome::NotRead);
 }
 
@@ -896,7 +932,10 @@ fn edits_are_refused_at_the_entrance_without_a_read_or_a_change() {
         (change(b"src/lib.rs", b"", b"b"), Outcome::NoMatch),
         (change(b"src/lib.rs", b"a", b"a"), Outcome::Unchanged),
         (big, Outcome::TooLarge { size: 1025 }),
-        (change(b"vendor/lib/x.rs", b"a", b"b"), Outcome::ReadOnly),
+        (
+            change(b"vendor/lib/x.rs", b"a", b"b"),
+            Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } },
+        ),
     ];
     h.domain.reclaim();
     for (call, expected) in table {
@@ -1039,9 +1078,9 @@ fn every_end_of_a_command_answers_for_itself() {
             Done::Exited { exit: Exit::TimedOut, head: bytes(b"h"), tail: bytes(b""), dropped: 0 },
             Outcome::Exited { exit: Exit::TimedOut, head: bytes(b"h"), tail: bytes(b""), dropped: 0 },
         ),
-        (Done::Missing, Outcome::NotFound),
-        (Done::NotDirectory, Outcome::NotDirectory),
-        (Done::Escapes, Outcome::Outside),
+        (Done::Missing, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper") } }),
+        (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper") } }),
+        (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper") } }),
         (Done::Failed { fault: Fault::Other }, Outcome::Failed { fault: Fault::Other }),
         (Done::TimedOut, Outcome::TimedOut),
         (Done::Cancelled, Outcome::Cancelled),
@@ -1062,7 +1101,10 @@ fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
     let mut outside = authority(ALL);
     outside.cwd = names(b"/work");
     let outside = h.open(2, outside);
-    assert_eq!(h.call(outside, Call::Shell { command: bytes(b"ls"), timeout: None }), Outcome::Outside);
+    assert_eq!(
+        h.call(outside, Call::Shell { command: bytes(b"ls"), timeout: None }),
+        Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } }
+    );
 }
 
 #[test]
@@ -1100,9 +1142,9 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
                 dropped: 0,
             },
         ),
-        (Done::Missing, Outcome::NotFound),
-        (Done::NotDirectory, Outcome::NotDirectory),
-        (Done::Escapes, Outcome::Outside),
+        (Done::Missing, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper") } }),
+        (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper") } }),
+        (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper") } }),
         (Done::TimedOut, Outcome::TimedOut),
         (Done::Cancelled, Outcome::Cancelled),
     ];
@@ -1115,7 +1157,7 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
         assert_eq!(h.end(owner, done), (2, expected));
     }
     let outside = Call::Search { path: path(b"/etc"), pattern: bytes(b"root"), glob: None };
-    assert_eq!(h.call(kit, outside), Outcome::Outside);
+    assert_eq!(h.call(kit, outside), Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc") } });
     // No NUL can go in an argument.
     let table = [
         Call::Search { path: path(b"."), pattern: bytes(b"a\0b"), glob: None },
@@ -1143,7 +1185,10 @@ fn a_kit_tells_what_happens_as_facts() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(5, authority(ALL));
     let session = Token::new(5);
-    assert_eq!(h.call(kit, read(b"/etc/passwd")), Outcome::Outside);
+    assert_eq!(
+        h.call(kit, read(b"/etc/passwd")),
+        Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc/passwd") } }
+    );
     let (owner, _) = h.start(kit, 1, read(b"src/lib.rs"));
     drop(h.end(owner, Done::Loaded { content: bytes(b"one\ntwo\n"), version: version(1) }));
     let (_, _) = h.start(kit, 2, Call::List { path: path(b"src") });
@@ -1171,7 +1216,10 @@ fn a_minimum_fact_reserve_keeps_every_native_entrance_observation() {
     let mut h = Harness::new(Limits { facts: crate::max_facts(&LIMITS), ..LIMITS });
     let kit = h.open(5, authority(ALL));
     assert!(h.domain.facts_room() < crate::max_facts(&LIMITS));
-    assert_eq!(h.call(kit, read(b"/etc/passwd")), Outcome::Outside);
+    assert_eq!(
+        h.call(kit, read(b"/etc/passwd")),
+        Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"etc/passwd") } }
+    );
     assert_eq!(h.step(Event::Close { kit }), Some(Request::Closed { session: Token::new(5) }));
     assert_eq!(h.observed.len() + h.env.limits.facts - h.domain.facts_room(), 3);
     assert_eq!(told(&mut h).len(), 3);
@@ -1338,5 +1386,46 @@ fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
             deadline: Time::ZERO
         }),
         Some(Request::Answer { to: ReplyTo::new(Token::new(99)), outcome: Outcome::TimedOut })
+    );
+}
+
+#[test]
+fn failed_paths_are_normalized_and_stay_at_the_admitted_path_bound() {
+    let mut h = Harness::new(LIMITS);
+    let kit = h.open(
+        77,
+        Authority {
+            cwd: names(b"/w"),
+            repos: Box::new([
+                Repo { mount: names(b"/w"), root: Token::new(1), writable: true },
+                Repo { mount: names(b"/d"), root: Token::new(2), writable: false },
+            ]),
+            grants: ALL,
+        },
+    );
+    let file = [b'x'; 62];
+    let (owner, _) = h.start(kit, 1, read(&file));
+    let (_, outcome) = h.end(owner, Done::Missing);
+    let expected = path::Resolved::Working { path: bytes(&file) };
+    assert_eq!(outcome, Outcome::NotFound { path: expected.clone() });
+    assert_eq!(expected.owned_bytes(), Some(62));
+    let outside = [b'z'; 64];
+    let absolute = Path {
+        absolute: true,
+        parts: Box::new([Part::Name { name: Name::new(bytes(&outside)).expect("bounded name") }]),
+    };
+    let call = Call::Read { path: absolute, skip: 0, lines: None };
+    assert_eq!(h.call(kit, call.clone()), Outcome::Outside { path: path::Resolved::Outside { path: bytes(&outside) } });
+    assert!(crate::result_worst_case(&call, &LIMITS).expect("checked credit") >= 64);
+    assert_eq!(h.call(kit, read(&[b'x'; 63])), Outcome::TooLong, "normalized mount plus file exceeds 64");
+    let call = Call::Write { path: path(b"/d/a/../guide.md"), content: bytes(b"x") };
+    assert_eq!(
+        h.call(kit, call),
+        Outcome::ReadOnly {
+            path: path::Resolved::Other {
+                directory: Name::new(bytes(b"d")).expect("directory name"),
+                path: bytes(b"guide.md")
+            }
+        }
     );
 }

@@ -45,6 +45,32 @@ impl Name {
     }
 }
 
+/// Where a failed path resolved, normalized and bounded by tools' `path_bytes`.
+/// The tools send this in failures; the protocol renders it in the fixed namespace.
+/// Contract: domain/tools.md, section 2.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Resolved {
+    /// Names beneath the working directory, empty for the directory itself.
+    Working { path: Box<[u8]> },
+    /// Names beneath another directory, together with its namespace name.
+    Other { directory: Name, path: Box<[u8]> },
+    /// Names from the namespace root, beyond every mounted directory.
+    Outside { path: Box<[u8]> },
+}
+
+impl Resolved {
+    /// Dynamic ownership beyond the fixed enum cell.
+    #[must_use]
+    pub fn owned_bytes(&self) -> Option<u64> {
+        match self {
+            Self::Working { path } | Self::Outside { path } => u64::try_from(path.len()).ok(),
+            Self::Other { directory, path } => {
+                u64::try_from(directory.as_bytes().len()).ok()?.checked_add(u64::try_from(path.len()).ok()?)
+            }
+        }
+    }
+}
+
 /// How paths read in a conversation, fixed from its authority for its life.
 /// Contract: domain/run.md, section 3.3; domain/tools.md, section 2.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

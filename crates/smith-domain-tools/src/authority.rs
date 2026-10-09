@@ -8,12 +8,12 @@
 use alloc::boxed::Box;
 
 use skein_lib::bytes::copy_of;
-use skein_lib::{List, Token};
+use skein_lib::{List, Token, Writer};
 
 use crate::boundary::Root;
 use crate::call::{Call, Outcome};
 use crate::limits::Limits;
-use crate::path::{self, Name, Namespace, Path, Place};
+use crate::path::{self, Name, Namespace, Path, Place, Resolved};
 
 /// What a kit is given when it opens.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -183,12 +183,57 @@ pub(crate) fn locate(checkout: &Checkout, path: &Path, max: u32) -> Result<Targe
         return Ok(Target::Directories);
     }
     let Some(index) = choose(&checkout.mounts, &at) else {
-        return Err(Outcome::Outside);
+        return Err(Outcome::Outside { path: Resolved::Outside { path: at } });
     };
     let mount = checkout.mounts.get(index).expect("chosen among the mounts");
     let start = beneath(&mount.at, &at).expect("the chosen mount holds the path");
     let path = copy_of(at.get(start..).expect("the path beneath a mount is within it"));
     Ok(Target::Place(Located { place: Place { root: mount.root, path }, writable: mount.writable }))
+}
+
+/// The normalized namespace path of a place retained by a job. Legacy nested
+/// mounts keep their remaining components after the directory's first name.
+pub(crate) fn resolved(checkout: &Checkout, place: &Place) -> Resolved {
+    for mount in &checkout.mounts {
+        if mount.root == place.root {
+            let separator = usize::from(!mount.at.is_empty() && !place.path.is_empty());
+            let size = mount
+                .at
+                .len()
+                .checked_add(separator)
+                .expect("bounded mount and separator")
+                .checked_add(place.path.len())
+                .expect("admitted normalized place");
+            let mut writer = Writer::new(size);
+            writer.put(&mount.at).expect("measured mount");
+            if separator != 0 {
+                writer.put(b"/").expect("measured separator");
+            }
+            writer.put(&place.path).expect("measured place");
+            let absolute = writer.finish();
+            if mount.at.is_empty() {
+                return Resolved::Working { path: absolute };
+            }
+            let mut end = absolute.len();
+            for (index, byte) in absolute.iter().enumerate() {
+                if *byte == b'/' {
+                    end = index;
+                    break;
+                }
+            }
+            let first = absolute.get(..end).expect("first namespace component");
+            let start = end.checked_add(usize::from(end < absolute.len())).expect("bounded component");
+            let path = copy_of(absolute.get(start..).expect("remaining components"));
+            match checkout.cwd.first() {
+                Some(working) if working.as_bytes() == first => return Resolved::Working { path },
+                Some(_) | None => {
+                    let directory = Name::new(copy_of(first)).expect("mount starts with a name");
+                    return Resolved::Other { directory, path };
+                }
+            }
+        }
+    }
+    unreachable!("jobs retain places in their admitted checkout")
 }
 
 /// The repository that holds `at`, an absolute path's names joined: the one

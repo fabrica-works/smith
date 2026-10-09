@@ -158,14 +158,14 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKin
             (Verdict::Exited { exit: *exit }, len(head).saturating_add(len(tail)))
         }
         Outcome::NotGranted => (Verdict::NotGranted, 0),
-        Outcome::Outside => (Verdict::Outside, 0),
-        Outcome::ReadOnly => (Verdict::ReadOnly, 0),
+        Outcome::Outside { .. } => (Verdict::Outside, 0),
+        Outcome::ReadOnly { .. } => (Verdict::ReadOnly, 0),
         Outcome::TooLong => (Verdict::TooLong, 0),
-        Outcome::NotFound => (Verdict::NotFound, 0),
+        Outcome::NotFound { .. } => (Verdict::NotFound, 0),
         Outcome::NotFile => (Verdict::NotFile, 0),
         Outcome::Linked => (Verdict::Linked, 0),
         Outcome::Protected => (Verdict::Protected, 0),
-        Outcome::NotDirectory => (Verdict::NotDirectory, 0),
+        Outcome::NotDirectory { .. } => (Verdict::NotDirectory, 0),
         Outcome::TooLarge { .. } => (Verdict::TooLarge, 0),
         Outcome::NotRead => (Verdict::NotRead, 0),
         Outcome::Stale => (Verdict::Stale, 0),

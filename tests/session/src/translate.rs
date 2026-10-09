@@ -11,7 +11,7 @@ use smith_domain_session::llm as agent;
 use crate::tickets::{Ticketed, Tickets};
 use skein_fake_llm_domain::api as provider;
 use skein_lib::Token;
-use smith_domain_tools::{Call, Effect, Exit, Grants, Name, Outcome, Part, Path};
+use smith_domain_tools::{Call, Effect, Exit, Grants, Name, Namespace, Outcome, Part, Path};
 
 /// The tools the agent's side offers, by name: the family that grants each,
 /// and its schema.
@@ -40,7 +40,7 @@ enum Family {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
-    let agent::Prompt { endpoint: _, model, system, tools, namespace: _, delegated, messages, max_tokens } = prompt;
+    let agent::Prompt { endpoint: _, model, system, tools, namespace, delegated, messages, max_tokens } = prompt;
     let mut offered = offer(tools).into_vec();
     for descriptor in &delegated {
         let Ticketed::Tool { name, effect, schema } = tickets.resolve(descriptor.ticket) else {
@@ -53,7 +53,7 @@ pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
             parameters: (*schema).into(),
         });
     }
-    let messages = messages.into_iter().map(translate_message).collect();
+    let messages = messages.into_iter().map(|message| translate_message(message, &namespace)).collect();
     provider::Query { model, system, tools: offered.into(), choice: provider::ToolChoice::Auto, messages, max_tokens }
 }
 
@@ -101,15 +101,15 @@ fn offer(grants: Grants) -> Box<[provider::ToolSpec]> {
         .collect()
 }
 
-fn translate_message(message: agent::Message) -> provider::Message {
+fn translate_message(message: agent::Message, namespace: &Namespace) -> provider::Message {
     let role = match message.role {
         agent::Role::User => provider::Role::User,
         agent::Role::Assistant => provider::Role::Assistant,
     };
-    provider::Message { role, parts: message.content.into_iter().map(part).collect() }
+    provider::Message { role, parts: message.content.into_iter().map(|block| part(block, namespace)).collect() }
 }
 
-fn part(block: agent::Block) -> provider::Part {
+fn part(block: agent::Block, namespace: &Namespace) -> provider::Part {
     match block {
         agent::Block::Text { text, .. } | agent::Block::Refusal { text, .. } => provider::Part::Text { text },
         agent::Block::Opaque { bytes } => provider::Part::Opaque { bytes },
@@ -118,7 +118,7 @@ fn part(block: agent::Block) -> provider::Part {
             provider::Part::ToolCall { id, name, arguments: input }
         }
         agent::Block::ToolResult { id, result } => {
-            let (output, is_error) = render(&result);
+            let (output, is_error) = render_with_namespace(&result, namespace);
             provider::Part::ToolOutput { id, output, is_error }
         }
     }
@@ -275,9 +275,23 @@ fn path(text: &[u8]) -> Result<Path, agent::Problem> {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn render(result: &agent::Returned) -> (Box<[u8]>, bool) {
+    render_with_namespace(result, &Namespace::One)
+}
+
+fn render_with_namespace(result: &agent::Returned, namespace: &Namespace) -> (Box<[u8]>, bool) {
     match result {
         agent::Returned::Text { text, error, replay: _ } => (text.clone(), *error),
         agent::Returned::Owned { outcome } => {
+            if matches!(
+                outcome,
+                Outcome::NotFound { .. }
+                    | Outcome::NotDirectory { .. }
+                    | Outcome::Outside { .. }
+                    | Outcome::ReadOnly { .. }
+            ) {
+                return smith_protocol_llm::render_outcome(outcome, namespace, 16_384)
+                    .expect("bounded path feedback from admitted tools");
+            }
             let failed = !matches!(
                 outcome,
                 Outcome::Read { .. }

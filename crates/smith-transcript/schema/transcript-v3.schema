@@ -33,10 +33,15 @@ record LineNumber { number: u32 }
 record Ambiguous { count: u32 lines: list 1024 LineNumber }
 enum Fault { denied, no_space, other }
 record Failed { fault: Fault }
+record WorkingPath { path: bytes 4096 }
+record OtherPath { directory: bytes 4096 path: bytes 4096 }
+record OutsidePath { path: bytes 4096 }
+enum Resolved { working: WorkingPath, other: OtherPath, outside: OutsidePath }
+record ResolvedFailure { path: Resolved }
 enum Outcome {
     read: Read, listed: Listed, found: Found, written: Written,
-    edited: Edited, exited: CommandEnd, not_granted, outside, read_only,
-    too_long, not_found, not_file, linked, protected, not_directory,
+    edited: Edited, exited: CommandEnd, not_granted, outside: ResolvedFailure, read_only: ResolvedFailure,
+    too_long, not_found: ResolvedFailure, not_file, linked, protected, not_directory: ResolvedFailure,
     too_large: TooLarge, not_read, stale, no_match,
     ambiguous: Ambiguous, unchanged, failed: Failed, timed_out,
     cancelled, busy, nul_byte

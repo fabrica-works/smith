@@ -64,6 +64,10 @@ fn transcript_limits() -> transcript::Limits {
         command_end_head: 0,
         command_end_last: 0,
         ambiguous_lines: 0,
+        working_path_path: 0,
+        other_path_directory: 0,
+        other_path_path: 0,
+        outside_path_path: 0,
         field_problem_field: 0,
         said_text: 0,
         tool_result_id: 0,
@@ -187,4 +191,35 @@ fn every_event_at_its_largest_payload_stays_within_its_encoded_and_heap_bounds()
             }
         }
     }
+}
+
+#[test]
+fn a_resolved_failure_attains_its_configured_path_payload_heap_bound() {
+    let limits =
+        transcript::Limits { text_text: 0, other_path_directory: 4096, other_path_path: 4096, ..transcript_limits() };
+    let path = transcript::OtherPath::new(
+        &limits,
+        transcript::OtherPathParts { directory: vec![b'd'; 4096].into(), path: vec![b'p'; 4096].into() },
+    )
+    .expect("ceiling descriptor");
+    let value = transcript::Outcome::ReadOnly(
+        transcript::ResolvedFailure::new(
+            &limits,
+            transcript::ResolvedFailureParts { path: transcript::Resolved::Other(path) },
+        )
+        .expect("failure"),
+    );
+    let mut writer = Writer::new(usize::try_from(value.measure()).expect("wire length"));
+    value.encode(&mut writer).expect("measured wire");
+    let wire = writer.finish();
+    drop(value);
+    let bound = transcript::Outcome::worst_case_heap(&limits).expect("configured failure bound");
+    let meter = Meter::new();
+    meter.start();
+    let decoded = transcript::Outcome::decode(&limits, &mut Reader::new(&wire)).expect("ceiling failure");
+    let measured = meter.end();
+    assert_eq!(measured.held(), 8192, "both separately bounded fields are retained");
+    assert!(measured.peak() <= bound, "decoded path within generated heap bound");
+    drop(decoded);
+    assert_eq!(meter.held(), 0, "path ownership settles");
 }

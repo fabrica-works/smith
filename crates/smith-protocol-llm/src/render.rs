@@ -18,17 +18,21 @@ pub const CUT_MARKER_BYTES: u32 = 37;
 /// Render workspace feedback, cutting its prefix with the exact omitted bytes.
 /// The caller derives a bound large enough for the marker before admitting a
 /// prompt. Cutting preserves the outcome's error flag and every UTF-8 boundary.
-pub fn render_outcome(outcome: &Outcome, maximum: u32) -> Result<(Box<[u8]>, bool), Error> {
+pub fn render_outcome(
+    outcome: &Outcome,
+    namespace: &tools::Namespace,
+    maximum: u32,
+) -> Result<(Box<[u8]>, bool), Error> {
     assert!(maximum >= CUT_MARKER_BYTES, "derived render bound holds the cut marker");
     let mut measure = Sink { length: 0, kept: 0, maximum: u64::MAX, cut: false, writer: None };
-    let error = render(outcome, &mut measure)?;
+    let error = render(outcome, namespace, &mut measure)?;
     let prefix_cap = if measure.length > u64::from(maximum) {
         u64::from(maximum.checked_sub(CUT_MARKER_BYTES).expect("marker room checked"))
     } else {
         u64::from(maximum)
     };
     let mut prefix = Sink { length: 0, kept: 0, maximum: prefix_cap, cut: false, writer: None };
-    let again = render(outcome, &mut prefix)?;
+    let again = render(outcome, namespace, &mut prefix)?;
     assert_eq!(error, again, "render classification is stable");
     let omitted = measure.length.checked_sub(prefix.kept).expect("prefix within full rendering");
     let marker_length = if omitted > 0 {
@@ -41,7 +45,7 @@ pub fn render_outcome(outcome: &Outcome, maximum: u32) -> Result<(Box<[u8]>, boo
     };
     let length = usize::try_from(prefix.kept.checked_add(marker_length).ok_or(Error::Limit)?).or(Err(Error::Limit))?;
     let mut output = Sink { length: 0, kept: 0, maximum: prefix_cap, cut: false, writer: Some(Writer::new(length)) };
-    let rendered = render(outcome, &mut output)?;
+    let rendered = render(outcome, namespace, &mut output)?;
     assert_eq!(error, rendered, "render classification is stable");
     assert_eq!(output.kept, prefix.kept, "render prefix is stable");
     let mut writer = output.writer.expect("writing pass owns its measured output");
@@ -147,7 +151,7 @@ fn hex(nibble: u8) -> u8 {
 }
 
 #[expect(clippy::too_many_lines, reason = "one exhaustive rendering cell per outcome variant")]
-fn render(outcome: &Outcome, output: &mut Sink) -> Result<bool, Error> {
+fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) -> Result<bool, Error> {
     let error = match outcome {
         Outcome::Read { content, skipped, lines, total, cut } => {
             read(content, *skipped, *lines, *total, *cut, output)?;
@@ -242,20 +246,23 @@ fn render(outcome: &Outcome, output: &mut Sink) -> Result<bool, Error> {
             output.put(b"tool not granted")?;
             true
         }
-        Outcome::Outside => {
-            output.put(b"path is outside the workspace")?;
+        Outcome::Outside { path } => {
+            output.put(b"path is outside the workspace: ")?;
+            resolved_path(path, namespace, output)?;
             true
         }
-        Outcome::ReadOnly => {
-            output.put(b"path is read-only")?;
+        Outcome::ReadOnly { path } => {
+            output.put(b"path is read-only: ")?;
+            resolved_path(path, namespace, output)?;
             true
         }
         Outcome::TooLong => {
             output.put(b"path is too long")?;
             true
         }
-        Outcome::NotFound => {
-            output.put(b"path not found")?;
+        Outcome::NotFound { path } => {
+            output.put(b"path not found: ")?;
+            resolved_path(path, namespace, output)?;
             true
         }
         Outcome::NotFile => {
@@ -270,8 +277,9 @@ fn render(outcome: &Outcome, output: &mut Sink) -> Result<bool, Error> {
             output.put(b"git directory is protected")?;
             true
         }
-        Outcome::NotDirectory => {
-            output.put(b"path is not a directory")?;
+        Outcome::NotDirectory { path } => {
+            output.put(b"path is not a directory: ")?;
+            resolved_path(path, namespace, output)?;
             true
         }
         Outcome::TooLarge { size } => {
@@ -395,4 +403,34 @@ pub(crate) fn cut_text(text: Box<[u8]>, maximum: u32) -> Box<[u8]> {
     writer.put(Decimal::of(omitted).as_bytes()).expect("measured byte-count room");
     writer.put(b" bytes omitted]").expect("measured marker room");
     writer.finish()
+}
+
+/// Name the normalized descriptor without showing a single directory's mount.
+fn resolved_path(path: &tools::Resolved, namespace: &tools::Namespace, output: &mut Sink) -> Result<(), Error> {
+    match path {
+        tools::Resolved::Working { path } => match namespace {
+            tools::Namespace::NoWorkspace | tools::Namespace::One => {
+                if path.is_empty() {
+                    output.put(b".")
+                } else {
+                    output.text(path)
+                }
+            }
+            tools::Namespace::Several { working } => named_path(working, path, output),
+        },
+        tools::Resolved::Other { directory, path } => named_path(directory, path, output),
+        tools::Resolved::Outside { path } => {
+            output.put(b"/")?;
+            output.text(path)
+        }
+    }
+}
+
+fn named_path(directory: &tools::Name, path: &[u8], output: &mut Sink) -> Result<(), Error> {
+    output.put(b"/")?;
+    output.text(directory.as_bytes())?;
+    if !path.is_empty() {
+        output.put(b"/")?;
+    }
+    output.text(path)
 }

@@ -47,7 +47,7 @@ use crate::window::Span;
 pub(crate) struct Kit {
     /// The session's token, echoed when the kit closes.
     session: Token,
-    checkout: Checkout,
+    pub(crate) checkout: Checkout,
     pub(crate) knowledge: Knowledge,
     /// The jobs running its calls.
     jobs: Set<Id<Job>>,
@@ -275,7 +275,9 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             }
             let located = match authority::locate(&kit.checkout, &path, limits.path_bytes)? {
                 Target::Place(located) => located,
-                Target::Directories => return Err(Outcome::NotDirectory),
+                Target::Directories => {
+                    return Err(Outcome::NotDirectory { path: path::Resolved::Outside { path: Box::new([]) } });
+                }
             };
             Work::Search { place: located.place, pattern, glob }
         }
@@ -339,7 +341,7 @@ fn writable(checkout: &Checkout, path: &Path, limits: &Limits) -> Result<Located
     let located = place(checkout, path, limits.path_bytes)?;
     file(&located.place)?;
     if !located.writable {
-        return Err(Outcome::ReadOnly);
+        return Err(Outcome::ReadOnly { path: authority::resolved(checkout, &located.place) });
     }
     if path::in_git(&located.place.path) {
         return Err(Outcome::Protected);

@@ -10,6 +10,7 @@ publish.workspace = true
 skein-lib.workspace = true
 smith-domain-session.workspace = true
 smith-domain-tools.workspace = true
+smith-protocol-llm.workspace = true
 smith-tools-world.workspace = true
 skein-fake-checkout.workspace = true
 skein-fake-llm-domain.workspace = true

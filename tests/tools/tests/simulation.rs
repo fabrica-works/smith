@@ -94,7 +94,17 @@ fn paths_that_lead_out_of_the_checkout_are_outside() {
         read(b"absolute"),
     ])];
     let (answers, world) = run(Settings::calm(3), INSPECT, script);
-    assert_eq!(answers, vec![Outcome::Outside; 6]);
+    assert_eq!(
+        answers,
+        vec![
+            Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Outside { path: b"work".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Working { path: b"temper/escape".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Working { path: b"temper/absolute".as_slice().into() } }
+        ]
+    );
     assert_eq!(world.stats().ops, 2, "only the links reached io");
 
     // Links inside the repository work, and `..` is resolved by the names.
@@ -242,13 +252,13 @@ fn what_is_missing_or_not_a_file_is_said_so() {
     ])];
     let (answers, _) = run(Settings::calm(7), INSPECT, script);
     let expected = vec![
-        Outcome::NotFound,
-        Outcome::NotFound,
-        Outcome::NotFound,
+        Outcome::NotFound { path: tools::Resolved::Working { path: b"temper/missing.rs".as_slice().into() } },
+        Outcome::NotFound { path: tools::Resolved::Working { path: b"temper/nowhere/missing.rs".as_slice().into() } },
+        Outcome::NotFound { path: tools::Resolved::Working { path: b"temper/nowhere".as_slice().into() } },
         Outcome::NotFile,
         Outcome::NotFile,
-        Outcome::NotDirectory,
-        Outcome::NotDirectory,
+        Outcome::NotDirectory { path: tools::Resolved::Working { path: b"temper/Cargo.toml".as_slice().into() } },
+        Outcome::NotDirectory { path: tools::Resolved::Working { path: b"temper/Cargo.toml/x".as_slice().into() } },
         Outcome::Failed { fault: Fault::Other },
     ];
     assert_eq!(answers, expected);
@@ -472,19 +482,21 @@ fn writes_stay_in_writable_repositories_of_granted_kits() {
     ];
     let (answers, world) = run(Settings::calm(24), MODIFY, script);
     let expected = vec![
-        Outcome::ReadOnly,
-        Outcome::ReadOnly,
-        Outcome::Outside,
-        Outcome::Outside,
+        Outcome::ReadOnly { path: tools::Resolved::Working { path: b"docs/guide.md".as_slice().into() } },
+        Outcome::ReadOnly { path: tools::Resolved::Working { path: b"temper/vendor/lib/lib.rs".as_slice().into() } },
+        Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
+        Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
         Outcome::TooLarge { size: 5000 },
         Outcome::NotFile,
         Outcome::NotFile,
-        Outcome::NotDirectory,
+        Outcome::NotDirectory { path: tools::Resolved::Working { path: b"temper/Cargo.toml/x".as_slice().into() } },
         Outcome::Protected,
         Outcome::Protected,
         Outcome::Protected,
         Outcome::Protected,
-        Outcome::ReadOnly,
+        Outcome::ReadOnly {
+            path: tools::Resolved::Working { path: b"temper/vendor/lib/.git/config".as_slice().into() },
+        },
         Outcome::Linked,
         Outcome::Linked,
         Outcome::Linked,
@@ -585,7 +597,7 @@ fn an_edit_that_would_be_wrong_changes_nothing() {
         Outcome::Unchanged,
         Outcome::NoMatch,
         Outcome::TooLarge { size: 6044 },
-        Outcome::ReadOnly,
+        Outcome::ReadOnly { path: tools::Resolved::Working { path: b"docs/guide.md".as_slice().into() } },
     ];
     assert_eq!(answers, expected);
     assert_eq!(world.checkout().files(), Fixture::new().checkout.files(), "nothing changed");
@@ -888,7 +900,7 @@ fn a_search_finds_lines_in_path_order_without_following_links() {
         ]),
         found(vec![hit(b"vendor/lib/lib.rs", 1, b"// vendored")]),
         found(vec![hit(b"", 2, b"pub fn two() {}")]),
-        Outcome::Outside,
+        Outcome::Outside { path: tools::Resolved::Outside { path: b"work".as_slice().into() } },
         found(vec![hit(b"main.rs", 1, b"fn main() {}")]),
         found(vec![hit(b"lib.rs", 1, b"// vendored")]),
     ];
@@ -923,8 +935,8 @@ fn a_search_is_bounded_and_says_when_it_cannot_run() {
             timed_out: false,
         },
         Outcome::Exited { exit: tools::Exit::Code { code: 2 }, head: stderr[..].into(), tail: [].into(), dropped: 0 },
-        Outcome::NotFound,
-        Outcome::Outside,
+        Outcome::NotFound { path: tools::Resolved::Working { path: b"temper/nowhere".as_slice().into() } },
+        Outcome::Outside { path: tools::Resolved::Working { path: b"temper/escape".as_slice().into() } },
         Outcome::Found { hits: [hit(b"guide.md", 1, b"# Guide")].into(), more: 0, timed_out: false },
     ];
     assert_eq!(answers, expected);
@@ -1098,4 +1110,47 @@ fn list_slash_answers_the_directories_without_io_even_when_io_always_fails() {
     assert_eq!(world.answers(session), vec![&expected, &expected]);
     assert_eq!(world.stats().ops, 0);
     assert_eq!(world.stats().faults, 0);
+}
+
+#[test]
+fn a_directory_name_written_as_a_prefix_fails_with_the_path_it_resolved_to() {
+    for several in [false, true] {
+        let fixture = Fixture::new();
+        let mut repos = vec![tools::Repo {
+            mount: Box::new([Name::new(b"work".as_slice().into()).expect("working directory")]),
+            root: fixture.repos[0].root,
+            writable: true,
+        }];
+        if several {
+            repos.push(tools::Repo {
+                mount: Box::new([Name::new(b"docs".as_slice().into()).expect("other directory")]),
+                root: fixture.repos[2].root,
+                writable: false,
+            });
+        }
+        let authority = tools::Authority { cwd: repos[0].mount.clone(), repos: repos.into(), grants: MODIFY };
+        let mut calls = vec![read(b"work/src/lib.rs"), read(b"src/lib.rs"), list(b"Cargo.toml"), read(b"escape")];
+        if several {
+            calls.push(write(b"/docs/guide.md", b"changed"));
+        }
+        let mut world = World::new(Settings::calm(9105), fixture.checkout);
+        let session = world.session(Time::ZERO, authority, vec![Step::Calls(calls)]);
+        world.run(ITERATIONS);
+        let mut expected = vec![
+            Outcome::NotFound { path: tools::Resolved::Working { path: b"work/src/lib.rs".as_slice().into() } },
+            read_of(LIB, 0, 3, 3),
+            Outcome::NotDirectory { path: tools::Resolved::Working { path: b"Cargo.toml".as_slice().into() } },
+            Outcome::Outside { path: tools::Resolved::Working { path: b"escape".as_slice().into() } },
+        ];
+        if several {
+            expected.push(Outcome::ReadOnly {
+                path: tools::Resolved::Other {
+                    directory: Name::new(b"docs".as_slice().into()).expect("other directory"),
+                    path: b"guide.md".as_slice().into(),
+                },
+            });
+        }
+        assert_eq!(world.answers(session), expected.iter().collect::<Vec<_>>());
+        assert_eq!(world.stats().ops, 4);
+    }
 }

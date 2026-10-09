@@ -117,7 +117,7 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
         }
     };
     let Some(place) = place(path) else {
-        return *outcome == Outcome::Outside;
+        return matches!(outcome, Outcome::Outside { .. });
     };
     let (directory, entry) = DIRECTORY;
     let is_directory = place == directory;
@@ -139,9 +139,9 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
             Call::Edit { .. },
             Outcome::Edited { .. } | Outcome::NoMatch | Outcome::Ambiguous { .. } | Outcome::Unchanged,
         )
-        | (Call::List { .. }, Outcome::NotDirectory) => is_file,
+        | (Call::List { .. }, Outcome::NotDirectory { .. }) => is_file,
         (Call::Read { .. } | Call::Write { .. } | Call::Edit { .. }, Outcome::NotFile) => is_directory,
-        (Call::Read { .. } | Call::List { .. } | Call::Search { .. } | Call::Edit { .. }, Outcome::NotFound) => {
+        (Call::Read { .. } | Call::List { .. } | Call::Search { .. } | Call::Edit { .. }, Outcome::NotFound { .. }) => {
             may_be_missing
         }
         // What the tools refuse before a change: a path not read first, or

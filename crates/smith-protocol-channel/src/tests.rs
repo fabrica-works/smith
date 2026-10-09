@@ -182,3 +182,55 @@ fn optional_usage_round_trips_without_turning_absence_into_zero() {
         assert_eq!(decoded.usage, usage);
     }
 }
+
+#[test]
+fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths() {
+    use smith_domain_session::{llm, record};
+    use smith_domain_tools::{Name, Outcome, Resolved};
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved turn");
+    let cases = [
+        Outcome::NotFound { path: Resolved::Working { path: "src/café.rs".as_bytes().into() } },
+        Outcome::NotDirectory { path: Resolved::Working { path: Box::new([]) } },
+        Outcome::ReadOnly {
+            path: Resolved::Other {
+                directory: Name::new(b"docs".as_slice().into()).expect("name"),
+                path: b"guide.md".as_slice().into(),
+            },
+        },
+        Outcome::Outside { path: Resolved::Outside { path: b"other/file".as_slice().into() } },
+    ];
+    for outcome in cases {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"path-result".as_slice().into(),
+                result: llm::Returned::Owned { outcome },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded turn");
+        assert_eq!(&bytes[..2], &[0, 3]);
+        let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("saved failure");
+        assert_eq!(decoded.messages, turn.messages, "typed descriptors survive durable translation");
+    }
+    for path in [b"../file".as_slice(), b"a/./b", b"a//b", b"/file", b"file/", b"a\0b"] {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"path-result".as_slice().into(),
+                result: llm::Returned::Owned {
+                    outcome: Outcome::NotFound { path: Resolved::Working { path: path.into() } },
+                },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("wire byte bound");
+        assert_eq!(
+            crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints),
+            Err(record::Refusal::Malformed),
+            "{path:?}"
+        );
+    }
+}

@@ -60,7 +60,7 @@ fn workspace_successes_render_the_retained_content_and_counts() {
         ),
     ];
     for (outcome, expected) in cases {
-        let (text, error) = adapter::render_outcome(&outcome, 4096).expect("bounded rendering");
+        let (text, error) = adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("bounded rendering");
         assert_eq!(text.as_ref(), expected);
         assert!(!error);
     }
@@ -70,14 +70,14 @@ fn workspace_successes_render_the_retained_content_and_counts() {
 fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
     let failures = [
         tools::Outcome::NotGranted,
-        tools::Outcome::Outside,
-        tools::Outcome::ReadOnly,
+        tools::Outcome::Outside { path: tools::Resolved::Working { path: b"gone.rs".as_slice().into() } },
+        tools::Outcome::ReadOnly { path: tools::Resolved::Working { path: b"gone.rs".as_slice().into() } },
         tools::Outcome::TooLong,
-        tools::Outcome::NotFound,
+        tools::Outcome::NotFound { path: tools::Resolved::Working { path: b"gone.rs".as_slice().into() } },
         tools::Outcome::NotFile,
         tools::Outcome::Linked,
         tools::Outcome::Protected,
-        tools::Outcome::NotDirectory,
+        tools::Outcome::NotDirectory { path: tools::Resolved::Working { path: b"gone.rs".as_slice().into() } },
         tools::Outcome::TooLarge { size: 10_000 },
         tools::Outcome::NotRead,
         tools::Outcome::Stale,
@@ -99,7 +99,8 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
         },
     ];
     for outcome in failures {
-        let (text, error) = adapter::render_outcome(&outcome, 4096).expect("bounded failure rendering");
+        let (text, error) =
+            adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("bounded failure rendering");
         assert!(error, "{outcome:?}");
         assert!(!text.is_empty());
         assert!(text.iter().all(u8::is_ascii), "{text:?}");
@@ -112,7 +113,8 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
         tools::Outcome::Read {
             content: "saved – 界\n".as_bytes().into(), skipped: 4, lines: 1, total: 6, cut: false
         };
-    let (live_text, live_error) = adapter::render_outcome(&outcome, 4096).expect("live feedback");
+    let (live_text, live_error) =
+        adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     let history = llm::Prompt {
         namespace: smith_domain::tools::Namespace::One,
         asker: llm::Asker::Main,

@@ -569,7 +569,10 @@ fn a_session_runs_the_tools_it_is_asked_for_and_yields_once_the_llm_is_done() {
     assert_eq!(h.step(Event::Done { owner: second, done: Done::Missing }), None);
     let (_, prompt) = calling(h.step(ran(first, b"main.rs")));
     assert_eq!(prompt.messages.len(), 3);
-    let results = [result(b"c1", read(b"main.rs")), result(b"c2", Outcome::NotFound)];
+    let results = [
+        result(b"c1", read(b"main.rs")),
+        result(b"c2", Outcome::NotFound { path: tools::Resolved::Working { path: bytes(b"gone.rs") } }),
+    ];
     assert_eq!(&*prompt.messages[2].content, &results);
 
     let done = completion(Box::new([text(b"fixed "), text(b"it")]), Stop::EndTurn);
@@ -756,7 +759,11 @@ fn a_batch_the_tools_answer_at_once_goes_on_from_the_ready_list_after_the_reclai
     assert!(!h.domain.is_ready());
     assert_eq!(loading(&op), place(b"main.rs"));
     let (_, prompt) = calling(h.step(ran(load, b"main.rs")));
-    let results = [result(b"c1", Outcome::Outside), result(b"c2", Outcome::Outside), result(b"c3", read(b"main.rs"))];
+    let results = [
+        result(b"c1", Outcome::Outside { path: tools::Resolved::Outside { path: bytes(b"etc") } }),
+        result(b"c2", Outcome::Outside { path: tools::Resolved::Outside { path: bytes(b"etc") } }),
+        result(b"c3", read(b"main.rs")),
+    ];
     assert_eq!(&*prompt.messages[2].content, &results);
 }
 
@@ -887,7 +894,10 @@ fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_
     let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
     let &[a] = runs.as_slice() else { panic!("the read alone runs, not {runs:?}") };
     let (_, prompt) = calling(h.step(ran(a, b"main.rs")));
-    let expected = [result(b"a", read(b"main.rs")), result(&id, Outcome::Outside)];
+    let expected = [
+        result(b"a", read(b"main.rs")),
+        result(&id, Outcome::Outside { path: tools::Resolved::Outside { path: bytes(b"etc") } }),
+    ];
     assert_eq!(&*prompt.messages[2].content, &expected);
     assert_eq!(
         &*h.turn_records.get(0).expect("actual observed turn").messages[2].content,

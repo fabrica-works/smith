@@ -80,14 +80,14 @@ fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
             tools::Outcome::Found { timed_out: true, .. }
             | tools::Outcome::Exited { .. }
             | tools::Outcome::NotGranted
-            | tools::Outcome::Outside
-            | tools::Outcome::ReadOnly
+            | tools::Outcome::Outside { .. }
+            | tools::Outcome::ReadOnly { .. }
             | tools::Outcome::TooLong
-            | tools::Outcome::NotFound
+            | tools::Outcome::NotFound { .. }
             | tools::Outcome::NotFile
             | tools::Outcome::Linked
             | tools::Outcome::Protected
-            | tools::Outcome::NotDirectory
+            | tools::Outcome::NotDirectory { .. }
             | tools::Outcome::TooLarge { .. }
             | tools::Outcome::NotRead
             | tools::Outcome::Stale

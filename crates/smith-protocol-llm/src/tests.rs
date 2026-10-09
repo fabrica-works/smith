@@ -79,13 +79,17 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
             },
         ];
         for outcome in cases {
-            let (full, _) = render_outcome(&outcome, bound).unwrap();
+            let (full, _) = render_outcome(&outcome, &tools::Namespace::One, bound).unwrap();
             if case % 8 == 0 {
-                assert_eq!(render_outcome(&outcome, bound).unwrap().0, full, "same outcome renders identical bytes");
+                assert_eq!(
+                    render_outcome(&outcome, &tools::Namespace::One, bound).unwrap().0,
+                    full,
+                    "same outcome renders identical bytes"
+                );
                 let cap = CUT_MARKER_BYTES + u32::try_from(rng.next_u64() % 128).unwrap();
                 assert_eq!(
-                    render_outcome(&outcome, cap),
-                    render_outcome(&outcome, cap),
+                    render_outcome(&outcome, &tools::Namespace::One, cap),
+                    render_outcome(&outcome, &tools::Namespace::One, cap),
                     "cut rendering is deterministic too"
                 );
             }
@@ -98,9 +102,9 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
 #[test]
 fn a_cut_marker_counts_the_exact_bytes_left_out_of_the_rendering() {
     let outcome = tools::Outcome::Read { content: vec![b'x'; 512].into(), skipped: 0, lines: 1, total: 1, cut: false };
-    let (full, error) = render_outcome(&outcome, 4096).unwrap();
+    let (full, error) = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
     for cap in CUT_MARKER_BYTES..128 {
-        let (cut, cut_error) = render_outcome(&outcome, cap).unwrap();
+        let (cut, cut_error) = render_outcome(&outcome, &tools::Namespace::One, cap).unwrap();
         let marker = cut.windows(2).position(|bytes| bytes == b"\n[").unwrap();
         let count =
             core::str::from_utf8(&cut[marker + 2..]).unwrap().split(' ').next().unwrap().parse::<usize>().unwrap();
@@ -153,10 +157,10 @@ fn valid_utf8_survives_and_only_invalid_bytes_and_controls_are_escaped() {
             tail: Box::new([]),
             dropped: 0,
         };
-        let first = render_outcome(&outcome, 4096).unwrap();
+        let first = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
         assert_eq!(first.0.as_ref(), expected);
         assert!(!first.1);
-        assert_eq!(first, render_outcome(&outcome, 4096).unwrap());
+        assert_eq!(first, render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap());
     }
 }
 
@@ -168,9 +172,9 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
         tail: Box::new([]),
         dropped: 0,
     };
-    let (full, _) = render_outcome(&outcome, 4096).unwrap();
+    let (full, _) = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
     for cap in CUT_MARKER_BYTES..128 {
-        let (cut, error) = render_outcome(&outcome, cap).unwrap();
+        let (cut, error) = render_outcome(&outcome, &tools::Namespace::One, cap).unwrap();
         let text = core::str::from_utf8(&cut).unwrap();
         let (prefix, marker) = text.split_once("\n[").unwrap();
         let omitted = marker.split(' ').next().unwrap().parse::<usize>().unwrap();
@@ -324,5 +328,40 @@ fn path_descriptions_follow_the_actual_conversation_namespace() {
                 assert!(!text.contains(absent));
             }
         }
+    }
+}
+
+#[test]
+fn resolved_failure_paths_render_in_the_fixed_namespace_live_and_on_replay() {
+    let working = tools::Resolved::Working { path: "src/café.rs".as_bytes().into() };
+    let other = tools::Resolved::Other {
+        directory: tools::Name::new(b"docs".as_slice().into()).expect("name"),
+        path: b"guide.md".as_slice().into(),
+    };
+    let outside = tools::Resolved::Outside { path: b"elsewhere/file".as_slice().into() };
+    let several = tools::Namespace::Several { working: tools::Name::new(b"work".as_slice().into()).expect("name") };
+    let table: [(tools::Outcome, tools::Namespace, &[u8]); 5] = [
+        (
+            tools::Outcome::NotFound { path: working.clone() },
+            tools::Namespace::One,
+            "path not found: src/café.rs".as_bytes(),
+        ),
+        (tools::Outcome::NotFound { path: working }, several, "path not found: /work/src/café.rs".as_bytes()),
+        (tools::Outcome::ReadOnly { path: other }, tools::Namespace::One, b"path is read-only: /docs/guide.md"),
+        (
+            tools::Outcome::Outside { path: outside },
+            tools::Namespace::One,
+            b"path is outside the workspace: /elsewhere/file",
+        ),
+        (
+            tools::Outcome::NotDirectory { path: tools::Resolved::Working { path: Box::new([]) } },
+            tools::Namespace::One,
+            b"path is not a directory: .",
+        ),
+    ];
+    for (outcome, namespace, expected) in table {
+        let rendered = render_outcome(&outcome, &namespace, 4096).expect("bounded path feedback");
+        assert_eq!(rendered, (expected.into(), true));
+        assert_eq!(rendered, render_outcome(&outcome.clone(), &namespace, 4096).expect("replay"));
     }
 }

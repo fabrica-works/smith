@@ -13,7 +13,7 @@ use alloc::boxed::Box;
 
 use skein_lib::Duration;
 
-use crate::path::{Name, Part, Path};
+use crate::path::{Name, Part, Path, Resolved};
 
 /// A call the LLM made to one of the tools.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -185,13 +185,13 @@ pub enum Outcome {
     NotGranted,
     /// The path is outside every repository of the checkout, or a symbolic
     /// link on the way to it leads out of its repository.
-    Outside,
+    Outside { path: Resolved },
     /// The path is in a repository the kit may not write.
-    ReadOnly,
+    ReadOnly { path: Resolved },
     /// The path is longer than the tools take.
     TooLong,
     /// Nothing is at the path.
-    NotFound,
+    NotFound { path: Resolved },
     /// What is at the path is not a regular file: a directory, a device.
     NotFile,
     /// The path of a write or an edit goes through a symbolic link, which
@@ -207,7 +207,7 @@ pub enum Outcome {
     Protected,
     /// What is at the path, or a directory on the way to it, is not a
     /// directory.
-    NotDirectory,
+    NotDirectory { path: Resolved },
     /// The file, or the content to write, is `size` bytes: more than the
     /// tools load or store.
     TooLarge {

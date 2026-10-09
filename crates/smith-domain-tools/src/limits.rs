@@ -107,7 +107,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 /// that wins cancellation; `None` means a configured bound overflowed.
 #[must_use]
 pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
-    match call {
+    let result = match call {
         Call::Read { .. } => Some(u64::from(limits.read_bytes)),
         Call::List { .. } => Some(limits.list_bytes),
         Call::Search { .. } => {
@@ -120,7 +120,8 @@ pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
             ambiguity_slot_bytes.checked_mul(u64::from(limits.match_lines))
         }
         Call::Shell { .. } => u64::from(limits.shell_head).checked_add(u64::from(limits.shell_tail)),
-    }
+    }?;
+    Some(result.max(u64::from(limits.path_bytes)))
 }
 
 /// What one kit holds beyond its slot: its authority, each path in it at most

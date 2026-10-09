@@ -58,4 +58,4 @@ pub use call::{Call, Effect, Entry, Exit, Fault, Hit, Kind, Outcome, Tool, effec
 pub use domain::{Domain, max_facts, max_out, step};
 pub use facts::{CallInfo, Fact, FactKind, Verdict};
 pub use limits::{Derivation, Field, Limits, derive, result_worst_case, worst_case};
-pub use path::{Name, Namespace, Part, Path, Place};
+pub use path::{Name, Namespace, Part, Path, Place, Resolved};

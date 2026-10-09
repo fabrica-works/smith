@@ -2211,6 +2211,10 @@ fn call_cost(call: &Call) -> Option<u64> {
 
 fn outcome_cost(outcome: &Outcome) -> Option<u64> {
     match outcome {
+        Outcome::NotFound { path }
+        | Outcome::NotDirectory { path }
+        | Outcome::Outside { path }
+        | Outcome::ReadOnly { path } => path.owned_bytes(),
         Outcome::Read { content, .. } => len(content),
         Outcome::Listed { entries, more: _ } => {
             let mut cost = u64::try_from(size_of::<Entry>()).ok()?.checked_mul(u64::try_from(entries.len()).ok()?)?;
@@ -2235,14 +2239,10 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
         | Outcome::NoMatch
         | Outcome::Unchanged
         | Outcome::NotGranted
-        | Outcome::Outside
-        | Outcome::ReadOnly
         | Outcome::TooLong
-        | Outcome::NotFound
         | Outcome::NotFile
         | Outcome::Linked
         | Outcome::Protected
-        | Outcome::NotDirectory
         | Outcome::TooLarge { .. }
         | Outcome::NotRead
         | Outcome::Stale

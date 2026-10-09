@@ -902,11 +902,15 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
     }
     let skeleton = spec_cost + completion_bytes + block + 1;
     let exact_result = exact.checked_sub(skeleton).expect("minimal provider reserve leaves actual result room");
+    assert!(exact_result >= 3, "the normalized one-byte mount and one-byte file fit");
     for read_bytes in [exact_result, exact_result + 1, 1 << 20] {
         let limits = Limits {
             session_bytes: exact,
             tools: smith_domain_tools::Limits {
                 read_bytes: u32::try_from(read_bytes).expect("bounded read cap"),
+                // This control attains read payload credit; its possible failure
+                // path fits beneath that credit as well.
+                path_bytes: 3,
                 ..base.tools
             },
             ..base

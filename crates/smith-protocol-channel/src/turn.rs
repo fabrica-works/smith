@@ -230,14 +230,26 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
             )?)
         }
         tools::Outcome::NotGranted => wire::Outcome::NotGranted,
-        tools::Outcome::Outside => wire::Outcome::Outside,
-        tools::Outcome::ReadOnly => wire::Outcome::ReadOnly,
+        tools::Outcome::Outside { path } => wire::Outcome::Outside(wire::ResolvedFailure::new(
+            limits,
+            wire::ResolvedFailureParts { path: encode_resolved(path, limits)? },
+        )?),
+        tools::Outcome::ReadOnly { path } => wire::Outcome::ReadOnly(wire::ResolvedFailure::new(
+            limits,
+            wire::ResolvedFailureParts { path: encode_resolved(path, limits)? },
+        )?),
         tools::Outcome::TooLong => wire::Outcome::TooLong,
-        tools::Outcome::NotFound => wire::Outcome::NotFound,
+        tools::Outcome::NotFound { path } => wire::Outcome::NotFound(wire::ResolvedFailure::new(
+            limits,
+            wire::ResolvedFailureParts { path: encode_resolved(path, limits)? },
+        )?),
         tools::Outcome::NotFile => wire::Outcome::NotFile,
         tools::Outcome::Linked => wire::Outcome::Linked,
         tools::Outcome::Protected => wire::Outcome::Protected,
-        tools::Outcome::NotDirectory => wire::Outcome::NotDirectory,
+        tools::Outcome::NotDirectory { path } => wire::Outcome::NotDirectory(wire::ResolvedFailure::new(
+            limits,
+            wire::ResolvedFailureParts { path: encode_resolved(path, limits)? },
+        )?),
         tools::Outcome::TooLarge { size } => {
             wire::Outcome::TooLarge(wire::TooLarge::new(limits, wire::TooLargeParts { size: *size })?)
         }
@@ -291,4 +303,21 @@ fn hex(value: u8) -> u8 {
     } else {
         b'a'.checked_add(value.checked_sub(10).expect("hex letter")).expect("hex digit")
     }
+}
+
+/// Preserve the typed normalized failure descriptor under transcript version 3.
+fn encode_resolved(source: &tools::Resolved, limits: &wire::v3::Limits) -> Result<wire::Resolved, Error> {
+    let value = match source {
+        tools::Resolved::Working { path } => {
+            wire::Resolved::Working(wire::WorkingPath::new(limits, wire::WorkingPathParts { path: path.clone() })?)
+        }
+        tools::Resolved::Other { directory, path } => wire::Resolved::Other(wire::OtherPath::new(
+            limits,
+            wire::OtherPathParts { directory: Box::from(directory.as_bytes()), path: path.clone() },
+        )?),
+        tools::Resolved::Outside { path } => {
+            wire::Resolved::Outside(wire::OutsidePath::new(limits, wire::OutsidePathParts { path: path.clone() })?)
+        }
+    };
+    Ok(value)
 }

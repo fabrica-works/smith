@@ -1313,6 +1313,7 @@ dependencies = [
  "skein-world",
  "smith-domain-session",
  "smith-domain-tools",
+ "smith-protocol-llm",
  "smith-tools-world",
 ]
 

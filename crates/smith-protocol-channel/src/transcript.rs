@@ -235,14 +235,14 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
             }
         }
         wire::Outcome::NotGranted => tools::Outcome::NotGranted,
-        wire::Outcome::Outside => tools::Outcome::Outside,
-        wire::Outcome::ReadOnly => tools::Outcome::ReadOnly,
+        wire::Outcome::Outside(failure) => tools::Outcome::Outside { path: resolved(failure.path())? },
+        wire::Outcome::ReadOnly(failure) => tools::Outcome::ReadOnly { path: resolved(failure.path())? },
         wire::Outcome::TooLong => tools::Outcome::TooLong,
-        wire::Outcome::NotFound => tools::Outcome::NotFound,
+        wire::Outcome::NotFound(failure) => tools::Outcome::NotFound { path: resolved(failure.path())? },
         wire::Outcome::NotFile => tools::Outcome::NotFile,
         wire::Outcome::Linked => tools::Outcome::Linked,
         wire::Outcome::Protected => tools::Outcome::Protected,
-        wire::Outcome::NotDirectory => tools::Outcome::NotDirectory,
+        wire::Outcome::NotDirectory(failure) => tools::Outcome::NotDirectory { path: resolved(failure.path())? },
         wire::Outcome::TooLarge(size) => tools::Outcome::TooLarge { size: size.size() },
         wire::Outcome::NotRead => tools::Outcome::NotRead,
         wire::Outcome::Stale => tools::Outcome::Stale,
@@ -284,4 +284,49 @@ fn hex(value: u8) -> u8 {
     } else {
         b'a'.checked_add(value.checked_sub(10).expect("hex letter")).expect("hex digit")
     }
+}
+
+/// Restore a normalized descriptor, refusing a malformed directory name or path.
+fn resolved(source: &wire::Resolved) -> Result<tools::Resolved, record::Refusal> {
+    let value = match source {
+        wire::Resolved::Working(working) => {
+            normalized(working.path())?;
+            tools::Resolved::Working { path: Box::from(working.path()) }
+        }
+        wire::Resolved::Other(other) => {
+            normalized(other.path())?;
+            let directory = tools::Name::new(Box::from(other.directory())).ok_or(record::Refusal::Malformed)?;
+            tools::Resolved::Other { directory, path: Box::from(other.path()) }
+        }
+        wire::Resolved::Outside(outside) => {
+            normalized(outside.path())?;
+            tools::Resolved::Outside { path: Box::from(outside.path()) }
+        }
+    };
+    Ok(value)
+}
+
+fn normalized(path: &[u8]) -> Result<(), record::Refusal> {
+    if path.is_empty() {
+        return Ok(());
+    }
+    let mut start = 0_usize;
+    for (index, byte) in path.iter().enumerate() {
+        if *byte == 0 {
+            return Err(record::Refusal::Malformed);
+        }
+        if *byte == b'/' {
+            let name = path.get(start..index).expect("component within path");
+            component(name)?;
+            start = index.checked_add(1).expect("path index");
+        }
+    }
+    component(path.get(start..).expect("remaining component"))
+}
+
+fn component(name: &[u8]) -> Result<(), record::Refusal> {
+    if name.is_empty() || name == b"." || name == b".." {
+        return Err(record::Refusal::Malformed);
+    }
+    Ok(())
 }

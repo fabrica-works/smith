@@ -65,8 +65,7 @@ fn translate(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Box<[llm::Served]>), Error> {
     inventory(&input, application, limits)?;
-    let llm::Prompt { asker: _, endpoint: _, model, system, tools: _, namespace: _, served, messages, max_tokens } =
-        input;
+    let llm::Prompt { asker: _, endpoint: _, model, system, tools: _, namespace, served, messages, max_tokens } = input;
     let mut offered = List::with_capacity(limits.client.dialect.parts);
     for descriptor in &served {
         match descriptor {
@@ -89,7 +88,7 @@ fn translate(
     for message in messages {
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
-            let block = translate_block(block, limits)?;
+            let block = translate_block(block, &namespace, limits)?;
             content.push(block).expect("room for each admitted source block");
         }
         let role = match message.role {
@@ -285,7 +284,7 @@ fn history_admitted(messages: &[llm::Message], limits: &Limits) -> Result<(), Er
     Ok(())
 }
 
-fn translate_block(block: llm::Block, limits: &Limits) -> Result<shared::Block, Error> {
+fn translate_block(block: llm::Block, namespace: &tools::Namespace, limits: &Limits) -> Result<shared::Block, Error> {
     match block {
         llm::Block::Text { text, replay } => Ok(shared::Block::Text { text, replay: replay_value(replay, limits)? }),
         llm::Block::Refusal { text, replay } => {
@@ -302,13 +301,17 @@ fn translate_block(block: llm::Block, limits: &Limits) -> Result<shared::Block, 
             Ok(shared::Block::ToolCall { id, name, arguments: input, replay: replay_value(replay, limits)? })
         }
         llm::Block::ToolResult { id, result } => {
-            let (text, error) = result_text(result, limits)?;
+            let (text, error) = result_text(result, namespace, limits)?;
             Ok(shared::Block::ToolResult { id, text, is_error: error })
         }
     }
 }
 
-fn result_text(result: llm::Returned, limits: &Limits) -> Result<(Box<[u8]>, bool), Error> {
+fn result_text(
+    result: llm::Returned,
+    namespace: &tools::Namespace,
+    limits: &Limits,
+) -> Result<(Box<[u8]>, bool), Error> {
     match result {
         llm::Returned::Text { text, error, replay } => match replay {
             Some(_) => Err(Error::Unsupported),
@@ -327,7 +330,7 @@ fn result_text(result: llm::Returned, limits: &Limits) -> Result<(Box<[u8]>, boo
             }
             Ok((value.text, value.error))
         }
-        llm::Returned::Owned { outcome } => crate::render::render_outcome(&outcome, limits.rendered_result),
+        llm::Returned::Owned { outcome } => crate::render::render_outcome(&outcome, namespace, limits.rendered_result),
     }
 }
 
