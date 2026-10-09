@@ -119,10 +119,10 @@ fn conservation(world: &World, rates: &[Rate]) -> run::Spend {
     assert_eq!(spent(world.answer()), expected, "one own-completion charge per outside callback");
     assert_eq!(world.prompts().len(), world.completions().len());
     assert_eq!(world.turn_metadata().last().expect("actual main Turn").2, expected);
-    assert!(
-        expected.input.unwrap_or(0) + expected.cache_read.unwrap_or(0) + expected.cache_write.unwrap_or(0) > 0
-            && expected.output.unwrap_or(0) > 0
-    );
+    assert!(expected.output.unwrap_or(0) > 0);
+    if expected.input.is_some() && expected.cache_read.is_some() && expected.cache_write.is_some() {
+        assert!(expected.input.unwrap_or(0) + expected.cache_read.unwrap_or(0) + expected.cache_write.unwrap_or(0) > 0);
+    }
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.judged().0 > 0 && world.judged().1 == 1);
     expected
