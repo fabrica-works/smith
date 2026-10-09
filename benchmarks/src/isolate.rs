@@ -221,3 +221,17 @@ mod tests {
         assert!(!fake_home.exists());
     }
 }
+
+/// Copy a settled directory into a fresh guarded destination, without links.
+/// Grading and cache copies are private writable files, never hard links.
+pub fn copy_directory(guard: &Guard, source: &Path, destination: &Path) -> Result<(), String> {
+    directory(guard, destination)?;
+    copy_seed(guard, source, destination)
+}
+
+/// Create a new private archive or scratch parent behind the common guard.
+pub fn create_directory(guard: &Guard, path: &Path) -> Result<PathBuf, String> {
+    let path = guard.write_path(path)?;
+    directory(guard, &path)?;
+    Ok(path)
+}

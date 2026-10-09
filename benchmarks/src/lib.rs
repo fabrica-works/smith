@@ -23,6 +23,10 @@ pub mod guard;
 
 pub mod isolate;
 
+pub mod process;
+
+pub mod grade;
+
 pub use agent::{Agent, Configuration, PinnedConfiguration, Provider, read_configuration};
 pub use models::{ModelChoice, ModelTiers, read_model_tiers};
 pub use result::{
@@ -51,3 +55,5 @@ pub use task::{
 
 #[cfg(test)]
 mod tests;
+
+pub mod run;

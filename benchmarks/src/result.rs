@@ -145,6 +145,8 @@ pub enum ResourceScope {
     Cgroup,
     /// Skein's pidfd walk settles and counts the discovered tree.
     PidfdWalk,
+    /// The pidfd walk observed the largest individual child, not simultaneous RSS.
+    LargestProcess,
     /// Only the agent's root process was counted.
     AgentProcess,
     /// The runner has no resource accounting for this attempt.
