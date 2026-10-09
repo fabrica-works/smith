@@ -110,7 +110,7 @@ fn max_completion(limits: &smith_events::Limits) -> Completion {
 }
 
 fn max_command_exit(_limits: &smith_events::Limits) -> CommandExit {
-    CommandExit { code: i64::MIN }
+    CommandExit::Signal { signal: u64::MAX }
 }
 
 fn max_session_started(limits: &smith_events::Limits) -> SessionStarted {
@@ -285,6 +285,8 @@ fn max_tool_completed(limits: &smith_events::Limits) -> ToolCompleted {
         verdict: Verdict::Unknown(payload(limits.string)),
         exit: Some(max_command_exit(limits)),
         bytes: u64::MAX,
+        omitted_bytes: u64::MAX,
+        clamped: true,
         duration_ms: u64::MAX,
         child: Some(smith_events::ChildCompleted {
             conversation: u64::MAX,

@@ -585,8 +585,16 @@ fn write_completion(json: &mut Encoder, value: &Completion, capture: &Capture) {
 
 fn write_command_exit(json: &mut Encoder, value: &CommandExit, _capture: &Capture) {
     json.object_start();
-    json.key(b"code");
-    json.signed(value.code);
+    match value {
+        CommandExit::Code { code } => {
+            json.key(b"code");
+            json.signed(*code);
+        }
+        CommandExit::Signal { signal } => {
+            json.key(b"signal");
+            json.unsigned(*signal);
+        }
+    }
     json.object_end();
 }
 
@@ -1631,6 +1639,10 @@ fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Ca
     }
     json.key(b"bytes");
     json.unsigned(value.bytes);
+    json.key(b"omitted_bytes");
+    json.unsigned(value.omitted_bytes);
+    json.key(b"clamped");
+    json.boolean(value.clamped);
     json.key(b"duration_ms");
     json.unsigned(value.duration_ms);
     if let Some(item) = &value.child {

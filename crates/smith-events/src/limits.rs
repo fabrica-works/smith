@@ -608,7 +608,7 @@ fn size_completion(capture: &Capture, limits: &Limits) -> Option<u64> {
 
 fn size_command_exit(_capture: &Capture, _limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
-    length = length.checked_add(8)?.checked_add(20_u64)?;
+    length = length.checked_add(10)?.checked_add(20_u64)?;
     Some(length)
 }
 
@@ -776,6 +776,8 @@ fn size_tool_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(11)?.checked_add(size_verdict(capture, limits)?)?;
     length = length.checked_add(8)?.checked_add(size_command_exit(capture, limits)?)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
+    length = length.checked_add(17)?.checked_add(20_u64)?;
+    length = length.checked_add(11)?.checked_add(5_u64)?;
     length = length.checked_add(15)?.checked_add(20_u64)?;
     length = length.checked_add(12)?.checked_add(size_delivered(capture, limits)?)?;
     // Optional child: four integers, its stop and the existing usage object.

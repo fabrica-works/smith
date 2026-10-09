@@ -591,10 +591,14 @@ pub struct Completion {
     pub blocks: List<Block>,
 }
 
-/// The command exit code the service records with a tool or check terminal.
+/// A command's code or signal, sent by the service with its tool or check terminal.
+/// Contract: protocol/events.md, section 3.6.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct CommandExit {
-    pub code: i64,
+pub enum CommandExit {
+    /// The leader exited with this code, recorded by the service.
+    Code { code: i64 },
+    /// This signal ended the leader, recorded by the service.
+    Signal { signal: u64 },
 }
 
 /// One effective bound sent in the startup header; the key names its layer and unit.
@@ -763,6 +767,10 @@ pub struct ToolCompleted {
     pub verdict: Verdict,
     pub exit: Option<CommandExit>,
     pub bytes: u64,
+    /// Bytes the render bound omitted from the result, under every capture policy.
+    pub omitted_bytes: u64,
+    /// Whether the requested budget or deadline was lowered to its ceiling.
+    pub clamped: bool,
     pub duration_ms: u64,
     pub child: Option<ChildCompleted>,
     pub delivery: Option<Delivered>,

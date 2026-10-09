@@ -338,3 +338,73 @@ fn startup_containment_requires_a_string_and_bounds_unknown_values() {
     header.containment = smith_events::Containment::Unknown(Box::new([0xff]));
     assert!(write(&record, &Capture::Everything, &limits()).is_err());
 }
+
+#[test]
+fn tool_budget_and_command_exit_metadata_survive_every_capture_policy() {
+    for (name, mut record, _) in fixtures::samples().into_iter().filter(|(name, _, _)| {
+        ["tool_completed_signal", "tool_completed_unclamped", "check_completed_signal"].contains(name)
+    }) {
+        if let Event::ToolCompleted(value) = &mut record.event {
+            value.result = None;
+        }
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let encoded = write(&record, &capture, &limits()).expect("bounded metadata").expect("terminal");
+            assert_eq!(read(&encoded, &limits()).expect("valid metadata"), Some(record.clone()), "{name}");
+            assert!(
+                u64::try_from(encoded.len()).expect("size")
+                    <= smith_events::largest_size(&record.event, &capture, &limits()).expect("bound")
+            );
+        }
+    }
+}
+
+#[test]
+fn tool_budget_metadata_is_required_and_exact() {
+    let (_, record, _) =
+        fixtures::samples().into_iter().find(|(name, _, _)| *name == "tool_completed_unclamped").expect("fixture");
+    let encoded = write(&record, &Capture::Everything, &limits()).expect("bounded").expect("terminal");
+    let text = std::str::from_utf8(&encoded).expect("UTF8");
+    for malformed in [
+        text.replace("\"omitted_bytes\":0,", ""),
+        text.replace("\"omitted_bytes\":0", "\"omitted_bytes\":null"),
+        text.replace("\"omitted_bytes\":0", "\"omitted_bytes\":-1"),
+        text.replace("\"omitted_bytes\":0", "\"omitted_bytes\":1.5"),
+        text.replace("\"omitted_bytes\":0", "\"omitted_bytes\":18446744073709551616"),
+        text.replace("\"clamped\":false,", ""),
+        text.replace("\"clamped\":false", "\"clamped\":null"),
+        text.replace("\"clamped\":false", "\"clamped\":0"),
+        text.replace("\"clamped\":false", "\"clamped\":\"false\""),
+    ] {
+        assert!(read(malformed.as_bytes(), &limits()).is_err(), "{malformed}");
+    }
+}
+
+#[test]
+fn command_exit_requires_exactly_one_code_or_unsigned_signal() {
+    for name in ["tool_completed_signal", "check_completed_signal"] {
+        let (_, record, _) = fixtures::samples().into_iter().find(|(sample, _, _)| *sample == name).expect("fixture");
+        let encoded = write(&record, &Capture::Everything, &limits()).expect("bounded").expect("terminal");
+        let text = std::str::from_utf8(&encoded).expect("UTF8");
+        for replacement in [
+            "{}",
+            "{\"code\":0,\"signal\":9}",
+            "{\"signal\":9,\"code\":0}",
+            "{\"code\":null}",
+            "{\"signal\":null}",
+            "{\"signal\":-1}",
+            "{\"signal\":1.5}",
+            "{\"signal\":18446744073709551616}",
+            "{\"code\":9223372036854775808}",
+            "{\"signal\":9,\"signal\":9}",
+        ] {
+            let malformed = text.replace("{\"signal\":18446744073709551615}", replacement);
+            assert!(read(malformed.as_bytes(), &limits()).is_err(), "{name}: {malformed}");
+        }
+        for replacement in
+            ["{\"code\":0}", "{\"code\":-9223372036854775808}", "{\"signal\":0}", "{\"signal\":9,\"future\":true}"]
+        {
+            let valid = text.replace("{\"signal\":18446744073709551615}", replacement);
+            assert!(read(valid.as_bytes(), &limits()).expect("valid exit").is_some());
+        }
+    }
+}

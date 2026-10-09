@@ -396,7 +396,7 @@ fn value_completion(name: &str, spelling: &str) -> Completion {
 }
 
 fn value_command_exit(_name: &str, _spelling: &str) -> CommandExit {
-    CommandExit { code: i64::MIN }
+    CommandExit::Code { code: i64::MIN }
 }
 
 fn value_session_started(name: &str, spelling: &str) -> SessionStarted {
@@ -554,6 +554,8 @@ fn value_tool_completed(name: &str, spelling: &str) -> ToolCompleted {
         verdict: value_verdict(name, spelling),
         exit: Some(value_command_exit(name, spelling)),
         bytes: u64::MAX,
+        omitted_bytes: u64::MAX,
+        clamped: true,
         duration_ms: u64::MAX,
         child: None,
         delivery: Some(value_delivered(name, spelling)),
@@ -1498,6 +1500,28 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         },
         Capture::Everything,
     )];
+    let mut signal = value_tool_completed("", "");
+    signal.exit = Some(CommandExit::Signal { signal: u64::MAX });
+    samples.push((
+        "tool_completed_signal",
+        Record { t_ms: 0, event: Event::ToolCompleted(signal) },
+        Capture::Everything,
+    ));
+    let mut zero = value_tool_completed("", "");
+    zero.omitted_bytes = 0;
+    zero.clamped = false;
+    samples.push((
+        "tool_completed_unclamped",
+        Record { t_ms: 0, event: Event::ToolCompleted(zero) },
+        Capture::Everything,
+    ));
+    let mut check = value_check_completed("", "");
+    check.exit = CommandExit::Signal { signal: u64::MAX };
+    samples.push((
+        "check_completed_signal",
+        Record { t_ms: 0, event: Event::CheckCompleted(check) },
+        Capture::Everything,
+    ));
     samples.extend(budget_samples());
     samples.extend(samples_0());
     samples.extend(samples_1());
@@ -1657,6 +1681,8 @@ fn child_terminal(name: &'static str, stop: smith_events::ChildStop) -> (&'stati
                 verdict: Verdict::Result,
                 exit: None,
                 bytes: 1,
+                omitted_bytes: 0,
+                clamped: false,
                 duration_ms: 1999,
                 child: Some(ChildCompleted {
                     conversation: 2,

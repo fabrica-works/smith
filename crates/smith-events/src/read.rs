@@ -851,7 +851,15 @@ fn read_completion(tokens: &[Token], limits: &Limits) -> Result<Completion, Erro
 
 fn read_command_exit(tokens: &[Token], _limits: &Limits) -> Result<CommandExit, Error> {
     object(tokens)?;
-    Ok(CommandExit { code: signed(required(tokens, b"code")?)? })
+    match field(tokens, b"code")? {
+        Some(code) => {
+            if field(tokens, b"signal")?.is_some() {
+                return Err(Error::Shape);
+            }
+            Ok(CommandExit::Code { code: signed(code)? })
+        }
+        None => Ok(CommandExit::Signal { signal: unsigned(required(tokens, b"signal")?)? }),
+    }
 }
 
 fn read_session_started(tokens: &[Token], limits: &Limits) -> Result<SessionStarted, Error> {
@@ -1158,6 +1166,8 @@ fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolComplete
             None => None,
         },
         bytes: unsigned(required(tokens, b"bytes")?)?,
+        omitted_bytes: unsigned(required(tokens, b"omitted_bytes")?)?,
+        clamped: boolean(required(tokens, b"clamped")?)?,
         duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
         child: match field(tokens, b"child")? {
             Some(item) => Some(read_child_completed(item, limits)?),
