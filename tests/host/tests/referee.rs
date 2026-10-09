@@ -135,8 +135,7 @@ fn the_common_parent_referee_rejects_a_fence_covering_an_unissued_name() {
 #[test]
 #[should_panic(expected = "the unread report precedes Gone")]
 fn the_common_parent_referee_rejects_an_admitted_spawn_failure_without_unread() {
-    let mut seen = Seen::default();
-    seen.owner = Some(Token::new(2));
+    let mut seen = Seen { owner: Some(Token::new(2)), ..Seen::default() };
     seen.observe_parent(
         parent::Request::Gone { client: Token::new(1), end: End::Unspawned, detail: Box::default() },
         true,

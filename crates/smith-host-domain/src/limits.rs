@@ -29,7 +29,7 @@ pub struct Limits {
     pub transcript_bytes: u64,
     /// Opaque post-transcript answer bytes.
     pub answered_bytes: u64,
-    /// One inbound message's label and text bytes together.
+    /// Rendered message bytes, including label, separator and text.
     pub message_bytes: u64,
     /// Queued plus sent-unread message names.
     pub messages: u32,
@@ -72,7 +72,8 @@ pub struct Limits {
 /// Count domain containers, retained payloads, bounded scratch and each retained
 /// receipt copy. Start stays here only before Started, which emits its Send;
 /// Spawning rejects messages, so retained Start and queued messages are exclusive.
-/// The disconnect snapshot follows draining queued payloads and is counted separately.
+/// The unread-name report coexists with queued payloads; callback withdrawal
+/// scratch follows draining them. Both bounded snapshots are counted separately.
 /// Emitted/lower-owned bytes are the caller's to count. None for
 /// invalid/unrepresentable limits.
 #[must_use]
