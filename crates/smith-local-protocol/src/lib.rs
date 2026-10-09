@@ -10,7 +10,7 @@
 //! | Collecting | newline without trailing backslash | one person line |
 //! | Collecting | newline with trailing backslash | retain continued line |
 //! | Any | first interrupt | cancel the run |
-//! | Cancelled | second interrupt | stop the process |
+//! | Cancelled | second interrupt | drop the selected child |
 //! | Any | answer finished | clear interrupt count |
 
 #![cfg_attr(not(test), no_std)]

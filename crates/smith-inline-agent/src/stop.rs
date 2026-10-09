@@ -1,7 +1,8 @@
 //! Cancel and terminal settlement (domain/host.md, section 9.2).
 //! The slot keeps submitted rights after its answer and requests their cleanup
 //! once. Gone requires every provider/parent terminal; a drop releases held
-//! turns unacknowledged. Cancel grace is added by the later stop increment.
+//! turns unacknowledged. Answered roots still hear their owed terminals;
+//! dropped roots hear nothing. The injected clock bounds cancellation grace.
 
 #![expect(clippy::manual_let_else, reason = "checked slot lookup remains exhaustive")]
 
@@ -19,8 +20,8 @@ pub(crate) fn cancel(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &
         None => return,
     };
     match slot.state {
-        Stage::Live => slot.state = Stage::Cancelling,
-        Stage::Cancelling | Stage::Settling | Stage::Dropped | Stage::Gone => return,
+        Stage::Live => slot.state = Stage::Cancelling { grace: env.now.saturating_add(env.limits.cancel_grace) },
+        Stage::Cancelling { .. } | Stage::Settling(_) | Stage::Gone => return,
     }
     let run = slot.run;
     let client = slot.client;
@@ -33,8 +34,8 @@ pub(crate) fn cancel(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &
 pub(crate) fn finish(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queue<Output>) {
     let slot = agent.slots.get_mut(id).expect("answer belongs to a retained slot");
     match slot.state {
-        Stage::Live | Stage::Cancelling => slot.state = Stage::Settling,
-        Stage::Settling | Stage::Dropped | Stage::Gone => unreachable!("a root answers exactly once"),
+        Stage::Live | Stage::Cancelling { .. } => slot.state = Stage::Settling(Settling::Answered),
+        Stage::Settling(_) | Stage::Gone => unreachable!("a root answers exactly once"),
     }
     cleanup(agent, now, id, out);
 }
@@ -45,17 +46,21 @@ pub(crate) fn drop_run(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Qu
         None => return,
     };
     let unanswered = match slot.state {
-        Stage::Live | Stage::Cancelling => true,
-        Stage::Settling => false,
-        Stage::Dropped | Stage::Gone => return,
+        Stage::Live | Stage::Cancelling { .. } => true,
+        Stage::Settling(Settling::Answered) => false,
+        Stage::Settling(Settling::Dropped) | Stage::Gone => return,
     };
-    slot.state = Stage::Dropped;
+    if unanswered {
+        slot.state = Stage::Settling(Settling::Dropped);
+    }
     slot.turns = skein_lib::Map::with_capacity(slot.turns.capacity());
     let client = slot.client;
     if unanswered {
         out.push(Output::Parent(parent::Request::Faulted { client, fault: smith_host_domain::Fault::Exited }));
     }
-    observe(agent, now, FactKind::Dropped { client });
+    if unanswered {
+        observe(agent, now, FactKind::Dropped { client });
+    }
     cleanup(agent, now, id, out);
 }
 
@@ -88,7 +93,7 @@ fn cleanup(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queue<Output>)
 pub(crate) fn settle(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queue<Output>) {
     let slot = agent.slots.get_mut(id).expect("settlement belongs to a retained slot");
     match slot.state {
-        Stage::Settling | Stage::Dropped => {
+        Stage::Settling(_) => {
             if !slot.completions.is_empty()
                 || !slot.io.is_empty()
                 || !slot.machine.is_empty()
@@ -102,16 +107,28 @@ pub(crate) fn settle(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queu
             out.push(Output::Parent(parent::Request::Gone { client, end: End::Stopped, detail: Box::default() }));
             observe(agent, now, FactKind::Gone { client, end: End::Stopped });
         }
-        Stage::Live | Stage::Cancelling | Stage::Gone => {}
+        Stage::Live | Stage::Cancelling { .. } | Stage::Gone => {}
     }
 }
 
 /// A retained slot's end, owned by cancellation and settlement.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Stage {
+    /// The root runs and receives its inputs.
     Live,
-    Cancelling,
-    Settling,
-    Dropped,
+    /// The root heard cancellation and has until the host's grace to answer.
+    Cancelling { grace: Time },
+    /// Every retained lower right is ending for this reason.
+    Settling(Settling),
+    /// Every terminal settled; native observations still keep the slot until drained.
     Gone,
+}
+
+/// Whether the root may hear its remaining owed terminals (domain/host.md, section 9.2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Settling {
+    /// An answered root continues receiving the terminals it owns.
+    Answered,
+    /// A dropped root receives nothing; the slot settles each terminal itself.
+    Dropped,
 }

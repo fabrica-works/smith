@@ -113,6 +113,10 @@ impl Local {
                     config.limits.local.smith,
                     config.limits.local.unsaved,
                     config.local.budget.time,
+                    match config.limits.local.agent {
+                        domain::AgentLimits::Inline(limits) => limits.cancel_grace,
+                        domain::AgentLimits::Spawned(_) => agent::profile::standard().policy.cancel_grace,
+                    },
                 )
                 .ok_or_else(|| derivation_refusal("local_worst_case"))?;
                 config.limits.inline = Some(

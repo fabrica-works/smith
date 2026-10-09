@@ -547,13 +547,7 @@ impl Service {
             let Some(event) = self.terminal_events.pop() else { break };
             match event {
                 protocol::TerminalEvent::Domain(event) => self.local_events.push(event),
-                protocol::TerminalEvent::StopProcess => {
-                    if self.below.inline().is_some() {
-                        self.local_events.push(local::Event::Interrupt);
-                    } else {
-                        self.below.process_mut().force_stop();
-                    }
-                }
+                protocol::TerminalEvent::DropRun => self.local_events.push(local::Event::Drop),
                 protocol::TerminalEvent::Write(text) => self.output.push(text),
             }
         }
@@ -720,6 +714,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             }
             other @ (local::Event::Line { .. }
             | local::Event::Interrupt
+            | local::Event::Drop
             | local::Event::Closed
             | local::Event::Loaded { .. }
             | local::Event::TurnSaved { .. }

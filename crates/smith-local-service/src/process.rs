@@ -99,7 +99,6 @@ pub(crate) struct ProcessAdapter {
     completions: Queue<kernel::Complete>,
     send: u64,
     failed: bool,
-    force_pending: bool,
     terminal_input: Option<Token>,
     signals: Option<Token>,
     closing: Option<u32>,
@@ -146,7 +145,6 @@ impl ProcessAdapter {
             completions: Queue::with_capacity(limits.queue),
             send: 1,
             failed: false,
-            force_pending: false,
             terminal_input: None,
             signals: None,
             closing: None,
@@ -432,8 +430,7 @@ impl ProcessAdapter {
     }
 
     pub(crate) fn work_pending(&self, now: Time) -> bool {
-        self.force_pending
-            || self.io.is_ready()
+        self.io.is_ready()
             || self.io.is_due(now)
             || !self.io_events.is_empty()
             || !self.io_requests.is_empty()
@@ -453,24 +450,6 @@ impl ProcessAdapter {
 
     pub(crate) fn output_room(&self) -> bool {
         self.io_requests.room() >= 64 && self.process_events.room() >= 64
-    }
-
-    pub(crate) fn force_stop(&mut self) {
-        self.force_pending = true;
-        if self.output_room() {
-            self.flush_force();
-        }
-    }
-
-    fn flush_force(&mut self) {
-        if !self.force_pending {
-            return;
-        }
-        if let Some(process) = &self.process
-            && process.kill_if_spawned(&mut self.io_requests)
-        {
-            self.force_pending = false;
-        }
     }
 
     fn reap(&mut self, env: &Env<io::Limits>) {
@@ -624,7 +603,6 @@ impl ProcessAdapter {
             self.git = None;
         }
         if self.output_room() {
-            self.flush_force();
             if let Some(process) = &mut self.process {
                 process.fire(now, &mut self.process_events, &mut self.io_requests);
             }

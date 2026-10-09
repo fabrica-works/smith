@@ -95,6 +95,28 @@ fn a_drop_before_the_answer_waits_for_actual_lower_settlement() {
 }
 
 #[test]
+fn an_inline_run_that_ignores_its_cancel_is_dropped_at_its_grace_with_everything_below_settled() {
+    use skein_lib::{Duration, Time};
+    let mut bounds = inline::limits();
+    bounds.cancel_grace = Duration::from_secs(5);
+    let mut world = World::new(321, bounds);
+    world.provider_latency(Duration::from_secs(20));
+    spawn(&mut world, 1, Job::HostTools);
+    world.event(parent::Event::Stop { agent: world.handle(Token::new(1)) });
+    world.at(Time::ZERO.saturating_add(Duration::from_secs(4)));
+    assert_eq!(world.seen[&Token::new(1)].fault, None);
+    world.at(Time::ZERO.saturating_add(Duration::from_secs(5)));
+    assert_eq!(world.seen[&Token::new(1)].fault, Some(host::Fault::Exited));
+    assert!(world.seen[&Token::new(1)].answer.is_none());
+    assert!(world.seen[&Token::new(1)].gone.is_none(), "actual provider terminal remains owed");
+    assert!(!world.lower.is_empty());
+    world.run();
+    world.settled();
+    assert!(world.seen[&Token::new(1)].answer.is_none(), "dropped root hears no terminal");
+    assert_eq!(world.observations.iter().filter(|fact| matches!(fact.kind, smith_inline_agent::FactKind::Dropped { .. })).count(), 1);
+}
+
+#[test]
 fn an_inline_run_waits_parks_and_resumes_from_its_transcript() {
     let mut world = World::new(312, inline::limits());
     spawn(&mut world, 1, Job::Waiting);

@@ -13,8 +13,13 @@ use crate::{Config, Contract, Domain, Event, Invalid, Limits, Request, charter};
 pub(super) fn limits() -> Limits {
     Limits {
         smith: smith_agent_world::LIMITS,
-        agent: crate::AgentLimits::inline(smith_agent_world::LIMITS, 2, Duration::from_secs(60))
-            .expect("bounded inline child"),
+        agent: crate::AgentLimits::inline(
+            smith_agent_world::LIMITS,
+            2,
+            Duration::from_secs(60),
+            Duration::from_secs(5),
+        )
+        .expect("bounded inline child"),
         endpoints: Box::new([Endpoint(4)]),
         chat_bytes: 64,
         text_bytes: 1024,

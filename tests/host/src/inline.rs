@@ -31,6 +31,7 @@ pub fn limits() -> inline::Limits {
         smith,
         window: smith::Window { turns: 8, bytes: smith::max_turn_bytes(&smith).expect("root turn bound") * 8 },
         wall_time: Duration::from_secs(3600),
+        cancel_grace: Duration::from_secs(5),
         facts: 32,
     }
 }
@@ -199,6 +200,13 @@ impl World {
     pub fn scripts(&mut self, scripts: Box<[provider::api::Script]>) {
         assert_eq!(self.provider.calls(), 0);
         self.provider = provider::Domain::scripted(&self.provider_env.limits, 1, scripts);
+    }
+
+    /// Delay actual native provider replies before admitting any call.
+    pub fn provider_latency(&mut self, latency: Duration) {
+        assert_eq!(self.provider.calls(), 0);
+        self.provider_env.limits.latency_min = latency;
+        self.provider_env.limits.latency_max = latency;
     }
 
     /// Return the generation-safe parent handle learned from Started.

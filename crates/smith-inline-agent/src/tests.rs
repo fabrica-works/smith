@@ -16,6 +16,7 @@ fn bounds() -> Limits {
             bytes: smith::max_turn_bytes(&smith).expect("root bound").checked_mul(8).expect("small window"),
         },
         wall_time: Duration::from_secs(3600),
+        cancel_grace: Duration::from_secs(5),
         facts: 32,
     }
 }

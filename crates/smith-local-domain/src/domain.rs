@@ -232,6 +232,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     match event {
         Event::Line { text } => receive_line(domain, env, text, out),
         Event::Interrupt => interrupt(domain, env, out),
+        Event::Drop => drop_run(domain, env),
         Event::Closed => closed(domain, out),
         Event::Loaded { state, transcript, deliveries } => loaded(domain, env, state, transcript, deliveries, out),
         Event::StateSaved => state_saved(domain, env, out),
@@ -686,6 +687,17 @@ fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
     if domain.chat.phase == Phase::Idle {
         domain.chat.phase = Phase::Done;
         out.push(Request::Exit { status: ExitStatus::Success });
+    }
+}
+
+fn drop_run(domain: &mut Domain, env: &Env<Limits>) {
+    if domain.turns.answer.is_some() {
+        return;
+    }
+    if let Some(run) = domain.run {
+        domain.chat.phase = Phase::Ending;
+        domain.wall_deadline = None;
+        command(&mut domain.agent, env.now, env.wall, parent::Event::Drop { agent: run });
     }
 }
 
