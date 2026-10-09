@@ -8,6 +8,7 @@ use smith_channel_world::{Observation, World};
 use smith_domain::{self as agent, Event as AgentEvent, Request as AgentRequest};
 use smith_host_domain::{self as host, Down, Up};
 
+#[path = "composed/long.rs"]
 mod long;
 
 #[test]

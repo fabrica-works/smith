@@ -67,11 +67,10 @@ fn completion_and_command_spans_do_not_claim_checks_are_running() {
         );
     }
     assert!(out.is_empty());
-    for _ in 0..2 {
+    for _ in 0_u32..2 {
         parent_request(&mut domain, &env, parent::Request::LongDone { client: Token::new(1) }, &mut out);
         assert!(out.is_empty());
     }
-    assert_eq!(domain.long_open, 0);
 }
 
 #[test]

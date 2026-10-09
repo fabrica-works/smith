@@ -53,8 +53,7 @@ pub struct Domain {
     agent_failed: bool,
     agent_life: AgentLife,
     show_bytes: u32,
-    long_open: u32,
-    checks_pending: bool,
+    long: crate::long::Long,
     wall_deadline: Option<Time>,
     facts: Queue<Fact>,
     facts_lost: u64,
@@ -173,8 +172,7 @@ impl Domain {
             agent_failed: false,
             agent_life: AgentLife::Starting,
             show_bytes: limits.show_bytes,
-            long_open: 0,
-            checks_pending: false,
+            long: crate::long::Long::new(),
             wall_deadline: None,
             facts: Queue::with_capacity(limits.facts),
             facts_lost: 0,
@@ -797,8 +795,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
     match event {
         parent::Request::Started { agent, .. } => {
             domain.run = Some(agent);
-            domain.long_open = 0;
-            domain.checks_pending = false;
+            domain.long = crate::long::Long::new();
         }
         parent::Request::Admitted { .. } => {
             send_line(domain, env, out);
@@ -815,21 +812,12 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
         }
         parent::Request::Waiting { .. } => out.push(Request::Show { text: Box::from(&b"Waiting for a message"[..]) }),
         parent::Request::Long { operation, .. } => {
-            domain.long_open = domain.long_open.checked_add(1).expect("bounded parent long operations");
-            match operation {
-                host::Operation::Checks => {
-                    domain.checks_pending = true;
-                    out.push(Request::Show { text: Box::from(&b"Running checks"[..]) });
-                }
-                host::Operation::Completion | host::Operation::Command => {}
+            if domain.long.begin(operation) {
+                out.push(Request::Show { text: Box::from(&b"Running checks"[..]) });
             }
         }
         parent::Request::LongDone { .. } => {
-            domain.long_open = domain.long_open.checked_sub(1).expect("parent terminal owns an open span");
-            // The anonymous terminal cannot identify a check among overlapping
-            // work. At the last terminal every check is certainly finished.
-            if domain.long_open == 0 && domain.checks_pending {
-                domain.checks_pending = false;
+            if domain.long.end() {
                 out.push(Request::Show { text: Box::from(&b"Checks finished"[..]) });
             }
         }

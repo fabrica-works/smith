@@ -2263,11 +2263,8 @@ fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
     assert_eq!(h.domain.commands.len(), 0);
     assert_eq!(h.long.as_slice(), &[Some(crate::Operation::Completion), None, Some(crate::Operation::Command), None]);
     let ended = h.next();
-    assert!(
-        matches!(
-            ended.as_ref(),
-            [Request::Answer { answer: run::Answer::Failed { failure: run::Failure::Cancelled, .. }, .. }]
-        ),
-        "{ended:?}"
-    );
+    let [Request::Answer { answer: run::Answer::Failed { failure: run::Failure::Cancelled, .. }, .. }] = ended.as_ref()
+    else {
+        panic!("only actual IO settlement permits the cancellation answer: {ended:?}");
+    };
 }
