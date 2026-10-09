@@ -130,6 +130,8 @@ pub fn configuration_with_tools(
     host.unacknowledged_bytes = 1_000_000_000;
     host.fact_bytes = 512;
     host.outcome_bytes = 4096;
+    // Actual provider spans carry the charter's whole-session deadline.
+    host.long_span = policy.config.budget.time;
     let inline_out = local::max_out(&policy.limits);
     policy.limits.agent = local::AgentLimits::Spawned(host);
     let queue = local::max_out(&policy.limits).max(inline_out).max(smith_host_domain::max_out(&host)).max(256);

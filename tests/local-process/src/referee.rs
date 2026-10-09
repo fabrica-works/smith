@@ -476,7 +476,13 @@ impl skein_world::Referee<crate::process::Proc> for Run {
             self.meeting.fire(now, &mut stimuli);
         }
         if let skein_world::domain::Verdict::Failed(why) = self.meeting.verdict() {
-            panic!("seed {}: {why:?}", self.seed);
+            panic!(
+                "seed {}: {why:?}; shown {:?}; errors {:?}; exit {:?}",
+                self.seed,
+                String::from_utf8_lossy(terminal.shown()),
+                String::from_utf8_lossy(terminal.errors()),
+                terminal.exit(),
+            );
         }
     }
     fn next_deadline(&self) -> Option<Time> {

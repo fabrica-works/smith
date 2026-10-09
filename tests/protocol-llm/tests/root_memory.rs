@@ -744,6 +744,7 @@ struct Counted {
     waiting: bool,
     answer: Option<run::Answer>,
     calls: u32,
+    long_open: u32,
     retained: Option<Retained>,
     overlaps: u32,
     restored_overlap: bool,
@@ -800,6 +801,7 @@ impl Counted {
             waiting: false,
             answer: None,
             calls: 0,
+            long_open: 0,
             retained: None,
             overlaps: 0,
             restored_overlap: false,
@@ -929,12 +931,21 @@ impl Counted {
                 }
                 Request::Answer { to, answer, read: _ } => {
                     assert_eq!(to.into_token(), PARENT);
+                    assert_eq!(self.long_open, 0, "provider work ended before the original Start terminal");
                     assert!(self.answer.replace(answer).is_none(), "one original Start terminal");
+                }
+                Request::Long { host_run, operation, .. } => {
+                    assert_eq!(host_run, WORKER);
+                    assert_eq!(operation, root::Operation::Completion, "this fixture only issues provider work");
+                    self.long_open = self.long_open.checked_add(1).expect("bounded actual provider spans");
+                    assert_eq!(self.long_open, 1, "one actual issued provider call per session");
+                }
+                Request::LongDone { host_run } => {
+                    assert_eq!(host_run, WORKER);
+                    self.long_open = self.long_open.checked_sub(1).expect("terminal belongs to actual provider work");
                 }
                 Request::HostCall { .. }
                 | Request::WithdrawHost { .. }
-                | Request::Long { .. }
-                | Request::LongDone { .. }
                 | Request::Deliver { .. }
                 | Request::Rejected { .. }
                 | Request::Exhausted { .. }
@@ -998,6 +1009,7 @@ impl Counted {
         assert!(self.admitted.is_some() && self.read.is_some());
         assert_eq!(self.calls, 0, "selected Start ownership survives outstanding discovery");
         assert!(self.complete.is_none());
+        assert_eq!(self.long_open, 0, "actual provider work settled before outside waiting");
     }
 
     fn discover(&mut self) {
