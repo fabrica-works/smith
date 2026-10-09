@@ -3,12 +3,12 @@
 
 use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
-    CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, ConversationClosed,
-    ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, EffectiveLimit,
-    Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model, Notice,
-    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
-    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
-    Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
+    ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
+    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model,
+    Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
+    SharePart, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -331,6 +331,20 @@ fn read_mode(tokens: &[Token], limits: &Limits) -> Result<Mode, Error> {
                 return Err(Error::Limits);
             }
             Mode::Unknown(value)
+        }
+    })
+}
+
+fn read_containment(tokens: &[Token], limits: &Limits) -> Result<Containment, Error> {
+    let value = text(tokens, limits.string.max(6))?;
+    Ok(match value.as_ref() {
+        b"groups" => Containment::Groups,
+        b"trees" => Containment::Trees,
+        _ => {
+            if value.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            Containment::Unknown(value)
         }
     })
 }
@@ -846,6 +860,7 @@ fn read_session_started(tokens: &[Token], limits: &Limits) -> Result<SessionStar
         wall_ms: unsigned(required(tokens, b"wall_ms")?)?,
         agent: read_agent(required(tokens, b"agent")?, limits)?,
         mode: read_mode(required(tokens, b"mode")?, limits)?,
+        containment: read_containment(required(tokens, b"containment")?, limits)?,
         pid: unsigned(required(tokens, b"pid")?)?,
         profile: text(required(tokens, b"profile")?, limits.string)?,
         capture: read_capture(required(tokens, b"capture")?, limits)?,

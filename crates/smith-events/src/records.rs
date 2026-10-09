@@ -41,6 +41,17 @@ pub enum Mode {
     Unknown(Box<[u8]>),
 }
 
+/// The machine containment that the shell records at startup (protocol/agent.md, section 3).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Containment {
+    /// Commands lead process groups and remain uncontained.
+    Groups,
+    /// Commands belong to contained process trees.
+    Trees,
+    /// A value this reader does not know, retained as bounded UTF-8.
+    Unknown(Box<[u8]>),
+}
+
 /// `Family` classification sent by a stream producer.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Family {
@@ -608,6 +619,7 @@ pub struct SessionStarted {
     pub wall_ms: u64,
     pub agent: Agent,
     pub mode: Mode,
+    pub containment: Containment,
     pub pid: u64,
     pub profile: Box<[u8]>,
     pub capture: Capture,

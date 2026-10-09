@@ -3,12 +3,12 @@
 
 use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
-    CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, ConversationClosed,
-    ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, EffectiveLimit,
-    Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model, Notice,
-    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
-    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
-    Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
+    ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
+    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, Mode, Model,
+    Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound,
+    SharePart, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -129,6 +129,14 @@ fn write_mode(json: &mut Encoder, value: &Mode, _capture: &Capture) {
         Mode::Exec => json.string(b"exec"),
         Mode::Chat => json.string(b"chat"),
         Mode::Unknown(text) => json.string(text),
+    }
+}
+
+fn write_containment(json: &mut Encoder, value: &Containment, _capture: &Capture) {
+    match value {
+        Containment::Groups => json.string(b"groups"),
+        Containment::Trees => json.string(b"trees"),
+        Containment::Unknown(text) => json.string(text),
     }
 }
 
@@ -746,6 +754,13 @@ fn validate_mode(value: &Mode, limits: &Limits) -> Result<(), Error> {
     }
 }
 
+fn validate_containment(value: &Containment, limits: &Limits) -> Result<(), Error> {
+    match value {
+        Containment::Groups | Containment::Trees => Ok(()),
+        Containment::Unknown(text) => check_text(text, limits.string),
+    }
+}
+
 fn validate_family(value: &Family, limits: &Limits) -> Result<(), Error> {
     match value {
         Family::Inspect | Family::Modify | Family::Shell | Family::SubAgents => Ok(()),
@@ -1014,6 +1029,7 @@ fn validate_completion(value: &Completion, limits: &Limits) -> Result<(), Error>
 fn validate_session_started(value: &SessionStarted, limits: &Limits) -> Result<(), Error> {
     validate_agent(&value.agent, limits)?;
     validate_mode(&value.mode, limits)?;
+    validate_containment(&value.containment, limits)?;
 
     check_text(&value.profile, limits.string)?;
     validate_capture(&value.capture, limits)?;
@@ -1289,6 +1305,8 @@ fn encode_session_started(json: &mut Encoder, value: &SessionStarted, capture: &
     write_agent(json, &value.agent, capture);
     json.key(b"mode");
     write_mode(json, &value.mode, capture);
+    json.key(b"containment");
+    write_containment(json, &value.containment, capture);
     json.key(b"pid");
     json.unsigned(value.pid);
     json.key(b"profile");

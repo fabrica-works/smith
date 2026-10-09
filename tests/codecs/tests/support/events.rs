@@ -405,6 +405,14 @@ fn value_session_started(name: &str, spelling: &str) -> SessionStarted {
         wall_ms: u64::MAX,
         agent: value_agent(name, spelling),
         mode: value_mode(name, spelling),
+        containment: match name {
+            "Containment" => match spelling {
+                "groups" => smith_events::Containment::Groups,
+                "trees" => smith_events::Containment::Trees,
+                _ => smith_events::Containment::Unknown(Box::from(spelling.as_bytes())),
+            },
+            _ => smith_events::Containment::Groups,
+        },
         pid: u64::MAX,
         profile: Box::from("sample\n\"🌍".as_bytes()),
         capture: value_capture(name, spelling),
@@ -1508,6 +1516,15 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
     samples.extend(samples_14());
     samples.extend(null_samples());
     samples.push(("session_started_effective_limits", effective_record(), Capture::Everything));
+    for (name, spelling) in
+        [("containment_groups", "groups"), ("containment_trees", "trees"), ("containment_unknown", "future🌍")]
+    {
+        samples.push((
+            name,
+            Record { t_ms: 0, event: Event::SessionStarted(value_session_started("Containment", spelling)) },
+            Capture::Everything,
+        ));
+    }
     samples
 }
 

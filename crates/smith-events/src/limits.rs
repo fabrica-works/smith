@@ -206,6 +206,7 @@ fn heap_session_started(limits: &Limits) -> Option<u64> {
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
+    length = length.checked_add(u64::from(limits.string))?;
     length = length
         .checked_add(List::<EffectiveLimit>::worst_case(limits.items)?)?
         .checked_add(u64::from(limits.items).checked_mul(u64::from(limits.string))?)?;
@@ -376,6 +377,10 @@ fn size_delivery(_capture: &Capture, limits: &Limits) -> Option<u64> {
 
 fn size_mode(_capture: &Capture, limits: &Limits) -> Option<u64> {
     u64::from(limits.string.max(5)).checked_mul(6)?.checked_add(2)
+}
+
+fn size_containment(_capture: &Capture, limits: &Limits) -> Option<u64> {
+    u64::from(limits.string.max(6)).checked_mul(6)?.checked_add(2)
 }
 
 fn size_family(_capture: &Capture, limits: &Limits) -> Option<u64> {
@@ -612,6 +617,7 @@ fn size_session_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(11)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_agent(capture, limits)?)?;
     length = length.checked_add(8)?.checked_add(size_mode(capture, limits)?)?;
+    length = length.checked_add(15)?.checked_add(size_containment(capture, limits)?)?;
     length = length.checked_add(7)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(11)?.checked_add(size_capture(capture, limits)?)?;

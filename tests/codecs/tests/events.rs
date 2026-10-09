@@ -295,3 +295,46 @@ fn child_and_budget_metadata_survive_capture_and_unknown_listed_values() {
         );
     }
 }
+
+#[test]
+fn startup_containment_preserves_known_and_forward_values_under_every_capture() {
+    for containment in [
+        smith_events::Containment::Groups,
+        smith_events::Containment::Trees,
+        smith_events::Containment::Unknown(Box::from("future🌍".as_bytes())),
+    ] {
+        let mut record = fixtures::effective_record();
+        let Event::SessionStarted(header) = &mut record.event else { panic!("header fixture") };
+        header.containment = containment;
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = write(&record, &capture, &limits()).expect("bounded header").expect("authoritative");
+            assert_eq!(read(&line, &limits()).expect("known record").expect("header"), record);
+        }
+    }
+}
+
+#[test]
+fn startup_containment_requires_a_string_and_bounds_unknown_values() {
+    let mut record = fixtures::effective_record();
+    let encoded = write(&record, &Capture::Everything, &limits()).expect("bounded header").expect("record");
+    let encoded = std::str::from_utf8(&encoded).expect("UTF8");
+    for malformed in [
+        encoded.replace("\"containment\":\"groups\",", ""),
+        encoded.replace("\"containment\":\"groups\"", "\"containment\":null"),
+        encoded.replace("\"containment\":\"groups\"", "\"containment\":42"),
+    ] {
+        assert_eq!(read(malformed.as_bytes(), &limits()), Err(Error::Shape));
+    }
+    let Event::SessionStarted(header) = &mut record.event else { panic!("header fixture") };
+    header.containment = smith_events::Containment::Unknown(vec![b'x'; 64].into());
+    let boundary = write(&record, &Capture::Everything, &limits()).expect("exact unknown bound").expect("record");
+    assert_eq!(read(&boundary, &limits()).expect("exact bound").expect("header"), record);
+    let Event::SessionStarted(header) = &mut record.event else { panic!("header fixture") };
+    header.containment = smith_events::Containment::Unknown(vec![b'x'; 65].into());
+    assert_eq!(write(&record, &Capture::Everything, &limits()), Err(Error::Limits));
+    let oversized = encoded.replace("\"groups\"", &format!("\"{}\"", "x".repeat(65)));
+    assert_eq!(read(oversized.as_bytes(), &limits()), Err(Error::Shape));
+    let Event::SessionStarted(header) = &mut record.event else { panic!("header fixture") };
+    header.containment = smith_events::Containment::Unknown(Box::new([0xff]));
+    assert!(write(&record, &Capture::Everything, &limits()).is_err());
+}

@@ -132,6 +132,7 @@ fn max_session_started(limits: &smith_events::Limits) -> SessionStarted {
         wall_ms: u64::MAX,
         agent: max_agent(limits),
         mode: Mode::Unknown(payload(limits.string)),
+        containment: smith_events::Containment::Unknown(payload(limits.string)),
         pid: u64::MAX,
         profile: payload(limits.string),
         capture: Capture::Unknown(payload(limits.string)),
