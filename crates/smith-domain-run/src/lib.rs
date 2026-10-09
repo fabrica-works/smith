@@ -48,6 +48,7 @@ mod host;
 mod inbox;
 mod land;
 mod limits;
+mod opening;
 pub mod outcome;
 mod prepare;
 mod prompt;

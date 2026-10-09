@@ -93,9 +93,9 @@ use crate::land::{self, Settled};
 use crate::limits::Limits;
 use crate::outcome::{self, Change, Declared};
 use crate::prepare::{self, Found, Step};
-use crate::prompt;
 use crate::workspace;
 use crate::{CompletionPermit, HostEffect, HostInput, HostProblem, HostReply, RelayName, Share, Workspace};
+use crate::{opening, prompt};
 
 #[derive(Debug)]
 pub(crate) struct Run {
@@ -1386,7 +1386,7 @@ fn open(
             unreachable!("main is opened once, when its run has prepared")
         }
     };
-    let mut opening = opening(
+    let mut opening = opening::main(
         &run.charter,
         run.activation,
         run.workspace.as_ref(),
@@ -1756,35 +1756,6 @@ fn answer(reply_to: ReplyTo, answer: Answer, read: Option<Token>, out: &mut Queu
 }
 
 // Helpers.
-
-/// The opening of a run's main conversation, given what the run found in its
-/// checkout, what it has spent and the time it has left. What it holds is
-/// rendered from the charter or copied: the run keeps the charter (copy at
-/// emission).
-fn opening(
-    charter: &Charter,
-    activation: u64,
-    workspace: Option<&Workspace>,
-    found: &Found,
-    spent: Spend,
-    left: Duration,
-) -> Opening {
-    Opening {
-        activation,
-        transcript: None,
-        wait: charter.grants.wait,
-        host_tools: charter.grants.host_tools.clone(),
-        deliver: charter.grants.deliver.is_some(),
-        llm: charter.llm.clone(),
-        system: prompt::system(charter, workspace, found),
-        prompt: copy_of(prompt::BEGIN),
-        tools: workspace::families(workspace, Families::of(&charter.grants)).tools,
-        workspace: workspace.cloned(),
-        budget: charter.budget.remainder(spent, left),
-        finish: true,
-        families: workspace::families(workspace, Families::of(&charter.grants)),
-    }
-}
 
 /// The answer of a run whose main conversation ended on its own, the run
 /// having spent `spent`.
