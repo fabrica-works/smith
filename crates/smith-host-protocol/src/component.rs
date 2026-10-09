@@ -93,6 +93,7 @@ pub struct Component {
     charter: smith_charter::v2::Limits,
     transcript: smith_transcript::v3::Limits,
     sequence: u32,
+    long_open: u32,
 }
 
 impl Component {
@@ -129,6 +130,7 @@ impl Component {
             charter: limits.charter,
             transcript: limits.transcript,
             sequence: 0,
+            long_open: 0,
         })
     }
 
@@ -518,7 +520,7 @@ impl Component {
                             Err(_) => self.refuse_rules(below),
                         }
                     }
-                    0x010b if self.phase == Phase::Admitted => {
+                    0x010b if self.phase == Phase::Admitted && self.long_open < u32::MAX => {
                         match smith_channel::Long::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(long) => {
                                 let operation = match long.operation() {
@@ -526,15 +528,17 @@ impl Component {
                                     smith_channel::Operation::Completion => smith_domain::Operation::Completion,
                                     smith_channel::Operation::Command => smith_domain::Operation::Command,
                                 };
+                                self.long_open = self.long_open.checked_add(1).expect("bounded active operations");
                                 to_service.push(OpenEvent::Long { operation, span: long.span() });
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }
                             Err(_) => self.refuse_rules(below),
                         }
                     }
-                    0x010c if self.phase == Phase::Admitted => {
+                    0x010c if self.phase == Phase::Admitted && self.long_open > 0 => {
                         match smith_channel::LongDone::decode(&self.bodies, &mut Reader::new(&body)) {
                             Ok(_) => {
+                                self.long_open = self.long_open.checked_sub(1).expect("one begun operation ends");
                                 to_service.push(OpenEvent::LongDone);
                                 self.machine.down(Request::Read, &mut self.events, below);
                             }

@@ -1,6 +1,6 @@
 //! Anonymous overlapping spans (domain/host.md, section 4;
 //! protocol/channel.md, section 4). State keeps the open count and latest
-//! permitted end. It never knows which operation a LongDone ended.
+//! permitted end. It never knows which operation a `LongDone` ended.
 
 use skein_lib::Time;
 

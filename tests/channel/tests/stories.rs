@@ -1106,3 +1106,31 @@ fn facts_outside_actual_admission_are_counted_without_failing_the_channel() {
     assert!(!world.agent_sends_fact(&fact, skein_lib::Time::ZERO));
     assert_eq!(world.lost_facts(), 4);
 }
+
+#[test]
+fn overlapping_kinds_have_exactly_one_terminal_per_begin() {
+    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    world.settle();
+    world.send_start(Box::from(
+        &include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin")[..],
+    ));
+    world.settle();
+    world.agent_admits();
+    world.settle();
+    assert!(!world.agent_try_ends_long(), "no span has begun");
+    for operation in [smith_domain::Operation::Completion, smith_domain::Operation::Command] {
+        world.agent_starts_long(operation, skein_lib::Duration::from_secs(30));
+        world.settle();
+        assert!(
+            world
+                .observations()
+                .contains(&Observation::HostLong { operation, span: skein_lib::Duration::from_secs(30) })
+        );
+    }
+    for _ in 0..2 {
+        world.agent_ends_long();
+        world.settle();
+    }
+    assert!(!world.agent_try_ends_long(), "the two begun operations are exhausted");
+    assert_eq!(world.observations().iter().filter(|seen| **seen == Observation::HostLongDone).count(), 2);
+}

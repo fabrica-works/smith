@@ -1235,3 +1235,40 @@ fn the_kit_counts_the_label_separator_at_the_exact_message_bound_and_one_byte_ov
 
 #[path = "simulation/inline.rs"]
 mod inline;
+
+#[test]
+fn overlapping_completion_and_command_spans_keep_the_later_deadline_until_the_last_end() {
+    for order in [[30, 60], [60, 30]] {
+        let mut bounds = limits();
+        bounds.long_open = 2;
+        let mut world = World::new(91, bounds);
+        world.live();
+        world.up(Up::Long { operation: smith_host_domain::Operation::Completion, span: Duration::from_secs(order[0]) });
+        world.up(Up::Long { operation: smith_host_domain::Operation::Command, span: Duration::from_secs(order[1]) });
+        world.at(11);
+        assert_eq!(world.seen.fault, None);
+        world.up(Up::LongDone);
+        world.at(40);
+        assert_eq!(world.seen.fault, None, "either first terminal leaves the latest extension in force");
+        world.up(Up::LongDone);
+        world.at(49);
+        assert_eq!(world.seen.fault, None);
+        world.at(50);
+        faulted(&mut world, Fault::NoProgress);
+    }
+}
+
+#[test]
+fn long_capacity_and_unowned_endings_are_channel_rule_faults() {
+    let mut world = World::new(92, limits());
+    world.live();
+    world.up(Up::LongDone);
+    faulted(&mut world, Fault::Rules);
+    let mut bounds = limits();
+    bounds.long_open = 1;
+    let mut world = World::new(93, bounds);
+    world.live();
+    world.up(Up::Long { operation: smith_host_domain::Operation::Completion, span: Duration::from_secs(30) });
+    world.up(Up::Long { operation: smith_host_domain::Operation::Command, span: Duration::from_secs(30) });
+    faulted(&mut world, Fault::Rules);
+}

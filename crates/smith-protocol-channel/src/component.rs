@@ -99,6 +99,7 @@ pub struct Component {
     window: Option<smith_domain::Window>,
     turns: Map<u32, u64>,
     last_sent_turn: u32,
+    long_open: u32,
     held_turn_bytes: u64,
     fact_reserve_frames: u32,
     fact_reserve_bytes: u32,
@@ -135,6 +136,7 @@ impl Component {
             window: None,
             turns: Map::with_capacity(limits.turns),
             last_sent_turn: 0,
+            long_open: 0,
             held_turn_bytes: 0,
             fact_reserve_frames: limits.fact_reserve_frames,
             fact_reserve_bytes: limits.fact_reserve_bytes,
@@ -290,6 +292,7 @@ impl Component {
         if self.phase != Phase::Admitted {
             return Err(Error::Order);
         }
+        let next = self.long_open.checked_add(1).ok_or(Error::Order)?;
         let operation = match operation {
             smith_domain::Operation::Checks => smith_channel::Operation::Check,
             smith_domain::Operation::Completion => smith_channel::Operation::Completion,
@@ -303,20 +306,21 @@ impl Component {
         record.encode(&mut body)?;
         let mut frame = frame_writer(0x010b, record.measure())?;
         frame.put(&body.finish())?;
+        self.long_open = next;
         self.machine.down(Request::Send { token, frame: frame.finish()? }, &mut self.events, below);
         self.drain(to_service, below);
         self.fire(to_service, below);
         Ok(())
     }
 
-    /// End the announced long operation when its checks finish.
+    /// End one announced operation after its actual terminal.
     pub fn send_long_done(
         &mut self,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
     ) -> Result<(), Error> {
-        if self.phase != Phase::Admitted {
+        if self.phase != Phase::Admitted || self.long_open == 0 {
             return Err(Error::Order);
         }
         let record = smith_channel::LongDone::new(&self.bodies, smith_channel::LongDoneParts {})?;
@@ -327,6 +331,7 @@ impl Component {
         record.encode(&mut body)?;
         let mut frame = frame_writer(0x010c, record.measure())?;
         frame.put(&body.finish())?;
+        self.long_open = self.long_open.checked_sub(1).expect("a begun operation owns this terminal");
         self.machine.down(Request::Send { token, frame: frame.finish()? }, &mut self.events, below);
         self.drain(to_service, below);
         self.fire(to_service, below);

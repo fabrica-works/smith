@@ -727,13 +727,19 @@ impl World {
         }
     }
 
-    /// Tell the host that the checks ended.
-    pub fn agent_ends_long(&mut self) {
+    /// Try to end one actual open span; false means an ordering refusal.
+    pub fn agent_try_ends_long(&mut self) -> bool {
         if let Half::Agent(agent) = &mut self.agent.half {
-            agent
+            return agent
                 .send_long_done(skein_lib::Token::new(27), &mut self.agent.agent_events, &mut self.agent.below)
-                .expect("bounded long end");
+                .is_ok();
         }
+        false
+    }
+
+    /// Tell the host that one begun span has actually ended.
+    pub fn agent_ends_long(&mut self) {
+        assert!(self.agent_try_ends_long(), "one begun span owns the terminal");
     }
 
     /// Offer one content-free domain fact through the agent's bounded output.
