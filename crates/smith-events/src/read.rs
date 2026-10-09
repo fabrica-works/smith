@@ -710,6 +710,7 @@ fn read_model(tokens: &[Token], limits: &Limits) -> Result<Model, Error> {
     Ok(Model {
         endpoint: text(required(tokens, b"endpoint")?, limits.string)?,
         model: text(required(tokens, b"model")?, limits.string)?,
+        window_tokens: unsigned(required(tokens, b"window_tokens")?)?,
         output_tokens: unsigned(required(tokens, b"output_tokens")?)?,
         effort: match required(tokens, b"effort")? {
             [Token::Null] => None,

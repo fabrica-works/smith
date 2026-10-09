@@ -39,6 +39,7 @@ fn max_model(limits: &smith_events::Limits) -> Model {
     Model {
         endpoint: payload(limits.string),
         model: payload(limits.string),
+        window_tokens: u64::MAX,
         output_tokens: u64::MAX,
         effort: Some(payload(limits.string)),
     }

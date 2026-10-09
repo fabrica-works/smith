@@ -582,3 +582,75 @@ fn run_message_counts_and_nullable_final_fence_are_required_exact_fields() {
         }
     }
 }
+
+#[test]
+fn model_window_is_exact_and_independent_of_output_under_every_capture() {
+    for (_, mut record, _) in fixtures::samples() {
+        let model = match &mut record.event {
+            Event::RunStarted(value) => &mut value.main,
+            Event::ConversationOpened(value) => &mut value.model,
+            Event::ResponseStarted(value) => &mut value.model,
+            Event::Budget(_)
+            | Event::SessionStarted(_)
+            | Event::SessionEnded(_)
+            | Event::RunCompleted(_)
+            | Event::ConversationClosed(_)
+            | Event::ResponseCompleted(_)
+            | Event::TextDelta(_)
+            | Event::ToolStarted(_)
+            | Event::ToolCompleted(_)
+            | Event::CheckStarted(_)
+            | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
+            | Event::Notice(_) => continue,
+        };
+        model.window_tokens = u64::MAX;
+        model.output_tokens = 9_007_199_254_740_993;
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = write(&record, &capture, &limits()).expect("bounded model").expect("model event");
+            let decoded = read(&line, &limits()).expect("exact integers").expect("known event");
+            let model = match &decoded.event {
+                Event::RunStarted(value) => &value.main,
+                Event::ConversationOpened(value) => &value.model,
+                Event::ResponseStarted(value) => &value.model,
+                Event::Budget(_)
+                | Event::SessionStarted(_)
+                | Event::SessionEnded(_)
+                | Event::RunCompleted(_)
+                | Event::ConversationClosed(_)
+                | Event::ResponseCompleted(_)
+                | Event::TextDelta(_)
+                | Event::ToolStarted(_)
+                | Event::ToolCompleted(_)
+                | Event::CheckStarted(_)
+                | Event::CheckCompleted(_)
+                | Event::MessageReceived(_)
+                | Event::MessageRead(_)
+                | Event::MessageUnread(_)
+                | Event::Notice(_) => panic!("model event preserved"),
+            };
+            assert_eq!(model.window_tokens, u64::MAX);
+            assert_eq!(model.output_tokens, 9_007_199_254_740_993);
+        }
+    }
+}
+
+#[test]
+fn model_window_requires_an_unsigned_integer() {
+    let (_, record, _) = fixtures::samples()
+        .into_iter()
+        .find(|(_, record, _)| matches!(record.event, Event::ResponseStarted(_)))
+        .expect("response fixture");
+    let line = write(&record, &Capture::Everything, &limits()).expect("bounded").expect("record");
+    let text = String::from_utf8(line.into_vec()).expect("JSON UTF-8");
+    let field = "\"window_tokens\":18446744073709551615";
+    assert!(text.contains(field));
+    for invalid in ["null", "-1", "1.5", "18446744073709551616", "\"64\""] {
+        let changed = text.replace(field, &format!("\"window_tokens\":{invalid}"));
+        assert!(read(changed.as_bytes(), &limits()).is_err(), "{invalid}");
+    }
+    let missing = text.replace(&format!("{field},"), "");
+    assert!(read(missing.as_bytes(), &limits()).is_err());
+}

@@ -418,11 +418,12 @@ pub struct PeakRss {
     pub children: u64,
 }
 
-/// The endpoint, model and output allowance the service records for a conversation.
+/// The endpoint, model and charter window/output allowances the service records for a conversation.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Model {
     pub endpoint: Box<[u8]>,
     pub model: Box<[u8]>,
+    pub window_tokens: u64,
     pub output_tokens: u64,
     pub effort: Option<Box<[u8]>>,
 }

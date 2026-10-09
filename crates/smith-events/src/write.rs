@@ -418,6 +418,8 @@ fn write_model(json: &mut Encoder, value: &Model, _capture: &Capture) {
     json.string(&value.endpoint);
     json.key(b"model");
     json.string(&value.model);
+    json.key(b"window_tokens");
+    json.unsigned(value.window_tokens);
     json.key(b"output_tokens");
     json.unsigned(value.output_tokens);
     json.key(b"effort");

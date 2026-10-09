@@ -325,6 +325,7 @@ fn value_model(_name: &str, _spelling: &str) -> Model {
     Model {
         endpoint: Box::from("sample\n\"🌍".as_bytes()),
         model: Box::from("sample\n\"🌍".as_bytes()),
+        window_tokens: u64::MAX,
         output_tokens: u64::MAX,
         effort: Some(Box::from("sample\n\"🌍".as_bytes())),
     }
@@ -1645,6 +1646,7 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
                 model: Model {
                     endpoint: Box::from(b"e".as_slice()),
                     model: Box::from(b"m".as_slice()),
+                    window_tokens: 1000,
                     output_tokens: 100,
                     effort: None,
                 },
