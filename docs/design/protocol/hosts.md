@@ -122,7 +122,7 @@ what its host's protocol layer would do:
   - a result contract, a report by default;
   - the commands' environment.
 - **A workspace may override them** for itself. Where settings are kept,
-  and in which format, is the binary's, decided when it is built.
+  and in which format, is the binary's (`docs/development/local-host.md`).
 - **The local host writes the agent's configuration** from these
   (agent.md, section 4), and the charter of each run.
 

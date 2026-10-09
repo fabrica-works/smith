@@ -6,9 +6,8 @@ on workers, and its agent is a capability of two kinds: smith's host
 domain, one process per run, on a worker; and an inline agent, smith's
 domains in the host's own process, in the engine. jig builds the inline
 agent first, as `jig-inline-agent`, beside its hub. This draft is what
-that asks of smith, for a pass once jig's extraction plan and smith's
-protocol plan are done. Nothing here is adopted: smith's `host.md`
-describes what is designed. Section 4 lists what would change; section 5
+that asks of smith. Nothing here is adopted: smith's `host.md` describes
+what is designed. Section 4 lists what would change; section 5
 what is open.
 
 ## 1. In one page
@@ -98,10 +97,6 @@ A child a host embeds, beside or instead of `smith-host-domain`:
     smith.
 - **Worlds:** the host world's stories run with both kinds of agent; the
   local host's world uses the inline agent in its one-process stories.
-- **Plans:** smith's protocol plan's local-host session builds the
-  one-process form on today's design. This pass reworks it onto the
-  inline agent afterwards, unless that session is still to run when this
-  is adopted, in which case it can build on the inline agent directly.
 
 ## 5. Open
 
@@ -112,9 +107,9 @@ A child a host embeds, beside or instead of `smith-host-domain`:
 - **Entities or bytes:** in one process, the charter and turns could
   cross as entities. The vocabulary carries bytes so the two kinds stay
   interchangeable; whether the extra encoding ever shows.
-- **When jig switches:** jig's `jig-inline-agent` exists now. Whether
-  smith's replaces it as soon as smith has it, or at jig's next repin of
-  smith after both plans finish.
+- **When jig switches:** whether smith's inline agent replaces
+  `jig-inline-agent` as soon as smith has it, or at jig's next repin of
+  smith.
 - **The watchdog:** whether a wall-time bound alone is enough for runs
   in one process, or progress should be watched there too, against an
   LLM component that never answers.

@@ -138,11 +138,11 @@ Replace the example registration and destinations with the issuer's values.
 numeric loopback issuer, and contains a path. Both issuer URLs may use HTTP
 when their authority is numeric loopback; HTTP also requires `address` to
 resolve to loopback. Omit `server_name` and `trust_der` for an HTTP token
-endpoint, which uses plaintext. The redirect must use HTTP to a loopback address with a fixed nonzero
-port and a path, without a query or fragment. `scope` defaults to an empty
-string. `json` selects JSON token requests; omitted or `false` uses form
-encoding. Optional `trust_der` names one DER trust certificate; omitted uses
-the system trust store.
+endpoint, which uses plaintext. The redirect must use HTTP to a loopback
+address with a fixed nonzero port and a path, without a query or fragment.
+`scope` defaults to an empty string. `json` selects JSON token requests;
+omitted or `false` uses form encoding. Optional `trust_der` names one DER
+trust certificate; omitted uses the system trust store.
 
 The host opens the loopback listener before showing the authorization URL.
 Visit that URL in a browser; the host receives the redirect and exchanges the
@@ -195,18 +195,9 @@ symbolic links, oversize and IO errors refuse the comparison. Original conflict
 paths are checked through bounded file reads before a git delivery; deleted
 paths are resolved, and a surviving marker refuses the delivery.
 
-## Verification and later work
+## Limits of the binary
 
-The [local-process world](../../tests/local-process/README.md) exercises the
-same shell library with both agent placements, OAuth peers and a fake checkout.
-It covers resume, commits, cancellation, credential renewal, observation-only
-referees, memory, replay and seeded IO faults. Shared Store tests cut every
-write and sync boundary. Serial measurements are in the
-[workflow](workflow.md).
-
-Process containment uses Skein's plain children until its contained-tree
-mechanism is available. The inherited standard agent profile has a conservative
-checked memory bound of roughly 354 GB, so its configured ceiling must exceed
-that bound; reducing the retained limits or tightening that calculation remains
-later work. The ceiling is checked accounting, not an eager allocation of that
-number of bytes.
+Children are plain processes, not contained trees. The standard agent
+profile's checked memory bound is conservative, roughly 354 GB, so the
+agent configuration's `memory_bytes` must exceed it; it is checked
+accounting, not an allocation.

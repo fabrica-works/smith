@@ -79,7 +79,7 @@ Its channel and its LLM calls are channel.md's and llm.md's.
 What the agent is given at startup, before the loop. Charters,
 transcripts and the channel's terms refer to what it holds, so that is
 this document's concern. How it is given (a file, its format, where it is
-kept) is the binary's, decided when the binary is built.
+kept) is the binary's (`crates/smith/README.md`).
 
 - **Endpoints,** each:
   - its name, which charters and transcripts use;
@@ -192,5 +192,4 @@ machines. The local host writes its agent's from its own settings
   waits on the domain (README.md, section 11).
 - **The network for commands:** whether a command's tree has a network,
   which a build may need and a review may not.
-- **Traces kept:** their format, rotation, and how long they are kept, as
-  the binary is built.
+- **Traces kept:** rotation, and how long they are kept.
