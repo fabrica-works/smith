@@ -122,3 +122,52 @@ fn rendering_derivation_refuses_arithmetic_overflow() {
     caps.list_bytes = u64::MAX;
     assert_eq!(render_worst_case(&caps, 1, 1), None);
 }
+
+#[test]
+fn valid_utf8_survives_and_only_invalid_bytes_and_controls_are_escaped() {
+    let cases = [
+        ("é界🦀 –\n\t".as_bytes(), "exit code 0\né界🦀 –\n\t".as_bytes()),
+        (
+            "\u{7ff}\u{800}\u{d7ff}\u{e000}\u{ffff}\u{10000}\u{10ffff}".as_bytes(),
+            "exit code 0\n\u{7ff}\u{800}\u{d7ff}\u{e000}\u{ffff}\u{10000}\u{10ffff}".as_bytes(),
+        ),
+        (b"\xc0\xaf\xf4\x90\x80\x80".as_slice(), b"exit code 0\n\\xc0\\xaf\\xf4\\x90\\x80\\x80".as_slice()),
+        (b"a\x00\r\x1b\x7fb".as_slice(), b"exit code 0\na\\x00\\x0d\\x1b\\x7fb".as_slice()),
+        ("a\u{85}b".as_bytes(), b"exit code 0\na\\xc2\\x85b".as_slice()),
+        (b"a\xff\xc3\xa9\xe2\x82".as_slice(), "exit code 0\na\\xffé\\xe2\\x82".as_bytes()),
+        (b"\xf0\x80\x80\x80\xed\xa0\x80".as_slice(), b"exit code 0\n\\xf0\\x80\\x80\\x80\\xed\\xa0\\x80".as_slice()),
+    ];
+    for (input, expected) in cases {
+        let outcome = tools::Outcome::Exited {
+            exit: tools::Exit::Code { code: 0 },
+            head: input.into(),
+            tail: Box::new([]),
+            dropped: 0,
+        };
+        let first = render_outcome(&outcome, 4096).unwrap();
+        assert_eq!(first.0.as_ref(), expected);
+        assert!(!first.1);
+        assert_eq!(first, render_outcome(&outcome, 4096).unwrap());
+    }
+}
+
+#[test]
+fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
+    let outcome = tools::Outcome::Exited {
+        exit: tools::Exit::Code { code: 0 },
+        head: "é界🦀".repeat(30).into_bytes().into(),
+        tail: Box::new([]),
+        dropped: 0,
+    };
+    let (full, _) = render_outcome(&outcome, 4096).unwrap();
+    for cap in CUT_MARKER_BYTES..128 {
+        let (cut, error) = render_outcome(&outcome, cap).unwrap();
+        let text = core::str::from_utf8(&cut).unwrap();
+        let (prefix, marker) = text.split_once("\n[").unwrap();
+        let omitted = marker.split(' ').next().unwrap().parse::<usize>().unwrap();
+        assert_eq!(omitted, full.len() - prefix.len());
+        assert_eq!(prefix.as_bytes(), &full[..prefix.len()]);
+        assert!(cut.len() <= usize::try_from(cap).unwrap());
+        assert!(!error);
+    }
+}

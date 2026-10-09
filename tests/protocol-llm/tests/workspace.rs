@@ -390,3 +390,90 @@ fn mixed_git_plain_and_readonly_mounts_share_discovery_and_child_authority() {
     assert!(writable.iter().any(|query| feedback_has(query, b"NotRead")), "main's knowledge is not child's");
     assert!(writable.iter().any(|query| feedback_has(query, b"ReadOnly")), "child cannot widen mount authority");
 }
+
+#[test]
+fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
+    for configuration in wire::configurations() {
+        let mut disk = Checkout::new();
+        disk.mkdir(b"work");
+        disk.write(b"work/utf8.txt", "sections 4–6\n".as_bytes());
+        disk.write(b"work/bad.txt", b"bad\xff\x00\r\xc2\x85\t\n");
+        let root = Token::new(disk.root(b"work"));
+        let workspace = run::Workspace {
+            directories: Box::new([run::Directory {
+                name: b"work".as_slice().into(),
+                root,
+                writable: true,
+                git: false,
+                conflicts: Box::new([]),
+            }]),
+        };
+        let scripts = Box::new([Script {
+            cue: Box::new([]),
+            turns: Box::new([
+                calls(vec![call(b"read", br#"{"path":"utf8.txt"}"#), call(b"read", br#"{"path":"bad.txt"}"#)], 1),
+                calls(
+                    vec![call(b"edit", r#"{"path":"utf8.txt","old":"sections 4–6","new":"sections 4-6"}"#.as_bytes())],
+                    1,
+                ),
+                calls(vec![call(b"finish", br#"{"report":"Edited the copied text.","source":"utf8.txt"}"#)], 1),
+            ]),
+        }]);
+        let bounds = Limits {
+            client: skein_llm_world::limits(),
+            tool_bytes: 32768,
+            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            shell_default: Duration::from_secs(120),
+            shell_maximum: Duration::from_secs(1200),
+        };
+        let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1013) };
+        settings.limits.session.completion_bytes =
+            adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
+                .expect("completion room");
+        settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+        let mut world =
+            World::with_workspace_wire(settings, None, Some(workspace), disk, configuration, bounds, scripts);
+        world.run(10_000);
+        assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
+        assert_eq!(world.disk().content(b"work/utf8.txt"), Some(b"sections 4-6\n".as_slice()));
+        assert_eq!(world.prompts().len(), 3);
+        let feedback = world.prompts()[1]
+            .messages
+            .iter()
+            .flat_map(|message| message.parts.iter())
+            .filter_map(|part| match part {
+                Part::ToolOutput { output, .. } => Some(output.as_ref()),
+                Part::Opaque { .. } | Part::Text { .. } | Part::ToolCall { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        let copied = feedback
+            .iter()
+            .find_map(|output| {
+                let text = std::str::from_utf8(output).expect("all result text is UTF-8");
+                text.lines()
+                    .next()
+                    .and_then(|line| line.strip_prefix("1: sections "))
+                    .map(|tail| format!("sections {tail}"))
+            })
+            .expect("actual native peer read result");
+        assert_eq!(copied, "sections 4–6");
+        assert!(
+            feedback.iter().any(|output| contains(output, b"bad\\xff\\x00\\x0d\\xc2\\x85\t")),
+            "invalid and control bytes are visible to the actual peer"
+        );
+        let edit = world.prompts()[2]
+            .messages
+            .iter()
+            .flat_map(|message| message.parts.iter())
+            .find_map(|part| match part {
+                Part::ToolCall { name, arguments, .. } if name.as_ref() == b"edit" => Some(arguments),
+                Part::Opaque { .. } | Part::Text { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. } => None,
+            })
+            .expect("native peer's actual edit call");
+        let expected = format!(r#"{{"path":"utf8.txt","old":"{copied}","new":"sections 4-6"}}"#);
+        assert_eq!(edit.as_ref(), expected.as_bytes(), "old text equals what the read rendered");
+        assert!(world.prompts()[2].messages.iter().flat_map(|message| &message.parts).any(|part|
+            matches!(part, Part::ToolOutput { output, is_error: false, .. } if contains(output, b"replaced 1 occurrence(s)"))
+        ), "one successful edit result was rendered to the native peer");
+    }
+}

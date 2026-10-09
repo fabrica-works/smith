@@ -94,17 +94,51 @@ impl Sink {
     }
 
     fn text(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        for byte in bytes {
-            match *byte {
-                b'\n' | b'\t' | 32..=126 => self.put(&[*byte])?,
-                _ => {
-                    let high = hex(byte >> 4_u8);
-                    let low = hex(byte & 15_u8);
-                    self.put(&[b'\\', b'x', high, low])?;
-                }
+        let mut next = 0_usize;
+        for position in 0..bytes.len() {
+            if position < next {
+                continue;
             }
+            let remaining = bytes.get(position..).expect("position within input");
+            let width = scalar_width(remaining);
+            let advance = width.unwrap_or(1);
+            let scalar = remaining.get(..advance).expect("validated scalar or one invalid byte");
+            match width {
+                Some(_) => match scalar {
+                    [b'\n' | b'\t'] => self.put(scalar)?,
+                    [0..=31 | 127] | [0xc2, 0x80..=0x9f] => self.escaped(scalar)?,
+                    _ => self.put(scalar)?,
+                },
+                None => self.escaped(scalar)?,
+            }
+            next = position.checked_add(advance).expect("advance remains within input");
         }
         Ok(())
+    }
+
+    fn escaped(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        for byte in bytes {
+            let high = hex(byte >> 4_u8);
+            let low = hex(byte & 15_u8);
+            self.put(&[b'\\', b'x', high, low])?;
+        }
+        Ok(())
+    }
+}
+
+// RFC 3629 scalar prefixes exclude overlong forms, surrogates and values
+// beyond U+10FFFF. The complete result buffer needs no streaming decoder state.
+fn scalar_width(bytes: &[u8]) -> Option<usize> {
+    match bytes {
+        [0..=0x7f, ..] => Some(1),
+        [0xc2..=0xdf, 0x80..=0xbf, ..] => Some(2),
+        [0xe0, 0xa0..=0xbf, 0x80..=0xbf, ..]
+        | [0xe1..=0xec | 0xee..=0xef, 0x80..=0xbf, 0x80..=0xbf, ..]
+        | [0xed, 0x80..=0x9f, 0x80..=0xbf, ..] => Some(3),
+        [0xf0, 0x90..=0xbf, 0x80..=0xbf, 0x80..=0xbf, ..]
+        | [0xf1..=0xf3, 0x80..=0xbf, 0x80..=0xbf, 0x80..=0xbf, ..]
+        | [0xf4, 0x80..=0x8f, 0x80..=0xbf, 0x80..=0xbf, ..] => Some(4),
+        _ => None,
     }
 }
 

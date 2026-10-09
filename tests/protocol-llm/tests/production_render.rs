@@ -110,7 +110,9 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
 #[test]
 fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
     let outcome =
-        tools::Outcome::Read { content: b"saved line\n".as_slice().into(), skipped: 4, lines: 1, total: 6, cut: false };
+        tools::Outcome::Read {
+            content: "saved – 界\n".as_bytes().into(), skipped: 4, lines: 1, total: 6, cut: false
+        };
     let (live_text, live_error) = adapter::render_outcome(&outcome, 4096).expect("live feedback");
     let history = llm::Prompt {
         asker: llm::Asker::Main,
