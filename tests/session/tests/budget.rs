@@ -79,7 +79,11 @@ fn raw_overflow_keeps_only_the_charged_completion() {
 
 #[test]
 fn unsent_budget_denial_settles_current_reservation() {
-    for (reason, dimension) in [(BudgetDenial::Turns, Dimension::Turns), (BudgetDenial::Spend, Dimension::Unit)] {
+    for (reason, dimension) in [
+        (BudgetDenial::Turns, Dimension::Turns),
+        (BudgetDenial::Spend, Dimension::Unit),
+        (BudgetDenial::Time, Dimension::Time),
+    ] {
         let mut world = World::new(45, 256);
         world.open(opening(None, 100));
         inert(&mut world, session::Event::BudgetDenied { owner: Token::new(u64::MAX), reason });

@@ -14,6 +14,7 @@ pub mod v2;
 pub use v2::{
     Budget, BudgetParts, CEILINGS, ChangeRule, ChangeRuleParts, Charter, CharterParts, Contract, ContractParts,
     Conventions, ConventionsParts, Effect, Families, FamiliesParts, Field, FieldParts, FieldRule, FieldRuleParts, Form,
-    HostTool, HostToolParts, Item, ItemKind, ItemKindParts, ItemParts, Llm, LlmParts, Prices, PricesParts, RunResult,
-    RunResultParts, Section, SectionParts, TextRule, TextRuleParts, Tools, ToolsParts, VerdictRule, VerdictRuleParts,
+    HostTool, HostToolParts, Item, ItemKind, ItemKindParts, ItemParts, Llm, LlmParts, Prices, PricesParts, Reserve,
+    ReserveParts, RunResult, RunResultParts, Section, SectionParts, TextRule, TextRuleParts, Tools, ToolsParts,
+    VerdictRule, VerdictRuleParts,
 };

@@ -199,8 +199,8 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
 /// Root asks before publishing a completion. A denial has no effects and names
 /// the exhausted global scalar dimension. Stale/closing conversations deny.
 #[must_use]
-pub fn completion_permit(domain: &Domain, conversation: Token) -> crate::CompletionPermit {
-    run::completion_permit(domain, conversation)
+pub fn completion_permit(domain: &Domain, conversation: Token, now: Time) -> crate::CompletionPermit {
+    run::completion_permit(domain, conversation, now)
 }
 
 /// Reserve a provider completion's priced maximum from the run's one budget.

@@ -176,6 +176,7 @@ fn workspace() -> run::Workspace {
 
 fn charter(restoring: bool) -> run::Charter {
     run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: Box::new([]),
         brief: run::Brief {
             sections: Box::new([run::Section {
@@ -1523,6 +1524,7 @@ fn maximum_convention_charter() -> run::Charter {
         path.into_boxed_slice()
     };
     run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: bounds(16).run.check_timeout },
         conventions: Some(run::Conventions { guide: make_path(b'g'), checks: make_path(b'c') }),
         outcome: run::outcome::OutcomeSpec {
             change: Some(run::outcome::ChangeSpec { checks_must_pass: true, fields: Box::new([]) }),
@@ -1560,19 +1562,9 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     let caller_bytes = charter_bytes(&caller);
     let both_paths = path_bytes.checked_mul(2).expect("two bounded convention paths fit a fixture size");
     assert!(caller_bytes >= u64::try_from(both_paths).expect("bounded maximum convention payload fits u64"));
-    let selected = caller.conventions.clone();
     assert_eq!(caller_bytes + workspace_bytes(mounted.as_ref()), receiving.run.run_bytes);
     counted.caller_workspace = mounted.clone();
-    let outcome = caller.outcome.clone();
-    let instructions = caller.instructions.clone();
-    let brief = run::Brief {
-        sections: caller
-            .brief
-            .sections
-            .iter()
-            .map(|section| run::Section { title: section.title.clone(), text: section.text.clone() })
-            .collect(),
-    };
+    let active = maximum_caller_start(&caller);
     counted.caller_charter = Some(caller);
     counted.step(Event::Start {
         messages: Box::default(),
@@ -1582,7 +1574,7 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
         identity: None,
         activation: 1,
         window: root::Window { turns: u32::MAX, bytes: u64::MAX },
-        charter: run::Charter { instructions, brief, conventions: selected, outcome, ..charter(false) },
+        charter: active,
         workspace: mounted,
         transcript: None,
         grants: Box::new([Grant { name: GrantName { account: 0, generation: 1 }, valid: Duration::from_secs(3600) }]),
@@ -1642,4 +1634,23 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     counted.cycle(&configuration, 1);
     assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 3, .. })));
     reclaim_every_owner(counted, &receiving, configuration);
+}
+
+/// Copy caller-owned maximum context into an independent actual Start.
+fn maximum_caller_start(caller: &run::Charter) -> run::Charter {
+    run::Charter {
+        instructions: caller.instructions.clone(),
+        brief: run::Brief {
+            sections: caller
+                .brief
+                .sections
+                .iter()
+                .map(|section| run::Section { title: section.title.clone(), text: section.text.clone() })
+                .collect(),
+        },
+        conventions: caller.conventions.clone(),
+        outcome: caller.outcome.clone(),
+        reserve: caller.reserve,
+        ..charter(false)
+    }
 }

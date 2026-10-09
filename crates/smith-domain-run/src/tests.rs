@@ -272,6 +272,7 @@ pub(crate) fn workspace() -> Workspace {
 
 pub(crate) fn charter() -> Charter {
     Charter {
+        reserve: crate::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::new([]),
         brief: crate::Brief {
             sections: Box::new([crate::Section {
@@ -412,7 +413,11 @@ fn a_run_looks_for_checks_in_writable_repositories_when_a_change_must_pass_them(
         report: None,
         failure: None,
     };
-    let emitted = h.start_workspace(1, Charter { outcome, ..charter() }, Some(checkout));
+    let emitted = h.start_workspace(
+        1,
+        Charter { outcome, reserve: crate::charter::Reserve { turns: 0, time: LIMITS.check_timeout }, ..charter() },
+        Some(checkout),
+    );
     let [Request::Admitted { run, .. }, Request::Read { at, .. }] = &*emitted else {
         panic!("expected a read, got {emitted:?}");
     };
@@ -649,6 +654,7 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
     drop(h.start(
         1,
         Charter {
+            reserve: crate::charter::Reserve { turns: 0, time: LIMITS.check_timeout },
             outcome: OutcomeSpec {
                 change: Some(ChangeSpec {
                     checks_must_pass: true,
@@ -905,6 +911,7 @@ fn coding_workspace() -> Workspace {
 
 fn coding() -> Charter {
     Charter {
+        reserve: crate::charter::Reserve { turns: 0, time: LIMITS.check_timeout },
         outcome: OutcomeSpec {
             change: Some(ChangeSpec {
                 checks_must_pass: true,
@@ -1645,6 +1652,96 @@ fn a_sub_agent_runs_on_the_llm_named_for_it_among_the_charters() {
 }
 
 #[test]
+fn a_child_with_no_requested_share_gets_only_the_ordinary_pool() {
+    let mut harness = Harness::new(LIMITS);
+    let mut charter = agents();
+    charter.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
+    let (_, main) = harness.running_on(1, 100, charter);
+    drop(harness.step(Event::Used { conversation: main, spend: spend(100) }));
+    let (_, opening) = harness.child(main, 7, families(true, false, false), 101);
+    assert_eq!(opening.budget, Budget { turns: 7, spend: BUDGET.spend - 100, time: Duration::from_secs(540) });
+}
+
+#[test]
+fn the_entrance_names_a_reserve_that_its_budget_cannot_hold() {
+    for (reserve, part) in [
+        (crate::charter::Reserve { turns: BUDGET.turns, time: Duration::ZERO }, crate::Part::Turns),
+        (crate::charter::Reserve { turns: 0, time: BUDGET.time }, crate::Part::Time),
+    ] {
+        let mut charter = charter();
+        charter.reserve = reserve;
+        assert_eq!(
+            answered(Harness::new(LIMITS).start(7, charter)),
+            (7, Answer::Refused(Refusal::Invalid(Invalid::Budget(crate::BudgetRefusal::Reserve(part)))))
+        );
+    }
+}
+
+#[test]
+fn change_contracts_reserve_the_checks_and_other_contracts_need_no_check_allowance() {
+    let mut policy = coding();
+    let reserve = Duration::from_nanos(LIMITS.check_timeout.as_nanos() - 1_000_000);
+    policy.reserve.time = reserve;
+    assert_eq!(
+        answered(Harness::new(LIMITS).start(7, policy)),
+        (
+            7,
+            Answer::Refused(Refusal::Invalid(Invalid::Budget(crate::BudgetRefusal::Checks {
+                reserve,
+                checks: LIMITS.check_timeout
+            })))
+        )
+    );
+    let equal = Harness::new(LIMITS).start(7, coding());
+    let [Request::Admitted { .. }, ..] = equal.as_ref() else { panic!("equal checks reserve: {equal:?}") };
+    let mut policy = charter();
+    policy.reserve.time = Duration::from_millis(1);
+    let report = Harness::new(LIMITS).start(7, policy);
+    let [Request::Admitted { .. }, ..] = report.as_ref() else { panic!("report reserve: {report:?}") };
+}
+
+#[test]
+fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
+    let mut harness = Harness::new(LIMITS);
+    let mut charter = agents();
+    charter.budget.turns = 3;
+    charter.reserve = crate::charter::Reserve { turns: 1, time: Duration::ZERO };
+    let (_, main) = harness.running_on(1, 100, charter);
+    drop(harness.step(Event::Used { conversation: main, spend: spend(1) }));
+    let (first, _) = harness.child(main, 7, families(true, false, false), 101);
+    let (second, _) = harness.child(main, 8, families(true, false, false), 102);
+    let owner = Token::new(701);
+    assert_eq!(crate::reserve(&mut harness.domain, first, owner, 1), Ok(()));
+    assert_eq!(
+        crate::completion_permit(&harness.domain, second, harness.env.now),
+        crate::CompletionPermit::Denied(Exhausted::Turns)
+    );
+    assert_eq!(crate::reserve(&mut harness.domain, second, Token::new(702), 1), Err(Exhausted::Turns));
+    assert!(crate::settle_reservation(&mut harness.domain, first, owner, 1));
+    drop(harness.step(Event::Used { conversation: first, spend: spend(1) }));
+    assert_eq!(
+        crate::completion_permit(&harness.domain, second, harness.env.now),
+        crate::CompletionPermit::Denied(Exhausted::Turns)
+    );
+    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
+}
+
+#[test]
+fn ordinary_time_denies_a_childs_next_completion_and_main_can_still_finish() {
+    let mut harness = Harness::new(LIMITS);
+    let mut charter = agents();
+    charter.reserve = crate::charter::Reserve { turns: 2, time: Duration::from_secs(60) };
+    let (_, main) = harness.running_on(1, 100, charter);
+    let (child, _) = harness.child(main, 7, families(true, false, false), 101);
+    harness.env.now = Time::ZERO.saturating_add(Duration::from_secs(540));
+    assert_eq!(
+        crate::completion_permit(&harness.domain, child, harness.env.now),
+        crate::CompletionPermit::Denied(Exhausted::Time)
+    );
+    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
+}
+
+#[test]
 fn an_ask_the_run_cannot_grant_returns_why_and_the_run_goes_on() {
     // Not granted sub-agents, or wider families than its own.
     let mut h = Harness::new(LIMITS);
@@ -2011,6 +2108,7 @@ fn delivered() -> Delivery {
 
 fn mid_report() -> Charter {
     let mut charter = text_charter(false);
+    charter.reserve.time = LIMITS.check_timeout;
     charter.grants.deliver = Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
     charter
 }
@@ -2767,6 +2865,7 @@ fn accepted_mixed_workspace_drives_discovery_opening_and_child_metadata() {
     let mut harness = Harness::new(LIMITS);
     let mounted = mixed_workspace();
     let mut policy = charter();
+    policy.reserve.time = LIMITS.check_timeout;
     policy.grants.deliver = Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
     let emitted = harness.start_workspace(51, policy, Some(mounted.clone()));
     let [Request::Admitted { run, .. }, Request::Read { at, .. }] = emitted.as_ref() else {
@@ -2946,6 +3045,7 @@ fn contracts_requiring_writes_without_writable_directories_refuse_before_effects
     for mounted in [None, Some(workspace())] {
         let mut harness = Harness::new(LIMITS);
         let change = Charter {
+            reserve: crate::charter::Reserve { turns: 0, time: LIMITS.check_timeout },
             outcome: OutcomeSpec {
                 change: Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) }),
                 ..charter().outcome
@@ -2957,6 +3057,7 @@ fn contracts_requiring_writes_without_writable_directories_refuse_before_effects
             (54, Answer::Refused(Refusal::Invalid(Invalid::Outcome)))
         );
         let mut deliver = charter();
+        deliver.reserve.time = LIMITS.check_timeout;
         deliver.grants.deliver = Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
         assert_eq!(
             answered(harness.start_workspace(55, deliver, mounted)),
@@ -3046,7 +3147,10 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
     let mut harness = Harness::new(LIMITS);
     let (_, main) = harness.running(1, 100);
     assert!(harness.step(priced(main, BUDGET.spend, BUDGET.spend)).is_empty());
-    assert_eq!(crate::completion_permit(&harness.domain, main), crate::CompletionPermit::Denied(Exhausted::Spend));
+    assert_eq!(
+        crate::completion_permit(&harness.domain, main, harness.env.now),
+        crate::CompletionPermit::Denied(Exhausted::Spend)
+    );
     let wait = Event::Delegated {
         conversation: main,
         call: Token::new(91),
@@ -3074,13 +3178,13 @@ fn completion_gate_distinguishes_child_withdrawal_from_budget_denial() {
     let mut harness = Harness::new(LIMITS);
     let (_, main) = harness.running_on(1, 100, agents());
     let (child, _) = harness.child(main, 7, families(true, false, false), 101);
-    assert_eq!(crate::completion_permit(&harness.domain, child), crate::CompletionPermit::Allowed);
+    assert_eq!(crate::completion_permit(&harness.domain, child, harness.env.now), crate::CompletionPermit::Allowed);
     assert_eq!(
         harness.step(Event::Withdraw { conversation: main, call: Token::new(7) }).as_ref(),
         &[Request::Close { peer: Token::new(101) }]
     );
-    assert_eq!(crate::completion_permit(&harness.domain, child), crate::CompletionPermit::Closing);
-    assert_eq!(crate::completion_permit(&harness.domain, main), crate::CompletionPermit::Allowed);
+    assert_eq!(crate::completion_permit(&harness.domain, child, harness.env.now), crate::CompletionPermit::Closing);
+    assert_eq!(crate::completion_permit(&harness.domain, main, harness.env.now), crate::CompletionPermit::Allowed);
     assert_eq!(
         harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }).as_ref(),
         &[returned(7, Returned::Cancelled)]

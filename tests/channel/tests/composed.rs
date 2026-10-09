@@ -181,7 +181,16 @@ fn composed_charter() -> host::Charter {
     let mut parts = source.into_parts();
     parts.budget = smith_charter::Budget::new(
         &smith_charter::CEILINGS,
-        smith_charter::BudgetParts { turns: 1, spend: 1, time: Duration::from_secs(60) },
+        smith_charter::BudgetParts {
+            turns: 1,
+            spend: 1,
+            time: Duration::from_secs(60),
+            reserve: smith_charter::Reserve::new(
+                &smith_charter::CEILINGS,
+                smith_charter::ReserveParts { turns: 0, time: Duration::ZERO },
+            )
+            .expect("bounded reserve"),
+        },
     )
     .expect("workable budget");
     parts.contract = smith_charter::Contract::new(

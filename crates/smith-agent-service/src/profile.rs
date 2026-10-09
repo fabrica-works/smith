@@ -195,6 +195,7 @@ fn derive_domain(profile: &Profile, configuration: &Configuration) -> Result<dom
         max_spend: policy.max_spend,
         max_time: policy.max_time,
         sections: policy.sections,
+        check_timeout: policy.check_timeout,
         host_tools: policy.host_tools,
         verdicts: policy.verdicts,
         guide: declared.guide,

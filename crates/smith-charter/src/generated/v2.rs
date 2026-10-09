@@ -193,12 +193,20 @@ pub enum Path {
     LlmPrices,
     /// Bytes after `Llm`.
     LlmTail,
+    /// The `turns` field of `Reserve`.
+    ReserveTurns,
+    /// The `time` field of `Reserve`.
+    ReserveTime,
+    /// Bytes after `Reserve`.
+    ReserveTail,
     /// The `turns` field of `Budget`.
     BudgetTurns,
     /// The `spend` field of `Budget`.
     BudgetSpend,
     /// The `time` field of `Budget`.
     BudgetTime,
+    /// The `reserve` field of `Budget`.
+    BudgetReserve,
     /// Bytes after `Budget`.
     BudgetTail,
     /// The `instructions` field of `Charter`.
@@ -1444,30 +1452,27 @@ impl Llm {
     }
 }
 
-/// Movable fields of `Budget`.
+/// Movable fields of `Reserve`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BudgetParts {
+pub struct ReserveParts {
     /// The `turns` field.
     pub turns: u32,
-    /// The `spend` field.
-    pub spend: u64,
     /// The `time` field.
     pub time: skein_lib::Duration,
 }
 
-/// `Budget` in this codec family.
+/// `Reserve` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Budget {
+pub struct Reserve {
     turns: u32,
-    spend: u64,
     time: skein_lib::Duration,
 }
 
-impl Budget {
+impl Reserve {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: BudgetParts) -> Result<Self, Problem> {
-        let BudgetParts { turns, spend, time } = parts;
-        let value = Self { turns, spend, time };
+    pub fn new(limits: &Limits, parts: ReserveParts) -> Result<Self, Problem> {
+        let ReserveParts { turns, time } = parts;
+        let value = Self { turns, time };
         value.check(limits)?;
         Ok(value)
     }
@@ -1476,17 +1481,13 @@ impl Budget {
     #[must_use]
     pub fn turns(&self) -> u32 { self.turns }
 
-    /// Reads the `spend` field.
-    #[must_use]
-    pub fn spend(&self) -> u64 { self.spend }
-
     /// Reads the `time` field.
     #[must_use]
     pub fn time(&self) -> skein_lib::Duration { self.time }
 
     /// Moves the fields out without copying.
     #[must_use]
-    pub fn into_parts(self) -> BudgetParts { BudgetParts { turns: self.turns, spend: self.spend, time: self.time } }
+    pub fn into_parts(self) -> ReserveParts { ReserveParts { turns: self.turns, time: self.time } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         let Self { .. } = self;
@@ -1520,6 +1521,93 @@ impl Budget {
         if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
         if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
         if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// Movable fields of `Budget`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BudgetParts {
+    /// The `turns` field.
+    pub turns: u32,
+    /// The `spend` field.
+    pub spend: u64,
+    /// The `time` field.
+    pub time: skein_lib::Duration,
+    /// The `reserve` field.
+    pub reserve: Reserve,
+}
+
+/// `Budget` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Budget {
+    turns: u32,
+    spend: u64,
+    time: skein_lib::Duration,
+    reserve: Reserve,
+}
+
+impl Budget {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: BudgetParts) -> Result<Self, Problem> {
+        let BudgetParts { turns, spend, time, reserve } = parts;
+        let value = Self { turns, spend, time, reserve };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `turns` field.
+    #[must_use]
+    pub fn turns(&self) -> u32 { self.turns }
+
+    /// Reads the `spend` field.
+    #[must_use]
+    pub fn spend(&self) -> u64 { self.spend }
+
+    /// Reads the `time` field.
+    #[must_use]
+    pub fn time(&self) -> skein_lib::Duration { self.time }
+
+    /// Reads the `reserve` field.
+    #[must_use]
+    pub fn reserve(&self) -> &Reserve { &self.reserve }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> BudgetParts { BudgetParts { turns: self.turns, spend: self.spend, time: self.time, reserve: self.reserve } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
+        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
+        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
+        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
+        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
+        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
+        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
+        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
+        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
+        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
+        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
+        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
+        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
+        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
+        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
+        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
+        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
+        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
+        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
+        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
+        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
+        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
+        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
+        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
+        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
+        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
+        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
+        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
+        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
+        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
+        self.reserve.check(limits)?;
         Ok(())
     }
 }
@@ -2668,6 +2756,39 @@ impl Llm {
     }
 }
 
+impl Reserve {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(8).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_turns = &self.turns;
+        writer.put(&field_turns.to_be_bytes())?;
+        let field_time = &self.time;
+        writer.put(&field_time.as_nanos().to_be_bytes())?;
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::ReserveTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_turns = reader.u32().ok_or(Problem { path: Path::ReserveTurns, reason: skein_codec::Reason::Short })?;
+        let decoded_time = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::ReserveTime, reason: skein_codec::Reason::Short })?);
+        Self::new(limits, ReserveParts { turns: decoded_turns, time: decoded_time })
+    }
+}
+
 impl Budget {
     /// Measures this record's wire encoding.
     #[must_use]
@@ -2676,6 +2797,8 @@ impl Budget {
         size = size.checked_add(4).expect("schema ceilings fit u32");
         size = size.checked_add(8).expect("schema ceilings fit u32");
         size = size.checked_add(8).expect("schema ceilings fit u32");
+        let field_reserve = &self.reserve;
+        size = size.checked_add(field_reserve.measure()).expect("schema ceilings fit u32");
         size
     }
 
@@ -2687,6 +2810,8 @@ impl Budget {
         writer.put(&field_spend.to_be_bytes())?;
         let field_time = &self.time;
         writer.put(&field_time.as_nanos().to_be_bytes())?;
+        let field_reserve = &self.reserve;
+        field_reserve.encode(writer)?;
         Ok(())
     }
 
@@ -2701,7 +2826,8 @@ impl Budget {
         let decoded_turns = reader.u32().ok_or(Problem { path: Path::BudgetTurns, reason: skein_codec::Reason::Short })?;
         let decoded_spend = reader.u64().ok_or(Problem { path: Path::BudgetSpend, reason: skein_codec::Reason::Short })?;
         let decoded_time = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::BudgetTime, reason: skein_codec::Reason::Short })?);
-        Self::new(limits, BudgetParts { turns: decoded_turns, spend: decoded_spend, time: decoded_time })
+        let decoded_reserve = Reserve::decode_from(limits, reader)?;
+        Self::new(limits, BudgetParts { turns: decoded_turns, spend: decoded_spend, time: decoded_time, reserve: decoded_reserve })
     }
 }
 
@@ -3352,14 +3478,13 @@ impl Llm {
     }
 }
 
-impl Budget {
+impl Reserve {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
-        size = size.checked_add(8_u64)?;
         size = size.checked_add(8_u64)?;
         Some(size)
     }
@@ -3371,7 +3496,32 @@ impl Budget {
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
+        Some(heap)
+    }
+}
+
+impl Budget {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(4_u64)?;
+        size = size.checked_add(8_u64)?;
+        size = size.checked_add(8_u64)?;
+        size = size.checked_add(Reserve::worst_case_bytes(limits)?)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(Reserve::worst_case_heap(limits)?)?;
         Some(heap)
     }
 }
@@ -3523,6 +3673,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(Conventions::worst_case_bytes(limits)?);
     biggest = biggest.max(Prices::worst_case_bytes(limits)?);
     biggest = biggest.max(Llm::worst_case_bytes(limits)?);
+    biggest = biggest.max(Reserve::worst_case_bytes(limits)?);
     biggest = biggest.max(Budget::worst_case_bytes(limits)?);
     biggest = biggest.max(Charter::worst_case_bytes(limits)?);
     biggest = biggest.max(Field::worst_case_bytes(limits)?);
@@ -3551,6 +3702,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(Conventions::worst_case_heap(limits)?);
     biggest = biggest.max(Prices::worst_case_heap(limits)?);
     biggest = biggest.max(Llm::worst_case_heap(limits)?);
+    biggest = biggest.max(Reserve::worst_case_heap(limits)?);
     biggest = biggest.max(Budget::worst_case_heap(limits)?);
     biggest = biggest.max(Charter::worst_case_heap(limits)?);
     biggest = biggest.max(Field::worst_case_heap(limits)?);
@@ -3562,7 +3714,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Section, SectionParts, Families, FamiliesParts, Effect, HostTool, HostToolParts, FieldRule, FieldRuleParts, TextRule, TextRuleParts, ItemKind, ItemKindParts, VerdictRule, VerdictRuleParts, ChangeRule, ChangeRuleParts, Contract, ContractParts, Tools, ToolsParts, Conventions, ConventionsParts, Prices, PricesParts, Llm, LlmParts, Budget, BudgetParts, Charter, CharterParts, Field, FieldParts, Item, ItemParts, Form, RunResult, RunResultParts};
+    use super::{CEILINGS, Path, Section, SectionParts, Families, FamiliesParts, Effect, HostTool, HostToolParts, FieldRule, FieldRuleParts, TextRule, TextRuleParts, ItemKind, ItemKindParts, VerdictRule, VerdictRuleParts, ChangeRule, ChangeRuleParts, Contract, ContractParts, Tools, ToolsParts, Conventions, ConventionsParts, Prices, PricesParts, Llm, LlmParts, Reserve, ReserveParts, Budget, BudgetParts, Charter, CharterParts, Field, FieldParts, Item, ItemParts, Form, RunResult, RunResultParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -3866,9 +4018,29 @@ mod golden_tests {
     }
 
     #[test]
+    fn record_reserve_smallest() {
+        let value = Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_reserve_full() {
+        let value = Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
     fn record_budget_smallest() {
-        let value = Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -3877,8 +4049,8 @@ mod golden_tests {
 
     #[test]
     fn record_budget_full() {
-        let value = Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -3887,8 +4059,8 @@ mod golden_tests {
 
     #[test]
     fn record_charter_smallest() {
-        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([].as_slice()), brief: skein_lib::List::with_capacity(0), tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings"), conventions: None, budget: Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings"), models: skein_lib::List::with_capacity(0), waiting: skein_lib::Duration::from_nanos(0_u64), resume: false }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([].as_slice()), brief: skein_lib::List::with_capacity(0), tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings"), conventions: None, budget: Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings"), models: skein_lib::List::with_capacity(0), waiting: skein_lib::Duration::from_nanos(0_u64), resume: false }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -3897,8 +4069,8 @@ mod golden_tests {
 
     #[test]
     fn record_charter_full() {
-        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([97_u8, 98_u8, 99_u8].as_slice()), brief: { let mut items = skein_lib::List::with_capacity(1); items.push(Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings"), conventions: Some(Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")), budget: Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings"), models: { let mut items = skein_lib::List::with_capacity(1); items.push(Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, waiting: skein_lib::Duration::from_nanos(u64::MAX), resume: true }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
+        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([97_u8, 98_u8, 99_u8].as_slice()), brief: { let mut items = skein_lib::List::with_capacity(1); items.push(Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings"), conventions: Some(Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")), budget: Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings"), models: { let mut items = skein_lib::List::with_capacity(1); items.push(Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, waiting: skein_lib::Duration::from_nanos(u64::MAX), resume: true }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 2, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -4430,13 +4602,13 @@ mod golden_tests {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
             let header = 2_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(100_usize).expect("wire size") } else { header };
+            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(112_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
             writer.put(&[0, 2]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
+                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
             }
             writer.finish()
         }
@@ -4450,13 +4622,13 @@ mod golden_tests {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
             let header = 6_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(96_usize).expect("wire size") } else { header };
+            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(108_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
             writer.put(&[0, 2, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
+                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
             }
             writer.finish()
         }
@@ -4469,10 +4641,10 @@ mod golden_tests {
     fn bound_charter_models() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(45).expect("schema ceiling");
-            let header = 93_usize.checked_add(4).expect("header size");
+            let header = 105_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(9_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
+            writer.put(&[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
                 for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }

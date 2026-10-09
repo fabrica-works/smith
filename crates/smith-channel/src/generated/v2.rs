@@ -389,6 +389,12 @@ pub enum Path {
     BudgetCompletionMost,
     /// Bytes after `BudgetCompletion`.
     BudgetCompletionTail,
+    /// The `reserve` field of `BudgetChecks`.
+    BudgetChecksReserve,
+    /// The `checks` field of `BudgetChecks`.
+    BudgetChecksChecks,
+    /// Bytes after `BudgetChecks`.
+    BudgetChecksTail,
     /// The tag of `BudgetRefusal`.
     BudgetRefusalTag,
     /// The `value` field of `BudgetRefusalValue`.
@@ -4996,6 +5002,77 @@ impl BudgetCompletion {
     }
 }
 
+/// Movable fields of `BudgetChecks`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BudgetChecksParts {
+    /// The `reserve` field.
+    pub reserve: skein_lib::Duration,
+    /// The `checks` field.
+    pub checks: skein_lib::Duration,
+}
+
+/// `BudgetChecks` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BudgetChecks {
+    reserve: skein_lib::Duration,
+    checks: skein_lib::Duration,
+}
+
+impl BudgetChecks {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: BudgetChecksParts) -> Result<Self, Problem> {
+        let BudgetChecksParts { reserve, checks } = parts;
+        let value = Self { reserve, checks };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `reserve` field.
+    #[must_use]
+    pub fn reserve(&self) -> skein_lib::Duration { self.reserve }
+
+    /// Reads the `checks` field.
+    #[must_use]
+    pub fn checks(&self) -> skein_lib::Duration { self.checks }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> BudgetChecksParts { BudgetChecksParts { reserve: self.reserve, checks: self.checks } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        let Self { .. } = self;
+        if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_path > CEILINGS.directory_path { return Err(Problem { path: Path::DirectoryPath, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_conflicts > CEILINGS.directory_conflicts { return Err(Problem { path: Path::DirectoryConflicts, reason: skein_codec::Reason::Bound }); }
+        if limits.directory_conflicts_item > CEILINGS.directory_conflicts_item { return Err(Problem { path: Path::DirectoryConflicts, reason: skein_codec::Reason::Bound }); }
+        if limits.workspace_directories > CEILINGS.workspace_directories { return Err(Problem { path: Path::WorkspaceDirectories, reason: skein_codec::Reason::Bound }); }
+        if limits.grant_value_credential > CEILINGS.grant_value_credential { return Err(Problem { path: Path::GrantValueCredential, reason: skein_codec::Reason::Bound }); }
+        if limits.receipt_text > CEILINGS.receipt_text { return Err(Problem { path: Path::ReceiptText, reason: skein_codec::Reason::Bound }); }
+        if limits.delivered_receipts > CEILINGS.delivered_receipts { return Err(Problem { path: Path::DeliveredReceipts, reason: skein_codec::Reason::Bound }); }
+        if limits.marker_path > CEILINGS.marker_path { return Err(Problem { path: Path::MarkerPath, reason: skein_codec::Reason::Bound }); }
+        if limits.delivery_refusal_explanation > CEILINGS.delivery_refusal_explanation { return Err(Problem { path: Path::DeliveryRefusalExplanation, reason: skein_codec::Reason::Bound }); }
+        if limits.delivery_failure_diagnostic > CEILINGS.delivery_failure_diagnostic { return Err(Problem { path: Path::DeliveryFailureDiagnostic, reason: skein_codec::Reason::Bound }); }
+        if limits.host_reply_text > CEILINGS.host_reply_text { return Err(Problem { path: Path::HostReplyText, reason: skein_codec::Reason::Bound }); }
+        if limits.answered_call_tool > CEILINGS.answered_call_tool { return Err(Problem { path: Path::AnsweredCallTool, reason: skein_codec::Reason::Bound }); }
+        if limits.message_label > CEILINGS.message_label { return Err(Problem { path: Path::MessageLabel, reason: skein_codec::Reason::Bound }); }
+        if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
+        if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
+        if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
+        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
+        if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
+        if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
+        if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
+        if limits.host_ask_tool > CEILINGS.host_ask_tool { return Err(Problem { path: Path::HostAskTool, reason: skein_codec::Reason::Bound }); }
+        if limits.host_ask_input > CEILINGS.host_ask_input { return Err(Problem { path: Path::HostAskInput, reason: skein_codec::Reason::Bound }); }
+        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
+        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
+        if limits.deliver_ask_fields > CEILINGS.deliver_ask_fields { return Err(Problem { path: Path::DeliverAskFields, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_body > CEILINGS.turn_body { return Err(Problem { path: Path::TurnBody, reason: skein_codec::Reason::Bound }); }
+        if limits.accepted_result > CEILINGS.accepted_result { return Err(Problem { path: Path::AcceptedResult, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
 /// `BudgetRefusal` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BudgetRefusal {
@@ -5007,6 +5084,8 @@ pub enum BudgetRefusal {
     Reserve(BudgetPartValue),
     /// `completion` carrying `BudgetCompletion`.
     Completion(BudgetCompletion),
+    /// `checks` carrying `BudgetChecks`.
+    Checks(BudgetChecks),
 }
 
 impl BudgetRefusal {
@@ -5021,6 +5100,7 @@ impl BudgetRefusal {
             Self::Ceiling(record) => BudgetCeilingValue::check(record, limits),
             Self::Empty(record) | Self::Reserve(record) => BudgetPartValue::check(record, limits),
             Self::Completion(record) => BudgetCompletion::check(record, limits),
+            Self::Checks(record) => BudgetChecks::check(record, limits),
         }?;
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
         if limits.directory_path > CEILINGS.directory_path { return Err(Problem { path: Path::DirectoryPath, reason: skein_codec::Reason::Bound }); }
@@ -8223,6 +8303,39 @@ impl BudgetCompletion {
     }
 }
 
+impl BudgetChecks {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        size = size.checked_add(8).expect("schema ceilings fit u32");
+        size = size.checked_add(8).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_reserve = &self.reserve;
+        writer.put(&field_reserve.as_nanos().to_be_bytes())?;
+        let field_checks = &self.checks;
+        writer.put(&field_checks.as_nanos().to_be_bytes())?;
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::BudgetChecksTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_reserve = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::BudgetChecksReserve, reason: skein_codec::Reason::Short })?);
+        let decoded_checks = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::BudgetChecksChecks, reason: skein_codec::Reason::Short })?);
+        Self::new(limits, BudgetChecksParts { reserve: decoded_reserve, checks: decoded_checks })
+    }
+}
+
 impl BudgetRefusal {
     /// Measures this variant's wire encoding.
     #[must_use]
@@ -8231,6 +8344,7 @@ impl BudgetRefusal {
             Self::Ceiling(record) => 1_u32.checked_add(BudgetCeilingValue::measure(record)).expect("schema ceilings fit u32"),
             Self::Empty(record) | Self::Reserve(record) => 1_u32.checked_add(BudgetPartValue::measure(record)).expect("schema ceilings fit u32"),
             Self::Completion(record) => 1_u32.checked_add(BudgetCompletion::measure(record)).expect("schema ceilings fit u32"),
+            Self::Checks(record) => 1_u32.checked_add(BudgetChecks::measure(record)).expect("schema ceilings fit u32"),
         }
     }
 
@@ -8241,6 +8355,7 @@ impl BudgetRefusal {
             Self::Empty(record) => { writer.put(&[1_u8])?; record.encode(writer)?; }
             Self::Reserve(record) => { writer.put(&[2_u8])?; record.encode(writer)?; }
             Self::Completion(record) => { writer.put(&[3_u8])?; record.encode(writer)?; }
+            Self::Checks(record) => { writer.put(&[4_u8])?; record.encode(writer)?; }
         }
         Ok(())
     }
@@ -8259,6 +8374,7 @@ impl BudgetRefusal {
             1 => Self::Empty(BudgetPartValue::decode_from(limits, reader)?),
             2 => Self::Reserve(BudgetPartValue::decode_from(limits, reader)?),
             3 => Self::Completion(BudgetCompletion::decode_from(limits, reader)?),
+            4 => Self::Checks(BudgetChecks::decode_from(limits, reader)?),
             _ => return Err(Problem { path: Path::BudgetRefusalTag, reason: skein_codec::Reason::Tag }),
         };
         Self::new(limits, value)
@@ -10045,6 +10161,28 @@ impl BudgetCompletion {
     }
 }
 
+impl BudgetChecks {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(8_u64)?;
+        size = size.checked_add(8_u64)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
+        heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?;
+        Some(heap)
+    }
+}
+
 impl BudgetRefusal {
     /// Maximum encoded bytes among variants.
     #[must_use]
@@ -10055,6 +10193,7 @@ impl BudgetRefusal {
         biggest = biggest.max(BudgetPartValue::worst_case_bytes(limits)?);
         biggest = biggest.max(BudgetPartValue::worst_case_bytes(limits)?);
         biggest = biggest.max(BudgetCompletion::worst_case_bytes(limits)?);
+        biggest = biggest.max(BudgetChecks::worst_case_bytes(limits)?);
         1_u64.checked_add(biggest)
     }
 
@@ -10067,6 +10206,7 @@ impl BudgetRefusal {
         biggest = biggest.max(BudgetPartValue::worst_case_heap(limits)?);
         biggest = biggest.max(BudgetPartValue::worst_case_heap(limits)?);
         biggest = biggest.max(BudgetCompletion::worst_case_heap(limits)?);
+        biggest = biggest.max(BudgetChecks::worst_case_heap(limits)?);
         Some(biggest)
     }
 }
@@ -10335,6 +10475,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(BudgetCeiling::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetCeilingValue::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetCompletion::worst_case_bytes(limits)?);
+    biggest = biggest.max(BudgetChecks::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetRefusal::worst_case_bytes(limits)?);
     biggest = biggest.max(BudgetRefusalValue::worst_case_bytes(limits)?);
     biggest = biggest.max(InvalidStart::worst_case_bytes(limits)?);
@@ -10420,6 +10561,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(BudgetCeiling::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetCeilingValue::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetCompletion::worst_case_heap(limits)?);
+    biggest = biggest.max(BudgetChecks::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetRefusal::worst_case_heap(limits)?);
     biggest = biggest.max(BudgetRefusalValue::worst_case_heap(limits)?);
     biggest = biggest.max(InvalidStart::worst_case_heap(limits)?);
@@ -10435,7 +10577,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, CompletionFailure, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts};
+    use super::{CEILINGS, Path, CallName, CallNameParts, Window, WindowParts, Directory, DirectoryParts, Workspace, WorkspaceParts, GrantValue, GrantValueParts, Grant, GrantParts, Receipt, ReceiptParts, Delivered, DeliveredParts, Marker, MarkerParts, DeliveryRefusal, DeliveryRefusalParts, DeliveryReason, DeliveryFailure, DeliveryFailureParts, Delivery, HostReply, HostReplyParts, DeliveryReply, DeliveryReplyParts, Reply, SavedReply, AnsweredCall, AnsweredCallParts, Message, MessageParts, Start, StartParts, HostAnswer, HostAnswerParts, Acknowledge, AcknowledgeParts, GrantRefresh, GrantRefreshParts, Cancel, CancelParts, Admitted, AdmittedParts, MessageRefusal, MessageRefused, MessageRefusedParts, Effect, HostAsk, HostAskParts, Field, FieldParts, DeliverAsk, DeliverAskParts, Ask, Call, CallParts, Withdraw, WithdrawParts, Turn, TurnParts, Waiting, WaitingParts, Long, LongParts, LongDone, LongDoneParts, Rejected, RejectedParts, Exhausted, ExhaustedParts, FactKind, Fact, FactParts, ReceivingLimit, Overflow, ReceivingLimitValue, ReceivingLimitValueParts, OverflowValue, OverflowValueParts, BudgetFailure, CompletionFailure, CompletionEvidence, CompletionFault, CompletionFaultParts, ModelFault, TranscriptRefusal, TranscriptRefusalValue, TranscriptRefusalValueParts, ModelFaultValue, ModelFaultValueParts, BudgetFailureValue, BudgetFailureValueParts, PolicyFailure, PolicyFailureParts, RunFailure, PriceRate, PriceRateValue, PriceRateValueParts, BudgetPart, BudgetPartValue, BudgetPartValueParts, BudgetTurns, BudgetTurnsParts, BudgetSpend, BudgetSpendParts, BudgetTime, BudgetTimeParts, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetCompletion, BudgetCompletionParts, BudgetChecks, BudgetChecksParts, BudgetRefusal, BudgetRefusalValue, BudgetRefusalValueParts, InvalidStart, InvalidStartValue, InvalidStartValueParts, StartRefusal, Accepted, AcceptedParts, Failed, FailedParts, Refused, RefusedParts, RunResult, Answer, AnswerParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -13319,6 +13461,26 @@ mod golden_tests {
     }
 
     #[test]
+    fn record_budget_checks_smallest() {
+        let value = BudgetChecks::new(&CEILINGS, BudgetChecksParts { reserve: skein_lib::Duration::from_nanos(0_u64), checks: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BudgetChecks::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_budget_checks_full() {
+        let value = BudgetChecks::new(&CEILINGS, BudgetChecksParts { reserve: skein_lib::Duration::from_nanos(u64::MAX), checks: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings");
+        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BudgetChecks::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
     fn enum_budget_refusal_ceiling_smallest() {
         let value = BudgetRefusal::Ceiling(BudgetCeilingValue::new(&CEILINGS, BudgetCeilingValueParts { value: BudgetCeiling::Turns(BudgetTurns::new(&CEILINGS, BudgetTurnsParts { value: 0_u32 }).expect("golden within ceilings")) }).expect("golden within ceilings"));
         let golden: &[u8] = &[0, 0, 0, 0, 0, 0];
@@ -13392,6 +13554,26 @@ mod golden_tests {
     fn enum_budget_refusal_completion_full() {
         let value = BudgetRefusal::Completion(BudgetCompletion::new(&CEILINGS, BudgetCompletionParts { most: u64::MAX }).expect("golden within ceilings"));
         let golden: &[u8] = &[3, 255, 255, 255, 255, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BudgetRefusal::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_budget_refusal_checks_smallest() {
+        let value = BudgetRefusal::Checks(BudgetChecks::new(&CEILINGS, BudgetChecksParts { reserve: skein_lib::Duration::from_nanos(0_u64), checks: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BudgetRefusal::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_budget_refusal_checks_full() {
+        let value = BudgetRefusal::Checks(BudgetChecks::new(&CEILINGS, BudgetChecksParts { reserve: skein_lib::Duration::from_nanos(u64::MAX), checks: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[4, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

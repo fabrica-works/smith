@@ -24,6 +24,7 @@ pub mod lease_referee;
 pub mod messages_referee;
 mod noisy;
 pub mod partner;
+pub mod share_referee;
 mod world;
 
 pub use noisy::noisy;

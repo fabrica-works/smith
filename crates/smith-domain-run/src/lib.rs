@@ -67,7 +67,7 @@ pub use boundary::{
 };
 pub use budget::{
     Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Overflow, Part, Prices, Rate, ReceivingLimit, Share,
-    Spend,
+    Spend, admit, reserve_spend,
 };
 pub use charter::{Brief, Charter, Conventions, Section};
 pub use domain::{

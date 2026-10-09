@@ -65,7 +65,7 @@ while inheriting the global agent, model, budget and account settings:
 | `instructions` | Required instruction text for each activation. |
 | `models` | Required nonempty array of priced models, described below. |
 | `sub_agents` | Offer main the native `sub_agent` tool; default `false`. Children share the workspace and run budget and cannot delegate. |
-| `budget` | Required positive `{ "turns", "spend", "seconds" }`. The usual run uses 512 turns, 25,000,000 micro-dollars ($25) and 3,600 seconds. Each part must fit the agent's ceiling; standard admits 4,096 turns, 1,000,000,000 micro-dollars and 86,400 seconds. |
+| `budget` | Required positive `{ "turns", "spend", "seconds" }`. The usual run uses 512 turns, 25,000,000 micro-dollars ($25) and 3,600 seconds. Its optional `reserve: { "turns", "seconds" }` defaults to 2 turns and 300 seconds for finishing. Children receive only what remains above it. The reserve must be smaller than the total in both parts; a change-capable chat also reserves at least the agent's `check_timeout`. Each total part must fit the agent's ceiling; standard admits 4,096 turns, 1,000,000,000 micro-dollars and 86,400 seconds. |
 | `waiting_seconds` | Required positive waiting interval, in seconds. |
 | `brief` | Ordered `{ "title", "text" }` context sections; default `[]`. |
 | `directories` | Ordered `{ "name", "path", "writable", "git" }` workspace roots; default `[]`. The binary's host profile allows two directories. |

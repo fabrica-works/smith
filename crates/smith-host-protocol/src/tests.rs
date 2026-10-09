@@ -378,6 +378,16 @@ fn invalid_start_round_trip_keeps_every_budget_reason_and_price_rate() {
             host::RunInvalid::Budget(host::BudgetRefusal::Reserve(host::Part::Time)),
         ),
         (
+            run::Invalid::Budget(run::BudgetRefusal::Checks {
+                reserve: Duration::from_secs(59),
+                checks: Duration::from_secs(60),
+            }),
+            host::RunInvalid::Budget(host::BudgetRefusal::Checks {
+                reserve: Duration::from_secs(59),
+                checks: Duration::from_secs(60),
+            }),
+        ),
+        (
             run::Invalid::Budget(run::BudgetRefusal::Completion { most: 123 }),
             host::RunInvalid::Budget(host::BudgetRefusal::Completion { most: 123 }),
         ),

@@ -343,6 +343,7 @@ fn empty_charter() -> crate::Charter {
 
     let bytes = 0_u64;
     let value = run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         resume: false,
         waiting: Duration::ZERO,
         instructions: Box::new([]),

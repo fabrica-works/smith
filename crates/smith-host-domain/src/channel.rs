@@ -420,6 +420,8 @@ pub enum BudgetRefusal {
     Empty(Part),
     /// The budget cannot hold its finishing reserve.
     Reserve(Part),
+    /// A change contract needs more check time than the finishing reserve holds.
+    Checks { reserve: Duration, checks: Duration },
     /// The spend cannot pay for one of main's most costly completions.
     Completion { most: u64 },
 }

@@ -1,7 +1,7 @@
 //! Sub-agents (domain/run.md, section 5.3): a delegated call the run serves by
 //! opening another conversation, on the same checkout, with families of tools
 //! no wider than its asker's and never `finish`, on an LLM the charter lists,
-//! with a share of what the run has left of its budget.
+//! with a share of what the run has left above its finishing reserve (section 9.1).
 //!
 //! The child lives as long as the call. A child that yields is done: its last
 //! message is the call's result, and it is closed. One that ends without
@@ -75,6 +75,7 @@ pub(crate) struct Means {
     pub(crate) spent: Spend,
     pub(crate) conversations: u32,
     pub(crate) left: Duration,
+    pub(crate) call_left: Duration,
 }
 
 /// What a conversation with `families` may be given when it asks
@@ -99,7 +100,10 @@ pub(crate) fn plan(
         None => charter.llm.clone(),
         Some(name) => model(&charter.models, name).ok_or(AskRefusal::UnknownLlm)?,
     };
-    let left = charter.budget.remainder(means.spent, means.left);
+    let reserve_spend =
+        crate::budget::reserve_spend(charter.reserve, &charter.llm).expect("admission checked reserve spend");
+    let mut left = crate::budget::ordinary(&charter.budget, charter.reserve, reserve_spend, means.spent, means.left);
+    left.time = left.time.min(means.call_left);
     let budget = match share {
         None => left,
         Some(share) => {

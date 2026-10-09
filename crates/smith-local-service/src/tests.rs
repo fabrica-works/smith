@@ -56,6 +56,7 @@ fn config() -> Config {
     Config {
         agent: crate::AgentConfig::Spawned,
         local: local::Config {
+            reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
             progress: Box::new([smith_domain::session::Progress {
                 head: Duration::from_secs(60),
                 idle: Duration::from_secs(30),

@@ -618,6 +618,7 @@ pub(crate) fn budget_denied(
     let spent = match reason {
         BudgetDenial::Turns => Dimension::Turns,
         BudgetDenial::Spend => Dimension::Unit,
+        BudgetDenial::Time => Dimension::Time,
     };
     unsent_finished(domain, env, owner, End::Budget { spent }, out);
 }

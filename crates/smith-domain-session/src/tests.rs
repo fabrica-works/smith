@@ -1855,9 +1855,11 @@ fn reservation_prices_input_bytes_allowance_and_maximum_output_once() {
 
 #[test]
 fn unsent_denial_releases_reserved_provider_credit_before_kit_settlement() {
-    for (reason, dimension) in
-        [(crate::BudgetDenial::Turns, Dimension::Turns), (crate::BudgetDenial::Spend, Dimension::Unit)]
-    {
+    for (reason, dimension) in [
+        (crate::BudgetDenial::Turns, Dimension::Turns),
+        (crate::BudgetDenial::Spend, Dimension::Unit),
+        (crate::BudgetDenial::Time, Dimension::Time),
+    ] {
         let mut harness = Harness::new(Limits { spend: 100, ..LIMITS });
         let owner = reserved_recorded_call(&mut harness);
         let (reserved, credit) = crate::session::provider_credit_for_test(&harness.domain, owner);

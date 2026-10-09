@@ -47,7 +47,8 @@ record Tools {
 record Conventions { guide: text 1024 checks: text 1024 }
 record Prices { input: u64 cached: u64 cache_write: option u64 output: u64 unit: u32 }
 record Llm { endpoint: text 64 model: text 128 window: u32 output: u32 prices: Prices }
-record Budget { turns: u32 spend: u64 time: duration }
+record Reserve { turns: u32 time: duration }
+record Budget { turns: u32 spend: u64 time: duration reserve: Reserve }
 
 # The complete charter is also bounded by the receiving run's Limits.run_bytes.
 versioned record Charter {

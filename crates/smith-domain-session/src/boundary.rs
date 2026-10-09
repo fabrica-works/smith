@@ -388,6 +388,8 @@ pub enum End {
 /// This carries no provider policy and allocates no payload.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum BudgetDenial {
+    /// Ordinary wall time is spent; ends as `Dimension::Time` after kit close.
+    Time,
     /// No global completion remains; ends as `Dimension::Turns` after kit close.
     Turns,
     /// No global deployment-unit allowance remains; ends as `Dimension::Unit`.

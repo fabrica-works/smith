@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use skein_lib::{Duration, Rng};
 use smith_domain_run::{Answer, Exhausted, Failure, Fault, Invalid, Policy, Refusal};
 use smith_run_world::{Settings, World, noisy};
 
@@ -89,4 +90,45 @@ fn random_worlds_settle_with_every_start_answered_once() {
         waited > 0 && delivered > 0 && host_answered > 0 && busy > 0 && lost > 0 && answered > 0,
         "wait {waited}, delivered {delivered}, host answered {host_answered}, relays {busy}/{lost}/{answered}"
     );
+}
+
+#[test]
+fn random_reserves_keep_parallel_children_above_the_finishing_pool() {
+    let mut children = 0;
+    let mut main_in_reserve = 0;
+    for seed in 900..960 {
+        let mut rng = Rng::new(seed);
+        let calm = Settings::calm(seed);
+        let settings = Settings {
+            host: smith_run_world::host::Script {
+                jobs: 1,
+                agents: 1000,
+                writable: 0,
+                reports: 1000,
+                verdicts: 0,
+                turns_min: u32::try_from(rng.between(4, 10)).expect("small drawn turns"),
+                turns_max: 12,
+                reserve: smith_domain_run::charter::Reserve {
+                    turns: u32::try_from(rng.between(1, 3)).expect("small drawn reserve"),
+                    time: Duration::from_secs(rng.between(1, 30)),
+                },
+                ..calm.host
+            },
+            partner: smith_run_world::partner::Script {
+                asks: 800,
+                finishes: 200,
+                reports: 1000,
+                yields: 0,
+                shares: u32::try_from(rng.between(0, 1000)).expect("per-mille draw"),
+                parallel: 3,
+                ..calm.partner
+            },
+            ..calm
+        };
+        let world = settled(&settings);
+        let observed = world.reserve_progress();
+        children += observed.0;
+        main_in_reserve += observed.1;
+    }
+    assert!(children > 0 && main_in_reserve > 0, "the sweep actually admits children and reserved main turns");
 }

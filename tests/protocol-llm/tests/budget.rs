@@ -142,6 +142,7 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
         dialect: 1,
     };
     run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: cue.into(),
         brief: Brief {
             sections: Box::new([Section {

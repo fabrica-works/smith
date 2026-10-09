@@ -174,5 +174,8 @@ fn budget_refusal(refusal: &wire::BudgetRefusal) -> host::BudgetRefusal {
         wire::BudgetRefusal::Empty(record) => host::BudgetRefusal::Empty(budget_part(record.value())),
         wire::BudgetRefusal::Reserve(record) => host::BudgetRefusal::Reserve(budget_part(record.value())),
         wire::BudgetRefusal::Completion(record) => host::BudgetRefusal::Completion { most: record.most() },
+        wire::BudgetRefusal::Checks(record) => {
+            host::BudgetRefusal::Checks { reserve: record.reserve(), checks: record.checks() }
+        }
     }
 }

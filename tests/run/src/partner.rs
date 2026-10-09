@@ -881,6 +881,9 @@ impl Partner {
             self.end(peer, End::Budget(exhausted), out);
             return;
         }
+        // An old yielded deadline no longer owns this conversation while its
+        // next unsent completion waits for the actual gate.
+        talk.wake += 1;
         talk.phase = Phase::Requesting;
         out.push(Out::Permit { conversation: talk.conversation, peer });
     }

@@ -351,6 +351,7 @@ fn translate_charter(charter: &wire::Charter, endpoints: &Endpoints) -> Result<r
         },
         outcome: contract(charter.contract())?,
         budget: run::Budget { turns: budget.turns(), spend: budget.spend(), time: budget.time() },
+        reserve: run::charter::Reserve { turns: budget.reserve().turns(), time: budget.reserve().time() },
         llm: llm(charter.main(), endpoints)?,
         models: models.into_boxed(),
     })
@@ -705,6 +706,10 @@ fn budget_refusal(refusal: run::BudgetRefusal, limits: &channel::Limits) -> Resu
         run::BudgetRefusal::Completion { most } => channel::BudgetRefusal::Completion(channel::BudgetCompletion::new(
             limits,
             channel::BudgetCompletionParts { most },
+        )?),
+        run::BudgetRefusal::Checks { reserve, checks } => channel::BudgetRefusal::Checks(channel::BudgetChecks::new(
+            limits,
+            channel::BudgetChecksParts { reserve, checks },
         )?),
     })
 }

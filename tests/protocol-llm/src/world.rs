@@ -1860,6 +1860,7 @@ fn charter(settings: &Settings) -> run::Charter {
     };
     let llm = main_model();
     run::Charter {
+        reserve: finishing_reserve(settings, change),
         instructions: Box::new([]),
         brief: run::Brief {
             sections: Box::new([run::Section {
@@ -2014,5 +2015,17 @@ fn main_model() -> run::charter::Llm {
         window: 8192,
         output: 4096,
         dialect: 1,
+    }
+}
+
+/// Host fixture allowance for every contract that can run checks.
+fn finishing_reserve(settings: &Settings, change: bool) -> run::charter::Reserve {
+    run::charter::Reserve {
+        turns: 0,
+        time: if change || matches!(settings.job, Job::MidReport | Job::MarkerReport) {
+            settings.limits.run.check_timeout
+        } else {
+            Duration::ZERO
+        },
     }
 }

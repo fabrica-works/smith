@@ -44,6 +44,8 @@ pub struct Config {
     pub progress: Box<[smith_domain::session::Progress]>,
     /// Activation budget in the host's unit.
     pub budget: run::Budget,
+    /// Main's finishing turns and time, kept outside child-opening budgets.
+    pub reserve: charter::Reserve,
     /// Optional guide and check paths.
     pub conventions: Option<run::Conventions>,
     /// Result form; a report is the usual choice.
@@ -190,7 +192,18 @@ impl Config {
     }
 
     fn check_budget(&self, limits: &Limits) -> Result<(), Invalid> {
-        match self.budget.check(&limits.smith.run.budget) {
+        let checks = match &self.contract {
+            Contract::Change(_) => Some(limits.smith.run.check_timeout),
+            Contract::Report(_) => {
+                if self.deliver.is_some() {
+                    Some(limits.smith.run.check_timeout)
+                } else {
+                    None
+                }
+            }
+        };
+        let main = self.models.first().ok_or(Invalid::Models)?;
+        match run::admit(&self.budget, self.reserve, main, &limits.smith.run.budget, checks) {
             Ok(()) => {}
             Err(reason) => return Err(Invalid::Budget(reason)),
         }
@@ -290,6 +303,7 @@ pub fn charter(config: &Config) -> charter::Charter {
         },
         outcome: outcome::OutcomeSpec { change, verdicts: Box::new([]), report, failure: None },
         budget: config.budget,
+        reserve: config.reserve,
         llm: main,
         models,
     }

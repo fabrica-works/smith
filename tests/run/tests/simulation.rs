@@ -402,7 +402,7 @@ fn an_llm_that_spends_past_the_tokens_fails_its_run_for_budget() {
 #[test]
 fn a_run_out_of_time_fails_for_time() {
     let calm = Settings::calm(6);
-    let host = host::Script { time: Span::millis(10_000, 20_000), ..calm.host };
+    let host = host::Script { time: Span::millis(10_000, 20_000), writable: 0, verdicts: 1000, ..calm.host };
     let script = Script { turn: Span::millis(3_000, 8_000), yields: 0, ..calm.partner };
     let world = settled(&Settings { host, partner: script, ..calm });
     for answer in answers(&world) {
@@ -567,6 +567,7 @@ fn an_outcome_that_does_not_fit_is_rejected_and_the_llm_tries_again() {
 fn a_check_deadline_terminal_returns_feedback_without_submitting_to_host() {
     let settings = finishing(18);
     let world = settled(&Settings {
+        run: Limits { check_timeout: Duration::from_millis(3_999), ..settings.run },
         host: host::Script { time: Span::millis(4_000, 4_000), ..settings.host },
         partner: Script { changes: 1000, finishes: 1000, turn: Span::millis(100, 100), ..settings.partner },
         checkout: Checkouts {
@@ -630,7 +631,13 @@ fn cancels_find_runs_in_every_state() {
     // its budget.
     for seed in 21..24 {
         let landing = finishing(seed);
-        let run = Limits { runs: 16, conversations: 16, calls: 16, ..landing.run };
+        let run = Limits {
+            runs: 16,
+            conversations: 16,
+            calls: 16,
+            check_timeout: Duration::from_millis(1_999),
+            ..landing.run
+        };
         let host = host::Script {
             jobs: 16,
             cancels: 1000,
@@ -709,7 +716,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
     let (mut cancels, mut deadlines) = (BTreeMap::new(), BTreeMap::new());
     for seed in 0..50 {
         let calm = Settings::calm(seed);
-        let host = host::Script { time: Span::millis(1_000, 6_000), ..calm.host };
+        let host = host::Script { time: Span::millis(1_000, 6_000), writable: 0, verdicts: 1000, ..calm.host };
         let checkout = Checkouts { io: Span::millis(0, 2_000), ..calm.checkout };
         let partner = Script { turn: Span::millis(100, 2_000), ..calm.partner };
         let settings = Settings { host, checkout, partner, hop: Span::millis(0, 1_500), ..calm };
@@ -719,7 +726,13 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
     // budget.
     for seed in 50..56 {
         let landing = finishing(seed);
-        let run = Limits { runs: 16, conversations: 16, calls: 16, ..landing.run };
+        let run = Limits {
+            runs: 16,
+            conversations: 16,
+            calls: 16,
+            check_timeout: Duration::from_millis(1_999),
+            ..landing.run
+        };
         let host = host::Script {
             jobs: 16,
             time: Span::millis(2_000, 15_000),
@@ -930,4 +943,36 @@ fn an_empty_failure_reason_is_accepted_in_the_run_world() {
         answer,
         Answer::Accepted { outcome: smith_domain_run::outcome::Declared::Failure(_), .. }
     )));
+}
+
+#[test]
+fn a_sub_agent_that_spends_the_ordinary_pool_leaves_main_its_reserve() {
+    for seed in 700..732 {
+        let calm = Settings::calm(seed);
+        let settings = Settings {
+            host: host::Script {
+                jobs: 1,
+                agents: 1000,
+                writable: 0,
+                reports: 1000,
+                verdicts: 0,
+                turns_min: 5,
+                turns_max: 5,
+                reserve: run::charter::Reserve { turns: 3, time: Duration::from_secs(10) },
+                ..calm.host
+            },
+            partner: Script { asks: 1000, parallel: 2, finishes: 400, reports: 1000, yields: 0, ..calm.partner },
+            ..calm
+        };
+        let world = settled(&settings);
+        let (children, main_in_reserve) = world.reserve_progress();
+        if children == 1
+            && main_in_reserve > 0
+            && answers(&world).iter().any(|answer| matches!(answer, Answer::Accepted { .. }))
+        {
+            assert!(world.stats().children > 0);
+            return;
+        }
+    }
+    panic!("the reserved turns never let main finish after the child's last ordinary completion");
 }

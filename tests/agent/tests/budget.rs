@@ -124,6 +124,7 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
         dialect: 1,
     };
     run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         instructions: cue.into(),
         brief: Brief {
             sections: Box::new([Section {
@@ -298,4 +299,30 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
         expected,
         "the whole positive conservation oracle detects double charging"
     );
+}
+
+#[test]
+fn parallel_children_cannot_spend_the_last_ordinary_turn_twice_and_main_finishes() {
+    let settings = settings(707, false, false);
+    let (disk, workspace) = workspace(false);
+    let mut charter = charter(&settings, b"@reserve-main", &MODEL_RATES);
+    charter.budget.turns = 4;
+    charter.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(300) };
+    let scripts = Box::new([
+        script(
+            b"@reserve-main",
+            vec![
+                calls(vec![call(b"sub_agent", CHILD_INPUT), call(b"sub_agent", CHILD_INPUT)], 3),
+                calls(vec![call(b"finish", REPORT)], 7),
+            ],
+        ),
+        script(b"@budget-child", vec![says(CHILD, 5)]),
+    ]);
+    let mut world = World::with_workspace_scripts_charter(settings, None, Some(workspace), disk, scripts, charter);
+    world.run(20_000);
+    let expected = conservation(&world, &MODEL_RATES);
+    assert_eq!(expected.turns, 3);
+    assert_eq!(model_calls(&world, b"fake-2").len(), 1, "one actual child callback takes the last ordinary turn");
+    assert_eq!(model_calls(&world, b"fake-1").len(), 2, "main takes a reserved turn to finish");
+    assert!(matches!(world.answer(), run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), .. }));
 }

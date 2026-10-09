@@ -109,6 +109,9 @@ fn an_empty_brief_parks_at_idle_wall_or_zero_waiting_without_opening() {
     for (idle, wall) in [(7, 30), (30, 7), (0, 30)] {
         let mut settings = Settings::calm(920 + idle);
         settings.host.jobs = 1;
+        settings.host.writable = 0;
+        settings.host.changes = 0;
+        settings.host.verdicts = 1000;
         settings.host.time = Span { min: Duration::from_secs(wall), max: Duration::from_secs(wall) };
         settings.network = Span::millis(0, 0);
         settings.hop = Span::millis(0, 0);

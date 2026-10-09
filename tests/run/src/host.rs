@@ -62,6 +62,10 @@ const TEXT: &[u8] = b"Fix the failing test in the parser, and keep the change sm
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Script {
+    /// Requested finishing quota, clamped below each generated total budget.
+    pub reserve: smith_domain_run::charter::Reserve,
+    /// Configured check policy supplied independently of the component.
+    pub checks: Duration,
     /// Runs to start, one per job, each at a time drawn from the first
     /// `window`.
     ///
@@ -584,19 +588,15 @@ impl Host {
             dialect: 1,
         };
         let workspace = Some(Workspace { directories: repositories.into_boxed_slice() });
+        let deliver = self.delivery_grant(script.deliveries);
         let charter = Charter {
+            reserve: finishing_reserve(script, budget, change || deliver.is_some()),
             instructions: Box::new([]),
             brief: smith_domain_run::Brief {
                 sections: Box::new([smith_domain_run::Section { title: b"Task".as_slice().into(), text: brief }]),
             },
 
-            grants: Grants {
-                wait: true,
-                deliver: self.delivery_grant(script.deliveries),
-                tools,
-                agents,
-                host_tools: host_tools.into(),
-            },
+            grants: Grants { wait: true, deliver, tools, agents, host_tools: host_tools.into() },
             outcome: OutcomeSpec {
                 change: change.then_some(ChangeSpec {
                     checks_must_pass: true,
@@ -687,4 +687,16 @@ fn delivered(writable: &[u32]) -> Delivery {
         })
         .collect();
     Delivery::Delivered(smith_domain_run::Delivered::new(receipts).expect("unique admitted directories"))
+}
+
+/// Independent host finishing allowance, including one configured checks run.
+fn finishing_reserve(script: Script, budget: Budget, change: bool) -> smith_domain_run::charter::Reserve {
+    smith_domain_run::charter::Reserve {
+        turns: script.reserve.turns.min(budget.turns.saturating_sub(1)),
+        time: if change {
+            script.reserve.time.max(script.checks)
+        } else {
+            script.reserve.time.min(Duration::from_nanos(budget.time.as_nanos().saturating_sub(1)))
+        },
+    }
 }

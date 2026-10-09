@@ -29,6 +29,7 @@ pub(super) fn limits() -> Limits {
 
 pub(super) fn config() -> Config {
     Config {
+        reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         chat: Box::from(&b"main"[..]),
         instructions: Box::from(&b"Assist the person"[..]),
         brief: run::charter::Brief {

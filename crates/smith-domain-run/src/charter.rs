@@ -20,6 +20,14 @@ pub use crate::conventions::Conventions;
 
 pub use crate::host::{HostEffect, HostTool};
 
+/// What the host keeps for main to finish with (domain/run.md, section 9.1).
+/// Spend is derived from main's completions and is never supplied separately.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Reserve {
+    pub turns: u32,
+    pub time: Duration,
+}
+
 /// What a run is given when it starts.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Charter {
@@ -53,6 +61,8 @@ pub struct Charter {
     pub outcome: OutcomeSpec,
     /// What the run may spend, across all its conversations.
     pub budget: Budget,
+    /// Beside the budget, which also sizes child shares without a reserve.
+    pub reserve: Reserve,
     /// The LLM the main conversation starts with.
     pub llm: Llm,
     /// The LLMs a sub-agent may be opened on, each named by its model, which
@@ -186,14 +196,26 @@ pub struct Endpoint(
 /// not fit them. Counts are checked before anything that compares names in
 /// pairs.
 pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<(), Invalid> {
-    let Charter { instructions: _, brief, grants, outcome, budget, llm, models, resume: _, waiting, conventions } =
-        charter;
+    let Charter {
+        instructions: _,
+        brief,
+        grants,
+        outcome,
+        budget,
+        reserve,
+        llm,
+        models,
+        resume: _,
+        waiting,
+        conventions,
+    } = charter;
     // Exact conversion: an overflowing count must refuse even at a u32::MAX cap.
     match u32::try_from(brief.sections.len()) {
         Ok(sections) if sections <= limits.brief_sections => {}
         Ok(_) | Err(_) => return Err(Invalid::TooLarge),
     }
-    match budget.check(&limits.budget) {
+    let checks = if outcome.change.is_some() || grants.deliver.is_some() { Some(limits.check_timeout) } else { None };
+    match crate::budget::admit(budget, *reserve, llm, &limits.budget, checks) {
         Ok(()) => {}
         Err(reason) => return Err(Invalid::Budget(reason)),
     }

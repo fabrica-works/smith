@@ -164,7 +164,7 @@ fn the_shared_budget_ends_the_run_after_every_conversation_settles() {
     let Answer::Failed { failure: Failure::Budget(Exhausted::Turns), spent, .. } = world.answer() else {
         panic!("the run spends its shared turns")
     };
-    assert!(spent.turns > 8 && spent.turns <= 12, "only in-flight completions can finish past the shared ceiling");
+    assert_eq!(spent.turns, 8, "pending children reserve the last shared turn before it is sent");
     assert_eq!(count(&world, |fact| matches!(fact, run::facts::FactKind::Opened { .. })), 3);
     assert!(world.landed().is_empty());
 }
@@ -237,6 +237,10 @@ fn a_deadline_mid_tree_answers_only_after_the_tree_settles() {
         let world = settled(&Settings {
             job: Job::Delegating,
             budget: run::Budget { time: Duration::from_secs(4), ..BUDGET },
+            limits: smith_domain::Limits {
+                run: run::Limits { check_timeout: Duration::from_millis(1), ..smith_agent_world::LIMITS.run },
+                ..smith_agent_world::LIMITS
+            },
             ..Settings::calm(700 + seed)
         });
         assert!(matches!(world.answer(), Answer::Failed { failure: Failure::Budget(Exhausted::Time), .. }));

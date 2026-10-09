@@ -517,5 +517,6 @@ const fn budget_refusal(refusal: run::BudgetRefusal) -> host::BudgetRefusal {
         run::BudgetRefusal::Empty(part) => host::BudgetRefusal::Empty(budget_part(part)),
         run::BudgetRefusal::Reserve(part) => host::BudgetRefusal::Reserve(budget_part(part)),
         run::BudgetRefusal::Completion { most } => host::BudgetRefusal::Completion { most },
+        run::BudgetRefusal::Checks { reserve, checks } => host::BudgetRefusal::Checks { reserve, checks },
     }
 }

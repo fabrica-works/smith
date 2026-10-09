@@ -120,6 +120,8 @@ pub(crate) struct Run {
     spent: Spend,
     /// Maximum charges of completions sent but not yet settled, across all conversations.
     reserved: u64,
+    /// Sent completions whose usage has not yet settled.
+    reserved_turns: u32,
     /// Nudges given.
     nudges: u32,
     /// Outcomes `finish` refused: rejected, or not landed.
@@ -305,6 +307,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         acknowledged: 0,
         spent: Spend::ZERO,
         reserved: 0,
+        reserved_turns: 0,
         nudges: 0,
         rejected: 0,
         conversations: 1,
@@ -775,7 +778,7 @@ fn hard_ending(ending: Ending, failure: Failure) -> Ending {
 }
 
 /// Pure completion gate; no leases, prompt copies or external effects.
-pub(crate) fn completion_permit(domain: &Domain, conversation: Token) -> CompletionPermit {
+pub(crate) fn completion_permit(domain: &Domain, conversation: Token, now: Time) -> CompletionPermit {
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = domain.conversations.get(id) else {
         return CompletionPermit::Closing;
@@ -787,6 +790,36 @@ pub(crate) fn completion_permit(domain: &Domain, conversation: Token) -> Complet
         }
     }
     let run = domain.runs.get(conversation.run).expect("conversation retains run");
+    let working = match &run.state {
+        State::Working { .. } => true,
+        State::Over { .. }
+        | State::Awaiting { .. }
+        | State::Preparing { .. }
+        | State::Stopping { .. }
+        | State::Waiting { .. }
+        | State::Winding { .. }
+        | State::Closed => false,
+    };
+    if working && conversation.asker.is_some() {
+        let reserve_spend = crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm)
+            .expect("admission checked reserve spend");
+        let ordinary = crate::budget::ordinary(
+            &run.charter.budget,
+            run.charter.reserve,
+            reserve_spend,
+            run.spent,
+            run.deadline.saturating_since(now),
+        );
+        if ordinary.turns <= run.reserved_turns {
+            return CompletionPermit::Denied(Exhausted::Turns);
+        }
+        if ordinary.spend <= run.reserved {
+            return CompletionPermit::Denied(Exhausted::Spend);
+        }
+        if ordinary.time == Duration::ZERO {
+            return CompletionPermit::Denied(Exhausted::Time);
+        }
+    }
     match &run.state {
         State::Working { .. } => match run.charter.budget.exhausted(run.spent) {
             Some(exhausted) => CompletionPermit::Denied(exhausted),
@@ -828,10 +861,22 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
     let run = domain.runs.get_mut(conversation.run).expect("conversation retains run");
     let committed = run.spent.units.checked_add(run.reserved).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
     let total = committed.checked_add(most).ok_or(Exhausted::Overflow(crate::Overflow::Spend))?;
+    if conversation.asker.is_some() {
+        let turn_ceiling = run.charter.budget.turns.checked_sub(run.charter.reserve.turns).expect("admitted reserve");
+        let next_turn = match run.spent.turns.checked_add(run.reserved_turns) {
+            Some(turns) => turns.checked_add(1),
+            None => None,
+        }
+        .ok_or(Exhausted::Overflow(crate::Overflow::Usage))?;
+        if next_turn > turn_ceiling {
+            return Err(Exhausted::Turns);
+        }
+    }
     if total > run.charter.budget.spend {
         return Err(Exhausted::Spend);
     }
     run.reserved = run.reserved.checked_add(most).expect("checked with total above");
+    run.reserved_turns = run.reserved_turns.checked_add(1).expect("one bounded reservation per conversation");
     conversation.reservation = Some((owner, most));
     Ok(())
 }
@@ -845,6 +890,7 @@ pub(crate) fn settle_reservation(domain: &mut Domain, conversation: Token, owner
     assert!(reserved_owner == owner, "provider terminal settles its own reservation");
     let run = domain.runs.get_mut(conversation.run).expect("conversation retains run");
     run.reserved = run.reserved.checked_sub(most).expect("reservation belongs to this run");
+    run.reserved_turns = run.reserved_turns.checked_sub(1).expect("reservation belongs to this run");
     charge <= most
 }
 
@@ -1634,8 +1680,13 @@ fn sub_agent(
 ) {
     let Asking { call, deadline, name: _ } = made;
     let asking = conversations.get(asker).expect("a conversation lives until it has ended");
-    let left = run.deadline.min(deadline).saturating_since(env.now);
-    let means = Means { spent: run.spent, conversations: run.conversations, left };
+    let left = run.deadline.saturating_since(env.now);
+    let means = Means {
+        spent: run.spent,
+        conversations: run.conversations,
+        left,
+        call_left: deadline.saturating_since(env.now),
+    };
     let planned = agent::plan(
         &run.charter,
         means,

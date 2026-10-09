@@ -1,6 +1,7 @@
 //! Scalar host-unit ceilings and exact accounting (domain/run.md,
 //! sections 9 and 10). Sessions price usage; the run never reprices it.
 
+use crate::charter::{Llm, Reserve};
 use skein_lib::Duration;
 
 /// A part of a run's budget supplied by its host (domain/run.md, section 9).
@@ -34,6 +35,8 @@ pub enum BudgetRefusal {
     Empty(Part),
     /// The budget cannot hold its finishing reserve.
     Reserve(Part),
+    /// A change contract needs more check time than its finishing reserve holds.
+    Checks { reserve: Duration, checks: Duration },
     /// The spend cannot pay for one of main's most costly completions.
     Completion { most: u64 },
 }
@@ -270,6 +273,50 @@ impl Budget {
 
     pub(crate) fn remainder(&self, spent: Spend, time: Duration) -> Budget {
         Budget { turns: self.turns.saturating_sub(spent.turns), spend: self.spend.saturating_sub(spent.units), time }
+    }
+}
+
+/// Whether a run may start, shared by the entrance, local host and `smith check`.
+/// A change contract supplies its configured check deadline; other contracts
+/// supply none (domain/run.md, sections 4 and 9.1).
+pub fn admit(
+    budget: &Budget,
+    reserve: Reserve,
+    main: &Llm,
+    ceilings: &Budget,
+    checks: Option<Duration>,
+) -> Result<(), BudgetRefusal> {
+    budget.check(ceilings)?;
+    if reserve.turns >= budget.turns {
+        return Err(BudgetRefusal::Reserve(Part::Turns));
+    }
+    if reserve.time >= budget.time {
+        return Err(BudgetRefusal::Reserve(Part::Time));
+    }
+    let reserved = reserve_spend(reserve, main).ok_or(BudgetRefusal::Reserve(Part::Spend))?;
+    if reserved >= budget.spend {
+        return Err(BudgetRefusal::Reserve(Part::Spend));
+    }
+    if let Some(checks) = checks
+        && reserve.time < checks
+    {
+        return Err(BudgetRefusal::Checks { reserve: reserve.time, checks });
+    }
+    Ok(())
+}
+
+/// Finishing spend is zero until increment 07.12 derives it from main's window.
+#[must_use]
+pub const fn reserve_spend(_reserve: Reserve, _main: &Llm) -> Option<u64> {
+    Some(0)
+}
+
+/// Remaining ordinary credit, above main's finishing reserve in each part.
+pub(crate) fn ordinary(budget: &Budget, reserve: Reserve, reserve_spend: u64, spent: Spend, left: Duration) -> Budget {
+    Budget {
+        turns: budget.turns.saturating_sub(spent.turns).saturating_sub(reserve.turns),
+        spend: budget.spend.saturating_sub(spent.units).saturating_sub(reserve_spend),
+        time: Duration::from_nanos(left.as_nanos().saturating_sub(reserve.time.as_nanos())),
     }
 }
 

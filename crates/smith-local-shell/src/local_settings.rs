@@ -49,6 +49,20 @@ pub struct Budget {
     pub turns: u32,
     pub spend: u64,
     pub seconds: u64,
+    #[serde(default = "default_reserve")]
+    pub reserve: Reserve,
+}
+
+/// Finishing allowance in local settings; the host supplies the product default.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reserve {
+    pub turns: u32,
+    pub seconds: u64,
+}
+
+fn default_reserve() -> Reserve {
+    Reserve { turns: 2, seconds: 300 }
 }
 
 /// One configured directory mounted into a local run.
@@ -278,6 +292,10 @@ pub fn policy(
             spend: settings.budget.spend,
             time: Duration::from_secs(settings.budget.seconds),
         },
+        reserve: run::charter::Reserve {
+            turns: settings.budget.reserve.turns,
+            time: Duration::from_secs(settings.budget.reserve.seconds),
+        },
         conventions: settings.conventions.as_ref().map(|value| run::Conventions {
             guide: value.guide.as_bytes().into(),
             checks: value.checks.as_bytes().into(),
@@ -323,7 +341,18 @@ pub fn policy(
         unsaved: 2,
         facts: 1024,
     };
-    policy.validate(&limits).map_err(|error| format!("local policy: {error:?}"))?;
+    policy.validate(&limits).map_err(|error| match error {
+        local::Invalid::Budget(reason) => budget_refusal(reason),
+        other @ (local::Invalid::Price(_)
+        | local::Invalid::Chat
+        | local::Invalid::Text
+        | local::Invalid::Models
+        | local::Invalid::Accounts
+        | local::Invalid::Endpoint
+        | local::Invalid::Limits
+        | local::Invalid::Contract
+        | local::Invalid::Push) => format!("local policy: {other:?}"),
+    })?;
     Ok(Prepared { config: policy, limits, paths: paths.into() })
 }
 
@@ -357,6 +386,11 @@ fn budget_refusal(reason: run::BudgetRefusal) -> String {
         run::BudgetRefusal::Completion { most } => {
             format!("budget.spend cannot pay for a completion costing {most} micro-dollars")
         }
+        run::BudgetRefusal::Checks { reserve, checks } => format!(
+            "budget.reserve.seconds is {} seconds, below check_timeout of {} seconds",
+            reserve.as_nanos() / 1_000_000_000,
+            checks.as_nanos() / 1_000_000_000
+        ),
     }
 }
 
@@ -494,6 +528,8 @@ mod tests {
         );
         let settings: Settings = serde_json::from_value(document.clone()).expect("merged settings");
         assert!(!settings.sub_agents, "omitted settings do not grant sub-agents");
+        assert_eq!(settings.budget.reserve.turns, 2);
+        assert_eq!(settings.budget.reserve.seconds, 300);
         assert_eq!(settings.instructions, "workspace");
         assert_eq!(settings.agent["profile"]["name"], "standard");
         assert_eq!(settings.agent["profile"]["declared"]["memory"], 99);
@@ -573,6 +609,7 @@ mod tests {
         let encoded = channel::encode_charter(&local::charter(&enabled.config), &wire::CEILINGS, endpoints)
             .expect("enabled charter");
         let decoded = channel::decode_charter(&encoded, &wire::CEILINGS, endpoints).expect("enabled wire grant");
+        assert_eq!(decoded.reserve, previous.reserve);
         assert!(decoded.grants.agents);
         assert_eq!(decoded.llm, previous.llm);
         assert!(decoded.models.is_empty(), "an unnamed child uses main's model");
@@ -605,7 +642,7 @@ mod tests {
                 price_unit: 1_000_000,
             }],
             sub_agents: false,
-            budget: Budget { turns: 512, spend: 25_000_000, seconds: 3600 },
+            budget: Budget { turns: 512, spend: 25_000_000, seconds: 3600, reserve: default_reserve() },
             waiting_seconds: 30,
             brief: vec![],
             directories: vec![],
@@ -658,6 +695,7 @@ mod tests {
         assert_eq!(decoded.llm.prices.cache_write, settings.models[0].cache_write_price);
         assert!(!decoded.grants.agents);
         settings.sub_agents = true;
+        assert_eq!(decoded.reserve, run::charter::Reserve { turns: 2, time: Duration::from_secs(300) });
         assert_sub_agent_grant(&settings, &endpoints, &agent_limits, &decoded);
     }
 }

@@ -84,6 +84,8 @@ pub struct Policy {
     pub tool_deadline: Duration,
     /// Default command duration.
     pub shell_timeout: Duration,
+    /// Check deadline that a change-capable charter's finishing reserve must hold.
+    pub check_timeout: Duration,
     /// Duration of each command group stop step.
     pub group_stop: Duration,
     /// IO close deadline.
@@ -172,6 +174,7 @@ pub const fn standard() -> Profile {
             connection_keep: Duration::from_secs(15),
             tool_deadline: Duration::from_secs(20 * 60),
             shell_timeout: Duration::from_secs(2 * 60),
+            check_timeout: Duration::from_secs(60),
             group_stop: Duration::from_millis(250),
             close: Duration::from_secs(5),
             write_deadline: Duration::from_secs(30),

@@ -25,6 +25,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
         facts: 64,
     };
     let config = local::Config {
+        reserve: run::charter::Reserve { turns: 0, time: skein_lib::Duration::ZERO },
         chat: b"main".as_slice().into(),
         instructions: b"Assist the person".as_slice().into(),
         brief: run::charter::Brief { sections: Box::new([]) },

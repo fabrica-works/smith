@@ -16,6 +16,7 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
     .expect("standard profile")
     .domain;
     let charter = run::Charter {
+        reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::default(),
         brief: run::Brief {
             sections: Box::new([run::Section { title: Box::default(), text: b"Review the change.".as_slice().into() }]),

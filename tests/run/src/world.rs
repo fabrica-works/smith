@@ -114,6 +114,8 @@ impl Settings {
             seed,
             run: calm_run_limits(),
             host: host::Script {
+                reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
+                checks: Duration::from_secs(600),
                 jobs: 4,
                 window: Duration::from_secs(10),
                 cancels: 0,
@@ -409,6 +411,7 @@ enum Lane {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct Start {
     budget: run::Budget,
+    reserve: run::charter::Reserve,
     /// The roots whose checks a change must pass, once its checkout is made.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
@@ -431,6 +434,7 @@ struct Open {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct RunView {
     budget: run::Budget,
+    reserve: run::charter::Reserve,
     deadline: Time,
     /// Its main conversation, once opened.
     ///
@@ -502,6 +506,7 @@ struct Pushing {
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 pub struct World {
     lease_seen: Vec<(Time, Token, crate::lease_referee::Seen)>,
+    share_seen: Vec<(Time, crate::share_referee::Seen)>,
     workspace_of_call: BTreeMap<Token, Token>,
     now: Time,
     rng: Rng,
@@ -528,6 +533,9 @@ pub struct World {
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     starts: BTreeMap<Token, Start>,
     opens: BTreeMap<Token, Open>,
+    reservations: BTreeSet<Token>,
+    child_completions: u32,
+    main_in_reserve: u32,
     calls: BTreeMap<Token, Call>,
     /// The checkouts' files, by their roots and paths, which of them are
     /// executable, and how many more times each repository's checks fail.
@@ -616,13 +624,14 @@ impl World {
     pub fn new(settings: Settings) -> World {
         assert!(run::worst_case(&settings.run).is_some(), "the shell refuses limits it cannot provision");
         let mut rng = Rng::new(settings.seed);
-        let host = Host::new(settings.host, rng.next_u64());
+        let host = Host::new(host::Script { checks: settings.run.check_timeout, ..settings.host }, rng.next_u64());
         let partner = Partner::new(settings.partner, rng.next_u64());
         World {
             now: Time::ZERO,
             rng,
             settings,
             lease_seen: Vec::new(),
+            share_seen: Vec::new(),
             workspace_of_call: BTreeMap::new(),
             run: run::Domain::new(&settings.run, settings.seed),
             run_stage: Stage::new(settings.run, run::MAX_OUT, OUT),
@@ -633,6 +642,9 @@ impl World {
             lanes: [Time::ZERO; 4],
             starts: BTreeMap::new(),
             opens: BTreeMap::new(),
+            reservations: BTreeSet::new(),
+            child_completions: 0,
+            main_in_reserve: 0,
             calls: BTreeMap::new(),
             files: BTreeMap::new(),
             executables: BTreeSet::new(),
@@ -696,6 +708,18 @@ impl World {
     pub fn carry_messages(&mut self, messages: Box<[run::Message]>) {
         self.carried_messages = messages;
         self.partner.tell_turns();
+    }
+
+    /// Actual child opening shares and external ordinary credit when asked.
+    #[must_use]
+    pub fn share_seen(&self) -> &[(Time, crate::share_referee::Seen)] {
+        &self.share_seen
+    }
+
+    /// Actual child completions admitted and main completions begun after ordinary turns ran out.
+    #[must_use]
+    pub fn reserve_progress(&self) -> (u32, u32) {
+        (self.child_completions, self.main_in_reserve)
     }
 
     /// Actual user opening bytes at the conversation boundary.
@@ -872,18 +896,7 @@ impl World {
                 *self.cancel_cells.entry(cell).or_insert(0) += 1;
             }
         }
-        // The provider gate runs after all earlier Started/Priced notices.
-        for (peer, conversation) in std::mem::take(&mut self.permits) {
-            if self.run_stage.has_events() {
-                self.permits.push((peer, conversation));
-                continue;
-            }
-            assert_eq!(self.conversation_of_peer.get(&peer), Some(&conversation), "Started really stepped first");
-            let permit = run::completion_permit(&self.run, conversation);
-            let mut out = Vec::new();
-            self.partner.permitted(self.now, peer, permit, &mut out);
-            self.partner_out(out);
-        }
+        self.provider_permits();
         // The host's alarms.
         if self.host.is_due(self.now) {
             let mut out = Vec::new();
@@ -1047,6 +1060,49 @@ impl World {
         self.schedule(self.now.saturating_add(delay), Delivery::Host(run::Event::HostReturned { relay, reply }));
     }
 
+    /// Admit scripted provider turns after earlier Started/Priced notices.
+    fn provider_permits(&mut self) {
+        // The provider gate runs after all earlier Started/Priced notices.
+        for (peer, conversation) in std::mem::take(&mut self.permits) {
+            if self.run_stage.has_events() {
+                self.permits.push((peer, conversation));
+                continue;
+            }
+            assert_eq!(self.conversation_of_peer.get(&peer), Some(&conversation), "Started really stepped first");
+            let mut permit = run::completion_permit(&self.run, conversation, self.now);
+            if permit == run::CompletionPermit::Allowed {
+                let owner = self.run_of_conversation[&conversation];
+                let view = &self.views[&owner];
+                let pending = self
+                    .reservations
+                    .iter()
+                    .filter(|conversation| self.run_of_conversation[conversation] == owner)
+                    .count();
+                let child = view.main != Some(conversation);
+                let ordinary_turns = view.budget.turns.saturating_sub(view.reserve.turns);
+                match run::reserve(&mut self.run, conversation, conversation, 0) {
+                    Ok(()) => {
+                        if child && !view.decided {
+                            assert!(
+                                u64::from(view.spent.turns) + u64::try_from(pending).expect("bounded pending turns")
+                                    < u64::from(ordinary_turns),
+                                "a child completion cannot take a reserved turn"
+                            );
+                            self.child_completions += 1;
+                        } else if !child && view.spent.turns >= ordinary_turns {
+                            self.main_in_reserve += 1;
+                        }
+                        assert!(self.reservations.insert(conversation), "one pending completion per conversation");
+                    }
+                    Err(exhausted) => permit = run::CompletionPermit::Denied(exhausted),
+                }
+            }
+            let mut out = Vec::new();
+            self.partner.permitted(self.now, peer, permit, &mut out);
+            self.partner_out(out);
+        }
+    }
+
     fn withdraw_host(&mut self, relay: run::RelayName) {
         assert!(self.relays.contains(&(relay.owner, relay.attempt)), "withdraw only a live relay");
         let run = self.relay_owner[&relay.owner];
@@ -1056,9 +1112,10 @@ impl World {
     /// Retain the independent start budget and checks at actual admission.
     /// Contract: domain/run.md, sections 3, 9 and 13.
     fn admitted(&mut self, host_run: Token, run: Token) {
-        let Start { budget, checks, .. } = &self.starts[&host_run];
+        let Start { budget, reserve, checks, .. } = &self.starts[&host_run];
         let view = RunView {
             budget: *budget,
+            reserve: *reserve,
             checks: checks.clone(),
             deadline: self.now.saturating_add(budget.time),
             main: None,
@@ -1229,7 +1286,16 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn note(&mut self, event: &run::Event, run: Option<Token>) -> Option<(Token, &'static str)> {
-        let view = self.views.get_mut(&run?)?;
+        let owner = run?;
+        if let run::Event::Used { conversation, .. } | run::Event::Ended { conversation, .. } = event
+            && self.reservations.remove(conversation)
+        {
+            assert!(
+                run::settle_reservation(&mut self.run, *conversation, *conversation, 0),
+                "the scripted provider reserves only turn credit"
+            );
+        }
+        let view = self.views.get_mut(&owner)?;
         match event {
             run::Event::Started { conversation, peer } => {
                 self.conversation_of_peer.insert(*peer, *conversation);
@@ -1337,9 +1403,10 @@ impl World {
                 // A sub-agent's share is within what its run had left as it
                 // took the ask.
                 let share = opening.budget;
+                self.share_seen.push((self.now, crate::share_referee::Seen { ordinary: left, effective: share }));
                 assert!(
                     share.turns <= left.turns && share.spend <= left.spend && share.time <= left.time,
-                    "a sub-agent's share {share:?} is within what its run has left, {left:?}"
+                    "a sub-agent's share {share:?} is within what is left above the reserve, {left:?}"
                 );
                 assert!(!opening.finish, "a sub-agent may not finish");
                 self.child_of_call.insert(call, conversation);
@@ -1484,7 +1551,12 @@ impl World {
         for event in out {
             match event {
                 run::Event::Start { reply_to, host_run, charter, workspace, .. } => {
-                    let start = Start { budget: charter.budget, checks: BTreeSet::new(), answer: None };
+                    let start = Start {
+                        budget: charter.budget,
+                        reserve: charter.reserve,
+                        checks: BTreeSet::new(),
+                        answer: None,
+                    };
                     assert!(self.starts.insert(host_run, start).is_none(), "jobs have distinct names");
                     self.stats.starts += 1;
                     self.send(Lane::Agent, Delivery::Start { reply_to, host_run, charter, workspace });
@@ -1913,6 +1985,8 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn assert_settled(&self) {
+        assert_eq!(crate::share_referee::judge(&self.share_seen), skein_world::domain::Verdict::Passed);
+        assert!(self.reservations.is_empty(), "every pending provider turn settled");
         assert!(
             crate::lease_referee::judge(&self.lease_seen)
                 .iter()
@@ -2016,9 +2090,11 @@ impl RunView {
     fn budget_left(&self, now: Time) -> run::Budget {
         let (spent, budget) = (self.spent, self.budget);
         run::Budget {
-            turns: budget.turns.saturating_sub(spent.turns),
+            turns: budget.turns.saturating_sub(self.reserve.turns).saturating_sub(spent.turns),
             spend: budget.spend.saturating_sub(spent.units),
-            time: self.deadline.saturating_since(now),
+            time: Duration::from_nanos(
+                self.deadline.saturating_since(now).as_nanos().saturating_sub(self.reserve.time.as_nanos()),
+            ),
         }
     }
 

@@ -141,7 +141,15 @@ pub fn encode_charter(
             conventions,
             budget: wire::Budget::new(
                 limits,
-                wire::BudgetParts { turns: source.budget.turns, spend: source.budget.spend, time: source.budget.time },
+                wire::BudgetParts {
+                    turns: source.budget.turns,
+                    spend: source.budget.spend,
+                    time: source.budget.time,
+                    reserve: wire::Reserve::new(
+                        limits,
+                        wire::ReserveParts { turns: source.reserve.turns, time: source.reserve.time },
+                    )?,
+                },
             )?,
             main: llm(&source.llm, limits, endpoints)?,
             models,

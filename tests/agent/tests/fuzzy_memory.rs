@@ -144,6 +144,7 @@ fn charter(context_bytes: u64) -> Charter {
     }
     assert_eq!(remainder, 0, "unchanged aggregate filler owns every byte");
     Charter {
+        reserve: run::charter::Reserve { turns: 0, time: TIGHT.run.check_timeout },
         instructions,
         brief: run::Brief { sections: sections.into_boxed_slice() },
 

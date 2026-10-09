@@ -609,7 +609,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     // Admission precedes grant lookup, prompt cloning, lease retention
     // and every Client effect. This completion is still unsent.
-    match run::completion_permit(&domain.run, conversation) {
+    match run::completion_permit(&domain.run, conversation, env.now) {
         run::CompletionPermit::Allowed => {}
         run::CompletionPermit::Held => {
             let run = run::owner(&domain.run, conversation).expect("main remains live while held");
@@ -621,7 +621,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             let reason = match exhausted {
                 run::Exhausted::Turns => session::BudgetDenial::Turns,
                 run::Exhausted::Spend => session::BudgetDenial::Spend,
-                run::Exhausted::Time => unreachable!("time closes the run through its alarm"),
+                run::Exhausted::Time => session::BudgetDenial::Time,
                 run::Exhausted::Tokens(_) | run::Exhausted::Overflow(_) => {
                     unreachable!("receiving and overflow failures close the run")
                 }
@@ -661,8 +661,18 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     let Some(most) = reservation else {
         return session_step(domain, env, session::Event::BudgetDenied { owner, reason: session::BudgetDenial::Spend });
     };
-    if run::reserve(&mut domain.run, conversation, owner, most).is_err() {
-        return session_step(domain, env, session::Event::BudgetDenied { owner, reason: session::BudgetDenial::Spend });
+    match run::reserve(&mut domain.run, conversation, owner, most) {
+        Ok(()) => {}
+        Err(exhausted) => {
+            let reason = match exhausted {
+                run::Exhausted::Turns => session::BudgetDenial::Turns,
+                run::Exhausted::Time => session::BudgetDenial::Time,
+                run::Exhausted::Spend | run::Exhausted::Tokens(_) | run::Exhausted::Overflow(_) => {
+                    session::BudgetDenial::Spend
+                }
+            };
+            return session_step(domain, env, session::Event::BudgetDenied { owner, reason });
+        }
     }
     let grant = match domain.grants.get(&account) {
         Some(held) if held.expires > env.now => held.name,

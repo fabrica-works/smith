@@ -132,9 +132,10 @@ record BudgetTime { value: duration }
 enum BudgetCeiling { turns: BudgetTurns, spend: BudgetSpend, time: BudgetTime }
 record BudgetCeilingValue { value: BudgetCeiling }
 record BudgetCompletion { most: u64 }
+record BudgetChecks { reserve: duration checks: duration }
 enum BudgetRefusal {
     ceiling: BudgetCeilingValue, empty: BudgetPartValue,
-    reserve: BudgetPartValue, completion: BudgetCompletion
+    reserve: BudgetPartValue, completion: BudgetCompletion, checks: BudgetChecks
 }
 record BudgetRefusalValue { value: BudgetRefusal }
 enum InvalidStart {

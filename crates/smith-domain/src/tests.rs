@@ -443,6 +443,7 @@ fn workspace() -> Workspace {
 
 fn charter() -> Charter {
     Charter {
+        reserve: run::charter::Reserve { turns: 0, time: Duration::ZERO },
         instructions: Box::new([]),
         brief: smith_domain_run::Brief {
             sections: Box::new([smith_domain_run::Section {
@@ -1053,7 +1054,14 @@ fn a_change_lands_through_the_worker_and_the_run_answers_with_it() {
         report: None,
         failure: None,
     };
-    let (_, main, _) = h.admit(7, Charter { outcome, ..charter() });
+    let (_, main, _) = h.admit(
+        7,
+        Charter {
+            outcome,
+            reserve: run::charter::Reserve { turns: 0, time: h.env.limits.run.check_timeout },
+            ..charter()
+        },
+    );
     let change = Change {
         fields: Box::new([
             smith_domain_run::outcome::Field { name: b"title".as_slice().into(), value: bytes(b"Fix the bug") },
@@ -1450,6 +1458,7 @@ fn convention_main(harness: &mut Harness, selected: Option<run::Conventions>) ->
     let mounted = Some(convention_workspace());
     let charter = Charter {
         conventions: selected,
+        reserve: run::charter::Reserve { turns: 0, time: harness.env.limits.run.check_timeout },
 
         outcome: OutcomeSpec {
             change: Some(ChangeSpec { checks_must_pass: true, fields: Box::new([]) }),

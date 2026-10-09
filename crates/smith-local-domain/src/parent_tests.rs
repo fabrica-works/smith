@@ -230,6 +230,8 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
 #[test]
 fn a_delivery_call_keeps_its_fields_owner_and_deadline_in_local_policy() {
     let mut config = crate::tests::config();
+    config.reserve.time = crate::tests::limits().smith.run.check_timeout;
+    config.budget.time = Duration::from_secs(120);
     config.contract = Contract::Change(run::outcome::ChangeSpec {
         checks_must_pass: false,
         fields: Box::from([run::outcome::FieldRule { name: b"title".as_slice().into(), max: 64 }]),
