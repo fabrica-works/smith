@@ -92,12 +92,19 @@ modify (`write`, `edit`), shell.
   so the LLM pages by asking from the next. A line longer than the
   window is cut, and says so. Any read counts as reading the file at the
   version io loaded, however little of it the window shows.
-- **`list { path, depth?, glob? }`** answers the entries beneath a
-  directory, files and directories in path order, to `depth` levels or
-  the whole tree, and only those whose names match `glob` when it is
-  given. Entries the ignore files exclude are left out, as `rg` leaves
-  them out, and git directories always. The outcome counts the entries
-  beyond its cap.
+- **`list { path, depth?, glob? }`** answers what a search would see
+  beneath a directory, in path order, to `depth` levels or the whole
+  tree:
+  - **files:** the files `rg` lists, and only those whose names match
+    `glob` when it is given. Files the ignore files exclude are left
+    out, as `rg` leaves them out;
+  - **directories:** the directories that hold such a file at any
+    depth. An empty directory is not listed, nor one that holds only
+    ignored or unmatched files. Git directories never appear. The
+    shell's `ls` shows everything.
+
+  The outcome counts the entries beyond its cap, after `depth` and
+  `glob`: files and directories alike, each once.
 - **`search { pattern, path?, glob? }`** answers the lines that match, in
   path order, within its caps on hits and bytes, and counts the rest.
 - **`write { path, content }`** makes the file hold `content`, creating
