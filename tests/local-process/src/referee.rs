@@ -332,7 +332,7 @@ impl Run {
         }
     }
 
-    /// Make the first turn's rename fail only after the provider observes the saved activation.
+    /// Make this turn's rename fail only after the provider observes the saved activation.
     pub fn fail_turn_at_query(&mut self, directory: std::path::PathBuf, number: u32) {
         self.failed_turn = Some(directory.join(format!("{number:010}.turn")));
     }

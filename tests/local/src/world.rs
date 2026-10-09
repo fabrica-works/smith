@@ -955,20 +955,21 @@ impl World {
                 let provider::Request::Reply { to, result } = reply;
                 let owner = to.into_token();
                 let (grants, served, asker) = self.pending.remove(&owner).expect("one provider terminal per call");
-                if self.cancelled.remove(&owner) {
-                    continue;
-                }
-                let event = match result {
-                    Ok(answer) => self.below(Below::Completed {
-                        owner,
-                        completion: translate::completion(answer, grants, &served, asker),
-                    }),
-                    Err(error) => self.below(Below::Failed {
-                        owner,
-                        failure: translate::failure(error),
-                        evidence: agent::llm::Evidence::Unknown,
-                        detail: Box::new([]),
-                    }),
+                let event = if self.cancelled.remove(&owner) {
+                    self.below(Below::Cancelled { owner })
+                } else {
+                    match result {
+                        Ok(answer) => self.below(Below::Completed {
+                            owner,
+                            completion: translate::completion(answer, grants, &served, asker),
+                        }),
+                        Err(error) => self.below(Below::Failed {
+                            owner,
+                            failure: translate::failure(error),
+                            evidence: agent::llm::Evidence::Unknown,
+                            detail: Box::new([]),
+                        }),
+                    }
                 };
                 self.events.push_back(event);
             }
@@ -1050,7 +1051,8 @@ impl World {
                 self.observe(Seen::SaveTurn { number, read });
                 if self.store_fault == Some(StoreFault::Turn) {
                     self.store_fault = None;
-                    self.events.push_back(Event::StoreFailed { turn: Some(turn.sequence), reason: StoreFailure::Write });
+                    self.events
+                        .push_back(Event::StoreFailed { turn: Some(turn.sequence), reason: StoreFailure::Write });
                     return;
                 }
                 if self.cut == Some(Cut::BeforeSaveTurn(number)) {
@@ -1431,8 +1433,14 @@ impl World {
                 );
             }
             Lower::Cancel { owner } => {
-                self.cancelled.insert(owner);
-                self.events.push_back(self.below(Below::Cancelled { owner }));
+                if self.pending.contains_key(&owner) {
+                    assert!(self.cancelled.insert(owner), "one cancellation per provider right");
+                } else {
+                    assert!(self.events.iter().any(|event| matches!(event,
+                        Event::Below { terminal: Below::Completed { owner: pending, .. } | Below::Failed { owner: pending, .. }, .. }
+                            if *pending == owner
+                    )), "an already completed provider right retains its queued terminal");
+                }
             }
             Lower::Io { owner, op, deadline: _ } => {
                 let store_root = match &op {
@@ -1464,9 +1472,8 @@ impl World {
                 }
                 self.events.push_back(self.below(Below::Done { owner, done }));
             }
-            Lower::CancelIo { owner } => {
-                self.events.push_back(self.below(Below::Done { owner, done: tools::Done::Cancelled }));
-            }
+            // Fake checkout operations already settled synchronously; their one terminal is queued above.
+            Lower::CancelIo { .. } | Lower::Abort { .. } => {}
             Lower::Read { owner, at, max, deadline: _ } => {
                 let read = match self.disk.load(at.root.raw(), &at.path, u64::from(max)) {
                     Ok((text, _)) => run::Read::Text { text: text.into(), whole: true },
@@ -1500,9 +1507,6 @@ impl World {
                     cut: u64::try_from(output.len() - keep).expect("small output"),
                 };
                 self.events.push_back(self.below(Below::Checked { owner, ran }));
-            }
-            Lower::Abort { owner } => {
-                self.events.push_back(self.below(Below::Aborted { owner }));
             }
         }
     }

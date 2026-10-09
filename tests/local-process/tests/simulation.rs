@@ -73,7 +73,7 @@ fn a_store_failure_stops_the_chat_and_tells_the_person() {
         assert!(std::fs::metadata(&fault).expect("failed turn target").is_dir());
         std::fs::remove_dir(fault).expect("remove only the test's rename fault");
         assert_eq!(failed.turns(), 1, "failed turn was never made durable");
-        let mut resumed = World::new(8, &files, placement, b"First answer");
+        let mut resumed = World::new(8, &files, placement, b"Second answer");
         resumed.settle();
         assert_eq!(resumed.exit(), Some(kernel::Exit::Code(0)));
         assert_eq!(resumed.turns(), 2, "resume starts from the last durable transcript");

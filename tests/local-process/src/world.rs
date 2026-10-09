@@ -327,7 +327,7 @@ impl World {
         )
     }
 
-    /// Fail the actual durable turn rename after the provider receives its first request.
+    /// Fail the second durable turn rename after the provider receives its first request.
     #[must_use]
     pub fn failed_store(seed: u64, files: &Files, placement: Placement) -> Self {
         let mut world = Self::new(seed, files, placement, b"could not be kept: write failed");
