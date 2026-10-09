@@ -12,8 +12,8 @@
 //!   ended by exactly one [`Event::Delivered`]. After submission the
 //!   host operation is never abandoned; its deadline bounds the host terminal.
 //!   Duplicate or stale callback owners are inert (domain/run.md, sections 8 and 10).
-//!   [`Request::Long`] and [`Request::LongDone`] bracket a check,
-//!   each a notice with no terminal.
+//!   [`Request::Long`] and [`Request::LongDone`] bracket actual checks,
+//!   provider completions and commands, from issuance to their terminal.
 //! - LLM providers, for the sessions: a [`Request::Complete`] is ended by one
 //!   of [`Event::Completed`], [`Event::Failed`] or, after a
 //!   [`Request::Cancel`] that won its race, [`Event::Cancelled`]. Its prompt
