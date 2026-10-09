@@ -105,7 +105,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 /// Local policy and its spawned host child, including the child's ordered output.
 #[must_use]
 pub fn spawned_worst_case(limits: &Limits, host: &smith_host_domain::Limits) -> Option<u64> {
-    worst_case(limits)?
-        .checked_add(smith_host_domain::worst_case(host)?)?
-        .checked_add(Queue::<smith_host_domain::Output>::worst_case(crate::max_out(limits))?)
+    worst_case(limits)?.checked_add(smith_host_domain::worst_case(host)?)?.checked_add(Queue::<
+        smith_host_domain::Output,
+    >::worst_case(
+        crate::max_out(limits)
+    )?)
 }

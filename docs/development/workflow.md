@@ -773,3 +773,13 @@ IO identity; checks and deliveries use the shared typed parent face. Actual
 native child commands wait for their machine terminal before cancellation
 answers, while a separate boundary fixture covers cleanup after an answer.
 Workspace focused and fuzzy budgets remain unchanged.
+
+Reliability inline increment 3.5 was measured through the serial heavy queue
+on 2026-10-09 with `measure -j 1`: the local domain, protocol, service and
+local and local-process worlds passed 130 focused tests in 2.605 seconds,
+with no skips. Both existing local fuzzy sweeps passed in 2.891 seconds.
+The spawned kit is now the local domain's child; typed parent values reach
+durability policy directly. Its advertised turn credit fits the local save
+queue. Every parent variant has a unit case, and the existing spawned
+authentication, commit, resume, interrupt, replay and memory stories pass.
+Workspace focused and fuzzy budgets remain unchanged.

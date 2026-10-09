@@ -210,12 +210,16 @@ pub enum Event {
     NoCredential { account: u32, reason: CredentialFailure },
     /// Terminal for a forwarded agent IO or LLM request.
     Agent(AgentIo),
-    /// One translated spawned-agent observation.
+    /// One process terminal from the adapter, consumed by the local host child.
     Process(smith_host_domain::process::Event),
 }
 
 /// One request to the person, store, credential source or agent IO.
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "typed process payloads are owned directly and priced by the request queue"
+)]
 pub enum Request {
     /// Bounded text shown to the person.
     Show { text: Box<[u8]> },
@@ -236,7 +240,7 @@ pub enum Request {
     Credential { account: u32 },
     /// Forward one agent IO or LLM request unchanged.
     Agent(agent::Request),
-    /// One request carried out through the spawned host process.
+    /// One process effect for the adapter; its terminal returns as Process.
     Process(smith_host_domain::process::Request),
     /// The caller may terminate this invocation.
     Exit { status: ExitStatus },

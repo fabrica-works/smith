@@ -1,8 +1,8 @@
-//! Agent composition and typed parent commands (domain/host.md, sections8
-//! and9.4). This module retains the child and its receiving bounds; it knows
+//! Agent composition and typed parent commands (domain/host.md, sections 8
+//! and 9.4). This module retains the child and its receiving bounds; it knows
 //! no process descriptors, credentials, wire bytes or durable store format.
 //! Commands and terminals enter the spawned child; its outputs remain ordered
-//! for the local policy to consume. The existing root child stays until3.6.
+//! for the local policy to consume. The existing root child stays until 3.6.
 
 use crate::Invalid;
 use alloc::boxed::Box;
@@ -164,6 +164,10 @@ pub(crate) fn delivery_to_host(delivery: run::Delivery) -> Result<host::Delivery
 
 /// Local-owned agent, keeping the existing root until the inline adoption.
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "bounded child state stays inline and is included in the ownership bound"
+)]
 pub(crate) enum Agent {
     /// Smith's existing root, receiving direct typed events in this increment.
     InProcess(root::Domain),
@@ -173,10 +177,7 @@ pub(crate) enum Agent {
 
 impl Agent {
     pub(crate) fn spawned(limits: host::Limits, output_cap: u32) -> Result<Self, Invalid> {
-        let required = match host::max_out(&limits).checked_mul(2) {
-            Some(required) => required,
-            None => return Err(Invalid::Limits),
-        };
+        let required = host::max_out(&limits).checked_mul(2).ok_or(Invalid::Limits)?;
         if host::worst_case(&limits).is_none() || required > output_cap {
             return Err(Invalid::Limits);
         }
@@ -244,7 +245,7 @@ impl Agent {
 
 pub(crate) fn command(agent: &mut Agent, now: Time, wall: skein_lib::Wall, event: host::parent::Event) {
     match agent {
-        Agent::InProcess(_) => unreachable!("direct root commands remain unchanged until3.6"),
+        Agent::InProcess(_) => unreachable!("direct root commands remain unchanged until 3.6"),
         Agent::Spawned { domain, limits, out } => {
             host::step(domain, &Env { now, wall, limits: *limits }, host::Input::Parent(event), out);
         }

@@ -1,5 +1,5 @@
 //! Local host for one person and one chat (domain/host.md, sections 8–10).
-//! It owns the in-process agent, typed chat metadata, queued person lines,
+//! It owns its root or spawned host child, typed chat metadata, queued person lines,
 //! credential names and turns awaiting a durable store terminal. It never
 //! knows terminal IO, file encoding, provider secrets or provider syntax.
 //! Uncertain writes retain their intent and inspect their stable delivery

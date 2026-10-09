@@ -123,12 +123,10 @@ impl Domain {
     pub fn new_external(
         config: Config,
         limits: &Limits,
-        host_limits: host::Limits,
+        mut host_limits: host::Limits,
         seed: u64,
     ) -> Result<Domain, Invalid> {
-        if host_limits.turns > limits.unsaved {
-            return Err(Invalid::Limits);
-        }
+        host_limits.turns = host_limits.turns.min(limits.unsaved);
         crate::spawned_worst_case(limits, &host_limits).ok_or(Invalid::Limits)?;
         Self::with_placement(config, limits, seed, Some(host_limits))
     }
@@ -591,7 +589,12 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             };
             match prepare_start(source, domain.agent.bounds()) {
                 Ok(start) => {
-                    command(&mut domain.agent, env.now, env.wall, parent::Event::Spawn { client: Token::new(1), start })
+                    command(
+                        &mut domain.agent,
+                        env.now,
+                        env.wall,
+                        parent::Event::Spawn { client: Token::new(1), start },
+                    );
                 }
                 Err(_) => {
                     domain.agent_failed = true;
@@ -738,7 +741,7 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
                 match domain.placement {
                     Placement::InProcess => step_agent(domain, env, agent::Event::Cancel { run }),
                     Placement::External => {
-                        command(&mut domain.agent, env.now, env.wall, parent::Event::Stop { agent: run })
+                        command(&mut domain.agent, env.now, env.wall, parent::Event::Stop { agent: run });
                     }
                 }
             }
@@ -896,7 +899,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             send_line(domain, env, out);
         }
         parent::Request::Turn { turn, .. } => {
-            accept_turn(domain, env, turn.number, turn.read, turn.body.into_value(), out)
+            accept_turn(domain, env, turn.number, turn.read, turn.body.into_value(), out);
         }
         parent::Request::Answered { answer, .. } => {
             observe(domain, Fact::Answered { activation: domain.chat.state.activation });
@@ -910,7 +913,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
         parent::Request::LongDone { .. } => out.push(Request::Show { text: Box::from(&b"Checks finished"[..]) }),
         parent::Request::Rejected { account, .. } => out.push(Request::Credential { account }),
         parent::Request::Exhausted { .. } => {
-            out.push(Request::Show { text: Box::from(&b"A model account is exhausted"[..]) })
+            out.push(Request::Show { text: Box::from(&b"A model account is exhausted"[..]) });
         }
         parent::Request::Called { call, name, deadline, ask, .. } => match ask {
             host::Ask::Deliver { fields } => begin_delivery(
@@ -1844,3 +1847,7 @@ fn route_spawned(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request
         }
     }
 }
+
+#[cfg(test)]
+#[path = "parent_tests.rs"]
+mod parent_tests;
