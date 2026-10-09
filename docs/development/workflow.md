@@ -551,6 +551,18 @@ remain unavailable. The fake-provider recording commands run separately;
 the offline tier starts no agent and reads no login. The one-second focused
 and five-second fuzzy harness shares and workspace budgets remain unchanged.
 
+Benchmark runner increment 00.8 extends the existing harness with real process
+controls on the shared end-to-end kit. Its idle serial `heavy` measurement on
+2026-10-09 passed 22 focused tests in 0.958 seconds and two fuzzy parser sweeps
+in 0.227 seconds. Related parser assertions share test-process startup while
+retaining every named story. The focused controls include all three supervised
+tree ends, a fresh attempt CLI, isolated warm caches and grading, seed diffs and
+archive digests, a crashed grader, and recovery after a fresh attempt exits
+without a result. Tree controls force the pidfd walk and require genuine
+settlement; the harness keeps its largest-process memory as a lower bound.
+No provider, agent login or network is used. The one-second focused and
+five-second fuzzy harness shares and workspace budgets remain unchanged.
+
 ## 5. Opt-in live suite
 
 The `live` profile runs the shipped binary against real backends, serially,

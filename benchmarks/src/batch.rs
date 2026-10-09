@@ -394,5 +394,35 @@ mod tests {
         let total = result.tokens.iter_mut().find(|record| record.role == ScopeKind::Total).expect("total");
         total.usage.fresh = Measure::unavailable("missing child");
         assert_eq!(known_tokens(&result), None);
+
+        // The fake fresh attempt creates its scratch, then exits without a
+        // result. Settlement must precede recovery and owned scratch deletion;
+        // dispatcher resource counts never become agent measurements.
+        let request = &first[0];
+        let state = std::env::temp_dir().join(format!("smith-bench-dispatch-{}", std::process::id()));
+        let guard = Guard::new(&state.join("user-home"), &state.join("config"), &state.join("state"), &[])
+            .expect("synthetic guard");
+        crate::isolate::create_directory(&guard, &state).expect("private state");
+        let scratch = crate::run::scratch_root(&state, request).expect("planned scratch");
+        let relative = scratch.strip_prefix(&state).expect("private scratch").display();
+        let archived = format!("runs/{}/{}", request.identity.run, request.identity.attempt);
+        fs::write(
+            state.join("attempt"),
+            format!("umask 077; mkdir -p '{relative}' '{archived}'; cp \"$1\" '{archived}/prepared.json'; printf transient > '{relative}/transient'; printf interrupted; exit 1\n"),
+        )
+        .expect("fake attempt program");
+        let machine = Machine { path: "/usr/bin:/bin".into(), rustup_home: None };
+        let recovered = dispatch(&guard, &machine, &state, &Clock::new(), Path::new("/bin/sh"), request, 1_000_000_000)
+            .expect("settled missing result");
+        assert!(matches!(recovered.outcome.end, End::HarnessError { .. }));
+        assert!(matches!(recovered.resources.cpu_ms, Measure::Unavailable { .. }));
+        let directory = state.join("runs").join(&request.identity.run).join(&request.identity.attempt);
+        assert_eq!(fs::read(directory.join("dispatcher-stdout.log")).expect("retained output"), b"interrupted");
+        assert!(!scratch.exists());
+        assert!(recovered.artifacts.iter().any(|artifact| {
+            artifact.path == Path::new("prepared.json")
+                && artifact.sha256 == crate::arm::binary_digest(&directory.join(&artifact.path)).expect("digest")
+        }));
+        fs::remove_dir_all(state).expect("remove dispatch control");
     }
 }

@@ -780,6 +780,17 @@ pub(crate) fn recover(
     let mut result = blank(prepared.identity.clone());
     result.outcome.end = End::HarnessError { what: reason };
     result.outcome.forced = process.forced;
+    // Keep the digest of any complete archive the interrupted child wrote.
+    // The dispatcher still supplies no agent measurements from its own tree.
+    for (path, entry) in crate::grade::snapshot_all(&directory)? {
+        match entry {
+            crate::grade::Entry::File { sha256, .. } => result.artifacts.push(Artifact { path, sha256 }),
+            crate::grade::Entry::Directory => {}
+            crate::grade::Entry::Link { .. } | crate::grade::Entry::Special => {
+                return Err("interrupted attempt archive contains a link or special node".into());
+            }
+        }
+    }
     result.health.passive_checks.push(crate::CheckVerdict {
         check: "dispatcher-tree-settled".into(),
         passed: Measure::Observed { value: true },
