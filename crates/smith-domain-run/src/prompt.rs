@@ -214,9 +214,13 @@ fn end_paragraph(text: &mut Text, came: &[u8]) {
 fn render_guide(text: &mut Text, repositories: &[Directory], guide: &Guide, guide_path: &[u8]) {
     text.put(b"## ");
     text.put(guide_path);
-    text.put(b" in `");
-    text.put(&name(repositories, guide.repository).name);
-    text.put(b"`\n\n");
+    if repositories.len() == 1 {
+        text.put(b" in the working directory\n\n");
+    } else {
+        text.put(b" in `");
+        text.put(&name(repositories, guide.repository).name);
+        text.put(b"`\n\n");
+    }
     if !guide.text.is_empty() {
         text.put(&guide.text);
         end_paragraph(text, &guide.text);
@@ -248,11 +252,25 @@ fn render_checkout(text: &mut Text, repositories: &[Directory], checks: &[u32], 
     if repositories.is_empty() {
         text.put(b"There is no checkout.\n");
     }
+    match repositories.len() {
+        0 => {}
+        1 => text.put(b"Paths start in your working directory. Use `src/lib.rs`, without a directory-name prefix.\n"),
+        _ => {
+            text.put(b"Your working directory is `");
+            text.put(&repositories.first().expect("several directories").name);
+            text.put(b"`. Relative paths start there; reach the other directories as `/name/...`. Use `list /` to list their names.\n");
+        }
+    }
     let mut index: u32 = 0;
     for Directory { name, root: _, writable, git, conflicts } in repositories {
-        text.put(b"- `");
-        text.put(name);
-        text.put(if *writable { b"`, which you may change" } else { b"`, which you may only read" });
+        if repositories.len() == 1 {
+            text.put(b"- The working directory");
+        } else {
+            text.put(b"- `");
+            text.put(name);
+            text.put(b"`");
+        }
+        text.put(if *writable { b", which you may change" } else { b", which you may only read" });
         text.put(if *git { b", a git working tree" } else { b", a plain directory" });
         if !conflicts.is_empty() {
             text.put(b", with initial merge conflicts: ");
@@ -537,7 +555,8 @@ You can read, list and search the files in the checkout.
 
 ## Checkout
 
-- `temper`, which you may only read, a git working tree
+Paths start in your working directory. Use `src/lib.rs`, without a directory-name prefix.
+- The working directory, which you may only read, a git working tree
 
 ## Sub-agents
 
@@ -630,6 +649,35 @@ you, and you are done.
             let mut written = measured.writing();
             written.put_decimal(n);
             assert_eq!(text(&written.finish()), expected);
+        }
+    }
+    #[test]
+    fn one_directory_hides_its_name_in_the_checkout_and_guide_headings() {
+        let charter = charter();
+        let mut mounted = workspace();
+        mounted.directories = Box::new([mounted.directories[0].clone()]);
+        let mut found = Found::with_capacity(1);
+        found.guides.push(Guide { repository: 0, text: bytes(b"Guide text."), whole: true }).unwrap();
+        let rendered = system(&charter, Some(&mounted), &found);
+        let rendered = text(&rendered);
+        assert!(!rendered.contains(text(&mounted.directories[0].name)), "the one mount's name is hidden");
+        assert!(rendered.contains("## AGENTS.md in the working directory\n\nGuide text."));
+        assert!(rendered.contains("## Checkout\n\nPaths start in your working directory. Use `src/lib.rs`, without a directory-name prefix.\n- The working directory, which you may only read"));
+    }
+
+    #[test]
+    fn several_directories_name_the_working_directory_and_the_namespace() {
+        let charter = charter();
+        let mut mounted = workspace();
+        let mut other = mounted.directories[0].clone();
+        other.name = bytes(b"docs");
+        other.root = skein_lib::Token::new(901);
+        mounted.directories = Box::new([mounted.directories[0].clone(), other]);
+        let rendered = system(&charter, Some(&mounted), &Found::with_capacity(0));
+        let rendered = text(&rendered);
+        assert!(rendered.contains("Your working directory is `temper`. Relative paths start there; reach the other directories as `/name/...`. Use `list /` to list their names."));
+        for directory in &mounted.directories {
+            assert!(rendered.contains(text(&directory.name)));
         }
     }
 }

@@ -96,7 +96,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let scratch = List::<bool>::worst_case(parts)?
         .checked_add(List::<&Name>::worst_case(parts.checked_mul(2)?)?)?
         .checked_add(u64::from(limits.path_bytes).checked_mul(2)?)?;
-    kits.checked_add(jobs)?.checked_add(facts)?.checked_add(scratch)
+    // A pure namespace listing borrows and sorts at most one name per mount.
+    let names = List::<&[u8]>::worst_case(limits.repos)?;
+    kits.checked_add(jobs)?.checked_add(facts)?.checked_add(scratch)?.checked_add(names)
 }
 
 /// Maximum dynamic ownership of this call's outcome, excluding its

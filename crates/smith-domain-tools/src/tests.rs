@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, Id, List, Queue, ReplyTo, Time, Token, Wall};
 
-use crate::authority::{self, Located};
+use crate::authority::{self, Located, Target};
 use crate::edit::{self, Edit};
 use crate::kit::Kit;
 use crate::knowledge::Knowledge;
@@ -351,7 +351,11 @@ fn a_path_is_in_the_repository_with_the_longest_mount_that_holds_it() {
         (b"a/very/long/path/that/does/not/fit/in/the/sixty/four/bytes/allowed", Err(Outcome::TooLong)),
     ];
     for (text, expected) in table {
-        let located = authority::locate(&checkout, &path(text), LIMITS.path_bytes);
+        let located = match authority::locate(&checkout, &path(text), LIMITS.path_bytes) {
+            Ok(Target::Place(located)) => Ok(located),
+            Ok(Target::Directories) => panic!("a place row"),
+            Err(outcome) => Err(outcome),
+        };
         assert_eq!(located, expected, "{text:?}");
     }
 }
@@ -367,10 +371,17 @@ fn a_repository_mounted_at_the_root_holds_what_no_other_does() {
     let table: [(&[u8], Result<Located, Outcome>); 3] = [
         (b"/etc/passwd", Ok(located(7, b"etc/passwd", false))),
         (b"src", Ok(located(1, b"src", true))),
-        (b"/", Ok(located(7, b"", false))),
+        (b".", Ok(located(1, b"", true))),
     ];
     for (text, expected) in table {
-        assert_eq!(authority::locate(&checkout, &path(text), LIMITS.path_bytes), expected, "{text:?}");
+        assert_eq!(
+            authority::locate(&checkout, &path(text), LIMITS.path_bytes),
+            match expected {
+                Ok(located) => Ok(Target::Place(located)),
+                Err(outcome) => Err(outcome),
+            },
+            "{text:?}"
+        );
     }
 }
 
@@ -1280,4 +1291,52 @@ fn file_calls_on_the_directory_itself_answer_without_io() {
             assert_eq!(h.call(kit, call), Outcome::NotFile);
         }
     }
+}
+
+#[test]
+fn list_slash_answers_sorted_authority_names_without_io_and_obeys_both_caps() {
+    let named = Authority {
+        cwd: names(b"/zeta"),
+        repos: Box::new([
+            Repo { mount: names(b"/zeta"), root: Token::new(1), writable: true },
+            Repo { mount: names(b"/alpha"), root: Token::new(2), writable: false },
+            Repo { mount: names(b"/beta"), root: Token::new(3), writable: false },
+        ]),
+        grants: ALL,
+    };
+    let alpha = entry(b"alpha", Kind::Directory);
+    let cost = u64::try_from(size_of::<Entry>()).unwrap() + 5;
+    let cases: [(u32, u64, Box<[Entry]>, u64); 4] = [
+        (3, 4096, Box::new([alpha.clone(), entry(b"beta", Kind::Directory), entry(b"zeta", Kind::Directory)]), 0),
+        (1, 4096, Box::new([alpha.clone()]), 2),
+        (3, cost, Box::new([alpha.clone()]), 2),
+        (3, cost - 1, Box::new([]), 3),
+    ];
+    for (count, bytes, expected, more) in cases {
+        let mut limits = LIMITS;
+        limits.list_entries = count;
+        limits.list_bytes = bytes;
+        let mut h = Harness::new(limits);
+        let kit = h.open(1, named.clone());
+        assert_eq!(h.call(kit, Call::List { path: path(b"/") }), Outcome::Listed { entries: expected, more });
+        assert!(h.domain.jobs.is_empty(), "the answer owns no IO job");
+        assert_eq!(h.step(Event::Close { kit }), Some(Request::Closed { session: Token::new(1) }));
+    }
+    let mut h = Harness::new(LIMITS);
+    let mut denied = named.clone();
+    denied.grants.inspect = false;
+    let kit = h.open(1, denied);
+    assert_eq!(h.call(kit, Call::List { path: path(b"/") }), Outcome::NotGranted);
+    let kit = h.open(2, named);
+    let reply_to = ReplyTo::new(Token::new(99));
+    assert_eq!(
+        h.step(Event::Call {
+            kit,
+            observation: None,
+            reply_to,
+            call: Call::List { path: path(b"/") },
+            deadline: Time::ZERO
+        }),
+        Some(Request::Answer { to: ReplyTo::new(Token::new(99)), outcome: Outcome::TimedOut })
+    );
 }

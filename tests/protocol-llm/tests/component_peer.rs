@@ -165,6 +165,7 @@ fn run(dialect: Provider, calls: bool) {
             owner: Token::new(7),
             grant: GrantName { account: 0, generation: 1 },
             prompt: llm::Prompt {
+                namespace: smith_domain::tools::Namespace::One,
                 asker: llm::Asker::Main,
                 endpoint: llm::Endpoint(1),
                 model: call.prompt.model,

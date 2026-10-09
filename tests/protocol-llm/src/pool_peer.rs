@@ -132,6 +132,7 @@ impl Peer {
                 owner: Token::new(owner),
                 grant: GrantName { account: 0, generation: 1 },
                 prompt: llm::Prompt {
+                    namespace: smith_domain::tools::Namespace::One,
                     asker: llm::Asker::Main,
                     endpoint: llm::Endpoint(0),
                     model: b"fixture".as_slice().into(),

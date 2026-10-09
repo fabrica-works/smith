@@ -158,6 +158,7 @@ fn prompt_feedback(returned: Option<run::Returned>) -> smith_domain::llm::Prompt
         None => Box::new([]),
     };
     llm::Prompt {
+        namespace: smith_domain::tools::Namespace::One,
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(0),
         model: b"fake".as_slice().into(),

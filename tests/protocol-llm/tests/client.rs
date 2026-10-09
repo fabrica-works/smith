@@ -35,6 +35,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        namespace: smith_domain::tools::Namespace::One,
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"fixture-model".as_slice().into(),

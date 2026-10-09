@@ -213,6 +213,8 @@ pub struct Prompt {
     /// The families of tools the LLM may call, whose schemas the protocol
     /// layer offers it, and the tools the opener serves.
     pub tools: tools::Grants,
+    /// Path presentation fixed from the conversation's workspace authority.
+    pub namespace: tools::Namespace,
     /// Opener-owned tool descriptors; tickets are resolved only by the opener.
     pub delegated: Box<[Descriptor]>,
     /// The conversation so far, oldest first, ending with a user message.
@@ -239,6 +241,7 @@ impl Prompt {
             .checked_add(
                 u64::try_from(size_of::<Message>()).ok()?.checked_mul(u64::try_from(self.messages.len()).ok()?)?,
             )?;
+        bytes = bytes.checked_add(self.namespace.owned_bytes()?)?;
         for message in &self.messages {
             bytes = bytes.checked_add(crate::session::content_cost(&message.content)?)?;
         }

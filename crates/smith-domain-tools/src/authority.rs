@@ -13,7 +13,7 @@ use skein_lib::{List, Token};
 use crate::boundary::Root;
 use crate::call::{Call, Outcome};
 use crate::limits::Limits;
-use crate::path::{self, Name, Path, Place};
+use crate::path::{self, Name, Namespace, Path, Place};
 
 /// What a kit is given when it opens.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -24,6 +24,36 @@ pub struct Authority {
     pub repos: Box<[Repo]>,
     /// Explicit authority supplied by the opener, never inferred from role or text.
     pub grants: Grants,
+}
+
+impl Authority {
+    /// Dynamic bytes of the namespace, measured before copying its working name.
+    #[must_use]
+    pub fn namespace_bytes(&self) -> Option<u64> {
+        match self.repos.len() {
+            0 | 1 => Some(0),
+            _ => match self.cwd.first() {
+                Some(name) => u64::try_from(name.as_bytes().len()).ok(),
+                None => Some(0),
+            },
+        }
+    }
+
+    /// The conversation's path presentation, derived without reading files.
+    #[must_use]
+    pub fn namespace(&self) -> Namespace {
+        match self.repos.len() {
+            0 => Namespace::NoWorkspace,
+            1 => Namespace::One,
+            _ => match self.cwd.first() {
+                Some(working) => Namespace::Several { working: working.clone() },
+                // Legacy authorities may mount the filesystem root without a
+                // working name. Keep their relative presentation; run-owned
+                // authorities always name the first directory.
+                None => Namespace::One,
+            },
+        }
+    }
 }
 
 /// A repository of the checkout.
@@ -69,6 +99,15 @@ pub(crate) struct Mount {
     pub(crate) at: Box<[u8]>,
     pub(crate) root: Token,
     pub(crate) writable: bool,
+}
+
+/// What the normalized path names, before any IO is asked.
+#[derive(PartialEq, Eq, Debug)]
+pub(crate) enum Target {
+    /// A place below an admitted directory and its write authority.
+    Place(Located),
+    /// The namespace root: listing it answers directory names without IO.
+    Directories,
 }
 
 /// Where a path is, and whether the kit may write there.
@@ -134,18 +173,22 @@ pub(crate) const fn granted(grants: Grants, call: &Call) -> bool {
 }
 
 /// Where `path` is in `checkout`, or the outcome that refuses it: `TooLong`
-/// past `max` bytes, `Outside` beyond every repository.
-pub(crate) fn locate(checkout: &Checkout, path: &Path, max: u32) -> Result<Located, Outcome> {
+/// past `max` bytes, `Outside` beyond every repository. The normalized
+/// absolute root names the directories themselves, without a filesystem place.
+pub(crate) fn locate(checkout: &Checkout, path: &Path, max: u32) -> Result<Target, Outcome> {
     let Some(at) = path::normalise(&checkout.cwd, path, max) else {
         return Err(Outcome::TooLong);
     };
+    if path.absolute && at.is_empty() {
+        return Ok(Target::Directories);
+    }
     let Some(index) = choose(&checkout.mounts, &at) else {
         return Err(Outcome::Outside);
     };
     let mount = checkout.mounts.get(index).expect("chosen among the mounts");
     let start = beneath(&mount.at, &at).expect("the chosen mount holds the path");
     let path = copy_of(at.get(start..).expect("the path beneath a mount is within it"));
-    Ok(Located { place: Place { root: mount.root, path }, writable: mount.writable })
+    Ok(Target::Place(Located { place: Place { root: mount.root, path }, writable: mount.writable }))
 }
 
 /// The repository that holds `at`, an absolute path's names joined: the one

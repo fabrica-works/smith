@@ -17,16 +17,16 @@ use crate::{Error, ToolKind, ToolSchema};
 pub fn schemas(prompt: &llm::Prompt, stated: &crate::Stated) -> Box<[ToolSchema]> {
     let mut descriptors = List::with_capacity(10);
     if prompt.tools.inspect {
-        add(&mut descriptors, owned(tools::Tool::Read, b"read", stated));
-        add(&mut descriptors, owned(tools::Tool::List, b"list", stated));
-        add(&mut descriptors, owned(tools::Tool::Search, b"search", stated));
+        add(&mut descriptors, owned(tools::Tool::Read, b"read", stated, &prompt.namespace));
+        add(&mut descriptors, owned(tools::Tool::List, b"list", stated, &prompt.namespace));
+        add(&mut descriptors, owned(tools::Tool::Search, b"search", stated, &prompt.namespace));
     }
     if prompt.tools.modify {
-        add(&mut descriptors, owned(tools::Tool::Write, b"write", stated));
-        add(&mut descriptors, owned(tools::Tool::Edit, b"edit", stated));
+        add(&mut descriptors, owned(tools::Tool::Write, b"write", stated, &prompt.namespace));
+        add(&mut descriptors, owned(tools::Tool::Edit, b"edit", stated, &prompt.namespace));
     }
     if prompt.tools.shell {
-        add(&mut descriptors, owned(tools::Tool::Shell, b"shell", stated));
+        add(&mut descriptors, owned(tools::Tool::Shell, b"shell", stated, &prompt.namespace));
     }
     for offered in &prompt.served {
         match offered {
@@ -93,11 +93,11 @@ fn descriptor(kind: ToolKind, name: &[u8], description: &[u8], schema: &[u8]) ->
     ToolSchema { kind, name: name.into(), description: description.into(), schema: schema.into() }
 }
 
-fn owned(tool: tools::Tool, name: &[u8], stated: &crate::Stated) -> ToolSchema {
+fn owned(tool: tools::Tool, name: &[u8], stated: &crate::Stated, namespace: &tools::Namespace) -> ToolSchema {
     ToolSchema {
         kind: ToolKind::Owned(tool),
         name: name.into(),
         description: crate::descriptions::description(tool, stated),
-        schema: crate::descriptions::schema(tool, stated),
+        schema: crate::descriptions::schema(tool, stated, namespace),
     }
 }

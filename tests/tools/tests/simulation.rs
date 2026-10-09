@@ -1038,3 +1038,64 @@ fn the_directory_itself_works_for_every_operation() {
     assert!(matches!(&answers[5], Outcome::Exited { exit: tools::Exit::Code { code: 0 }, .. }));
     assert_eq!(world.stats().ops, 3, "file-only calls never ask io");
 }
+
+#[test]
+fn paths_in_one_directory_and_in_several() {
+    for several in [false, true] {
+        let fixture = Fixture::new();
+        let mut repos = vec![tools::Repo {
+            mount: Box::new([Name::new(b"work-hidden".as_slice().into()).expect("valid namespace fixture")]),
+            root: fixture.repos[0].root,
+            writable: true,
+        }];
+        if several {
+            repos.push(tools::Repo {
+                mount: Box::new([Name::new(b"docs".as_slice().into()).expect("valid namespace fixture")]),
+                root: fixture.repos[2].root,
+                writable: false,
+            });
+        }
+        let authority = tools::Authority { cwd: repos[0].mount.clone(), repos: repos.into(), grants: INSPECT };
+        assert_eq!(
+            authority.namespace(),
+            if several {
+                tools::Namespace::Several {
+                    working: Name::new(b"work-hidden".as_slice().into()).expect("valid namespace fixture"),
+                }
+            } else {
+                tools::Namespace::One
+            }
+        );
+        let mut calls = vec![read(b"src/lib.rs"), list(b"/")];
+        if several {
+            calls.push(read(b"/docs/guide.md"));
+        }
+        let mut world = World::new(Settings::calm(9106), fixture.checkout);
+        let session = world.session(Time::ZERO, authority, vec![Step::Calls(calls)]);
+        world.run(ITERATIONS);
+        let answers = world.answers(session);
+        assert_eq!(answers[0], &read_of(LIB, 0, 3, 3));
+        let mut entries = if several { vec![entry(b"docs", Kind::Directory)] } else { vec![] };
+        entries.push(entry(b"work-hidden", Kind::Directory));
+        assert_eq!(answers[1], &Outcome::Listed { entries: entries.into(), more: 0 });
+        if several {
+            assert_eq!(answers[2], &read_of(b"# Guide\n", 0, 1, 1));
+        }
+        assert_eq!(world.stats().ops, if several { 2 } else { 1 }, "list / uses authority alone");
+    }
+}
+
+#[test]
+fn list_slash_answers_the_directories_without_io_even_when_io_always_fails() {
+    let fixture = Fixture::new();
+    let authority = fixture.authority(INSPECT);
+    let mut settings = Settings::calm(9107);
+    settings.faults = 1000;
+    let mut world = World::new(settings, fixture.checkout);
+    let session = world.session(Time::ZERO, authority, vec![Step::Calls(vec![list(b"/"), list(b"/work/..")])]);
+    world.run(ITERATIONS);
+    let expected = Outcome::Listed { entries: Box::new([entry(b"work", Kind::Directory)]), more: 0 };
+    assert_eq!(world.answers(session), vec![&expected, &expected]);
+    assert_eq!(world.stats().ops, 0);
+    assert_eq!(world.stats().faults, 0);
+}

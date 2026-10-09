@@ -5,7 +5,7 @@
 use crate::Stated;
 use alloc::boxed::Box;
 use skein_lib::{Decimal, Writer};
-use smith_domain::tools::Tool;
+use smith_domain::tools::{Namespace, Tool};
 
 struct Text {
     length: usize,
@@ -37,49 +37,54 @@ pub(crate) fn description(tool: Tool, stated: &Stated) -> Box<[u8]> {
     output.finish()
 }
 
-pub(crate) fn schema(tool: Tool, stated: &Stated) -> Box<[u8]> {
+pub(crate) fn schema(tool: Tool, stated: &Stated, namespace: &Namespace) -> Box<[u8]> {
     let mut measure = Text { length: 0, writer: None };
-    properties(tool, stated, &mut measure);
+    properties(tool, stated, namespace, &mut measure);
     let mut output = Text { length: 0, writer: Some(Writer::new(measure.length)) };
-    properties(tool, stated, &mut output);
+    properties(tool, stated, namespace, &mut output);
     output.finish()
 }
 
 fn words(tool: Tool, stated: &Stated, output: &mut Text) {
     match tool {
-        Tool::Read => output.put(b"Read lines; output is cut and marked. "),
+        Tool::Read => output.put(b"Read lines; cuts are marked. "),
         Tool::List => {
-            output.put(b"List a directory; at most ");
+            output.put(b"List a directory; max ");
             output.number(u64::from(stated.list_entries));
-            output.put(b" entries; omitted entries are counted. ");
+            output.put(b" entries; omissions counted. List / for directory names. ");
         }
         Tool::Search => {
-            output.put(b"Search files; at most ");
+            output.put(b"Search files; max ");
             output.number(u64::from(stated.search_hits));
-            output.put(b" matches and ");
+            output.put(b" matches, ");
             output.number(u64::from(stated.search_bytes));
             output.put(b" bytes; cuts are marked. ");
         }
         Tool::Write => output.put(b"Write a file; read its current version first. "),
         Tool::Edit => output.put(b"Edit a file already read; old must match once, or at least once with all. "),
         Tool::Shell => {
-            output.put(b"Run a command; files may change. Keep at most ");
+            output.put(b"Run a command; files may change. Max ");
             output.number(u64::from(stated.output_ceiling));
             output.put(b" output bytes; cuts are marked. ");
         }
     }
     match tool {
         Tool::Read | Tool::List | Tool::Search => {
-            output.put(b"Batch independent reads, listings and searches; they run side by side.");
+            output.put(b"Batch independent reads, lists and searches side by side.");
         }
         Tool::Write | Tool::Edit | Tool::Shell => {
-            output.put(b"Batch writes, edits and commands; one at a time, in call order.");
+            output.put(b"Batch writes, edits and commands; run serially in call order.");
         }
     }
 }
 
-fn path(stated: &Stated, output: &mut Text) {
-    output.put(br#""path":{"type":"string","description":"Workspace path, relative to the working directory or /name/...; max "#);
+fn path(stated: &Stated, namespace: &Namespace, output: &mut Text) {
+    output.put(br#""path":{"type":"string","description":""#);
+    match namespace {
+        Namespace::NoWorkspace => output.put(b"No workspace path; max "),
+        Namespace::One => output.put(b"Relative to the working directory, e.g. src/lib.rs; max "),
+        Namespace::Several { .. } => output.put(b"Relative to the working directory or /name/...; max "),
+    }
     output.number(u64::from(stated.path_bytes));
     output.put(br#" bytes."}"#);
 }
@@ -96,21 +101,21 @@ fn payload(stated: &Stated, output: &mut Text) {
     input(stated, output);
 }
 
-fn properties(tool: Tool, stated: &Stated, output: &mut Text) {
+fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut Text) {
     output.put(br#"{"type":"object","properties":{"#);
     match tool {
         Tool::Read => {
-            path(stated, output);
+            path(stated, namespace, output);
             output.put(br#", "first_line":{"type":"integer","minimum":1,"description":"First line, counting from 1; max 4294967295."},"lines":{"type":"integer","minimum":1,"description":"Requested line count; max 4294967295. Kept window max "#);
             output.number(u64::from(stated.read_window));
             output.put(br#" bytes."}},"required":["path"]}"#);
         }
         Tool::List => {
-            path(stated, output);
+            path(stated, namespace, output);
             output.put(br#"},"required":["path"]}"#);
         }
         Tool::Search => {
-            path(stated, output);
+            path(stated, namespace, output);
             output.put(br#", "pattern":{"type":"string","description":"Search pattern."#);
             input(stated, output);
             output.put(br#""},"glob":{"type":"string","description":"Optional file glob."#);
@@ -118,13 +123,13 @@ fn properties(tool: Tool, stated: &Stated, output: &mut Text) {
             output.put(br#""}},"required":["pattern"]}"#);
         }
         Tool::Write => {
-            path(stated, output);
+            path(stated, namespace, output);
             output.put(br#", "content":{"type":"string","description":"Whole file content; max "#);
             payload(stated, output);
             output.put(br#""}},"required":["path","content"]}"#);
         }
         Tool::Edit => {
-            path(stated, output);
+            path(stated, namespace, output);
             output
                 .put(br#", "old":{"type":"string","description":"Text to match once, or at least once with all; max "#);
             payload(stated, output);

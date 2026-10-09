@@ -96,6 +96,7 @@ fn endpoints_with_connect(connect: Duration) -> Endpoints {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        namespace: smith_domain::tools::Namespace::One,
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(42),
         model: b"fixture-model".as_slice().into(),

@@ -38,6 +38,7 @@ const MAIN_MECHANICS: &str = "## Tools\n\n\
 You can read, list and search the files in the checkout.\n\
 You can write and edit files in its writable repositories.\n\n\
 ## Checkout\n\n\
+Your working directory is `work`. Relative paths start there; reach the other directories as `/name/...`. Use `list /` to list their names.\n\
 - `work`, which you may change, a git working tree, with checks (`.temper/pre-pr`)\n\
 - `archive`, which you may only read, a plain directory\n\n\
 ## Sub-agents\n\n\
@@ -54,6 +55,7 @@ Extra fields are allowed within the aggregate result byte limit; no field name m
 const CHILD_MECHANICS: &str = "## Tools\n\n\
 You can read, list and search the files in the checkout.\n\n\
 ## Checkout\n\n\
+Your working directory is `work`. Relative paths start there; reach the other directories as `/name/...`. Use `list /` to list their names.\n\
 - `work`, which you may change, a git working tree, with checks (`.temper/pre-pr`)\n\
 - `archive`, which you may only read, a plain directory\n\n\
 ## Answering\n\n\

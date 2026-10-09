@@ -50,6 +50,19 @@ fn fill(limits: Limits) {
     for session in 0..limits.kits {
         let opened = step(Event::Open { session: Token::new(session.into()), authority: authority(&limits) });
         let [kit] = opened[..] else { panic!("{limits:?}: the authority fits") };
+        let list =
+            smith_domain_tools::Call::List { path: smith_domain_tools::Path { absolute: true, parts: Box::new([]) } };
+        assert!(
+            step(Event::Call {
+                kit,
+                observation: None,
+                reply_to: ReplyTo::new(Token::new(9000)),
+                call: list,
+                deadline
+            })
+            .is_empty(),
+            "namespace listing has no IO owner"
+        );
         for _ in 0..limits.known_files * 2 {
             file += 1;
             let reply_to = ReplyTo::new(Token::new(file));

@@ -7,7 +7,8 @@
 //! its `.git`, what it
 //! would store must fit the limits, an edit must be of a file its LLM has read
 //! and must change something, its deadline must not have passed, and the kit
-//! must have room for one more job. A call that passes becomes a job.
+//! must have room for one more call. A filesystem call that passes becomes a
+//! job; the namespace root's listing answers directly from its authority.
 //!
 //! The transition table.
 //!
@@ -28,18 +29,18 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Env, Id, Queue, ReplyTo, Set, Slab, Time, Token};
+use skein_lib::{Env, Id, List, Queue, ReplyTo, Set, Slab, Time, Token};
 
-use crate::authority::{self, Authority, Checkout, Located};
+use crate::authority::{self, Authority, Checkout, Located, Target};
 use crate::boundary::{Expect, Refusal, Request};
-use crate::call::{self, Call, Outcome};
+use crate::call::{self, Call, Entry, Kind, Outcome};
 use crate::domain::Domain;
 use crate::edit::Edit;
 use crate::facts::{self, FactKind, Facts};
 use crate::job::{self, Job, Work};
 use crate::knowledge::Knowledge;
 use crate::limits::Limits;
-use crate::path::{self, Path};
+use crate::path::{self, Name, Path};
 use crate::window::Span;
 
 #[derive(Debug)]
@@ -114,11 +115,17 @@ pub(crate) fn call(
     assert!(kit.state == State::Open, "no call follows a close");
     let tool = call::tool(&call);
     match admit(kit, call, deadline, env) {
-        Ok(work) => {
+        Ok(Admitted::Work(work)) => {
             facts.push_call(FactKind::Started { session: kit.session, tool }, observation);
             let job = job::start(jobs, id, reply_to, observation, work, deadline, env, out);
             let fresh = kit.jobs.insert(job).expect("checked for room at the entrance");
             assert!(fresh, "a job is new to its kit");
+        }
+        Ok(Admitted::Directories) => {
+            facts.push_call(FactKind::Started { session: kit.session, tool }, observation);
+            let outcome = directories(&kit.checkout, &env.limits);
+            facts.push_call(facts::answered(kit.session, tool, &outcome), observation);
+            out.push(Request::Answer { to: reply_to, outcome });
         }
         Err(outcome) => {
             facts.push_call(facts::answered(kit.session, tool, &outcome), observation);
@@ -182,28 +189,94 @@ fn end(kits: &mut Slab<Kit>, facts: &mut Facts, id: Id<Kit>, out: &mut Queue<Req
     kits.retire(id);
 }
 
+/// An admitted IO job, or the namespace root's immediate listing.
+enum Admitted {
+    Work(Work),
+    Directories,
+}
+
+/// A file-system place; the namespace root has no file behind it.
+fn place(checkout: &Checkout, path: &Path, maximum: u32) -> Result<Located, Outcome> {
+    match authority::locate(checkout, path, maximum)? {
+        Target::Place(located) => Ok(located),
+        Target::Directories => Err(Outcome::NotFile),
+    }
+}
+
+/// Directory names at the namespace root, in name order and within both
+/// listing caps. Legacy nested mounts contribute their first name once.
+fn directories(checkout: &Checkout, limits: &Limits) -> Outcome {
+    let mut names = List::with_capacity(u32::try_from(checkout.mounts.len()).expect("admitted mounts"));
+    for mount in &checkout.mounts {
+        let name = first_name(&mount.at);
+        if !name.is_empty() && !names.as_slice().contains(&name) {
+            names.push(name).expect("at most one name per mount");
+        }
+    }
+    let mut names = names.into_boxed();
+    names.sort_unstable();
+    let mut entries =
+        List::with_capacity(limits.list_entries.min(u32::try_from(names.len()).expect("admitted mount count")));
+    let mut bytes = 0_u64;
+    for name in &names {
+        let cell = u64::try_from(size_of::<Entry>()).expect("entry cell fits");
+        let cost = cell.checked_add(u64::try_from(name.len()).expect("admitted name fits")).expect("bounded entry");
+        let Some(next) = bytes.checked_add(cost) else { break };
+        if entries.len() >= limits.list_entries || next > limits.list_bytes {
+            break;
+        }
+        bytes = next;
+        entries
+            .push(Entry {
+                name: Name::new(skein_lib::bytes::copy_of(name)).expect("mount's first name"),
+                kind: Kind::Directory,
+            })
+            .expect("checked entry cap");
+    }
+    let more = u64::try_from(
+        names.len().checked_sub(usize::try_from(entries.len()).expect("entry count")).expect("kept prefix"),
+    )
+    .expect("admitted count");
+    Outcome::Listed { entries: entries.into_boxed(), more }
+}
+
+fn first_name(path: &[u8]) -> &[u8] {
+    for (index, byte) in path.iter().enumerate() {
+        if *byte == b'/' {
+            return path.get(..index).expect("slash index is in path");
+        }
+    }
+    path
+}
+
 /// What `call` does if it passes the entrance, or the outcome that refuses it.
-fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Work, Outcome> {
+fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Admitted, Outcome> {
     let limits = &env.limits;
     if !authority::granted(kit.checkout.grants, &call) {
         return Err(Outcome::NotGranted);
     }
     let work = match call {
         Call::Read { path, skip, lines } => {
-            let located = authority::locate(&kit.checkout, &path, limits.path_bytes)?;
+            let located = place(&kit.checkout, &path, limits.path_bytes)?;
             file(&located.place)?;
             Work::Read { place: located.place, span: Span { skip, lines } }
         }
-        Call::List { path } => {
-            let located = authority::locate(&kit.checkout, &path, limits.path_bytes)?;
-            Work::List { place: located.place }
-        }
+        Call::List { path } => match authority::locate(&kit.checkout, &path, limits.path_bytes)? {
+            Target::Place(located) => Work::List { place: located.place },
+            Target::Directories => {
+                ready(kit, deadline, env)?;
+                return Ok(Admitted::Directories);
+            }
+        },
         Call::Search { path, pattern, glob } => {
             passable(&pattern)?;
             if let Some(glob) = &glob {
                 passable(glob)?;
             }
-            let located = authority::locate(&kit.checkout, &path, limits.path_bytes)?;
+            let located = match authority::locate(&kit.checkout, &path, limits.path_bytes)? {
+                Target::Place(located) => located,
+                Target::Directories => return Err(Outcome::NotDirectory),
+            };
             Work::Search { place: located.place, pattern, glob }
         }
         Call::Write { path, content } => {
@@ -238,25 +311,32 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Wor
             // Commands run in the working directory, which must be in the
             // checkout.
             let here = Path { absolute: false, parts: Box::new([]) };
-            let located = authority::locate(&kit.checkout, &here, limits.path_bytes)?;
+            let located = place(&kit.checkout, &here, limits.path_bytes)?;
             let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
             let roots = kit.checkout.roots.clone();
             Work::Shell { cwd: located.place, command, timeout, roots }
         }
     };
+    ready(kit, deadline, env)?;
+    Ok(Admitted::Work(work))
+}
+
+/// The common entrance deadline and concurrent-call bounds.
+fn ready(kit: &Kit, deadline: Time, env: &Env<Limits>) -> Result<(), Outcome> {
+    let limits = &env.limits;
     if deadline <= env.now {
         return Err(Outcome::TimedOut);
     }
     if kit.jobs.len() >= limits.calls {
         return Err(Outcome::Busy);
     }
-    Ok(work)
+    Ok(())
 }
 
 /// Where `path` is, if the kit may write there: in a writable repository, and
 /// not in its `.git`.
 fn writable(checkout: &Checkout, path: &Path, limits: &Limits) -> Result<Located, Outcome> {
-    let located = authority::locate(checkout, path, limits.path_bytes)?;
+    let located = place(checkout, path, limits.path_bytes)?;
     file(&located.place)?;
     if !located.writable {
         return Err(Outcome::ReadOnly);

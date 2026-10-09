@@ -19,6 +19,7 @@ fn grants() -> tools::Grants {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        namespace: smith_domain::tools::Namespace::One,
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"test".as_slice().into(),

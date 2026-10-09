@@ -164,6 +164,7 @@ struct Conversation {
     system: Box<[u8]>,
     /// The families of its own tools it offers the LLM, as its kit has them.
     tools: Grants,
+    namespace: tools::Namespace,
     delegated: Box<[Descriptor]>,
     output: u32,
     /// The conversation so far, oldest first, starting with the spec's prompt.
@@ -1761,7 +1762,8 @@ fn admit(
         return None;
     }
     let content: Box<[Block]> = Box::new([Block::Text { text: spec.prompt, replay: None }]);
-    let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?;
+    let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?
+        .checked_add(spec.authority.namespace_bytes()?)?;
     if bytes > limits.session_bytes {
         return None;
     }
@@ -1774,6 +1776,7 @@ fn admit(
         model: spec.model,
         system: spec.system,
         tools: spec.authority.grants,
+        namespace: spec.authority.namespace(),
         delegated: spec.delegated,
         output: spec.output,
         transcript,
@@ -1852,6 +1855,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
         model: conversation.model.clone(),
         system: conversation.system.clone(),
         tools: conversation.tools,
+        namespace: conversation.namespace.clone(),
         delegated: conversation.delegated.clone(),
         messages: conversation.transcript.to_boxed(),
         max_tokens,

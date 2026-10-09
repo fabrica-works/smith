@@ -547,8 +547,99 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         let list = offered.iter().find(|tool| tool.name.as_ref() == b"list").expect("native list declaration");
         assert!(contains(&list.description, b"11 entries"));
         let search = offered.iter().find(|tool| tool.name.as_ref() == b"search").expect("native search declaration");
-        assert!(contains(&search.description, b"13 matches and 127 bytes"));
+        assert!(contains(&search.description, b"13 matches, 127 bytes"));
         let shell = offered.iter().find(|tool| tool.name.as_ref() == b"shell").expect("native shell declaration");
         assert!(contains(&shell.description, b"151 output bytes"));
+    }
+}
+
+#[test]
+fn namespace_descriptions_and_list_slash_reach_both_native_provider_dialects() {
+    for several in [false, true] {
+        for configuration in wire::configurations() {
+            let mut disk = Checkout::new();
+            disk.mkdir(b"work");
+            disk.mkdir(b"docs");
+            let working = Token::new(disk.root(b"work"));
+            let sibling = Token::new(disk.root(b"docs"));
+            let mut directories = vec![run::Directory {
+                name: b"hidden-working-name".as_slice().into(),
+                root: working,
+                writable: true,
+                git: false,
+                conflicts: Box::new([]),
+            }];
+            if several {
+                directories.push(run::Directory {
+                    name: b"docs".as_slice().into(),
+                    root: sibling,
+                    writable: false,
+                    git: false,
+                    conflicts: Box::new([]),
+                });
+            }
+            let workspace = run::Workspace { directories: directories.into() };
+            let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1096) };
+            let client = skein_llm_world::limits();
+            let bounds = Limits {
+                client,
+                tool_bytes: 32768,
+                rendered_result: client.dialect.string_bytes,
+                stated: adapter::Stated::from_tools(&settings.limits.session.tools, client.dialect.input_bytes)
+                    .expect("valid namespace fixture"),
+            };
+            settings.limits.session.completion_bytes =
+                adapter::completion_worst_case(&client, settings.limits.decoded_call_bytes)
+                    .expect("valid namespace fixture");
+            settings.limits.session.completion_blocks = client.dialect.parts;
+            let scripts = Box::new([Script {
+                cue: Box::new([]),
+                turns: Box::new([
+                    calls(vec![call(b"list", br#"{"path":"/"}"#)], 1),
+                    calls(vec![call(b"finish", br#"{"report":"Namespace observed.","source":"authority"}"#)], 1),
+                ]),
+            }]);
+            let mut world =
+                World::with_workspace_wire(settings, None, Some(workspace), disk, configuration, bounds, scripts);
+            world.run(10_000);
+            assert!(matches!(world.answer(), run::Answer::Accepted { .. }), "{:?}", world.answer());
+            assert_eq!(world.prompts().len(), 2);
+            let initial = &world.prompts()[0];
+            if several {
+                assert!(contains(&initial.system, b"Your working directory is `hidden-working-name`"));
+            } else {
+                assert!(contains(&initial.system, b"Paths start in your working directory. Use `src/lib.rs`"));
+                assert!(!contains(&initial.system, b"hidden-working-name"));
+            }
+            for name in [b"read".as_slice(), b"list", b"search", b"write", b"edit"] {
+                let tool =
+                    initial.tools.iter().find(|tool| tool.name.as_ref() == name).expect("valid namespace fixture");
+                let expected = if several {
+                    b"Relative to the working directory or /name/...".as_slice()
+                } else {
+                    b"Relative to the working directory, e.g. src/lib.rs".as_slice()
+                };
+                assert!(contains(&tool.parameters, expected));
+                if !several {
+                    assert!(!contains(&tool.parameters, b"/name/..."));
+                }
+            }
+            let outputs: Vec<_> = world.prompts()[1]
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .filter_map(|part| match part {
+                    Part::ToolOutput { output, is_error: false, .. } => Some(output),
+                    Part::Opaque { .. } | Part::Text { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. } => None,
+                })
+                .collect();
+            assert_eq!(outputs.len(), 1);
+            assert!(contains(outputs[0], b"hidden-working-name\tdirectory"));
+            assert_eq!(contains(outputs[0], b"docs\tdirectory"), several);
+            assert!(
+                !world.boundaries().iter().any(|(_, boundary)| matches!(boundary, Boundary::Io { .. })),
+                "listing / asks no machine IO"
+            );
+        }
     }
 }

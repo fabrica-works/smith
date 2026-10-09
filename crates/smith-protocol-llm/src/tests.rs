@@ -184,6 +184,7 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
 fn described_prompt() -> smith_domain::llm::Prompt {
     use smith_domain::llm;
     llm::Prompt {
+        namespace: tools::Namespace::One,
         asker: llm::Asker::Main,
         endpoint: llm::Endpoint(1),
         model: b"test".as_slice().into(),
@@ -211,28 +212,25 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         output_ceiling: 151,
     };
     let golden = [
+        ("Read lines; cuts are marked. Batch independent reads, lists and searches side by side.", 3_usize),
         (
-            "Read lines; output is cut and marked. Batch independent reads, listings and searches; they run side by side.",
-            3_usize,
-        ),
-        (
-            "List a directory; at most 11 entries; omitted entries are counted. Batch independent reads, listings and searches; they run side by side.",
+            "List a directory; max 11 entries; omissions counted. List / for directory names. Batch independent reads, lists and searches side by side.",
             1,
         ),
         (
-            "Search files; at most 13 matches and 127 bytes; cuts are marked. Batch independent reads, listings and searches; they run side by side.",
+            "Search files; max 13 matches, 127 bytes; cuts are marked. Batch independent reads, lists and searches side by side.",
             3,
         ),
         (
-            "Write a file; read its current version first. Batch writes, edits and commands; one at a time, in call order.",
+            "Write a file; read its current version first. Batch writes, edits and commands; run serially in call order.",
             2,
         ),
         (
-            "Edit a file already read; old must match once, or at least once with all. Batch writes, edits and commands; one at a time, in call order.",
+            "Edit a file already read; old must match once, or at least once with all. Batch writes, edits and commands; run serially in call order.",
             4,
         ),
         (
-            "Run a command; files may change. Keep at most 151 output bytes; cuts are marked. Batch writes, edits and commands; one at a time, in call order.",
+            "Run a command; files may change. Max 151 output bytes; cuts are marked. Batch writes, edits and commands; run serially in call order.",
             2,
         ),
     ];
@@ -283,4 +281,48 @@ fn stated_quantities_copy_effective_limits_and_refuse_capture_overflow() {
     assert_eq!(stated.tool_deadline, Duration::from_secs(120));
     let excessive = tools::Limits { shell_head: u32::MAX, shell_tail: 1, ..limits };
     assert!(crate::Stated::from_tools(&excessive, 401).is_none());
+}
+
+#[test]
+fn path_descriptions_follow_the_actual_conversation_namespace() {
+    use smith_domain::tools::{Name, Namespace};
+    for (namespace, wanted, absent) in [
+        (Namespace::One, "Relative to the working directory, e.g. src/lib.rs", "/name/..."),
+        (
+            Namespace::Several {
+                working: Name::new(b"private-name".as_slice().into()).expect("valid namespace fixture"),
+            },
+            "Relative to the working directory or /name/...",
+            "private-name",
+        ),
+    ] {
+        let mut prompt = described_prompt();
+        prompt.namespace = namespace;
+        for schema in crate::schemas(
+            &prompt,
+            &crate::Stated {
+                path_bytes: 256,
+                read_window: 1024,
+                tool_payload: 4096,
+                call_input_bytes: 2048,
+                list_entries: 16,
+                search_hits: 8,
+                search_bytes: 256,
+                shell_timeout: Duration::from_secs(60),
+                tool_deadline: Duration::from_secs(600),
+                shell_output: 192,
+                output_ceiling: 192,
+            },
+        ) {
+            if schema.name.as_ref() != b"shell" {
+                let text = core::str::from_utf8(&schema.schema).expect("valid namespace fixture");
+                assert!(
+                    text.contains(wanted),
+                    "{}",
+                    core::str::from_utf8(&schema.name).expect("valid namespace fixture")
+                );
+                assert!(!text.contains(absent));
+            }
+        }
+    }
 }

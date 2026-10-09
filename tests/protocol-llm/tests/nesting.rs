@@ -39,8 +39,9 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
         world.run(100_000);
         assert!(
             matches!(world.answer(), run::Answer::Accepted { .. }),
-            "actual native nesting terminal: {:?}",
-            world.answer()
+            "actual native nesting terminal: {:?}; request bytes: {:?}",
+            world.answer(),
+            world.wire_bindings().iter().map(|binding| binding.request.len()).collect::<Vec<_>>()
         );
         let note = b"a sub-agent does its work itself";
         let feedback = world

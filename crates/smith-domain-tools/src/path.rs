@@ -45,6 +45,29 @@ impl Name {
     }
 }
 
+/// How paths read in a conversation, fixed from its authority for its life.
+/// Contract: domain/run.md, section 3.3; domain/tools.md, section 2.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Namespace {
+    /// No directories are mounted, so no workspace paths are offered.
+    NoWorkspace,
+    /// One directory: paths are relative to it and its name is hidden.
+    One,
+    /// Several directories: relative paths start in the named working directory.
+    Several { working: Name },
+}
+
+impl Namespace {
+    /// Dynamic bytes retained beyond this value's fixed cell.
+    #[must_use]
+    pub fn owned_bytes(&self) -> Option<u64> {
+        match self {
+            Self::NoWorkspace | Self::One => Some(0),
+            Self::Several { working } => u64::try_from(working.as_bytes().len()).ok(),
+        }
+    }
+}
+
 /// A path as the LLM wrote it, split at its slashes by the protocol layer.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Path {

@@ -574,6 +574,10 @@ fn prompt_bytes(prompt: &llm::Prompt) -> u64 {
         + len(&prompt.system)
         + u64::try_from(prompt.served.len()).expect("bounded descriptors") * size::<llm::Served>()
         + u64::try_from(prompt.messages.len()).expect("bounded messages") * size::<llm::Message>();
+    bytes += match &prompt.namespace {
+        root::tools::Namespace::NoWorkspace | root::tools::Namespace::One => 0,
+        root::tools::Namespace::Several { working } => len(working.as_bytes()),
+    };
     for served in &prompt.served {
         assert!(matches!(served, llm::Served::Finish | llm::Served::Wait));
     }
@@ -635,6 +639,7 @@ fn copy_prompt(prompt: &llm::Prompt) -> llm::Prompt {
         })
         .collect();
     let copied = llm::Prompt {
+        namespace: prompt.namespace.clone(),
         asker: prompt.asker,
         endpoint: prompt.endpoint,
         model: prompt.model.clone(),

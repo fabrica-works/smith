@@ -33,6 +33,8 @@ pub struct Prompt {
     /// The families of tools the LLM may call, whose schemas the protocol
     /// layer offers it, and the tools the run serves.
     pub tools: tools::Grants,
+    /// Path presentation fixed from the conversation's workspace authority.
+    pub namespace: tools::Namespace,
     /// Typed run tools offered for this completion; only the main conversation offers finish.
     pub served: Box<[Served]>,
     /// The conversation so far, oldest first, ending with a user message.

@@ -4,6 +4,7 @@ use smith_session_world::assert_prompt_extends;
 
 fn prompt() -> Prompt {
     Prompt {
+        namespace: smith_domain_tools::Namespace::One,
         endpoint: Endpoint(0),
         model: b"model".as_slice().into(),
         system: b"system".as_slice().into(),

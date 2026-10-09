@@ -179,7 +179,7 @@ impl Peer {
     /// The protocol layer's view of the session's `prompt`: every ticket in it
     /// resolved, the answers copied.
     pub(crate) fn prompt(&self, prompt: sllm::Prompt) -> Prompt {
-        let sllm::Prompt { endpoint, model, system, tools, delegated, messages, max_tokens } = prompt;
+        let sllm::Prompt { endpoint, model, system, tools, namespace, delegated, messages, max_tokens } = prompt;
         let mut served = List::with_capacity(u32::try_from(delegated.len()).expect("bounded declaration inventory"));
         for descriptor in &delegated {
             let tool = match descriptor.ticket {
@@ -211,6 +211,7 @@ impl Peer {
             model,
             system,
             tools,
+            namespace,
             served: served.into_boxed(),
             messages: resolved.into_boxed(),
             max_tokens,
