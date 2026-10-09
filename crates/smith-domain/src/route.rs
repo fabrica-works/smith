@@ -17,7 +17,7 @@ use skein_lib::{Duration, Env, Id, List, Queue, ReplyTo, Token};
 use smith_domain_run::{self as run, Spend};
 use smith_domain_session as session;
 
-use crate::boundary::{AnsweredCall, Event, Request};
+use crate::boundary::{AnsweredCall, Event, Operation, Request};
 use crate::domain::{Credential, Domain, Due, Flight, Handoff, StartContext, TurnHandoff};
 use crate::limits::{self, Limits};
 use crate::peer::Peer;
@@ -85,7 +85,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Aborted { owner } => run::Event::Aborted { owner },
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
         Event::Failed { owner, failure, evidence, detail } => {
-            let grant = domain.completions.remove(&owner).expect("failed calls were emitted");
+            let grant = completion_done(domain, owner);
             let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
             let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
             assert!(
@@ -117,8 +117,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
             return session_step(domain, env, session::Event::Failed { owner, failure, evidence, detail });
         }
         Event::Cancelled { owner } => {
-            let ended = domain.completions.remove(&owner);
-            assert!(ended.is_some(), "cancelled calls were emitted");
+            completion_done(domain, owner);
             let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
             let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
             assert!(
@@ -128,6 +127,9 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
             return session_step(domain, env, session::Event::Cancelled { owner });
         }
         Event::Done { owner, done } => {
+            if let Some(host_run) = domain.commands.remove(&owner) {
+                domain.notices.push(Request::LongDone { host_run });
+            }
             if room_for_content(domain, env, crate::facts::done_bytes(&done)) {
                 domain.content.push(crate::Content::Tool { owner, done: done.clone() });
             }
@@ -142,8 +144,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
 /// may record usage or run decoded calls.
 fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: crate::llm::Completion) {
     capture(domain, env, owner, &completion);
-    let ended = domain.completions.remove(&owner);
-    assert!(ended.is_some(), "completed calls were emitted");
+    completion_done(domain, owner);
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     let preview = session::preview_completion(&domain.session, owner, completion.usage);
@@ -171,13 +172,25 @@ fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: c
     session_step(domain, env, session::Event::Completed { owner, completion });
 }
 
+/// A provider terminal ends the actual issued span before session work proceeds.
+fn completion_done(domain: &mut Domain, owner: Token) -> crate::GrantName {
+    let grant = domain.completions.remove(&owner).expect("provider terminal belongs to an emitted call");
+    let id = *domain.sessions.get(&owner).expect("session lives through its provider terminal");
+    let conversation = domain.peers.get(id).expect("peer lives through its provider terminal").conversation;
+    let host_run = run::host_name(&domain.run, conversation).expect("run lives through its session's terminal");
+    domain.notices.push(Request::LongDone { host_run });
+    grant
+}
+
 fn acknowledge(domain: &mut Domain, env: &Env<Limits>, run: Token, turn: u32) {
     run_step(domain, env, run::Event::Acknowledge { run, turn });
     if let Some(pending) = domain.pending.remove(&run) {
-        let mut emitted = Queue::with_capacity(1);
+        let mut emitted = Queue::with_capacity(2);
         complete(domain, env, pending, &mut emitted);
-        if let Some(request) = emitted.pop() {
-            domain.notices.push(request);
+        for _ in 0..2 {
+            if let Some(request) = emitted.pop() {
+                domain.notices.push(request);
+            }
         }
     }
 }
@@ -340,8 +353,10 @@ fn history_fits(transcript: Option<&session::record::Transcript>, answered: &[u8
 /// Routes what the child domains emitted, and what that leads to, until both
 /// have emitted all they will in this entry point.
 pub(crate) fn hand_off(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    if let Some(notice) = domain.notices.pop() {
-        out.push(notice);
+    for _ in 0..2 {
+        if let Some(notice) = domain.notices.pop() {
+            out.push(notice);
+        }
     }
     let bound = limits::run_out(&env.limits).saturating_add(limits::session_out(&env.limits));
     for _ in 0..bound {
@@ -424,7 +439,23 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             }
             return out.push(Request::Cancel { owner });
         }
-        session::Request::Io { owner, op, deadline } => return out.push(Request::Io { owner, op, deadline }),
+        session::Request::Io { owner, op, deadline } => {
+            let command = match &op {
+                crate::tools::Op::Spawn { .. } => true,
+                crate::tools::Op::Load { .. }
+                | crate::tools::Op::Scan { .. }
+                | crate::tools::Op::Store { .. }
+                | crate::tools::Op::Search { .. } => false,
+            };
+            if command {
+                let conversation = domain.session.io_opener(owner).expect("issued command retains its session");
+                let host_run = run::host_name(&domain.run, conversation).expect("issued command retains its run");
+                let old = domain.commands.insert(owner, host_run).expect("one command per live tools call");
+                assert!(old.is_none(), "the previous operation has actually ended");
+                out.push(Request::Long { host_run, operation: Operation::Command, until: deadline });
+            }
+            return out.push(Request::Io { owner, op, deadline });
+        }
         session::Request::CancelIo { owner } => return out.push(Request::CancelIo { owner }),
         session::Request::Opened { opener, session } => {
             let id = peer(domain, opener);
@@ -527,8 +558,10 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             domain.turns.retire(id);
             return out.push(Request::Turn { host_run, number, position, opens_window, read, spent, turn });
         }
-        run::Request::Checking { host_run, deadline } => return out.push(Request::Checking { host_run, deadline }),
-        run::Request::ChecksEnded { host_run } => return out.push(Request::ChecksEnded { host_run }),
+        run::Request::Checking { host_run, deadline } => {
+            return out.push(Request::Long { host_run, operation: Operation::Checks, until: deadline });
+        }
+        run::Request::ChecksEnded { host_run } => return out.push(Request::LongDone { host_run }),
         run::Request::Deliver { host_run, owner, change, name, deadline } => {
             return out.push(Request::Deliver { host_run, owner, change, name, deadline });
         }
@@ -695,6 +728,8 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     };
     let inserted = domain.completions.insert(owner, grant).expect("one completion per session");
     assert!(inserted.is_none(), "the previous completion ended");
+    let host_run = run::host_name(&domain.run, conversation).expect("issued completion retains its run");
+    out.push(Request::Long { host_run, operation: Operation::Completion, until: deadlines.whole });
     out.push(Request::Complete {
         owner,
         grant,

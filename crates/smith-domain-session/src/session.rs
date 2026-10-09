@@ -742,6 +742,12 @@ pub(crate) fn cancelled(domain: &mut Domain, env: &Env<Limits>, owner: Token, ou
     conclude(domain, env, id, out, mark);
 }
 
+/// The parent opener whose live tools job issued this IO operation.
+pub(crate) fn io_opener(domain: &Domain, owner: Token) -> Option<Token> {
+    let session = domain.calls.tools.io_session(owner)?;
+    Some(domain.sessions.get(Id::from_token(session))?.conversation.opener)
+}
+
 /// An operation the tools asked of io has ended: the tools take it, and it may
 /// answer one of their calls, or end a closing kit with its last.
 pub(crate) fn io_done(

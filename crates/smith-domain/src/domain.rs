@@ -53,7 +53,7 @@ use crate::route;
 /// much room in `out` before calling it.
 #[must_use]
 pub const fn max_out(limits: &Limits) -> u32 {
-    limits::run_out(limits).saturating_add(limits::session_out(limits)).saturating_add(1)
+    limits::run_out(limits).saturating_add(limits::session_out(limits).saturating_mul(2)).saturating_add(2)
 }
 
 /// The child observations along every bounded causal handoff of one entrance.
@@ -87,6 +87,8 @@ pub struct Domain {
     /// One unsent main completion per run awaiting acknowledgement credit.
     pub(crate) pending: Map<Token, route::PendingCompletion>,
     pub(crate) notices: Queue<Request>,
+    /// Issued command IO tokens retain their logical run until the actual terminal.
+    pub(crate) commands: Map<Token, Token>,
     pub(crate) ready: Ready,
     /// Tickets the peers hold.
     pub(crate) tickets: u32,
@@ -234,7 +236,8 @@ impl Domain {
             grants: Map::with_capacity(limits.accounts),
             completions: Map::with_capacity(limits.run.conversations),
             pending: Map::with_capacity(limits.run.runs),
-            notices: Queue::with_capacity(1),
+            notices: Queue::with_capacity(2),
+            commands: Map::with_capacity(limits::commands(limits).expect("validated command ownership bound")),
             ready: Ready::with_capacity(handoffs),
             tickets: 0,
             run_out: Queue::with_capacity(limits::run_out(limits)),

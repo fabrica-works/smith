@@ -101,7 +101,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(flights(limits)?).checked_mul(session_limits.delegated_result_bytes)?)?
         .checked_add(Map::<u32, Credential>::worst_case(limits.accounts)?)?
         .checked_add(Map::<Token, GrantName>::worst_case(run_limits.conversations)?)?
-        .checked_add(Queue::<crate::Request>::worst_case(1)?)?;
+        .checked_add(Queue::<crate::Request>::worst_case(2)?)?
+        .checked_add(Map::<Token, Token>::worst_case(commands(limits)?)?)?;
     let ready = Set::<Handoff>::worst_case(handoffs(limits)?)?.checked_mul(2)?;
     // Each queued run output can independently own a receipt copy, fields
     // or returned feedback. Inline
@@ -161,7 +162,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     )?;
     let pending = Map::<Token, crate::route::PendingCompletion>::worst_case(run_limits.runs)?
         .checked_add(u64::from(run_limits.runs).checked_mul(prompt_payload(limits)?)?)?
-        .checked_add(Queue::<crate::Request>::worst_case(1)?)?;
+        .checked_add(Queue::<crate::Request>::worst_case(2)?)?;
     let turns = Slab::<TurnHandoff>::worst_case(session_out(limits))?
         .checked_add(u64::from(session_out(limits)).checked_mul(record)?)?;
     // Canonical rendering can temporarily retain the complete semantic result
@@ -303,4 +304,9 @@ pub(crate) fn prompt_payload(limits: &Limits) -> Option<u64> {
         .checked_add(messages)?
         .checked_add(descriptors)?
         .checked_add(limits.run.run_bytes)
+}
+
+/// One command per live tools call; retired job slots own no IO rights.
+pub(crate) fn commands(limits: &Limits) -> Option<u32> {
+    limits.session.tools.kits.checked_mul(limits.session.tools.calls)
 }

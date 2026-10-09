@@ -220,6 +220,13 @@ pub fn owner(domain: &Domain, conversation: Token) -> Option<Token> {
     Some(conversation.run.token())
 }
 
+/// The host's logical name for the run owning a live conversation.
+#[must_use]
+pub fn host_name(domain: &Domain, conversation: Token) -> Option<Token> {
+    let conversation = domain.conversations.get(skein_lib::Id::from_token(conversation))?;
+    Some(domain.runs.get(conversation.run)?.host_name)
+}
+
 /// Check one provider completion against exact run-wide arithmetic before its
 /// calls enter the session.
 #[must_use]

@@ -92,6 +92,12 @@ impl Domain {
         self.calls.runs.len()
     }
 
+    /// The parent opener owning live tool IO, for the root's deadline notices.
+    #[must_use]
+    pub fn io_opener(&self, owner: skein_lib::Token) -> Option<skein_lib::Token> {
+        session::io_opener(self, owner)
+    }
+
     /// Kits present, closed ones included until they are reclaimed.
     #[must_use]
     pub fn kits(&self) -> u32 {

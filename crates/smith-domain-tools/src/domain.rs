@@ -60,6 +60,12 @@ impl Domain {
         self.jobs.len()
     }
 
+    /// The session owning a live IO operation, for its parent's deadline notices.
+    #[must_use]
+    pub fn io_session(&self, owner: skein_lib::Token) -> Option<skein_lib::Token> {
+        job::io_session(self, owner)
+    }
+
     /// The oldest reserved observation; the parent drains it before more work.
     pub fn pop_fact(&mut self) -> Option<Fact> {
         self.facts.pop()

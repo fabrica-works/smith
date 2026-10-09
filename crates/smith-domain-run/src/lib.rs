@@ -71,7 +71,8 @@ pub use budget::{
 };
 pub use charter::{Brief, Charter, Conventions, Section};
 pub use domain::{
-    Domain, MAX_OUT, completion_overflow, completion_permit, fire, max_facts, owner, reserve, settle_reservation, step,
+    Domain, MAX_OUT, completion_overflow, completion_permit, fire, host_name, max_facts, owner, reserve,
+    settle_reservation, step,
 };
 pub use identity::Identity;
 pub use inbox::rendered_bytes;

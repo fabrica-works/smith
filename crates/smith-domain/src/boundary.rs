@@ -12,7 +12,7 @@
 //!   ended by exactly one [`Event::Delivered`]. After submission the
 //!   host operation is never abandoned; its deadline bounds the host terminal.
 //!   Duplicate or stale callback owners are inert (domain/run.md, sections 8 and 10).
-//!   [`Request::Checking`] and [`Request::ChecksEnded`] bracket a check,
+//!   [`Request::Long`] and [`Request::LongDone`] bracket a check,
 //!   each a notice with no terminal.
 //! - LLM providers, for the sessions: a [`Request::Complete`] is ended by one
 //!   of [`Event::Completed`], [`Event::Failed`] or, after a
@@ -302,11 +302,10 @@ pub enum Request {
         /// Last message covered by an actual told main turn; none before any read.
         read: Option<Token>,
     },
-    /// To the host: checks of the run it names `host_run` are running until
-    /// `deadline` at the latest, so its watchdog waits that long.
-    Checking { host_run: Token, deadline: Time },
-    /// To the host: the previously announced check has ended.
-    ChecksEnded { host_run: Token },
+    /// To the host: bounded work of `host_run` began; one `LongDone` ends it.
+    Long { host_run: Token, operation: Operation, until: Time },
+    /// To the host: one previously announced operation has actually ended.
+    LongDone { host_run: Token },
     /// To the host, deliver the exact checked writable-directory state under
     /// the logical run named `host_run`. The host interprets the unchanged
     /// generic fields and returns its bounded host terminal. Final Change
@@ -404,4 +403,16 @@ pub enum Request {
     /// Stop the `Check` in flight for `owner`. Its terminal still comes:
     /// `Aborted`, or `Checked` if the checks ended first.
     Abort { owner: Token },
+}
+
+/// Work below the run, reported to its host with its own deadline
+/// (domain/host.md, section 4; protocol/channel.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Operation {
+    /// The run reports its checks before a delivery; their terminal ends this span.
+    Checks,
+    /// The root reports an issued provider completion; its actual terminal ends this span.
+    Completion,
+    /// The root reports an issued session command; its actual IO terminal ends this span.
+    Command,
 }
