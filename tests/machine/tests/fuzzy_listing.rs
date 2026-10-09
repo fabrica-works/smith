@@ -12,7 +12,7 @@ static HEAP: Counting = Counting;
 #[test]
 fn seeded_selected_paths_keep_the_exact_tree_prefix_and_omitted_count_within_memory() {
     for seed in 0..128 {
-        let mut rng = Rng::seed(seed);
+        let mut rng = Rng::new(seed);
         let depth = match rng.below(4) {
             0 => tools::Depth::Whole,
             value => tools::Depth::Levels(u32::try_from(value).expect("small depth")),

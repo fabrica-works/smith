@@ -244,6 +244,38 @@ fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths()
     }
 }
 
+#[test]
+fn listed_tree_paths_survive_replay_and_refuse_unnormalized_entries() {
+    use smith_domain_session::{llm, record};
+    use smith_domain_tools::{Entry, Kind, Outcome};
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved turn");
+    for path in ["src/café.rs".as_bytes(), b"../file", b"a/./b", b"a//b", b"/file", b"file/", b"a\0b", b""] {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"tree-result".as_slice().into(),
+                result: llm::Returned::Owned {
+                    outcome: Outcome::Listed {
+                        entries: Box::new([Entry { name: path.into(), kind: Kind::File }]),
+                        more: 7,
+                    },
+                },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded entry");
+        let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints);
+        if path == "src/café.rs".as_bytes() {
+            assert_eq!(decoded.expect("nested relative path").messages, turn.messages);
+        } else {
+            assert_eq!(decoded, Err(record::Refusal::Malformed), "{path:?}");
+        }
+    }
+}
+
 fn with_recorded_affinity(bytes: &[u8], affinity: Option<smith_transcript::Affinity>) -> Box<[u8]> {
     let limits = smith_transcript::CEILINGS;
     let mut parts =
