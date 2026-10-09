@@ -13,7 +13,7 @@ use super::{Check, Configuration, Layer, LimitName, Per, Profile, Refusal, Value
 pub struct Room {
     /// The smallest threshold less two reserved outputs, counting a byte as a token.
     pub room: u64,
-    /// Measured Smith instructions, schemas and framing allowance, in bytes.
+    /// Largest measured Smith part across endpoints, including their actual options.
     pub own: u64,
     /// The host's rendered contribution, including directory guides, in bytes.
     pub host: u64,
@@ -50,7 +50,11 @@ pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_
         });
     }
     let mut smallest = None;
+    let mut smallest_remaining = None;
+    let mut largest_own = own;
     for endpoint in &configuration.endpoints {
+        let endpoint_own = own.checked_add(endpoint.option_bytes).ok_or(derived("fresh_window"))?;
+        largest_own = largest_own.max(endpoint_own);
         for (index, model) in endpoint.models.iter().enumerate() {
             let per = Per::Model {
                 endpoint: endpoint.number,
@@ -64,7 +68,7 @@ pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_
                 .checked_div(u64::from(threshold.denominator))
                 .ok_or(derived("window_at_threshold"))?;
             let reserved = output.checked_mul(2).ok_or(derived("fresh_window"))?;
-            let required = reserved.checked_add(own).ok_or(derived("fresh_window"))?;
+            let required = reserved.checked_add(endpoint_own).ok_or(derived("fresh_window"))?;
             if required >= within {
                 return Err(Refusal::Broken {
                     check: Check::FreshWindow,
@@ -89,6 +93,11 @@ pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_
                 });
             }
             let room = within.checked_sub(reserved).expect("fresh window holds both outputs");
+            let remaining = room.checked_sub(endpoint_own).expect("fresh window leaves room after actual own part");
+            smallest_remaining = Some(match smallest_remaining {
+                Some(current) => remaining.min(current),
+                None => remaining,
+            });
             smallest = Some(match smallest {
                 Some(current) => room.min(current),
                 None => room,
@@ -96,13 +105,13 @@ pub fn room(profile: &Profile, configuration: &Configuration, own: u64, summary_
         }
     }
     let room = smallest.expect("validated configuration declares at least one model");
-    let remaining = room.checked_sub(own).expect("each model leaves room after Smith's own part");
+    let remaining = smallest_remaining.expect("validated models leave measured room");
     let host = remaining.checked_div(2).expect("nonzero fixed divisor");
     let messages = remaining.checked_sub(host).expect("host takes at most half the remainder");
     let offer = messages.checked_div(2).expect("nonzero fixed divisor");
     let message =
         u32::try_from(offer.min(u64::from(profile.declared.tool_payload))).or(Err(derived("message_bytes")))?;
-    Ok(Room { room, own, host, messages, offer, message })
+    Ok(Room { room, own: largest_own, host, messages, offer, message })
 }
 
 fn model_value(layer: Layer, field: &'static str, per: Per, value: u64) -> super::Limit {

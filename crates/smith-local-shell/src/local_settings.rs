@@ -585,6 +585,8 @@ mod tests {
                 environment_bytes: 0,
                 endpoints: Box::new([smith_agent_service::profile::Endpoint {
                     number: 7,
+                    provider: skein_llm::Provider::OpenAiCodex,
+                    option_bytes: 0,
                     connect: Duration::from_secs(10),
                     handshake: Duration::from_secs(10),
                     models: settings

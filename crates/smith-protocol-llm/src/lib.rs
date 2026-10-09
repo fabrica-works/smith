@@ -41,7 +41,8 @@ pub use component::{Component, ComponentError, ComponentLimits, MAX_OUT, MaxOut,
 pub use contract::{decode_deliver, decode_finish, deliver_schema, finish_schema};
 pub use decode::decode;
 pub use endpoints::{
-    ConfiguredEndpoint, ConfiguredModel, EndpointError, EndpointOptions, Endpoints, IdentityProfile, OversizedReasoning,
+    ConfiguredEndpoint, ConfiguredModel, EndpointError, EndpointOptions, Endpoints, IdentityProfile,
+    OversizedReasoning, endpoint_own,
 };
 pub use failure::{cancelled, failed, refusal};
 pub use grants::{GrantError, Grants};

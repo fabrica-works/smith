@@ -29,6 +29,40 @@ pub enum OversizedReasoning {
     Drop,
 }
 
+/// Measure actual endpoint options and provider identity for startup's own part.
+/// Field punctuation belongs to the separately measured provider framing.
+/// Contract: protocol/limits.md, sections 3.2 and 3.9.
+pub fn endpoint_own(
+    reasoning_effort: Option<&[u8]>,
+    cache_key: Option<&[u8]>,
+    identity: IdentityProfile,
+) -> Result<u64, crate::Error> {
+    let mut bytes = 0_u64;
+    for option in [reasoning_effort, cache_key] {
+        if let Some(value) = option {
+            if core::str::from_utf8(value).is_err() {
+                return Err(crate::Error::Invalid);
+            }
+            bytes = bytes
+                .checked_add(u64::try_from(value.len()).or(Err(crate::Error::Limit))?)
+                .ok_or(crate::Error::Limit)?;
+        }
+    }
+    match identity {
+        IdentityProfile::Plain => {}
+        IdentityProfile::ClaudeCode => {
+            let instructions = match skein_llm::anthropic::identity::instructions(&[]) {
+                Ok(instructions) => instructions,
+                Err(error) => return Err(crate::Error::from_shared(error)),
+            };
+            bytes = bytes
+                .checked_add(u64::try_from(instructions.len()).or(Err(crate::Error::Limit))?)
+                .ok_or(crate::Error::Limit)?;
+        }
+    }
+    Ok(bytes)
+}
+
 /// One declared model's per-call policy, supplied by startup and retained by its endpoint.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ConfiguredModel {

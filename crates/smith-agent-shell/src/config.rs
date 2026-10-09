@@ -254,7 +254,7 @@ fn build(document: Document) -> Result<Configuration, String> {
     }
     let mut declarations = Vec::with_capacity(document.endpoints.len());
     for endpoint in &document.endpoints {
-        declarations.push(build_models(endpoint.number, endpoint.connect, endpoint.handshake, &endpoint.models)?);
+        declarations.push(build_models(endpoint)?);
     }
     let declarations = service::profile::Configuration {
         environment_bytes: u32::try_from(environment_bytes).map_err(|_| environment_size_refusal())?,
@@ -357,11 +357,7 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
             headers.push(Header { name: header.name.into_bytes().into(), value: header.value.into_bytes().into() });
         }
         llm_endpoint.headers = headers.into_boxed_slice();
-        let identity = match endpoint.identity.as_deref() {
-            None | Some("plain") => llm::IdentityProfile::Plain,
-            Some("claude-code") => llm::IdentityProfile::ClaudeCode,
-            Some(_) => return Err("endpoint identity must be plain or claude-code".into()),
-        };
+        let identity = endpoint_identity(endpoint.identity.as_deref())?;
         domain_endpoints.push(run::charter::Endpoint(endpoint.number));
         channel_endpoints
             .push(channel::Endpoint {
@@ -633,6 +629,14 @@ fn endpoint_duration(millis: u64, endpoint: u32, field: &'static str) -> Result<
     duration(millis, LimitName { layer: Layer::Policy, field, per: Per::Endpoint(endpoint) })
 }
 
+fn endpoint_identity(value: Option<&str>) -> Result<llm::IdentityProfile, String> {
+    match value {
+        None | Some("plain") => Ok(llm::IdentityProfile::Plain),
+        Some("claude-code") => Ok(llm::IdentityProfile::ClaudeCode),
+        Some(_) => Err("endpoint identity must be plain or claude-code".into()),
+    }
+}
+
 fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, String> {
     match value {
         None | Some("fail") => Ok(llm::OversizedReasoning::Fail),
@@ -641,12 +645,25 @@ fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, Stri
     }
 }
 
-fn build_models(
-    number: u32,
-    connect: u64,
-    handshake: u64,
-    models: &[ModelDocument],
-) -> Result<service::profile::Endpoint, String> {
+fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, String> {
+    let number = endpoint.number;
+    let models = &endpoint.models;
+    let provider = match endpoint.provider.as_str() {
+        "codex" => shared::Provider::OpenAiCodex,
+        "anthropic" => shared::Provider::Anthropic,
+        _ => return Err("endpoint provider must be codex or anthropic".into()),
+    };
+    let identity = endpoint_identity(endpoint.identity.as_deref())?;
+    let option_bytes = llm::endpoint_own(
+        endpoint.reasoning_effort.as_deref().map(str::as_bytes),
+        endpoint.cache_key.as_deref().map(str::as_bytes),
+        identity,
+    )
+    .map_err(|_| {
+        profile_refusal(Refusal::Derived {
+            limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
+        })
+    })?;
     if models.is_empty() {
         return Err(profile_refusal(Refusal::Field {
             limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(number) },
@@ -683,8 +700,10 @@ fn build_models(
     }
     Ok(service::profile::Endpoint {
         number,
-        connect: endpoint_duration(connect, number, "connect")?,
-        handshake: endpoint_duration(handshake, number, "handshake")?,
+        provider,
+        option_bytes,
+        connect: endpoint_duration(endpoint.connect, number, "connect")?,
+        handshake: endpoint_duration(endpoint.handshake, number, "handshake")?,
         models: prepared.into_boxed_slice(),
     })
 }

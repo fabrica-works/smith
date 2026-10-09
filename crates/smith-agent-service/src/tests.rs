@@ -9,6 +9,8 @@ fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
         environment_bytes,
         endpoints: Box::new([Endpoint {
             number: 0,
+            provider: skein_llm::Provider::OpenAiCodex,
+            option_bytes: 0,
             connect: skein_lib::Duration::from_secs(1),
             handshake: skein_lib::Duration::from_secs(1),
             models: Box::new([Model {

@@ -12,6 +12,8 @@ fn declarations(window: u32, output: u32) -> Configuration {
         environment_bytes: 0,
         endpoints: Box::new([Endpoint {
             number: 7,
+            provider: skein_llm::Provider::OpenAiCodex,
+            option_bytes: 0,
             connect: Duration::from_secs(1),
             handshake: Duration::from_secs(1),
             models: Box::new([Model {
@@ -118,4 +120,20 @@ fn fixed_own_measurement_is_checked_and_real_declared_models_leave_room() {
     assert!(own > smith_domain::run::fixed_prompt_bytes().expect("fixed text"));
     assert!(room(&profile, &declarations, own, 0).expect("real model fits measured own").host > 0);
     assert_eq!(super::own_part(&tools, limits.llm.adapter.client.dialect.input_bytes, u64::MAX), None);
+}
+
+#[test]
+fn configured_options_are_charged_only_to_their_endpoint() {
+    let mut configuration = declarations(20_000, 1000);
+    configuration.endpoints[0].option_bytes = 1000;
+    let mut second = declarations(100_000, 1000).endpoints.into_vec().pop().expect("one endpoint");
+    second.number = 8;
+    second.option_bytes = 10_000;
+    configuration.endpoints = Box::new([configuration.endpoints.into_vec().pop().expect("one endpoint"), second]);
+    let parts = room(&standard(), &configuration, 2000, 0).expect("each actual endpoint owns enough room");
+    assert_eq!(parts.room, 14_000);
+    assert_eq!(parts.own, 12_000);
+    assert_eq!(parts.host + parts.messages, 11_000);
+    assert!(2000 + 1000 + parts.host + parts.messages <= 14_000);
+    assert!(2000 + 10_000 + parts.host + parts.messages <= 78_000);
 }

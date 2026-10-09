@@ -129,6 +129,10 @@ pub struct Model {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     pub number: u32,
+    /// The dialect whose limits are derived for this destination.
+    pub provider: skein_llm::Provider,
+    /// Actual configured option and identity bytes added to Smith's own part.
+    pub option_bytes: u64,
     pub connect: Duration,
     pub handshake: Duration,
     pub models: Box<[Model]>,
