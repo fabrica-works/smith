@@ -12,7 +12,8 @@ use smith_local_domain::ChatState;
 use smith_protocol_channel::{self as channel, Endpoints};
 use smith_transcript as transcript;
 
-const STATE_BYTES: usize = 4 + 8 + 8 + 1 + 8;
+/// Exact bytes in the fixed local metadata file, including its opaque identity.
+pub const STATE_BYTES: usize = 4 + 16 + 8 + 8 + 1 + 8;
 const TURN_HEADER: usize = 4 + 1 + 8;
 
 /// One file replacement; the service acknowledges it only after a durable store terminal.
@@ -40,6 +41,7 @@ pub enum StoreError {
 pub fn save_state(state: ChatState) -> File {
     let mut writer = Writer::new(STATE_BYTES);
     writer.put(b"SMLS").expect("fixed state header fits");
+    writer.put(&state.identity.bytes()).expect("fixed identity fits");
     writer.put(&state.activation.to_be_bytes()).expect("fixed activation fits");
     writer.put(&state.next_message.to_be_bytes()).expect("fixed message counter fits");
     match state.read {
@@ -64,6 +66,8 @@ pub fn decode_state(bytes: &[u8]) -> Result<ChatState, StoreError> {
     if reader.bytes(4) != Some(&b"SMLS"[..]) {
         return Err(StoreError::Malformed);
     }
+    let key: [u8; 16] = reader.bytes(16).ok_or(StoreError::Malformed)?.try_into().or(Err(StoreError::Malformed))?;
+    let identity = smith_domain::run::Identity::new(key);
     let activation = reader.u64().ok_or(StoreError::Malformed)?;
     let next_message = reader.u64().ok_or(StoreError::Malformed)?;
     let flag = reader.u8().ok_or(StoreError::Malformed)?;
@@ -76,7 +80,7 @@ pub fn decode_state(bytes: &[u8]) -> Result<ChatState, StoreError> {
     if !reader.is_empty() {
         return Err(StoreError::Malformed);
     }
-    Ok(ChatState { activation, next_message, read })
+    Ok(ChatState { identity, activation, next_message, read })
 }
 
 /// Fixed-width numeric path for one turn, sortable in transcript order.
@@ -161,10 +165,21 @@ mod tests {
 
     #[test]
     fn saved_metadata_round_trips_with_read_fence() {
-        let state = ChatState { activation: 42, next_message: 9, read: Some(Token::new(8)) };
+        let state = ChatState {
+            identity: smith_domain::run::Identity::new([0x42; 16]),
+            activation: 42,
+            next_message: 9,
+            read: Some(Token::new(8)),
+        };
         let file = save_state(state);
         assert_eq!(file.name.as_ref(), b"state");
         assert_eq!(decode_state(&file.bytes), Ok(state));
+        assert_eq!(file.bytes.len(), STATE_BYTES);
+        let mut previous = Writer::new(STATE_BYTES.saturating_sub(16));
+        previous.put(b"SMLS").expect("old fixed header fits");
+        previous.put(file.bytes.get(20..).expect("fixed fields follow identity")).expect("old fixed fields fit");
+        let previous_format = previous.finish();
+        assert_eq!(decode_state(&previous_format), Err(StoreError::Malformed), "identity is required");
         let truncated = file.bytes.get(..STATE_BYTES.saturating_sub(1)).expect("state has bytes");
         assert_eq!(decode_state(truncated), Err(StoreError::Malformed));
     }

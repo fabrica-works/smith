@@ -52,7 +52,11 @@ impl Store {
         if self.directory.join("fresh").exists() {
             return Err(local::StoreFailure::Read);
         }
-        let mut state = match read_optional(&self.directory.join("state"), 33, &mut total)? {
+        let mut state = match read_optional(
+            &self.directory.join("state"),
+            u64::try_from(protocol::STATE_BYTES).expect("fixed metadata length fits u64"),
+            &mut total,
+        )? {
             Some(bytes) => Some(protocol::decode_state(&bytes).map_err(|_| local::StoreFailure::Read)?),
             None => None,
         };
@@ -187,7 +191,8 @@ impl Store {
     fn recover_fresh(&mut self) -> io::Result<()> {
         let path = self.directory.join("fresh");
         let Some(bytes) =
-            read_optional(&path, 33, &mut 0).map_err(|_| io::Error::other("fresh journal read failed"))?
+            read_optional(&path, u64::try_from(protocol::STATE_BYTES).expect("fixed metadata length fits u64"), &mut 0)
+                .map_err(|_| io::Error::other("fresh journal read failed"))?
         else {
             return Ok(());
         };
@@ -316,7 +321,15 @@ mod tests {
         let path = directory();
         let mut store = Store::new(path.clone(), endpoints(), 4096).expect("store opens");
         store
-            .save_state(local::ChatState { activation: 1, next_message: 2, read: None }, false)
+            .save_state(
+                local::ChatState {
+                    identity: smith_domain::run::Identity::new([0x42; 16]),
+                    activation: 1,
+                    next_message: 2,
+                    read: None,
+                },
+                false,
+            )
             .expect("state durable");
         store.save_turn(1, Some(Token::new(2)), &turn()).expect("turn durable");
         drop(store);
@@ -352,7 +365,15 @@ mod tests {
         let mut store = Store::new(path.clone(), endpoints(), 4096).expect("store opens");
         fs::write(path.join(".state.1.tmp"), b"partial").expect("crash cut file");
         store
-            .save_state(local::ChatState { activation: 1, next_message: 1, read: None }, false)
+            .save_state(
+                local::ChatState {
+                    identity: smith_domain::run::Identity::new([0x42; 16]),
+                    activation: 1,
+                    next_message: 1,
+                    read: None,
+                },
+                false,
+            )
             .expect("new save uses a fresh temporary file");
         assert!(path.join(".state.1.tmp").exists());
         assert!(matches!(store.load(), Ok(local::Event::Loaded { state: Some(_), .. })));
@@ -360,7 +381,12 @@ mod tests {
     }
 
     fn state(activation: u64) -> local::ChatState {
-        local::ChatState { activation, next_message: 2, read: Some(Token::new(2)) }
+        local::ChatState {
+            identity: smith_domain::run::Identity::new([0x42; 16]),
+            activation,
+            next_message: 2,
+            read: Some(Token::new(2)),
+        }
     }
 
     fn delivery() -> DeliveryRecord {
@@ -428,11 +454,12 @@ mod tests {
 
     #[test]
     fn every_fresh_reset_cut_recovers_one_complete_history() {
+        let replacement = local::ChatState { identity: smith_domain::run::Identity::new([0x84; 16]), ..state(2) };
         for cut in 1..=17 {
             let path = directory();
             let mut store = baseline(&path);
             store.crash_after(Some(cut));
-            assert_eq!(store.save_state(state(2), true).err(), Some(local::StoreFailure::Write), "cut {cut}");
+            assert_eq!(store.save_state(replacement, true).err(), Some(local::StoreFailure::Write), "cut {cut}");
             assert_eq!(store.boundaries(), cut);
             drop(store);
             let store = Store::new(path.clone(), endpoints(), 4096).expect("fresh journal recovers");
@@ -443,10 +470,12 @@ mod tests {
             };
             if cut < 5 {
                 assert_eq!(saved.activation, 1);
+                assert_eq!(saved.identity, state(1).identity, "cut before journal durability keeps the old chat");
                 assert_eq!(transcript.expect("original history").turns.len(), 1);
                 assert_eq!(deliveries, Box::<[DeliveryRecord]>::from([delivery()]));
             } else {
                 assert_eq!(saved.activation, 2);
+                assert_eq!(saved.identity, replacement.identity, "journal recovery keeps the new opaque identity");
                 assert!(transcript.is_none());
                 assert!(deliveries.is_empty());
                 assert!(!path.join("fresh").exists());
@@ -456,7 +485,7 @@ mod tests {
         let path = directory();
         let mut store = baseline(&path);
         store.crash_after(None);
-        assert!(matches!(store.save_state(state(2), true), Ok(local::Event::StateSaved)));
+        assert!(matches!(store.save_state(replacement, true), Ok(local::Event::StateSaved)));
         assert_eq!(store.boundaries(), 17, "all journal, writes, syncs and removals covered");
         drop(store);
         let store = Store::new(path.clone(), endpoints(), 4096).expect("acknowledged reset reopens");

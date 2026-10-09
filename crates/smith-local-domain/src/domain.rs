@@ -150,7 +150,7 @@ impl Domain {
         Ok(Domain {
             config,
             agent: Agent::new(&child_limits, agent_config, seed, max_out(limits))?,
-            chat: Chat::new(),
+            chat: Chat::new(seed),
             transcript: None,
             records: Map::with_capacity(limits.smith.run.answered_calls),
             delivery: None,
@@ -409,7 +409,18 @@ fn loaded(
         domain.chat.phase,
         domain.chat.load_requested
     );
-    domain.chat.state = state.unwrap_or(ChatState { activation: 0, next_message: 0, read: None });
+    match state {
+        Some(mut saved) => {
+            if !domain.config.resume {
+                saved.identity = domain.chat.state.identity;
+            }
+            domain.chat.state = saved;
+        }
+        None => {
+            domain.chat.state =
+                ChatState { identity: domain.chat.state.identity, activation: 0, next_message: 0, read: None };
+        }
+    }
     domain.transcript = transcript;
     domain.records = Map::with_capacity(env.limits.smith.run.answered_calls);
     for record in deliveries {
@@ -546,6 +557,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.agent_life = AgentLife::Starting;
     domain.agent_failed = false;
     let source = RunStart {
+        identity: domain.chat.state.identity,
         activation: domain.chat.state.activation,
         charter: charter(&domain.config),
         workspace: domain.config.workspace.clone(),

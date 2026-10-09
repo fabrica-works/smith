@@ -26,7 +26,9 @@ fn a_spawned_last_word_keeps_its_local_display_class() {
 fn a_local_start_keeps_its_concrete_charter_and_run_identity() {
     let settings = smith_agent_world::Settings::calm(67);
     let charter = smith_agent_world::scripted_charter(&settings);
+    let identity = run::Identity::new([0x83; 16]);
     let source = RunStart {
+        identity,
         activation: 7,
         charter: smith_agent_world::scripted_charter(&settings),
         workspace: None,
@@ -38,6 +40,7 @@ fn a_local_start_keeps_its_concrete_charter_and_run_identity() {
         prepare_start(source, crate::tests::host_limits().charter_bytes, crate::tests::host_limits().transcript_bytes)
             .expect("bounded concrete start");
     assert_eq!(prepared.activation, 7);
+    assert_eq!(prepared.identity, Some(identity));
     assert_eq!(prepared.logical_run, skein_lib::Token::new(1));
     assert_eq!(prepared.charter.into_value(), charter);
     assert!(prepared.transcript.is_none());

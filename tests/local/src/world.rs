@@ -71,6 +71,12 @@ impl Store {
         self.state.map_or(0, |state| state.activation)
     }
 
+    /// Opaque chat identity in the last durably acknowledged metadata.
+    #[must_use]
+    pub fn identity(&self) -> Option<run::Identity> {
+        self.state.map(|state| state.identity)
+    }
+
     /// Number of durable turns across activations.
     #[must_use]
     pub fn turns(&self) -> usize {
@@ -211,6 +217,7 @@ pub struct World {
     exit: Option<ExitStatus>,
     completions: u32,
     prompt_assistants: Vec<usize>,
+    prompt_affinities: Vec<agent::llm::Affinity>,
     child_prompts: Vec<(tools::Grants, Box<[agent::llm::Served]>)>,
     prompt_texts: Vec<Vec<u8>>,
     tool_results: Vec<Vec<u8>>,
@@ -677,6 +684,7 @@ impl World {
             exit: None,
             completions: 0,
             prompt_assistants: Vec::new(),
+            prompt_affinities: Vec::new(),
             child_prompts: Vec::new(),
             prompt_texts: Vec::new(),
             tool_results: Vec::new(),
@@ -856,6 +864,18 @@ impl World {
         &self.child_prompts
     }
 
+    /// Affinity in every actual native child completion prompt.
+    #[must_use]
+    pub fn prompt_affinities(&self) -> &[agent::llm::Affinity] {
+        &self.prompt_affinities
+    }
+
+    /// The chat identity after its metadata reaches the durable store.
+    #[must_use]
+    pub fn identity(&self) -> Option<run::Identity> {
+        self.store.identity()
+    }
+
     /// Number of assistant messages in each provider request.
     #[must_use]
     pub fn prompt_assistants(&self) -> &[usize] {
@@ -870,6 +890,7 @@ impl World {
 
     /// Run through the waiting interval until the agent parks.
     pub fn drive_to_park(&mut self, iterations: u32) -> bool {
+        self.reached.remove(&Goal::Parked);
         self.drive_until(iterations, Goal::Parked)
     }
 
@@ -1373,6 +1394,7 @@ impl World {
             Lower::Complete { owner, prompt, .. } => {
                 self.observe(Seen::Complete { owner });
                 self.completions += 1;
+                self.prompt_affinities.push(prompt.affinity);
                 self.prompt_assistants
                     .push(prompt.messages.iter().filter(|message| message.role == agent::llm::Role::Assistant).count());
                 let mut user_text = Vec::new();

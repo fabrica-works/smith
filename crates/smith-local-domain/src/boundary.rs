@@ -107,6 +107,7 @@ pub enum GitResult {
 /// Chat metadata kept beside durable turns.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ChatState {
+    pub identity: run::Identity,
     /// Last activation saved before it started.
     pub activation: u64,
     /// Last person message name saved before it was sent.

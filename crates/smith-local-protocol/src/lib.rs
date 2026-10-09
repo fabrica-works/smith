@@ -36,7 +36,7 @@ pub use git::{Git, GitAction, GitCompletion, GitLimits, git_worst_case};
 pub use git_child::{GitChild, git_child_worst_case};
 pub use markers::{MarkerAction, Markers, markers_worst_case};
 pub use plain::{Plain, PlainAction, PlainLimits, Snapshot, plain_worst_case};
-pub use store::{File, StoreError, decode_state, decode_turns, save_state, save_turn, turn_name};
+pub use store::{File, STATE_BYTES, StoreError, decode_state, decode_turns, save_state, save_turn, turn_name};
 pub use terminal::{
     Event as TerminalEvent, Limits as TerminalLimits, Terminal, max_out as terminal_max_out,
     worst_case as terminal_worst_case,

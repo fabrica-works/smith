@@ -447,18 +447,58 @@ fn a_chat_with_no_workspace_waits_parks_and_resumes_on_the_next_invocation() {
 }
 
 #[test]
+fn a_chat_keeps_its_identity_across_activations_and_invocations() {
+    let mut first = World::new(8084);
+    first.line(b"Hello");
+    assert!(first.drive_to_park(300), "first activation parks");
+    let identity = first.identity().expect("identity durable before the child starts");
+    assert_eq!(first.activation(), 1);
+    first.line(b"Another activation in this invocation");
+    assert!(first.drive_to_park(300), "a later activation actually reaches its own park");
+    assert_eq!(first.activation(), 2);
+    assert_eq!(first.identity(), Some(identity));
+    assert!(!first.prompt_affinities().is_empty());
+    assert!(first.prompt_affinities().iter().all(|affinity| affinity.key == identity.bytes() && affinity.thread == 0));
+
+    let mut second = World::with_store(8085, first.into_store());
+    second.line(b"Resume in another invocation");
+    assert!(second.drive_to_park(300), "resumed activation parks");
+    assert_eq!(second.activation(), 3);
+    assert_eq!(second.identity(), Some(identity), "the new invocation's seed does not replace the saved key");
+    assert!(!second.prompt_affinities().is_empty());
+    assert!(second.prompt_affinities().iter().all(|affinity| affinity.key == identity.bytes() && affinity.thread == 0));
+
+    let mut fresh = World::with_store_fresh(8086, second.into_store());
+    fresh.line(b"Begin afresh");
+    assert!(fresh.drive_to_park(300), "resume off starts a fresh conversation");
+    let replacement = fresh.identity().expect("fresh identity durable");
+    assert_ne!(replacement, identity);
+    assert!(!fresh.prompt_affinities().is_empty());
+    assert!(
+        fresh.prompt_affinities().iter().all(|affinity| affinity.key == replacement.bytes() && affinity.thread == 0)
+    );
+    let mut resumed = World::with_store(8087, fresh.into_store());
+    resumed.line(b"Resume the replacement chat");
+    assert!(resumed.drive(300));
+    assert_eq!(resumed.identity(), Some(replacement));
+    assert!(resumed.prompt_affinities().iter().all(|affinity| affinity.key == replacement.bytes()));
+}
+
+#[test]
 fn a_crash_after_saving_an_activation_never_reuses_it() {
     let mut first = World::new(23);
     first.line(b"First attempt");
     assert!(first.drive_to_cut(100, Cut::AfterSaveState));
     let stored = first.into_store();
     assert_eq!(stored.activation(), 1);
+    let identity = stored.identity().expect("metadata names the chat before any provider work");
     assert_eq!(stored.turns(), 0, "the child was never started");
 
     let mut second = World::with_store(24, stored);
     second.line(b"Retry");
     assert!(second.drive_to_cut(100, Cut::AfterSaveState));
     assert_eq!(second.activation(), 2, "the crashed activation is never reused");
+    assert_eq!(second.identity(), Some(identity), "the crash did not replace its durable chat identity");
 }
 
 #[test]
@@ -468,12 +508,15 @@ fn a_crash_before_a_turn_is_saved_resumes_from_the_turn_before_with_a_new_activa
     assert!(first.drive_to_cut(300, Cut::BeforeSaveTurn(2)));
     let stored = first.into_store();
     assert_eq!(stored.turns(), 1, "the second turn did not reach durable storage");
+    let identity = stored.identity().expect("first activation identity durable");
     assert!(stored.read().is_none(), "the first turn did not yet read the person's line");
 
     let mut second = World::with_store(26, stored);
     second.line(b"Continue");
     assert!(second.drive(300), "the next activation resumes the saved prefix");
     assert_eq!(second.activation(), 2, "the replacement activation has a new name");
+    assert_eq!(second.identity(), Some(identity));
+    assert!(second.prompt_affinities().iter().all(|affinity| affinity.key == identity.bytes()));
     assert_eq!(second.prompt_assistants().first(), Some(&1), "only the turn before the cut is replayable");
 }
 
