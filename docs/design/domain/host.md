@@ -236,6 +236,19 @@ policy.
   until the parent acknowledges it, as temper's worker holds them across
   its own channel's losses; a host that keeps no transcript acknowledges
   at once.
+- **A turn the host cannot keep is never acknowledged.** An
+  acknowledgement means durable (channel.md, section 7). A host whose
+  store fails therefore drops the run at once (9.2): nothing the run says
+  after that could be kept, and its window would never open again.
+  - **The drop releases the held turns.** It releases every turn held for
+    the host, unacknowledged. The agent is gone once what the run started
+    has settled, and does not wait for acknowledgements that can no
+    longer come.
+  - **The host owns the failure.** It says which turn it could not keep
+    and why. It ends its run as a host failure, even after an answer,
+    which then stands but was not kept whole.
+  - **A later resume starts from what was kept.** A host that keeps its
+    transcripts durably resumes from the last turn it kept.
 - **Only the current window goes back.** Each told turn says whether it
   opens a window (section 2), so a host, or its store with the turns
   encoded, knows where the current window starts from that flag alone. Resuming a run,
@@ -408,9 +421,12 @@ A child a host embeds, beside or instead of `smith-host-domain`:
    dropped: its domain hears nothing more, its relayed calls are
    withdrawn, and the root is asked to end what the run holds below it,
    its LLM completions cancelled and its file operations and the process
-   trees of its commands and checks stopped. The agent is gone only once
-   each has its terminal, the twin of "gone only once gone" (section 4),
-   and its failure is that it went without answering.
+   trees of its commands and checks stopped. The turns held for the host
+   are released unacknowledged (section 6). The agent is gone only once
+   each operation has its terminal, the twin of "gone only once gone"
+   (section 4), and its failure is that it went without answering. A
+   drop after an answer, from a host whose store failed while the run
+   settled, releases the held turns the same way, and the answer stands.
 
 - **After an answer,** the same settlement runs without a grace: what
   the run still held below it is cancelled, its relayed calls are
