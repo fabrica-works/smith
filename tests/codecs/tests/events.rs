@@ -709,7 +709,22 @@ fn conversation_thread_and_response_window_are_required_exact_metadata_under_eve
             let actual = match &record.event {
                 Event::ConversationOpened(opened) => opened.thread,
                 Event::ResponseStarted(started) => started.window,
-                _ => panic!("independent conversation or response record"),
+                Event::Budget(_)
+                | Event::SessionStarted(_)
+                | Event::SessionEnded(_)
+                | Event::RunStarted(_)
+                | Event::RunCompleted(_)
+                | Event::ConversationClosed(_)
+                | Event::ResponseCompleted(_)
+                | Event::TextDelta(_)
+                | Event::ToolStarted(_)
+                | Event::ToolCompleted(_)
+                | Event::CheckStarted(_)
+                | Event::CheckCompleted(_)
+                | Event::MessageReceived(_)
+                | Event::MessageRead(_)
+                | Event::MessageUnread(_)
+                | Event::Notice(_) => panic!("independent conversation or response record"),
             };
             assert_eq!(actual, value);
             for capture in [Capture::None, Capture::Calls, Capture::Everything] {
