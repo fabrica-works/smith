@@ -625,7 +625,11 @@ answers as it was ending; the host has the delivery's own answer.
   product's presets give a default (`docs/design/shell.md`). Its spend is
   derived: its turns, each at the main model's maximum completion cost
   (its window of input at its highest input rate, and its most output).
-  A budget that
+  When the charter's contract allows a change, the reserve's time holds
+  at least one run of the checks (`check_timeout`, protocol/limits.md,
+  2.3). A finish in the wind-down then always has time to check what it
+  delivers, and a charter whose reserve cannot is refused at the
+  entrance, naming both. A budget that
   cannot hold its reserve is refused at the entrance.
 - **The ordinary pool** is what is left above the reserve, in each part
   of the budget. Main's ordinary work and every sub-agent's share draw
@@ -865,9 +869,6 @@ timings, budgets and shares within its own (`docs/design/testing.md`).
 - **A forced acceptance, marked:** whether the answer says that an
   accepted result came in the wind-down, so a host can tell a finished
   task from one the budget cut short.
-- **The reserve and the checks:** whether a charter whose contract allows
-  a change must keep its checks' deadline within its time reserve, and is
-  refused otherwise.
 - **A minted identity across resumes:** a resumed main keeps its
   transcript's affinity, but a run whose host gives no identity draws a
   new one in each activation for its sub-agents; whether the run takes

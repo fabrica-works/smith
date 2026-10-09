@@ -166,6 +166,14 @@ refused at the entrance, which has no `run.started`:
 | `unread` | integer | the messages it answered without reading |
 | `duration_ms` | integer | from admission to the answer |
 
+A run dropped before it answered (domain/host.md, 9.2) has no answer, so
+its host writes `run.completed` from the turns it was told:
+- `status` is `failed`;
+- `turns`, `spent`, `usage` and `read` come from those turns;
+- `unread` counts the messages delivered after the last one read;
+- `duration_ms` runs to the run's end;
+- there is no `result`, and `wind_down` is false.
+
 ### 3.4 Conversations
 
 **`conversation.opened`:**
@@ -350,9 +358,18 @@ when it is about one; and the kind's fields.
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
   `completion`, a completion failure, or `account`), `budget` (with `which`: `turns`,
-  `spend` or `time`), `policy`, `cancelled`, `stale`, `transcript` (with
+  `spend` or `time`), `policy`, `cancelled` (with `dropped`), `stale`,
+  `transcript` (with `reason`), `agent` (with `ended`) or `host` (with
   `reason`) for a failed run; `busy` or `invalid` (with `which`, what was
   beyond the limits, and `bound`) for a refused one.
+  - **Without an answer,** the class is the first cause of the end:
+    - `cancelled`, `dropped: true`: the host asked for the end, at a
+      second interrupt or past the cancel's grace, and the run went
+      without answering. A cancelled answer has `dropped: false`;
+    - `agent`, with `ended`: a spawned agent ended without answering,
+      with its exit status or signal;
+    - `host`, with `reason` `store` and the `turn`: the host could not
+      keep that turn and dropped the run (domain/host.md, 6).
 
 ### 3.11 What content looks like
 

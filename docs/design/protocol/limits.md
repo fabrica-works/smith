@@ -122,6 +122,7 @@ name `smith check` and the event stream's header print it under
 | `connection_keep` | duration, per endpoint | how long an idle connection stays open in a live service; never how the process ends, since the pool closes at the answer (skein's `llm-connection.md`, section 7) |
 | `tool_deadline` | duration | a tool call's longest deadline: the most a command's call may ask for, and the most any tool call's deadline may be, a host tool's included (domain/tools.md, section 5) |
 | `shell_timeout` | duration | a command's deadline when its call asks for none |
+| `check_timeout` | duration | the checks' deadline (domain/run.md, 8.1), cut at the run's end; a charter that allows a change keeps at least this much time in its reserve (domain/run.md, 9.1) |
 | `group_stop` | duration | each of the three steps that stop a command's group (agent.md, section 2) |
 | `close` | duration | io's close deadline (section 7) |
 | `write_deadline` | duration | the most one write of the event stream may stay in flight before its destination is given up (events.md, section 5.2) |
@@ -478,8 +479,8 @@ reserve against the budget.
   fails unsent.
 - **Tools and checks** have the domain's deadlines: a host tool's from
   the charter, at most `tool_deadline`; a command's from its call, or
-  `shell_timeout`, clamped to `tool_deadline`; the checks' from the run
-  (domain/tools.md, section 5).
+  `shell_timeout`, clamped to `tool_deadline`; the checks' is
+  `check_timeout`, cut at the run's end (domain/tools.md, section 5).
 - **The end of the process** is bounded only by io's close deadlines
   (skein's `shell.md`, section 13). After its answer the agent closes its
   components together, its LLM connections, its machine's roots and its

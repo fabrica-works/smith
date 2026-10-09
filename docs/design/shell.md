@@ -347,7 +347,7 @@ A headless run's code follows its answer (domain/run.md, section 10):
 | 3 | credentials | an account the run needs without a usable credential: not signed in, rejected, a borrowed login expired, a variable unset; also a run that failed because the provider refused its credential (a model failure of class `unauthorized`) |
 | 4 | budget | a failed answer for its budget: spend, time or turns |
 | 5 | needs input | a parked answer |
-| 130 | interrupted | a cancelled answer, after an interrupt or a termination signal |
+| 130 | interrupted | a cancelled answer, after an interrupt or a termination signal; or a run dropped before it answered, at the person's second interrupt or past the cancel's grace |
 
 The code is also `session.ended`'s `exit`.
 
@@ -366,11 +366,12 @@ the typed values:
 | 1 | policy, stale | `smith: run failed: policy: <what was refused>`; `smith: run failed: stale: <what moved>` |
 | 1 | a transcript | `smith: run failed: chat <name> cannot be resumed: <reason>` |
 | 1 | a spawned agent's failure | `smith: run failed: the agent <how it ended>: <its error output's tail>` |
+| 1 | a host failure | `smith: run failed: chat <name>: turn <n> could not be kept: <error>` |
 | 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>` |
 | 3 | credentials | ``smith: account <account> has no credential: run `smith login <account>` ``; the expiry notice of section 7; `smith: account <account>: the provider rejected its credential`; `smith: account <account>: <VARIABLE> is not set` |
 | 4 | budget | `smith: run failed: out of <spend, time or turns>: used <used> of <limit>` |
 | 5 | needs input | ``smith: needs input: answer with `smith exec --chat <name>` `` |
-| 130 | interrupted | `smith: interrupted: the run was cancelled` |
+| 130 | interrupted | `smith: interrupted: the run was cancelled`; for a dropped run, `smith: interrupted: the run was dropped before it answered` |
 
 A forced exit after an accepted answer adds a warning line before the
 last; the code stays 0.
@@ -632,6 +633,7 @@ names (section 2.3):
 | `unacknowledged` | 64 turns | provisional |
 | `compaction_threshold` | 80% of the window | decided as about 80%; the history probe |
 | `shell_timeout` | 2 minutes | provisional; the tool-output probe |
+| `check_timeout` | 5 minutes, which the default reserve's 5 minutes holds (domain/run.md, 9.1) | provisional |
 | `tool_deadline` | 20 minutes, the most a command's call may ask for | provisional; the tool-output probe |
 | `group_stop` | 1 s for each of its three steps | provisional; the process-tree probe |
 | `close` | 5 s | provisional |
