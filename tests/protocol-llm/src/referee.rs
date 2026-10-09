@@ -36,6 +36,17 @@ impl NativeRequest {
         let mut history = items.into_iter().map(|item| String::from(item.get())).collect::<Vec<_>>();
         if fields.contains_key("messages") {
             const MARKER: &str = ",\"cache_control\":{\"type\":\"ephemeral\"}";
+            let system_blocks: Vec<serde_json::Value> =
+                serde_json::from_str(system.get()).expect("Anthropic system block array");
+            let system_markers = system_blocks.iter().filter(|block| block.get("cache_control").is_some()).count();
+            assert_eq!(system_markers, usize::from(!system_blocks.is_empty()), "one marker for nonempty system text");
+            for (index, block) in system_blocks.iter().enumerate() {
+                if let Some(marker) = block.get("cache_control") {
+                    assert_eq!(index + 1, system_blocks.len(), "fixed marker is on the last system block");
+                    assert_eq!(block["type"], "text", "system marker belongs to text");
+                    assert_eq!(marker, &serde_json::json!({ "type": "ephemeral" }), "provider default cache lifetime");
+                }
+            }
             let values = history
                 .iter()
                 .map(|item| serde_json::from_str::<serde_json::Value>(item).expect("native message"))
@@ -51,6 +62,16 @@ impl NativeRequest {
                 .flat_map(|message| message["content"].as_array().expect("native content blocks"))
                 .filter(|block| block.get("cache_control").is_some())
                 .count();
+            let tool_markers = fields.get("tools").map_or(0, |tools| {
+                let tools: Vec<serde_json::Value> = serde_json::from_str(tools.get()).expect("native tools");
+                tools.iter().filter(|tool| tool.get("cache_control").is_some()).count()
+            });
+            assert!(system_markers + markers + tool_markers <= 4, "Anthropic breakpoint allowance");
+            for block in values.iter().flat_map(|message| message["content"].as_array().expect("native blocks")) {
+                if matches!(block["type"].as_str(), Some("thinking" | "redacted_thinking")) {
+                    assert!(block.get("cache_control").is_none(), "thinking never carries a marker");
+                }
+            }
             assert!(markers <= 1, "at most one moving Anthropic tail marker");
             for (message, item) in history.iter_mut().enumerate() {
                 let fields: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =

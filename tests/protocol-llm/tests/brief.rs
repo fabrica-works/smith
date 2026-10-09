@@ -536,6 +536,95 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
     }
 }
 
+#[test]
+fn anthropic_breakpoints_account_for_thinking_and_a_full_tool_batch() {
+    const THINKING: &[u8] =
+        br#"{"type":"thinking","thinking":"Inspect the whole batch.","signature":"fixture-signature"}"#;
+    let mut bounds = Limits {
+        client: skein_llm_world::limits(),
+        tool_bytes: 32768,
+        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        stated: adapter::stated(),
+    };
+    bounds.client.http.request = 16384;
+    bounds.client.dialect.request_bytes = 16384;
+    bounds.client.dialect.document_bytes = 16384;
+    let mut settings = Settings {
+        job: Job::Waiting,
+        waiting: Duration::from_secs(1),
+        network: Span::millis(1, 1),
+        ..Settings::calm(1104)
+    };
+    settings.limits.session.completion_bytes =
+        adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
+            .expect("actual full-batch receiving reservation");
+    settings.limits.session.completion_blocks = bounds.client.dialect.parts;
+    let batch = usize::try_from(bounds.client.dialect.parts).expect("bounded fixture parts");
+    let read = || call(b"read", br#"{"path":"data.txt"}"#);
+    let scripts = Box::new([Script {
+        cue: b"@brief-native".as_slice().into(),
+        turns: Box::new([
+            calls(vec![Line::Opaque { bytes: THINKING.into() }, read()], 2),
+            calls((0..batch).map(|_| read()).collect(), 3),
+            calls(vec![Line::Text { text: FIRST.into() }, call(b"wait", b"{}")], 5),
+        ]),
+    }]);
+    let (disk, mounted) = workspace();
+    let roots = mounted.directories.iter().map(|directory| directory.root).collect::<Vec<_>>();
+    let mut world = World::with_workspace_wire_charter(
+        settings,
+        None,
+        Some(mounted),
+        disk,
+        (wire::configurations().into_iter().nth(1).expect("Anthropic fixture"), bounds),
+        scripts,
+        charter(&settings, NATIVE_INSTRUCTIONS),
+    );
+    world.run(100_000);
+    let mut history = vec![message(Role::User, vec![text(BEGIN)])];
+    let mut prefixes = vec![history.clone()];
+    let read_call = |number: usize| Part::ToolCall {
+        id: format!("call_{number:016x}").into_bytes().into(),
+        name: b"read".as_slice().into(),
+        arguments: br#"{"path":"data.txt"}"#.as_slice().into(),
+    };
+    let read_result = |number: usize| Part::ToolOutput {
+        id: format!("call_{number:016x}").into_bytes().into(),
+        output: b"1: old\n(1 of 1 lines; skipped 0)".as_slice().into(),
+        is_error: false,
+    };
+    history.extend([
+        message(Role::Assistant, vec![Part::Opaque { bytes: THINKING.into() }, read_call(1)]),
+        message(Role::User, vec![read_result(1)]),
+    ]);
+    prefixes.push(history.clone());
+    history.extend([
+        message(Role::Assistant, (2..batch + 2).map(read_call).collect()),
+        message(Role::User, (2..batch + 2).map(read_result).collect()),
+    ]);
+    prefixes.push(history);
+    native_accounting(
+        &world,
+        &expected_main("@brief-native PARENT-INSTRUCTIONS: native first activation.\n\n"),
+        &prefixes,
+        &[2, 3, 5],
+        0,
+        true,
+        None,
+    );
+    let turns = world.turns();
+    let largest = turns
+        .iter()
+        .map(|turn| turn.messages.iter().map(|message| message.content.len()).sum::<usize>())
+        .max()
+        .expect("three captured tool turns");
+    assert_eq!(largest, batch * 2, "full call batch followed by every concrete result");
+    assert_eq!(batch, 16, "this fixture's declared receiving block bound");
+    assert!(turns.iter().skip(1).all(|turn| turn.usage.cache_read_tokens.unwrap_or(0) > 0));
+    assert!(turns.iter().all(|turn| turn.usage.cache_write_tokens.unwrap_or(0) > 0));
+    native_settled(&world, &settings, &roots);
+}
+
 fn native_settled(world: &World, settings: &Settings, roots: &[Token]) {
     assert_eq!(world.waiting().len(), 1);
     assert_eq!(world.waiting()[0].1, None);
