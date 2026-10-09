@@ -115,8 +115,11 @@ What comes with the charter:
   entrance refuses them with it.
 - **The run's identity:** opaque and of the fixed size the vocabulary
   seals (protocol/limits.md, section 2.4), the same for every
-  activation and resume of the run, which its host keeps with the run. A
-  start without one gets one the run draws from its seeded randomness as
+  activation and resume of the run, which its host keeps with the run.
+  A start without one takes the identity its transcript records (the key
+  of main's affinity), so a minted identity is also the run's for its
+  whole life. Only a start with neither, a run's first activation without
+  a host identity, gets one the run draws from its seeded randomness as
   it admits the start. Every conversation of the run carries it, with an
   ordinal of its own (main's is zero), as its affinity (session.md,
   section 2), so a provider can route the run's requests to where their
@@ -869,10 +872,13 @@ timings, budgets and shares within its own (`docs/design/testing.md`).
 - **A forced acceptance, marked:** whether the answer says that an
   accepted result came in the wind-down, so a host can tell a finished
   task from one the budget cut short.
-- **A minted identity across resumes:** a resumed main keeps its
-  transcript's affinity, but a run whose host gives no identity draws a
-  new one in each activation for its sub-agents; whether the run takes
-  the transcript's instead.
+- **Threads across activations:** a sub-agent's thread is its ordinal
+  in its activation, so a later activation's children reuse earlier
+  threads under the run's one key. Affinity is a routing hint, so a
+  reused thread can cost a cache miss, never correctness. Whether
+  ordinals should continue across activations, which would need the
+  count kept with the transcript, waits on a capture showing a provider
+  keeps state per thread.
 - **A child's context:** whether a sub-agent may open from its parent's
   transcript, bounded by its limits and counted in its share, so it
   starts warm.
