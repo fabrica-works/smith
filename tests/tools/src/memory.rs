@@ -107,7 +107,10 @@ pub fn full(limits: &Limits, byte: u8) -> Box<[u8]> {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn write(limits: &Limits, file: u64) -> Call {
-    Call::Write { path: path(limits, file), content: full(limits, b'x') }
+    Call::Write {
+        path: path(limits, file),
+        content: vec![b'x'; usize::try_from(limits.tool_payload).expect("a small piece")].into(),
+    }
 }
 
 /// An edit of a file the kit read, with snippets as long as they may be,
@@ -116,7 +119,7 @@ pub fn write(limits: &Limits, file: u64) -> Call {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn edit(limits: &Limits, file: u64) -> Call {
-    let edits = (0..limits.file_bytes)
+    let edits = (0..limits.tool_payload)
         .map(|_| smith_domain_tools::Replacement {
             old: b"x".as_slice().into(),
             new: b"y".as_slice().into(),

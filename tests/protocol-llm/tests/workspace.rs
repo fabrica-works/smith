@@ -543,7 +543,8 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         let caps = &mut settings.limits.session.tools;
         caps.path_bytes = 37;
         caps.read_bytes = 73;
-        caps.file_bytes = 257;
+        caps.file_bytes = 513;
+        caps.tool_payload = 257;
         caps.list_entries = 11;
         caps.search_hits = 13;
         caps.search_bytes = 127;
@@ -591,6 +592,10 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
             assert_eq!(schema.matches("\"description\"").count(), parameters);
             assert!(contains(schema.as_bytes(), detail));
             assert!(!contains(&tool.description, b"runs alone"));
+        }
+        for name in [b"read".as_slice(), b"write", b"edit"] {
+            let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("whole-file declaration");
+            assert!(contains(&tool.description, b"Whole-file limit 513 bytes"));
         }
         let list = offered.iter().find(|tool| tool.name.as_ref() == b"list").expect("native list declaration");
         assert!(contains(&list.description, b"11 entries"));
