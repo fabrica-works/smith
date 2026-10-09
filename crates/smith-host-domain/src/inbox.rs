@@ -86,6 +86,11 @@ impl Inbox {
         self.names.is_empty()
     }
 
+    /// The last message ended by an accepted read fence.
+    pub(crate) const fn read(&self) -> Option<Token> {
+        self.read
+    }
+
     /// Admit by the run's rendered size, name and count arithmetic.
     pub fn admit(&mut self, name: Token, label: &[u8], text: &[u8], bound: u64) -> Result<(), MessageRefusal> {
         match self.report {

@@ -176,6 +176,10 @@ fn cancel_fire_resume_terminal_and_reclaim_settle_exactly_once() {
     assert_eq!(answer.result, host::RunResult::Failed { failure: host::RunFailure::Cancelled });
     assert_eq!(
         out.pop(),
+        Some(Output::Parent(parent::Request::Unread { client: Token::new(1), names: Box::default() }))
+    );
+    assert_eq!(
+        out.pop(),
         Some(Output::Parent(parent::Request::Gone {
             client: Token::new(1),
             end: host::End::Stopped,

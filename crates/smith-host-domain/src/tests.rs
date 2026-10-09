@@ -85,6 +85,7 @@ fn a_spawn_beyond_the_slots_is_refused_as_busy_without_displacing_the_active_own
             | parent::Request::Waiting { .. }
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
+            | parent::Request::Unread { .. }
             | parent::Request::Rejected { .. }
             | parent::Request::Exhausted { .. }
             | parent::Request::Told { .. }
@@ -130,6 +131,7 @@ fn a_spawn_beyond_the_slots_is_refused_as_busy_without_displacing_the_active_own
             | parent::Request::Waiting { .. }
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
+            | parent::Request::Unread { .. }
             | parent::Request::Rejected { .. }
             | parent::Request::Exhausted { .. }
             | parent::Request::Told { .. }
@@ -184,6 +186,7 @@ fn host_mount_metadata_admission_agrees_with_optional_workspace_and_git_kind() {
             | parent::Request::Waiting { .. }
             | parent::Request::Long { .. }
             | parent::Request::LongDone { .. }
+            | parent::Request::Unread { .. }
             | parent::Request::Rejected { .. }
             | parent::Request::Exhausted { .. }
             | parent::Request::Told { .. }
@@ -242,6 +245,7 @@ fn host_mount_metadata_admission_agrees_with_optional_workspace_and_git_kind() {
                 | parent::Request::Waiting { .. }
                 | parent::Request::Long { .. }
                 | parent::Request::LongDone { .. }
+                | parent::Request::Unread { .. }
                 | parent::Request::Rejected { .. }
                 | parent::Request::Exhausted { .. }
                 | parent::Request::Told { .. }

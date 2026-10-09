@@ -136,6 +136,7 @@ impl Measured {
                     | parent::Request::Waiting { .. }
                     | parent::Request::Long { .. }
                     | parent::Request::LongDone { .. }
+                    | parent::Request::Unread { .. }
                     | parent::Request::Rejected { .. }
                     | parent::Request::Exhausted { .. }
                     | parent::Request::Told { .. }

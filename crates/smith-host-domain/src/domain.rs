@@ -511,15 +511,9 @@ fn valid_start(start: &Start, limits: &Limits) -> Option<Invalid> {
         return Some(Invalid::Messages);
     }
     for (at, message) in start.messages.iter().enumerate() {
-        let length = match message.label.len().checked_add(2) {
-            Some(bytes) => match bytes.checked_add(message.text.len()) {
-                Some(bytes) => bytes,
-                None => return Some(Invalid::Messages),
-            },
-            None => return Some(Invalid::Messages),
-        };
-        if u64::try_from(length).expect("owned lengths fit") > limits.message_bytes {
-            return Some(Invalid::Messages);
+        match smith_domain::run::rendered_bytes(&message.label, &message.text) {
+            Some(bytes) if bytes <= limits.message_bytes => {}
+            Some(_) | None => return Some(Invalid::Messages),
         }
         for earlier in start.messages.get(..at).expect("enumerated prefix") {
             if earlier.name == message.name {
@@ -1080,7 +1074,7 @@ fn valid_answer(agent: &Agent, answer: &crate::Answer, limits: &Limits) -> bool 
             }
         }
     }
-    if !known_read(agent, answer.read) || answer.turns != agent.number || !valid_spend(agent, answer.spent) {
+    if answer.read != agent.unread.read() || answer.turns != agent.number || !valid_spend(agent, answer.spent) {
         return false;
     }
     match &answer.result {

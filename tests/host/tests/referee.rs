@@ -85,3 +85,49 @@ fn the_common_parent_referee_rejects_a_gone_with_an_actual_machine_right() {
         false,
     );
 }
+
+#[test]
+#[should_panic(expected = "one unread report")]
+fn the_common_parent_referee_rejects_a_duplicate_empty_unread_report() {
+    let mut seen = Seen::default();
+    for _ in 0..2 {
+        seen.observe_parent(parent::Request::Unread { client: Token::new(1), names: Box::default() }, true, true);
+    }
+}
+
+#[test]
+#[should_panic(expected = "unread names every remaining accepted message in order")]
+fn the_common_parent_referee_rejects_a_report_that_loses_a_queued_name() {
+    let mut seen = Seen::default();
+    seen.messages.push(Token::new(2));
+    seen.observe_parent(parent::Request::Unread { client: Token::new(1), names: Box::default() }, true, true);
+}
+
+#[test]
+#[should_panic(expected = "one actual message terminal")]
+fn the_common_parent_referee_rejects_refusal_after_reporting_the_same_name() {
+    let mut seen = Seen::default();
+    seen.messages.push(Token::new(2));
+    seen.observe_parent(
+        parent::Request::Unread { client: Token::new(1), names: Box::from([Token::new(2)]) },
+        true,
+        true,
+    );
+    seen.observe_parent(
+        parent::Request::MessageRefused {
+            client: Token::new(1),
+            name: Token::new(2),
+            reason: host::MessageRefusal::Ending,
+        },
+        true,
+        true,
+    );
+}
+
+#[test]
+#[should_panic(expected = "a covering fence follows actual message issuance")]
+fn the_common_parent_referee_rejects_a_fence_covering_an_unissued_name() {
+    let mut seen = Seen::default();
+    seen.messages.push(Token::new(2));
+    seen.observe_parent(parent::Request::Waiting { client: Token::new(1), read: Some(Token::new(2)) }, true, true);
+}
