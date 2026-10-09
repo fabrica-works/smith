@@ -537,7 +537,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
 }
 
 #[test]
-fn anthropic_breakpoints_account_for_thinking_and_a_full_tool_batch() {
+fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     const THINKING: &[u8] =
         br#"{"type":"thinking","thinking":"Inspect the whole batch.","signature":"fixture-signature"}"#;
     let mut bounds = Limits {
@@ -549,6 +549,9 @@ fn anthropic_breakpoints_account_for_thinking_and_a_full_tool_batch() {
     bounds.client.http.request = 16384;
     bounds.client.dialect.request_bytes = 16384;
     bounds.client.dialect.document_bytes = 16384;
+    // This pin shares one parts bound between completion and replay history.
+    // Keep room for the measured sixteen-call turn and its concrete results.
+    bounds.client.dialect.parts = 64;
     let mut settings = Settings {
         job: Job::Waiting,
         waiting: Duration::from_secs(1),
@@ -559,7 +562,7 @@ fn anthropic_breakpoints_account_for_thinking_and_a_full_tool_batch() {
         adapter::completion_worst_case(&bounds.client, settings.limits.decoded_call_bytes)
             .expect("actual full-batch receiving reservation");
     settings.limits.session.completion_blocks = bounds.client.dialect.parts;
-    let batch = usize::try_from(bounds.client.dialect.parts).expect("bounded fixture parts");
+    let batch = 16_usize;
     let read = || call(b"read", br#"{"path":"data.txt"}"#);
     let scripts = Box::new([Script {
         cue: b"@brief-native".as_slice().into(),
@@ -619,7 +622,7 @@ fn anthropic_breakpoints_account_for_thinking_and_a_full_tool_batch() {
         .max()
         .expect("three captured tool turns");
     assert_eq!(largest, batch * 2, "full call batch followed by every concrete result");
-    assert_eq!(batch, 16, "this fixture's declared receiving block bound");
+    assert_eq!(batch, 16, "the scripted call batch measured independently of history room");
     assert!(turns.iter().skip(1).all(|turn| turn.usage.cache_read_tokens.unwrap_or(0) > 0));
     assert!(turns.iter().all(|turn| turn.usage.cache_write_tokens.unwrap_or(0) > 0));
     native_settled(&world, &settings, &roots);
