@@ -268,7 +268,7 @@ fn component_limits(
             endpoints: ENDPOINTS,
             connections: profile.declared.conversations,
             calls: profile.declared.conversations,
-            per_endpoint: 2,
+            per_endpoint: profile.declared.conversations,
             idle_keep: profile.policy.connection_keep,
             io,
             tls: tls_limits(),

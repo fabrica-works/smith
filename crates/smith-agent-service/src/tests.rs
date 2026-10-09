@@ -151,3 +151,17 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         Some(crate::profile::ProfileError::Receiving)
     );
 }
+
+#[test]
+fn every_declared_conversation_can_use_the_same_endpoint() {
+    for conversations in [1, 2, 3, 5, 8] {
+        let mut profile = crate::profile::standard();
+        profile.declared.memory = Some(u64::MAX);
+        profile.declared.conversations = conversations;
+        let configuration = crate::profile::Configuration { environment_bytes: 0, endpoints: Box::new([]) };
+        let limits = crate::profile::derive(&profile, &configuration).expect("declared conversations derive");
+        assert_eq!(limits.llm.connection.calls, conversations);
+        assert_eq!(limits.llm.connection.connections, conversations);
+        assert_eq!(limits.llm.connection.per_endpoint, conversations);
+    }
+}

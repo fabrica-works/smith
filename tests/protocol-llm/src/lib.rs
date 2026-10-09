@@ -26,6 +26,9 @@
 
 pub mod adapter;
 
+/// Actual Smith component peer for shared-pool and model-progress stories.
+pub mod pool_peer;
+
 mod fixture;
 
 pub mod host_referee;
