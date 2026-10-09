@@ -36,6 +36,7 @@ struct Fixture {
     text_replay: Option<&'static [u8]>,
     seal: &'static [u8],
     cache_write: bool,
+    reasoning: Option<u64>,
 }
 
 fn fixtures() -> [Fixture; 2] {
@@ -47,6 +48,7 @@ fn fixtures() -> [Fixture; 2] {
             text_replay: Some(TEXT_REPLAY),
             seal: b"encrypted-root",
             cache_write: true,
+            reasoning: Some(0),
         },
         Fixture {
             opaque: ANTHROPIC_OPAQUE,
@@ -55,6 +57,7 @@ fn fixtures() -> [Fixture; 2] {
             text_replay: None,
             seal: b"signed-root",
             cache_write: true,
+            reasoning: None,
         },
     ]
 }
@@ -401,6 +404,8 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
             changed[field] += 1;
             assert_ne!(changed, wanted, "usage field {field} participates in the oracle");
         }
+        assert_eq!(turn.usage.reasoning_tokens, fixture.reasoning, "literal peer reasoning reporting");
+        total.reasoning = fixture.reasoning;
         total.turns += 1;
         total.units += 1;
         total.input = Some(total.input.unwrap_or(0) + wanted[0]);

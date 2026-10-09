@@ -380,6 +380,7 @@ fn native_accounting(
     outputs: &[u64],
     prior: u32,
     cache_write: bool,
+    reasoning: Option<u64>,
 ) {
     assert_eq!(world.prompts().len(), prefixes.len());
     assert_eq!(world.turns().len(), prefixes.len());
@@ -430,6 +431,8 @@ fn native_accounting(
             [Some(input), Some(outputs[index]), Some(read), write],
             "all four usage fields independently priced from literal system and native query"
         );
+        assert_eq!(turn.usage.reasoning_tokens, reasoning, "literal peer reasoning reporting");
+        spent.reasoning = reasoning;
         spent.turns += 1;
         spent.units += 1;
         spent.input = Some(spent.input.unwrap_or(0) + input);
@@ -523,6 +526,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
             &[2, 3, 5, 7, 11],
             0,
             true,
+            if index == 0 { Some(0) } else { None },
         );
         assert_eq!(world.wire_bindings().len(), 5, "five actual native Client requests");
     }
@@ -639,7 +643,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             message(Role::Assistant, vec![text(FIRST), wait_call()]),
             message(Role::User, vec![wait_result()]),
         ]);
-        native_accounting(&first, &first_system, &[opening], &[17], 0, true);
+        native_accounting(&first, &first_system, &[opening], &[17], 0, true, if index == 0 { Some(0) } else { None });
         native_settled(&first, &settings, &roots);
         recorded_wait(&first.turns()[0], false);
         let actual = &first.turns()[0];
@@ -664,7 +668,15 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         );
         restored.run(100_000);
         let restored_system = expected_main("@brief-native RESUME-INSTRUCTIONS: use the saved history.\n\n");
-        native_accounting(&restored, &restored_system, &[waited], &[11], 1, true);
+        native_accounting(
+            &restored,
+            &restored_system,
+            &[waited],
+            &[11],
+            1,
+            true,
+            if index == 0 { Some(0) } else { None },
+        );
         native_settled(&restored, &settings, &roots);
         recorded_wait(&restored.turns()[0], true);
         assert_eq!(first.turn_metadata()[0].2.output, Some(17));

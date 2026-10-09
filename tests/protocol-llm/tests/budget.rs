@@ -490,6 +490,45 @@ fn both_native_forms_account_parallel_children_under_one_budget() {
     }
 }
 
+#[test]
+fn both_native_forms_conserve_charges_without_inventing_unreported_counts() {
+    use skein_fake_llm_protocol::documents::{UsageField, UsageFields};
+
+    for index in 0..2 {
+        let mut settings = settings(712, true, false);
+        let bounds = bounds(&mut settings);
+        let (disk, workspace) = workspace(true);
+        let mut configuration = configuration(index);
+        configuration.usage_fields = UsageFields::NONE.with(UsageField::Input).with(UsageField::Output);
+        let scripts = Box::new([script(
+            b"@budget-optional",
+            vec![calls(vec![call(b"read", READ)], 3), calls(vec![call(b"finish", REPORT)], 7)],
+        )]);
+        let mut world = World::with_workspace_wire_charter(
+            settings,
+            None,
+            Some(workspace),
+            disk,
+            (configuration, bounds),
+            scripts,
+            charter(&settings, b"@budget-optional", &CROSSING_RATES),
+        );
+        world.run(100_000);
+        native_settled(&world);
+        let expected = conservation(&world, &CROSSING_RATES);
+        assert_eq!((expected.turns, expected.units, expected.input, expected.output), (2, 10, Some(0), Some(10)));
+        assert_eq!([expected.cache_read, expected.cache_write, expected.reasoning], [None; 3]);
+        assert!(world.turns().iter().all(|turn| {
+            turn.usage.input_tokens == Some(0)
+                && turn.usage.cache_read_tokens.is_none()
+                && turn.usage.cache_write_tokens.is_none()
+                && turn.usage.reasoning_tokens.is_none()
+        }));
+        assert_ne!(run::Spend { cache_write: Some(0), ..expected }, expected, "absent differs from reported zero");
+        assert!(matches!(world.answer(), run::Answer::Accepted { turns: 2, .. }));
+    }
+}
+
 fn parking_scripts() -> Box<[Script]> {
     Box::new([
         script(

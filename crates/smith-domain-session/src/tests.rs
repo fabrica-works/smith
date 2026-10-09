@@ -547,7 +547,7 @@ fn ended(end: End, turns: u32) -> Request {
     for _ in 0..turns {
         usage = usage_sum(usage, USAGE).expect("bounded fixture usage");
     }
-    Request::Ended { opener: Token::new(1), end, turns, usage, reported: usage }
+    Request::Ended { opener: Token::new(1), end, turns, usage, reported: if turns == 0 { Usage::NONE } else { usage } }
 }
 
 #[test]

@@ -33,7 +33,7 @@ fn every_session_yield_and_usage_counter_maps_to_the_run() {
             cache_read: Some(5),
             cache_write: Some(7),
             units: 0,
-            reasoning: None
+            reasoning: Some(2)
         }
     );
 }

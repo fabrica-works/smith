@@ -1980,13 +1980,10 @@ fn observed_price(prices: run::Prices, usage: llm::Usage) -> Option<u64> {
     let numerator = fresh
         .checked_mul(u128::from(prices.input))?
         .checked_add(
-            u128::from(usage.cache_write_tokens.expect("scripted peer supplies count"))
+            u128::from(usage.cache_write_tokens.unwrap_or(0))
                 .checked_mul(u128::from(prices.cache_write.unwrap_or(prices.input)))?,
         )?
-        .checked_add(
-            u128::from(usage.cache_read_tokens.expect("scripted peer supplies count"))
-                .checked_mul(u128::from(prices.cached))?,
-        )?
+        .checked_add(u128::from(usage.cache_read_tokens.unwrap_or(0)).checked_mul(u128::from(prices.cached))?)?
         .checked_add(
             u128::from(usage.output_tokens.expect("scripted peer supplies count"))
                 .checked_mul(u128::from(prices.output))?,

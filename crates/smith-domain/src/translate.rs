@@ -166,8 +166,8 @@ pub(crate) const fn stop(stop: Yield) -> run::Stop {
     }
 }
 
-/// Numeric run-budget bookkeeping counts reported tokens only; raw facts keep
-/// absence unchanged, and reasoning is already included in output.
+/// Run accounting retains supplied counts and absence unchanged; reasoning
+/// is already included in output and contributes no separate charge.
 pub(crate) fn spend(turns: u32, usage: llm::Usage) -> Spend {
     let llm::Usage { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens } = usage;
     Spend {

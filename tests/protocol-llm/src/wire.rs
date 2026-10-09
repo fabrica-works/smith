@@ -27,6 +27,8 @@ pub struct Configuration {
     /// Whole shared endpoint configuration, supplied as neutral caller data.
     /// Contract: scratch/client.md, section 1.
     pub endpoint: shared::Endpoint,
+    /// Fields emitted by the shared peer, preserving absent native counts.
+    pub usage_fields: skein_fake_llm_protocol::documents::UsageFields,
     /// Actual grant supplied to one Client and separately to its independent peer.
     /// Contract: scratch/client.md, sections 1 and 6.
     pub credential: shared::Credential,
@@ -51,6 +53,7 @@ pub fn configurations() -> Box<[Configuration]> {
     Box::new([
         Configuration {
             endpoint: shared::Endpoint::codex(),
+            usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
             credential: shared::Credential {
                 access_token: b"fixture-token".as_slice().into(),
                 account_id: b"fixture-account".as_slice().into(),
@@ -62,6 +65,7 @@ pub fn configurations() -> Box<[Configuration]> {
         },
         Configuration {
             endpoint: shared::Endpoint::anthropic(),
+            usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
             credential: shared::Credential::anthropic(b"fixture-token".as_slice().into()),
             error_prefix: Box::new([]),
             error_flag: true,
@@ -403,7 +407,17 @@ impl Wire {
             adapter::Input { owner, prompt, endpoint_name, endpoint, credential, application, receiving },
             limits,
         )?;
-        let peer = Exchange::prepared(client, peer_endpoint, peer_credential, limits.client, scripts);
+        let peer = Exchange::prepared_with_options(
+            client,
+            peer_endpoint,
+            peer_credential,
+            limits.client,
+            scripts,
+            skein_fake_llm_protocol::documents::Options {
+                usage_fields: configuration.usage_fields,
+                ..skein_fake_llm_protocol::documents::Options::DEFAULT
+            },
+        );
         Ok(Self { peer, context: Some(context), observed: Vec::new(), accepted_usage: None })
     }
 

@@ -3398,17 +3398,24 @@ fn run_wide_overflow_preflight_preserves_charged_prefix() {
 
 #[test]
 fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
-    let mut harness = Harness::new(LIMITS);
-    let (_, main) = harness.running(1, 100);
-    let full = Spend { output: Some(u64::MAX), ..Spend::ZERO };
-    assert!(harness.step(Event::Used { conversation: main, spend: full }).is_empty());
-    let overflow = Spend { output: Some(1), ..Spend::ZERO };
-    assert_eq!(
-        harness.step(Event::Used { conversation: main, spend: overflow }).as_ref(),
-        &[Request::Close { peer: Token::new(100) }]
-    );
-    let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: full })).1;
-    assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), full));
+    for (full, overflow) in [
+        (Spend { output: Some(u64::MAX), ..Spend::ZERO }, Spend { output: Some(1), ..Spend::ZERO }),
+        (Spend { reasoning: Some(u64::MAX), ..Spend::ZERO }, Spend { reasoning: Some(1), ..Spend::ZERO }),
+    ] {
+        let mut harness = Harness::new(LIMITS);
+        let (_, main) = harness.running(1, 100);
+        assert!(harness.step(Event::Used { conversation: main, spend: full }).is_empty());
+        assert_eq!(
+            crate::completion_overflow(&harness.domain, main, 0, overflow),
+            Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)))
+        );
+        assert_eq!(
+            harness.step(Event::Used { conversation: main, spend: overflow }).as_ref(),
+            &[Request::Close { peer: Token::new(100) }]
+        );
+        let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: full })).1;
+        assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), full));
+    }
 }
 
 #[test]

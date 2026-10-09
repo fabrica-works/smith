@@ -184,8 +184,8 @@ pub enum Request {
         turns: u32,
         /// Exact cumulative raw usage of charged completions.
         usage: Usage,
-        /// Numeric sums of supplied counts for the parent's budget bookkeeping;
-        /// every field is present. This is never a raw provider observation.
+        /// Sums of supplied counts for the parent's bookkeeping, absent until
+        /// reported at least once. This is never a raw provider observation.
         reported: Usage,
     },
     /// Ask an LLM for its next message, ended by one completion or call terminal.

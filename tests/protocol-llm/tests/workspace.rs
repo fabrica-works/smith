@@ -69,7 +69,14 @@ fn part_bytes(part: &Part) -> usize {
     }
 }
 
-fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: u32, cache_write: bool) {
+fn accounting(
+    world: &World,
+    prefixes: &[Vec<Message>],
+    outputs: &[u64],
+    prior: u32,
+    cache_write: bool,
+    reasoning: Option<u64>,
+) {
     assert_eq!(world.prompts().len(), prefixes.len());
     assert_eq!(world.turns().len(), prefixes.len());
     let mut spent = run::Spend::ZERO;
@@ -105,6 +112,8 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
             [Some(input), Some(outputs[index]), Some(read), write],
             "all four independently calculated SDK usage fields"
         );
+        assert_eq!(turn.usage.reasoning_tokens, reasoning, "literal peer reasoning reporting");
+        spent.reasoning = reasoning;
         spent.turns += 1;
         spent.units += 1;
         spent.input = Some(spent.input.unwrap_or(0) + input);
@@ -190,7 +199,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             message(Role::Assistant, vec![text(FIRST), tool(b"call_0000000000000002", b"wait", b"{}")]),
             message(Role::User, vec![result(b"call_0000000000000002", BEGIN)]),
         ]);
-        accounting(&first, &[first_prefix, second_prefix], &[17, 11], 0, true);
+        accounting(&first, &[first_prefix, second_prefix], &[17, 11], 0, true, if index == 0 { Some(0) } else { None });
         no_workspace(&first, &settings);
         assert_eq!(first.host_submissions().len(), 1);
         assert_eq!(first.host_submissions()[0].name, run::CallName { activation: 1, completion: 1, position: 0 });
@@ -219,7 +228,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             native_script(),
         );
         resumed.run(100_000);
-        accounting(&resumed, &[third_prefix], &[7], 2, true);
+        accounting(&resumed, &[third_prefix], &[7], 2, true, if index == 0 { Some(0) } else { None });
         no_workspace(&resumed, &settings);
         assert!(resumed.host_submissions().is_empty() && resumed.host_terminals().is_empty());
         assert_eq!(resumed.host_decisions(), 0, "restored history performs no second host effect");
