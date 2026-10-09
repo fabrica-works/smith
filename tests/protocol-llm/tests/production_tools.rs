@@ -184,10 +184,11 @@ fn optional_child_turns_and_seconds_decode_without_a_schema_maximum() {
     let schemas = adapter::schemas(&prompt(), &limits.stated);
     let schema = schemas.iter().find(|schema| schema.kind == ToolKind::SubAgent).expect("main tool");
     let document = skein_llm::Json::from_bytes(&schema.schema, &limits.client.dialect).expect("bounded schema");
-    let keys: Vec<_> = document
-        .as_tokens()
-        .iter()
-        .filter_map(|token| if let skein_json::Token::Key(key) = token { Some(key.as_ref()) } else { None })
+    let compact = document.document();
+    let keys: Vec<_> = (0..compact.len())
+        .filter_map(|index| compact.token(index))
+        .filter(|record| record.kind == skein_json::Kind::Key)
+        .filter_map(|record| compact.text(record))
         .collect();
     assert!(keys.contains(&b"max_turns".as_slice()) && keys.contains(&b"max_seconds".as_slice()));
     assert!(!keys.contains(&b"maximum".as_slice()));
