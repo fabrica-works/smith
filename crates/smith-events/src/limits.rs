@@ -1,7 +1,7 @@
 //! Record-size bounds derived from content lengths and list cardinalities.
 //! Contract: protocol/limits.md, section 3.7; protocol/events.md, section 5.3.
 
-use crate::records::{Block, Capture, Count, Event, Family, Field, Form, Message};
+use crate::records::{Block, Capture, Count, EffectiveLimit, Event, Family, Field, Form, Message};
 use alloc::boxed::Box;
 use skein_lib::{List, Queue};
 
@@ -205,7 +205,9 @@ fn heap_session_started(limits: &Limits) -> Option<u64> {
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
-    length = length.checked_add(0_u64)?;
+    length = length
+        .checked_add(List::<EffectiveLimit>::worst_case(limits.items)?)?
+        .checked_add(u64::from(limits.items).checked_mul(u64::from(limits.string))?)?;
     Some(length)
 }
 
@@ -612,6 +614,9 @@ fn size_session_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(11)?.checked_add(size_capture(capture, limits)?)?;
     length = length.checked_add(12)?.checked_add(size_delivery(capture, limits)?)?;
     length = length.checked_add(12)?.checked_add(size_versions(capture, limits)?)?;
+    // One escaped key, colon, 69-byte maximal exact fraction, and separator.
+    let entry = u64::from(limits.string).checked_mul(6)?.checked_add(73)?;
+    length = length.checked_add(10)?.checked_add(2)?.checked_add(entry.checked_mul(u64::from(limits.items))?)?;
     Some(length)
 }
 

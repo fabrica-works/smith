@@ -401,6 +401,7 @@ fn value_command_exit(_name: &str, _spelling: &str) -> CommandExit {
 
 fn value_session_started(name: &str, spelling: &str) -> SessionStarted {
     SessionStarted {
+        limits: List::with_capacity(0),
         wall_ms: u64::MAX,
         agent: value_agent(name, spelling),
         mode: value_mode(name, spelling),
@@ -1501,6 +1502,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
     samples.extend(samples_13());
     samples.extend(samples_14());
     samples.extend(null_samples());
+    samples.push(("session_started_effective_limits", effective_record(), Capture::Everything));
     samples
 }
 
@@ -1525,4 +1527,22 @@ fn null_samples() -> Vec<(&'static str, Record, Capture)> {
         Record { t_ms: u64::MAX, event: Event::ResponseCompleted(response) },
         Capture::Everything,
     )]
+}
+
+/// Header with exact scoped numbers and a policy share, independent of domain types.
+pub fn effective_record() -> Record {
+    let mut started = value_session_started("", "");
+    let mut values = List::with_capacity(6);
+    for (name, value) in [
+        ("llm.request[endpoint=7]", smith_events::LimitValue::Integer(u64::MAX)),
+        ("llm.request[endpoint=8]", smith_events::LimitValue::Integer(9_007_199_254_740_993)),
+        ("declared.window[endpoint=7,model=0]", smith_events::LimitValue::Integer(262_144)),
+        ("declared.window[endpoint=7,model=1]", smith_events::LimitValue::Integer(131_072)),
+        ("policy.compaction_threshold", smith_events::LimitValue::Fraction { numerator: 4, denominator: 5 }),
+        ("declared.memory", smith_events::LimitValue::Integer(2_147_483_648)),
+    ] {
+        values.push(smith_events::EffectiveLimit { name: name.as_bytes().into(), value }).expect("fixture count");
+    }
+    started.limits = values;
+    Record { t_ms: 0, event: Event::SessionStarted(started) }
 }

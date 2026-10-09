@@ -504,6 +504,22 @@ pub struct CommandExit {
     pub code: i64,
 }
 
+/// One effective bound sent in the startup header; the key names its layer and unit.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct EffectiveLimit {
+    pub name: Box<[u8]>,
+    pub value: LimitValue,
+}
+
+/// An exact numeric effective value, supplied by startup and retained by the reader.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum LimitValue {
+    /// An integer in the named limit's unit, sent by startup without floating conversion.
+    Integer(u64),
+    /// A policy share, sent by startup as an exact pair with a nonzero denominator.
+    Fraction { numerator: u64, denominator: u64 },
+}
+
 /// The shell startup record that opens one process stream.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct SessionStarted {
@@ -515,6 +531,8 @@ pub struct SessionStarted {
     pub capture: Capture,
     pub delivery: Delivery,
     pub versions: Versions,
+    /// Named effective values, ordered by the service; names are unique.
+    pub limits: List<EffectiveLimit>,
 }
 
 /// The shell exit and resource record that terminates one process stream.

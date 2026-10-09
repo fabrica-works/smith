@@ -114,6 +114,20 @@ fn max_command_exit(_limits: &smith_events::Limits) -> CommandExit {
 
 fn max_session_started(limits: &smith_events::Limits) -> SessionStarted {
     SessionStarted {
+        limits: {
+            let mut values = List::with_capacity(limits.items);
+            for index in 0..limits.items {
+                let mut name = payload(limits.string);
+                *name.last_mut().expect("max metadata has a name") = u8::try_from(index).expect("small fixture");
+                values
+                    .push(smith_events::EffectiveLimit {
+                        name,
+                        value: smith_events::LimitValue::Fraction { numerator: u64::MAX, denominator: u64::MAX },
+                    })
+                    .expect("configured count");
+            }
+            values
+        },
         wall_ms: u64::MAX,
         agent: max_agent(limits),
         mode: Mode::Unknown(payload(limits.string)),

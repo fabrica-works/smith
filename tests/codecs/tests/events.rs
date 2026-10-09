@@ -199,3 +199,57 @@ fn a_reasoning_drop_notice_keeps_its_size_under_every_capture() {
         Err(Error::Shape)
     );
 }
+
+#[test]
+fn startup_limits_preserve_scopes_and_exact_numbers_under_every_capture() {
+    let record = fixtures::effective_record();
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let line = write(&record, &capture, &limits()).expect("bounded header").expect("authoritative record");
+        let text = std::str::from_utf8(&line).expect("UTF8");
+        assert!(text.contains("18446744073709551615"));
+        assert!(text.contains("9007199254740993"));
+        assert!(text.contains("llm.request[endpoint=7]"));
+        assert!(text.contains("llm.request[endpoint=8]"));
+        assert!(text.contains("declared.window[endpoint=7,model=0]"));
+        assert!(text.contains("declared.window[endpoint=7,model=1]"));
+        assert_eq!(read(&line, &limits()).expect("read").expect("header"), record);
+    }
+}
+
+#[test]
+fn startup_limits_refuse_duplicate_names_invalid_values_and_exceeded_bounds() {
+    let original = fixtures::effective_record();
+    for invalid in 0..5 {
+        let mut record = original.clone();
+        let Event::SessionStarted(header) = &mut record.event else { panic!("header fixture") };
+        match invalid {
+            0 => header.limits.get_mut(1).expect("second").name = header.limits.get(0).expect("first").name.clone(),
+            1 => header.limits.get_mut(0).expect("first").name = Box::new([]),
+            2 => header.limits.get_mut(0).expect("first").name = Box::new([0xff]),
+            3 => header.limits.get_mut(0).expect("first").name = vec![b'a'; 65].into(),
+            4 => {
+                header.limits.get_mut(0).expect("first").value =
+                    smith_events::LimitValue::Fraction { numerator: u64::MAX, denominator: 0 }
+            }
+            _ => unreachable!("five controls"),
+        }
+        assert!(write(&record, &Capture::Everything, &limits()).is_err(), "control {invalid}");
+    }
+    assert_eq!(write(&original, &Capture::Everything, &Limits { items: 5, ..limits() }), Err(Error::Limits));
+}
+
+#[test]
+fn startup_limit_reader_refuses_ambiguous_names_and_inexact_numbers() {
+    let line = write(&fixtures::effective_record(), &Capture::Everything, &limits()).expect("bounded").expect("header");
+    let line = String::from_utf8(line.into_vec()).expect("UTF8");
+    for malformed in [
+        line.replace("llm.request[endpoint=8]", "llm.request[endpoint=7]"),
+        line.replace("18446744073709551615", "18446744073709551616"),
+        line.replace("18446744073709551615", "1.5"),
+        line.replace("18446744073709551615", "-1"),
+        line.replace("\"denominator\":5", "\"denominator\":0"),
+    ] {
+        assert!(read(malformed.as_bytes(), &limits()).is_err(), "{malformed}");
+    }
+    assert_eq!(read(line.as_bytes(), &Limits { items: 5, ..limits() }), Err(Error::Limits));
+}

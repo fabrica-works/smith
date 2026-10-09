@@ -4,10 +4,10 @@
 use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
     CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
+    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
+    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -849,7 +849,70 @@ fn read_session_started(tokens: &[Token], limits: &Limits) -> Result<SessionStar
         capture: read_capture(required(tokens, b"capture")?, limits)?,
         delivery: read_delivery(required(tokens, b"delivery")?, limits)?,
         versions: read_versions(required(tokens, b"versions")?, limits)?,
+        limits: read_effective_limits(required(tokens, b"limits")?, limits)?,
     })
+}
+
+fn read_effective_limits(tokens: &[Token], limits: &Limits) -> Result<List<EffectiveLimit>, Error> {
+    object(tokens)?;
+    let mut values: List<EffectiveLimit> = List::with_capacity(limits.items);
+    let mut at = 1_usize;
+    for _ in 0..tokens.len() {
+        if at >= tokens.len().saturating_sub(1) {
+            break;
+        }
+        let name = match tokens.get(at).ok_or(Error::Shape)? {
+            Token::Key(name) => {
+                if name.is_empty() {
+                    return Err(Error::Shape);
+                }
+                if name.len() > usize::try_from(limits.string).expect("u32 fits usize") {
+                    return Err(Error::Limits);
+                }
+                bytes::copy_of(name)
+            }
+            Token::ObjectStart
+            | Token::ObjectEnd
+            | Token::ArrayStart
+            | Token::ArrayEnd
+            | Token::String(_)
+            | Token::Number(_)
+            | Token::True
+            | Token::False
+            | Token::Null => {
+                return Err(Error::Shape);
+            }
+        };
+        for previous in &values {
+            if previous.name == name {
+                return Err(Error::Shape);
+            }
+        }
+        let start = at.checked_add(1).ok_or(Error::Limits)?;
+        at = value_end(tokens, start)?;
+        let value = tokens.get(start..at).ok_or(Error::Shape)?;
+        let value = match value.first().ok_or(Error::Shape)? {
+            Token::Number(_) => LimitValue::Integer(unsigned(value)?),
+            Token::ObjectStart => {
+                let numerator = unsigned(required(value, b"numerator")?)?;
+                let denominator = unsigned(required(value, b"denominator")?)?;
+                if denominator == 0 {
+                    return Err(Error::Shape);
+                }
+                LimitValue::Fraction { numerator, denominator }
+            }
+            Token::ObjectEnd
+            | Token::ArrayStart
+            | Token::ArrayEnd
+            | Token::Key(_)
+            | Token::String(_)
+            | Token::True
+            | Token::False
+            | Token::Null => return Err(Error::Shape),
+        };
+        values.push(EffectiveLimit { name, value }).or(Err(Error::Limits))?;
+    }
+    Ok(values)
 }
 
 fn read_session_ended(tokens: &[Token], limits: &Limits) -> Result<SessionEnded, Error> {

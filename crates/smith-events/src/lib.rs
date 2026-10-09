@@ -18,10 +18,10 @@ pub use read::{Line, Reader, read};
 pub use records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
     CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
+    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
+    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 pub use write::write;
 

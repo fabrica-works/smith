@@ -4,10 +4,10 @@
 use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
     CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolCompleted, ToolStarted,
-    Tools, Usage, Verdict, Versions,
+    Delivered, Delivery, Effect, EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue,
+    Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
+    TextDelta, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 use alloc::boxed::Box;
@@ -1013,6 +1013,33 @@ fn validate_session_started(value: &SessionStarted, limits: &Limits) -> Result<(
     check_text(&value.profile, limits.string)?;
     validate_capture(&value.capture, limits)?;
     validate_delivery(&value.delivery, limits)?;
+    validate_effective_limits(&value.limits, limits)?;
+    Ok(())
+}
+
+fn validate_effective_limits(values: &List<EffectiveLimit>, limits: &Limits) -> Result<(), Error> {
+    if values.len() > limits.items {
+        return Err(Error::Limits);
+    }
+    for (index, value) in values.as_slice().iter().enumerate() {
+        if value.name.is_empty() {
+            return Err(Error::Shape);
+        }
+        check_text(&value.name, limits.string)?;
+        for previous in values.as_slice().get(..index).ok_or(Error::Shape)? {
+            if previous.name == value.name {
+                return Err(Error::Shape);
+            }
+        }
+        match value.value {
+            LimitValue::Integer(_) => {}
+            LimitValue::Fraction { denominator, .. } => {
+                if denominator == 0 {
+                    return Err(Error::Shape);
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1254,6 +1281,23 @@ fn encode_session_started(json: &mut Encoder, value: &SessionStarted, capture: &
     write_delivery(json, &value.delivery, capture);
     json.key(b"versions");
     write_versions(json, &value.versions, capture);
+    json.key(b"limits");
+    json.object_start();
+    for limit in &value.limits {
+        json.key(&limit.name);
+        match limit.value {
+            LimitValue::Integer(value) => json.unsigned(value),
+            LimitValue::Fraction { numerator, denominator } => {
+                json.object_start();
+                json.key(b"numerator");
+                json.unsigned(numerator);
+                json.key(b"denominator");
+                json.unsigned(denominator);
+                json.object_end();
+            }
+        }
+    }
+    json.object_end();
 }
 
 fn encode_session_ended(json: &mut Encoder, value: &SessionEnded, capture: &Capture) {
