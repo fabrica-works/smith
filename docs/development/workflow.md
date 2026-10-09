@@ -793,3 +793,14 @@ new failed-write story starts with durable history, releases held turns
 without an ACK, settles actual lower work, exits for the failed chat turn,
 and resumes from the unchanged durable prefix. These deterministic controls
 do not supply credentialed smoke evidence. Workspace budgets are unchanged.
+
+Independent reliability inline 3.8 work was measured through the serial heavy
+queue on 2026-10-09, with `measure -j 1`: the affected inline, host, local,
+machine and event-codec packages passed 206 focused tests in 3.356 seconds,
+with no skips. Their six fuzzy stories passed in 3.001 seconds. Native
+controls cover cancellation grace, dropped-root settlement, active guide
+cleanup, first-cause retention and late scheduled inputs after Gone. Frozen
+end records retain all three capture policies. This is a partial checkpoint:
+the stream producer, actual agent exit evidence and the required two-interrupt
+process story remain pending. These deterministic controls supply no live
+smoke evidence. Workspace budgets are unchanged.

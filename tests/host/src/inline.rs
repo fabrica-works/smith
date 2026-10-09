@@ -284,7 +284,7 @@ impl World {
     pub fn run(&mut self) {
         for _ in 0..4096 {
             self.pass();
-            if self.seen.values().all(|seen| seen.gone.is_some()) && !self.seen.is_empty() {
+            if self.seen.values().all(|seen| seen.gone.is_some()) && !self.seen.is_empty() && self.schedule.is_empty() {
                 return;
             }
             let next = self

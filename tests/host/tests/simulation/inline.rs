@@ -82,6 +82,20 @@ fn a_drop_after_an_answer_releases_held_turns_without_replacing_the_answer() {
 }
 
 #[test]
+fn a_late_drop_is_ignored_after_the_ordinary_answer_and_gone() {
+    let mut world = World::new(333, inline::limits());
+    spawn(&mut world, 1, Job::HostTools);
+    let agent = world.handle(Token::new(1));
+    world
+        .schedule
+        .send(skein_lib::Time::ZERO.saturating_add(skein_lib::Duration::from_secs(10)), parent::Event::Drop { agent });
+    world.run();
+    assert!(world.seen[&Token::new(1)].answer.is_some());
+    assert!(world.seen[&Token::new(1)].fault.is_none());
+    world.settled();
+}
+
+#[test]
 fn a_drop_before_the_answer_waits_for_actual_lower_settlement() {
     let mut world = World::new(320, inline::limits());
     spawn(&mut world, 1, Job::HostTools);
