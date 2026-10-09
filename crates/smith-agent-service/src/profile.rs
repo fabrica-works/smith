@@ -113,7 +113,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     charter.item_kind_fields = policy.fields;
     charter.verdict_rule_fields = policy.fields;
     charter.change_rule_fields = policy.fields;
-    let transcript = transcript(declared.calls_per_response, domain.run.offer_messages, client.output_items)?;
+    let transcript = transcript(declared.calls_per_response, client.output_items)?;
     let queue = domain::max_out(&domain).max(256);
     let operations = io::operations(&io).ok_or(derived(Layer::Service, "routes"))?;
     let routes = operations.checked_add(64).ok_or(derived(Layer::Service, "routes"))?;
@@ -172,12 +172,8 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
 
 // One turn surrounds one completion; session::tell_turn flushes it before
 // the next provider call. A window turn instead has one opening message.
-fn transcript(calls: u32, offered: u32, completion: u32) -> Result<smith_transcript::v3::Limits, Refusal> {
-    let result_blocks = calls
-        .checked_add(offered)
-        .ok_or(derived(Layer::Transcript, "message_blocks"))?
-        .checked_add(1)
-        .ok_or(derived(Layer::Transcript, "message_blocks"))?;
+fn transcript(calls: u32, completion: u32) -> Result<smith_transcript::v3::Limits, Refusal> {
+    let result_blocks = calls.checked_add(1).ok_or(derived(Layer::Transcript, "message_blocks"))?;
     let message_blocks = completion.max(result_blocks);
     validate::calls_in_transcript(message_blocks, smith_transcript::CEILINGS.message_blocks)?;
     let mut limits = smith_transcript::CEILINGS;
