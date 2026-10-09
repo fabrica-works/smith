@@ -3,7 +3,7 @@
 
 use alloc::boxed::Box;
 
-use skein_json::Token;
+use skein_json::Kind;
 use skein_lib::{List, bytes};
 use skein_llm as shared;
 use smith_domain::{llm, run, tools};
@@ -65,7 +65,7 @@ fn translate(
     limits: &Limits,
 ) -> Result<(shared::Prompt, Box<[llm::Served]>), Error> {
     inventory(&input, application, limits)?;
-    let llm::Prompt { asker: _, endpoint: _, model, system, tools: _, namespace, served, messages, max_tokens } = input;
+    let llm::Prompt { asker: _, endpoint: _, affinity, model, system, tools: _, namespace, served, messages, max_tokens } = input;
     let mut offered = List::with_capacity(limits.client.dialect.parts);
     for descriptor in &served {
         match descriptor {
@@ -105,7 +105,7 @@ fn translate(
             choice: shared::ToolChoice::Auto,
             messages: translated.into_boxed(),
             reasoning_effort: None,
-            cache_key: None,
+            affinity: Some(shared::Affinity { key: affinity.key, thread: affinity.thread }),
             max_output_tokens: Some(max_tokens),
         },
         served,
@@ -349,8 +349,9 @@ pub(crate) fn object(data: &[u8], limits: &Limits) -> Result<shared::Json, Error
         Ok(value) => value,
         Err(error) => return Err(Error::from_shared(shared::document_error(error))),
     };
-    if value.as_tokens().first() != Some(&Token::ObjectStart) {
-        return Err(Error::Invalid);
+    match value.document().token(0) {
+        Some(record) if record.kind == Kind::ObjectStart => {}
+        Some(_) | None => return Err(Error::Invalid),
     }
     Ok(value)
 }

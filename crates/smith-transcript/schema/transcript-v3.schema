@@ -67,7 +67,11 @@ record Message { role: Role blocks: list 16 Block }
 
 # Transcript admission also checks common version, endpoint, dialect and
 # consecutive place, and its aggregate byte and message limits.
+record Affinity { key: fixed 16 thread: u32 }
+enum TurnKind { ordinary, window }
 versioned record Turn {
+    kind: TurnKind
+    affinity: option Affinity
     endpoint: text 64
     dialect: text 32
     place: u32

@@ -159,6 +159,7 @@ struct Conversation {
     /// The opener's token, echoed on every record back to it.
     opener: Token,
     endpoint: Endpoint,
+    affinity: crate::llm::Affinity,
     progress: Progress,
     model: Box<[u8]>,
     system: Box<[u8]>,
@@ -681,7 +682,7 @@ pub(crate) fn failed(
     let state = mem::replace(&mut session.state, State::Closed);
     session.state = match state {
         State::Calling { attempt } => {
-            if failure == Failure::TimedOut && env.now >= session.conversation.expires {
+            if timed_out(failure) && env.now >= session.conversation.expires {
                 finish(OUT_OF_TIME)
             } else {
                 call_failed(attempt, failure, evidence, &mut domain.rng, env)
@@ -1772,6 +1773,7 @@ fn admit(
     let conversation = Conversation {
         opener,
         endpoint: spec.endpoint,
+        affinity: spec.affinity,
         progress: spec.progress,
         model: spec.model,
         system: spec.system,
@@ -1852,6 +1854,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
     let max_tokens = u32::try_from(left).unwrap_or(u32::MAX).min(conversation.output);
     let prompt = Prompt {
         endpoint: conversation.endpoint,
+        affinity: conversation.affinity,
         model: conversation.model.clone(),
         system: conversation.system.clone(),
         tools: conversation.tools,
@@ -1936,11 +1939,27 @@ fn tally(content: &[Block]) -> (u32, u32) {
     (calls, invalid)
 }
 
+fn timed_out(failure: Failure) -> bool {
+    match failure {
+        Failure::TimedOut { .. } => true,
+        Failure::Overloaded
+        | Failure::Unavailable
+        | Failure::Unauthorized
+        | Failure::RateLimited { .. }
+        | Failure::ContextTooLong
+        | Failure::Invalid
+        | Failure::Exhausted { .. }
+        | Failure::Limit
+        | Failure::Protocol
+        | Failure::Cancelled => false,
+    }
+}
+
 /// How long to wait before retrying a call that failed with `failure` after
 /// `attempt` retries, or `None` if it is not to be retried.
 fn backoff(failure: Failure, attempt: u32, limits: &Limits, rng: &mut Rng) -> Option<Duration> {
     let floor = match failure {
-        Failure::Overloaded | Failure::Unavailable | Failure::TimedOut | Failure::Unauthorized => Duration::ZERO,
+        Failure::Overloaded | Failure::Unavailable | Failure::TimedOut { .. } | Failure::Unauthorized => Duration::ZERO,
         Failure::RateLimited { retry_after } => retry_after,
         Failure::ContextTooLong
         | Failure::Invalid
@@ -2375,6 +2394,7 @@ fn validate_transcript(
     let mut count = 1_u32;
     let mut bytes = conversation.bytes;
     let mut sequence = 0_u32;
+    let mut opening = true;
     let mut previous: Option<&Message> = None;
     let mut withheld: Option<&[u8]> = None;
     for turn in &transcript.turns {
@@ -2387,6 +2407,25 @@ fn validate_transcript(
         if turn.dialect != dialect {
             return Err(Refusal::Dialect);
         }
+        match turn.kind {
+            crate::record::Kind::First { .. } => {
+                if !opening || turn.sequence != 1 {
+                    return Err(Refusal::Malformed);
+                }
+            }
+            crate::record::Kind::Window { .. } => {
+                if !opening || turn.sequence == 0 {
+                    return Err(Refusal::Malformed);
+                }
+                sequence = turn.sequence.checked_sub(1).ok_or(Refusal::Malformed)?;
+            }
+            crate::record::Kind::Ordinary => {
+                if opening {
+                    return Err(Refusal::Malformed);
+                }
+            }
+        }
+        opening = false;
         sequence = sequence.checked_add(1).ok_or(Refusal::Malformed)?;
         if turn.sequence != sequence || turn.messages.is_empty() {
             return Err(Refusal::Malformed);
@@ -2437,8 +2476,26 @@ fn validate_transcript(
                 return Err(Refusal::TooLarge);
             }
         }
-        if assistants != 1 {
-            return Err(Refusal::Malformed);
+        match turn.kind {
+            crate::record::Kind::First { .. } | crate::record::Kind::Ordinary => {
+                if assistants != 1 {
+                    return Err(Refusal::Malformed);
+                }
+            }
+            crate::record::Kind::Window { .. } => {
+                if turn.messages.len() != 1 || assistants != 0 {
+                    return Err(Refusal::Malformed);
+                }
+                let message = turn.messages.first().expect("validated one window message");
+                for block in &message.content {
+                    match block {
+                        Block::Text { .. } => {}
+                        Block::Refusal { .. } | Block::Opaque { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } => {
+                            return Err(Refusal::Malformed);
+                        }
+                    }
+                }
+            }
         }
     }
     if sequence == 0 {
@@ -2530,6 +2587,10 @@ fn restore(
 ) -> Result<u32, crate::record::Refusal> {
     use crate::record::Refusal;
     let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
+    conversation.affinity = match transcript.turns.first().expect("validated nonempty history").kind {
+        crate::record::Kind::First { affinity } | crate::record::Kind::Window { affinity } => affinity,
+        crate::record::Kind::Ordinary => unreachable!("validated opening kind"),
+    };
     let prompt = conversation.transcript.get(0).expect("admission held the initial prompt");
     let prompt_charge = content_cost(&prompt.content).ok_or(Refusal::TooLarge)?;
     let last =
@@ -2707,6 +2768,11 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
     *told = conversation.transcript.len();
     let turn = crate::record::Turn {
         version: crate::record::VERSION,
+        kind: if next == 1 {
+            crate::record::Kind::First { affinity: conversation.affinity }
+        } else {
+            crate::record::Kind::Ordinary
+        },
         endpoint: conversation.endpoint,
         dialect,
         sequence: next,

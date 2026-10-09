@@ -31,7 +31,15 @@ pub fn failed(
         shared::Failure::Overloaded => llm::Failure::Overloaded,
         shared::Failure::RateLimited { retry_after } => llm::Failure::RateLimited { retry_after },
         shared::Failure::Unavailable => llm::Failure::Unavailable,
-        shared::Failure::TimedOut => llm::Failure::TimedOut,
+        shared::Failure::TimedOut { phase } => llm::Failure::TimedOut {
+            phase: match phase {
+                shared::Phase::Connect => llm::Phase::Connect,
+                shared::Phase::Handshake => llm::Phase::Handshake,
+                shared::Phase::Head => llm::Phase::Head,
+                shared::Phase::Idle => llm::Phase::Idle,
+                shared::Phase::Whole => llm::Phase::Whole,
+            },
+        },
         shared::Failure::ContextTooLong => llm::Failure::ContextTooLong,
         shared::Failure::Invalid => llm::Failure::Invalid,
         shared::Failure::Unauthorized => llm::Failure::Unauthorized,

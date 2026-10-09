@@ -95,7 +95,6 @@ impl Peer {
                 },
                 account: 0,
                 reasoning_effort: None,
-                cache_key: None,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
                 models: Box::new([]),
             }]),

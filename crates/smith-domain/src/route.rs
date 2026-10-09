@@ -107,7 +107,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                 crate::llm::Failure::Overloaded
                 | crate::llm::Failure::RateLimited { .. }
                 | crate::llm::Failure::Unavailable
-                | crate::llm::Failure::TimedOut
+                | crate::llm::Failure::TimedOut { .. }
                 | crate::llm::Failure::ContextTooLong
                 | crate::llm::Failure::Invalid
                 | crate::llm::Failure::Limit
@@ -284,6 +284,23 @@ fn start(
         (None, Box::default(), None)
     };
     let resumed = transcript.is_some();
+    // A resume without a host identity keeps the run tree under the recorded
+    // main key (domain/run.md, section 3.2). The run only mints when both are absent.
+    let identity = match identity {
+        Some(identity) => Some(identity),
+        None => match transcript.as_ref() {
+            Some(history) => match history.turns.first() {
+                Some(turn) => match turn.kind {
+                    session::record::Kind::First { affinity } | session::record::Kind::Window { affinity } => {
+                        Some(run::Identity::new(affinity.key))
+                    }
+                    session::record::Kind::Ordinary => None,
+                },
+                None => None,
+            },
+            None => None,
+        },
+    };
     let context = StartContext { reply_to: Some(reply_to), transcript, answered, refused };
     let id = domain.starts.insert(context).expect("reserved original parent right before work");
     run_step(

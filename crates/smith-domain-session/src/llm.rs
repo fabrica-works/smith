@@ -201,11 +201,20 @@ pub struct Message {
     pub content: Box<[Block]>,
 }
 
+/// The opener's run identity and conversation ordinal, retained across windows
+/// and resumes (domain/session.md, section 2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Affinity {
+    pub key: [u8; 16],
+    pub thread: u32,
+}
+
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Prompt {
     pub endpoint: Endpoint,
+    pub affinity: Affinity,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
@@ -319,6 +328,22 @@ pub enum Evidence {
     Response,
 }
 
+/// The protocol's elapsed call phase, carried losslessly in timeout terminals
+/// (protocol/llm.md, sections 6 and 10).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Phase {
+    /// The connection's socket admission deadline.
+    Connect,
+    /// The connection's TLS handshake deadline.
+    Handshake,
+    /// The completion's first response-byte deadline.
+    Head,
+    /// The completion's deadline between response events.
+    Idle,
+    /// The completion's absolute whole-call deadline.
+    Whole,
+}
+
 /// Why a call produced no message, as the protocol layer classifies the
 /// provider's answer, or the lack of one.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -346,7 +371,7 @@ pub enum Failure {
     /// HTTP 500). Transient.
     Unavailable,
     /// No answer within the call's deadline. Transient.
-    TimedOut,
+    TimedOut { phase: Phase },
     /// The conversation does not fit the model's context window.
     ContextTooLong,
     /// The provider rejected the call as malformed or unsupported (HTTP 400,

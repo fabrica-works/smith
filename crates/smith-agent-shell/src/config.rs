@@ -153,8 +153,6 @@ struct Endpoint {
     #[serde(default)]
     reasoning_effort: Option<String>,
     #[serde(default)]
-    cache_key: Option<String>,
-    #[serde(default)]
     identity: Option<String>,
 }
 
@@ -378,7 +376,6 @@ fn build_endpoints(endpoints: Vec<Endpoint>, limits: &llm::ComponentLimits) -> R
             connect: endpoint_duration(endpoint.connect, endpoint.number, "connect")?,
             handshake: endpoint_duration(endpoint.handshake, endpoint.number, "handshake")?,
             reasoning_effort: endpoint.reasoning_effort.map(|value| value.into_bytes().into()),
-            cache_key: endpoint.cache_key.map(|value| value.into_bytes().into()),
             identity,
             models: endpoint_models(&endpoint.models)?,
         });
@@ -801,7 +798,6 @@ mod tests {
             trust_der: Some(format!("{}/../../tests/protocol-llm/fixtures/root.der", env!("CARGO_MANIFEST_DIR"))),
             headers: vec![],
             reasoning_effort: None,
-            cache_key: None,
             identity: None,
         });
         let configuration = build(document).expect("resolved endpoint");

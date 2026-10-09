@@ -115,7 +115,7 @@ fn store_uses_no_follow_and_returns_digest() {
                 root: Token::new(10),
                 path: Box::from(&b"src/a"[..]),
                 bytes: Box::from(&b"new"[..]),
-                expected: None,
+                expected: file::Expect::Absent,
                 no_follow: true,
             },
             deadline: Time::from_nanos(u64::MAX)

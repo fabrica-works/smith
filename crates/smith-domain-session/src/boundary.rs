@@ -247,6 +247,8 @@ pub enum Request {
 #[derive(PartialEq, Eq, Debug)]
 pub struct Spec {
     pub endpoint: Endpoint,
+    /// The opener's affinity; a resumed session keeps its transcript's instead.
+    pub affinity: crate::llm::Affinity,
     pub progress: Progress,
     /// The provider's name for the model.
     pub model: Box<[u8]>,

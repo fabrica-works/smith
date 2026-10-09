@@ -300,6 +300,7 @@ impl Component {
             | io::Event::Connecting { .. }
             | io::Event::Connected { .. }
             | io::Event::Output { .. }
+            | io::Event::Usage { .. }
             | io::Event::Shutdown { .. } => unreachable!("no sockets, output grants or signal source requested"),
         };
         let process_owner = match self.routes.get(&owner) {
@@ -331,6 +332,7 @@ impl Component {
             | io::Event::Connecting { .. }
             | io::Event::Connected { .. }
             | io::Event::Output { .. }
+            | io::Event::Usage { .. }
             | io::Event::Shutdown { .. } => unreachable!("no sockets or signal source requested"),
         }
         if process.ready() {

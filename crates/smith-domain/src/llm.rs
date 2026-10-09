@@ -17,7 +17,7 @@ use alloc::boxed::Box;
 use smith_domain_run as run;
 use smith_domain_tools as tools;
 
-pub use smith_domain_session::llm::{Endpoint, Evidence, Failure, Problem, Replay, Role, Stop, Usage};
+pub use smith_domain_session::llm::{Affinity, Endpoint, Evidence, Failure, Phase, Problem, Replay, Role, Stop, Usage};
 
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.
@@ -26,6 +26,7 @@ pub struct Prompt {
     /// Whether this completion belongs to main or a child, for nesting refusals.
     pub asker: Asker,
     pub endpoint: Endpoint,
+    pub affinity: Affinity,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.

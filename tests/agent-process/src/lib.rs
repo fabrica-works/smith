@@ -163,7 +163,6 @@ pub fn configuration() -> agent::Config {
             },
             account: 0,
             reasoning_effort: None,
-            cache_key: None,
             identity: llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),

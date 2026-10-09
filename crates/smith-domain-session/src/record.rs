@@ -3,7 +3,7 @@
 
 use crate::{
     Spec,
-    llm::{Endpoint, Message, Usage},
+    llm::{Affinity, Endpoint, Message, Usage},
 };
 use alloc::boxed::Box;
 
@@ -102,12 +102,36 @@ pub struct Answered {
     pub result: crate::llm::Returned,
 }
 
+/// The session's turn kind, including the affinity of each window opener
+/// (protocol/transcript.md, sections 2 and 3).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Kind {
+    /// The conversation's first settled completion, opening its first window.
+    First { affinity: Affinity },
+    /// A settled ordinary completion after the window's opener.
+    Ordinary,
+    /// A settled compaction, opening another window with the same affinity.
+    Window { affinity: Affinity },
+}
+
+impl Kind {
+    /// Whether the host may begin a saved transcript at this turn.
+    #[must_use]
+    pub const fn opens_window(self) -> bool {
+        match self {
+            Kind::First { .. } | Kind::Window { .. } => true,
+            Kind::Ordinary => false,
+        }
+    }
+}
+
 /// A settled completion and its surrounding messages. Assistant call names,
 /// provider ids and input bytes are concrete; delegated result bytes are too.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Turn {
     /// Concrete transcript encoding version; unsupported versions are refused.
     pub version: u16,
+    pub kind: Kind,
     pub endpoint: Endpoint,
     /// Configured provider dialect identity; replay requires an exact match.
     pub dialect: u32,

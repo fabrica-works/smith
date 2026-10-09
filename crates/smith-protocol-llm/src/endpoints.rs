@@ -50,8 +50,6 @@ pub struct ConfiguredEndpoint {
     pub handshake: Duration,
     /// Dialect-supported reasoning option supplied by startup configuration.
     pub reasoning_effort: Option<Box<[u8]>>,
-    /// Dialect-supported cache affinity supplied by startup configuration.
-    pub cache_key: Option<Box<[u8]>>,
     /// Optional provider system identity selected at startup.
     pub identity: IdentityProfile,
     /// The models whose per-call reasoning policy this endpoint serves.
@@ -71,8 +69,6 @@ pub struct EndpointOptions {
     pub provider: Provider,
     /// Configured reasoning option, when supported.
     pub reasoning_effort: Option<Box<[u8]>>,
-    /// Configured cache affinity, when supported.
-    pub cache_key: Option<Box<[u8]>>,
     /// Optional provider system identity selected at startup.
     pub identity: IdentityProfile,
     /// The models whose per-call reasoning policy this endpoint serves.
@@ -149,7 +145,6 @@ impl Endpoints {
                 handshake: configured.handshake,
                 provider,
                 reasoning_effort: configured.reasoning_effort,
-                cache_key: configured.cache_key,
                 identity: configured.identity,
                 models: configured.models,
             };
@@ -169,7 +164,6 @@ impl Endpoints {
     pub fn apply(&self, name: llm::Endpoint, prompt: &mut Prompt) -> Result<u32, EndpointError> {
         let options = self.resolve(name).ok_or(EndpointError::Unknown)?;
         prompt.reasoning_effort.clone_from(&options.reasoning_effort);
-        prompt.cache_key.clone_from(&options.cache_key);
         match options.identity {
             IdentityProfile::Plain => {}
             IdentityProfile::ClaudeCode => {
@@ -196,9 +190,6 @@ impl Endpoints {
                 held = held.checked_add(u64::try_from(model.name.len()).ok()?)?;
             }
             if let Some(value) = &option.reasoning_effort {
-                held = held.checked_add(u64::try_from(value.len()).ok()?)?;
-            }
-            if let Some(value) = &option.cache_key {
                 held = held.checked_add(u64::try_from(value.len()).ok()?)?;
             }
         }

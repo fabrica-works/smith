@@ -29,12 +29,28 @@ pub fn decode_transcript(
     let mut turns = List::with_capacity(count);
     let mut first_endpoint: Option<llm::Endpoint> = None;
     let mut first_dialect: Option<u32> = None;
+    let mut previous: Option<u32> = None;
     for body in bytes {
         if body.get(..2) != Some(&[0, 3][..]) {
             return Err(record::Refusal::Version);
         }
-        let place = turns.len().checked_add(1).ok_or(record::Refusal::TooLarge)?;
-        let turn = decode_turn(body, place, limits, endpoints)?;
+        let place = match previous {
+            Some(place) => Some(place.checked_add(1).ok_or(record::Refusal::Malformed)?),
+            None => None,
+        };
+        let turn = saved_turn(body, place, limits, endpoints)?;
+        if turns.is_empty() {
+            match turn.kind {
+                record::Kind::First { .. } | record::Kind::Window { .. } => {}
+                record::Kind::Ordinary => return Err(record::Refusal::Malformed),
+            }
+        } else {
+            match turn.kind {
+                record::Kind::First { .. } | record::Kind::Window { .. } => return Err(record::Refusal::Malformed),
+                record::Kind::Ordinary => {}
+            }
+        }
+        previous = Some(turn.sequence);
         match first_endpoint {
             Some(first) if first != turn.endpoint => return Err(record::Refusal::Endpoint),
             Some(_) => {}
@@ -64,14 +80,30 @@ pub fn decode_turn(
     limits: &wire::v3::Limits,
     endpoints: &Endpoints,
 ) -> Result<record::Turn, record::Refusal> {
+    if number == 0 {
+        return Err(record::Refusal::Malformed);
+    }
+    saved_turn(bytes, Some(number), limits, endpoints)
+}
+
+fn saved_turn(
+    bytes: &[u8],
+    number: Option<u32>,
+    limits: &wire::v3::Limits,
+    endpoints: &Endpoints,
+) -> Result<record::Turn, record::Refusal> {
     if bytes.get(..2) != Some(&[0, 3][..]) {
         return Err(record::Refusal::Version);
     }
     let Ok(source) = wire::Turn::decode(limits, &mut Reader::new(bytes)) else {
         return Err(record::Refusal::Malformed);
     };
-    if number == 0 || source.place() != number {
+    if source.place() == 0 {
         return Err(record::Refusal::Malformed);
+    }
+    match number {
+        Some(number) if source.place() != number => return Err(record::Refusal::Malformed),
+        Some(_) | None => {}
     }
     let endpoint = endpoints.resolve(source.endpoint()).ok_or(record::Refusal::Endpoint)?;
     if source.dialect() != dialect_name(endpoint.dialect).as_ref() {
@@ -81,6 +113,22 @@ pub fn decode_turn(
 }
 
 fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<record::Turn, record::Refusal> {
+    let affinity = match source.affinity() {
+        Some(value) => Some(llm::Affinity { key: *value.key(), thread: value.thread() }),
+        None => None,
+    };
+    let kind = match source.kind() {
+        wire::TurnKind::Ordinary => match affinity {
+            Some(affinity) if source.place() == 1 => record::Kind::First { affinity },
+            Some(_) => return Err(record::Refusal::Malformed),
+            None if source.place() > 1 => record::Kind::Ordinary,
+            None => return Err(record::Refusal::Malformed),
+        },
+        wire::TurnKind::Window => match affinity {
+            Some(affinity) => record::Kind::Window { affinity },
+            None => return Err(record::Refusal::Malformed),
+        },
+    };
     let mut messages = List::with_capacity(source.messages().len());
     for message in source.messages() {
         let role = match message.role() {
@@ -100,6 +148,7 @@ fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<rec
     }
     Ok(record::Turn {
         version: record::VERSION,
+        kind,
         endpoint: llm::Endpoint(endpoint),
         dialect,
         sequence: source.place(),

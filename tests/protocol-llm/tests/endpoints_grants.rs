@@ -32,7 +32,6 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
         },
         account,
         reasoning_effort: Some(b"medium".as_slice().into()),
-        cache_key: Some(b"run-cache".as_slice().into()),
         identity: smith_protocol_llm::IdentityProfile::Plain,
         models: Box::new([]),
     }
@@ -58,12 +57,11 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
         choice: shared::ToolChoice::Auto,
         messages: Box::new([]),
         reasoning_effort: None,
-        cache_key: None,
         max_output_tokens: Some(32),
     };
     assert_eq!(endpoints.apply(llm::Endpoint(42), &mut prompt), Ok(0));
     assert_eq!(prompt.reasoning_effort.as_deref(), Some(b"medium".as_slice()));
-    assert_eq!(prompt.cache_key.as_deref(), Some(b"run-cache".as_slice()));
+    assert_eq!(prompt.affinity, Some(skein_llm::Affinity { key: [0; 16], thread: 0 }));
     assert_eq!(endpoints.apply(llm::Endpoint(3), &mut prompt), Err(EndpointError::Unknown));
     let (destinations, options) = endpoints.into_parts();
     assert_eq!(destinations.len(), 2);
@@ -131,7 +129,6 @@ fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() 
         choice: shared::ToolChoice::Auto,
         messages: Box::new([]),
         reasoning_effort: None,
-        cache_key: None,
         max_output_tokens: Some(32),
     };
     assert_eq!(endpoints.apply(llm::Endpoint(8), &mut prompt), Ok(0));

@@ -69,8 +69,8 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         deliver,
         families,
         wait,
-        identity: _,
-        ordinal: _,
+        identity,
+        ordinal,
         activation: _,
         transcript: _,
     } = opening;
@@ -100,6 +100,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
     let run::Budget { turns, spend: _, time } = budget;
     let spec = Spec {
         endpoint: llm::Endpoint(llm.endpoint.0),
+        affinity: llm::Affinity { key: identity.bytes(), thread: ordinal },
         progress,
         model: llm.model,
         system,
@@ -257,7 +258,7 @@ fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
         llm::Failure::Cancelled => run::CompletionFailure::Cancelled,
         llm::Failure::Overloaded => run::CompletionFailure::Overloaded,
         llm::Failure::Unavailable => run::CompletionFailure::Unavailable,
-        llm::Failure::TimedOut => run::CompletionFailure::TimedOut,
+        llm::Failure::TimedOut { .. } => run::CompletionFailure::TimedOut,
         llm::Failure::ContextTooLong => run::CompletionFailure::ContextTooLong,
         llm::Failure::Invalid => run::CompletionFailure::Invalid,
         llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,

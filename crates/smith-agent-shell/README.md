@@ -37,7 +37,7 @@ the bound remains later work. `grace_ms` is the duration of each process stop
 step. Children use Skein's plain process mechanism until contained trees are
 available. An endpoint may additionally set `authority`,
 `target`, `headers` (an array of `{ "name", "value" }`), `reasoning_effort`,
-`cache_key`, and `identity` (`plain` or `claude-code`). `trust_der` is an optional
+and `identity` (`plain` or `claude-code`). `trust_der` is an optional
 path to one DER root certificate; without it, the system trust store is loaded.
 `transport` is `"tls"` by default, requiring `server_name` and using the
 configured trust. For a server on this machine, set `"transport": "plaintext"`

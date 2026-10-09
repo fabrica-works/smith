@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 
-use skein_json::Token;
+use skein_json::{Compact, Document, Kind as JsonKind};
 use skein_lib::{Duration, List};
 use skein_llm::{DocumentError, Json};
 use smith_domain::{llm, run, tools};
@@ -47,8 +47,8 @@ pub fn decode(
             return invalid(llm::Problem::NotAnObject);
         }
     };
-    let tokens = document.as_tokens();
-    if tokens.first() != Some(&Token::ObjectStart) {
+    let tokens = document.document();
+    if match tokens.token(0) { Some(record) => record.kind != JsonKind::ObjectStart, None => true } {
         return invalid(llm::Problem::NotAnObject);
     }
     match kind {
@@ -96,7 +96,7 @@ fn offered(served: &[llm::Served], kind: Kind) -> bool {
 }
 
 #[expect(clippy::manual_map, reason = "strict step subset excludes closure arguments")]
-fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
     let result = match kind {
         Kind::Read => llm::Decoded::Owned {
             call: tools::Call::Read {
@@ -178,65 +178,60 @@ fn bad_value(name: &[u8]) -> llm::Problem {
     llm::Problem::BadValue { field: name.into() }
 }
 
-// The tokenizer validates every comma, colon, escape and nested value. Only
-// direct object members are looked up; an unknown member's subtree is ignored.
-fn field<'a>(tokens: &'a [Token], name: &[u8]) -> Option<&'a Token> {
+// Skein admits the grammar. Inspect only direct application members through
+// borrowed compact records; no token tree or string copy is reconstructed.
+fn field<'a>(document: &'a Document, name: &[u8]) -> Option<&'a Compact> {
     let mut depth = 0_u32;
-    let mut wanted = false;
-    for token in tokens {
-        match token {
-            Token::ObjectStart | Token::ArrayStart => {
-                if wanted {
-                    return Some(token);
-                }
-                depth = depth.saturating_add(1);
-            }
-            Token::ObjectEnd | Token::ArrayEnd => {
-                depth = depth.saturating_sub(1);
-            }
-            Token::Key(key) if depth == 1 => {
-                wanted = key.as_ref() == name;
-            }
-            Token::Key(_) => {}
-            Token::String(_) | Token::Number(_) | Token::True | Token::False | Token::Null => {
-                if wanted {
-                    return Some(token);
+    for index in 0..document.len() {
+        let record = document.token(index)?;
+        match record.kind {
+            JsonKind::ObjectStart | JsonKind::ArrayStart => depth = depth.checked_add(1)?,
+            JsonKind::ObjectEnd | JsonKind::ArrayEnd => depth = depth.checked_sub(1)?,
+            JsonKind::Key if depth == 1 => {
+                if document.text(record)? == name {
+                    return document.token(index.checked_add(1)?);
                 }
             }
+            JsonKind::Key | JsonKind::String | JsonKind::Number | JsonKind::True
+            | JsonKind::False | JsonKind::Null | JsonKind::Long => {}
         }
     }
     None
 }
 
-fn required_string(tokens: &[Token], name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
-    match field(tokens, name) {
-        Some(Token::String(value)) => Ok(value.clone()),
+fn required_string(document: &Document, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
+    match field(document, name) {
+        Some(record) if record.kind == JsonKind::String => {
+            Ok(document.text(record).ok_or(llm::Problem::NotAnObject)?.into())
+        }
         Some(_) => Err(wrong_type(name)),
         None => Err(missing(name)),
     }
 }
 
-fn optional_string(tokens: &[Token], name: &[u8]) -> Result<Option<Box<[u8]>>, llm::Problem> {
-    match field(tokens, name) {
-        Some(Token::String(value)) => Ok(Some(value.clone())),
+fn optional_string(document: &Document, name: &[u8]) -> Result<Option<Box<[u8]>>, llm::Problem> {
+    match field(document, name) {
+        Some(record) if record.kind == JsonKind::String => {
+            Ok(Some(document.text(record).ok_or(llm::Problem::NotAnObject)?.into()))
+        }
         Some(_) => Err(wrong_type(name)),
         None => Ok(None),
     }
 }
 
-fn optional_bool(tokens: &[Token], name: &[u8]) -> Result<Option<bool>, llm::Problem> {
-    match field(tokens, name) {
-        Some(Token::True) => Ok(Some(true)),
-        Some(Token::False) => Ok(Some(false)),
+fn optional_bool(document: &Document, name: &[u8]) -> Result<Option<bool>, llm::Problem> {
+    match field(document, name) {
+        Some(record) if record.kind == JsonKind::True => Ok(Some(true)),
+        Some(record) if record.kind == JsonKind::False => Ok(Some(false)),
         Some(_) => Err(wrong_type(name)),
         None => Ok(None),
     }
 }
 
-fn optional_u32(tokens: &[Token], name: &[u8]) -> Result<Option<u32>, llm::Problem> {
-    match field(tokens, name) {
-        Some(Token::Number(value)) => {
-            let number = decimal(value).ok_or(bad_value(name))?;
+fn optional_u32(document: &Document, name: &[u8]) -> Result<Option<u32>, llm::Problem> {
+    match field(document, name) {
+        Some(record) if record.kind == JsonKind::Number => {
+            let number = decimal(document.text(record).ok_or(llm::Problem::NotAnObject)?).ok_or(bad_value(name))?;
             if number == 0 {
                 return Err(bad_value(name));
             }
@@ -301,38 +296,42 @@ fn append_part(parts: &mut List<tools::Part>, piece: &[u8]) -> Result<(), llm::P
     parts.push(part).or(Err(llm::Problem::TooLarge))
 }
 
-fn families(tokens: &[Token]) -> Result<run::charter::Families, llm::Problem> {
+fn families(document: &Document) -> Result<run::charter::Families, llm::Problem> {
     let mut inspect = false;
     let mut modify = false;
     let mut shell = false;
-    match field(tokens, b"tools") {
-        Some(Token::ArrayStart) => {}
+    match field(document, b"tools") {
+        Some(record) if record.kind == JsonKind::ArrayStart => {}
         Some(_) => return Err(wrong_type(b"tools")),
         None => return Err(missing(b"tools")),
     }
     let mut in_tools = false;
     let mut depth = 0_u32;
-    for token in tokens {
-        match token {
-            Token::ObjectEnd => depth = depth.saturating_sub(1),
-            Token::Key(name) if depth == 1 => in_tools = name.as_ref() == b"tools",
-            Token::ObjectStart | Token::ArrayStart => depth = depth.saturating_add(1),
-            Token::ArrayEnd => {
-                depth = depth.saturating_sub(1);
+    for index in 0..document.len() {
+        let record = document.token(index).expect("index within admitted document");
+        match record.kind {
+            JsonKind::ObjectEnd => depth = depth.checked_sub(1).ok_or(llm::Problem::NotAnObject)?,
+            JsonKind::Key if depth == 1 => in_tools = document.text(record) == Some(b"tools".as_slice()),
+            JsonKind::ObjectStart | JsonKind::ArrayStart => {
+                depth = depth.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+            }
+            JsonKind::ArrayEnd => {
+                depth = depth.checked_sub(1).ok_or(llm::Problem::NotAnObject)?;
                 if depth == 1 {
                     in_tools = false;
                 }
             }
-            Token::String(value) if in_tools && depth == 2 => match value.as_ref() {
+            JsonKind::String if in_tools && depth == 2 => match document.text(record).ok_or(llm::Problem::NotAnObject)? {
                 b"inspect" => inspect = true,
                 b"modify" => modify = true,
                 b"shell" => shell = true,
                 _ => return Err(bad_value(b"tools")),
             },
-            Token::Number(_) | Token::True | Token::False | Token::Null if in_tools && depth == 2 => {
+            JsonKind::Number | JsonKind::True | JsonKind::False | JsonKind::Null if in_tools && depth == 2 => {
                 return Err(wrong_type(b"tools"));
             }
-            Token::Key(_) | Token::String(_) | Token::Number(_) | Token::True | Token::False | Token::Null => {}
+            JsonKind::Key | JsonKind::String | JsonKind::Number | JsonKind::True
+            | JsonKind::False | JsonKind::Null | JsonKind::Long => {}
         }
     }
     Ok(run::charter::Families { tools: run::charter::Tools { inspect, modify, shell }, agents: false })

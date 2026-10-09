@@ -50,8 +50,8 @@ pub(crate) fn request(
                 return Err(tools::Done::TooLarge { size: u64::try_from(content.len()).unwrap_or(u64::MAX) });
             }
             let expected = match expect {
-                tools::Expect::Absent => None,
-                tools::Expect::Is { version } => Some(digest::Digest(version.raw())),
+                tools::Expect::Absent => file::Expect::Absent,
+                tools::Expect::Is { version } => file::Expect::Digest(digest::Digest(version.raw())),
             };
             Ok((
                 Kind::Store,

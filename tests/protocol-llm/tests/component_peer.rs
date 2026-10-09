@@ -67,7 +67,7 @@ fn run(dialect: Provider, calls: bool) {
         Provider::Anthropic => {
             call.endpoint = skein_llm::Endpoint::anthropic();
             call.credential = Credential::anthropic(b"fake-token".as_slice().into());
-            call.prompt.cache_key = None;
+            call.prompt.affinity = None;
         }
     }
     call.prompt.output_ceiling(dialect, 4096).expect("provider output ceiling");
@@ -131,7 +131,6 @@ fn run(dialect: Provider, calls: bool) {
             },
             account: 0,
             reasoning_effort: None,
-            cache_key: None,
             identity: smith_protocol_llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
