@@ -111,15 +111,22 @@ pub enum Verdict {
     /// The file version changed since it was read.
     Stale,
     /// The edit snippet has no occurrence.
-    NoMatch { edit: u32 },
+    NoMatch {
+        /// First failed replacement, counting from one.
+        edit: u32,
+    },
     /// A single-occurrence edit found more than one match.
     Ambiguous {
+        /// First failed replacement, counting from one.
         edit: u32,
         /// Number of matched occurrences which made a single-occurrence edit ambiguous.
         count: u32,
     },
     /// The edit or write would change no file bytes.
-    Unchanged { edit: u32 },
+    Unchanged {
+        /// First failed replacement, counting from one.
+        edit: u32,
+    },
     /// One failed terminal with bounded diagnostics.
     Failed {
         /// Typed IO failure; this boundary carries no OS error text.

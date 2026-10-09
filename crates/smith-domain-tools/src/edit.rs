@@ -1,7 +1,7 @@
-//! Edits: a snippet of a file replaced with another. Whether the snippet is
-//! there, once or more, is policy, so it is decided here, over the file io
-//! loaded, with lib's linear byte search; the new file is spliced together at
-//! its final length.
+//! Ordered edits over current bytes loaded by io. Each replacement matches
+//! the result of its predecessors; scratch bytes never change the file. The
+//! caller stores the final result once, only over the version it loaded.
+//! This module knows no earlier reads or filesystem state.
 //!
 //! Contract: domain/tools.md, sections 3 and 4; programming-model.md, sections 4.4 and 6.3.
 
@@ -14,9 +14,8 @@ use crate::call::{Mismatch, Occurrences, Outcome, Replacement};
 use crate::limits::Limits;
 
 /// `content` with `edit` made, and how many occurrences it replaced; or the
-/// outcome that refuses it: `NoMatch`, `Ambiguous` with the lines of the
-/// first matches, or `TooLarge` if the file would outgrow what the tools
-/// store.
+/// indexed mismatch that refuses it, or `TooLarge` if its scratch result
+/// would outgrow the file bound.
 pub(crate) fn apply(
     content: &[u8],
     edit: &Replacement,

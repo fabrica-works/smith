@@ -59,3 +59,32 @@ fn failure_goldens_keep_their_tags_and_now_require_a_resolved_path_payload() {
         assert!(Outcome::decode(&CEILINGS, &mut Reader::new(&[tag])).is_err(), "bare failure lacks its path");
     }
 }
+
+#[test]
+fn indexed_edit_failure_goldens_keep_the_first_failure_and_matching_reason() {
+    use skein_lib::{List, Writer};
+    use smith_transcript::{
+        Ambiguous, AmbiguousParts, EditFailed, EditFailedParts, LineNumber, LineNumberParts, Mismatch, Outcome,
+    };
+    let mut lines = List::with_capacity(2);
+    for number in [3, 7] {
+        lines.push(LineNumber::new(&CEILINGS, LineNumberParts { number }).expect("line")).expect("room");
+    }
+    let value = Outcome::EditFailed(
+        EditFailed::new(
+            &CEILINGS,
+            EditFailedParts {
+                edit: 2,
+                why: Mismatch::Ambiguous(
+                    Ambiguous::new(&CEILINGS, AmbiguousParts { count: 5, lines }).expect("bounded reason"),
+                ),
+            },
+        )
+        .expect("indexed failure"),
+    );
+    let mut writer = Writer::new(usize::try_from(value.measure()).expect("bound"));
+    value.encode(&mut writer).expect("sized encoding");
+    let bytes = writer.finish();
+    assert_eq!(bytes.as_ref(), &[18, 0, 0, 0, 2, 1, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 7]);
+    assert_eq!(Outcome::decode(&CEILINGS, &mut Reader::new(&bytes)).expect("decode"), value);
+}

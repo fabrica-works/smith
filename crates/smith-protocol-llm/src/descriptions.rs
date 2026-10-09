@@ -132,7 +132,9 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         }
         Tool::Edit => {
             path(stated, namespace, output);
-            output.put(br#", "edits":{"type":"array","minItems":1,"description":"Apply in order and store once; none apply if one fails.","items":{"type":"object","properties":{"old":{"type":"string","description":"Text to match; aggregate old snippets max "#);
+            output.put(br#", "edits":{"type":"array","minItems":1,"maxItems":"#);
+            output.number(u64::from(stated.tool_payload));
+            output.put(br#", "description":"Apply in order and store once; none apply if one fails.","items":{"type":"object","properties":{"old":{"type":"string","description":"Text to match; aggregate old snippets max "#);
             payload(stated, output);
             output.put(br#""},"new":{"type":"string","description":"Replacement text; aggregate new snippets max "#);
             payload(stated, output);

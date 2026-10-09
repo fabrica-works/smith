@@ -285,10 +285,15 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
         }
         tools::Outcome::NotRead => wire::Outcome::NotRead,
         tools::Outcome::Stale => wire::Outcome::Stale,
-        tools::Outcome::EditFailed { edit, why } => wire::Outcome::EditFailed(wire::EditFailed::new(
-            limits,
-            wire::EditFailedParts { edit: *edit, why: encode_mismatch(why, limits)? },
-        )?),
+        tools::Outcome::EditFailed { edit, why } => {
+            if *edit == 0 {
+                return Err(Error::Transcript(record::Refusal::Malformed));
+            }
+            wire::Outcome::EditFailed(wire::EditFailed::new(
+                limits,
+                wire::EditFailedParts { edit: *edit, why: encode_mismatch(why, limits)? },
+            )?)
+        }
         tools::Outcome::Failed { fault } => {
             let fault = match fault {
                 tools::Fault::Denied => wire::Fault::Denied,

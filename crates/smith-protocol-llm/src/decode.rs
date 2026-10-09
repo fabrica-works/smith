@@ -203,7 +203,7 @@ fn field(document: &Document, name: &[u8]) -> Option<Compact> {
 }
 
 /// A direct member's value index in one admitted compact object.
-fn member(document: &Document, start: usize, name: &[u8]) -> Option<usize> {
+fn member(document: &Document, start: u32, name: &[u8]) -> Option<u32> {
     let mut depth = 0_u32;
     for index in start..document.len() {
         let record = document.token(index)?;
@@ -228,7 +228,7 @@ fn member(document: &Document, start: usize, name: &[u8]) -> Option<usize> {
     None
 }
 
-fn replacement_string(document: &Document, start: usize, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
+fn replacement_string(document: &Document, start: u32, name: &[u8]) -> Result<Box<[u8]>, llm::Problem> {
     let index = member(document, start, name).ok_or(missing(name))?;
     let record = document.token(index).ok_or(llm::Problem::NotAnObject)?;
     match record.kind {
@@ -246,7 +246,7 @@ fn replacement_string(document: &Document, start: usize, name: &[u8]) -> Result<
     }
 }
 
-fn replacement(document: &Document, start: usize) -> Result<tools::Replacement, llm::Problem> {
+fn replacement(document: &Document, start: u32) -> Result<tools::Replacement, llm::Problem> {
     let occurrences = match member(document, start, b"all") {
         Some(index) => match document.token(index).ok_or(llm::Problem::NotAnObject)?.kind {
             JsonKind::True => tools::Occurrences::All,
@@ -309,7 +309,7 @@ fn replacements(document: &Document) -> Result<Box<[tools::Replacement]>, llm::P
     Ok(edits.into_boxed())
 }
 
-fn replacement_count(document: &Document, start: usize) -> Result<u32, llm::Problem> {
+fn replacement_count(document: &Document, start: u32) -> Result<u32, llm::Problem> {
     let mut depth = 0_u32;
     let mut count = 0_u32;
     for index in start..document.len() {

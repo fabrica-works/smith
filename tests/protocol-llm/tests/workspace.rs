@@ -276,10 +276,7 @@ fn mixed_scripts() -> Box<[Script]> {
         Script {
             cue: b"@midreport".as_slice().into(),
             turns: vec![
-                calls(
-                    vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"old","new":"premature"}]}"#)],
-                    1,
-                ),
+                calls(vec![call(b"write", br#"{"path":"../notes/data.txt","content":"premature"}"#)], 1),
                 calls(vec![call(b"read", br#"{"path":"../notes/data.txt"}"#)], 1),
                 calls(vec![call(b"edit", br#"{"path":"../notes/data.txt","edits":[{"old":"old","new":"main"}]}"#)], 1),
                 calls(
@@ -308,13 +305,7 @@ fn mixed_scripts() -> Box<[Script]> {
         Script {
             cue: b"@mixed-write".as_slice().into(),
             turns: Box::new([
-                calls(
-                    vec![call(
-                        b"edit",
-                        br#"{"path":"../notes/data.txt","edits":[{"old":"main","new":"unread-child"}]}"#,
-                    )],
-                    1,
-                ),
+                calls(vec![call(b"write", br#"{"path":"../notes/data.txt","content":"unread-child"}"#)], 1),
                 calls(
                     vec![call(b"read", br#"{"path":"../notes/data.txt"}"#), call(b"read", br#"{"path":"data.txt"}"#)],
                     1,

@@ -296,6 +296,9 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
         wire::Outcome::NotRead => tools::Outcome::NotRead,
         wire::Outcome::Stale => tools::Outcome::Stale,
         wire::Outcome::EditFailed(failed) => {
+            if failed.edit() == 0 {
+                return Err(record::Refusal::Malformed);
+            }
             tools::Outcome::EditFailed { edit: failed.edit(), why: mismatch(failed.why())? }
         }
         wire::Outcome::Failed(failed) => {
@@ -387,4 +390,23 @@ fn mismatch(source: &wire::Mismatch) -> Result<tools::Mismatch, record::Refusal>
         }
     };
     Ok(why)
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::{outcome, record, tools, wire};
+
+    #[test]
+    fn an_edit_failure_index_counts_from_one_at_transcript_admission() {
+        let zero = wire::Outcome::EditFailed(
+            wire::EditFailed::new(&wire::CEILINGS, wire::EditFailedParts { edit: 0, why: wire::Mismatch::NoMatch })
+                .expect("codec-shaped value"),
+        );
+        assert_eq!(outcome(&zero), Err(record::Refusal::Malformed));
+        let two = wire::Outcome::EditFailed(
+            wire::EditFailed::new(&wire::CEILINGS, wire::EditFailedParts { edit: 2, why: wire::Mismatch::NoMatch })
+                .expect("bounded value"),
+        );
+        assert_eq!(outcome(&two), Ok(tools::Outcome::EditFailed { edit: 2, why: tools::Mismatch::NoMatch }));
+    }
 }
