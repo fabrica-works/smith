@@ -6,6 +6,33 @@ use smith_domain::{self as agent, session, tools};
 
 pub(crate) const LABEL: &[u8] = b"person";
 
+/// Name the unsaved chat turn and its actual store terminal without claiming an ACK.
+pub(crate) fn store_failure(chat: &[u8], number: u32, reason: crate::StoreFailure, cap: u32) -> Box<[u8]> {
+    let mut shown = List::with_capacity(cap);
+    append_text(&mut shown, b"Chat ");
+    append_text(&mut shown, chat);
+    append_text(&mut shown, b" turn ");
+    let mut digits = [0_u8; 10];
+    let mut first = digits.len();
+    let mut remaining = number;
+    for _ in 0..digits.len() {
+        first = first.checked_sub(1).expect("u32 has at most ten decimal digits");
+        *digits.get_mut(first).expect("bounded decimal position") =
+            u8::try_from(remaining % 10).expect("decimal digit fits u8").checked_add(b'0').expect("ASCII digit");
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
+    }
+    append_text(&mut shown, digits.get(first..).expect("bounded decimal suffix"));
+    let cause: &[u8] = match reason {
+        crate::StoreFailure::Read => b" could not be kept: read failed",
+        crate::StoreFailure::Write => b" could not be kept: write failed",
+    };
+    append_text(&mut shown, cause);
+    shown.into_boxed()
+}
+
 /// One person line whose saved name precedes delivery to the agent.
 #[derive(Debug)]
 pub(crate) struct Line {

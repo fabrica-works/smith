@@ -88,7 +88,11 @@ pub fn max_line_bytes(message_bytes: u32) -> Option<u32> {
 /// Bound on owned local state, including the child domain.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    if limits.models == 0 || limits.lines == 0 || limits.unsaved == 0 || limits.show_bytes < 64 {
+    if limits.models == 0
+        || limits.lines == 0
+        || limits.unsaved == 0
+        || limits.show_bytes < limits.chat_bytes.checked_add(52)?.max(64)
+    {
         return None;
     }
     agent::worst_case(&limits.smith)?;

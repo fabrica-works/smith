@@ -571,7 +571,7 @@ impl Service {
             }
             Some(false) => {
                 self.snapshot_state = SnapshotState::Failed;
-                self.local_events.push(local::Event::StoreFailed { reason: local::StoreFailure::Read });
+                self.local_events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
             }
             None => {}
         }

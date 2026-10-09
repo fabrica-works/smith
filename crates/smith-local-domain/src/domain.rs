@@ -11,6 +11,7 @@ use smith_host_domain::{self as host, parent};
 
 use crate::boundary::{
     ChatState, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp, GitResult, Request,
+    StoreFailure,
 };
 use crate::chat::{Chat, Phase};
 use crate::credentials::Grants;
@@ -238,7 +239,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::DeliverySaved { name } => delivery_saved(domain, env, name, out),
         Event::Git { owner, result } => git_result(domain, env, owner, result, out),
         Event::PlainStatus { owner, changed } => plain_status(domain, env, owner, changed, out),
-        Event::StoreFailed { reason: _ } => store_failed(domain, env, out),
+        Event::StoreFailed { turn, reason } => store_failed(domain, env, turn, reason, out),
         Event::Credential { grant } => credential(domain, env, grant, out),
         Event::NoCredential { account: _, reason: _ } => no_credential(domain, env, out),
         Event::Below { agent, terminal } => agent_terminal(domain, env, agent, terminal),
@@ -413,7 +414,7 @@ fn loaded(
         match domain.records.insert(record.name, record) {
             Ok(None) => {}
             Ok(Some(_)) | Err(_) => {
-                store_failed(domain, env, out);
+                store_failed(domain, env, None, StoreFailure::Read, out);
                 return;
             }
         }
@@ -688,7 +689,13 @@ fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
     }
 }
 
-fn store_failed(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+fn store_failed(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    turn: Option<u32>,
+    reason: StoreFailure,
+    out: &mut Queue<Request>,
+) {
     if domain.stop_failed {
         return;
     }
@@ -697,6 +704,11 @@ fn store_failed(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>
     domain.wall_deadline = None;
     domain.turns.unsaved = Queue::with_capacity(env.limits.unsaved);
     out.push(Request::Show { text: Box::from(&b"The chat could not be saved"[..]) });
+    if let Some(number) = turn {
+        out.push(Request::Show {
+            text: crate::person::store_failure(&domain.config.chat, number, reason, domain.show_bytes),
+        });
+    }
     if let Some(record) = domain.saving.take() {
         let owner = domain.delivery_owner.take();
         match &record.state {
@@ -722,7 +734,7 @@ fn store_failed(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>
         }
     }
     if let Some(run) = domain.run {
-        command(&mut domain.agent, env.now, env.wall, parent::Event::Stop { agent: run });
+        command(&mut domain.agent, env.now, env.wall, parent::Event::Drop { agent: run });
         domain.chat.phase = Phase::Ending;
     } else {
         domain.chat.phase = Phase::Done;
@@ -830,7 +842,9 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             if domain.agent_life == AgentLife::Gone => {}
         parent::Request::Faulted { .. } | parent::Request::MessageRefused { .. } => {
             domain.agent_failed = true;
-            out.push(Request::Show { text: Box::from(&b"Agent process failed"[..]) });
+            if !domain.stop_failed {
+                out.push(Request::Show { text: Box::from(&b"Agent process failed"[..]) });
+            }
             if domain.turns.unsaved.is_empty() && domain.agent_life == AgentLife::Gone {
                 domain.chat.phase = Phase::Done;
                 out.push(Request::Exit { status: ExitStatus::Failed });
@@ -839,12 +853,12 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
         parent::Request::Gone { .. } => {
             domain.agent_life = AgentLife::Gone;
             domain.run = None;
-            if domain.turns.answer.is_none() && !domain.agent_failed {
+            if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
                 domain.agent_failed = true;
                 out.push(Request::Show { text: Box::from(&b"Agent process ended without an answer"[..]) });
             }
             if domain.turns.unsaved.is_empty() {
-                if domain.agent_failed {
+                if domain.agent_failed || domain.stop_failed {
                     domain.chat.phase = Phase::Done;
                     out.push(Request::Exit { status: ExitStatus::Failed });
                 } else if domain.turns.answer.is_some() {

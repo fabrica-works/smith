@@ -164,7 +164,11 @@ pub enum Event {
     /// Terminal for a plain directory's changed-state query.
     PlainStatus { owner: Token, changed: bool },
     /// Terminal for any outstanding store request that failed.
-    StoreFailed { reason: StoreFailure },
+    StoreFailed {
+        /// The transcript sequence whose `SaveTurn` write failed; other store operations carry None.
+        turn: Option<u32>,
+        reason: StoreFailure,
+    },
     /// Terminal for one Credential request.
     Credential { grant: agent::Grant },
     /// Terminal for one Credential request that could not be served.

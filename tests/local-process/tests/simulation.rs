@@ -54,6 +54,34 @@ fn an_interrupt_in_the_middle_of_a_turn_cancels_the_run() {
 }
 
 #[test]
+fn a_store_failure_stops_the_chat_and_tells_the_person() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut first = World::new(6, &files, placement, b"First answer");
+        first.settle();
+        assert_eq!(first.exit(), Some(kernel::Exit::Code(0)));
+        assert_eq!(first.turns(), 1);
+        let kept = files.path().join("chat/0000000001.turn");
+        let original = std::fs::read(&kept).expect("first durable turn");
+        let mut failed = World::failed_store(7, &files, placement);
+        failed.settle();
+        assert_eq!(failed.exit(), Some(kernel::Exit::Code(1)));
+        let shown = String::from_utf8_lossy(failed.shown());
+        assert!(shown.contains("Chat main turn 2 could not be kept: write failed"), "{shown}");
+        assert!(!failed.queries().is_empty());
+        let fault = failed.scenario.launch.state_directory.join("0000000002.turn");
+        assert!(std::fs::metadata(&fault).expect("failed turn target").is_dir());
+        std::fs::remove_dir(fault).expect("remove only the test's rename fault");
+        assert_eq!(failed.turns(), 1, "failed turn was never made durable");
+        let mut resumed = World::new(8, &files, placement, b"First answer");
+        resumed.settle();
+        assert_eq!(resumed.exit(), Some(kernel::Exit::Code(0)));
+        assert_eq!(resumed.turns(), 2, "resume starts from the last durable transcript");
+        assert_eq!(std::fs::read(kept).expect("kept turn after recovery"), original);
+    }
+}
+
+#[test]
 fn a_change_is_committed_in_place_with_its_fields_as_the_message() {
     for placement in [Placement::Spawned, Placement::InProcess] {
         let files = Files::new();

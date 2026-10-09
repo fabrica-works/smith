@@ -19,6 +19,8 @@ pub enum FactKind {
     Opened { client: Token },
     /// The parent or wall bound requested cancellation once.
     Stopped { client: Token },
+    /// The parent dropped the run and released its held turns without acknowledgement.
+    Dropped { client: Token },
     /// A spawn refused or all owned rights settled under this parent client.
     Gone { client: Token, end: End },
 }

@@ -42,6 +42,53 @@ fn an_inline_run_answers_and_its_slot_is_released_after_its_last_completion() {
 }
 
 #[test]
+fn a_drop_after_an_answer_releases_held_turns_without_replacing_the_answer() {
+    let mut inline = World::new(319, inline::limits());
+    inline.auto_ack = false;
+    spawn(&mut inline, 1, Job::HostTools);
+    for _ in 0..100 {
+        if inline.seen[&Token::new(1)].answer.is_some() {
+            break;
+        }
+        inline.at(inline.next_deadline().expect("actual provider or root alarm"));
+    }
+    assert!(inline.seen[&Token::new(1)].answer.is_some(), "actual native answer");
+    let answer = format!("{:?}", inline.seen[&Token::new(1)].answer);
+    assert!(!inline.seen[&Token::new(1)].turns.is_empty());
+    inline.event(parent::Event::Drop { agent: inline.handle(Token::new(1)) });
+    assert_eq!(format!("{:?}", inline.seen[&Token::new(1)].answer), answer);
+    assert_eq!(inline.seen[&Token::new(1)].fault, None);
+    inline.settled();
+
+    let mut spawned = Spawned::new(319, smith_host_world::limits());
+    spawned.live();
+    spawned.up(host::Up::Turn {
+        turn: host::Turn { number: 1, spent: 0, read: None, body: smith_host_world::turn_value(64) },
+    });
+    let answer = host::Answer { read: None, turns: 1, spent: 0, result: RunResult::Parked };
+    spawned.up(host::Up::Answer { answer });
+    spawned.event(host::Input::Parent(parent::Event::Drop { agent: spawned.agent() }));
+    spawned.cleanup();
+    assert_eq!(spawned.seen.answer, Some(host::Answer { read: None, turns: 1, spent: 0, result: RunResult::Parked }));
+    assert_eq!(spawned.seen.fault, None);
+    assert!(!spawned.seen.down.iter().any(|message| matches!(message, host::Down::Acknowledge { .. })));
+    spawned.settled();
+}
+
+#[test]
+fn a_drop_before_the_answer_waits_for_actual_lower_settlement() {
+    let mut world = World::new(320, inline::limits());
+    spawn(&mut world, 1, Job::HostTools);
+    assert!(!world.lower.is_empty());
+    world.event(parent::Event::Drop { agent: world.handle(Token::new(1)) });
+    assert_eq!(world.seen[&Token::new(1)].fault, Some(host::Fault::Exited));
+    assert!(world.seen[&Token::new(1)].gone.is_none());
+    world.run();
+    assert!(world.seen[&Token::new(1)].answer.is_none());
+    world.settled();
+}
+
+#[test]
 fn an_inline_run_waits_parks_and_resumes_from_its_transcript() {
     let mut world = World::new(312, inline::limits());
     spawn(&mut world, 1, Job::Waiting);

@@ -313,6 +313,10 @@ impl World {
                 self.seen.turns.remove(turn);
                 None
             }
+            Input::Parent(parent::Event::Drop { .. }) => {
+                self.seen.turns.clear();
+                None
+            }
             Input::Parent(
                 parent::Event::Spawn { .. }
                 | parent::Event::Message { .. }
@@ -331,7 +335,8 @@ impl World {
                 | parent::Event::Answer { .. }
                 | parent::Event::Acknowledge { .. }
                 | parent::Event::Grant { .. }
-                | parent::Event::Stop { .. },
+                | parent::Event::Stop { .. }
+                | parent::Event::Drop { .. },
             )
             | Input::Process(
                 process::Event::Spawned { .. }

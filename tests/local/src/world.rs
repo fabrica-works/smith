@@ -1016,7 +1016,7 @@ impl World {
             Request::Load => {
                 if self.store_fault == Some(StoreFault::Load) {
                     self.store_fault = None;
-                    self.events.push_back(Event::StoreFailed { reason: StoreFailure::Read });
+                    self.events.push_back(Event::StoreFailed { turn: None, reason: StoreFailure::Read });
                 } else {
                     self.events.push_back(Event::Loaded {
                         state: self.store.state,
@@ -1029,7 +1029,7 @@ impl World {
                 self.observe(Seen::Activation { number: state.activation, message: state.next_message });
                 if self.store_fault == Some(StoreFault::State) {
                     self.store_fault = None;
-                    self.events.push_back(Event::StoreFailed { reason: StoreFailure::Write });
+                    self.events.push_back(Event::StoreFailed { turn: None, reason: StoreFailure::Write });
                     return;
                 }
                 if self.store.activation() < state.activation {
@@ -1050,7 +1050,7 @@ impl World {
                 self.observe(Seen::SaveTurn { number, read });
                 if self.store_fault == Some(StoreFault::Turn) {
                     self.store_fault = None;
-                    self.events.push_back(Event::StoreFailed { reason: StoreFailure::Write });
+                    self.events.push_back(Event::StoreFailed { turn: Some(turn.sequence), reason: StoreFailure::Write });
                     return;
                 }
                 if self.cut == Some(Cut::BeforeSaveTurn(number)) {

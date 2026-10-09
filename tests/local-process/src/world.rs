@@ -326,6 +326,14 @@ impl World {
             (true, true, false),
         )
     }
+
+    /// Fail the actual durable turn rename after the provider receives its first request.
+    #[must_use]
+    pub fn failed_store(seed: u64, files: &Files, placement: Placement) -> Self {
+        let mut world = Self::new(seed, files, placement, b"could not be kept: write failed");
+        world.scenario.ending = Ending::HostFailure;
+        world
+    }
     #[must_use]
     pub fn without_facts(seed: u64, files: &Files, placement: Placement, answer: &[u8]) -> Self {
         Self::configured(
@@ -487,7 +495,7 @@ impl World {
         let opened = machine.files.open_handles();
         assert_eq!(opened, 1);
         let terminal_root = machine.files.open(machine.master, b".", How::Directory).expect("terminal root");
-        let referee = Run::new(
+        let mut referee = Run::new(
             launch.seed,
             self.scenario.ending.clone(),
             Box::new(self.checkout.clone()),
@@ -495,6 +503,9 @@ impl World {
             self.scenario.interrupt_on_query,
             launch.keep_facts,
         );
+        if matches!(self.scenario.ending, Ending::HostFailure) {
+            referee.fail_turn_at_query(launch.state_directory.clone(), 2);
+        }
         let mut world = skein_world::World::new(launch.seed, config, referee, self.memory).with_machine(machine);
         world.host_roots(
             HostedProgram {

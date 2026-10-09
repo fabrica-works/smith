@@ -220,6 +220,11 @@ impl World {
                     self.seen.values_mut().find(|seen| seen.agent == Some(*agent)).expect("parent's actual slot");
                 seen.turns.remove(turn);
             }
+            parent::Event::Drop { agent } => {
+                let seen =
+                    self.seen.values_mut().find(|seen| seen.agent == Some(*agent)).expect("parent's actual slot");
+                seen.turns.clear();
+            }
             parent::Event::Spawn { .. }
             | parent::Event::Message { .. }
             | parent::Event::Grant { .. }

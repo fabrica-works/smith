@@ -238,10 +238,14 @@ impl Local {
     fn files(&mut self) {
         for _ in 0..self.service.shell_requests().capacity() {
             let Some(request) = self.service.shell_requests().pop() else { break };
+            let mut failed_turn = None;
             let event = match request {
                 domain::Request::Load => self.store.load(),
                 domain::Request::SaveState { state, fresh } => self.store.save_state(state, fresh),
-                domain::Request::SaveTurn { number, read, turn } => self.store.save_turn(number, read, &turn),
+                domain::Request::SaveTurn { number, read, turn } => {
+                    failed_turn = Some(turn.sequence);
+                    self.store.save_turn(number, read, &turn)
+                }
                 domain::Request::SaveDelivery { record } => self.store.save_delivery(&record),
                 domain::Request::Credential { account } => {
                     self.credential(account);
@@ -259,7 +263,7 @@ impl Local {
             };
             self.service.local_event(match event {
                 Ok(event) => event,
-                Err(reason) => domain::Event::StoreFailed { reason },
+                Err(reason) => domain::Event::StoreFailed { turn: failed_turn, reason },
             });
         }
     }
@@ -393,7 +397,7 @@ impl Local {
 
     fn write_failed(&mut self) {
         self.error = Some("terminal output failed".into());
-        self.service.local_event(domain::Event::StoreFailed { reason: domain::StoreFailure::Write });
+        self.service.local_event(domain::Event::StoreFailed { turn: None, reason: domain::StoreFailure::Write });
     }
 
     fn writer_down(&mut self) {

@@ -44,6 +44,7 @@ pub enum Ending {
     Cancelled,
     Change { before: Vec<u8> },
     Unavailable,
+    HostFailure,
 }
 
 /// Evidence handed to the shared judgment kit, never internal process cells.
@@ -110,27 +111,38 @@ impl Expectations for Meeting {
                     Ending::Cancelled => b"Run cancelled",
                     Ending::Change { .. } => b"Change delivered",
                     Ending::Unavailable => b"account is unavailable",
+                    Ending::HostFailure => b"could not be kept: write failed",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
                     judge.check(
                         self.activation.is_none() && !self.answered && !self.shown,
                         "a refused account starts no run",
                     );
+                } else if matches!(self.ending, Ending::HostFailure) {
+                    judge.check(self.activation.is_some() && !self.shown, "failed store owns the terminal failure");
                 } else if self.require_facts {
                     judge.check(self.shown && self.answered, "the invocation actually answered and showed it");
                 }
-                judge.check(exit == Some(kernel::Exit::Code(0)), "successful shell exit");
+                let code = if matches!(self.ending, Ending::HostFailure) { 1 } else { 0 };
+                judge.check(exit == Some(kernel::Exit::Code(code)), "shell exit matches the host terminal");
                 judge.check(
                     if matches!(self.ending, Ending::Unavailable) { queries == 0 } else { queries > 0 },
                     "provider work matches account availability",
                 );
                 let start = b"smith: local host started; worst case ";
-                let expected_diagnostic = errors.is_empty()
-                    || errors
-                        .strip_prefix(start)
-                        .and_then(|tail| tail.strip_suffix(b" bytes\n"))
-                        .is_some_and(|count| !count.is_empty() && count.iter().all(u8::is_ascii_digit));
-                judge.check(expected_diagnostic, "only the local operator start line, no startup refusal");
+                let diagnostic = if matches!(self.ending, Ending::HostFailure) {
+                    errors.strip_suffix(b"smith: local chat ended with a failure\n")
+                } else {
+                    Some(errors.as_slice())
+                };
+                let expected_diagnostic = diagnostic.is_some_and(|bytes| {
+                    bytes.is_empty()
+                        || bytes
+                            .strip_prefix(start)
+                            .and_then(|tail| tail.strip_suffix(b" bytes\n"))
+                            .is_some_and(|count| !count.is_empty() && count.iter().all(u8::is_ascii_digit))
+                });
+                judge.check(expected_diagnostic, "only the expected local operator start and failure lines");
                 judge.check(shown.windows(expected.len()).any(|part| part == expected), "expected terminal text");
                 judge.check(
                     !shown.windows(7).any(|part| part == b"refresh") && !shown.windows(5).any(|part| part == b"token"),
@@ -283,6 +295,7 @@ pub struct Run {
     next_act: Option<Time>,
     shutdown: bool,
     end: Option<Time>,
+    failed_turn: Option<std::path::PathBuf>,
 }
 impl Run {
     /// Prepare the scenario's policy, repository face and observed-token check.
@@ -315,7 +328,13 @@ impl Run {
             next_act: None,
             shutdown: false,
             end: None,
+            failed_turn: None,
         }
+    }
+
+    /// Make the first turn's rename fail only after the provider observes the saved activation.
+    pub fn fail_turn_at_query(&mut self, directory: std::path::PathBuf, number: u32) {
+        self.failed_turn = Some(directory.join(format!("{number:010}.turn")));
     }
 }
 impl skein_world::Referee<crate::process::Proc> for Run {
@@ -324,6 +343,9 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         self.end.get_or_insert_with(|| now.saturating_add(Duration::from_secs(120)));
         self.next_act = None;
         let query = procs.iter().any(|p| matches!(p, Proc::Peer(peer) if crate::llm::queries(peer).next().is_some()));
+        if query && let Some(path) = self.failed_turn.take() {
+            std::fs::create_dir(path).expect("turn rename fault after the initial transcript load");
+        }
         let exited = procs.iter().any(|p| matches!(p, Proc::Terminal(t) if t.exit().is_some()));
         let url = procs.iter().find_map(|p| {
             if let Proc::Terminal(t) = p {

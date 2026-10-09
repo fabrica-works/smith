@@ -289,7 +289,7 @@ impl ProcessAdapter {
         let root = match self.file_roots.get(usize::try_from(directory).expect("bounded directory")) {
             Some(root) if self.snapshots.get(&directory).is_some() => *root,
             Some(_) | None => {
-                events.push(local::Event::StoreFailed { reason: local::StoreFailure::Read });
+                events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
                 return;
             }
         };
@@ -322,7 +322,7 @@ impl ProcessAdapter {
                 match active.purpose {
                     PlainPurpose::Capture { .. } => self.capture_done = Some(false),
                     PlainPurpose::Compare { .. } => {
-                        events.push(local::Event::StoreFailed { reason: local::StoreFailure::Read });
+                        events.push(local::Event::StoreFailed { turn: None, reason: local::StoreFailure::Read });
                     }
                 }
             }

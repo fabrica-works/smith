@@ -1,5 +1,6 @@
 //! V2 supervision cells and surviving terminal ledgers (domain/host.md, sections
-//! 2–7). Process exit never discards parent calls or turn ACKs.
+//! 2–7 and 9.2). Process exit never discards parent calls. A parent's drop
+//! releases held turns unacknowledged, retaining submitted send terminals.
 //! The kit knows channel send order, not private agent stop
 //! decisions; policy and durable decisions remain in the parent.
 use crate::{
@@ -211,7 +212,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
             | parent::Event::Answer { agent, .. }
             | parent::Event::Acknowledge { agent, .. }
             | parent::Event::Grant { agent, .. }
-            | parent::Event::Stop { agent },
+            | parent::Event::Stop { agent }
+            | parent::Event::Drop { agent },
         ) => *agent,
         Input::Process(
             process::Event::Spawned { owner, .. }
@@ -275,6 +277,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
         Input::Parent(parent::Event::Answer { call, reply, .. }) => answered(agent, call, reply, env),
         Input::Parent(parent::Event::Acknowledge { turn, .. }) => acknowledge_turn(agent, turn),
         Input::Parent(parent::Event::Grant { grant, .. }) => grant_name(agent, grant),
+        Input::Parent(parent::Event::Drop { .. }) => drop_run(agent, token, env, out),
         Input::Parent(parent::Event::Stop { .. }) => {
             match agent.phase {
                 Phase::Starting | Phase::Live | Phase::Cancelled | Phase::Draining => agent.host_stopped = true,
@@ -295,7 +298,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
                     | parent::Event::Answer { .. }
                     | parent::Event::Acknowledge { .. }
                     | parent::Event::Grant { .. }
-                    | parent::Event::Stop { .. },
+                    | parent::Event::Stop { .. }
+                    | parent::Event::Drop { .. },
                 )
                 | Input::Process(
                     process::Event::Spawned { .. }
@@ -426,7 +430,8 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
             | parent::Event::Answer { .. }
             | parent::Event::Acknowledge { .. }
             | parent::Event::Grant { .. }
-            | parent::Event::Stop { .. },
+            | parent::Event::Stop { .. }
+            | parent::Event::Drop { .. },
         ) => unreachable!("only Spawn enters admission"),
     };
     let refusal = if domain.agents.is_full() {
@@ -1223,6 +1228,28 @@ fn fail(agent: &mut Agent, owner: Token, fault: Fault, env: &Env<Limits>, out: &
         }
         Phase::Terminating | Phase::Killing => {}
         Phase::Spawning | Phase::Closed => unreachable!("only spawned processes fail channel/progress"),
+    }
+}
+
+fn drop_run(agent: &mut Agent, owner: Token, env: &Env<Limits>, out: &mut Queue<Output>) {
+    agent.host_stopped = true;
+    agent.owed = None;
+    let mut released = skein_lib::List::with_capacity(env.limits.turns);
+    for (number, turn) in &agent.turns {
+        match turn.stage {
+            TurnStage::Parent => released.push(*number).expect("bounded held turns"),
+            TurnStage::Queued | TurnStage::Sending => {}
+        }
+    }
+    for number in &released {
+        let turn = agent.turns.remove(number).expect("held turn released exactly once");
+        agent.turn_bytes = agent.turn_bytes.checked_sub(turn.bytes).expect("held turn byte credit");
+    }
+    match agent.phase {
+        Phase::Starting | Phase::Live | Phase::Cancelled | Phase::Draining | Phase::Exiting => {
+            terminate(agent, owner, env, out);
+        }
+        Phase::Spawning | Phase::Terminating | Phase::Killing | Phase::Closed => {}
     }
 }
 

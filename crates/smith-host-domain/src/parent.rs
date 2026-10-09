@@ -47,6 +47,8 @@ pub enum Event {
     },
     /// Parent politely stops once; no deadline reset.
     Stop { agent: Token },
+    /// Parent drops the run now, releasing held turns; Gone waits for all operation terminals.
+    Drop { agent: Token },
 }
 
 /// Notices sent by an agent capability to its parent; Spawn ends in Gone.
