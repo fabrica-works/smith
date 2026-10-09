@@ -479,17 +479,21 @@ fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
     step(
         &mut agent,
         &env,
-        Input::Below { agent: handle, terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled } },
+        Input::Below {
+            agent: handle,
+            terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled },
+        },
         &mut out,
     );
-    let Some(Output::Parent(parent::Request::Gone { .. })) = out.pop() else {
-        panic!("command terminal settles Gone")
-    };
+    let Some(Output::Parent(parent::Request::Gone { .. })) = out.pop() else { panic!("command terminal settles Gone") };
     assert!(out.is_empty());
     step(
         &mut agent,
         &env,
-        Input::Below { agent: handle, terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled } },
+        Input::Below {
+            agent: handle,
+            terminal: Below::Done { owner: Token::new(100), done: smith::tools::Done::Cancelled },
+        },
         &mut out,
     );
     assert!(out.is_empty());
