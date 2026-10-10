@@ -50,12 +50,13 @@ pub struct Limits {
     pub match_lines: u32,
     /// How long a file operation may take, within its call's deadline.
     pub file_timeout: Duration,
-    /// How long a command may run if its call does not say, and the longest
-    /// it may ask for; both within the call's deadline.
+    /// The command duration when its call asks for no deadline.
     pub shell_timeout: Duration,
-    /// Maximum accepted explicit shell timeout; larger requests are refused.
-    pub shell_timeout_max: Duration,
-    /// How much of a command's output is kept: its first bytes, and its last.
+    /// Maximum duration any tool call may ask for; larger command requests are clamped.
+    pub tool_deadline: Duration,
+    /// Retained command bytes when the caller asks for no budget.
+    pub shell_output: u32,
+    /// With `shell_tail`, the capture ceiling and its head/tail proportion.
     pub shell_head: u32,
     /// Last output bytes retained from a shell process.
     pub shell_tail: u32,
@@ -78,6 +79,7 @@ pub struct Limits {
 /// outcomes answered.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
+    limits.shell_head.checked_add(limits.shell_tail)?;
     if limits.facts < crate::max_facts(limits) {
         return None;
     }
@@ -136,7 +138,11 @@ pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
             let ambiguity_slot_bytes = u64::try_from(size_of::<u32>()).ok()?;
             ambiguity_slot_bytes.checked_mul(u64::from(limits.match_lines))
         }
-        Call::Shell { .. } => u64::from(limits.shell_head).checked_add(u64::from(limits.shell_tail)),
+        Call::Shell { output, .. } => {
+            limits.shell_head.checked_add(limits.shell_tail)?;
+            let kept = crate::command::kept(*output, limits);
+            u64::from(kept.head).checked_add(u64::from(kept.tail))
+        }
     }?;
     Some(result.max(u64::from(limits.path_bytes)))
 }
@@ -172,6 +178,7 @@ pub struct Derivation {
     pub tool_payload: u32,
     pub file_bytes: u32,
     pub read_window: u32,
+    pub shell_output: u32,
     pub shell_head: u32,
     pub shell_tail: u32,
     pub search_hits: u32,
@@ -190,6 +197,8 @@ pub enum Field {
     Calls,
     /// Listing ownership, derived from a read window and entry cells.
     ListBytes,
+    /// The capture ceiling cannot be represented as one byte budget.
+    ShellOutput,
 }
 
 impl Field {
@@ -200,6 +209,7 @@ impl Field {
             Self::Kits => "kits",
             Self::Calls => "calls",
             Self::ListBytes => "list_bytes",
+            Self::ShellOutput => "shell_output",
         }
     }
 }
@@ -213,6 +223,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     if inputs.calls_per_response == 0 {
         return Err(Field::Calls);
     }
+    inputs.shell_head.checked_add(inputs.shell_tail).ok_or(Field::ShellOutput)?;
     let entry_bytes = u64::try_from(size_of::<Entry>()).or(Err(Field::ListBytes))?;
     let smallest_entry = entry_bytes.checked_add(1).ok_or(Field::ListBytes)?;
     Ok(Limits {
@@ -232,7 +243,8 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         match_lines: 8,
         file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
         shell_timeout: inputs.shell_timeout,
-        shell_timeout_max: inputs.tool_deadline,
+        tool_deadline: inputs.tool_deadline,
+        shell_output: inputs.shell_output,
         shell_head: inputs.shell_head,
         shell_tail: inputs.shell_tail,
         search_hits: inputs.search_hits,

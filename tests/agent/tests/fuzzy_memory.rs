@@ -76,6 +76,7 @@ const LIMITS: Limits = Limits {
         // A whole completion may report one content-free drop per block.
         facts: 34,
         tools: smith_domain::tools::Limits {
+            shell_output: 128,
             kits: 4,
             calls: 2,
             file_bytes: 512,
@@ -577,7 +578,11 @@ impl Driver {
                     occurrences: smith_domain::tools::Occurrences::Once,
                 }]),
             },
-            5 => Call::Shell { command: bytes(8), timeout: None },
+            5 => Call::Shell {
+                command: bytes(8),
+                timeout: smith_domain::tools::Timeout::Default,
+                output: smith_domain::tools::Budget::Default,
+            },
             6 if finish => return Decoded::Served { ask: self.finish(limits) },
             7 if agents => {
                 let families = Families {

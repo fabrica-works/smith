@@ -332,6 +332,8 @@ fn result_input(configuration: &Configuration) -> Input {
                         head: b"prior".as_slice().into(),
                         tail: Box::new([]),
                         dropped: 0,
+                        timeout: tools::TimeoutClamp::Within,
+                        output: tools::BytesClamp::Within,
                     },
                 },
             }]),
@@ -388,7 +390,13 @@ fn resolutions(case: Attestation) -> Box<[ResolvedCall]> {
         Attestation::Name => exact.name = b"another-name".as_slice().into(),
         Attestation::Input => exact.input = b"{".as_slice().into(),
         Attestation::Kind => {
-            exact.call = llm::Decoded::Owned { call: tools::Call::Shell { command: Box::new([]), timeout: None } };
+            exact.call = llm::Decoded::Owned {
+                call: tools::Call::Shell {
+                    command: Box::new([]),
+                    timeout: tools::Timeout::Default,
+                    output: tools::Budget::Default,
+                },
+            };
         }
         Attestation::Duplicate => return Box::new([resolution(), resolution()]),
         Attestation::Unused => {
@@ -479,6 +487,8 @@ fn a_result_past_its_bound_is_cut_with_its_marker_and_the_request_goes() {
                     head: vec![b'x'; byte_count].into(),
                     tail: Box::new([]),
                     dropped: 0,
+                    timeout: tools::TimeoutClamp::Within,
+                    output: tools::BytesClamp::Within,
                 },
             },
         };

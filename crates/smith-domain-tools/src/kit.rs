@@ -313,14 +313,30 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
             replacements_fit(&edits, limits)?;
             Work::Edit { place: located.place, edits }
         }
-        Call::Shell { command, timeout } => {
+        Call::Shell { command, timeout, output } => {
             passable(&command)?;
             // Commands run in the working directory, which must be in the
             // checkout.
             let here = Path { absolute: false, parts: Box::new([]) };
             let located = place(&kit.checkout, &here, limits.path_bytes)?;
-            let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
-            Work::Shell { cwd: located.place, command, timeout }
+            match timeout {
+                crate::Timeout::Asked(duration) => {
+                    if duration == skein_lib::Duration::ZERO {
+                        return Err(Outcome::Failed { fault: crate::Fault::Other });
+                    }
+                }
+                crate::Timeout::Default => {}
+            }
+            match output {
+                crate::Budget::Asked(0) => return Err(Outcome::Failed { fault: crate::Fault::Other }),
+                crate::Budget::Asked(_) | crate::Budget::Default => {}
+            }
+            Work::Shell {
+                cwd: located.place,
+                command,
+                timed: crate::command::timed(timeout, limits),
+                kept: crate::command::kept(output, limits),
+            }
         }
     };
     ready(kit, deadline, env)?;

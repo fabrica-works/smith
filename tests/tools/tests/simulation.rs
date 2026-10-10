@@ -826,7 +826,14 @@ fn a_cancel_that_comes_after_its_operation_ended_changes_nothing() {
 }
 
 fn exited(exit: tools::Exit, head: &[u8], tail: &[u8], dropped: u64) -> Outcome {
-    Outcome::Exited { exit, head: head.into(), tail: tail.into(), dropped }
+    Outcome::Exited {
+        exit,
+        head: head.into(),
+        tail: tail.into(),
+        dropped,
+        timeout: tools::TimeoutClamp::Within,
+        output: tools::BytesClamp::Within,
+    }
 }
 
 #[test]
@@ -855,12 +862,22 @@ fn a_command_runs_and_its_output_is_kept_at_both_ends() {
 #[test]
 fn a_command_past_its_deadline_is_killed_with_what_it_wrote() {
     let calm = Settings::calm(61);
-    let settings = Settings { tools: Limits { shell_timeout_max: Duration::from_secs(5), ..calm.tools }, ..calm };
+    let settings = Settings { tools: Limits { tool_deadline: Duration::from_secs(5), ..calm.tools }, ..calm };
     // Asked for an hour, the command gets the tools' most: five seconds of
     // the six hundred it would take, and so none of its output yet.
     let script = vec![Step::Calls(vec![shell(b"sleep 600", Some(Duration::from_secs(3600)))])];
     let (answers, world) = run(settings, ALL, script);
-    assert_eq!(answers, vec![exited(tools::Exit::TimedOut, b"", b"", 0)]);
+    assert_eq!(
+        answers,
+        vec![Outcome::Exited {
+            exit: tools::Exit::TimedOut,
+            head: Box::new([]),
+            tail: Box::new([]),
+            dropped: 0,
+            timeout: tools::TimeoutClamp::Clamped { asked: Duration::from_secs(3600), ceiling: Duration::from_secs(5) },
+            output: tools::BytesClamp::Within
+        }]
+    );
     assert!(world.now() < Time::ZERO.saturating_add(Duration::from_secs(6)), "killed at its deadline");
     assert_eq!(world.checkout().content(b"work/temper/slept"), None, "nor its changes");
     // A command asking for less gets less, and the call's own deadline holds.
@@ -970,7 +987,14 @@ fn a_search_is_bounded_and_says_when_it_cannot_run() {
             more: 98,
             timed_out: false,
         },
-        Outcome::Exited { exit: tools::Exit::Code { code: 2 }, head: stderr[..].into(), tail: [].into(), dropped: 0 },
+        Outcome::Exited {
+            exit: tools::Exit::Code { code: 2 },
+            head: stderr[..].into(),
+            tail: [].into(),
+            dropped: 0,
+            timeout: tools::TimeoutClamp::Within,
+            output: tools::BytesClamp::Within,
+        },
         Outcome::NotFound { path: tools::Resolved::Working { path: b"temper/nowhere".as_slice().into() } },
         Outcome::Outside { path: tools::Resolved::Working { path: b"temper/escape".as_slice().into() } },
         Outcome::Found { hits: [hit(b"guide.md", 1, b"# Guide")].into(), more: 0, timed_out: false },
@@ -1245,10 +1269,11 @@ fn a_command_whose_child_outlives_it_ends_with_its_group_at_the_deadline() {
     use smith_protocol_machine::{FromDomain, ToDomain};
     let calm = Settings::calm(101);
     let limits = tools::Limits {
+        shell_output: 8,
         shell_head: 4,
         shell_tail: 4,
         shell_timeout: Duration::from_millis(1),
-        shell_timeout_max: Duration::from_millis(1),
+        tool_deadline: Duration::from_millis(1),
         ..calm.tools
     };
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1389,4 +1414,48 @@ fn a_file_is_paged_window_by_window_and_a_large_window_is_clamped_and_said() {
         window: tools::BytesClamp::Clamped { asked: 99, ceiling: 12 },
     };
     assert_eq!(world.answers(session), vec![&read_of(b"aaa\nbbb\n", 0, 2, 3), &read_of(b"ccc\n", 2, 1, 3), &clamped]);
+}
+
+#[test]
+fn a_kept_output_asked_for_is_split_between_head_and_tail_and_its_clamp_is_said() {
+    let calm = Settings::calm(166);
+    let settings = Settings { tools: Limits { shell_output: 8, shell_head: 9, shell_tail: 3, ..calm.tools }, ..calm };
+    let commands = [
+        tools::Call::Shell {
+            command: b"cargo test".as_slice().into(),
+            timeout: tools::Timeout::Default,
+            output: tools::Budget::Default,
+        },
+        tools::Call::Shell {
+            command: b"cargo test".as_slice().into(),
+            timeout: tools::Timeout::Default,
+            output: tools::Budget::Asked(5),
+        },
+        tools::Call::Shell {
+            command: b"cargo test".as_slice().into(),
+            timeout: tools::Timeout::Default,
+            output: tools::Budget::Asked(99),
+        },
+    ];
+    let (answers, world) = run(settings, ALL, vec![Step::Calls(commands.into())]);
+    let log = test_log();
+    let expected = [
+        (6, 2, tools::BytesClamp::Within),
+        (3, 2, tools::BytesClamp::Within),
+        (9, 3, tools::BytesClamp::Clamped { asked: 99, ceiling: 12 }),
+    ];
+    for (outcome, (head, tail, clamp)) in answers.iter().zip(expected) {
+        assert_eq!(
+            outcome,
+            &Outcome::Exited {
+                exit: tools::Exit::Code { code: 101 },
+                head: log[..head].into(),
+                tail: log[log.len() - tail..].into(),
+                dropped: u64::try_from(log.len() - head - tail).expect("omitted output count fits"),
+                timeout: tools::TimeoutClamp::Within,
+                output: clamp
+            }
+        );
+    }
+    assert_eq!(world.stats().ops, 3);
 }

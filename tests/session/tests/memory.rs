@@ -70,7 +70,6 @@ const LIMITS: Limits = Limits {
     backoff_base: Duration::from_secs(60),
     backoff_max: Duration::from_secs(60),
 
-    tool_timeout: Duration::from_secs(20),
     facts: 64,
     parallel_tools: 1,
     // Reads answer with the whole file loaded.
@@ -747,6 +746,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
 /// Minimal lower inventory isolates the large historical-ID staging peak.
 fn restore_tail_tools() -> smith_domain_tools::Limits {
     smith_domain_tools::Limits {
+        shell_output: 0,
         kits: 1,
         calls: 1,
         path_bytes: 16,

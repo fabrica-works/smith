@@ -117,10 +117,10 @@ const LIMITS: Limits = Limits {
         backoff_base: Duration::from_millis(100),
         backoff_max: Duration::from_secs(1),
 
-        tool_timeout: Duration::from_secs(20),
         facts: 64,
         parallel_tools: 2,
         tools: tools::Limits {
+            shell_output: 128,
             kits: 4,
             calls: 4,
             repos: 2,
@@ -135,7 +135,7 @@ const LIMITS: Limits = Limits {
             match_lines: 4,
             file_timeout: Duration::from_secs(60),
             shell_timeout: Duration::from_secs(60),
-            shell_timeout_max: Duration::from_secs(600),
+            tool_deadline: Duration::from_secs(600),
             shell_head: 64,
             shell_tail: 64,
             search_hits: 8,
@@ -2318,7 +2318,11 @@ fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
         owner,
         Box::new([owned(
             b"command",
-            Call::Shell { command: bytes(b"sleep 12"), timeout: Some(Duration::from_secs(30)) },
+            Call::Shell {
+                command: bytes(b"sleep 12"),
+                timeout: tools::Timeout::Asked(Duration::from_secs(30)),
+                output: tools::Budget::Default,
+            },
         )]),
     );
     let [Request::Io { owner: command, op: Op::Spawn { .. }, .. }] = emitted.as_ref() else {

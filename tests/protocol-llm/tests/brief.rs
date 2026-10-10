@@ -64,7 +64,7 @@ Your working directory is `work`. Relative paths start there; reach the other di
 ## Answering\n\n\
 When you are done, end your turn with your answer. The run adds your usage to the result.\n\n\
 ## Your share\n\n\
-At open, your share is 60 turns and 3594 seconds. Your answer may hold at most 1024 bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.\n";
+At open, your share is 60 turns and 120 seconds. Your answer may hold at most 1024 bytes; anything past it is cut with a marker. Your last turn has no tools: answer with what you have.\n";
 
 fn charter(settings: &Settings, instructions: &str) -> run::Charter {
     use run::charter::{Brief, Endpoint, Grants, Llm, Section, Tools};

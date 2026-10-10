@@ -69,7 +69,14 @@ pub fn edits(at: &[u8], replacements: &[(&[u8], &[u8], bool)]) -> Call {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn shell(command: &[u8], timeout: Option<Duration>) -> Call {
-    Call::Shell { command: command.into(), timeout }
+    Call::Shell {
+        command: command.into(),
+        timeout: match timeout {
+            Some(duration) => smith_domain_tools::Timeout::Asked(duration),
+            None => smith_domain_tools::Timeout::Default,
+        },
+        output: smith_domain_tools::Budget::Default,
+    }
 }
 
 /// Searches the files at and beneath `at` for `pattern`, in those whose names

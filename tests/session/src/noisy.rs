@@ -20,7 +20,7 @@ pub fn noisy(seed: u64) -> Settings {
     let calm = Settings::calm(seed);
     let mut millis = |low: u64, high: u64| Duration::from_millis(rng.between(low, high));
     let call_head = millis(500, 5_000);
-    let tool_timeout = millis(500, 5_000);
+    let tool_deadline = millis(500, 5_000);
     let session_timeout = millis(2_000, 120_000);
     let latency_max = millis(10, 4_000);
     let think = millis(0, 5_000);
@@ -41,10 +41,10 @@ pub fn noisy(seed: u64) -> Settings {
             retries: pick(0, 4),
             backoff_base: Duration::from_millis(50),
             backoff_max: Duration::from_secs(2),
-            tool_timeout,
             facts: pick(0, 24),
             parallel_tools,
             tools: tools::Limits {
+                tool_deadline,
                 kits: sessions,
                 calls: parallel_tools + pick(0, 2),
                 known_files: pick(1, 4),

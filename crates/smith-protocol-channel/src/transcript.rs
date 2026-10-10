@@ -7,7 +7,7 @@
 //! the history; the domain still checks call/result pairing and ownership.
 
 use alloc::boxed::Box;
-use skein_lib::{List, Reader};
+use skein_lib::{Duration, List, Reader};
 use smith_domain_session::{llm, record};
 use smith_domain_tools as tools;
 use smith_transcript as wire;
@@ -279,6 +279,19 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
                 head: Box::from(command.head()),
                 tail: Box::from(command.last()),
                 dropped: command.dropped(),
+                timeout: match command.timeout() {
+                    wire::TimeoutClamp::Within => tools::TimeoutClamp::Within,
+                    wire::TimeoutClamp::Clamped(clamp) => {
+                        if clamp.ceiling_ns() == 0 || clamp.asked_ns() <= clamp.ceiling_ns() {
+                            return Err(record::Refusal::Malformed);
+                        }
+                        tools::TimeoutClamp::Clamped {
+                            asked: Duration::from_nanos(clamp.asked_ns()),
+                            ceiling: Duration::from_nanos(clamp.ceiling_ns()),
+                        }
+                    }
+                },
+                output: byte_clamp(command.output())?,
             }
         }
         wire::Outcome::NotGranted => tools::Outcome::NotGranted,
@@ -390,6 +403,18 @@ fn mismatch(source: &wire::Mismatch) -> Result<tools::Mismatch, record::Refusal>
     Ok(why)
 }
 
+fn byte_clamp(source: &wire::BytesClamp) -> Result<tools::BytesClamp, record::Refusal> {
+    match source {
+        wire::BytesClamp::Within => Ok(tools::BytesClamp::Within),
+        wire::BytesClamp::Clamped(clamp) => {
+            if clamp.ceiling() == 0 || clamp.asked() <= clamp.ceiling() {
+                return Err(record::Refusal::Malformed);
+            }
+            Ok(tools::BytesClamp::Clamped { asked: clamp.asked(), ceiling: clamp.ceiling() })
+        }
+    }
+}
+
 fn read_outcome(read: &wire::Read) -> Result<tools::Outcome, record::Refusal> {
     if read.first() == 0 {
         return Err(record::Refusal::Malformed);
@@ -407,15 +432,7 @@ fn read_outcome(read: &wire::Read) -> Result<tools::Outcome, record::Refusal> {
         wire::ReadCut::Whole => tools::Cut::Whole,
         wire::ReadCut::Line => tools::Cut::Line,
     };
-    let window = match read.window() {
-        wire::BytesClamp::Within => tools::BytesClamp::Within,
-        wire::BytesClamp::Clamped(clamp) => {
-            if clamp.ceiling() == 0 || clamp.asked() <= clamp.ceiling() {
-                return Err(record::Refusal::Malformed);
-            }
-            tools::BytesClamp::Clamped { asked: clamp.asked(), ceiling: clamp.ceiling() }
-        }
-    };
+    let window = byte_clamp(read.window())?;
     Ok(tools::Outcome::Read {
         content: Box::from(read.content()),
         first: read.first(),

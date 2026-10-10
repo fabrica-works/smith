@@ -70,11 +70,6 @@ pub struct Limits {
     pub backoff_base: Duration,
     /// The longest wait before a retry, unless the provider asks for longer.
     pub backoff_max: Duration,
-    /// How long a tool call may run, and no later than the session's time
-    /// runs out. Its deadline goes with it, and a call that runs out of time
-    /// is answered as such, to the LLM. A delegated call has no timeout here:
-    /// the opener races it against the session's time.
-    pub tool_timeout: Duration,
     /// Reserved observations, including tools, buffered until the parent drains them.
     pub facts: u32,
     /// The tools child domain's, which the session owns: a kit for each
@@ -190,7 +185,6 @@ pub struct Derivation {
     pub max_turns: u32,
     pub max_spend: u64,
     pub max_time: Duration,
-    pub tool_deadline: Duration,
     pub tools: tools::Limits,
     pub request: u64,
     pub history_items: u32,
@@ -287,7 +281,6 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         retries: 3,
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
-        tool_timeout: inputs.tool_deadline,
         facts: 1024,
         parallel_tools: inputs.calls_per_response.min(4),
         tools: inputs.tools,

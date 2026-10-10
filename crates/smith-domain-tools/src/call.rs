@@ -40,13 +40,14 @@ pub enum Call {
     /// Apply replacements in order, store once over the loaded version, or apply none.
     /// No earlier read is required; ends in `Edited`, `EditFailed` or a file terminal.
     Edit { path: Path, edits: Box<[Replacement]> },
-    /// Run `command` with the shell, in the working directory, for at most
-    /// `timeout` if given and within the tools' own limit.
+    /// Run the session's command with selected time and output budgets; ends in Exited or a process terminal.
     Shell {
         /// Owned shell command interpreted only by the process-group layer.
         command: Box<[u8]>,
-        /// Maximum time allowed for this completion or command.
-        timeout: Option<Duration>,
+        /// Caller-selected deadline, within the configured tool ceiling.
+        timeout: Timeout,
+        /// Caller-selected retained output, within the configured capture ceiling.
+        output: Budget,
     },
 }
 
@@ -83,6 +84,24 @@ pub enum Budget {
     Default,
     /// Apply the requested byte budget within its ceiling.
     Asked(u32),
+}
+
+/// A command's requested duration, or the deployment's default.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Timeout {
+    /// Use the deployment's command deadline.
+    Default,
+    /// Apply this duration within the tool deadline.
+    Asked(Duration),
+}
+
+/// How the domain applied a requested command deadline, returned with its terminal.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum TimeoutClamp {
+    /// The duration fits the tool deadline.
+    Within,
+    /// The duration was reduced to the tool deadline.
+    Clamped { asked: Duration, ceiling: Duration },
 }
 
 /// How the domain applied a requested byte budget, returned with the outcome.
@@ -215,10 +234,7 @@ pub enum Outcome {
         /// Number of edit occurrences successfully replaced.
         replaced: u32,
     },
-    /// The command ended so, having written its output (standard output and
-    /// standard error together, as they came): the first bytes of it in
-    /// `head`, the last in `tail`, and `dropped` bytes between them that were
-    /// not kept.
+    /// The machine's command terminal, its retained output, omitted bytes and applied clamps, returned to the session.
     Exited {
         /// Terminal process classification; only a zero exit code passes checks.
         exit: Exit,
@@ -228,6 +244,8 @@ pub enum Outcome {
         tail: Box<[u8]>,
         /// Bytes omitted between the retained process output head and tail.
         dropped: u64,
+        timeout: TimeoutClamp,
+        output: BytesClamp,
     },
 
     /// The kit was not granted the call's family of tools.
@@ -377,7 +395,7 @@ impl Call {
                 }
                 Some(cost)
             }
-            Call::Shell { command, timeout: _ } => owned_len(command),
+            Call::Shell { command, timeout: _, output: _ } => owned_len(command),
         };
         u64::try_from(size_of::<Self>()).ok()?.checked_add(payload?)
     }

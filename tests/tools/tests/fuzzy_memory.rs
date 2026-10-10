@@ -120,7 +120,13 @@ fn random_call(limits: &Limits, rng: &mut Rng) -> Call {
         0 => read(limits, file),
         1 => Call::List { path: path(limits, file), depth: smith_domain_tools::Depth::Whole, glob: None },
         2 => write(limits, file),
-        3 => Call::Shell { command: b"cargo test"[..].into(), timeout: None },
+        3 => Call::Shell {
+            command: b"cargo test"[..].into(),
+            timeout: smith_domain_tools::Timeout::Default,
+            output: smith_domain_tools::Budget::Asked(
+                limits.shell_head.checked_add(limits.shell_tail).expect("capture ceiling fits"),
+            ),
+        },
         _ => {
             // Mostly small, so that most edits fit and are stored.
             let len = if rng.chance(100) { u64::from(limits.file_bytes) } else { rng.below(8) };

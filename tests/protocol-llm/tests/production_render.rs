@@ -54,6 +54,8 @@ fn workspace_successes_render_the_retained_content_and_counts() {
                 head: b"first".as_slice().into(),
                 tail: b"last".as_slice().into(),
                 dropped: 42,
+                timeout: tools::TimeoutClamp::Within,
+                output: tools::BytesClamp::Within,
             },
             b"exit code 0\nfirst\n... 42 bytes dropped ...\nlast",
         ),
@@ -95,6 +97,8 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
             head: b"failure\xff".as_slice().into(),
             tail: Box::new([]),
             dropped: 0,
+            timeout: tools::TimeoutClamp::Within,
+            output: tools::BytesClamp::Within,
         },
     ];
     for outcome in failures {
@@ -247,4 +251,22 @@ fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
         assert_eq!(text.as_ref(), b"input too large: 1024 bytes, bound 256 bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound");
         assert!(*is_error);
     }
+}
+
+#[test]
+fn command_clamps_are_rendered_without_losing_the_exit_or_omitted_output() {
+    let outcome = tools::Outcome::Exited {
+        exit: tools::Exit::Code { code: 1 },
+        head: b"first".as_slice().into(),
+        tail: b"last".as_slice().into(),
+        dropped: 100,
+        timeout: tools::TimeoutClamp::Clamped {
+            asked: skein_lib::Duration::from_secs(9),
+            ceiling: skein_lib::Duration::from_secs(5),
+        },
+        output: tools::BytesClamp::Clamped { asked: 99, ceiling: 12 },
+    };
+    let (text, error) = adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("command feedback");
+    assert_eq!(text.as_ref(), b"exit code 1\nfirst\n... 100 bytes dropped ...\nlast\n[timeout clamped: 9000 ms to 5000 ms]\n[output clamped: 99 bytes to 12 bytes]");
+    assert!(error);
 }

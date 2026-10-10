@@ -312,9 +312,10 @@ fn budget_prose(world: &World, settings: &Settings, child_bill: u64) {
     assert!(main_queries.iter().all(|query| query.system == main_queries[0].system), "Budget stays fixed at open");
     assert!(String::from_utf8_lossy(&main_queries[0].system).contains(&main_text));
     assert_eq!(grant.turns, 63, "one actual main turn preceded delegation");
-    let child_left = settings.budget.time.as_nanos() - child_at.saturating_since(admitted_at).as_nanos();
-    assert_eq!(grant.time.as_nanos(), child_left, "unasked share is the actual ordinary pool at delegation");
-    assert_eq!(grant.time_set, run::Set::Pool);
+    let child_left = (settings.budget.time.as_nanos() - child_at.saturating_since(admitted_at).as_nanos())
+        .min(settings.limits.session.tools.tool_deadline.as_nanos());
+    assert_eq!(grant.time.as_nanos(), child_left, "unasked share is the ordinary pool within the common tool deadline");
+    assert_eq!(grant.time_set, run::Set::Deadline);
     let child_seconds = child_left / 1_000_000_000;
     let child_text = format!(
         "## Your share\n\nAt open, your share is 63 turns and {child_seconds} seconds. Your answer may hold at most {} bytes",

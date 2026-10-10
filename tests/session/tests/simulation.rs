@@ -294,7 +294,10 @@ fn an_opener_that_closes_a_tooling_session_has_its_tool_cancelled() {
 fn a_tool_call_that_runs_out_of_time_goes_back_to_the_llm_and_the_conversation_goes_on() {
     let calm = Settings::calm(21);
     let settings = Settings {
-        agent: Limits { tool_timeout: Duration::from_secs(1), ..calm.agent },
+        agent: Limits {
+            tools: smith_domain_tools::Limits { tool_deadline: Duration::from_secs(1), ..calm.agent.tools },
+            ..calm.agent
+        },
         tool: Span::millis(5_000, 5_000),
         ..calm
     };

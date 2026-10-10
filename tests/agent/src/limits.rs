@@ -89,10 +89,10 @@ pub const LIMITS: Limits = Limits {
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
 
-        tool_timeout: Duration::from_secs(60),
         facts: 1024,
         parallel_tools: 4,
         tools: tools::Limits {
+            shell_output: 512,
             kits: 6,
             calls: 4,
             repos: 2,
@@ -107,7 +107,7 @@ pub const LIMITS: Limits = Limits {
             match_lines: 8,
             file_timeout: Duration::from_secs(30),
             shell_timeout: Duration::from_secs(30),
-            shell_timeout_max: Duration::from_secs(120),
+            tool_deadline: Duration::from_secs(120),
             shell_head: 256,
             shell_tail: 256,
             search_hits: 16,
@@ -150,7 +150,6 @@ pub const TIGHT: Limits = Limits {
         delegated_result_bytes: 4_194_304,
         retries: 2,
 
-        tool_timeout: Duration::from_secs(30),
         parallel_tools: 3,
         tools: tools::Limits { kits: 4, calls: 3, ..LIMITS.session.tools },
         ..LIMITS.session

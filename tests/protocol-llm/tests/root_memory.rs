@@ -139,6 +139,7 @@ fn bounds(messages: u32) -> Limits {
             parallel_tools: 1,
             facts: 256,
             tools: root::tools::Limits {
+                shell_output: 0,
                 kits: 1,
                 calls: 1,
                 repos: 1,

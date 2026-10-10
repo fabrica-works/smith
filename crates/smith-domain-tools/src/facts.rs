@@ -162,7 +162,7 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKin
         }
         Outcome::Written { created } => (Verdict::Written { created: *created }, 0),
         Outcome::Edited { replaced } => (Verdict::Edited { replaced: *replaced }, 0),
-        Outcome::Exited { exit, head, tail, dropped: _ } => {
+        Outcome::Exited { exit, head, tail, dropped: _, timeout: _, output: _ } => {
             (Verdict::Exited { exit: *exit }, len(head).saturating_add(len(tail)))
         }
         Outcome::NotGranted => (Verdict::NotGranted, 0),

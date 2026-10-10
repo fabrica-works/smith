@@ -47,7 +47,6 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
         max_turns: 4,
         max_spend: u64::MAX,
         max_time: Duration::from_secs(60),
-        tool_deadline: Duration::from_secs(1),
         tools,
         request: u64::from(client.request),
         history_items: client.history_items,

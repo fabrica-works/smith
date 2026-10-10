@@ -104,7 +104,6 @@ fn offered(served: &[llm::Served], kind: Kind) -> bool {
     false
 }
 
-#[expect(clippy::manual_map, reason = "strict step subset excludes closure arguments")]
 fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
     let result = match kind {
         Kind::Read => llm::Decoded::Owned {
@@ -159,12 +158,19 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
             call: tools::Call::Edit { path: path(&required_string(tokens, b"path")?)?, edits: replacements(tokens)? },
         },
         Kind::Shell => {
-            let seconds = optional_u32(tokens, b"timeout")?;
-            let timeout = match seconds {
-                Some(seconds) => Some(Duration::from_secs(u64::from(seconds))),
-                None => None,
+            let timeout = match optional_u32(tokens, b"timeout_seconds")? {
+                Some(0) => return Err(bad_value(b"timeout_seconds")),
+                Some(seconds) => tools::Timeout::Asked(Duration::from_secs(u64::from(seconds))),
+                None => tools::Timeout::Default,
             };
-            llm::Decoded::Owned { call: tools::Call::Shell { command: required_string(tokens, b"command")?, timeout } }
+            let output = match optional_u32(tokens, b"output_bytes")? {
+                Some(0) => return Err(bad_value(b"output_bytes")),
+                Some(bytes) => tools::Budget::Asked(bytes),
+                None => tools::Budget::Default,
+            };
+            llm::Decoded::Owned {
+                call: tools::Call::Shell { command: required_string(tokens, b"command")?, timeout, output },
+            }
         }
         Kind::Wait => llm::Decoded::Served { ask: run::Ask::Wait },
         Kind::SubAgent => llm::Decoded::Served {

@@ -552,7 +552,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         caps.shell_head = 71;
         caps.shell_tail = 80;
         caps.shell_timeout = Duration::from_secs(12);
-        caps.shell_timeout_max = Duration::from_secs(43);
+        caps.tool_deadline = Duration::from_secs(43);
         settings.limits.run.directory_name_bytes = 37;
         let client = skein_llm_world::limits();
         let bounds = Limits {
@@ -587,7 +587,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
             (b"search", 3, b"Search pattern"),
             (b"write", 2, b"max 257 bytes"),
             (b"edit", 5, b"max 257 bytes"),
-            (b"shell", 2, b"43000 ms"),
+            (b"shell", 3, b"43000 ms"),
         ] {
             let tool = offered.iter().find(|tool| tool.name.as_ref() == name).expect("actual offered tool");
             let schema = std::str::from_utf8(&tool.parameters).expect("native schema text");

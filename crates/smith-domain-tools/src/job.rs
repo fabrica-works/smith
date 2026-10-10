@@ -62,7 +62,7 @@
 use alloc::boxed::Box;
 use core::mem;
 
-use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Slab, Time, Token};
+use skein_lib::{Env, Id, Queue, ReplyTo, Slab, Time, Token};
 
 use crate::authority::{self, Checkout};
 use crate::boundary::{Done, Expect, Op, Request};
@@ -110,7 +110,7 @@ enum State {
     /// Storing the file at `place`, for `change`.
     Storing { reply_to: ReplyTo, place: Place, change: Change },
     /// Running a command.
-    Running { reply_to: ReplyTo, place: Place },
+    Running { reply_to: ReplyTo, place: Place, timeout: crate::TimeoutClamp, output: crate::BytesClamp },
     /// Searching files.
     Searching { reply_to: ReplyTo, place: Place },
     /// Terminal: answered, holds nothing.
@@ -162,7 +162,8 @@ pub(crate) enum Work {
     Shell {
         cwd: Place,
         command: Box<[u8]>,
-        timeout: Duration,
+        timed: crate::command::Timed,
+        kept: crate::command::Kept,
     },
     Search {
         place: Place,
@@ -198,7 +199,7 @@ pub(crate) fn start(
         Work::Search { .. } => (Tool::Search, limits.search_timeout),
         Work::Write { .. } => (Tool::Write, limits.file_timeout),
         Work::Edit { .. } => (Tool::Edit, limits.file_timeout),
-        Work::Shell { timeout, .. } => (Tool::Shell, *timeout),
+        Work::Shell { timed, .. } => (Tool::Shell, timed.timeout),
     };
     let deadline = deadline.min(env.now.saturating_add(limit));
     // The place goes to io and stays with the job: copy at emission.
@@ -223,10 +224,10 @@ pub(crate) fn start(
             let op = Op::Load { at: place.clone(), max: limits.file_bytes };
             (State::Editing { reply_to, editing: Editing { place, edits, deadline: call_deadline } }, op)
         }
-        Work::Shell { cwd, command, timeout: _ } => {
+        Work::Shell { cwd, command, timed, kept } => {
             let place = cwd.clone();
-            let op = Op::Spawn { cwd, command, head: limits.shell_head, tail: limits.shell_tail };
-            (State::Running { reply_to, place }, op)
+            let op = Op::Spawn { cwd, command, head: kept.head, tail: kept.tail };
+            (State::Running { reply_to, place, timeout: timed.clamp, output: kept.clamp }, op)
         }
         Work::Search { place, pattern, glob } => {
             let op =
@@ -267,7 +268,9 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         State::Storing { reply_to, place, change } => {
             stored(&kit.checkout, &mut kit.knowledge, reply_to, place, change, done)
         }
-        State::Running { reply_to, place } => exited(&kit.checkout, reply_to, place, done),
+        State::Running { reply_to, place, timeout, output } => {
+            exited(&kit.checkout, reply_to, place, timeout, output, done)
+        }
         State::Done => unreachable!("a job that has answered has nothing in flight"),
     };
     job.state = settle(next, kit::session(kit), job.tool, job.observation, facts, out);
@@ -376,7 +379,14 @@ fn scanned(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> 
 fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
     let outcome = match done {
         Done::Found { hits, more, timed_out } => Outcome::Found { hits, more, timed_out },
-        Done::Exited { exit, head, tail, dropped } => Outcome::Exited { exit, head, tail, dropped },
+        Done::Exited { exit, head, tail, dropped } => Outcome::Exited {
+            exit,
+            head,
+            tail,
+            dropped,
+            timeout: crate::TimeoutClamp::Within,
+            output: crate::BytesClamp::Within,
+        },
         Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
         Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
         Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
@@ -490,9 +500,16 @@ fn stored(
 }
 
 /// Running, ended: answer with how the command ended and what it wrote.
-fn exited(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Next {
+fn exited(
+    checkout: &Checkout,
+    reply_to: ReplyTo,
+    place: Place,
+    timeout: crate::TimeoutClamp,
+    output: crate::BytesClamp,
+    done: Done,
+) -> Next {
     let outcome = match done {
-        Done::Exited { exit, head, tail, dropped } => Outcome::Exited { exit, head, tail, dropped },
+        Done::Exited { exit, head, tail, dropped } => Outcome::Exited { exit, head, tail, dropped, timeout, output },
         // The working directory.
         Done::Missing => Outcome::NotFound { path: authority::resolved(checkout, &place) },
         Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },

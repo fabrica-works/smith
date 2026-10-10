@@ -405,3 +405,56 @@ fn read_window_metadata_round_trips_and_invalid_one_based_values_are_refused() {
         }
     }
 }
+
+#[test]
+fn command_clamps_round_trip_losslessly_and_invalid_relationships_are_refused() {
+    use skein_lib::Duration;
+    use smith_domain_session::{llm, record};
+    use smith_domain_tools::{BytesClamp, Exit, Outcome, TimeoutClamp};
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved turn");
+    for (timeout, output, valid) in [
+        (TimeoutClamp::Within, BytesClamp::Within, true),
+        (
+            TimeoutClamp::Clamped {
+                asked: Duration::from_nanos(501_000_001),
+                ceiling: Duration::from_nanos(300_000_000),
+            },
+            BytesClamp::Clamped { asked: 99, ceiling: 8 },
+            true,
+        ),
+        (
+            TimeoutClamp::Clamped { asked: Duration::from_nanos(1), ceiling: Duration::from_nanos(1) },
+            BytesClamp::Within,
+            false,
+        ),
+        (TimeoutClamp::Within, BytesClamp::Clamped { asked: 1, ceiling: 0 }, false),
+    ] {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"command".as_slice().into(),
+                result: llm::Returned::Owned {
+                    outcome: Outcome::Exited {
+                        exit: Exit::TimedOut,
+                        head: b"first".as_slice().into(),
+                        tail: b"last".as_slice().into(),
+                        dropped: 99,
+                        timeout,
+                        output,
+                    },
+                },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded command turn");
+        let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints);
+        if valid {
+            assert_eq!(decoded.expect("command metadata").messages, turn.messages);
+        } else {
+            assert_eq!(decoded, Err(record::Refusal::Malformed));
+        }
+    }
+}

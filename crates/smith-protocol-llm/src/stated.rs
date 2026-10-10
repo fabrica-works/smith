@@ -11,7 +11,7 @@ pub struct Stated {
     /// Maximum rendered host part and raw sub-agent brief bytes.
     pub host_part: u64,
     pub path_bytes: u32,
-    /// Current fixed read window, in bytes.
+    /// Default read window, in bytes.
     pub read_window: u32,
     /// Maximum content and replacement snippets in one piece, in bytes.
     pub tool_payload: u32,
@@ -24,7 +24,7 @@ pub struct Stated {
     pub search_bytes: u32,
     pub shell_timeout: Duration,
     pub tool_deadline: Duration,
-    /// Current fixed kept command output, in bytes.
+    /// Default kept command output, in bytes.
     pub shell_output: u32,
     /// Combined head and tail capture ceiling, in bytes.
     pub output_ceiling: u32,
@@ -46,8 +46,8 @@ impl Stated {
             search_hits: limits.search_hits,
             search_bytes: limits.search_bytes,
             shell_timeout: limits.shell_timeout,
-            tool_deadline: limits.shell_timeout_max,
-            shell_output: output,
+            tool_deadline: limits.tool_deadline,
+            shell_output: limits.shell_output,
             output_ceiling: output,
         })
     }

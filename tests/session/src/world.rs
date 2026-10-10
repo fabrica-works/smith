@@ -52,6 +52,7 @@ pub const BUDGET: agent::Budget = agent::Budget {
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 pub const TOOLS: tools::Limits = tools::Limits {
+    shell_output: 512,
     kits: 4,
     calls: 4,
     repos: 1,
@@ -66,7 +67,7 @@ pub const TOOLS: tools::Limits = tools::Limits {
     match_lines: 8,
     file_timeout: Duration::from_secs(30),
     shell_timeout: Duration::from_secs(30),
-    shell_timeout_max: Duration::from_secs(120),
+    tool_deadline: Duration::from_secs(120),
     shell_head: 256,
     shell_tail: 256,
     search_hits: 16,
@@ -220,7 +221,6 @@ impl Settings {
                 backoff_base: Duration::from_millis(200),
                 backoff_max: Duration::from_secs(5),
 
-                tool_timeout: Duration::from_secs(60),
                 facts: 256,
                 parallel_tools: 4,
                 tools: TOOLS,

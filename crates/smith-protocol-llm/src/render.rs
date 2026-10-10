@@ -211,7 +211,7 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             output.put(b" occurrence(s)")?;
             false
         }
-        Outcome::Exited { exit, head, tail, dropped } => {
+        Outcome::Exited { exit, head, tail, dropped, timeout, output: kept } => {
             let failure = match exit {
                 tools::Exit::Code { code } => {
                     output.put(b"exit code ")?;
@@ -241,6 +241,7 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
                 output.put(b"\n")?;
                 output.text(tail)?;
             }
+            command_following(*timeout, *kept, output)?;
             failure
         }
         Outcome::NotGranted => {
@@ -397,6 +398,30 @@ fn read_following(next: tools::Next, window: tools::BytesClamp, output: &mut Sin
         tools::BytesClamp::Within => {}
         tools::BytesClamp::Clamped { asked, ceiling } => {
             output.put(b" [window clamped: ")?;
+            output.number(u64::from(asked))?;
+            output.put(b" bytes to ")?;
+            output.number(u64::from(ceiling))?;
+            output.put(b" bytes]")?;
+        }
+    }
+    Ok(())
+}
+
+fn command_following(timeout: tools::TimeoutClamp, kept: tools::BytesClamp, output: &mut Sink) -> Result<(), Error> {
+    match timeout {
+        tools::TimeoutClamp::Within => {}
+        tools::TimeoutClamp::Clamped { asked, ceiling } => {
+            output.put(b"\n[timeout clamped: ")?;
+            output.number(asked.as_nanos() / 1_000_000)?;
+            output.put(b" ms to ")?;
+            output.number(ceiling.as_nanos() / 1_000_000)?;
+            output.put(b" ms]")?;
+        }
+    }
+    match kept {
+        tools::BytesClamp::Within => {}
+        tools::BytesClamp::Clamped { asked, ceiling } => {
+            output.put(b"\n[output clamped: ")?;
             output.number(u64::from(asked))?;
             output.put(b" bytes to ")?;
             output.number(u64::from(ceiling))?;

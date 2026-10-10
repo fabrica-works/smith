@@ -13,6 +13,7 @@ use crate::{CUT_MARKER_BYTES, render_outcome, render_worst_case};
 
 fn tools() -> tools::Limits {
     tools::Limits {
+        shell_output: 128,
         kits: 1,
         calls: 1,
         repos: 1,
@@ -27,7 +28,7 @@ fn tools() -> tools::Limits {
         match_lines: 8,
         file_timeout: Duration::from_secs(30),
         shell_timeout: Duration::from_secs(30),
-        shell_timeout_max: Duration::from_secs(120),
+        tool_deadline: Duration::from_secs(120),
         shell_head: 64,
         shell_tail: 64,
         search_hits: 8,
@@ -80,6 +81,11 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
                 head: vec![0xff; usize::try_from(caps.shell_head).unwrap()].into(),
                 tail: vec![0; usize::try_from(caps.shell_tail).unwrap()].into(),
                 dropped: u64::MAX,
+                timeout: tools::TimeoutClamp::Clamped {
+                    asked: Duration::from_nanos(u64::MAX),
+                    ceiling: Duration::from_nanos(1),
+                },
+                output: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: 1 },
             },
         ];
         for outcome in cases {
@@ -168,6 +174,8 @@ fn valid_utf8_survives_and_only_invalid_bytes_and_controls_are_escaped() {
             head: input.into(),
             tail: Box::new([]),
             dropped: 0,
+            timeout: tools::TimeoutClamp::Within,
+            output: tools::BytesClamp::Within,
         };
         let first = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
         assert_eq!(first.0.as_ref(), expected);
@@ -183,6 +191,8 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
         head: "é界🦀".repeat(30).into_bytes().into(),
         tail: Box::new([]),
         dropped: 0,
+        timeout: tools::TimeoutClamp::Within,
+        output: tools::BytesClamp::Within,
     };
     let (full, _) = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
     for cap in CUT_MARKER_BYTES..128 {
@@ -254,7 +264,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         ),
         (
             "Run a command; files may change. Max 151 output bytes; cuts are marked. Batch writes, edits and commands; run serially in call order.",
-            2,
+            3,
         ),
     ];
     let schemas = crate::schemas(&described_prompt(), &stated);

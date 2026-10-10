@@ -803,7 +803,11 @@ fn maximum_owned_result(
             )
         }
         3 => (
-            Call::Shell { command: b"echo owned".as_slice().into(), timeout: None },
+            Call::Shell {
+                command: b"echo owned".as_slice().into(),
+                timeout: smith_domain_tools::Timeout::Default,
+                output: smith_domain_tools::Budget::Asked(4096),
+            },
             Done::Exited {
                 exit: Exit::Code { code: 7 },
                 head: vec![b'h'; 2048].into(),
@@ -815,6 +819,8 @@ fn maximum_owned_result(
                 head: vec![b'h'; 2048].into(),
                 tail: vec![b't'; 2048].into(),
                 dropped: 23,
+                timeout: smith_domain_tools::TimeoutClamp::Within,
+                output: smith_domain_tools::BytesClamp::Within,
             },
         ),
         _ => unreachable!("four owning result kinds"),

@@ -29,6 +29,7 @@ const BUDGET: Budget = Budget {
 
 /// The tools' limits: a kit for each session, room for a batch and more.
 const TOOLS: tools::Limits = tools::Limits {
+    shell_output: 128,
     kits: 2,
     calls: 8,
     repos: 2,
@@ -43,7 +44,7 @@ const TOOLS: tools::Limits = tools::Limits {
     match_lines: 4,
     file_timeout: Duration::from_secs(60),
     shell_timeout: Duration::from_secs(60),
-    shell_timeout_max: Duration::from_secs(600),
+    tool_deadline: Duration::from_secs(600),
     shell_head: 64,
     shell_tail: 64,
     search_hits: 8,
@@ -68,7 +69,6 @@ const LIMITS: Limits = Limits {
     backoff_base: Duration::from_millis(100),
     backoff_max: Duration::from_secs(1),
 
-    tool_timeout: Duration::from_secs(20),
     facts: 64,
     parallel_tools: 2,
     tools: TOOLS,
@@ -731,7 +731,11 @@ fn a_tool_call_carries_its_deadline_and_one_that_runs_out_of_time_goes_back_to_t
     let Some(Request::Io { owner: run, op: _, deadline }) = h.one() else {
         panic!("expected an operation for the tools");
     };
-    assert_eq!(deadline, h.env.now.saturating_add(LIMITS.tool_timeout), "the call's deadline bounds its operation");
+    assert_eq!(
+        deadline,
+        h.env.now.saturating_add(LIMITS.tools.file_timeout),
+        "the file duration bounds the operation within its common call deadline"
+    );
     // Whoever runs the call runs the race: the session arms nothing for it.
     assert_eq!(h.domain.next_deadline(), Some(Time::ZERO.saturating_add(BUDGET.time)));
     h.env.now = deadline;
@@ -2203,7 +2207,11 @@ fn delayed_facts_keep_their_times_completion_numbers_and_exact_call_measurements
     assert_eq!(call.source, crate::ToolSource::Workspace);
     assert_eq!(call.effect, Effect::Read);
     assert_eq!(call.input_bytes, 2);
-    assert_eq!(call.deadline, Time::from_nanos(11).saturating_add(LIMITS.tool_timeout));
+    assert_eq!(
+        call.deadline,
+        Time::from_nanos(7).saturating_add(BUDGET.time),
+        "remaining conversation time bounds the common tool deadline"
+    );
     assert_eq!(facts[7].call.as_ref(), Some(call), "terminal retains metadata after transcript advances");
 }
 
@@ -2673,7 +2681,6 @@ fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
         max_turns: 20,
         max_spend: 100,
         max_time: Duration::from_secs(60),
-        tool_deadline: Duration::from_secs(10),
         tools: LIMITS.tools,
         request: 6000,
         history_items: 100,

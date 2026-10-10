@@ -32,7 +32,9 @@ record Edited { replaced: u32 }
 record ExitCode { code: u8 }
 record ExitSignal { signal: u8 }
 enum Exit { code: ExitCode, signal: ExitSignal, timed_out }
-record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: u64 }
+record DurationClamp { asked_ns: u64 ceiling_ns: u64 }
+enum TimeoutClamp { within, clamped: DurationClamp }
+record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: u64 timeout: TimeoutClamp output: BytesClamp }
 record TooLarge { size: u64 }
 record Ambiguous { count: u32 lines: list 1024 LineNumber }
 enum Mismatch { no_match, ambiguous: Ambiguous, unchanged }

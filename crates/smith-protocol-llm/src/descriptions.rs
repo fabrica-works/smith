@@ -165,11 +165,17 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
         Tool::Shell => {
             output.put(br#""command":{"type":"string","description":"Shell command text."#);
             input(stated, output);
-            output.put(br#""},"timeout":{"type":"integer","minimum":1,"description":"Seconds; default deadline "#);
+            output.put(
+                br#""},"timeout_seconds":{"type":"integer","minimum":1,"description":"Seconds; default deadline "#,
+            );
             output.number(stated.shell_timeout.as_nanos() / 1_000_000);
             output.put(b" ms; effective maximum ");
             output.number(stated.tool_deadline.as_nanos() / 1_000_000);
-            output.put(br#" ms, within the remaining session time."}},"required":["command"]}"#);
+            output.put(br#" ms, within the remaining session time. Larger requests are clamped and reported."},"output_bytes":{"type":"integer","minimum":1,"description":"Retained output bytes; default "#);
+            output.number(u64::from(stated.shell_output));
+            output.put(b" bytes; max ");
+            output.number(u64::from(stated.output_ceiling));
+            output.put(br#" bytes, split between head and tail. Larger requests are clamped and reported."}},"required":["command"]}"#);
         }
     }
 }

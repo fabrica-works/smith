@@ -975,8 +975,8 @@ mod tests {
         assert_eq!(limits.machine.group_stop, Duration::from_millis(7));
         assert_eq!(limits.domain.session.tools.shell_tail, 64);
         assert_eq!(limits.domain.run.check_tail, 64);
-        assert_eq!(limits.domain.session.tool_timeout, configured.profile.policy.tool_deadline);
-        assert_eq!(limits.domain.session.tools.shell_timeout_max, configured.profile.policy.tool_deadline);
+        assert_eq!(limits.domain.session.tools.tool_deadline, configured.profile.policy.tool_deadline);
+        assert_eq!(limits.domain.session.tools.shell_output, configured.profile.declared.shell_output);
         assert_eq!(limits.domain.run.host_timeout_max, configured.profile.policy.tool_deadline);
         assert_eq!(limits.llm.adapter.stated.tool_deadline, configured.profile.policy.tool_deadline);
         assert_eq!(configured.profile.declared.shell_head, service::profile::standard().declared.shell_head);

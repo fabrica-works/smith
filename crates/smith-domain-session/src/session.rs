@@ -1447,7 +1447,7 @@ fn advance(
                 }
                 let credit = owned_credit(call, &env.limits);
                 let call = call.clone();
-                let deadline = env.now.saturating_add(env.limits.tool_timeout).min(conversation.expires);
+                let deadline = env.now.saturating_add(env.limits.tools.tool_deadline).min(conversation.expires);
                 let metadata = tool_metadata(provider_id, name, input, crate::ToolSource::Workspace, effect, deadline);
                 let run = observed_run(calls, id, tools.slots.len(), index, By::Tools, credit, metadata);
                 let (kit, reply_to) = (conversation.kit, ReplyTo::new(run.token()));
@@ -1491,11 +1491,12 @@ fn advance(
                     break;
                 }
                 let credit = delegated_credit(&env.limits);
-                let metadata = tool_metadata(provider_id, name, input, *source, *effect, conversation.expires);
+                let deadline = env.now.saturating_add(env.limits.tools.tool_deadline).min(conversation.expires);
+                let metadata = tool_metadata(provider_id, name, input, *source, *effect, deadline);
                 let run = observed_run(calls, id, tools.slots.len(), index, By::Opener, credit, metadata);
                 // The opener runs the race, and the session waits for it as
                 // long as it lives.
-                let (opener, call, deadline) = (conversation.opener, *ticket, conversation.expires);
+                let (opener, call) = (conversation.opener, *ticket);
                 let sequence = next_sequence(conversation);
                 let origin = crate::record::Origin { sequence, position: index };
                 out.push(Request::Delegate { owner: run.token(), opener, call, deadline, origin });
@@ -2523,7 +2524,9 @@ fn outcome_cost(outcome: &Outcome) -> Option<u64> {
             }
             Some(cost)
         }
-        Outcome::Exited { exit: _, head, tail, dropped: _ } => len(head)?.checked_add(len(tail)?),
+        Outcome::Exited { exit: _, head, tail, dropped: _, timeout: _, output: _ } => {
+            len(head)?.checked_add(len(tail)?)
+        }
         Outcome::EditFailed { edit: _, why } => match why {
             tools::Mismatch::Ambiguous { count: _, lines } => {
                 u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::try_from(lines.len()).ok()?)

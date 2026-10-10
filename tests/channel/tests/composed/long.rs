@@ -175,7 +175,8 @@ fn an_actual_command_crosses_the_channel_and_outlasts_no_progress_until_its_term
                 call: agent::llm::Decoded::Owned {
                     call: agent::tools::Call::Shell {
                         command: b"sleep 12".as_slice().into(),
-                        timeout: Some(Duration::from_secs(30)),
+                        timeout: agent::tools::Timeout::Asked(Duration::from_secs(30)),
+                        output: agent::tools::Budget::Default,
                     },
                 },
             }]),

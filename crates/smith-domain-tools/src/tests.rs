@@ -19,6 +19,7 @@ use crate::{
 use crate::{FactKind as Fact, Tool, Verdict};
 
 const LIMITS: Limits = Limits {
+    shell_output: 192,
     kits: 2,
     calls: 4,
     repos: 4,
@@ -34,7 +35,7 @@ const LIMITS: Limits = Limits {
     file_timeout: Duration::from_secs(10),
 
     shell_timeout: Duration::from_secs(60),
-    shell_timeout_max: Duration::from_secs(600),
+    tool_deadline: Duration::from_secs(600),
     shell_head: 64,
     shell_tail: 128,
     search_hits: 8,
@@ -311,7 +312,10 @@ fn reading_calls_have_the_read_effect_and_the_rest_write() {
             },
             Effect::Write,
         ),
-        (Call::Shell { command: bytes(b"ls"), timeout: None }, Effect::Write),
+        (
+            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default },
+            Effect::Write,
+        ),
     ];
     for (call, expected) in table {
         assert_eq!(effect(&call), expected, "{call:?}");
@@ -502,7 +506,8 @@ fn authorities_beyond_the_limits_are_refused_as_invalid() {
 fn calls_are_refused_at_the_entrance() {
     let inspect = Grants { inspect: true, modify: false, shell: false };
     let modify = Grants { inspect: false, modify: true, shell: false };
-    let shell = Call::Shell { command: bytes(b"cargo test"), timeout: None };
+    let shell =
+        Call::Shell { command: bytes(b"cargo test"), timeout: crate::Timeout::Default, output: crate::Budget::Default };
     let table = [
         (modify, read(b"src/lib.rs"), Outcome::NotGranted),
         (modify, Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None }, Outcome::NotGranted),
@@ -1127,7 +1132,14 @@ fn a_path_is_in_git_when_one_of_its_names_is_dot_git() {
 /// for and its deadline.
 fn spawned(h: &mut Harness, kit: Token, timeout: Option<Duration>) -> (Token, Op, Time) {
     let reply_to = ReplyTo::new(Token::new(1));
-    let call = Call::Shell { command: bytes(b"cargo test"), timeout };
+    let call = Call::Shell {
+        command: bytes(b"cargo test"),
+        timeout: match timeout {
+            Some(duration) => crate::Timeout::Asked(duration),
+            None => crate::Timeout::Default,
+        },
+        output: crate::Budget::Default,
+    };
     let deadline = h.env.now.saturating_add(Duration::from_secs(3600));
     match h.step(Event::Call { kit, observation: None, reply_to, call, deadline }) {
         Some(Request::Io { owner, op, deadline }) => (owner, op, deadline),
@@ -1153,8 +1165,14 @@ fn a_command_runs_in_the_working_directory_with_the_kits_output_bounds() {
     assert_eq!((op, deadline), (expected, at(60)), "the tools' default limit for a command");
     let exited =
         Done::Exited { exit: Exit::Code { code: 101 }, head: bytes(b"running"), tail: bytes(b"FAILED"), dropped: 7 };
-    let outcome =
-        Outcome::Exited { exit: Exit::Code { code: 101 }, head: bytes(b"running"), tail: bytes(b"FAILED"), dropped: 7 };
+    let outcome = Outcome::Exited {
+        exit: Exit::Code { code: 101 },
+        head: bytes(b"running"),
+        tail: bytes(b"FAILED"),
+        dropped: 7,
+        timeout: crate::TimeoutClamp::Within,
+        output: crate::BytesClamp::Within,
+    };
     assert_eq!(h.end(owner, exited), (1, outcome));
 }
 
@@ -1169,7 +1187,11 @@ fn a_command_runs_as_long_as_it_asks_within_the_tools_limit() {
     }
     // The call's own deadline holds over both.
     let reply_to = ReplyTo::new(Token::new(1));
-    let call = Call::Shell { command: bytes(b"sleep 9"), timeout: Some(Duration::from_secs(5)) };
+    let call = Call::Shell {
+        command: bytes(b"sleep 9"),
+        timeout: crate::Timeout::Asked(Duration::from_secs(5)),
+        output: crate::Budget::Default,
+    };
     match h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(2) }) {
         Some(Request::Io { deadline, .. }) => assert_eq!(deadline, at(2)),
         other => panic!("expected a spawn, not {other:?}"),
@@ -1181,7 +1203,14 @@ fn every_end_of_a_command_answers_for_itself() {
     let table = [
         (
             Done::Exited { exit: Exit::TimedOut, head: bytes(b"h"), tail: bytes(b""), dropped: 0 },
-            Outcome::Exited { exit: Exit::TimedOut, head: bytes(b"h"), tail: bytes(b""), dropped: 0 },
+            Outcome::Exited {
+                exit: Exit::TimedOut,
+                head: bytes(b"h"),
+                tail: bytes(b""),
+                dropped: 0,
+                timeout: crate::TimeoutClamp::Within,
+                output: crate::BytesClamp::Within,
+            },
         ),
         (Done::Missing, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper") } }),
         (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper") } }),
@@ -1202,12 +1231,21 @@ fn every_end_of_a_command_answers_for_itself() {
 fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
     let mut h = Harness::new(LIMITS);
     let modify = h.open(1, authority(Grants { inspect: true, modify: true, shell: false }));
-    assert_eq!(h.call(modify, Call::Shell { command: bytes(b"ls"), timeout: None }), Outcome::NotGranted);
+    assert_eq!(
+        h.call(
+            modify,
+            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default }
+        ),
+        Outcome::NotGranted
+    );
     let mut outside = authority(ALL);
     outside.cwd = names(b"/work");
     let outside = h.open(2, outside);
     assert_eq!(
-        h.call(outside, Call::Shell { command: bytes(b"ls"), timeout: None }),
+        h.call(
+            outside,
+            Call::Shell { command: bytes(b"ls"), timeout: crate::Timeout::Default, output: crate::Budget::Default }
+        ),
         Outcome::Outside { path: path::Resolved::Outside { path: bytes(b"work") } }
     );
 }
@@ -1245,6 +1283,8 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
                 head: bytes(b"regex parse error"),
                 tail: bytes(b""),
                 dropped: 0,
+                timeout: crate::TimeoutClamp::Within,
+                output: crate::BytesClamp::Within,
             },
         ),
         (Done::Missing, Outcome::NotFound { path: path::Resolved::Working { path: bytes(b"temper") } }),
@@ -1267,7 +1307,7 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
     let table = [
         Call::Search { path: path(b"."), pattern: bytes(b"a\0b"), glob: None },
         Call::Search { path: path(b"."), pattern: bytes(b"a"), glob: Some(bytes(b"*.rs\0")) },
-        Call::Shell { command: bytes(b"ls\0-la"), timeout: None },
+        Call::Shell { command: bytes(b"ls\0-la"), timeout: crate::Timeout::Default, output: crate::Budget::Default },
     ];
     for call in table {
         assert_eq!(h.call(kit, call.clone()), Outcome::NulByte, "{call:?}");
@@ -1722,4 +1762,55 @@ fn a_read_uses_its_default_or_reports_the_clamped_payload_window() {
         assert_eq!(h.call(kit, call), Outcome::Failed { fault: Fault::Other });
     }
     assert_eq!(h.domain.jobs(), 0);
+}
+
+#[test]
+fn a_command_retains_its_requested_deadline_and_output_clamps_at_the_terminal() {
+    let limits = Limits {
+        shell_output: 8,
+        shell_head: 9,
+        shell_tail: 3,
+        shell_timeout: Duration::from_secs(6),
+        tool_deadline: Duration::from_secs(10),
+        ..LIMITS
+    };
+    let mut h = Harness::new(limits);
+    let kit = h.open(1, authority(ALL));
+    let call = Call::Shell {
+        command: bytes(b"test"),
+        timeout: crate::Timeout::Asked(Duration::from_secs(15)),
+        output: crate::Budget::Asked(20),
+    };
+    let reply_to = ReplyTo::new(Token::new(1));
+    let request = h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(30) });
+    let Some(Request::Io { owner, op, deadline }) = request else { panic!("command spawn") };
+    assert_eq!(deadline, at(10));
+    assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head: 9, tail: 3 });
+    let terminal = Done::Exited { exit: Exit::TimedOut, head: bytes(b"first"), tail: bytes(b"end"), dropped: 7 };
+    let expected = Outcome::Exited {
+        exit: Exit::TimedOut,
+        head: bytes(b"first"),
+        tail: bytes(b"end"),
+        dropped: 7,
+        timeout: crate::TimeoutClamp::Clamped { asked: Duration::from_secs(15), ceiling: Duration::from_secs(10) },
+        output: crate::BytesClamp::Clamped { asked: 20, ceiling: 12 },
+    };
+    assert_eq!(h.end(owner, terminal), (1, expected));
+}
+
+#[test]
+fn a_requested_command_capture_is_split_in_the_deployments_proportion() {
+    let limits = Limits { shell_output: 8, shell_head: 9, shell_tail: 3, ..LIMITS };
+    let mut h = Harness::new(limits);
+    let kit = h.open(1, authority(ALL));
+    for (output, head, tail) in
+        [(crate::Budget::Default, 6, 2), (crate::Budget::Asked(5), 3, 2), (crate::Budget::Asked(1), 0, 1)]
+    {
+        let call = Call::Shell { command: bytes(b"test"), timeout: crate::Timeout::Default, output };
+        let reply_to = ReplyTo::new(Token::new(1));
+        let request = h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(3600) });
+        let Some(Request::Io { owner, op, .. }) = request else { panic!("command spawn") };
+        assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head, tail });
+        drop(h.end(owner, Done::Cancelled));
+    }
 }

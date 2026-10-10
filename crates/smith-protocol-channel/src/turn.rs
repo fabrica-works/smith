@@ -267,7 +267,7 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
         tools::Outcome::Edited { replaced } => {
             wire::Outcome::Edited(wire::Edited::new(limits, wire::EditedParts { replaced: *replaced })?)
         }
-        tools::Outcome::Exited { exit, head, tail, dropped } => {
+        tools::Outcome::Exited { exit, head, tail, dropped, timeout, output } => {
             let exit = match exit {
                 tools::Exit::Code { code } => {
                     wire::Exit::Code(wire::ExitCode::new(limits, wire::ExitCodeParts { code: *code })?)
@@ -279,7 +279,27 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
             };
             wire::Outcome::Exited(wire::CommandEnd::new(
                 limits,
-                wire::CommandEndParts { exit, head: head.clone(), last: tail.clone(), dropped: *dropped },
+                wire::CommandEndParts {
+                    exit,
+                    head: head.clone(),
+                    last: tail.clone(),
+                    dropped: *dropped,
+                    timeout: match timeout {
+                        tools::TimeoutClamp::Within => wire::TimeoutClamp::Within,
+                        tools::TimeoutClamp::Clamped { asked, ceiling } => {
+                            wire::TimeoutClamp::Clamped(wire::DurationClamp::new(
+                                limits,
+                                wire::DurationClampParts { asked_ns: asked.as_nanos(), ceiling_ns: ceiling.as_nanos() },
+                            )?)
+                        }
+                    },
+                    output: match output {
+                        tools::BytesClamp::Within => wire::BytesClamp::Within,
+                        tools::BytesClamp::Clamped { asked, ceiling } => wire::BytesClamp::Clamped(
+                            wire::ByteClamp::new(limits, wire::ByteClampParts { asked: *asked, ceiling: *ceiling })?,
+                        ),
+                    },
+                },
             )?)
         }
         tools::Outcome::NotGranted => wire::Outcome::NotGranted,

@@ -68,7 +68,7 @@ fn each_workspace_call_decodes_escaped_input_and_ignores_unknown_members() {
         (b"search", br#"{"pattern":"a\\nb","glob":"*.rs"}"#, tools::Tool::Search),
         (b"write", br#"{"path":"a","content":"line\nnext"}"#, tools::Tool::Write),
         (b"edit", br#"{"path":"a","edits":[{"old":"before","new":"after","all":true}]}"#, tools::Tool::Edit),
-        (b"shell", br#"{"command":"printf ok","timeout":5}"#, tools::Tool::Shell),
+        (b"shell", br#"{"command":"printf ok","timeout_seconds":5,"output_bytes":99}"#, tools::Tool::Shell),
     ];
     for (name, input, expected) in cases {
         let decoded = adapter::decode(name, input, grants(), &[], llm::Asker::Main, &limits);
@@ -92,7 +92,7 @@ fn malformed_workspace_calls_have_field_named_typed_problems_then_correct() {
         (b"search", br#"{"pattern":false}"#, b"pattern"),
         (b"write", br#"{"path":"a"}"#, b"content"),
         (b"edit", br#"{"path":"a","edits":[{"old":"x"}]}"#, b"new"),
-        (b"shell", br#"{"command":"x","timeout":-1}"#, b"timeout"),
+        (b"shell", br#"{"command":"x","timeout_seconds":-1}"#, b"timeout_seconds"),
     ];
     for (name, input, field) in cases {
         let decoded = adapter::decode(name, input, grants(), &[], llm::Asker::Main, &limits);
@@ -320,5 +320,33 @@ fn read_offsets_and_byte_windows_decode_as_typed_requests() {
             panic!("positive fields")
         };
         assert_eq!(field.as_ref(), expected);
+    }
+}
+
+#[test]
+fn shell_budgets_decode_by_unit_and_a_unitless_timeout_is_ignored() {
+    for (input, timeout, output) in [
+        (br#"{"command":"test","timeout":9}"#.as_slice(), tools::Timeout::Default, tools::Budget::Default),
+        (
+            br#"{"command":"test","timeout_seconds":9,"output_bytes":99}"#.as_slice(),
+            tools::Timeout::Asked(skein_lib::Duration::from_secs(9)),
+            tools::Budget::Asked(99),
+        ),
+    ] {
+        assert_eq!(
+            adapter::decode(b"shell", input, grants(), &[], llm::Asker::Main, &limits()),
+            llm::Decoded::Owned { call: tools::Call::Shell { command: b"test".as_slice().into(), timeout, output } }
+        );
+    }
+    for (input, field) in [
+        (br#"{"command":"test","timeout_seconds":0}"#.as_slice(), b"timeout_seconds".as_slice()),
+        (br#"{"command":"test","output_bytes":0}"#.as_slice(), b"output_bytes".as_slice()),
+    ] {
+        let llm::Decoded::Invalid { problem: llm::Problem::BadValue { field: actual }, .. } =
+            adapter::decode(b"shell", input, grants(), &[], llm::Asker::Main, &limits())
+        else {
+            panic!("zero budget refused")
+        };
+        assert_eq!(actual.as_ref(), field);
     }
 }

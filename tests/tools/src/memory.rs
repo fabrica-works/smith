@@ -9,6 +9,7 @@ use smith_domain_tools::{Authority, Call, Grants, Limits, Name, Part, Path, Repo
 ///
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 pub const LIMITS: Limits = Limits {
+    shell_output: 64,
     kits: 2,
     calls: 3,
     repos: 2,
@@ -24,7 +25,7 @@ pub const LIMITS: Limits = Limits {
     file_timeout: Duration::from_secs(10),
 
     shell_timeout: Duration::from_secs(60),
-    shell_timeout_max: Duration::from_secs(600),
+    tool_deadline: Duration::from_secs(600),
     shell_head: 64,
     shell_tail: 128,
     search_hits: 8,

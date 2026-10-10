@@ -60,6 +60,7 @@ impl Settings {
         Settings {
             seed,
             tools: tools::Limits {
+                shell_output: 192,
                 kits: 4,
                 calls: 8,
                 repos: 4,
@@ -74,7 +75,7 @@ impl Settings {
                 match_lines: 4,
                 file_timeout: Duration::from_secs(10),
                 shell_timeout: Duration::from_secs(60),
-                shell_timeout_max: Duration::from_secs(600),
+                tool_deadline: Duration::from_secs(600),
                 shell_head: 64,
                 shell_tail: 128,
                 search_hits: 8,
