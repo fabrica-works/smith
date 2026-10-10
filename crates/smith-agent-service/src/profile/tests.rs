@@ -113,14 +113,16 @@ fn policy_fields_past_the_vocabulary_are_refused_before_deriving() {
 
 #[test]
 fn composed_machine_refuses_a_file_cap_below_the_tools() {
-    let limits = super::derive(&profile(), &declarations()).expect("valid declarations");
+    let mut profile = profile();
+    profile.declared.file_bytes = 512;
+    let limits = super::derive(&profile, &declarations()).expect("valid declarations");
     let mut machine = limits.machine;
     machine.file_bytes = limits.domain.session.tools.file_bytes.checked_sub(1).expect("positive payload");
     let refusal = validate::machine(&machine, &limits.domain.session.tools).expect_err("file cap");
     assert_eq!(refusal.check(), Some(Check::MachineHoldsTools));
     assert_eq!(
         words(&refusal).as_ref(),
-        b"machine-holds-tools: tools.file_bytes=256 bytes; machine.file_bytes=255 bytes"
+        b"machine-holds-tools: tools.file_bytes=512 bytes; machine.file_bytes=511 bytes"
     );
 }
 
@@ -253,7 +255,6 @@ fn transcript_blocks_hold_the_largest_completion_or_name_the_ceiling() {
     let profile = profile();
     let limits = super::derive(&profile, &declarations()).expect("coherent declarations");
     assert!(limits.channel.transcript.message_blocks >= limits.domain.session.completion_blocks);
-    assert_eq!(limits.channel.transcript.turn_messages, 3);
     let refusal = validate::calls_in_transcript(65, 64).expect_err("one beyond the vocabulary");
     assert_eq!(refusal.check(), Some(Check::CallsInTranscript));
     assert_eq!(

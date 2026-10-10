@@ -74,7 +74,7 @@ fn the_startup_refusals_of_both_commands_are_observed_outside() {
         String::from_utf8_lossy(&errors).lines().last(),
         Some("smith: the run could not answer: Some(ChannelEnded)")
     );
-    std::fs::write(&path, br#"{"profile":{"name":"standard","declared":{"memory":1099511627776},"policy":{"group_stop":10}},"endpoints":[{"name":"invalid","number":1,"dialect":1,"account":0,"provider":"codex","connect":10000,"handshake":10000,"models":[{"name":"fake","window":8192,"output":1024,"reasoning_item":2048,"head":60000,"idle":30000}],"address":"192.0.2.1:8080","transport":"plaintext"}],"environment":[]}"#).expect("invalid transport fixture");
+    std::fs::write(&path, br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"conversations":1,"calls_per_response":2,"tool_payload":256,"read_window":256},"policy":{"group_stop":10}},"endpoints":[{"name":"invalid","number":1,"dialect":1,"account":0,"provider":"codex","connect":10000,"handshake":10000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}],"address":"192.0.2.1:8080","transport":"plaintext"}],"environment":[]}"#).expect("invalid transport fixture");
     let errors = support::refusal(&scratch, vec!["agent".into(), path.into()]);
     assert_eq!(
         String::from_utf8_lossy(&errors).lines().last(),
