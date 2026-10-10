@@ -19,7 +19,12 @@ record Call {
 enum Kind { file, directory, link, other }
 record Entry { name: bytes 4096 kind: Kind }
 record Hit { path: bytes 4096 line: u32 text: bytes 4096 }
-record Read { content: bytes 1048576 skipped: u32 lines: u32 total: u32 cut: bool }
+record LineNumber { number: u32 }
+enum Next { line: LineNumber, end }
+enum ReadCut { whole, line }
+record ByteClamp { asked: u32 ceiling: u32 }
+enum BytesClamp { within, clamped: ByteClamp }
+record Read { content: bytes 1048576 first: u32 lines: u32 total: u32 next: Next cut: ReadCut window: BytesClamp }
 record Listed { entries: list 256 Entry more: u64 }
 record Found { hits: list 256 Hit more: u64 timed_out: bool }
 record Written { created: bool }
@@ -29,7 +34,6 @@ record ExitSignal { signal: u8 }
 enum Exit { code: ExitCode, signal: ExitSignal, timed_out }
 record CommandEnd { exit: Exit head: bytes 1048576 last: bytes 1048576 dropped: u64 }
 record TooLarge { size: u64 }
-record LineNumber { number: u32 }
 record Ambiguous { count: u32 lines: list 1024 LineNumber }
 enum Mismatch { no_match, ambiguous: Ambiguous, unchanged }
 record EditFailed { edit: u32 why: Mismatch }

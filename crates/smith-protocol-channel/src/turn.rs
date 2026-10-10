@@ -198,10 +198,33 @@ fn encode_problem(source: &llm::Problem, limits: &wire::v3::Limits) -> Result<wi
 #[expect(clippy::too_many_lines, reason = "every typed tool outcome has an explicit durable representation")]
 fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<wire::Outcome, Error> {
     let outcome = match source {
-        tools::Outcome::Read { content, skipped, lines, total, cut } => wire::Outcome::Read(wire::Read::new(
-            limits,
-            wire::ReadParts { content: content.clone(), skipped: *skipped, lines: *lines, total: *total, cut: *cut },
-        )?),
+        tools::Outcome::Read { content, first, lines, total, next, cut, window } => {
+            wire::Outcome::Read(wire::Read::new(
+                limits,
+                wire::ReadParts {
+                    content: content.clone(),
+                    first: *first,
+                    lines: *lines,
+                    total: *total,
+                    next: match next {
+                        tools::Next::Line(line) => {
+                            wire::Next::Line(wire::LineNumber::new(limits, wire::LineNumberParts { number: *line })?)
+                        }
+                        tools::Next::End => wire::Next::End,
+                    },
+                    cut: match cut {
+                        tools::Cut::Whole => wire::ReadCut::Whole,
+                        tools::Cut::Line => wire::ReadCut::Line,
+                    },
+                    window: match window {
+                        tools::BytesClamp::Within => wire::BytesClamp::Within,
+                        tools::BytesClamp::Clamped { asked, ceiling } => wire::BytesClamp::Clamped(
+                            wire::ByteClamp::new(limits, wire::ByteClampParts { asked: *asked, ceiling: *ceiling })?,
+                        ),
+                    },
+                },
+            )?)
+        }
         tools::Outcome::Listed { entries, more } => {
             let mut output = List::with_capacity(count(entries.len())?);
             for entry in entries {

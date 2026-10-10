@@ -56,8 +56,8 @@ fn a_resolved_missing_path_reaches_the_llm_in_the_fixed_conversation_namespace()
                                 .map(|bytes| Part::Name { name: Name::new(bytes.into()).expect("name") })
                                 .collect(),
                         },
-                        skip: 0,
-                        lines: None,
+                        offset: 1,
+                        window: smith_domain_tools::Budget::Default,
                     },
                 },
                 replay: None,

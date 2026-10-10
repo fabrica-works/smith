@@ -744,7 +744,7 @@ fn opaque_reasoning_returns_in_its_position_without_becoming_text() {
     let (_, owner, _) = h.admit(7, charter());
     let content = Box::new([
         Said::Opaque { bytes: bytes(b"provider reasoning") },
-        owned(b"r", Call::Read { path: path(false, &[b"src"]), skip: 0, lines: Some(1) }),
+        owned(b"r", Call::Read { path: path(false, &[b"src"]), offset: 1, window: tools::Budget::Default }),
     ]);
     let emitted = h.answer(owner, content);
     let [Request::Io { owner: tool, .. }] = &*emitted else { panic!("expected read") };
@@ -921,8 +921,8 @@ fn a_run_opens_main_as_a_session_through_to_its_first_call_to_the_llm() {
     assert_eq!((h.domain.peers(), h.domain.tickets(), h.domain.flights()), (1, 0, 0));
 
     // Relative paths start in the first repository, mounted under its name.
-    let relative = Call::Read { path: path(false, &[b"src", b"lib.rs"]), skip: 0, lines: None };
-    let absolute = Call::Read { path: path(true, &[b"temper", b"README"]), skip: 0, lines: None };
+    let relative = Call::Read { path: path(false, &[b"src", b"lib.rs"]), offset: 1, window: tools::Budget::Default };
+    let absolute = Call::Read { path: path(true, &[b"temper", b"README"]), offset: 1, window: tools::Budget::Default };
     let emitted = h.answer(main, Box::new([owned(b"c1", relative), owned(b"c2", absolute)]));
     let [Request::Io { op: Op::Load { at: first, .. }, .. }, Request::Io { op: Op::Load { at: second, .. }, .. }] =
         &*emitted

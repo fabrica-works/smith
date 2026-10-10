@@ -153,8 +153,9 @@ fn hex(nibble: u8) -> u8 {
 #[expect(clippy::too_many_lines, reason = "one exhaustive rendering cell per outcome variant")]
 fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) -> Result<bool, Error> {
     let error = match outcome {
-        Outcome::Read { content, skipped, lines, total, cut } => {
-            read(content, *skipped, *lines, *total, *cut, output)?;
+        Outcome::Read { content, first, lines, total, next, cut, window } => {
+            read(content, *first, *lines, *total, *cut, output)?;
+            read_following(*next, *window, output)?;
             false
         }
         Outcome::Listed { entries, more } => {
@@ -346,7 +347,8 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
     Ok(error)
 }
 
-fn read(content: &[u8], skipped: u32, lines: u32, total: u32, cut: bool, output: &mut Sink) -> Result<(), Error> {
+fn read(content: &[u8], first: u32, lines: u32, total: u32, cut: tools::Cut, output: &mut Sink) -> Result<(), Error> {
+    let skipped = first.checked_sub(1).ok_or(Error::Invalid)?;
     let mut start = 0_usize;
     let mut index = 0_u64;
     for (position, byte) in content.iter().enumerate() {
@@ -375,8 +377,31 @@ fn read(content: &[u8], skipped: u32, lines: u32, total: u32, cut: bool, output:
     output.put(b" lines; skipped ")?;
     output.number(u64::from(skipped))?;
     output.put(b")")?;
-    if cut {
-        output.put(b" [line cut]")?;
+    match cut {
+        tools::Cut::Line => output.put(b" [line cut]")?,
+        tools::Cut::Whole => {}
+    }
+    Ok(())
+}
+
+fn read_following(next: tools::Next, window: tools::BytesClamp, output: &mut Sink) -> Result<(), Error> {
+    match next {
+        tools::Next::Line(line) => {
+            output.put(b" [next line ")?;
+            output.number(u64::from(line))?;
+            output.put(b"]")?;
+        }
+        tools::Next::End => output.put(b" [end of file]")?,
+    }
+    match window {
+        tools::BytesClamp::Within => {}
+        tools::BytesClamp::Clamped { asked, ceiling } => {
+            output.put(b" [window clamped: ")?;
+            output.number(u64::from(asked))?;
+            output.put(b" bytes to ")?;
+            output.number(u64::from(ceiling))?;
+            output.put(b" bytes]")?;
+        }
     }
     Ok(())
 }

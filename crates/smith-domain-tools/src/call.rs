@@ -18,18 +18,8 @@ use crate::path::{Part, Path, Resolved};
 /// A call the LLM made to one of the tools.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Call {
-    /// Read the file at `path`: its lines after the first `skip`, at most
-    /// `lines` of them if given, within the tools' limit on what a read
-    /// answers with. Any read counts as reading the file at the version io
-    /// loaded, however little of it the window shows: a change needs the
-    /// current version seen, not all of it.
-    Read {
-        path: Path,
-        /// Number of whole lines skipped before the returned read window.
-        skip: u32,
-        /// Maximum number of lines to return when present.
-        lines: Option<u32>,
-    },
+    /// Read whole lines from the one-based offset within the chosen byte window; ends in Read or a file terminal.
+    Read { path: Path, offset: u32, window: Budget },
     /// List matching files and their directories beneath `path`, within the requested depth.
     List { path: Path, depth: Depth, glob: Option<Box<[u8]>> },
     /// Search the files at and beneath `path` for `pattern`, a regular
@@ -84,6 +74,42 @@ pub enum Depth {
     Whole,
     /// List at most this many levels; the caller supplies at least one.
     Levels(u32),
+}
+
+/// A byte budget the caller asks for, or the configured default.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Budget {
+    /// Use the configured default.
+    Default,
+    /// Apply the requested byte budget within its ceiling.
+    Asked(u32),
+}
+
+/// How the domain applied a requested byte budget, returned with the outcome.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum BytesClamp {
+    /// The request fits the configured ceiling.
+    Within,
+    /// The requested bytes were reduced to the ceiling.
+    Clamped { asked: u32, ceiling: u32 },
+}
+
+/// Where the session can begin its next read window.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Next {
+    /// Continue at this one-based line.
+    Line(u32),
+    /// This window reached the file's end.
+    End,
+}
+
+/// Whether the read's last line fit its byte window.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Cut {
+    /// Every returned line is whole.
+    Whole,
+    /// The first line was cut at the window.
+    Line,
 }
 
 /// Why the tools refused one replacement without storing any part of the edit.
@@ -149,22 +175,16 @@ pub const fn effect(call: &Call) -> Effect {
 /// What came of a call: exactly one per call.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Outcome {
-    /// A read: `content` is the lines after the first `skipped`, `lines` of
-    /// them, of the `total` the file has. They are whole lines, but for a
-    /// line longer than what a read answers with, which is `cut` at that
-    /// limit; a read moves by whole lines, so the rest of a cut line cannot
-    /// be read (a search, or a command, can reach it).
+    /// The read's lines, next offset, cut and applied window clamp, returned to the session.
     Read {
-        /// Owned content blocks or file bytes, bounded by the enclosing record's byte cap.
         content: Box<[u8]>,
-        /// Whole file lines skipped before this read window.
-        skipped: u32,
-        /// Number of lines returned in `content`.
+        /// First line of this window, counting from one, including an empty window at EOF.
+        first: u32,
         lines: u32,
-        /// Total file lines observed at the loaded version.
         total: u32,
-        /// Bytes omitted outside the retained output window.
-        cut: bool,
+        next: Next,
+        cut: Cut,
+        window: BytesClamp,
     },
     /// A listing: the selected tree's first entries in path order, and how many
     /// `more` it has.
@@ -332,7 +352,7 @@ impl Call {
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
         let payload = match self {
-            Call::Read { path, skip: _, lines: _ } => owned_path(path),
+            Call::Read { path, offset: _, window: _ } => owned_path(path),
             Call::List { path, depth: _, glob } => {
                 let filter = match glob {
                     Some(filter) => owned_len(filter)?,

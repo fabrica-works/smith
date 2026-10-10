@@ -47,7 +47,13 @@ pub(crate) fn schema(tool: Tool, stated: &Stated, namespace: &Namespace) -> Box<
 
 fn words(tool: Tool, stated: &Stated, output: &mut Text) {
     match tool {
-        Tool::Read => output.put(b"Read lines; cuts are marked. "),
+        Tool::Read => {
+            output.put(b"Read whole lines in byte windows; default ");
+            output.number(u64::from(stated.read_window));
+            output.put(b" bytes, ceiling ");
+            output.number(u64::from(stated.tool_payload));
+            output.put(b" bytes. Next line, cuts and clamps are reported. ");
+        }
         Tool::List => {
             output.put(b"List matching files and their directory tree; depth defaults to whole, direct children 1. Glob selects files. Max ");
             output.number(u64::from(stated.list_entries));
@@ -120,9 +126,11 @@ fn properties(tool: Tool, stated: &Stated, namespace: &Namespace, output: &mut T
     match tool {
         Tool::Read => {
             path(stated, namespace, output);
-            output.put(br#", "first_line":{"type":"integer","minimum":1,"description":"First line, counting from 1; max 4294967295."},"lines":{"type":"integer","minimum":1,"description":"Requested line count; max 4294967295. Kept window max "#);
+            output.put(br#", "offset":{"type":"integer","minimum":1,"maximum":4294967295,"description":"First line, counting from 1; default 1."},"window":{"type":"integer","minimum":1,"description":"Requested byte window; default "#);
             output.number(u64::from(stated.read_window));
-            output.put(br#" bytes."}},"required":["path"]}"#);
+            output.put(b" bytes; max ");
+            output.number(u64::from(stated.tool_payload));
+            output.put(br#" bytes. Larger requests are clamped and reported."}},"required":["path"]}"#);
         }
         Tool::List => {
             path(stated, namespace, output);

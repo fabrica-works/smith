@@ -565,7 +565,7 @@ impl Driver {
     fn call(&mut self, limits: &Limits, size: u64, finish: bool, agents: bool) -> Decoded {
         let lib = || path(&[b"src", b"lib.rs"]);
         let call = match self.rng.below(9) {
-            0 => Call::Read { path: lib(), skip: 0, lines: None },
+            0 => Call::Read { path: lib(), offset: 1, window: smith_domain_tools::Budget::Default },
             1 => Call::List { path: path(&[b"src"]), depth: smith_domain_tools::Depth::Whole, glob: None },
             2 => Call::Search { path: path(&[b"src"]), pattern: bytes(3), glob: None },
             3 => Call::Write { path: lib(), content: bytes(size) },

@@ -245,7 +245,7 @@ fn located(root: u64, path: &[u8], writable: bool) -> Located {
 }
 
 fn read(text: &[u8]) -> Call {
-    Call::Read { path: path(text), skip: 0, lines: None }
+    Call::Read { path: path(text), offset: 1, window: crate::Budget::Default }
 }
 
 fn write(text: &[u8], size: usize) -> Call {
@@ -296,7 +296,7 @@ fn names_are_never_empty_dots_or_slashes() {
 #[test]
 fn reading_calls_have_the_read_effect_and_the_rest_write() {
     let table = [
-        (Call::Read { path: path(b"a"), skip: 0, lines: None }, Effect::Read),
+        (Call::Read { path: path(b"a"), offset: 1, window: crate::Budget::Default }, Effect::Read),
         (Call::List { path: path(b"."), depth: crate::Depth::Whole, glob: None }, Effect::Read),
         (Call::Search { path: path(b"."), pattern: bytes(b"fn main"), glob: None }, Effect::Read),
         (Call::Write { path: path(b"a"), content: bytes(b"") }, Effect::Write),
@@ -579,36 +579,46 @@ fn entry(name: &[u8], kind: Kind) -> Entry {
     Entry { name: Box::from(name), kind }
 }
 
-fn span(skip: u32, lines: Option<u32>) -> Span {
-    Span { skip, lines }
+fn span(offset: u32, bytes: u32) -> Span {
+    Span { offset, window: window::Window { bytes, clamp: crate::BytesClamp::Within } }
 }
 
 fn read_of(content: &[u8], skipped: u32, lines: u32, total: u32, cut: bool) -> Outcome {
-    Outcome::Read { content: Box::from(content), skipped, lines, total, cut }
+    let after = skipped.checked_add(lines).expect("fixture line count");
+    Outcome::Read {
+        content: Box::from(content),
+        first: (skipped).saturating_add(1),
+        lines,
+        total,
+        cut: if cut { crate::Cut::Line } else { crate::Cut::Whole },
+        next: if after < total {
+            crate::Next::Line(after.checked_add(1).expect("fixture next line"))
+        } else {
+            crate::Next::End
+        },
+        window: crate::BytesClamp::Within,
+    }
 }
 
 #[test]
 fn a_read_answers_with_whole_lines_within_its_limit() {
-    let table: [(&[u8], Span, u32, Outcome); 14] = [
-        (b"a\nb\nc\n", span(0, None), 100, read_of(b"a\nb\nc\n", 0, 3, 3, false)),
-        (b"a\nb\nc", span(0, None), 100, read_of(b"a\nb\nc", 0, 3, 3, false)),
-        (b"a\nb\nc\n", span(1, None), 100, read_of(b"b\nc\n", 1, 2, 3, false)),
-        (b"a\nb\nc\n", span(1, Some(1)), 100, read_of(b"b\n", 1, 1, 3, false)),
-        (b"a\nb\nc\n", span(3, None), 100, read_of(b"", 3, 0, 3, false)),
-        (b"a\nb\nc\n", span(9, None), 100, read_of(b"", 3, 0, 3, false)),
-        (b"a\nb\nc\n", span(0, Some(0)), 100, read_of(b"", 0, 0, 3, false)),
-        (b"aa\nbb\ncc\n", span(0, None), 6, read_of(b"aa\nbb\n", 0, 2, 3, false)),
-        (b"aa\nbb\ncc\n", span(0, None), 5, read_of(b"aa\n", 0, 1, 3, false)),
-        (b"", span(0, None), 4, read_of(b"", 0, 0, 0, false)),
-        (b"\n\n", span(0, None), 4, read_of(b"\n\n", 0, 2, 2, false)),
-        // A line longer than a read is cut.
-        (b"aaaaaa\nb\n", span(0, None), 4, read_of(b"aaaa", 0, 1, 2, true)),
-        (b"aaaaaa", span(0, None), 4, read_of(b"aaaa", 0, 1, 1, true)),
-        (b"a\nbbbbbb\n", span(1, Some(5)), 4, read_of(b"bbbb", 1, 1, 2, true)),
+    let table = [
+        (b"a\nb\nc\n".as_slice(), span(1, 100), read_of(b"a\nb\nc\n", 0, 3, 3, false)),
+        (b"a\nb\nc", span(1, 100), read_of(b"a\nb\nc", 0, 3, 3, false)),
+        (b"a\nb\nc\n", span(2, 100), read_of(b"b\nc\n", 1, 2, 3, false)),
+        (b"a\nb\nc\n", span(2, 2), read_of(b"b\n", 1, 1, 3, false)),
+        (b"a\nb\nc\n", span(4, 100), read_of(b"", 3, 0, 3, false)),
+        (b"a\nb\nc\n", span(10, 100), read_of(b"", 3, 0, 3, false)),
+        (b"aa\nbb\ncc\n", span(1, 6), read_of(b"aa\nbb\n", 0, 2, 3, false)),
+        (b"aa\nbb\ncc\n", span(1, 5), read_of(b"aa\n", 0, 1, 3, false)),
+        (b"", span(1, 4), read_of(b"", 0, 0, 0, false)),
+        (b"\n\n", span(1, 4), read_of(b"\n\n", 0, 2, 2, false)),
+        (b"aaaaaa\nb\n", span(1, 4), read_of(b"aaaa", 0, 1, 2, true)),
+        (b"aaaaaa", span(1, 4), read_of(b"aaaa", 0, 1, 1, true)),
+        (b"a\nbbbbbb\n", span(2, 4), read_of(b"bbbb", 1, 1, 2, true)),
     ];
-    for (content, span, max, expected) in table {
-        let read = window::window(Box::from(content), span, max);
-        assert_eq!(read, expected, "{content:?} {span:?} {max}");
+    for (content, span, expected) in table {
+        assert_eq!(window::read(Box::from(content), span), expected, "{content:?} {span:?}");
     }
 }
 
@@ -635,12 +645,13 @@ fn a_kit_forgets_the_file_read_longest_ago() {
 fn a_read_loads_the_file_and_answers_with_its_window() {
     let mut h = Harness::new(LIMITS);
     let kit = h.open(1, authority(ALL));
-    let (owner, op) = h.start(kit, 7, Call::Read { path: path(b"src/lib.rs"), skip: 1, lines: Some(1) });
+    let (owner, op) =
+        h.start(kit, 7, Call::Read { path: path(b"src/lib.rs"), offset: 2, window: crate::Budget::Asked(4) });
     assert_eq!(op, Op::Load { at: place(1, b"src/lib.rs"), max: LIMITS.file_bytes });
     assert_eq!(h.domain.jobs(), 1);
     let content = Box::from(&b"one\ntwo\nthree\n"[..]);
     let (call, outcome) = h.end(owner, Done::Loaded { content, version: version(5) });
-    let expected = Outcome::Read { content: Box::from(&b"two\n"[..]), skipped: 1, lines: 1, total: 3, cut: false };
+    let expected = read_of(b"two\n", 1, 1, 3, false);
     assert_eq!((call, outcome), (7, expected));
     assert_eq!(h.knowledge(kit).version(&place(1, b"src/lib.rs")), Some(version(5)));
     h.domain.reclaim();
@@ -1538,7 +1549,7 @@ fn failed_paths_are_normalized_and_stay_at_the_admitted_path_bound() {
         absolute: true,
         parts: Box::new([Part::Name { name: Name::new(bytes(&outside)).expect("bounded name") }]),
     };
-    let call = Call::Read { path: absolute, skip: 0, lines: None };
+    let call = Call::Read { path: absolute, offset: 1, window: crate::Budget::Default };
     assert_eq!(h.call(kit, call.clone()), Outcome::Outside { path: path::Resolved::Outside { path: bytes(&outside) } });
     assert!(crate::result_worst_case(&call, &LIMITS).expect("checked credit") >= 64);
     assert_eq!(h.call(kit, read(&[b'x'; 63])), Outcome::TooLong, "normalized mount plus file exceeds 64");
@@ -1690,4 +1701,25 @@ fn an_edit_can_grow_to_the_whole_file_bound_and_refuses_one_byte_past_it() {
             assert_eq!(result, Err(Outcome::TooLarge { size: 129 }));
         }
     }
+}
+
+#[test]
+fn a_read_uses_its_default_or_reports_the_clamped_payload_window() {
+    let limits = Limits { read_bytes: 4, tool_payload: 8, ..LIMITS };
+    assert_eq!(window::window(crate::Budget::Default, &limits).bytes, 4);
+    let within = window::window(crate::Budget::Asked(6), &limits);
+    assert_eq!(within.bytes, 6);
+    assert_eq!(within.clamp, crate::BytesClamp::Within);
+    let clamp = window::window(crate::Budget::Asked(99), &limits);
+    assert_eq!(clamp.bytes, 8);
+    assert_eq!(clamp.clamp, crate::BytesClamp::Clamped { asked: 99, ceiling: 8 });
+    let mut h = Harness::new(limits);
+    let kit = h.open(1, authority(ALL));
+    for call in [
+        Call::Read { path: path(b"x"), offset: 0, window: crate::Budget::Default },
+        Call::Read { path: path(b"x"), offset: 1, window: crate::Budget::Asked(0) },
+    ] {
+        assert_eq!(h.call(kit, call), Outcome::Failed { fault: Fault::Other });
+    }
+    assert_eq!(h.domain.jobs(), 0);
 }

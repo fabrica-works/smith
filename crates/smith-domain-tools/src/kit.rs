@@ -253,10 +253,17 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Adm
         return Err(Outcome::NotGranted);
     }
     let work = match call {
-        Call::Read { path, skip, lines } => {
+        Call::Read { path, offset, window } => {
             let located = place(&kit.checkout, &path, limits.path_bytes)?;
             file(&located.place)?;
-            Work::Read { place: located.place, span: Span { skip, lines } }
+            if offset == 0 {
+                return Err(Outcome::Failed { fault: crate::Fault::Other });
+            }
+            match window {
+                crate::Budget::Asked(0) => return Err(Outcome::Failed { fault: crate::Fault::Other }),
+                crate::Budget::Asked(_) | crate::Budget::Default => {}
+            }
+            Work::Read { place: located.place, span: Span { offset, window: crate::window::window(window, limits) } }
         }
         Call::List { path, depth, glob } => {
             match depth {

@@ -91,7 +91,7 @@ pub fn path(limits: &Limits, file: u64) -> Path {
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn read(limits: &Limits, file: u64) -> Call {
-    Call::Read { path: path(limits, file), skip: 0, lines: None }
+    Call::Read { path: path(limits, file), offset: 1, window: smith_domain_tools::Budget::Asked(limits.tool_payload) }
 }
 
 /// The most a file holds.

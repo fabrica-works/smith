@@ -61,7 +61,7 @@ fn each_workspace_call_decodes_escaped_input_and_ignores_unknown_members() {
     let cases = [
         (
             b"read".as_slice(),
-            br#"{"path":"src/a.rs","first_line":3,"lines":3,"future":[1,{"x":true}]}"#.as_slice(),
+            br#"{"path":"src/a.rs","offset":3,"window":12,"future":[1,{"x":true}]}"#.as_slice(),
             tools::Tool::Read,
         ),
         (b"list", br#"{"path":".","future":false}"#, tools::Tool::List),
@@ -293,5 +293,32 @@ fn list_depth_and_glob_decode_to_one_typed_call_and_invalid_depth_is_refused() {
             adapter::decode(b"list", input, grants(), &[], llm::Asker::Main, &limits),
             llm::Decoded::Invalid { problem: llm::Problem::BadValue { field: b"depth".as_slice().into() } }
         );
+    }
+}
+
+#[test]
+fn read_offsets_and_byte_windows_decode_as_typed_requests() {
+    for (input, first, budget) in [
+        (br#"{"path":"file"}"#.as_slice(), 1, tools::Budget::Default),
+        (br#"{"path":"file","offset":3,"window":99}"#.as_slice(), 3, tools::Budget::Asked(99)),
+    ] {
+        let llm::Decoded::Owned { call: tools::Call::Read { offset, window, .. } } =
+            adapter::decode(b"read", input, grants(), &[], llm::Asker::Main, &limits())
+        else {
+            panic!("typed read")
+        };
+        assert_eq!(offset, first);
+        assert_eq!(window, budget);
+    }
+    for (input, expected) in [
+        (br#"{"path":"file","offset":0}"#.as_slice(), b"offset".as_slice()),
+        (br#"{"path":"file","window":0}"#.as_slice(), b"window".as_slice()),
+    ] {
+        let llm::Decoded::Invalid { problem: llm::Problem::BadValue { field } } =
+            adapter::decode(b"read", input, grants(), &[], llm::Asker::Main, &limits())
+        else {
+            panic!("positive fields")
+        };
+        assert_eq!(field.as_ref(), expected);
     }
 }

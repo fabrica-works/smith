@@ -119,7 +119,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 #[must_use]
 pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
     let result = match call {
-        Call::Read { .. } => Some(u64::from(limits.read_bytes)),
+        Call::Read { .. } => Some(u64::from(limits.tool_payload)),
         Call::List { .. } => Some(limits.list_bytes),
         Call::Search { .. } => {
             let cells = u64::try_from(size_of::<Hit>()).ok()?;

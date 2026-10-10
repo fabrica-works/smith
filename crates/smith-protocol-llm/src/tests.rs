@@ -58,11 +58,13 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
             .into_boxed_slice();
         let cases = [
             tools::Outcome::Read {
-                content: vec![b'\n'; usize::try_from(caps.read_bytes).unwrap()].into(),
-                skipped: u32::MAX,
+                content: vec![b'\n'; usize::try_from(caps.tool_payload).unwrap()].into(),
+                first: u32::MAX,
                 lines: u32::MAX,
                 total: u32::MAX,
-                cut: true,
+                cut: tools::Cut::Line,
+                next: tools::Next::Line(u32::MAX),
+                window: tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: caps.tool_payload },
             },
             tools::Outcome::Listed { entries, more: u64::MAX },
             tools::Outcome::Found { hits, more: u64::MAX, timed_out: true },
@@ -103,7 +105,15 @@ fn random_outcomes_at_random_caps_fit_their_derived_render_bound() {
 
 #[test]
 fn a_cut_marker_counts_the_exact_bytes_left_out_of_the_rendering() {
-    let outcome = tools::Outcome::Read { content: vec![b'x'; 512].into(), skipped: 0, lines: 1, total: 1, cut: false };
+    let outcome = tools::Outcome::Read {
+        content: vec![b'x'; 512].into(),
+        first: 1,
+        lines: 1,
+        total: 1,
+        cut: tools::Cut::Whole,
+        next: tools::Next::End,
+        window: tools::BytesClamp::Within,
+    };
     let (full, error) = render_outcome(&outcome, &tools::Namespace::One, 4096).unwrap();
     for cap in CUT_MARKER_BYTES..128 {
         let (cut, cut_error) = render_outcome(&outcome, &tools::Namespace::One, cap).unwrap();
@@ -223,7 +233,7 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
     };
     let golden = [
         (
-            "Read lines; cuts are marked. Whole-file limit 257 bytes. Batch independent reads, lists and searches side by side.",
+            "Read whole lines in byte windows; default 73 bytes, ceiling 257 bytes. Next line, cuts and clamps are reported. Whole-file limit 257 bytes. Batch independent reads, lists and searches side by side.",
             3_usize,
         ),
         (

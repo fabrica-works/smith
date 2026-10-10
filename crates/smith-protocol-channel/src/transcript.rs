@@ -235,13 +235,7 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
 
 fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
     let value = match source {
-        wire::Outcome::Read(read) => tools::Outcome::Read {
-            content: Box::from(read.content()),
-            skipped: read.skipped(),
-            lines: read.lines(),
-            total: read.total(),
-            cut: read.cut(),
-        },
+        wire::Outcome::Read(read) => read_outcome(read)?,
         wire::Outcome::Listed(listed) => {
             let mut entries = List::with_capacity(listed.entries().len());
             for entry in listed.entries() {
@@ -394,6 +388,43 @@ fn mismatch(source: &wire::Mismatch) -> Result<tools::Mismatch, record::Refusal>
         }
     };
     Ok(why)
+}
+
+fn read_outcome(read: &wire::Read) -> Result<tools::Outcome, record::Refusal> {
+    if read.first() == 0 {
+        return Err(record::Refusal::Malformed);
+    }
+    let next = match read.next() {
+        wire::Next::Line(line) => {
+            if line.number() == 0 {
+                return Err(record::Refusal::Malformed);
+            }
+            tools::Next::Line(line.number())
+        }
+        wire::Next::End => tools::Next::End,
+    };
+    let cut = match read.cut() {
+        wire::ReadCut::Whole => tools::Cut::Whole,
+        wire::ReadCut::Line => tools::Cut::Line,
+    };
+    let window = match read.window() {
+        wire::BytesClamp::Within => tools::BytesClamp::Within,
+        wire::BytesClamp::Clamped(clamp) => {
+            if clamp.ceiling() == 0 || clamp.asked() <= clamp.ceiling() {
+                return Err(record::Refusal::Malformed);
+            }
+            tools::BytesClamp::Clamped { asked: clamp.asked(), ceiling: clamp.ceiling() }
+        }
+    };
+    Ok(tools::Outcome::Read {
+        content: Box::from(read.content()),
+        first: read.first(),
+        lines: read.lines(),
+        total: read.total(),
+        next,
+        cut,
+        window,
+    })
 }
 
 #[cfg(test)]

@@ -302,8 +302,8 @@ fn closing_a_resting_batch_keeps_its_result_and_marks_only_unstarted_calls() {
             call: llm::Decoded::Owned {
                 call: Call::Read {
                     path: Path { absolute: false, parts: Box::new([Part::Current]) },
-                    skip: 0,
-                    lines: None,
+                    offset: 1,
+                    window: smith_domain_tools::Budget::Default,
                 },
             },
             replay: None,
@@ -382,8 +382,8 @@ fn owned_io_cancellation_keeps_terminal_results_in_the_turn() {
                                     name: Name::new(b"data".as_slice().into()).expect("a file name"),
                                 }]),
                             },
-                            skip: 0,
-                            lines: None,
+                            offset: 1,
+                            window: smith_domain_tools::Budget::Default,
                         },
                     },
                     replay: None,
@@ -420,10 +420,12 @@ fn owned_io_cancellation_keeps_terminal_results_in_the_turn() {
                 *outcome,
                 Outcome::Read {
                     content: b"file bytes\n".as_slice().into(),
-                    skipped: 0,
+                    first: 1,
                     lines: 1,
                     total: 1,
-                    cut: false
+                    cut: smith_domain_tools::Cut::Whole,
+                    next: smith_domain_tools::Next::End,
+                    window: smith_domain_tools::BytesClamp::Within
                 }
             );
         } else {
@@ -767,9 +769,17 @@ fn maximum_owned_result(
     };
     match kind {
         0 => (
-            Call::Read { path: path(), skip: 0, lines: None },
+            Call::Read { path: path(), offset: 1, window: smith_domain_tools::Budget::Default },
             Done::Loaded { content: vec![b'r'; 4096].into(), version: Version::new([1; 4]) },
-            Outcome::Read { content: vec![b'r'; 4096].into(), skipped: 0, lines: 1, total: 1, cut: false },
+            Outcome::Read {
+                content: vec![b'r'; 4096].into(),
+                first: 1,
+                lines: 1,
+                total: 1,
+                cut: smith_domain_tools::Cut::Whole,
+                next: smith_domain_tools::Next::End,
+                window: smith_domain_tools::BytesClamp::Within,
+            },
         ),
         1 => {
             let each = (4096 - 8 * core::mem::size_of::<Entry>()) / 8;

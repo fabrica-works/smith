@@ -259,7 +259,7 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
     let state = mem::replace(&mut job.state, State::Done);
     let next = match state {
         State::Reading { reply_to, place, span } => {
-            loaded(&kit.checkout, &mut kit.knowledge, reply_to, place, span, done, &env.limits)
+            loaded(&kit.checkout, &mut kit.knowledge, reply_to, place, span, done)
         }
         State::Listing { reply_to, place } => scanned(&kit.checkout, reply_to, place, done),
         State::Searching { reply_to, place } => found(&kit.checkout, reply_to, place, done),
@@ -323,12 +323,11 @@ fn loaded(
     place: Place,
     span: Span,
     done: Done,
-    limits: &Limits,
 ) -> Next {
     let outcome = match done {
         Done::Loaded { content, version } => {
             knowledge.record(place, version);
-            window::window(content, span, limits.read_bytes)
+            window::read(content, span)
         }
         Done::Missing => {
             knowledge.forget(&place);

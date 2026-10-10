@@ -10,15 +10,14 @@ use crate::translate::path;
 /// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
 #[must_use]
 pub fn read(at: &[u8]) -> Call {
-    Call::Read { path: path(at), skip: 0, lines: None }
+    Call::Read { path: path(at), offset: 1, window: smith_domain_tools::Budget::Default }
 }
 
-/// Reads `lines` lines of the file at `at`, after the first `skip`.
-///
-/// World contract: domain/tools.md, sections 7 and 9; testing-strategy.md, section 2.2.
+/// Reads a byte window at a one-based offset.
+/// World contract: domain/tools.md, sections 3 and 7.
 #[must_use]
-pub fn read_lines(at: &[u8], skip: u32, lines: u32) -> Call {
-    Call::Read { path: path(at), skip, lines: Some(lines) }
+pub fn read_window(at: &[u8], offset: u32, bytes: u32) -> Call {
+    Call::Read { path: path(at), offset, window: smith_domain_tools::Budget::Asked(bytes) }
 }
 
 /// Lists the directory at `at`.

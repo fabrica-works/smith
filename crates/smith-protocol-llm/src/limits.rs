@@ -137,7 +137,7 @@ pub fn worst_case(limits: &Limits, receiving: &Receiving) -> Option<u64> {
 /// Contract: protocol/limits.md, section 3.4; protocol/llm.md, section 5.
 #[must_use]
 pub fn render_worst_case(tools: &smith_domain::tools::Limits, host_answer: u32, delegated_answer: u64) -> Option<u32> {
-    let read = u64::from(tools.read_bytes).checked_mul(16)?.checked_add(96)?;
+    let read = u64::from(tools.tool_payload).checked_mul(16)?.checked_add(192)?;
     let listed = tools
         .list_bytes
         .checked_mul(4)?

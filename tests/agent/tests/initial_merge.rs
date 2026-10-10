@@ -271,7 +271,7 @@ fn conflict_read(turn: &smith_domain::Turn) -> bool {
         .filter(|block| {
             matches!(block,
             llm::Block::ToolResult { id: returned_id, result: llm::Returned::Owned {
-                outcome: tools::Outcome::Read { content, skipped: 0, lines: 5, total: 5, cut: false }
+                outcome: tools::Outcome::Read { content, first: 1, lines: 5, total: 5, cut: tools::Cut::Whole, next: tools::Next::End, window: tools::BytesClamp::Within }
             }} if returned_id == *id && content.as_ref() == MARKERS)
         })
         .count()

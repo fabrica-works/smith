@@ -362,3 +362,46 @@ fn attached_host_paths_are_normalized_before_copying_and_stay_bounded() {
     assert_eq!(crate::host_path(b"relative", 32), None);
     assert_eq!(crate::host_path(b"/a\0b", 32), None);
 }
+
+#[test]
+fn read_window_metadata_round_trips_and_invalid_one_based_values_are_refused() {
+    use smith_domain_session::{llm, record};
+    use smith_domain_tools::{BytesClamp, Cut, Next, Outcome};
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved turn");
+    for (first, next, window, valid) in [
+        (1, Next::Line(2), BytesClamp::Within, true),
+        (1, Next::End, BytesClamp::Clamped { asked: 99, ceiling: 8 }, true),
+        (0, Next::End, BytesClamp::Within, false),
+        (1, Next::Line(0), BytesClamp::Within, false),
+        (1, Next::End, BytesClamp::Clamped { asked: 8, ceiling: 8 }, false),
+    ] {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"window".as_slice().into(),
+                result: llm::Returned::Owned {
+                    outcome: Outcome::Read {
+                        content: b"part".as_slice().into(),
+                        first,
+                        lines: 1,
+                        total: 2,
+                        next,
+                        cut: Cut::Line,
+                        window,
+                    },
+                },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded read turn");
+        let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints);
+        if valid {
+            assert_eq!(decoded.expect("read metadata").messages, turn.messages);
+        } else {
+            assert_eq!(decoded, Err(record::Refusal::Malformed));
+        }
+    }
+}

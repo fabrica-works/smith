@@ -8,7 +8,9 @@ use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use skein_world::domain::heap::{self, Meter};
 use smith_domain_session::llm::{Block, Completion, Decoded, Descriptor, Endpoint, Failure, Problem, Stop, Usage};
 use smith_domain_session::{Budget, Domain, Event, Limits, MAX_PARALLEL, Request, Spec, max_out, worst_case};
-use smith_domain_tools::{Authority, Call, Done, Effect, Grants, Name, Part, Path, Repo, Version};
+use smith_domain_tools::{
+    Authority, Budget as ToolBudget, Call, Done, Effect, Grants, Name, Part, Path, Repo, Version,
+};
 use smith_session_world::{TOOLS, reservation_envelope};
 
 #[global_allocator]
@@ -262,7 +264,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
         match route {
             Route::Tool => {
                 let path = Path { absolute: false, parts: Box::new([Part::Name { name: name() }]) };
-                let call = Decoded::Owned { call: Call::Read { path, skip: 0, lines: None } };
+                let call = Decoded::Owned { call: Call::Read { path, offset: 1, window: ToolBudget::Default } };
                 let content =
                     Box::new([Block::ToolCall { id: bytes(1), name: bytes(1), input: bytes(1), call, replay: None }]);
                 let completion = received(content, Stop::ToolUse);
@@ -894,8 +896,8 @@ fn read_completion(width: u32) -> Completion {
             call: Decoded::Owned {
                 call: Call::Read {
                     path: Path { absolute: false, parts: Box::new([Part::Name { name: name() }]) },
-                    skip: 0,
-                    lines: None,
+                    offset: 1,
+                    window: ToolBudget::Default,
                 },
             },
         });

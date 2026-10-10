@@ -5,7 +5,7 @@
 use skein_fake_checkout::Checkout;
 use skein_lib::{Duration, Time};
 use smith_domain_tools::{self as tools, Entry, Fault, Grants, Hit, Kind, Limits, Name, Outcome, Refusal};
-use smith_tools_world::calls::{edit, list, read, read_lines, search, shell, write};
+use smith_tools_world::calls::{edit, list, read, read_window, search, shell, write};
 use smith_tools_world::fixture::{FORMATTED, Fixture, LIB, long, test_log};
 use smith_tools_world::{Settings, Span, Step, World, kind, noisy_world};
 
@@ -18,7 +18,15 @@ const MODIFY: Grants = Grants { inspect: true, modify: true, shell: false };
 const ALL: Grants = Grants { inspect: true, modify: true, shell: true };
 
 fn read_of(content: &[u8], skipped: u32, lines: u32, total: u32) -> Outcome {
-    Outcome::Read { content: content.into(), skipped, lines, total, cut: false }
+    Outcome::Read {
+        content: content.into(),
+        first: (skipped).saturating_add(1),
+        lines,
+        total,
+        cut: tools::Cut::Whole,
+        next: if skipped + lines < total { tools::Next::Line(skipped + lines + 1) } else { tools::Next::End },
+        window: tools::BytesClamp::Within,
+    }
 }
 
 fn entry(name: &[u8], kind: Kind) -> Entry {
@@ -41,7 +49,7 @@ fn run(settings: Settings, grants: Grants, script: Vec<Step>) -> (Vec<Outcome>, 
 fn a_kit_reads_and_lists_its_checkout() {
     let script = vec![Step::Calls(vec![
         read(b"src/lib.rs"),
-        read_lines(b"src/lib.rs", 1, 1),
+        read_window(b"src/lib.rs", 2, 16),
         list(b"src"),
         read(b"../docs/guide.md"),
         read(b"vendor/lib/lib.rs"),
@@ -129,7 +137,7 @@ fn reads_and_listings_are_bounded() {
     let calm = Settings::calm(5);
     let settings = Settings { tools: Limits { list_entries: 4, ..calm.tools }, ..calm };
     let script =
-        vec![Step::Calls(vec![read(b"big.txt"), read(b"long.txt"), read_lines(b"long.txt", 95, 10), list(b".")])];
+        vec![Step::Calls(vec![read(b"big.txt"), read(b"long.txt"), read_window(b"long.txt", 96, 1024), list(b".")])];
     let (answers, _) = run(settings, INSPECT, script);
     let long = long();
     let first = [
@@ -1354,4 +1362,31 @@ fn a_tree_cut_at_its_cap_leaves_ignored_entries_out() {
         assert_eq!(world.answers(session), [&expected]);
         assert_eq!(world.stats().ops, 1);
     }
+}
+
+#[test]
+fn a_file_is_paged_window_by_window_and_a_large_window_is_clamped_and_said() {
+    let calm = Settings::calm(62);
+    let settings = Settings { tools: Limits { read_bytes: 8, tool_payload: 12, ..calm.tools }, ..calm };
+    let mut fixture = Fixture::new();
+    fixture.checkout.write(b"work/temper/pages", b"aaa\nbbb\nccc\n");
+    let authority = fixture.authority(INSPECT);
+    let mut world = World::new(settings, fixture.checkout);
+    let script = vec![
+        Step::Calls(vec![read(b"pages")]),
+        Step::Calls(vec![read_window(b"pages", 3, 6)]),
+        Step::Calls(vec![read_window(b"pages", 1, 99)]),
+    ];
+    let session = world.session(Time::ZERO, authority, script);
+    world.run(ITERATIONS);
+    let clamped = Outcome::Read {
+        content: b"aaa\nbbb\nccc\n".as_slice().into(),
+        first: 1,
+        lines: 3,
+        total: 3,
+        next: tools::Next::End,
+        cut: tools::Cut::Whole,
+        window: tools::BytesClamp::Clamped { asked: 99, ceiling: 12 },
+    };
+    assert_eq!(world.answers(session), vec![&read_of(b"aaa\nbbb\n", 0, 2, 3), &read_of(b"ccc\n", 2, 1, 3), &clamped]);
 }

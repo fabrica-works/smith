@@ -5,7 +5,7 @@ use skein_fake_checkout::Checkout;
 use skein_lib::{Duration, Rng, Time};
 use smith_domain_tools::{Grants, Limits};
 
-use crate::calls::{edit, edits, list, read, read_lines, search, shell, write};
+use crate::calls::{edit, edits, list, read, read_window, search, shell, write};
 use crate::fixture::Fixture;
 use crate::{Settings, Span, Step, World};
 
@@ -138,7 +138,7 @@ fn noisy_calls(rng: &mut Rng) -> Vec<smith_domain_tools::Call> {
             9 => search(path, SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")], None),
             8 => shell(COMMANDS[usize::try_from(rng.below(COMMANDS.len() as u64)).expect("an index")], None),
             0 => list(path),
-            1 => read_lines(path, u32::try_from(rng.below(5)).expect("small"), 2),
+            1 => read_window(path, u32::try_from(rng.below(5) + 1).expect("small"), 128),
             2 | 3 => write(path, format!("written {}\n", rng.below(1000)).as_bytes()),
             4 | 5 => {
                 let old = SNIPPETS[usize::try_from(rng.below(SNIPPETS.len() as u64)).expect("an index")];

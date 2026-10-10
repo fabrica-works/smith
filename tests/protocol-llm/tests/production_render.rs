@@ -18,10 +18,12 @@ fn workspace_successes_render_the_retained_content_and_counts() {
         (
             tools::Outcome::Read {
                 content: b"alpha\nbeta\n".as_slice().into(),
-                skipped: 2,
+                first: 3,
                 lines: 2,
                 total: 9,
-                cut: false,
+                cut: tools::Cut::Whole,
+                next: if 2 + 2 < 9 { tools::Next::Line(2 + 2 + 1) } else { tools::Next::End },
+                window: tools::BytesClamp::Within,
             },
             b"3: alpha\n4: beta\n(2 of 9 lines; skipped 2)".as_slice(),
         ),
@@ -106,10 +108,15 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
 
 #[test]
 fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
-    let outcome =
-        tools::Outcome::Read {
-            content: "saved – 界\n".as_bytes().into(), skipped: 4, lines: 1, total: 6, cut: false
-        };
+    let outcome = tools::Outcome::Read {
+        content: "saved – 界\n".as_bytes().into(),
+        first: 5,
+        lines: 1,
+        total: 6,
+        cut: tools::Cut::Whole,
+        next: if 4 + 1 < 6 { tools::Next::Line(4 + 1 + 1) } else { tools::Next::End },
+        window: tools::BytesClamp::Within,
+    };
     let (live_text, live_error) =
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     let history = llm::Prompt {

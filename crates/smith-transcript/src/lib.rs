@@ -13,13 +13,14 @@ extern crate alloc;
 pub mod v3;
 
 pub use v3::{
-    Affinity, AffinityParts, Ambiguous, AmbiguousParts, Block, CEILINGS, Call, CallParts, CallProblem, CommandEnd,
-    CommandEndParts, CutProblem, CutProblemParts, EditFailed, EditFailedParts, Edited, EditedParts, Entry, EntryParts,
-    Exit, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Failed, FailedParts, Fault, FieldProblem,
-    FieldProblemParts, Found, FoundParts, Hit, HitParts, Invalid, InvalidParts, Kind, LineNumber, LineNumberParts,
-    Listed, ListedParts, Message, MessageParts, Mismatch, Opaque, OpaqueParts, OtherPath, OtherPathParts, Outcome,
-    OutsidePath, OutsidePathParts, OversizeProblem, OversizeProblemParts, OwnedOutcome, OwnedOutcomeParts, Read,
-    ReadParts, Replay, ReplayParts, Resolved, ResolvedFailure, ResolvedFailureParts, Returned, Role, Said, SaidParts,
-    Text, TextParts, TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts, Usage,
-    UsageParts, WorkingPath, WorkingPathParts, Written, WrittenParts,
+    Affinity, AffinityParts, Ambiguous, AmbiguousParts, Block, ByteClamp, ByteClampParts, BytesClamp, CEILINGS, Call,
+    CallParts, CallProblem, CommandEnd, CommandEndParts, CutProblem, CutProblemParts, EditFailed, EditFailedParts,
+    Edited, EditedParts, Entry, EntryParts, Exit, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Failed,
+    FailedParts, Fault, FieldProblem, FieldProblemParts, Found, FoundParts, Hit, HitParts, Invalid, InvalidParts, Kind,
+    LineNumber, LineNumberParts, Listed, ListedParts, Message, MessageParts, Mismatch, Next, Opaque, OpaqueParts,
+    OtherPath, OtherPathParts, Outcome, OutsidePath, OutsidePathParts, OversizeProblem, OversizeProblemParts,
+    OwnedOutcome, OwnedOutcomeParts, Read, ReadCut, ReadParts, Replay, ReplayParts, Resolved, ResolvedFailure,
+    ResolvedFailureParts, Returned, Role, Said, SaidParts, Text, TextParts, TooLarge, TooLargeParts, ToolResult,
+    ToolResultParts, Turn, TurnKind, TurnParts, Usage, UsageParts, WorkingPath, WorkingPathParts, Written,
+    WrittenParts,
 };

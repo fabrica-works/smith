@@ -110,11 +110,16 @@ fn call(kind: Kind, tokens: &Document) -> Result<llm::Decoded, llm::Problem> {
         Kind::Read => llm::Decoded::Owned {
             call: tools::Call::Read {
                 path: path(&required_string(tokens, b"path")?)?,
-                skip: match optional_u32(tokens, b"first_line")? {
-                    Some(first_line) => first_line.checked_sub(1).ok_or(bad_value(b"first_line"))?,
-                    None => 0,
+                offset: match optional_u32(tokens, b"offset")? {
+                    Some(0) => return Err(bad_value(b"offset")),
+                    Some(offset) => offset,
+                    None => 1,
                 },
-                lines: optional_u32(tokens, b"lines")?,
+                window: match optional_u32(tokens, b"window")? {
+                    Some(0) => return Err(bad_value(b"window")),
+                    Some(bytes) => tools::Budget::Asked(bytes),
+                    None => tools::Budget::Default,
+                },
             },
         },
         Kind::List => {

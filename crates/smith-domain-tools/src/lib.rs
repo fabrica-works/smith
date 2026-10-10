@@ -55,7 +55,8 @@ mod window;
 pub use authority::{Authority, Grants, Repo};
 pub use boundary::{Done, Event, Expect, Op, Refusal, Request, Version};
 pub use call::{
-    Call, Depth, Effect, Entry, Exit, Fault, Hit, Kind, Mismatch, Occurrences, Outcome, Replacement, Tool, effect, tool,
+    Budget, BytesClamp, Call, Cut, Depth, Effect, Entry, Exit, Fault, Hit, Kind, Mismatch, Next, Occurrences, Outcome,
+    Replacement, Tool, effect, tool,
 };
 pub use domain::{Domain, max_facts, max_out, step};
 pub use facts::{CallInfo, Fact, FactKind, Verdict};

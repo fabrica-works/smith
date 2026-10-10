@@ -373,7 +373,7 @@ fn list() -> Call {
 
 /// Reads `name`.
 fn cat(name: &[u8]) -> Call {
-    Call::Read { path: path(name), skip: 0, lines: None }
+    Call::Read { path: path(name), offset: 1, window: tools::Budget::Default }
 }
 
 /// The LLM's call `id` of `call`, as the protocol layer decoded it.
@@ -487,7 +487,15 @@ fn usage_sum(previous: Usage, usage: Usage) -> Option<Usage> {
 
 /// A read that found `content`.
 fn read(content: &[u8]) -> Outcome {
-    Outcome::Read { content: bytes(content), skipped: 0, lines: 1, total: 1, cut: false }
+    Outcome::Read {
+        content: bytes(content),
+        first: 1,
+        lines: 1,
+        total: 1,
+        cut: tools::Cut::Whole,
+        next: tools::Next::End,
+        window: tools::BytesClamp::Within,
+    }
 }
 
 /// io loaded `content` for the operation of `owner`.
@@ -769,7 +777,7 @@ fn a_batch_the_tools_answer_at_once_goes_on_from_the_ready_list_after_the_reclai
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
     // Outside the checkout: the tools answer these at their entrance.
-    let away = Call::Read { path: outside(), skip: 0, lines: None };
+    let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let over = Call::Write { path: outside(), content: bytes(b"x") };
     let content = Box::new([tool_call(b"c1", away), tool_call(b"c2", over), tool_call(b"c3", cat(b"main.rs"))]);
     // The first batch is answered within the step that started it: the
@@ -798,7 +806,7 @@ fn a_batch_the_tools_answer_at_once_goes_on_from_the_ready_list_after_the_reclai
 fn a_session_closed_while_it_rests_leaves_the_ready_list() {
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
-    let away = Call::Read { path: outside(), skip: 0, lines: None };
+    let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let over = Call::Write { path: outside(), content: bytes(b"x") };
     let content = Box::new([tool_call(b"c1", away), tool_call(b"c2", over)]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
@@ -811,7 +819,7 @@ fn a_session_closed_while_it_rests_leaves_the_ready_list() {
 fn time_expires_while_a_session_rests_between_batches() {
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
-    let away = Call::Read { path: outside(), skip: 0, lines: None };
+    let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let next = Call::Write { path: outside(), content: bytes(b"x") };
     let content = Box::new([tool_call(b"first", away), tool_call(b"next", next)]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
@@ -850,7 +858,9 @@ fn the_minimum_fact_reserve_keeps_a_maximum_batch_answered_at_the_tools_entrance
     let (owner, _) = h.open(1);
     let mut content = List::with_capacity(MAX_PARALLEL);
     for _ in 0..MAX_PARALLEL {
-        content.push(tool_call(b"c", Call::Read { path: outside(), skip: 0, lines: None })).expect("batch bound");
+        content
+            .push(tool_call(b"c", Call::Read { path: outside(), offset: 1, window: tools::Budget::Default }))
+            .expect("batch bound");
     }
     h.keep_facts();
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content.into_boxed(), Stop::ToolUse) }), None);
@@ -901,7 +911,7 @@ fn result_space_is_refused_before_any_batch_and_maximum_winners_fit() {
 
 #[test]
 fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_fits() {
-    let away = Call::Read { path: outside(), skip: 0, lines: None };
+    let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let large = Box::new([tool_call(b"a", cat(b"main.rs")), tool_call(&[b'i'; 2100], away.clone())]);
     let credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("two read credits fit");
     let limits = receiving_limits(4096, &large[..], credit);
@@ -2284,7 +2294,7 @@ fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
-    let call = Call::Read { path: outside(), skip: 0, lines: None };
+    let call = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let content = Box::new([tool_call(b"refused", call)]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
     h.env.now = Time::from_nanos(99);
