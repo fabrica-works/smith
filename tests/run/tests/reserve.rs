@@ -122,12 +122,13 @@ fn actual_facts_tell_child_shares_and_budget_without_deciding_work() {
         })
         .collect();
     assert_eq!(judge(&observed), Verdict::Passed);
-    for part in 0..3 {
+    for part in 0..4 {
         let mut bad = observed.clone();
         match part {
             0 => bad[0].1.standing.turns += 1,
             1 => bad[0].1.standing.spend += 1,
             2 => bad[0].1.standing.time = Duration::from_nanos(bad[0].1.standing.time.as_nanos() + 1),
+            3 => bad[0].1.standing.reserve_spend += 1,
             _ => unreachable!(),
         }
         assert!(matches!(judge(&bad), Verdict::Failed(_)), "budget part {part}");

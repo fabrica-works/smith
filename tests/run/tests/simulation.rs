@@ -128,6 +128,7 @@ fn reserved_start(host: &mut CrashHost, spend: u64) -> run::Event {
     let mut start = host.start(1);
     let run::Event::Start { charter, .. } = &mut start else { panic!("scripted host starts a run") };
     charter.budget.spend = spend;
+    charter.llm.prices.unit = 1_000_000;
     charter.grants.agents = true;
     start
 }
@@ -389,11 +390,17 @@ fn an_llm_that_works_on_runs_out_of_turns() {
 }
 
 #[test]
-fn an_llm_that_spends_past_the_tokens_fails_its_run_for_budget() {
+fn an_llm_that_runs_out_of_spend_fails_without_crossing_its_budget() {
     let calm = Settings::calm(5);
-    let host = host::Script { tokens_min: 5_000, tokens_max: 20_000, ..calm.host };
+    let host = host::Script { tokens_min: 80_000, tokens_max: 100_000, turns_min: 100, turns_max: 100, ..calm.host };
     let world = settled(&Settings { host, partner: Script { yields: 0, ..calm.partner }, ..calm });
-    let tokens = [Exhausted::Spend, Exhausted::Spend, Exhausted::Spend, Exhausted::Spend].map(Failure::Budget);
+    let tokens = [Exhausted::Spend].map(Failure::Budget);
+    assert!(world.facts_seen().iter().any(|fact| matches!(fact.kind,
+        run::facts::FactKind::Budget { standing, .. }
+            if standing.stage == run::Stage::WindDown
+                && standing.turns < standing.turns_limit
+                && standing.spend_limit - standing.spend < 4000)));
+    assert!(world.charges_seen().iter().all(|(_, _, charge)| charge.spent.units <= charge.budget.spend));
     for answer in answers(&world) {
         assert!(tokens.contains(&failure(answer)), "{answer:?}");
     }
@@ -647,8 +654,8 @@ fn cancels_find_runs_in_every_state() {
             jobs: 16,
             cancels: 1000,
             cancel: Span::millis(2_000, 30_000),
-            tokens_min: 5_000,
-            tokens_max: 40_000,
+            tokens_min: 80_000,
+            tokens_max: 100_000,
             ..landing.host
         };
         let partner = Script { changes: 1000, ..landing.partner };
@@ -694,6 +701,7 @@ fn cancels_find_runs_in_every_state() {
         };
         tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
     }
+    tally(&settled(&wind_down_pressure(901, true)), &mut cancels, &mut deadlines);
     let cells = [
         "preparing",
         "stopping",
@@ -704,7 +712,7 @@ fn cancels_find_runs_in_every_state() {
         "relay withdrawing",
         "relay backoff",
         "landing",
-        "over",
+        "wind-down",
         "winding",
         "answered",
         "gone",
@@ -742,8 +750,8 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
         let host = host::Script {
             jobs: 16,
             time: Span::millis(2_000, 15_000),
-            tokens_min: 2_000,
-            tokens_max: 8_000,
+            tokens_min: 80_000,
+            tokens_max: 100_000,
             ..landing.host
         };
         let partner = Script { changes: 1000, turn: Span::millis(100, 2_000), ..landing.partner };
@@ -774,6 +782,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
         };
         tally(&settled(&Settings { host, partner, ..calm }), &mut cancels, &mut deadlines);
     }
+    tally(&settled(&wind_down_pressure(902, false)), &mut cancels, &mut deadlines);
     for cell in [
         "preparing",
         "opening",
@@ -783,7 +792,7 @@ fn deadlines_find_runs_in_every_state_they_run_in() {
         "relay withdrawing",
         "relay backoff",
         "landing",
-        "over",
+        "wind-down",
     ] {
         assert!(deadlines.get(cell).is_some_and(|count| *count > 0), "no deadline found a run {cell}: {deadlines:?}");
     }
@@ -1007,4 +1016,23 @@ fn a_sub_agent_that_spends_the_ordinary_pool_leaves_main_its_reserve() {
         }
     }
     panic!("the reserved turns never let main finish after the child's last ordinary completion");
+}
+
+fn wind_down_pressure(seed: u64, cancel: bool) -> Settings {
+    let mut settings = Settings::calm(seed);
+    settings.host.jobs = 1;
+    settings.host.window = Duration::ZERO;
+    settings.host.writable = 0;
+    settings.host.verdicts = 0;
+    settings.host.reports = 1000;
+    settings.host.host_tools = 0;
+    settings.host.time = Span::millis(6000, 6000);
+    settings.host.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(2) };
+    settings.host.cancels = if cancel { 1000 } else { 0 };
+    settings.host.cancel = Span::millis(5000, 5000);
+    settings.partner.turn = Span::millis(3000, 3000);
+    settings.partner.yields = 0;
+    settings.partner.changes = 0;
+    settings.partner.finishes = 0;
+    settings
 }

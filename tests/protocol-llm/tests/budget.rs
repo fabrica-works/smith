@@ -457,7 +457,7 @@ fn two_priced_models_and_a_refused_child_delegate_conserve_global_own_charges() 
 
 #[test]
 fn an_unaffordable_completion_never_edits_or_finishes() {
-    for finish in [false, true] {
+    for (index, finish) in [(0, false), (0, true), (1, false), (1, true)] {
         let mut settings = settings(702, true, false);
         settings.budget.spend = 4;
         let mut lines = vec![call(b"edit", EDIT)];
@@ -466,13 +466,15 @@ fn an_unaffordable_completion_never_edits_or_finishes() {
         }
         let scripts =
             Box::new([script(b"@budget-crossing", vec![calls(vec![call(b"read", READ)], 3), calls(lines, 7)])]);
-        let mut world = typed_world(&settings, b"@budget-crossing", &CROSSING_RATES, scripts);
+        let mut world = native_world(settings, b"@budget-crossing", &CROSSING_RATES, scripts, None, index);
         world.run(20_000);
+        assert!(world.wire_bindings().is_empty(), "no native HTTP request was started");
         assert!(world.completions().is_empty(), "the maximum cannot fit even the first completion");
-        assert_eq!(spent(world.answer()), run::Spend::ZERO);
         assert!(matches!(
             world.answer(),
-            run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Spend), turns: 0, .. }
+            run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Budget(run::BudgetRefusal::Completion {
+                most: 4097
+            })))
         ));
         assert_eq!(world.disk().content(b"work/data.txt"), Some(b"before\n".as_slice()));
         assert!(
@@ -486,22 +488,25 @@ fn an_unaffordable_completion_never_edits_or_finishes() {
 
 #[test]
 fn an_affordable_completion_edits_and_finishes_within_the_budget() {
-    let settings = settings(702, true, false);
-    let scripts = Box::new([script(
-        b"@budget-crossing",
-        vec![calls(vec![call(b"read", READ)], 3), calls(vec![call(b"edit", EDIT), call(b"finish", REPORT)], 7)],
-    )]);
-    let mut world = typed_world(&settings, b"@budget-crossing", &CROSSING_RATES, scripts);
-    world.run(20_000);
-    let expected = conservation(&world, &CROSSING_RATES);
-    assert_eq!((expected.turns, expected.units, expected.output), (2, 12, Some(10)));
-    assert!(expected.units <= settings.budget.spend);
-    assert_eq!(world.disk().content(b"work/data.txt"), Some(b"after\n".as_slice()));
-    assert_eq!(world.turns().len(), 2);
-    assert!(matches!(
-        world.answer(),
-        run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), turns: 2, .. }
-    ));
+    for index in 0..2 {
+        let settings = settings(702, true, false);
+        let scripts = Box::new([script(
+            b"@budget-crossing",
+            vec![calls(vec![call(b"read", READ)], 3), calls(vec![call(b"edit", EDIT), call(b"finish", REPORT)], 7)],
+        )]);
+        let mut world = native_world(settings, b"@budget-crossing", &CROSSING_RATES, scripts, None, index);
+        world.run(20_000);
+        native_settled(&world);
+        let expected = conservation(&world, &CROSSING_RATES);
+        assert_eq!((expected.turns, expected.units, expected.output), (2, 12, Some(10)));
+        assert!(expected.units <= settings.budget.spend);
+        assert_eq!(world.disk().content(b"work/data.txt"), Some(b"after\n".as_slice()));
+        assert_eq!(world.turns().len(), 2);
+        assert!(matches!(
+            world.answer(),
+            run::Answer::Accepted { outcome: run::outcome::Declared::Report(_), turns: 2, .. }
+        ));
+    }
 }
 
 const COSTLY_INPUT: &[u8] = br#"{"brief":"@budget-costly own task","tools":["inspect"],"llm":"fake-2"}"#;

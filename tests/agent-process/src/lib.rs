@@ -322,7 +322,7 @@ pub fn charter() -> Box<[u8]> {
         &smith_charter::CEILINGS,
         smith_charter::BudgetParts {
             turns: 1,
-            spend: 1,
+            spend: 2,
             time: Duration::from_secs(60),
             reserve: smith_charter::Reserve::new(
                 &smith_charter::CEILINGS,

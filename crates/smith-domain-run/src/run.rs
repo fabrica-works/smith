@@ -753,6 +753,8 @@ fn account_state(run: &mut Run, ready: &mut crate::wind_down::Ready, id: Id<Run>
     let ordinary = ordinary_left(run, now);
     let exhausted = if ordinary.turns == 0 {
         Some(Exhausted::Turns)
+    } else if ordinary.spend == 0 {
+        Some(Exhausted::Spend)
     } else if ordinary.time == Duration::ZERO {
         Some(Exhausted::Time)
     } else {
@@ -827,7 +829,7 @@ fn hard_ending(ending: Ending, failure: Failure) -> Ending {
 }
 
 /// Admit unsent work, starting the finishing phase before any provider effect.
-pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: Time) -> CompletionPermit {
+pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: Time, most: u64) -> CompletionPermit {
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = domain.conversations.get(id) else {
         return CompletionPermit::Closing;
@@ -853,6 +855,8 @@ pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: T
     let ordinary = ordinary_left(run, now);
     let changed = if ordinary.turns <= run.reserved_turns {
         begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Turns)
+    } else if most > ordinary.spend.saturating_sub(run.reserved) {
+        begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Spend)
     } else if ordinary.time == Duration::ZERO {
         begin_wind_down(run, &mut domain.ready, run_id, Exhausted::Time)
     } else {
@@ -890,9 +894,14 @@ fn working_permit(run: &mut Run, child: bool, now: Time) -> CompletionPermit {
     }
     match &mut run.wind_down {
         Some(crate::wind_down::WindDown::Settling { .. }) => CompletionPermit::Held,
-        Some(crate::wind_down::WindDown::Finishing { used, noted, .. }) => {
+        Some(crate::wind_down::WindDown::Finishing { used, noted, exhausted }) => {
             if *used >= run.charter.reserve.turns {
-                return CompletionPermit::Denied(Exhausted::Turns);
+                let reason = if run.charter.reserve.turns == 0 && *exhausted == Exhausted::Spend {
+                    Exhausted::Spend
+                } else {
+                    Exhausted::Turns
+                };
+                return CompletionPermit::Denied(reason);
             }
             let note = if *noted {
                 None
@@ -917,8 +926,12 @@ fn final_remaining(run: &Run, now: Time) -> Result<(), Exhausted> {
         return Err(Exhausted::Time);
     }
     match &run.wind_down {
-        Some(crate::wind_down::WindDown::Finishing { used, .. }) if *used >= run.charter.reserve.turns => {
-            Err(Exhausted::Turns)
+        Some(crate::wind_down::WindDown::Finishing { used, exhausted, .. }) if *used >= run.charter.reserve.turns => {
+            Err(if run.charter.reserve.turns == 0 && *exhausted == Exhausted::Spend {
+                Exhausted::Spend
+            } else {
+                Exhausted::Turns
+            })
         }
         Some(crate::wind_down::WindDown::Finishing { .. } | crate::wind_down::WindDown::Settling { .. }) | None => {
             Ok(())
@@ -969,7 +982,13 @@ pub(crate) fn reserve(domain: &mut Domain, conversation: Token, owner: Token, mo
             return Err(Exhausted::Turns);
         }
     }
-    if total > run.charter.budget.spend {
+    let spend_ceiling = if final_turn {
+        run.charter.budget.spend
+    } else {
+        let reserved = crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm).expect("admitted reserve");
+        run.charter.budget.spend.checked_sub(reserved).expect("admitted reserve")
+    };
+    if total > spend_ceiling {
         return Err(Exhausted::Spend);
     }
     if final_turn {
@@ -1098,7 +1117,7 @@ fn serve(
         Ask::Wait => {
             let result = if main != conversation || !run.charter.grants.wait {
                 Returned::Refused { refusal: AskRefusal::NotGranted }
-            } else if run.charter.budget.exhausted(run.spent).is_some() && run.wind_down.is_none() {
+            } else if run.charter.budget.exhausted(run.spent).is_some() {
                 Returned::Refused { refusal: AskRefusal::Over }
             } else if run.inbox.has_queued() {
                 Returned::Waited { text: prompt::waited() }
@@ -1832,7 +1851,7 @@ fn sub_agent(
         left,
         call_left: deadline.saturating_since(env.now),
     };
-    if run.wind_down.is_none() && run.charter.budget.exhausted(run.spent).is_some() {
+    if run.charter.budget.exhausted(run.spent).is_some() {
         out.push(Request::Return { spent: 0, call, result: Returned::Refused { refusal: AskRefusal::Over } });
         return;
     }

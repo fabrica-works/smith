@@ -44,7 +44,7 @@ pub(super) fn config() -> Config {
             idle: Duration::from_secs(30),
         }]),
         models: Box::new([run::charter::Llm {
-            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             dialect: 1,
             account: 7,
             endpoint: Endpoint(4),
@@ -421,4 +421,20 @@ fn invalid_or_unowned_model_declarations_refuse_local_startup() {
     let config = config();
     let limits = Limits { smith: smith_domain::Limits { configured_model_bytes: 0, ..limits.smith }, ..limits };
     assert_eq!(config.validate(&limits), Err(Invalid::Limits));
+}
+
+#[test]
+fn impossible_completion_or_reserve_spend_refuses_before_local_agent_construction() {
+    let limits = limits();
+    for (spend, reason) in [
+        (4_127, run::BudgetRefusal::Completion { most: 4_128 }),
+        (8_256, run::BudgetRefusal::Reserve(run::Part::Spend)),
+    ] {
+        let mut impossible = config();
+        impossible.models[0].prices.unit = 1;
+        impossible.models[0].window = 4000;
+        impossible.budget.spend = spend;
+        impossible.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(1) };
+        assert_eq!(Domain::new(impossible, &limits, 71).err(), Some(Invalid::Budget(reason)));
+    }
 }

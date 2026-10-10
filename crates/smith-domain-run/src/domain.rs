@@ -217,9 +217,10 @@ pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) 
 
 /// Root asks before publishing a completion. This may record the finishing
 /// stage and keep deferred child closures; it never starts provider work.
+/// `most` is the unsent completion's maximum in the host's priced unit.
 #[must_use]
-pub fn completion_permit(domain: &mut Domain, conversation: Token, now: Time) -> crate::CompletionPermit {
-    run::completion_permit(domain, conversation, now)
+pub fn completion_permit(domain: &mut Domain, conversation: Token, now: Time, most: u64) -> crate::CompletionPermit {
+    run::completion_permit(domain, conversation, now, most)
 }
 
 /// Reserve a provider completion's priced maximum from the run's one budget.

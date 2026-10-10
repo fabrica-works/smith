@@ -189,7 +189,7 @@ fn charter(held: u64) -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
-            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
+            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
@@ -198,7 +198,7 @@ fn charter(held: u64) -> Charter {
             dialect: 1,
         },
         models: Box::new([Llm {
-            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
+            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
@@ -683,7 +683,7 @@ fn full_delivery_charter(limits: &Limits) -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
-            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
+            prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
@@ -982,7 +982,7 @@ fn a_run_at_scalar_maxima_emits_its_largest_final_note_within_its_ownership_boun
     env.now = Time::from_nanos(1);
     while domain.pop_fact().is_some() {}
     meter.start();
-    let permit = smith_domain_run::completion_permit(&mut domain, conversation, env.now);
+    let permit = smith_domain_run::completion_permit(&mut domain, conversation, env.now, 0);
     let measured = meter.end();
     let smith_domain_run::CompletionPermit::Final { note: Some(note) } = permit else { panic!("maximum note") };
     assert!(note.windows(b"4294967294".len()).any(|bytes| bytes == b"4294967294"));

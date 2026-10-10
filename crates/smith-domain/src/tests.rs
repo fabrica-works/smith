@@ -1892,7 +1892,12 @@ fn scalar_charter() -> Charter {
     let selected = charter();
     Charter {
         budget: run::Budget { spend: 100, ..selected.budget },
-        llm: Llm { prices: run::Prices { input: 1, cached: 2, cache_write: None, output: 3, unit: 1 }, ..selected.llm },
+        llm: Llm {
+            window: 8,
+            output: 1,
+            prices: run::Prices { input: 1, cached: 2, cache_write: None, output: 3, unit: 1 },
+            ..selected.llm
+        },
         ..selected
     }
 }
@@ -1998,12 +2003,26 @@ fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
         },
         ..scalar_charter()
     };
-    let (harness, emitted) = scalar_prepared(selected);
-    let [Request::Answer { answer: run::Answer::Failed { failure, spent, turns }, .. }] = emitted.as_ref() else {
-        panic!("overflow settles with a typed answer: {emitted:?}");
+    let mut harness = Harness::with(&scalar_limits());
+    let emitted = harness.step(Event::Start {
+        messages: Box::default(),
+        window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
+        answered: Box::default(),
+        workspace: Some(workspace()),
+        grants: Box::default(),
+        reply_to: ReplyTo::new(Token::new(1)),
+        host_run: Token::new(1),
+        identity: None,
+        activation: 1,
+        charter: selected,
+        transcript: None,
+    });
+    let [Request::Answer { answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Budget(reason))), .. }] =
+        emitted.as_ref()
+    else {
+        panic!("overflow refuses at entrance: {emitted:?}")
     };
-    assert_eq!(*failure, run::Failure::Budget(run::Exhausted::Spend));
-    assert_eq!((spent.units, spent.turns, *turns), (0, 0, 0));
+    assert_eq!(*reason, run::BudgetRefusal::Reserve(run::Part::Spend));
     assert!(harness.turns.is_empty());
     assert_eq!(harness.domain.flights(), 0);
 }
@@ -2231,6 +2250,7 @@ fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() 
         let selected = Charter {
             budget: run::Budget { spend: 100_000, ..selected.budget },
             llm: Llm {
+                window: 8192,
                 output: 10,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 3_000_000, unit: 1_000_000 },
                 ..selected.llm

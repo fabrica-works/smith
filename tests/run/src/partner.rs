@@ -60,6 +60,9 @@ use skein_world::domain::Span;
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Script {
+    /// Optional real integer rates; absent keeps the historical scripted charge oracle.
+    pub prices: Option<smith_domain_run::Prices>,
+
     /// Conversations at once. An opening beyond them is refused as busy.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
@@ -466,7 +469,7 @@ impl Partner {
     #[must_use]
     pub fn turn_max(&self) -> Spend {
         let Script { input, output, cache, .. } = self.script;
-        Spend {
+        let mut maximum = Spend {
             units: input,
             turns: 1,
             input: Some(input),
@@ -474,7 +477,11 @@ impl Partner {
             cache_read: Some(cache),
             cache_write: Some(cache),
             reasoning: None,
+        };
+        if let Some(prices) = self.script.prices {
+            maximum.units = scripted_price(prices, maximum);
         }
+        maximum
     }
 
     /// Delivers a new typed opening to the scripted peer or session and retains its pending terminal obligations.
@@ -982,7 +989,10 @@ impl Partner {
             cache_write: Some(self.rng.below(cache.saturating_add(1))),
             reasoning: None,
         };
-        spend.units = spend.input.expect("scripted input is reported");
+        spend.units = match self.script.prices {
+            Some(prices) => scripted_price(prices, spend),
+            None => spend.input.expect("scripted input is reported"),
+        };
         let talk = self.talks.get_mut(&peer).expect("a live conversation spends");
         talk.spent = talk.spent.accumulate(spend).expect("bounded scripted usage");
         self.spent = self.spent.accumulate(spend).expect("bounded scripted usage");
@@ -1069,4 +1079,14 @@ fn overspent(budget: &Budget, spent: Spend) -> Option<Exhausted> {
     } else {
         None
     }
+}
+
+// An outside bill oracle: raw callback counts at the injected rates, rounded once.
+fn scripted_price(prices: smith_domain_run::Prices, spend: Spend) -> u64 {
+    let numerator = u128::from(spend.input.expect("scripted input")) * u128::from(prices.input)
+        + u128::from(spend.output.expect("scripted output")) * u128::from(prices.output)
+        + u128::from(spend.cache_read.expect("scripted cache read")) * u128::from(prices.cached)
+        + u128::from(spend.cache_write.expect("scripted cache write"))
+            * u128::from(prices.cache_write.unwrap_or(prices.input));
+    u64::try_from(numerator.div_ceil(u128::from(prices.unit))).expect("bounded scripted price")
 }

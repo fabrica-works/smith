@@ -11,6 +11,7 @@ pub struct Charged {
     pub spent: Spend,
     pub budget: Budget,
     pub reserve: Reserve,
+    pub reserved_spend: u64,
     pub time: Duration,
 }
 
@@ -44,7 +45,10 @@ impl Expectations for Meeting {
                 && got.reserve == outside.reserve,
             "budget facts reproduce the admitted host ceiling and reserve",
         );
-        judge.check(got.reserve_spend == 0, "the derived spend reserve is introduced by its own increment");
+        judge.check(
+            got.reserve_spend == outside.reserved_spend,
+            "reserve spend follows the admitted model rates and bounds",
+        );
     }
 }
 

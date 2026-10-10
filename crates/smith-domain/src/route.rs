@@ -659,13 +659,44 @@ fn denied_budget(exhausted: run::Exhausted) -> session::BudgetDenial {
     }
 }
 
+fn completion_input(peer: &Peer, prompt: &session::llm::Prompt) -> Option<u64> {
+    prompt.input_bytes()?.checked_add(peer.declaration_bytes()?)
+}
+
+fn pending_permit(
+    domain: &mut Domain,
+    conversation: Token,
+    env: &Env<Limits>,
+    pending: &PendingCompletion,
+) -> run::CompletionPermit {
+    match run::completion_permit(&mut domain.run, conversation, env.now, 0) {
+        run::CompletionPermit::Allowed => {}
+        permit @ (run::CompletionPermit::Final { .. }
+        | run::CompletionPermit::Held
+        | run::CompletionPermit::Denied(_)
+        | run::CompletionPermit::Closing) => return permit,
+    }
+    let id = *domain.sessions.get(&pending.owner).expect("pending session");
+    let peer = domain.peers.get(id).expect("session retains peer");
+    let most = match completion_input(peer, &pending.prompt) {
+        Some(bytes) => {
+            session::preview_reservation(&domain.session, pending.owner, bytes, 0, pending.prompt.max_tokens)
+        }
+        None => None,
+    };
+    match most {
+        Some(most) => run::completion_permit(&mut domain.run, conversation, env.now, most),
+        None => run::CompletionPermit::Denied(run::Exhausted::Spend),
+    }
+}
+
 fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, out: &mut Queue<Request>) {
     let owner = pending.owner;
     let id = *domain.sessions.get(&owner).expect("a session asks for completions once it has opened");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     // Admission precedes grant lookup, prompt cloning, lease retention
     // and every Client effect. This completion is still unsent.
-    match run::completion_permit(&mut domain.run, conversation, env.now) {
+    match pending_permit(domain, conversation, env, &pending) {
         run::CompletionPermit::Allowed | run::CompletionPermit::Final { note: None } => {}
         run::CompletionPermit::Final { note: Some(note) } => {
             drop(pending);
@@ -694,13 +725,7 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     let forgotten = peer.forget_asks(&env.limits.session);
     domain.tickets = domain.tickets.saturating_sub(forgotten);
     let account = peer.account;
-    let input_bytes = match prompt.input_bytes() {
-        Some(bytes) => match peer.declaration_bytes() {
-            Some(declarations) => bytes.checked_add(declarations),
-            None => None,
-        },
-        None => None,
-    };
+    let input_bytes = completion_input(peer, &prompt);
     let prompt = peer.prompt(prompt);
     let reservation = match input_bytes {
         Some(bytes) => session::reserve_completion(&mut domain.session, owner, bytes, 0, prompt.max_tokens),

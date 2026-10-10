@@ -49,8 +49,37 @@ fn random_worlds_settle_with_every_start_answered_once() {
     let (mut busy, mut lost, mut answered) = (0, 0, 0);
     // Ordinary expiry now starts wind-down or parks. Retain the noisy corpus
     // and add a long child turn that actually crosses the full run deadline.
-    for seed in 0..301 {
-        let settings = if seed == 300 { time_pressure() } else { noisy(seed) };
+    for seed in 0..304 {
+        let settings = match seed {
+            300 => time_pressure(),
+            301 => {
+                let mut settings = Settings::calm(3);
+                settings.run.nudges = 0;
+                settings.partner.yields = 1000;
+                settings.partner.odd_stops = 1000;
+                settings
+            }
+            302 => {
+                let mut settings = Settings::calm(5);
+                settings.host.tokens_min = 80_000;
+                settings.host.tokens_max = 100_000;
+                settings.host.turns_min = 100;
+                settings.host.turns_max = 100;
+                settings.partner.yields = 0;
+                settings
+            }
+            303 => {
+                let mut settings = Settings::calm(seed);
+                settings.host.jobs = 1;
+                settings.host.host_tools = 1000;
+                settings.host.relay_lost = 1000;
+                settings.host.relay_busy = 0;
+                settings.partner.host_calls = 1000;
+                settings.partner.yields = 0;
+                settings
+            }
+            _ => noisy(seed),
+        };
         let world = settled(&settings);
         assert_eq!(
             smith_run_world::child_final_referee::judge(world.facts_seen()),
@@ -158,4 +187,38 @@ fn random_reserves_keep_parallel_children_above_the_finishing_pool() {
         main_in_reserve += observed.1;
     }
     assert!(children > 0 && main_in_reserve > 0, "the sweep actually admits children and reserved main turns");
+}
+
+#[test]
+fn drawn_prices_reserve_main_and_children_without_spending_past_the_ceiling() {
+    let mut rng = Rng::new(0x0712);
+    let mut charged = 0;
+    for seed in 0..48 {
+        let mut settings = Settings::calm(seed);
+        settings.host.jobs = 1;
+        settings.host.writable = 0;
+        settings.host.verdicts = 0;
+        settings.host.reports = 1000;
+        settings.host.agents = 1000;
+        settings.host.host_tools = 0;
+        settings.host.reserve = smith_domain_run::charter::Reserve { turns: 2, time: Duration::from_secs(1) };
+        settings.partner.prices = Some(smith_domain_run::Prices {
+            input: rng.between(1, 5),
+            cached: rng.between(1, 9),
+            cache_write: Some(rng.between(1, 7)),
+            output: rng.between(1, 8),
+            unit: u32::try_from(rng.between(1, 100)).expect("small denominator"),
+        });
+        settings.partner.asks = 600;
+        settings.partner.finishes = 300;
+        settings.partner.changes = 0;
+        settings.partner.parallel = 3;
+        settings.partner.yields = 0;
+        let world = settled(&settings);
+        for (_, _, charge) in world.charges_seen() {
+            assert!(charge.spent.units <= charge.budget.spend, "price seed {seed}: {charge:?}");
+            charged += 1;
+        }
+    }
+    assert!(charged > 48, "priced main and child callbacks actually enter the shared pool");
 }

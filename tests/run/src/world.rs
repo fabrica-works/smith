@@ -146,6 +146,7 @@ impl Settings {
                 push_failures: 0,
             },
             partner: Script {
+                prices: None,
                 conversations: 16,
                 invalid: 0,
                 turn: Span::millis(100, 5_000),
@@ -416,6 +417,7 @@ enum Lane {
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct Start {
+    reserved_spend: u64,
     budget: run::Budget,
     reserve: run::charter::Reserve,
     /// The roots whose checks a change must pass, once its checkout is made.
@@ -441,6 +443,7 @@ struct Open {
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
 struct RunView {
+    reserved_spend: u64,
     admitted_at: Time,
     budget: run::Budget,
     reserve: run::charter::Reserve,
@@ -1140,7 +1143,8 @@ impl World {
                 continue;
             }
             assert_eq!(self.conversation_of_peer.get(&peer), Some(&conversation), "Started really stepped first");
-            let mut permit = run::completion_permit(&mut self.run, conversation, self.now);
+            let mut permit =
+                run::completion_permit(&mut self.run, conversation, self.now, self.partner.turn_max().units);
             if matches!(permit, run::CompletionPermit::Allowed | run::CompletionPermit::Final { .. }) {
                 let owner = self.run_of_conversation[&conversation];
                 let view = &self.views[&owner];
@@ -1151,7 +1155,7 @@ impl World {
                     .count();
                 let child = view.main != Some(conversation);
                 let ordinary_turns = view.budget.turns.saturating_sub(view.reserve.turns);
-                match run::reserve(&mut self.run, conversation, conversation, 0) {
+                match run::reserve(&mut self.run, conversation, conversation, self.partner.turn_max().units) {
                     Ok(()) => {
                         if matches!(permit, run::CompletionPermit::Final { .. }) {
                             self.wind_down_seen.push((
@@ -1196,8 +1200,9 @@ impl World {
     /// Retain the independent start budget and checks at actual admission.
     /// Contract: domain/run.md, sections 3, 9 and 13.
     fn admitted(&mut self, host_run: Token, run: Token) {
-        let Start { budget, reserve, checks, .. } = &self.starts[&host_run];
+        let Start { budget, reserve, checks, reserved_spend, .. } = &self.starts[&host_run];
         let view = RunView {
+            reserved_spend: *reserved_spend,
             admitted_at: self.now,
             budget: *budget,
             reserve: *reserve,
@@ -1377,9 +1382,10 @@ impl World {
         if let run::Event::Used { conversation, .. } | run::Event::Ended { conversation, .. } = event
             && self.reservations.remove(conversation)
         {
+            let charge = if let run::Event::Used { spend, .. } = event { spend.units } else { 0 };
             assert!(
-                run::settle_reservation(&mut self.run, *conversation, *conversation, 0),
-                "the scripted provider reserves only turn credit"
+                run::settle_reservation(&mut self.run, *conversation, *conversation, charge),
+                "the scripted provider charges within its actual reserved maximum"
             );
         }
         let view = self.views.get_mut(&owner)?;
@@ -1399,6 +1405,7 @@ impl World {
                         spent: view.spent,
                         budget: view.budget,
                         reserve: view.reserve,
+                        reserved_spend: view.reserved_spend,
                         time: self.now.saturating_since(view.admitted_at),
                     },
                 ));
@@ -1448,9 +1455,15 @@ impl World {
             None if view.main.is_none() => "preparing",
             None if view.decided => "winding",
             None if !view.started => "opening",
-            // Past its budget is a state of the run's own, landing or not.
-            None if view.budget_spent() => "over",
             None if landing => "landing",
+            None if self.facts_seen.iter().rev().any(|fact| {
+                matches!(fact.kind,
+                run::facts::FactKind::Budget { run: owner, standing }
+                    if owner == run && standing.stage == run::Stage::WindDown)
+            }) =>
+            {
+                "wind-down"
+            }
             None if self.relay_stage.contains_key(&run) => self.relay_stage[&run],
             None if view.waiting => "waiting",
             None => "working",
@@ -1677,8 +1690,27 @@ impl World {
     fn host_out(&mut self, out: Vec<run::Event>) {
         for event in out {
             match event {
-                run::Event::Start { reply_to, host_run, charter, workspace, .. } => {
+                run::Event::Start { reply_to, host_run, mut charter, workspace, .. } => {
+                    if let Some(prices) = self.settings.partner.prices {
+                        charter.llm.prices = prices;
+                        for model in &mut charter.models {
+                            model.prices = prices;
+                        }
+                    }
+                    let input_rate = charter
+                        .llm
+                        .prices
+                        .input
+                        .max(charter.llm.prices.cached)
+                        .max(charter.llm.prices.cache_write.unwrap_or(charter.llm.prices.input));
+                    let numerator = u128::from(charter.llm.window) * u128::from(input_rate)
+                        + u128::from(charter.llm.output) * u128::from(charter.llm.prices.output);
+                    let unit = u128::from(charter.llm.prices.unit);
+                    let maximum = numerator.div_ceil(unit);
+                    let reserved_spend =
+                        u64::try_from(maximum * u128::from(charter.reserve.turns)).expect("finite scripted reserve");
                     let start = Start {
+                        reserved_spend,
                         budget: charter.budget,
                         reserve: charter.reserve,
                         checks: BTreeSet::new(),
@@ -2126,6 +2158,10 @@ impl World {
         assert_eq!(crate::share_referee::judge(&self.share_seen), skein_world::domain::Verdict::Passed);
         assert!(self.reservations.is_empty(), "every pending provider turn settled");
         assert!(
+            self.views.values().all(|view| !view.budget_spent()),
+            "honest reserved callbacks never cross a scalar ceiling"
+        );
+        assert!(
             crate::lease_referee::judge(&self.lease_seen)
                 .iter()
                 .all(|verdict| *verdict == skein_world::domain::Verdict::Passed),
@@ -2230,7 +2266,7 @@ impl RunView {
         let (spent, budget) = (self.spent, self.budget);
         run::Budget {
             turns: budget.turns.saturating_sub(self.reserve.turns).saturating_sub(spent.turns),
-            spend: budget.spend.saturating_sub(spent.units),
+            spend: budget.spend.saturating_sub(spent.units).saturating_sub(self.reserved_spend),
             time: Duration::from_nanos(
                 self.deadline.saturating_since(now).as_nanos().saturating_sub(self.reserve.time.as_nanos()),
             ),

@@ -125,10 +125,10 @@ pub enum Stage {
     WindDown,
 }
 
-/// Host-supplied model rates, interpreted only by Session. The price is the
-/// ceiling of ((fresh input + cache writes)*input + cache reads*cached +
-/// output*output)/unit, checked before conversion to u64. The run refuses zero
-/// rates or a zero unit before discovery; Session keeps its own charging policy.
+/// Host-supplied rates: Session charges reported usage; Run derives completion
+/// maxima from them (domain/run.md, section 9). Absent cache-write pricing uses
+/// the input rate. The run refuses zero rates or a zero unit before discovery;
+/// Session keeps its own generic charging policy.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Prices {
     /// Fresh input rate.
@@ -368,6 +368,10 @@ pub fn admit(
     if reserve.time >= budget.time {
         return Err(BudgetRefusal::Reserve(Part::Time));
     }
+    let most = most_costly(main).ok_or(BudgetRefusal::Reserve(Part::Spend))?;
+    if most > budget.spend {
+        return Err(BudgetRefusal::Completion { most });
+    }
     let reserved = reserve_spend(reserve, main).ok_or(BudgetRefusal::Reserve(Part::Spend))?;
     if reserved >= budget.spend {
         return Err(BudgetRefusal::Reserve(Part::Spend));
@@ -380,10 +384,23 @@ pub fn admit(
     Ok(())
 }
 
-/// Finishing spend is zero until increment 07.12 derives it from main's window.
+/// Main's full input window at the highest input rate and output at its rate,
+/// rounded up once.
+/// Contract: domain/run.md, sections 9 and 9.1.
 #[must_use]
-pub const fn reserve_spend(_reserve: Reserve, _main: &Llm) -> Option<u64> {
-    Some(0)
+pub fn most_costly(main: &Llm) -> Option<u64> {
+    let input = u128::from(main.window).checked_mul(u128::from(main.prices.reserved_input()))?;
+    let output = u128::from(main.output).checked_mul(u128::from(main.prices.output))?;
+    let sum = input.checked_add(output)?;
+    let unit = u128::from(main.prices.unit);
+    let rounded = sum.checked_div(unit)?.checked_add(u128::from(sum.checked_rem(unit)? != 0))?;
+    u64::try_from(rounded).ok()
+}
+
+/// Main's finishing turns, each charged at its maximum completion cost.
+#[must_use]
+pub fn reserve_spend(reserve: Reserve, main: &Llm) -> Option<u64> {
+    most_costly(main)?.checked_mul(u64::from(reserve.turns))
 }
 
 /// Remaining ordinary credit, above main's finishing reserve in each part.

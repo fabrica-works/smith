@@ -123,3 +123,34 @@ fn final_turns_ignored_fail_once_for_the_budget() {
         );
     }
 }
+
+#[test]
+fn a_run_whose_spend_runs_out_first_winds_down_and_is_accepted() {
+    let mut witnessed = 0;
+    for seed in 0..16 {
+        let mut settings = settings(seed);
+        settings.host.turns_min = 100;
+        settings.host.turns_max = 100;
+        settings.partner.prices =
+            Some(smith_domain_run::Prices { input: 1, cached: 1, cache_write: Some(1), output: 1, unit: 1 });
+        settings.host.tokens_min = 2 * 69_632 + 9_001;
+        settings.host.tokens_max = settings.host.tokens_min;
+        settings.host.reserve.turns = 2;
+        settings.host.agents = 0;
+        settings.partner.finishes = 200;
+        let mut world = World::new(settings);
+        world.run(1_000_000);
+        assert!(world.charges_seen().iter().all(|(_, _, charge)| charge.spent.units <= charge.budget.spend));
+        if world.facts_seen().iter().any(|fact| {
+            matches!(fact.kind,
+            smith_domain_run::facts::FactKind::Budget { standing, .. }
+                if standing.stage == smith_domain_run::Stage::WindDown
+                    && standing.turns < standing.turns_limit - standing.reserve.turns
+                    && standing.time.as_nanos() < standing.time_limit.as_nanos() - standing.reserve.time.as_nanos())
+        }) && world.answers().any(|answer| matches!(answer, Some(Answer::Accepted { .. })))
+        {
+            witnessed += 1;
+        }
+    }
+    assert!(witnessed > 0, "actual spend starts final work before turns or time, then accepts");
+}

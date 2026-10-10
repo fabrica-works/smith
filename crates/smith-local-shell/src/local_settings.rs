@@ -704,6 +704,14 @@ mod tests {
                 .expect("zero rate");
             assert_eq!(refused, format!("models[0].{key} must be positive"));
         }
+        for spend in [1, 337_920] {
+            let mut impossible = settings.clone();
+            impossible.budget.spend = spend;
+            let refused = policy(&impossible, &endpoints, agent_limits, vec![0; impossible.models.len()].into())
+                .err()
+                .expect("spend cannot pay main or retain its reserve");
+            assert!(refused.contains("budget.spend"), "{refused}");
+        }
         let prepared =
             policy(&settings, &endpoints, agent_limits, vec![0; settings.models.len()].into()).expect("bounded policy");
         assert!(prepared.paths.is_empty());

@@ -214,6 +214,13 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
         Ok(sections) if sections <= limits.brief_sections => {}
         Ok(_) | Err(_) => return Err(Invalid::TooLarge),
     }
+    match llm.prices.check() {
+        Ok(()) => {}
+        Err(rate) => return Err(Invalid::Price(rate)),
+    }
+    if !valid_llm(llm) {
+        return Err(Invalid::Llm);
+    }
     let checks = if outcome.change.is_some() || grants.deliver.is_some() { Some(limits.check_timeout) } else { None };
     match crate::budget::admit(budget, *reserve, llm, &limits.budget, checks) {
         Ok(()) => {}
@@ -222,11 +229,7 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
     if *waiting > limits.waiting {
         return Err(Invalid::Budget(crate::BudgetRefusal::Ceiling(crate::Ceiling::Time(limits.waiting))));
     }
-    match llm.prices.check() {
-        Ok(()) => {}
-        Err(rate) => return Err(Invalid::Price(rate)),
-    }
-    if !valid_llm(llm) || count(models.len()) > limits.models || repeated_model(models) {
+    if count(models.len()) > limits.models || repeated_model(models) {
         return Err(Invalid::Llm);
     }
     for model in models {

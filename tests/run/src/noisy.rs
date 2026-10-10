@@ -49,6 +49,7 @@ pub fn noisy(seed: u64) -> Settings {
         ..host
     };
     let partner = Script {
+        prices: None,
         conversations: small(pick(0, 4)),
         invalid: small(pick(0, 30)),
         turn: Span::millis(10, pick(100, 20_000)),

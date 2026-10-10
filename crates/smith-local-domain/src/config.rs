@@ -205,6 +205,13 @@ impl Config {
             }
         };
         let main = self.models.first().ok_or(Invalid::Models)?;
+        match main.prices.check() {
+            Ok(()) => {}
+            Err(rate) => return Err(Invalid::Price(rate)),
+        }
+        if main.window == 0 || main.output == 0 || main.prices.unit == 0 {
+            return Err(Invalid::Models);
+        }
         match run::admit(&self.budget, self.reserve, main, &limits.smith.run.budget, checks) {
             Ok(()) => {}
             Err(reason) => return Err(Invalid::Budget(reason)),
