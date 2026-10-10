@@ -676,6 +676,7 @@ enum Delivery {
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     Deadline {
         call: u64,
+        phase: smith_domain_session::llm::Phase,
     },
     /// A cancel that won its race is told.
     ///
@@ -1158,10 +1159,13 @@ impl World {
                 self.check_results(owner, &prompt);
                 self.stats.not_run += not_run(&prompt);
                 let call = self.wire.name();
-                let deadline = self.schedule(
-                    deadlines.whole.min(self.now.saturating_add(deadlines.head)),
-                    Delivery::Deadline { call },
-                );
+                let head = self.now.saturating_add(deadlines.head);
+                let phase = if deadlines.whole <= head {
+                    smith_domain_session::llm::Phase::Whole
+                } else {
+                    smith_domain_session::llm::Phase::Head
+                };
+                let deadline = self.schedule(deadlines.whole.min(head), Delivery::Deadline { call, phase });
                 let opener = *self.openers.get(&owner).expect("a session calls the LLM while it lives");
                 let served = prompt.delegated.clone();
                 self.calls.open(call, Call { owner, deadline, opener, served });
@@ -1760,7 +1764,7 @@ impl World {
                         self.stats.late_answers += 1;
                     }
                 }
-                Delivery::Deadline { call } => {
+                Delivery::Deadline { call, phase } => {
                     let Call { owner, .. } =
                         self.end_call(call).expect("a deadline is withdrawn when its call ends first");
                     if self.cancel_lost.remove(&owner) {
@@ -1768,7 +1772,7 @@ impl World {
                     }
                     self.agent_stage.push(agent::Event::Failed {
                         owner,
-                        failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Whole },
+                        failure: Failure::TimedOut { phase },
                         evidence: smith_domain_session::llm::Evidence::Unknown,
                         detail: Box::default(),
                     });

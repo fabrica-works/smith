@@ -206,7 +206,7 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
     assert_eq!(
         end(&world, opener),
         End::Failed {
-            failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Whole },
+            failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Head },
             evidence: smith_domain_session::llm::Evidence::Unknown
         }
     );
