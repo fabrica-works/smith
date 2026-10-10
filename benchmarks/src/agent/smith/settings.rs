@@ -81,10 +81,9 @@ fn overrides(
         let (path, declared) = match name.as_str() {
             "window" | "output" | "reasoning_item" | "head" | "idle" => (format!("/models/0/{name}"), false),
             "connect" | "handshake" => (format!("/agent/endpoints/0/{name}"), false),
-            "conversations" | "tool_payload" | "calls_per_response" | "read_window" | "shell_output" | "shell_head"
-            | "shell_tail" | "search_hits" | "search_bytes" | "list_entries" | "guide" | "llm_pool" | "memory" => {
-                (format!("/agent/profile/declared/{name}"), true)
-            }
+            "conversations" | "tool_payload" | "file_bytes" | "calls_per_response" | "read_window" | "shell_output"
+            | "shell_head" | "shell_tail" | "search_hits" | "search_bytes" | "list_entries" | "guide" | "llm_pool"
+            | "memory" => (format!("/agent/profile/declared/{name}"), true),
             "max_turns" | "max_spend" | "max_time" | "max_waiting" | "sections" | "host_tools" | "verdicts"
             | "items" | "fields" | "inbox" | "unacknowledged" | "connection_keep" | "tool_deadline"
             | "shell_timeout" | "group_stop" | "close" | "write_deadline" | "cancel_grace" | "exit_grace" => {
@@ -297,6 +296,7 @@ mod tests {
         // call count, so current native InputAnswer/WindowFirst checks apply.
         task.smith.insert("tool_payload".into(), toml::Value::Integer(4096));
         task.smith.insert("calls_per_response".into(), toml::Value::Integer(1));
+        task.smith.insert("file_bytes".into(), toml::Value::Integer(1_048_576));
         let current = render(&task, Shape::LocalDelegating).expect("current");
         assert_eq!(current["agent"]["profile"]["declared"]["read_window"], 4096);
         assert_eq!(current["agent"]["profile"]["declared"]["tool_payload"], 4096);
@@ -306,7 +306,9 @@ mod tests {
         let local: smith_local_shell::local_settings::Settings =
             serde_json::from_value(current.clone()).expect("shipped local settings");
         let encoded = smith_local_shell::local_settings::agent_document(&local).expect("local generates its models");
-        smith_agent_shell::config::parse(&encoded).expect("shipped agent accepts the local-generated document");
+        let configured =
+            smith_agent_shell::config::parse(&encoded).expect("shipped agent accepts the local-generated document");
+        assert_eq!(configured.profile.declared.file_bytes, 1_048_576);
         task.smith.insert("output".into(), toml::Value::Integer(1024));
         let changed = render(&task, Shape::LocalDeclared).expect("declared output override");
         assert_eq!(changed["models"][0]["output"], 1024);
