@@ -523,7 +523,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
                     Role::User,
                     vec![Part::ToolOutput {
                         id: id.as_slice().into(),
-                        output: b"1: old\n(1 of 1 lines; skipped 0)".as_slice().into(),
+                        output: b"1: old\n(1 of 1 lines; skipped 0) [end of file]".as_slice().into(),
                         is_error: false,
                     }],
                 ),
@@ -613,7 +613,7 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     };
     let read_result = |number: usize| Part::ToolOutput {
         id: format!("call_{number:016x}").into_bytes().into(),
-        output: b"1: old\n(1 of 1 lines; skipped 0)".as_slice().into(),
+        output: b"1: old\n(1 of 1 lines; skipped 0) [end of file]".as_slice().into(),
         is_error: false,
     };
     history.extend([

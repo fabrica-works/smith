@@ -582,7 +582,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         );
         let offered = &world.prompts()[0].tools;
         for (name, parameters, detail) in [
-            (b"read".as_slice(), 3, b"max 73 bytes".as_slice()),
+            (b"read".as_slice(), 3, b"default 73 bytes; max 257 bytes".as_slice()),
             (b"list", 3, b"max 37 bytes"),
             (b"search", 3, b"Search pattern"),
             (b"write", 2, b"max 257 bytes"),
@@ -637,7 +637,8 @@ fn namespace_descriptions_and_list_slash_reach_both_native_provider_dialects() {
             }
             let workspace = run::Workspace { directories: directories.into() };
             let mut settings = Settings { job: Job::Reporting, ..Settings::calm(1096) };
-            let client = skein_llm_world::limits();
+            let mut client = skein_llm_world::limits();
+            client.request = 16384;
             let bounds = Limits {
                 client,
                 tool_bytes: 32768,

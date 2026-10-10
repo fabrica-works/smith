@@ -25,7 +25,7 @@ fn workspace_successes_render_the_retained_content_and_counts() {
                 next: if 2 + 2 < 9 { tools::Next::Line(2 + 2 + 1) } else { tools::Next::End },
                 window: tools::BytesClamp::Within,
             },
-            b"3: alpha\n4: beta\n(2 of 9 lines; skipped 2)".as_slice(),
+            b"3: alpha\n4: beta\n(2 of 9 lines; skipped 2) [next line 5]".as_slice(),
         ),
         (
             tools::Outcome::Listed {

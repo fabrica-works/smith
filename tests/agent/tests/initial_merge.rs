@@ -18,7 +18,7 @@ const MARKERS: &[u8] = b"<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n";
 const READ_CONFLICT: &[u8] = br#"{"path":"conflict.txt"}"#;
 // Existing typed fixture rendering uses numeric byte-array Debug, rather than
 // an ASCII file body. This is the complete literal continuation expectation.
-const READ_RESULT: &[u8] = b"Owned { outcome: Read { content: [60, 60, 60, 60, 60, 60, 60, 32, 111, 117, 114, 115, 10, 111, 117, 114, 115, 10, 61, 61, 61, 61, 61, 61, 61, 10, 116, 104, 101, 105, 114, 115, 10, 62, 62, 62, 62, 62, 62, 62, 32, 116, 104, 101, 105, 114, 115, 10], skipped: 0, lines: 5, total: 5, cut: false } }";
+const READ_RESULT: &[u8] = b"Owned { outcome: Read { content: [60, 60, 60, 60, 60, 60, 60, 32, 111, 117, 114, 115, 10, 111, 117, 114, 115, 10, 61, 61, 61, 61, 61, 61, 61, 10, 116, 104, 101, 105, 114, 115, 10, 62, 62, 62, 62, 62, 62, 62, 32, 116, 104, 101, 105, 114, 115, 10], first: 1, lines: 5, total: 5, next: End, cut: Whole, window: Within } }";
 
 #[derive(Clone, Debug)]
 struct Commit {

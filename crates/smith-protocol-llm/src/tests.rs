@@ -271,7 +271,9 @@ fn golden_descriptions_state_batching_and_every_effective_parameter() {
         assert!(!text.contains("runs alone"));
         match schema.name.as_ref() {
             b"read" => assert!(
-                text.contains("max 37 bytes") && text.contains("max 73 bytes") && text.contains("counting from 1")
+                text.contains("max 37 bytes")
+                    && text.contains("default 73 bytes; max 257 bytes")
+                    && text.contains("counting from 1")
             ),
             b"list" => assert!(text.contains("max 37 bytes")),
             b"search" => assert!(text.contains("max 37 bytes") && text.matches("max 401 bytes").count() == 2),
