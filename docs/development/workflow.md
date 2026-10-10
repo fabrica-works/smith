@@ -667,14 +667,30 @@ cargo nextest run -p smith --test live --profile live -E 'test(=a_second_run_res
 ## 6. Benchmarks
 
 Benchmarks run real agents against real providers, and are designed in
-`docs/design/benchmarks.md`. They are never part of the merge gate: no check
-in section 1 runs an agent, and no benchmark result blocks or permits a merge.
+`docs/design/benchmarks.md`. Section 1's gate stays deterministic: none of
+its checks runs an agent. **A change is proven before it merges and before
+it is complete,** by the kind of proof its kind of change needs:
 
-- **A change to the runtime, limits, providers or host** records a smoke run in
-  its commit body, with the binary it ran.
-- **Every fix names the probe that guards it,** and its commit body records that
-  probe failing on the fix's parent and passing on the fix. A fix without a
-  probe adds one in the same change (`docs/design/benchmarks.md`, section 4.2).
+- **A plain defect** (a crash, a wrong answer, a race, a limit that refuses
+  valid input) is proven by a deterministic test that fails on the parent
+  and passes on the fix. The gate runs it.
+- **An improvement** (prompt caching, budgets, deadlines, tool round trips,
+  limits sized for real work) is proven by its benchmark probe, run before
+  the merge:
+  - it passes on the change;
+  - where the parent can run the probe live, it fails on the parent;
+  - where the probe compares agents, Codex runs it too.
+
+  Tests show that a mechanism works. Only a real model shows that it helps.
+- **Every smith merge runs `smoke-tools` live** on the tip that becomes
+  `main`, with the cheapest model and effort, whatever the change touched.
+  It takes about ten seconds and ten thousand tokens. A red smoke stops the
+  line: nothing else merges until it is green again.
+
+The commit body records the proof: the test's name, or the probe's run
+identifiers and verdicts, and the smoke's. Evidence is never "pending" at
+merge (`docs/design/benchmarks.md`, section 4.2). A skein change is proven
+by its tests, and then by its smith consumer's smoke when smith pins it.
 
 Reliability limits increment 4.1 was measured through the serialized heavy
 queue with `measure -j 1`: the protocol LLM packages passed 62 focused tests

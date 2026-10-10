@@ -122,15 +122,30 @@ Only the offline tier is a test (section 14). The others are runs of
 
 ### 4.2 A fix and its probe
 
-- **Every fix names the probe that guards it** in its commit body, with
-  two runs the harness prints ready for it: **before,** on the fix's
-  parent, failing; **after,** on the fix, passing.
+- **Proof comes before the merge.** A change merges, and counts as done,
+  only with its proof in its commit body (`docs/development/workflow.md`,
+  section 6). Evidence is never left "pending".
+- **Every improvement names the probe that guards it** in its commit
+  body, with the runs the harness prints ready for it:
+  - **after,** on the change, passing;
+  - **before,** on its parent, failing, wherever the parent can run the
+    probe live;
+  - **Codex,** on the same task, where the probe compares agents.
 - **A fix with no probe adds one,** calibrated, in the same change. A
   defect no probe can force, such as a race or a rare provider stall, is
   guarded by a passive check or an event check on the closest probe, and
   the commit says which.
-- **A change to the runtime, limits, providers or host** records a smoke
-  run in its commit body, with the binary it ran.
+- **Every smith merge runs `smoke-tools` live** on the tip that becomes
+  `main`. A red smoke stops the line until it is green again.
+- **A parent that cannot run live.** When a parent fails the probe for a
+  reason unrelated to the change (for example, its limits refuse what the
+  provider sends today), the before is the closest evidence that exists:
+  - the change's deterministic tests, which fail on the parent;
+  - recorded measurements, such as the spike's;
+  - a same-code run with a setting that turns the feature off, where one
+    exists.
+
+  The commit says which. No switch is added only for this.
 - **The probe stays** in its suites with its `guards`, so a later failure
   names the design sections at stake.
 - **Choosing what to run.** The harness lists the tasks guarding the
