@@ -1578,6 +1578,10 @@ fn encode_response_completed(json: &mut Encoder, value: &ResponseCompleted, capt
     json.unsigned(value.calls);
     json.key(b"invalid");
     json.unsigned(value.invalid);
+    json.key(b"oversized");
+    json.unsigned(value.oversized);
+    json.key(b"cut");
+    json.unsigned(value.cut);
     json.key(b"usage");
     write_usage(json, &value.usage, capture);
     json.key(b"spent");

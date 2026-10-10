@@ -253,6 +253,8 @@ fn max_response_completed(limits: &smith_events::Limits) -> ResponseCompleted {
         blocks: u64::MAX,
         calls: u64::MAX,
         invalid: u64::MAX,
+        oversized: u64::MAX,
+        cut: u64::MAX,
         usage: max_usage(limits),
         spent: u64::MAX,
         request_bytes: Some(u64::MAX),

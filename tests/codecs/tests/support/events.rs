@@ -522,6 +522,8 @@ fn value_response_completed(name: &str, spelling: &str) -> ResponseCompleted {
         blocks: u64::MAX,
         calls: u64::MAX,
         invalid: u64::MAX,
+        oversized: u64::MAX,
+        cut: u64::MAX,
         usage: value_usage(name, spelling),
         spent: u64::MAX,
         request_bytes: Some(u64::MAX),

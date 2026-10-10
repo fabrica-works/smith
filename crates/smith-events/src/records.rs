@@ -747,6 +747,8 @@ pub struct ResponseCompleted {
     pub blocks: u64,
     pub calls: u64,
     pub invalid: u64,
+    pub oversized: u64,
+    pub cut: u64,
     pub usage: Usage,
     pub spent: u64,
     pub request_bytes: Option<u64>,

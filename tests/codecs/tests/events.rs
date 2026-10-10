@@ -28,6 +28,37 @@ fn every_record_and_listed_value_reads_back_to_its_written_values() {
 }
 
 #[test]
+fn response_block_counts_are_required_exact_metadata_under_every_capture() {
+    let base = r#"{"v":1,"type":"response.completed","t_ms":0,"run":1,"conversation":2,"response":3,"outcome":"completed","blocks":9,"calls":7,"invalid":2,"oversized":18446744073709551615,"cut":9007199254740993,"usage":{"input_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":null,"reasoning_tokens":null},"spent":0,"request_bytes":null,"first_byte_ms":null,"largest_gap_ms":null,"duration_ms":0}"#;
+    let record = read(base.as_bytes(), &limits()).expect("independent wire").expect("response");
+    let Event::ResponseCompleted(response) = &record.event else { panic!("response") };
+    assert_eq!(response.oversized, u64::MAX);
+    assert_eq!(response.cut, 9_007_199_254_740_993);
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let line = write(&record, &capture, &limits()).expect("bounded metadata").expect("response");
+        assert_eq!(read(&line, &limits()).expect("exact integer metadata"), Some(record.clone()));
+        assert!(
+            line.len()
+                <= usize::try_from(smith_events::largest_size(&record.event, &capture, &limits()).expect("bound"))
+                    .expect("length")
+        );
+    }
+    for field in ["oversized", "cut"] {
+        let value = if field == "oversized" { "18446744073709551615" } else { "9007199254740993" };
+        let original = format!(",\"{field}\":{value}");
+        for replacement in [
+            String::new(),
+            format!(",\"{field}\":null"),
+            format!(",\"{field}\":-1"),
+            format!(",\"{field}\":1.5"),
+            format!(",\"{field}\":18446744073709551616"),
+        ] {
+            assert_eq!(read(base.replace(&original, &replacement).as_bytes(), &limits()), Err(Error::Shape));
+        }
+    }
+}
+
+#[test]
 fn response_tool_choice_is_metadata_with_bounded_unknown_values_and_a_required_string() {
     let base = r#"{"v":1,"type":"response.started","t_ms":0,"run":1,"conversation":2,"response":3,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"e","model":"m","window_tokens":1,"output_tokens":1,"effort":null},"messages":1,"output_tokens":1,"tool_choice":"auto"}"#;
     for (spelling, expected) in [

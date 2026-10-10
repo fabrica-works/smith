@@ -745,6 +745,8 @@ fn size_response_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(10)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;
+    length = length.checked_add(13)?.checked_add(20_u64)?;
+    length = length.checked_add(7)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_usage(capture, limits)?)?;
     length = length.checked_add(9)?.checked_add(20_u64)?;
     length = length.checked_add(17)?.checked_add(20_u64)?;

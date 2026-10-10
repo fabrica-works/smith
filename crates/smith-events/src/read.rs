@@ -1102,6 +1102,8 @@ fn read_response_completed(tokens: &[Token], limits: &Limits) -> Result<Response
         blocks: unsigned(required(tokens, b"blocks")?)?,
         calls: unsigned(required(tokens, b"calls")?)?,
         invalid: unsigned(required(tokens, b"invalid")?)?,
+        oversized: unsigned(required(tokens, b"oversized")?)?,
+        cut: unsigned(required(tokens, b"cut")?)?,
         usage: read_usage(required(tokens, b"usage")?, limits)?,
         spent: unsigned(required(tokens, b"spent")?)?,
         request_bytes: match required(tokens, b"request_bytes")? {
