@@ -114,11 +114,12 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
         lines: 1,
         total: 6,
         cut: tools::Cut::Whole,
-        next: if 4 + 1 < 6 { tools::Next::Line(4 + 1 + 1) } else { tools::Next::End },
-        window: tools::BytesClamp::Within,
+        next: tools::Next::Line(6),
+        window: tools::BytesClamp::Clamped { asked: 99, ceiling: 32 },
     };
     let (live_text, live_error) =
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
+    assert!(live_text.ends_with(b"[next line 6] [window clamped: 99 bytes to 32 bytes]"));
     let history = llm::Prompt {
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,

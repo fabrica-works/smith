@@ -2102,38 +2102,49 @@ fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
 
 #[test]
 fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_nothing() {
-    let content = Box::new([tool_call(b"a", cat(b"a")), tool_call(b"b", cat(b"b"))]);
-    let credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("both maximum read results fit");
-    let limits = receiving_limits(2048, &content[..], credit);
-    let mut held = crate::session::content_cost(&content[..]).expect("actual content fits");
-    for block in &content[..] {
-        let Block::ToolCall { id, .. } = block else { panic!("fixture contains only calls") };
-        let block = u64::try_from(size_of::<Block>()).expect("result block fits");
-        let copied_id = u64::try_from(id.len()).expect("copied ID fits");
-        held = held.checked_add(block).expect("actual result block fits");
-        held = held.checked_add(copied_id).expect("actual copied result ID fits");
-    }
-    let held_prefix = initial_bytes().checked_add(held).expect("batch prefix fits");
-    let exact = held_prefix.checked_add(credit).expect("batch fits");
-    let provider = crate::completion_reserve(&limits).expect("provider envelope fits");
-    let provider_entrance = initial_bytes().checked_add(provider).expect("provider entrance fits");
-    assert!(exact > provider_entrance);
-    let mut admitted = Harness::new(Limits { history_bytes: exact, ..limits });
-    let (owner, _) = admitted.open(1);
-    let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
-    let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
-    assert_eq!(admitted.step(ran(second, &[b'y'; 4096])), None);
-    assert_eq!(admitted.step(ran(first, &[b'x'; 4096])), Some(ended(End::TranscriptFull, 1)));
-    let expected = [result(b"a", read(&[b'x'; 4096])), result(b"b", read(&[b'y'; 4096]))];
-    assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
+    for (window, bytes) in
+        [(tools::Budget::Default, TOOLS.read_bytes), (tools::Budget::Asked(u32::MAX), TOOLS.tool_payload)]
+    {
+        let call = Call::Read { path: path(b"file"), offset: 1, window };
+        let content = Box::new([tool_call(b"a", call.clone()), tool_call(b"b", call)]);
+        let credit = u64::from(bytes).checked_mul(2).expect("both maximum read results fit");
+        let limits = receiving_limits(2048, &content[..], credit);
+        let mut held = crate::session::content_cost(&content[..]).expect("actual content fits");
+        for block in &content[..] {
+            let Block::ToolCall { id, .. } = block else { panic!("fixture contains only calls") };
+            let block = u64::try_from(size_of::<Block>()).expect("result block fits");
+            let copied_id = u64::try_from(id.len()).expect("copied ID fits");
+            held = held.checked_add(block).expect("actual result block fits");
+            held = held.checked_add(copied_id).expect("actual copied result ID fits");
+        }
+        let held_prefix = initial_bytes().checked_add(held).expect("batch prefix fits");
+        let exact = held_prefix.checked_add(credit).expect("batch fits");
+        let provider = crate::completion_reserve(&limits).expect("provider envelope fits");
+        let provider_entrance = initial_bytes().checked_add(provider).expect("provider entrance fits");
+        assert!(exact > provider_entrance);
+        let mut admitted = Harness::new(Limits { history_bytes: exact, ..limits });
+        let (owner, _) = admitted.open(1);
+        let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
+        let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
+        assert_eq!(admitted.step(ran(second, &vec![b'y'; usize::try_from(bytes).expect("window fits")])), None);
+        assert_eq!(
+            admitted.step(ran(first, &vec![b'x'; usize::try_from(bytes).expect("window fits")])),
+            Some(ended(End::TranscriptFull, 1))
+        );
+        let expected = [
+            result(b"a", read(&vec![b'x'; usize::try_from(bytes).expect("window fits")])),
+            result(b"b", read(&vec![b'y'; usize::try_from(bytes).expect("window fits")])),
+        ];
+        assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
 
-    let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
-    let (owner, _) = refused.open(1);
-    assert_eq!(
-        refused.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }),
-        Some(ended(End::TranscriptFull, 1))
-    );
-    assert_eq!((refused.domain.runs(), refused.domain.jobs()), (0, 0), "no partial batch is published");
+        let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
+        let (owner, _) = refused.open(1);
+        assert_eq!(
+            refused.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }),
+            Some(ended(End::TranscriptFull, 1))
+        );
+        assert_eq!((refused.domain.runs(), refused.domain.jobs()), (0, 0), "no partial batch is published");
+    }
 }
 
 #[test]
