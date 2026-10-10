@@ -768,11 +768,7 @@ pub(crate) fn failed(
     let state = mem::replace(&mut session.state, State::Closed);
     session.state = match state {
         State::Calling { attempt } => {
-            if timed_out(failure) && env.now >= session.conversation.expires {
-                finish(OUT_OF_TIME)
-            } else {
-                call_failed(attempt, failure, evidence, &mut domain.rng, env)
-            }
+            call_failed(attempt, failure, evidence, session.conversation.expires, &mut domain.rng, env)
         }
         State::Closing { end, waiting: waiting @ Waiting { call: true, .. } } => {
             State::Closing { end, waiting: Waiting { call: false, ..waiting } }
@@ -1722,6 +1718,7 @@ fn call_failed(
     attempt: u32,
     failure: Failure,
     evidence: crate::llm::Evidence,
+    expiry: Time,
     rng: &mut Rng,
     env: &Env<Limits>,
 ) -> State {
@@ -1742,9 +1739,12 @@ fn call_failed(
         | Failure::Unauthorized
         | Failure::Exhausted { .. } => failure,
     };
-    match backoff(failure, attempt, &env.limits, rng) {
-        Some(delay) => State::Backoff { attempt: attempt.saturating_add(1), until: env.now.saturating_add(delay) },
-        None => finish(End::Failed { failure, evidence }),
+    match retry_decision(failure, attempt, env.now, expiry, &env.limits, rng) {
+        Retry::After(delay) => {
+            State::Backoff { attempt: attempt.saturating_add(1), until: env.now.saturating_add(delay) }
+        }
+        Retry::Fail => finish(End::Failed { failure, evidence }),
+        Retry::TimeUp => finish(OUT_OF_TIME),
     }
 }
 
@@ -2162,9 +2162,28 @@ fn tally(content: &[Block]) -> (u32, u32) {
     (calls, invalid)
 }
 
-fn timed_out(failure: Failure) -> bool {
+/// The session's policy decision after a failed attempt (domain/session.md, section 4).
+enum Retry {
+    /// A transient failure waits for this backoff before another attempt.
+    After(Duration),
+    /// A lasting failure or exhausted retry allowance ends the session.
+    Fail,
+    /// The whole call or the session time ended; no retry is armed.
+    TimeUp,
+}
+
+fn retry_decision(failure: Failure, attempt: u32, now: Time, expiry: Time, limits: &Limits, rng: &mut Rng) -> Retry {
+    if now >= expiry {
+        return Retry::TimeUp;
+    }
     match failure {
-        Failure::TimedOut { .. } => true,
+        Failure::TimedOut { phase } => match phase {
+            crate::llm::Phase::Whole => return Retry::TimeUp,
+            crate::llm::Phase::Connect
+            | crate::llm::Phase::Handshake
+            | crate::llm::Phase::Head
+            | crate::llm::Phase::Idle => {}
+        },
         Failure::Overloaded
         | Failure::Unavailable
         | Failure::Unauthorized
@@ -2175,7 +2194,11 @@ fn timed_out(failure: Failure) -> bool {
         | Failure::Limit { .. }
         | Failure::ApplicationLimit
         | Failure::Protocol
-        | Failure::Cancelled => false,
+        | Failure::Cancelled => {}
+    }
+    match backoff(failure, attempt, limits, rng) {
+        Some(delay) => Retry::After(delay),
+        None => Retry::Fail,
     }
 }
 

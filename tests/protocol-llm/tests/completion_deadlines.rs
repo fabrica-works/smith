@@ -2,9 +2,12 @@
 //! Contract: domain/session.md, sections 4, 6 and 10; protocol/llm.md, section 6.
 
 use skein_lib::Token;
+use skein_lib::{Duration, Time};
 use smith_domain::llm;
+use smith_domain::session;
 use smith_protocol_llm::ToDomain;
 use smith_protocol_llm_world::pool_peer::Peer;
+use smith_session_world::recorded::{World, opening};
 
 fn body() -> Vec<u8> {
     [
@@ -96,4 +99,89 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(2)));
     peer.advance(301);
     assert_eq!(peer.terminals.len(), 2);
+}
+
+fn session_with_time(seconds: u64) -> World {
+    let mut world = World::new(411, 256);
+    let mut start = opening(None, u64::MAX);
+    start.spec.budget.time = Duration::from_secs(seconds);
+    start.spec.progress = session::Progress { head: Duration::from_secs(20), idle: Duration::from_secs(5) };
+    world.open(start);
+    world
+}
+
+fn deliver_failure(peer: &mut Peer, world: &mut World) {
+    let ToDomain::Failed { owner, failure, evidence, detail } = peer.terminals.remove(0) else {
+        panic!("one native failed attempt")
+    };
+    assert_eq!(world.completing, Some(owner));
+    world.step(session::Event::Failed { owner, failure, evidence, detail });
+}
+
+#[test]
+fn a_stall_times_out_idle_and_is_retried() {
+    let mut world = session_with_time(40);
+    let owner = world.completing.expect("actual session call");
+    let mut peer = Peer::configured(1, 1);
+    // The fixture executes each emitted attempt through the actual adapter;
+    // its literal prompt is independent of the timeout and retry decisions.
+    peer.start(owner.raw(), 20, 5, 40);
+    peer.bytes(100, &head_for(body().len()));
+    peer.advance(6);
+    assert!(matches!(
+        peer.terminals.as_slice(),
+        [ToDomain::Failed { failure: llm::Failure::TimedOut { phase: llm::Phase::Idle }, .. }]
+    ));
+    world.env.now = Time::ZERO.saturating_add(Duration::from_secs(6));
+    deliver_failure(&mut peer, &mut world);
+    assert_eq!(world.prompts.len(), 1, "no request is sent during backoff");
+    world.env.now = world.domain.next_deadline().expect("actual retry alarm");
+    assert!(world.env.now < Time::ZERO.saturating_add(Duration::from_secs(40)));
+    session::fire(&mut world.domain, &world.env, &mut world.out);
+    world.resume();
+    assert_eq!(world.prompts.len(), 2);
+    assert_eq!(world.prompts[0], world.prompts[1], "retry keeps the admitted conversation");
+    peer.advance(7);
+    peer.start(owner.raw(), 20, 5, 40);
+    peer.bytes(100, &head_for(body().len()));
+    peer.bytes(100, &body());
+    let ToDomain::Completed { owner: actual, completion } = peer.terminals.remove(0) else {
+        panic!("native retry completes")
+    };
+    assert_eq!(actual, owner);
+    let [llm::Said::Text { text, .. }] = completion.content.as_ref() else { panic!("actual answer") };
+    world.complete(
+        Box::new([session::llm::Block::Text { text: text.clone(), replay: None }]),
+        session::llm::Stop::EndTurn,
+        completion.usage,
+    );
+    assert_eq!(world.turns.len(), 1, "the failed attempt commits no turn");
+    world.close();
+    peer.advance(41);
+    assert!(peer.terminals.is_empty(), "settled attempts never repeat a terminal");
+    assert_eq!(peer.connections(), 0);
+}
+
+#[test]
+fn the_sessions_time_ending_fails_once_without_a_retry() {
+    let mut world = session_with_time(3);
+    let owner = world.completing.expect("actual session call");
+    let mut peer = Peer::configured(1, 1);
+    peer.start(owner.raw(), 20, 5, 3);
+    peer.bytes(100, &head_for(body().len()));
+    peer.advance(3);
+    assert!(matches!(
+        peer.terminals.as_slice(),
+        [ToDomain::Failed { failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, .. }]
+    ));
+    world.env.now = Time::ZERO.saturating_add(Duration::from_secs(3));
+    deliver_failure(&mut peer, &mut world);
+    assert_eq!(world.end, Some(session::End::Budget { spent: session::Dimension::Time }));
+    assert_eq!(world.prompts.len(), 1);
+    assert_eq!(world.domain.next_deadline(), None);
+    assert_eq!(world.turns.len(), 0);
+    world.close();
+    peer.advance(41);
+    assert!(peer.terminals.is_empty());
+    assert_eq!(peer.connections(), 0);
 }

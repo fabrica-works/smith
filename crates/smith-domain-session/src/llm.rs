@@ -470,7 +470,7 @@ pub enum Failure {
     /// The provider could not be reached, or failed (a connection error,
     /// HTTP 500). Transient.
     Unavailable,
-    /// No answer within the call's deadline. Transient.
+    /// A phase deadline ended the call; only the whole phase ends the session's time without retry.
     TimedOut { phase: Phase },
     /// The conversation does not fit the model's context window.
     ContextTooLong,

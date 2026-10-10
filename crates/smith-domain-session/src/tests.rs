@@ -1287,6 +1287,68 @@ fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
 }
 
 #[test]
+fn each_transient_timeout_phase_retries_with_the_same_absolute_expiry() {
+    for phase in
+        [crate::llm::Phase::Connect, crate::llm::Phase::Handshake, crate::llm::Phase::Head, crate::llm::Phase::Idle]
+    {
+        let mut h = Harness::new(LIMITS);
+        let (owner, _) = h.open(1);
+        assert_eq!(
+            h.step(Event::Failed {
+                owner,
+                failure: Failure::TimedOut { phase },
+                evidence: crate::llm::Evidence::Unknown,
+                detail: Box::default()
+            }),
+            None
+        );
+        h.env.now = h.domain.next_deadline().expect("transient retry is armed");
+        let Some(Request::Complete { deadlines, .. }) = h.fire() else { panic!("retry for {phase:?}") };
+        assert_eq!(deadlines.whole, Time::ZERO.saturating_add(BUDGET.time));
+        let end = h.step(Event::Failed {
+            owner,
+            failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
+            evidence: crate::llm::Evidence::Response,
+            detail: Box::default(),
+        });
+        assert_eq!(
+            end,
+            Some(ended(OUT_OF_TIME, 0)),
+            "Whole never spends another retry, even before the parent clock catches up"
+        );
+        assert_eq!(h.domain.next_deadline(), None);
+    }
+}
+
+#[test]
+fn whole_expiry_or_elapsed_session_time_ends_once_even_with_no_retries() {
+    for phase in [
+        crate::llm::Phase::Connect,
+        crate::llm::Phase::Handshake,
+        crate::llm::Phase::Head,
+        crate::llm::Phase::Idle,
+        crate::llm::Phase::Whole,
+    ] {
+        let mut h = Harness::new(Limits { retries: 0, ..LIMITS });
+        let (owner, _) = h.open(1);
+        if phase != crate::llm::Phase::Whole {
+            h.after(BUDGET.time);
+        }
+        assert_eq!(
+            h.step(Event::Failed {
+                owner,
+                failure: Failure::TimedOut { phase },
+                evidence: crate::llm::Evidence::Unknown,
+                detail: Box::default()
+            }),
+            Some(ended(OUT_OF_TIME, 0))
+        );
+        assert_eq!(h.domain.next_deadline(), None);
+        assert_eq!(h.step(Event::Close { session: owner }), None);
+    }
+}
+
+#[test]
 fn a_completion_that_wins_the_race_with_a_close_still_ends_the_session() {
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
