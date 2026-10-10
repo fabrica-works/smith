@@ -312,7 +312,10 @@ pub enum Request {
 
     /// Ask an LLM for the next assistant message, giving up after `timeout`.
     Complete {
+        /// Session's opaque token, shared with its provider terminals and captured content.
         owner: Token,
+        /// Session-owned completion identity; emitted even when no content follows.
+        name: crate::llm::CompletionName,
         /// Credential name or refresh notice; its secret value stays below the domain.
         grant: GrantName,
         /// Complete provider-neutral conversation snapshot from the root, bounded by session ownership limits.

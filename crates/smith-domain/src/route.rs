@@ -70,7 +70,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
         Event::Aborted { owner } => run::Event::Aborted { owner },
         Event::Completed { owner, completion } => return completed(domain, env, owner, completion),
         Event::Failed { owner, failure, evidence, detail } => {
-            let grant = domain.completions.remove(&owner).expect("failed calls were emitted");
+            let grant = domain.completions.remove(&owner).expect("failed calls were emitted").grant;
             let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
             let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
             assert!(
@@ -126,9 +126,8 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
 /// Settle the provider lease and its budget reservation before the session
 /// may record usage or run decoded calls.
 fn completed(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: crate::llm::Completion) {
-    capture(domain, env, owner, &completion);
-    let ended = domain.completions.remove(&owner);
-    assert!(ended.is_some(), "completed calls were emitted");
+    let issued = domain.completions.remove(&owner).expect("completed calls were emitted");
+    capture(domain, env, owner, issued.name, &completion);
     let id = *domain.sessions.get(&owner).expect("a session lives until its call has ended");
     let conversation = domain.peers.get(id).expect("a peer lives as its session").conversation;
     let preview = session::preview_completion(&domain.session, owner, completion.usage);
@@ -364,6 +363,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         }
         session::Request::Complete {
             owner,
+            name,
             prompt,
             timeout,
             max_completion_bytes,
@@ -372,6 +372,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         } => {
             let pending = PendingCompletion {
                 owner,
+                name,
                 prompt,
                 timeout,
                 max_completion_bytes,
@@ -533,6 +534,7 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
 #[derive(Debug)]
 pub(crate) struct PendingCompletion {
     owner: Token,
+    name: crate::llm::CompletionName,
     prompt: session::llm::Prompt,
     timeout: Duration,
     max_completion_bytes: u64,
@@ -569,8 +571,15 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             return session_step(domain, env, session::Event::UnsentClosed { owner });
         }
     }
-    let PendingCompletion { owner, prompt, timeout, max_completion_bytes, max_completion_blocks, max_failure_bytes } =
-        pending;
+    let PendingCompletion {
+        owner,
+        name,
+        prompt,
+        timeout,
+        max_completion_bytes,
+        max_completion_blocks,
+        max_failure_bytes,
+    } = pending;
     let peer = domain.peers.get_mut(id).expect("a peer lives as its session");
     // What the last completion asked and the session did not dispatch,
     // it never will.
@@ -620,10 +629,14 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
             );
         }
     };
-    let inserted = domain.completions.insert(owner, grant).expect("one completion per session");
+    let inserted = domain
+        .completions
+        .insert(owner, crate::domain::IssuedCompletion { grant, name })
+        .expect("one completion per session");
     assert!(inserted.is_none(), "the previous completion ended");
     out.push(Request::Complete {
         owner,
+        name,
         grant,
         prompt,
         timeout,
@@ -780,23 +793,30 @@ fn room_for_content(domain: &mut Domain, env: &Env<Limits>, bytes: u64) -> bool 
     }
 }
 
-fn capture(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: &crate::llm::Completion) {
+fn capture(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    owner: Token,
+    name: crate::llm::CompletionName,
+    completion: &crate::llm::Completion,
+) {
     for said in &completion.content {
         match said {
             crate::llm::Said::Text { text, .. } | crate::llm::Said::Refusal { text, .. } => {
                 if room_for_content(domain, env, crate::facts::bytes(text)) {
-                    domain.content.push(crate::Content::Text { owner, text: text.clone() });
+                    domain.content.push(crate::Content::Text { owner, completion: name, text: text.clone() });
                 }
             }
-            crate::llm::Said::ToolCall { id, name, input, call: _, .. } => {
+            crate::llm::Said::ToolCall { id, name: tool, input, call: _, .. } => {
                 let bytes = crate::facts::bytes(id)
-                    .saturating_add(crate::facts::bytes(name))
+                    .saturating_add(crate::facts::bytes(tool))
                     .saturating_add(crate::facts::bytes(input));
                 if room_for_content(domain, env, bytes) {
                     domain.content.push(crate::Content::Call {
                         owner,
+                        completion: name,
                         id: id.clone(),
-                        name: name.clone(),
+                        name: tool.clone(),
                         input: input.clone(),
                     });
                 }
@@ -805,6 +825,6 @@ fn capture(domain: &mut Domain, env: &Env<Limits>, owner: Token, completion: &cr
         }
     }
     if room_for_content(domain, env, 0) {
-        domain.content.push(crate::Content::Usage { owner, usage: completion.usage });
+        domain.content.push(crate::Content::Usage { owner, completion: name, usage: completion.usage });
     }
 }

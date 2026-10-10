@@ -237,6 +237,17 @@ impl Prompt {
     }
 }
 
+/// The session's name for a pending completion (domain/session.md, sections 3–4).
+/// Retries keep the sequence and advance only the retry; accepted completions
+/// advance the transcript sequence before another completion begins.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct CompletionName {
+    /// Next concrete transcript sequence, starting at one; scoped by the session owner token.
+    pub sequence: u32,
+    /// Provider retry number, starting at zero and bounded by the session's retry limit.
+    pub retry: u32,
+}
+
 /// The next assistant message.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Completion {

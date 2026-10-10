@@ -89,7 +89,7 @@ impl Trace {
     pub fn content(&mut self, content: domain::Content, at_ns: u64) {
         match (self.capture, content) {
             (Capture::None, _) => {}
-            (Capture::Calls | Capture::Everything, domain::Content::Call { owner, id, name, input }) => {
+            (Capture::Calls | Capture::Everything, domain::Content::Call { owner, completion, id, name, input }) => {
                 if id.len() > CALL_BYTES || name.len() > CALL_BYTES || input.len() > CALL_BYTES {
                     self.dropped = self.dropped.saturating_add(1);
                     return;
@@ -99,6 +99,8 @@ impl Trace {
                         "type": "call",
                         "at_ns": at_ns,
                         "owner": owner.raw(),
+                        "sequence": completion.sequence,
+                        "retry": completion.retry,
                         "encoding": "hex",
                         "id": hex(&id),
                         "name": hex(&name),
@@ -113,7 +115,7 @@ impl Trace {
                         .to_string(),
                 );
             }
-            (Capture::Everything, domain::Content::Text { owner, text }) => {
+            (Capture::Everything, domain::Content::Text { owner, completion, text }) => {
                 if text.len() > TEXT_BYTES {
                     self.dropped = self.dropped.saturating_add(1);
                     return;
@@ -123,12 +125,12 @@ impl Trace {
                     return;
                 };
                 self.offer(
-                    json!({ "type": "completion", "at_ns": at_ns, "owner": owner.raw(), "text": text }).to_string(),
+                    json!({ "type": "completion", "at_ns": at_ns, "owner": owner.raw(), "sequence": completion.sequence, "retry": completion.retry, "text": text }).to_string(),
                 );
             }
-            (Capture::Everything, domain::Content::Usage { owner, usage }) => {
+            (Capture::Everything, domain::Content::Usage { owner, completion, usage }) => {
                 self.offer(
-                    json!({ "type": "usage", "at_ns": at_ns, "owner": owner.raw(), "usage": format!("{usage:?}") })
+                    json!({ "type": "usage", "at_ns": at_ns, "owner": owner.raw(), "sequence": completion.sequence, "retry": completion.retry, "usage": format!("{usage:?}") })
                         .to_string(),
                 );
             }
@@ -212,11 +214,19 @@ mod tests {
     #[test]
     fn facts_are_content_free_and_calls_policy_keeps_only_selected_content() {
         let (mut trace, receiver) = trace(Capture::Calls);
-        trace.content(domain::Content::Text { owner: Token::new(1), text: b"private completion".to_vec().into() }, 5);
+        trace.content(
+            domain::Content::Text {
+                owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
+                text: b"private completion".to_vec().into(),
+            },
+            5,
+        );
         assert!(receiver.try_recv().is_err());
         trace.content(
             domain::Content::Call {
                 owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
                 id: b"call".to_vec().into(),
                 name: b"inspect".to_vec().into(),
                 input: b"file".to_vec().into(),
@@ -232,12 +242,69 @@ mod tests {
     #[test]
     fn full_trace_keeps_completion_text_and_counts_backpressure() {
         let (mut trace, receiver) = trace(Capture::Everything);
-        trace.content(domain::Content::Text { owner: Token::new(1), text: b"answer".to_vec().into() }, 5);
+        trace.content(
+            domain::Content::Text {
+                owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
+                text: b"answer".to_vec().into(),
+            },
+            5,
+        );
         assert!(receiver.try_recv().expect("completion").contains("answer"));
-        trace.content(domain::Content::Text { owner: Token::new(1), text: b"first".to_vec().into() }, 5);
-        trace.content(domain::Content::Text { owner: Token::new(1), text: b"second".to_vec().into() }, 5);
-        trace.content(domain::Content::Text { owner: Token::new(1), text: b"third".to_vec().into() }, 5);
+        trace.content(
+            domain::Content::Text {
+                owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
+                text: b"first".to_vec().into(),
+            },
+            5,
+        );
+        trace.content(
+            domain::Content::Text {
+                owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
+                text: b"second".to_vec().into(),
+            },
+            5,
+        );
+        trace.content(
+            domain::Content::Text {
+                owner: Token::new(1),
+                completion: domain::llm::CompletionName { sequence: 1, retry: 0 },
+                text: b"third".to_vec().into(),
+            },
+            5,
+        );
         assert_eq!(trace.dropped, 1);
+    }
+
+    #[test]
+    fn captured_completion_names_preserve_the_full_retry_width() {
+        let (mut trace, receiver) = trace(Capture::Everything);
+        let completion = domain::llm::CompletionName { sequence: u32::MAX, retry: u32::MAX };
+        trace.content(domain::Content::Text { owner: Token::new(17), completion, text: b"answer".to_vec().into() }, 5);
+        let record: serde_json::Value = serde_json::from_str(&receiver.try_recv().expect("completion")).expect("JSON");
+        assert_eq!(record["owner"], 17);
+        assert_eq!(record["sequence"], u32::MAX);
+        assert_eq!(record["retry"], u32::MAX);
+        trace.content(
+            domain::Content::Call {
+                owner: Token::new(17),
+                completion,
+                id: b"call".to_vec().into(),
+                name: b"inspect".to_vec().into(),
+                input: b"{}".to_vec().into(),
+            },
+            6,
+        );
+        let record: serde_json::Value = serde_json::from_str(&receiver.try_recv().expect("call")).expect("JSON");
+        assert_eq!(record["sequence"], u32::MAX);
+        assert_eq!(record["retry"], u32::MAX);
+        assert_eq!(record["name"], "696e7370656374");
+        trace.content(domain::Content::Usage { owner: Token::new(17), completion, usage: domain::llm::Usage::ZERO }, 7);
+        let record: serde_json::Value = serde_json::from_str(&receiver.try_recv().expect("usage")).expect("JSON");
+        assert_eq!(record["sequence"], u32::MAX);
+        assert_eq!(record["retry"], u32::MAX);
     }
 
     #[test]

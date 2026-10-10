@@ -176,6 +176,8 @@ pub enum Request {
     /// Ask an LLM for the next assistant message, giving up after `timeout`.
     Complete {
         owner: Token,
+        /// Session-owned completion identity; emitted even when no content follows.
+        name: crate::llm::CompletionName,
         /// First user message supplied by the opener.
         prompt: Prompt,
         /// Maximum time allowed for this completion or contained command.

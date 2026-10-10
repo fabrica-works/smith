@@ -75,7 +75,7 @@ pub struct Domain {
     /// session's token for them.
     pub(crate) flights: Map<Token, Flight>,
     pub(crate) grants: Map<u32, Credential>,
-    pub(crate) completions: Map<Token, GrantName>,
+    pub(crate) completions: Map<Token, IssuedCompletion>,
     /// One unsent main completion per run awaiting acknowledgement credit.
     pub(crate) pending: Map<Token, route::PendingCompletion>,
     pub(crate) notices: Queue<Request>,
@@ -107,6 +107,13 @@ pub(crate) struct StartContext {
 #[derive(Debug)]
 pub(crate) struct TurnHandoff {
     pub(crate) turn: Option<session::record::Turn>,
+}
+
+/// Issued provider identity survives session closing and is consumed by its terminal.
+#[derive(Debug)]
+pub(crate) struct IssuedCompletion {
+    pub(crate) grant: GrantName,
+    pub(crate) name: crate::llm::CompletionName,
 }
 
 #[derive(Debug)]

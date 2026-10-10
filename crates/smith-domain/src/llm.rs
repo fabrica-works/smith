@@ -17,7 +17,7 @@ use alloc::boxed::Box;
 use smith_domain_run as run;
 use smith_domain_tools as tools;
 
-pub use smith_domain_session::llm::{Endpoint, Evidence, Failure, Problem, Replay, Role, Stop, Usage};
+pub use smith_domain_session::llm::{CompletionName, Endpoint, Evidence, Failure, Problem, Replay, Role, Stop, Usage};
 
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.

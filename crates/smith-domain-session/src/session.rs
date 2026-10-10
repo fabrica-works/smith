@@ -993,6 +993,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
             }
             Request::Complete {
                 owner: _,
+                name,
                 prompt,
                 timeout: _,
                 max_completion_bytes: _,
@@ -1000,7 +1001,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
                 max_failure_bytes: _,
             } => {
                 let (messages, max_tokens) = (count(prompt.messages.len()), prompt.max_tokens);
-                Fact::CompletionStarted { opener, attempt: attempt(&session.state), messages, max_tokens }
+                Fact::CompletionStarted { opener, attempt: name.retry, messages, max_tokens }
             }
             Request::Delegate { owner, opener: _, call: _, deadline: _, origin: _ } => {
                 let run = runs.get(Id::from_token(*owner)).expect("a run lives while its call is asked for");
@@ -1016,19 +1017,6 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
             }
         };
         facts.push(fact);
-    }
-}
-
-/// The retries of the call a session has just asked for.
-fn attempt(state: &State) -> u32 {
-    match state {
-        State::Calling { attempt } => *attempt,
-        State::Backoff { .. }
-        | State::Tooling { .. }
-        | State::Resting { .. }
-        | State::Yielded
-        | State::Closing { .. }
-        | State::Closed => unreachable!("a session that asks for a completion is calling"),
     }
 }
 
@@ -1481,7 +1469,7 @@ fn call(
             return finish(End::TranscriptFull);
         }
     }
-    out.push(complete(id, conversation, &env.limits));
+    out.push(complete(id, conversation, attempt, &env.limits));
     State::Calling { attempt }
 }
 
@@ -1663,7 +1651,7 @@ fn spent(conversation: &Conversation, now: Time) -> Option<Dimension> {
 /// The request for the next assistant message, its answer cut to the output
 /// budget left. The conversation is copied: the session keeps it, and the
 /// protocol layer holds the copy (copy at emission).
-fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Request {
+fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &Limits) -> Request {
     let left = conversation.budget.output.saturating_sub(conversation.usage.output_tokens);
     let max_tokens = u32::try_from(left).unwrap_or(u32::MAX).min(conversation.max_tokens);
     let prompt = Prompt {
@@ -1677,6 +1665,10 @@ fn complete(id: Id<Session>, conversation: &Conversation, limits: &Limits) -> Re
     };
     Request::Complete {
         owner: id.token(),
+        name: crate::llm::CompletionName {
+            sequence: conversation.recording.sequence.checked_add(1).expect("call admitted the next sequence"),
+            retry,
+        },
         prompt,
         timeout: limits.call_timeout,
         max_completion_bytes: limits.completion_bytes,
