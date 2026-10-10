@@ -598,7 +598,7 @@ The declared quantities of protocol/limits.md, section 2.2:
 | Value | Default | Status |
 |---|---|---|
 | `conversations` | 6 | provisional; the parallel-children probe |
-| `tool_payload` | 64 KiB | provisional; the large-write probe |
+| `tool_payload` | 40 KiB, so that a call at the payload, escaped at its largest (6 bytes a byte), fits one answer of the smallest preset `output` (32,000 tokens at 8 bytes a token): skein's `input ≤ answer` (limits.md, 4) | provisional; the large-write probe |
 | `file_bytes` | 1 MiB: the largest file the tools read whole and edit | provisional; the large-write probe |
 | `calls_per_response` | 16 | provisional; the parallel-read probe |
 | `read_window` | 32 KiB; a call may ask up to `tool_payload` | decided |
