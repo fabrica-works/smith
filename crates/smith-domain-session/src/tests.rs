@@ -2102,9 +2102,14 @@ fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
 
 #[test]
 fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_nothing() {
-    for (window, bytes) in
-        [(tools::Budget::Default, TOOLS.read_bytes), (tools::Budget::Asked(u32::MAX), TOOLS.tool_payload)]
-    {
+    for (window, bytes, clamp) in [
+        (tools::Budget::Default, TOOLS.read_bytes, tools::BytesClamp::Within),
+        (
+            tools::Budget::Asked(u32::MAX),
+            TOOLS.tool_payload,
+            tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: TOOLS.tool_payload },
+        ),
+    ] {
         let call = Call::Read { path: path(b"file"), offset: 1, window };
         let content = Box::new([tool_call(b"a", call.clone()), tool_call(b"b", call)]);
         let credit = u64::from(bytes).checked_mul(2).expect("both maximum read results fit");
@@ -2132,8 +2137,30 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
             Some(ended(End::TranscriptFull, 1))
         );
         let expected = [
-            result(b"a", read(&answer(u64::from(b'x'), u64::from(bytes)))),
-            result(b"b", read(&answer(u64::from(b'y'), u64::from(bytes)))),
+            result(
+                b"a",
+                Outcome::Read {
+                    content: answer(u64::from(b'x'), u64::from(bytes)),
+                    first: 1,
+                    lines: 1,
+                    total: 1,
+                    next: tools::Next::End,
+                    cut: tools::Cut::Whole,
+                    window: clamp,
+                },
+            ),
+            result(
+                b"b",
+                Outcome::Read {
+                    content: answer(u64::from(b'y'), u64::from(bytes)),
+                    first: 1,
+                    lines: 1,
+                    total: 1,
+                    next: tools::Next::End,
+                    cut: tools::Cut::Whole,
+                    window: clamp,
+                },
+            ),
         ];
         assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
 
