@@ -147,6 +147,22 @@ pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
     Some(result.max(u64::from(limits.path_bytes)))
 }
 
+/// Largest dynamic result ownership of one legal owned batch, supplied to
+/// the parent's startup check. Reads may run together; writes run alone.
+/// Returns `None` when any receiving bound overflows.
+#[must_use]
+pub fn batch_result_worst_case(limits: &Limits, parallel: u32) -> Option<u64> {
+    let path = u64::from(limits.path_bytes);
+    let search = u64::try_from(size_of::<Hit>())
+        .ok()?
+        .checked_mul(u64::from(limits.search_hits))?
+        .checked_add(u64::from(limits.search_bytes))?;
+    let read = u64::from(limits.read_bytes.max(limits.tool_payload)).max(limits.list_bytes).max(search).max(path);
+    let edit = u64::try_from(size_of::<u32>()).ok()?.checked_mul(u64::from(limits.match_lines))?;
+    let shell = u64::from(limits.shell_head.checked_add(limits.shell_tail)?);
+    Some(read.checked_mul(u64::from(parallel))?.max(edit).max(shell).max(path))
+}
+
 /// What one kit holds beyond its slot: its authority, each path in it at most
 /// `path_bytes` joined; what its LLM knows, a place for each file; and its
 /// jobs' names.

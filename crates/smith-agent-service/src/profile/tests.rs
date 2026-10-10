@@ -251,6 +251,41 @@ fn request_head_and_uncut_rendering_keep_the_actual_byte_sides() {
 }
 
 #[test]
+fn window_first_holds_owned_and_delegated_batches_at_the_exact_byte_edge() {
+    let profile = profile();
+    let configuration = declarations();
+    let path = super::path::path(&profile, &configuration).expect("native declarations");
+    let mut limits = super::derive_domain(&profile, &configuration, &path).expect("numeric domain limits").session;
+    limits.tools.list_bytes = 100_000;
+    limits.delegated_result_bytes = 1;
+    let threshold = u64::from(configuration.endpoints[0].models[0].window) * 4 / 5;
+    let reserve = smith_domain::session::completion_reserve(&limits).expect("completion reserve");
+    let batch =
+        smith_domain::tools::batch_result_worst_case(&limits.tools, limits.parallel_tools).expect("owned batch");
+    assert_eq!(batch, 200_000, "two largest read results coexist");
+    limits.history_bytes = threshold + reserve + batch;
+    validate::window_first(&profile, &configuration, &limits).expect("exact receiving edge");
+    limits.history_bytes -= 1;
+    let refusal = validate::window_first(&profile, &configuration, &limits).expect_err("one byte beyond history");
+    assert_eq!(refusal.check(), Some(Check::WindowFirst));
+    limits.history_bytes += 1;
+    limits.delegated_result_bytes = 100_001;
+    let refusal = validate::window_first(&profile, &configuration, &limits).expect_err("delegated batch is larger");
+    assert_eq!(refusal.check(), Some(Check::WindowFirst));
+    limits.delegated_result_bytes = u64::MAX;
+    assert_eq!(
+        validate::window_first(&profile, &configuration, &limits),
+        Err(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "batch_results") })
+    );
+    limits.delegated_result_bytes = 1;
+    limits.tools.list_bytes = u64::MAX;
+    assert_eq!(
+        validate::window_first(&profile, &configuration, &limits),
+        Err(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "batch_results") })
+    );
+}
+
+#[test]
 fn transcript_blocks_hold_the_largest_completion_or_name_the_ceiling() {
     let profile = profile();
     let limits = super::derive(&profile, &declarations()).expect("coherent declarations");

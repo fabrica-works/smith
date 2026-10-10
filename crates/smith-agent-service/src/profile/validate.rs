@@ -313,7 +313,8 @@ pub fn request_head(endpoint: u32, required: u32, available: u32) -> Result<(), 
     )
 }
 
-/// Every model reaches its threshold while a provider terminal still fits the history.
+/// Every model reaches its threshold while a provider terminal and its largest
+/// owned or delegated result batch still fit the history.
 /// Byte-as-token pricing includes the input's fixed cells, so the same threshold
 /// divided by each smallest cell bounds the represented message and block counts.
 pub fn window_first(
@@ -323,6 +324,17 @@ pub fn window_first(
 ) -> Result<(), Refusal> {
     let reserve = smith_domain::session::completion_reserve(limits)
         .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "completion_reserve") })?;
+    let owned = tools::batch_result_worst_case(&limits.tools, limits.parallel_tools)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "batch_results") })?;
+    let delegated = limits
+        .delegated_result_bytes
+        .checked_mul(u64::from(limits.parallel_tools))
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "batch_results") })?;
+    // The completion owns its result skeletons, but their dynamic payloads
+    // reserve separate credit immediately before the first batch's effects.
+    let reserve = reserve
+        .checked_add(owned.max(delegated))
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "window_receiving") })?;
     for endpoint in &configuration.endpoints {
         for (index, model) in endpoint.models.iter().enumerate() {
             let per = Per::Model { endpoint: endpoint.number, model: u32::try_from(index).expect("bounded models") };
