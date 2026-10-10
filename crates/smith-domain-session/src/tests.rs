@@ -2126,14 +2126,14 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
         let (owner, _) = admitted.open(1);
         let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
         let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
-        assert_eq!(admitted.step(ran(second, &vec![b'y'; usize::try_from(bytes).expect("window fits")])), None);
+        assert_eq!(admitted.step(ran(second, &answer(u64::from(b'y'), u64::from(bytes)))), None);
         assert_eq!(
-            admitted.step(ran(first, &vec![b'x'; usize::try_from(bytes).expect("window fits")])),
+            admitted.step(ran(first, &answer(u64::from(b'x'), u64::from(bytes)))),
             Some(ended(End::TranscriptFull, 1))
         );
         let expected = [
-            result(b"a", read(&vec![b'x'; usize::try_from(bytes).expect("window fits")])),
-            result(b"b", read(&vec![b'y'; usize::try_from(bytes).expect("window fits")])),
+            result(b"a", read(&answer(u64::from(b'x'), u64::from(bytes)))),
+            result(b"b", read(&answer(u64::from(b'y'), u64::from(bytes)))),
         ];
         assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
 
