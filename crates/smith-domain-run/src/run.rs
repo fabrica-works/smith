@@ -1910,7 +1910,14 @@ fn sub_agent(
 }
 
 /// Render an admitted child's immutable opening from its effective grant.
-fn child_opening(run: &Run, brief: &[u8], plan: agent::Plan, ordinal: u32, answer_bytes: u32, wrap_up: Duration) -> Opening {
+fn child_opening(
+    run: &Run,
+    brief: &[u8],
+    plan: agent::Plan,
+    ordinal: u32,
+    answer_bytes: u32,
+    wrap_up: Duration,
+) -> Opening {
     Opening {
         final_turn: Some(crate::FinalTurn {
             note: prompt::child_final_note(),

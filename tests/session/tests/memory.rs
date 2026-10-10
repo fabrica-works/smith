@@ -1305,11 +1305,11 @@ fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released()
     let block = size(size_of::<Block>());
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
     let note_bytes = 8192;
-    let original = Limits { messages: 5, ..LIMITS };
+    let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole provider credit");
     let cap = spec_cost + block + note_bytes + credit;
     for extra in [0, 1] {
-        let limits = Limits { session_bytes: cap, ..original };
+        let limits = Limits { history_bytes: cap, ..original };
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();

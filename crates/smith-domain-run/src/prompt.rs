@@ -69,6 +69,9 @@ fn render_fixed(text: &mut Text) {
     text.put(&opening(false, None));
     text.put(b"\n\n");
     render_fixed_budget(text);
+    render_wind_down(text, Reserve { turns: u32::MAX, time: Duration::from_nanos(u64::MAX) });
+    text.put(&finish_now());
+    text.put(&child_final_note());
 }
 
 fn render_fixed_budget(text: &mut Text) {

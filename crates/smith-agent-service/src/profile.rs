@@ -170,15 +170,16 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
         .ok_or(derived(Layer::Llm, "endpoint_own"))
 }
 
-// One turn surrounds one completion; session::tell_turn flushes it before
-// the next provider call. A window turn instead has one opening message.
+// One turn surrounds one completion; a first final turn also includes its
+// opening and final note before the assistant and settled results. A window
+// turn instead has one opening message.
 fn transcript(calls: u32, completion: u32) -> Result<smith_transcript::v3::Limits, Refusal> {
     let result_blocks = calls.checked_add(1).ok_or(derived(Layer::Transcript, "message_blocks"))?;
     let message_blocks = completion.max(result_blocks);
     validate::calls_in_transcript(message_blocks, smith_transcript::CEILINGS.message_blocks)?;
     let mut limits = smith_transcript::CEILINGS;
     limits.message_blocks = message_blocks;
-    limits.turn_messages = 3;
+    limits.turn_messages = 4;
     Ok(limits)
 }
 

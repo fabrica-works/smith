@@ -70,5 +70,36 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         );
         assert_eq!(world.turns.len(), 1, "the completion produces a real transcript turn");
         world.close();
+
+        let mut final_world = World::new(4611 + u64::from(window), 256);
+        final_world.env.limits = limits.domain.session;
+        final_world.domain = session::Domain::new(&final_world.env.limits, 4611 + u64::from(window));
+        final_world.out = Queue::with_capacity(session::max_out(&final_world.env.limits));
+        let mut final_start = opening(None, final_world.env.limits.spend);
+        final_start.spec.budget = final_world.env.limits.budget;
+        final_start.spec.budget.turns = 1;
+        final_start.spec.final_turn =
+            Some(session::FinalTurn { note: b"Answer now.".as_slice().into(), allowance: Duration::from_secs(1) });
+        final_world.open(final_start);
+        final_world.complete(smith_session_world::recorded::called(), llm::Stop::ToolUse, llm::Usage::ZERO);
+        final_world.resume();
+        assert!(final_world.delegated.is_empty(), "final-turn calls start no effects");
+        let turn = final_world.turns.last().expect("the actual final completion produces a durable turn");
+        let mut names = skein_lib::List::with_capacity(1);
+        names
+            .push(smith_protocol_channel::Endpoint {
+                name: b"model-endpoint".as_slice().into(),
+                number: turn.endpoint.0,
+                dialect: turn.dialect,
+                account: 0,
+            })
+            .expect("one declared endpoint");
+        let names = smith_protocol_channel::Endpoints::new(names);
+        smith_protocol_channel::encode_turn(turn, &limits.channel.transcript, &names)
+            .expect("derived transcript receiving holds opening, final note, assistant and settled results");
+        let mut short = limits.channel.transcript;
+        short.turn_messages = u32::try_from(turn.messages.len()).expect("bounded turn") - 1;
+        assert!(smith_protocol_channel::encode_turn(turn, &short, &names).is_err(), "one missing message refuses");
+        final_world.close();
     }
 }

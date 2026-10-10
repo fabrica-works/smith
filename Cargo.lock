@@ -1319,6 +1319,7 @@ dependencies = [
  "smith-domain",
  "smith-domain-session",
  "smith-domain-tools",
+ "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-tools-world",
 ]
