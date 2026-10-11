@@ -144,10 +144,7 @@ fn heap_tools(limits: &Limits) -> Option<u64> {
 }
 
 fn heap_completion_failure(limits: &Limits) -> Option<u64> {
-    let mut length = 0_u64;
-    length = length.checked_add(u64::from(limits.string))?;
-    length = length.checked_add(u64::from(limits.string))?;
-    Some(length)
+    u64::from(limits.string).checked_mul(4)?.checked_add(u64::from(limits.content))
 }
 
 fn heap_answer_failure(limits: &Limits) -> Option<u64> {
@@ -156,7 +153,7 @@ fn heap_answer_failure(limits: &Limits) -> Option<u64> {
     length = length.checked_add(heap_completion_failure(limits)?)?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
-    Some(length)
+    length.checked_add(u64::from(limits.string).checked_mul(2)?)
 }
 
 fn heap_field(limits: &Limits) -> Option<u64> {
@@ -554,6 +551,15 @@ fn size_completion_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(9)?.checked_add(size_failure_class(capture, limits)?)?;
     length = length.checked_add(12)?.checked_add(size_evidence(capture, limits)?)?;
     length = length.checked_add(18)?.checked_add(20_u64)?;
+    length = length.checked_add(9)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
+    length = length.checked_add(48)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
+    length = length.checked_add(10)?.checked_add(20)?;
+    match capture {
+        Capture::None | Capture::Unknown(_) => {}
+        Capture::Calls | Capture::Everything => {
+            length = length.checked_add(10)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
+        }
+    }
     Some(length)
 }
 
@@ -564,6 +570,8 @@ fn size_answer_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(11)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(10)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
+    length = length.checked_add(24)?.checked_add(u64::from(limits.string).checked_mul(12)?.checked_add(4)?)?;
+    length = length.checked_add(12)?.checked_add(20)?;
     Some(length)
 }
 

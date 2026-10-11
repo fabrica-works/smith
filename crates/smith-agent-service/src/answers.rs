@@ -85,6 +85,9 @@ fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult {
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
+        endpoint: None,
+        model: None,
+        attempts: None,
         class,
         completion: None,
         account: None,
@@ -200,7 +203,7 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
         run::CompletionEvidence::Unknown => Evidence::MaybeSent,
         run::CompletionEvidence::Response => Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms }
+    CompletionFailure { class, evidence, retry_after_ms, phase: None, limit: None, status: None, detail: None }
 }
 
 #[cfg(test)]
@@ -313,6 +316,10 @@ mod tests {
         assert_eq!(
             why.completion,
             Some(CompletionFailure {
+                phase: None,
+                limit: None,
+                status: None,
+                detail: None,
                 class: FailureClass::RateLimited,
                 evidence: Evidence::Response,
                 retry_after_ms: Some(23),

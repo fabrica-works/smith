@@ -111,10 +111,18 @@ fn session_with_time(seconds: u64) -> World {
 }
 
 fn deliver_failure(peer: &mut Peer, world: &mut World) {
-    let ToDomain::Failed { owner, failure, evidence, detail } = peer.terminals.remove(0) else {
+    let ToDomain::Failed { owner, failure, evidence, status, detail } = peer.terminals.remove(0) else {
         panic!("one native failed attempt")
     };
     assert_eq!(world.completing, Some(owner));
+    assert_eq!(
+        status,
+        match evidence {
+            llm::Evidence::Response => Some(200),
+            llm::Evidence::Unsent | llm::Evidence::Unknown => None,
+        },
+        "status follows the actual independent response head, never inferred from its diagnostic"
+    );
     world.step(session::Event::Failed { owner, failure, evidence, detail });
 }
 

@@ -396,6 +396,25 @@ impl Sinks {
         self.responses.received(owner, completion)
     }
 
+    pub(crate) fn failed(
+        &mut self,
+        owner: Token,
+        failure: smith_domain::llm::Failure,
+        evidence: smith_domain::llm::Evidence,
+        status: Option<u16>,
+        detail: &[u8],
+    ) {
+        assert!(
+            detail.len() <= usize::try_from(self.limits.scalar_content).expect("u32 fits"),
+            "the native diagnostic respects its configured source bound"
+        );
+        self.responses.failed(owner, failure, evidence, status, detail, self.capture);
+    }
+
+    pub(crate) fn answer_failure(&mut self, record: &mut smith_events::RunCompleted) {
+        self.responses.answer_failure(record);
+    }
+
     /// All raw reported counters across this invocation, independently of accepted charges.
     #[must_use]
     pub fn reported(&self) -> smith_events::Usage {
@@ -878,7 +897,11 @@ pub(crate) fn largest_line(
     // Extra provider room covers both strings even on records without a call.
     let metadata = smith_events::Limits { string: metadata_string, ..*limits };
     let provider = limits.string.checked_mul(12)?;
-    let scalar = smith_events::largest_record_for(&smith_events::Capture::None, &metadata)?.checked_add(provider)?;
+    let scalar_capture = match capture {
+        Capture::None => smith_events::Capture::None,
+        Capture::Calls | Capture::Everything => smith_events::Capture::Calls,
+    };
+    let scalar = smith_events::largest_record_for(&scalar_capture, &metadata)?.checked_add(provider)?;
     match capture {
         Capture::None | Capture::Calls => Some(scalar),
         Capture::Everything => {
@@ -921,7 +944,7 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         .checked_add(emitted_names_bytes()?)?
         .checked_add(Map::<Token, Record>::worst_case(limits.conversations)?)?
         .checked_add(u64::from(limits.conversations).checked_mul(u64::from(limits.metadata_string).checked_mul(3)?)?)?
-        .checked_add(crate::responses::worst_case(limits.conversations, limits.metadata_string)?)
+        .checked_add(crate::responses::worst_case(limits.conversations, limits.metadata_string, limits.scalar_content)?)
 }
 
 fn emitted_names_bytes() -> Option<u64> {

@@ -548,6 +548,8 @@ impl skein_world::Referee<Proc> for Referee {
             let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
             if matches!(self.tracing, Some((TraceCase::Parked, _))) {
                 assert_eq!(fake::queries(peer).count(), 0, "empty zero-waiting work parks without a provider request");
+            } else if matches!(self.tracing, Some((TraceCase::ProviderRejected, _))) {
+                assert!(fake::context_rejected(peer), "the independent provider rejected the actual request");
             } else if !self.cancel && !matches!(self.tracing, Some((TraceCase::Refused, _))) {
                 assert!(
                     fake::replied(peer),
@@ -642,6 +644,8 @@ pub enum TraceCase {
     ChildAnswered,
     /// One native completion calls three children together, each of which answers.
     ThreeChildren,
+    /// The actual independent provider sends a typed HTTP context rejection.
+    ProviderRejected,
 }
 
 impl TraceCase {
@@ -654,6 +658,7 @@ impl TraceCase {
             Self::Cancelled => 4,
             Self::ChildAnswered => 5,
             Self::ThreeChildren => 6,
+            Self::ProviderRejected => 7,
         }
     }
 
@@ -687,6 +692,7 @@ impl TraceCase {
                 },
             ],
             Self::Failed | Self::Refused | Self::Cancelled => return fake::peer(),
+            Self::ProviderRejected => return fake::rejected(),
             Self::ChildAnswered | Self::ThreeChildren => unreachable!("selected actual child scripts above"),
         };
         fake::configured(

@@ -5,9 +5,9 @@ use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
-    MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
-    Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
+    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Form, Level, LimitValue, Loss, Message,
+    MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss,
+    Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
     RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
     ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
@@ -518,12 +518,49 @@ fn write_tools(json: &mut Encoder, value: &Tools, capture: &Capture) {
     json.object_end();
 }
 
+fn write_failure_phase(json: &mut Encoder, value: &FailurePhase) {
+    json.string(match value {
+        FailurePhase::Connect => b"connect",
+        FailurePhase::Handshake => b"handshake",
+        FailurePhase::Head => b"head",
+        FailurePhase::Idle => b"idle",
+        FailurePhase::Whole => b"whole",
+        FailurePhase::Unknown(value) => value,
+    });
+}
+
 fn write_completion_failure(json: &mut Encoder, value: &CompletionFailure, capture: &Capture) {
     json.object_start();
     json.key(b"class");
     write_failure_class(json, &value.class, capture);
     json.key(b"evidence");
     write_evidence(json, &value.evidence, capture);
+    if let Some(item) = &value.phase {
+        json.key(b"phase");
+        write_failure_phase(json, item);
+    }
+    if let Some(item) = &value.limit {
+        json.key(b"limit");
+        json.object_start();
+        json.key(b"which");
+        json.string(&item.which);
+        json.key(b"bound");
+        json.unsigned(item.bound);
+        json.object_end();
+    }
+    if let Some(item) = value.status {
+        json.key(b"status");
+        json.unsigned(item);
+    }
+    match capture {
+        Capture::None | Capture::Unknown(_) => {}
+        Capture::Calls | Capture::Everything => {
+            if let Some(item) = &value.detail {
+                json.key(b"detail");
+                json.string(item);
+            }
+        }
+    }
     if let Some(item) = &value.retry_after_ms {
         json.key(b"retry_after_ms");
         json.unsigned(*item);
@@ -535,6 +572,18 @@ fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Cap
     json.object_start();
     json.key(b"class");
     write_answer_class(json, &value.class, capture);
+    if let Some(item) = &value.endpoint {
+        json.key(b"endpoint");
+        json.string(item);
+    }
+    if let Some(item) = &value.model {
+        json.key(b"model");
+        json.string(item);
+    }
+    if let Some(item) = value.attempts {
+        json.key(b"attempts");
+        json.unsigned(item);
+    }
     if let Some(item) = &value.completion {
         json.key(b"completion");
         write_completion_failure(json, item, capture);
@@ -1044,11 +1093,33 @@ fn validate_tools(value: &Tools, limits: &Limits) -> Result<(), Error> {
 fn validate_completion_failure(value: &CompletionFailure, limits: &Limits) -> Result<(), Error> {
     validate_failure_class(&value.class, limits)?;
     validate_evidence(&value.evidence, limits)?;
+    if let Some(phase) = &value.phase {
+        match phase {
+            FailurePhase::Connect
+            | FailurePhase::Handshake
+            | FailurePhase::Head
+            | FailurePhase::Idle
+            | FailurePhase::Whole => {}
+            FailurePhase::Unknown(text) => check_text(text, limits.string)?,
+        }
+    }
+    if let Some(limit) = &value.limit {
+        check_text(&limit.which, limits.string)?;
+    }
+    if let Some(detail) = &value.detail {
+        check_text(detail, limits.content)?;
+    }
     Ok(())
 }
 
 fn validate_answer_failure(value: &AnswerFailure, limits: &Limits) -> Result<(), Error> {
     validate_answer_class(&value.class, limits)?;
+    if let Some(endpoint) = &value.endpoint {
+        check_text(endpoint, limits.string)?;
+    }
+    if let Some(model) = &value.model {
+        check_text(model, limits.string)?;
+    }
     if let Some(item) = &value.completion {
         validate_completion_failure(item, limits)?;
     }

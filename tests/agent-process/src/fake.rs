@@ -57,13 +57,26 @@ pub fn configured_transport(
     latency: Duration,
     transport: Transport,
 ) -> llm::Peer {
-    configured_dialect(scripts, credential, latency, transport, false)
+    configured_dialect(scripts, credential, latency, transport, false, false)
 }
 
 /// Select Anthropic's real byte codec for the native live-text scenario.
 #[must_use]
 pub fn configured_anthropic(scripts: Box<[api::Script]>, credential: skein_llm::Credential) -> llm::Peer {
-    configured_dialect(scripts, credential, Duration::ZERO, Transport::Plaintext, true)
+    configured_dialect(scripts, credential, Duration::ZERO, Transport::Plaintext, true, false)
+}
+
+/// An actual independent HTTP provider rejection, with no application decoder substitute.
+#[must_use]
+pub fn rejected() -> llm::Peer {
+    configured_dialect(
+        Box::new([]),
+        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        Duration::ZERO,
+        Transport::Plaintext,
+        false,
+        true,
+    )
 }
 
 fn configured_dialect(
@@ -72,10 +85,14 @@ fn configured_dialect(
     latency: Duration,
     transport: Transport,
     anthropic: bool,
+    rejected: bool,
 ) -> llm::Peer {
     let mut config = skein_llm_world::fake::config();
     config.latency_min = latency;
     config.latency_max = latency;
+    if rejected {
+        config.too_long = 1000;
+    }
     let mut protocol = skein_llm_world::fake::limits(&skein_llm_world::limits());
     protocol.documents.openai.request = 32_768;
     protocol.documents.openai.strings = 16_384;
@@ -122,4 +139,12 @@ pub fn replied(peer: &llm::Peer) -> bool {
     peer.observations()
         .iter()
         .any(|observation| matches!(observation, llm::Observation::Answered { result: Ok(()), .. }))
+}
+
+/// Whether the independent provider actually terminated with the configured context rejection.
+#[must_use]
+pub fn context_rejected(peer: &llm::Peer) -> bool {
+    peer.observations().iter().any(|observation| {
+        matches!(observation, llm::Observation::Answered { result: Err(api::Error::ContextTooLong), .. })
+    })
 }

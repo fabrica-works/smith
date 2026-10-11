@@ -551,18 +551,50 @@ pub struct Tools {
     pub host: List<Box<[u8]>>,
 }
 
+/// The observed deadline phase sent with a timed-out completion failure.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum FailurePhase {
+    /// Connection establishment expired.
+    Connect,
+    /// The TLS handshake expired.
+    Handshake,
+    /// The response head expired.
+    Head,
+    /// Response progress expired.
+    Idle,
+    /// The whole request expired.
+    Whole,
+    /// A phase this reader does not know, retained as UTF-8.
+    Unknown(Box<[u8]>),
+}
+
+/// The exact named receiving bound sent with a completion failure.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct FailureLimit {
+    pub which: Box<[u8]>,
+    pub bound: u64,
+}
+
 /// The provider failure classification and transport evidence the service records.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CompletionFailure {
     pub class: FailureClass,
     pub evidence: Evidence,
     pub retry_after_ms: Option<u64>,
+    pub phase: Option<FailurePhase>,
+    pub limit: Option<FailureLimit>,
+    pub status: Option<u64>,
+    /// Bounded provider diagnostic content, absent under capture `none`.
+    pub detail: Option<Box<[u8]>>,
 }
 
 /// The typed failed or refused answer the service records at run completion.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct AnswerFailure {
     pub class: AnswerClass,
+    pub endpoint: Option<Box<[u8]>>,
+    pub model: Option<Box<[u8]>>,
+    pub attempts: Option<u64>,
     pub completion: Option<CompletionFailure>,
     pub account: Option<u64>,
     pub which: Option<Box<[u8]>>,

@@ -8,11 +8,11 @@ use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
-    MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
-    Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
-    RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
-    ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Form, Level, LimitValue,
+    Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind,
+    Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role,
+    RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status,
+    Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -797,11 +797,39 @@ fn read_tools(tokens: &[Token], limits: &Limits) -> Result<Tools, Error> {
     })
 }
 
+fn read_failure_phase(tokens: &[Token], limits: &Limits) -> Result<FailurePhase, Error> {
+    let value = text(tokens, limits.string)?;
+    Ok(match value.as_ref() {
+        b"connect" => FailurePhase::Connect,
+        b"handshake" => FailurePhase::Handshake,
+        b"head" => FailurePhase::Head,
+        b"idle" => FailurePhase::Idle,
+        b"whole" => FailurePhase::Whole,
+        _ => FailurePhase::Unknown(value),
+    })
+}
+
 fn read_completion_failure(tokens: &[Token], limits: &Limits) -> Result<CompletionFailure, Error> {
     object(tokens)?;
     Ok(CompletionFailure {
         class: read_failure_class(required(tokens, b"class")?, limits)?,
         evidence: read_evidence(required(tokens, b"evidence")?, limits)?,
+        phase: match field(tokens, b"phase")? {
+            Some(item) => Some(read_failure_phase(item, limits)?),
+            None => None,
+        },
+        limit: match field(tokens, b"limit")? {
+            Some(item) => Some(read_failure_limit(item, limits)?),
+            None => None,
+        },
+        status: match field(tokens, b"status")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
+        detail: match field(tokens, b"detail")? {
+            Some(item) => Some(text(item, limits.content)?),
+            None => None,
+        },
         retry_after_ms: match field(tokens, b"retry_after_ms")? {
             Some(item) => Some(unsigned(item)?),
             None => None,
@@ -809,10 +837,30 @@ fn read_completion_failure(tokens: &[Token], limits: &Limits) -> Result<Completi
     })
 }
 
+fn read_failure_limit(tokens: &[Token], limits: &Limits) -> Result<FailureLimit, Error> {
+    object(tokens)?;
+    Ok(FailureLimit {
+        which: text(required(tokens, b"which")?, limits.string)?,
+        bound: unsigned(required(tokens, b"bound")?)?,
+    })
+}
+
 fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailure, Error> {
     object(tokens)?;
     Ok(AnswerFailure {
         class: read_answer_class(required(tokens, b"class")?, limits)?,
+        endpoint: match field(tokens, b"endpoint")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        model: match field(tokens, b"model")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
+        attempts: match field(tokens, b"attempts")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
         completion: match field(tokens, b"completion")? {
             Some(item) => Some(read_completion_failure(item, limits)?),
             None => None,

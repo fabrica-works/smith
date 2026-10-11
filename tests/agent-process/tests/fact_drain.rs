@@ -99,7 +99,7 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
                 );
                 assert_eq!(ended, &Status::Accepted);
             }
-            TraceCase::Failed => {
+            TraceCase::Failed | TraceCase::ProviderRejected => {
                 assert!(matches!(answer.result(), RunResult::Failed(_)));
                 assert_eq!(ended, &Status::Failed);
             }

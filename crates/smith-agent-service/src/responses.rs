@@ -6,7 +6,9 @@
 //! A content cursor skips already recorded completions; original completion
 //! blocks and observed transport measures wait for their terminal. Unknown
 //! measures remain absent, and observed zero durations remain zero. No provider
-//! replay bytes are retained.
+//! replay bytes are retained. Typed diagnostics join the actual request terminal,
+//! then its conversation and failed main answer; child diagnostics never supply
+//! the main failure. Capture none keeps no provider diagnostic content.
 //! Contracts: protocol/events.md, sections 3.4–3.5, 3.10–3.11 and 4.
 
 #![expect(
@@ -37,6 +39,15 @@ pub(crate) struct Book {
     conversations: Map<Token, Conversation>,
     next: u64,
     reported: crate::observations::Reported,
+    main_failure: Option<RunFailure>,
+}
+
+#[derive(Debug)]
+struct RunFailure {
+    run: u64,
+    model: Model,
+    attempts: u64,
+    failure: CompletionFailure,
 }
 
 #[derive(Debug)]
@@ -53,6 +64,9 @@ struct Conversation {
     admitted: bool,
     root_end: Option<(Time, run::End)>,
     recorded: Option<u32>,
+    main: bool,
+    attempts: u64,
+    last_failure: Option<CompletionFailure>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,6 +83,7 @@ struct Started {
     received: Option<Received>,
     completion: Option<smith_events::Completion>,
     measures: Option<smith_protocol_llm::Measures>,
+    failure: Option<CompletionFailure>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -98,6 +113,7 @@ impl Book {
             conversations: Map::with_capacity(conversations),
             next: 1,
             reported: crate::observations::Reported::NONE,
+            main_failure: None,
         }
     }
 
@@ -119,6 +135,14 @@ impl Book {
                     admitted: false,
                     root_end: None,
                     recorded: None,
+                    main: match opening.kind {
+                        smith_events::ConversationKind::Main => true,
+                        smith_events::ConversationKind::Child
+                        | smith_events::ConversationKind::Compaction
+                        | smith_events::ConversationKind::Unknown(_) => false,
+                    },
+                    attempts: 0,
+                    last_failure: None,
                 },
             )
             .expect("one join row per bounded live conversation");
@@ -154,6 +178,8 @@ impl Book {
         let intent = conversation.intent.take().expect("each actual request has a surviving logical intent");
         let number = self.next;
         self.next = self.next.checked_add(1).expect("a process cannot exhaust response names");
+        conversation.attempts = u64::from(intent.retry).checked_add(1).expect("u32 retry count plus one fits u64");
+        conversation.last_failure = None;
         conversation.attempt = Attempt::Started(Started {
             number,
             at: now,
@@ -161,6 +187,7 @@ impl Book {
             received: None,
             completion: None,
             measures: None,
+            failure: None,
         });
         Record {
             t_ms: millis(now, origin),
@@ -194,6 +221,75 @@ impl Book {
             }
         }
         None
+    }
+
+    pub(crate) fn failed(
+        &mut self,
+        request_owner: Token,
+        failure: llm::Failure,
+        evidence: llm::Evidence,
+        status: Option<u16>,
+        detail: &[u8],
+        capture: crate::sinks::Capture,
+    ) {
+        let owner = self.owner_for(request_owner).expect("failure belongs to an actual request");
+        let conversation = self.conversations.get_mut(&owner).expect("found above");
+        let mut observed = completion_failure(failure, evidence);
+        observed.status = match status {
+            Some(status) => Some(u64::from(status)),
+            None => None,
+        };
+        observed.detail = match capture {
+            crate::sinks::Capture::None => None,
+            crate::sinks::Capture::Calls | crate::sinks::Capture::Everything => Some(detail.into()),
+        };
+        match &mut conversation.attempt {
+            Attempt::Started(started) => {
+                assert!(started.failure.is_none(), "one actual failure observation per terminal");
+                started.failure = Some(observed);
+            }
+            Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
+                unreachable!("actual failure precedes its domain fact")
+            }
+        }
+    }
+
+    pub(crate) fn answer_failure(&mut self, record: &mut smith_events::RunCompleted) {
+        let observed = match self.main_failure.take() {
+            Some(observed) => observed,
+            None => return,
+        };
+        if observed.run != record.run {
+            return;
+        }
+        let failure = match &mut record.failure {
+            Some(failure) => failure,
+            None => return,
+        };
+        match &failure.class {
+            smith_events::AnswerClass::Model => {}
+            smith_events::AnswerClass::Budget
+            | smith_events::AnswerClass::Policy
+            | smith_events::AnswerClass::Cancelled
+            | smith_events::AnswerClass::Stale
+            | smith_events::AnswerClass::Transcript
+            | smith_events::AnswerClass::Busy
+            | smith_events::AnswerClass::Invalid
+            | smith_events::AnswerClass::Unknown(_) => return,
+        }
+        let completion = match &failure.completion {
+            Some(completion) => completion,
+            None => return,
+        };
+        assert_eq!(completion.class, observed.failure.class, "the actual main terminal supplies the failed answer");
+        assert_eq!(
+            completion.evidence, observed.failure.evidence,
+            "the main answer agrees with its actual transport evidence"
+        );
+        failure.endpoint = Some(observed.model.endpoint);
+        failure.model = Some(observed.model.model);
+        failure.attempts = Some(observed.attempts);
+        failure.completion = Some(observed.failure);
     }
 
     pub(crate) fn observation(&self, request_owner: Token) -> smith_protocol_llm::Observation {
@@ -396,9 +492,24 @@ impl Book {
                 let conversation = self.conversations.get_mut(&opener).expect("failure follows opening");
                 let started = take_started(&mut conversation.attempt);
                 match started {
-                    Some(started) => {
-                        conversation.attempt =
-                            Attempt::Failed { started, at: fact.at, failure: completion_failure(failure, evidence) }
+                    Some(mut started) => {
+                        let projected = completion_failure(failure, evidence);
+                        let observed = match started.failure.take() {
+                            Some(observed) => {
+                                assert_eq!(
+                                    observed.class, projected.class,
+                                    "the domain fact preserves the actual failure class"
+                                );
+                                assert_eq!(
+                                    observed.evidence, projected.evidence,
+                                    "the domain fact preserves actual transport evidence"
+                                );
+                                observed
+                            }
+                            None => projected,
+                        };
+                        conversation.last_failure = Some(observed.clone());
+                        conversation.attempt = Attempt::Failed { started, at: fact.at, failure: observed };
                     }
                     None => unreachable!("a component failure follows an actual hand-off"),
                 }
@@ -425,7 +536,23 @@ impl Book {
                 if let Some(record) = terminal(&mut conversation, origin, unknown_usage(), 0, None) {
                     records.push(record).expect("one pending terminal before end");
                 }
-                let (end, which, failure) = conversation_end(end);
+                let (end, which, mut failure) = conversation_end(end);
+                if failure.is_some() {
+                    if let Some(observed) = conversation.last_failure.take() {
+                        failure = Some(observed);
+                    }
+                    if conversation.main {
+                        self.main_failure = match &failure {
+                            Some(failure) => Some(RunFailure {
+                                run: conversation.run,
+                                model: conversation.model.clone(),
+                                attempts: conversation.attempts,
+                                failure: failure.clone(),
+                            }),
+                            None => None,
+                        };
+                    }
+                }
                 records
                     .push(Record {
                         t_ms: millis(fact.at, origin),
@@ -626,7 +753,75 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         llm::Evidence::Unknown => smith_events::Evidence::MaybeSent,
         llm::Evidence::Response => smith_events::Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms }
+    let phase = match failure {
+        llm::Failure::TimedOut { phase } => Some(match phase {
+            llm::Phase::Connect => smith_events::FailurePhase::Connect,
+            llm::Phase::Handshake => smith_events::FailurePhase::Handshake,
+            llm::Phase::Head => smith_events::FailurePhase::Head,
+            llm::Phase::Idle => smith_events::FailurePhase::Idle,
+            llm::Phase::Whole => smith_events::FailurePhase::Whole,
+        }),
+        llm::Failure::Limit { .. }
+        | llm::Failure::ApplicationLimit
+        | llm::Failure::Protocol
+        | llm::Failure::Cancelled
+        | llm::Failure::Overloaded
+        | llm::Failure::Unavailable
+        | llm::Failure::ContextTooLong
+        | llm::Failure::Invalid
+        | llm::Failure::Unauthorized
+        | llm::Failure::RateLimited { .. }
+        | llm::Failure::Exhausted { .. } => None,
+    };
+    let limit = match failure {
+        llm::Failure::Limit { which, bound } => {
+            Some(smith_events::FailureLimit { which: limit_name(which).into(), bound })
+        }
+        llm::Failure::ApplicationLimit
+        | llm::Failure::Protocol
+        | llm::Failure::Cancelled
+        | llm::Failure::Overloaded
+        | llm::Failure::Unavailable
+        | llm::Failure::TimedOut { .. }
+        | llm::Failure::ContextTooLong
+        | llm::Failure::Invalid
+        | llm::Failure::Unauthorized
+        | llm::Failure::RateLimited { .. }
+        | llm::Failure::Exhausted { .. } => None,
+    };
+    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status: None, detail: None }
+}
+
+fn limit_name(which: llm::Limit) -> &'static [u8] {
+    match which {
+        llm::Limit::Pool { .. } => b"pool",
+        llm::Limit::History => b"history",
+        llm::Limit::Call => b"call",
+        llm::Limit::Message => b"message",
+        llm::Limit::Path(which) => match which {
+            llm::Cap::Request => b"request",
+            llm::Cap::RequestHead => b"request_head",
+            llm::Cap::ResponseHead => b"response_head",
+            llm::Cap::ResponseFields => b"response_fields",
+            llm::Cap::Skip => b"skip",
+            llm::Cap::Field => b"field",
+            llm::Cap::Retained => b"retained",
+            llm::Cap::Tokens => b"tokens",
+            llm::Cap::Depth => b"depth",
+            llm::Cap::Strings => b"strings",
+            llm::Cap::Number => b"number",
+            llm::Cap::Reasoning => b"reasoning",
+            llm::Cap::OutputItems => b"output_items",
+            llm::Cap::Metadata => b"metadata",
+            llm::Cap::Tools => b"tools",
+            llm::Cap::HistoryItems => b"history_items",
+            llm::Cap::Output => b"output",
+            llm::Cap::Answer => b"answer",
+            llm::Cap::ErrorBody => b"error_body",
+            llm::Cap::AccessToken => b"access_token",
+            llm::Cap::AccountId => b"account_id",
+        },
+    }
 }
 
 fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]>, Option<CompletionFailure>) {
@@ -655,10 +850,14 @@ fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]
     }
 }
 
-pub(crate) fn worst_case(conversations: u32, string: u32) -> Option<u64> {
+pub(crate) fn worst_case(conversations: u32, string: u32, detail: u32) -> Option<u64> {
     List::<Record>::worst_case(2)?
         .checked_add(Map::<Token, Conversation>::worst_case(conversations)?)?
-        .checked_add(u64::from(conversations).checked_mul(u64::from(string).checked_mul(3)?)?)
+        .checked_add(u64::from(conversations).checked_mul(u64::from(string).checked_mul(3)?)?)?
+        .checked_add(
+            u64::from(conversations).checked_mul(u64::from(detail).checked_add(u64::from(string))?.checked_mul(2)?)?,
+        )?
+        .checked_add(u64::from(string).checked_mul(4)?.checked_add(u64::from(detail))?)
 }
 
 #[cfg(test)]
@@ -1183,5 +1382,148 @@ pub(crate) mod tests {
                 }
             );
         }
+    }
+
+    fn fail_attempt(book: &mut Book, owner: Token, retry: u32, capture: crate::sinks::Capture) {
+        let request = Token::new(u64::from(retry) + 99);
+        let (status, detail) = if retry == 0 { (429, b"first".as_slice()) } else { (404, b"last".as_slice()) };
+
+        intent(book, owner, session::Choice::Auto, retry);
+        book.request(at(3), Time::ZERO, request, &prompt(0));
+        let failure = if retry == 0 {
+            llm::Failure::RateLimited { retry_after: Duration::from_millis(29) }
+        } else {
+            llm::Failure::Invalid
+        };
+        book.failed(request, failure, llm::Evidence::Response, Some(status), detail, capture);
+        assert!(
+            book.fact(
+                Time::ZERO,
+                &fact(
+                    5,
+                    session::FactKind::CompletionFailed { opener: owner, failure, evidence: llm::Evidence::Response },
+                    1,
+                    None
+                )
+            )
+            .is_empty()
+        );
+        if retry == 0 {
+            let records = book.fact(
+                Time::ZERO,
+                &fact(
+                    6,
+                    session::FactKind::CompletionRetried {
+                        opener: owner,
+                        attempt: 1,
+                        delay: Duration::from_millis(31),
+                    },
+                    1,
+                    None,
+                ),
+            );
+            let Event::ResponseCompleted(first) = &records.get(0).unwrap().event else { panic!("retry terminal") };
+            let observed = first.failure.as_ref().unwrap();
+            assert_eq!(observed.status, Some(429));
+            assert_eq!(observed.retry_after_ms, Some(29));
+            assert_eq!(first.retry_ms, Some(31));
+        }
+    }
+
+    #[test]
+    fn actual_failure_joins_keep_retry_identity_and_child_diagnostics_out_of_the_run() {
+        for kind in [smith_events::ConversationKind::Main, smith_events::ConversationKind::Child] {
+            for capture in
+                [crate::sinks::Capture::None, crate::sinks::Capture::Calls, crate::sinks::Capture::Everything]
+            {
+                let mut book = Book::new(1);
+                let owner = Token::new(11);
+                let mut opening = opened(11, 0);
+                opening.kind = kind.clone();
+                book.opened(at(1), owner, &opening);
+                for retry in [0, 1] {
+                    fail_attempt(&mut book, owner, retry, capture);
+                }
+                let records = book.fact(
+                    Time::ZERO,
+                    &fact(
+                        7,
+                        session::FactKind::Ended {
+                            opener: owner,
+                            end: session::End::Failed {
+                                failure: llm::Failure::Invalid,
+                                evidence: llm::Evidence::Response,
+                            },
+                            turns: 0,
+                            usage: llm::Usage::NONE,
+                        },
+                        1,
+                        None,
+                    ),
+                );
+                let Event::ResponseCompleted(last) = &records.get(0).unwrap().event else {
+                    panic!("last actual response")
+                };
+                let Event::ConversationClosed(closed) = &records.get(1).unwrap().event else { panic!("conversation") };
+                assert_eq!(last.failure, closed.failure);
+                let observed = last.failure.as_ref().unwrap();
+                assert_eq!(observed.status, Some(404));
+                assert_eq!(observed.retry_after_ms, None);
+                assert_eq!(
+                    observed.detail.as_deref(),
+                    if capture == crate::sinks::Capture::None { None } else { Some(b"last".as_slice()) }
+                );
+                let mut run = smith_events::RunCompleted {
+                    run: 7,
+                    wind_down: false,
+                    status: smith_events::Status::Failed,
+                    failure: Some(smith_events::AnswerFailure {
+                        class: smith_events::AnswerClass::Model,
+                        endpoint: None,
+                        model: None,
+                        attempts: None,
+                        completion: Some(completion_failure(llm::Failure::Invalid, llm::Evidence::Response)),
+                        account: None,
+                        which: None,
+                        reason: None,
+                    }),
+                    result: None,
+                    turns: 0,
+                    spent: 0,
+                    usage: unknown_usage(),
+                    read: None,
+                    unread: 0,
+                    duration_ms: 7,
+                };
+                book.answer_failure(&mut run);
+                let answer = run.failure.as_ref().unwrap();
+                if kind == smith_events::ConversationKind::Main {
+                    assert_eq!(answer.completion, last.failure);
+                    assert_eq!(answer.endpoint, Some(opening.model.endpoint.clone()));
+                    assert_eq!(answer.model, Some(opening.model.model.clone()));
+                    assert_eq!(answer.attempts, Some(2));
+                } else {
+                    assert_eq!(answer.completion.as_ref().unwrap().status, None);
+                    assert_eq!(answer.endpoint, None);
+                    assert_eq!(answer.attempts, None);
+                }
+            }
+        }
+        for phase in [llm::Phase::Connect, llm::Phase::Handshake, llm::Phase::Head, llm::Phase::Idle, llm::Phase::Whole]
+        {
+            let failure = completion_failure(llm::Failure::TimedOut { phase }, llm::Evidence::Unknown);
+            assert!(failure.phase.is_some());
+            assert_eq!(failure.status, None);
+            assert_eq!(failure.detail, None);
+        }
+        let failure = completion_failure(
+            llm::Failure::Limit { which: llm::Limit::Path(llm::Cap::ResponseHead), bound: 1935 },
+            llm::Evidence::Unsent,
+        );
+        assert_eq!(
+            failure.limit,
+            Some(smith_events::FailureLimit { which: b"response_head".as_slice().into(), bound: 1935 })
+        );
+        assert_eq!(failure.status, None);
     }
 }

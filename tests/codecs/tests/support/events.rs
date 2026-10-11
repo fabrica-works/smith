@@ -4,10 +4,10 @@ use skein_lib::List;
 use smith_events::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckExit, CheckStarted, CommandExit,
     Completion, CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
-    Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode,
-    Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role,
-    RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolChoice,
-    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Form,
+    Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
+    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
+    TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn value_capture(name: &str, spelling: &str) -> Capture {
@@ -356,6 +356,10 @@ fn value_tools(name: &str, spelling: &str) -> Tools {
 
 fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
     CompletionFailure {
+        phase: None,
+        limit: None,
+        status: None,
+        detail: None,
         class: value_failure_class(name, spelling),
         evidence: value_evidence(name, spelling),
         retry_after_ms: Some(u64::MAX),
@@ -364,6 +368,9 @@ fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
 
 fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
     AnswerFailure {
+        endpoint: None,
+        model: None,
+        attempts: None,
         class: value_answer_class(name, spelling),
         completion: Some(value_completion_failure(name, spelling)),
         account: Some(u64::MAX),
@@ -1557,6 +1564,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         response.tool_choice = choice;
         samples.push((name, Record { t_ms: u64::MAX, event: Event::ResponseStarted(response) }, Capture::Everything));
     }
+    samples.extend(failure_samples());
     samples.extend(budget_samples());
     samples.extend(message_samples());
     samples.extend(samples_0());
@@ -1834,5 +1842,43 @@ fn message_samples() -> Vec<(&'static str, Record, Capture)> {
         Record { t_ms: u64::MAX, event: Event::RunCompleted(completed) },
         Capture::Everything,
     ));
+    samples
+}
+
+fn failure_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for (name, phase) in [
+        ("failure_phase_connect", FailurePhase::Connect),
+        ("failure_phase_handshake", FailurePhase::Handshake),
+        ("failure_phase_head", FailurePhase::Head),
+        ("failure_phase_idle", FailurePhase::Idle),
+        ("failure_phase_whole", FailurePhase::Whole),
+        ("failure_phase_unknown", FailurePhase::Unknown("future🌍".as_bytes().into())),
+    ] {
+        let mut response = value_response_completed("Outcome", "failed");
+        let failure = response.failure.as_mut().expect("failure fixture");
+        failure.phase = Some(phase);
+        failure.limit = Some(FailureLimit { which: b"response_head".as_slice().into(), bound: u64::MAX });
+        failure.status = Some(404);
+        failure.detail = Some("unknown model 🌍".as_bytes().into());
+        samples.push((name, Record { t_ms: 0, event: Event::ResponseCompleted(response) }, Capture::Everything));
+    }
+    for (name, capture) in [
+        ("run_model_failure_none", Capture::None),
+        ("run_model_failure_calls", Capture::Calls),
+        ("run_model_failure_everything", Capture::Everything),
+    ] {
+        let mut run = value_run_completed("Status", "failed");
+        let failure = run.failure.as_mut().expect("run fixture");
+        failure.class = AnswerClass::Model;
+        failure.endpoint = Some(b"api.provider.test/v1".as_slice().into());
+        failure.model = Some(b"missing-model".as_slice().into());
+        failure.attempts = Some(2);
+        let completion = failure.completion.as_mut().expect("completion fixture");
+        completion.class = FailureClass::Invalid;
+        completion.status = Some(404);
+        completion.detail = Some("unknown model 🌍".as_bytes().into());
+        samples.push((name, Record { t_ms: 0, event: Event::RunCompleted(run) }, capture));
+    }
     samples
 }

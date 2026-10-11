@@ -250,3 +250,65 @@ fn three_conversations_starting_completions_in_one_pass_are_each_recorded() {
     }
     world.assert_agent_clean();
 }
+
+#[test]
+fn native_provider_failure_keeps_status_and_capture_selected_detail_in_every_terminal() {
+    use smith_agent_service::sinks::Capture;
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let mut world = World::new(71, &charter());
+        world.initial_message(907, b"task", b"ALPHA");
+        world.observe_facts(TraceCase::ProviderRejected, 4);
+        world.capture(capture);
+        world.check_memory();
+        assert!(world.settle());
+        world.assert_event_conformance();
+        let mut response = None;
+        let mut conversation = None;
+        let mut run = None;
+        let mut started = None;
+        for record in world.records() {
+            match &record.event {
+                Event::ResponseStarted(value) => started = Some(value),
+                Event::ResponseCompleted(value) => response = value.failure.as_ref(),
+                Event::ConversationClosed(value) => conversation = value.failure.as_ref(),
+                Event::RunCompleted(value) => run = value.failure.as_ref(),
+                Event::Budget(_)
+                | Event::SessionStarted(_)
+                | Event::SessionEnded(_)
+                | Event::RunStarted(_)
+                | Event::ConversationOpened(_)
+                | Event::TextDelta(_)
+                | Event::ToolStarted(_)
+                | Event::ToolCompleted(_)
+                | Event::CheckStarted(_)
+                | Event::CheckCompleted(_)
+                | Event::MessageReceived(_)
+                | Event::MessageRead(_)
+                | Event::MessageUnread(_)
+                | Event::Notice(_) => {}
+            }
+        }
+        let failure = response.expect("actual provider failure");
+        assert_eq!(failure.class, smith_events::FailureClass::ContextTooLong);
+        assert_eq!(failure.evidence, smith_events::Evidence::Response);
+        assert_eq!(failure.status, Some(400));
+        assert_eq!(conversation, Some(failure));
+        let run = run.expect("actual failed run");
+        assert_eq!(run.class, smith_events::AnswerClass::Model);
+        assert_eq!(run.completion.as_ref(), Some(failure));
+        let model = &started.expect("actual request").model;
+        assert_eq!(run.endpoint.as_deref(), Some(model.endpoint.as_ref()));
+        assert_eq!(run.model.as_deref(), Some(model.model.as_ref()));
+        assert_eq!(run.attempts, Some(1));
+        match capture {
+            Capture::None => assert!(failure.detail.is_none()),
+            Capture::Calls | Capture::Everything => {
+                let detail = failure.detail.as_ref().expect("clipped provider content");
+                assert!(!detail.is_empty());
+                assert!(detail.len() <= 512);
+                assert!(std::str::from_utf8(detail).is_ok());
+            }
+        }
+        world.assert_agent_clean();
+    }
+}

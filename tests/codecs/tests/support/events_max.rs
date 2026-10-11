@@ -70,6 +70,10 @@ fn max_tools(limits: &smith_events::Limits) -> Tools {
 
 fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
     CompletionFailure {
+        phase: Some(smith_events::FailurePhase::Unknown(payload(limits.string))),
+        limit: Some(smith_events::FailureLimit { which: payload(limits.string), bound: u64::MAX }),
+        status: Some(u64::MAX),
+        detail: Some(payload(limits.content)),
         class: FailureClass::Unknown(payload(limits.string)),
         evidence: Evidence::Unknown(payload(limits.string)),
         retry_after_ms: Some(u64::MAX),
@@ -78,6 +82,9 @@ fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
 
 fn max_answer_failure(limits: &smith_events::Limits) -> AnswerFailure {
     AnswerFailure {
+        endpoint: Some(payload(limits.string)),
+        model: Some(payload(limits.string)),
+        attempts: Some(u64::MAX),
         class: AnswerClass::Unknown(payload(limits.string)),
         completion: Some(max_completion_failure(limits)),
         account: Some(u64::MAX),

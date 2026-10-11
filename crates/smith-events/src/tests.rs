@@ -6,6 +6,26 @@
 use crate::{Capture, Error, Event, Limits, read, write};
 
 #[test]
+#[expect(clippy::disallowed_macros, reason = "an independent frozen wire fixture reproduces the reader defect")]
+fn provider_failure_metadata_and_capture_detail_survive_the_reader() {
+    let limits = Limits { string: 256, content: 1024, items: 16 };
+    let original = core::str::from_utf8(include_bytes!("../golden/v1/outcome_failed.jsonl")).unwrap();
+    let source = original.replace(
+        "\"class\":\"overloaded\"",
+        "\"class\":\"invalid\",\"status\":404,\"phase\":\"head\",\"limit\":{\"which\":\"response_head\",\"bound\":1935},\"detail\":\"unknown model 🌍\"",
+    );
+    let record = crate::read_with_ceiling(source.as_bytes(), &limits, 4096).unwrap().unwrap();
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let encoded = crate::write_with_ceiling(&record, &capture, &limits, 4096).unwrap().unwrap();
+        let line = core::str::from_utf8(&encoded).unwrap();
+        assert!(line.contains("\"status\":404"), "observed HTTP status is typed metadata");
+        assert!(line.contains("\"phase\":\"head\""));
+        assert!(line.contains("\"limit\":{\"which\":\"response_head\",\"bound\":1935}"));
+        assert_eq!(line.contains("\"detail\":\"unknown model 🌍\""), capture != Capture::None);
+    }
+}
+
+#[test]
 fn actual_producer_receiving_caps_construct_without_a_cartesian_product() {
     let limits = Limits { string: 524_288, content: 4096, items: 32 };
     let ceiling = u32::try_from(END_WITH_UNREAD_USAGE.len()).expect("terminal length");

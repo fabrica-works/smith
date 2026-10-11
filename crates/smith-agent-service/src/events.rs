@@ -453,6 +453,7 @@ impl Producer {
             self.capture,
         );
         record.usage = self.sinks.reported();
+        self.sinks.answer_failure(&mut record);
         self.overflow_notice = match answer {
             run::Answer::Failed { failure, .. } => match failure {
                 run::Failure::Budget(exhausted) => match exhausted {

@@ -880,3 +880,45 @@ fn check_exit_tags_values_and_unknown_kinds_are_bounded() {
     check.exit = smith_events::CheckExit::Unknown([255].as_slice().into());
     assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Text));
 }
+
+#[test]
+fn failure_metadata_is_typed_and_detail_remains_capture_selected_and_bounded() {
+    let source = include_bytes!("../../../crates/smith-events/golden/v1/failure_phase_head.jsonl");
+    let record = read(source, &limits()).expect("bounded failure fixture").expect("bounded failure fixture");
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let line =
+            write(&record, &capture, &limits()).expect("bounded failure fixture").expect("bounded failure fixture");
+        let decoded = read(&line, &limits()).expect("bounded failure fixture").expect("bounded failure fixture");
+        let Event::ResponseCompleted(response) = &decoded.event else { panic!("response failure") };
+        let failure = response.failure.as_ref().expect("bounded failure fixture");
+        assert_eq!(failure.status, Some(404));
+        assert_eq!(failure.phase, Some(smith_events::FailurePhase::Head));
+        assert_eq!(failure.limit.as_ref().expect("bounded failure fixture").bound, u64::MAX);
+        assert_eq!(failure.detail.is_some(), capture != Capture::None);
+    }
+    let text = core::str::from_utf8(source).expect("bounded failure fixture");
+    for value in ["-1", "1.5", "18446744073709551616", "\"404\""] {
+        assert_eq!(
+            read(text.replace("\"status\":404", &format!("\"status\":{value}")).as_bytes(), &limits()),
+            Err(Error::Shape)
+        );
+    }
+    for value in ["[]", "0", "{\"which\":\"response_head\"}", "{\"which\":0,\"bound\":3}"] {
+        let malformed = text.replace("{\"which\":\"response_head\",\"bound\":18446744073709551615}", value);
+        assert_eq!(read(malformed.as_bytes(), &limits()), Err(Error::Shape));
+    }
+    for value in ["null", "0", "[]"] {
+        assert_eq!(
+            read(text.replace("\"phase\":\"head\"", &format!("\"phase\":{value}")).as_bytes(), &limits()),
+            Err(Error::Shape)
+        );
+    }
+    for (content, success) in [(1024, true), (1025, false)] {
+        let mut record = record.clone();
+        let Event::ResponseCompleted(response) = &mut record.event else { panic!("failure") };
+        response.failure.as_mut().expect("bounded failure fixture").detail = Some(vec![b'x'; content].into());
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            assert_eq!(write(&record, &capture, &limits()).is_ok(), success, "semantic content cap is never relaxed");
+        }
+    }
+}
