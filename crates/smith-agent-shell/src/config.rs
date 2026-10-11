@@ -130,9 +130,13 @@ struct TraceDocument {
     delivery: String,
 }
 
-fn default_capture() -> String { "none".into() }
+fn default_capture() -> String {
+    "none".into()
+}
 
-fn default_delivery() -> String { "complete".into() }
+fn default_delivery() -> String {
+    "complete".into()
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -218,6 +222,23 @@ fn environment_refusal(error: machine::Unencodable) -> String {
     }
 }
 
+fn event_limits(
+    limits: &service::Limits,
+    endpoints: &[Endpoint],
+    capture: Capture,
+    write_deadline: Duration,
+) -> Result<service::EventLimits, String> {
+    let mut options = 0_u32;
+    for endpoint in endpoints {
+        if let Some(effort) = &endpoint.reasoning_effort {
+            options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?);
+        }
+    }
+    let events =
+        service::EventLimits::derive(limits, capture, 1, options, write_deadline).ok_or("event ownership overflow")?;
+    Ok(events)
+}
+
 fn build(document: Document) -> Result<Configuration, String> {
     let profile = build_profile(&document.profile)?;
     let memory = profile.declared.memory.ok_or("profile.declared.memory is required")?;
@@ -274,14 +295,7 @@ fn build(document: Document) -> Result<Configuration, String> {
     };
     let mut limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
     if let Some(trace) = &trace {
-        let mut options = 0_u32;
-        for endpoint in &document.endpoints {
-            if let Some(effort) = &endpoint.reasoning_effort { options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?); }
-        }
-        let events = service::EventLimits::derive(&limits, trace.capture, 1, options, profile.policy.write_deadline).ok_or("event ownership overflow")?;
-        let line = events.sinks.output.checked_div(5).ok_or("event output bound")?;
-        limits.io.output = limits.io.output.max(line);
-        limits.llm.connection.io.output = limits.io.output;
+        let events = event_limits(&limits, &document.endpoints, trace.capture, profile.policy.write_deadline)?;
         limits.events = Some(events);
     }
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
@@ -319,10 +333,9 @@ fn build(document: Document) -> Result<Configuration, String> {
             None => false,
         },
     };
-    let complete = service::worst_case(&config.limits, &config.llm_endpoints)
-        .ok_or_else(|| {
-            profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
-        })?;
+    let complete = service::worst_case(&config.limits, &config.llm_endpoints).ok_or_else(|| {
+        profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
+    })?;
     service::profile::validate::memory(complete, memory).map_err(profile_refusal)?;
     Ok(Configuration { service: config, memory, trace, profile, declarations })
 }
@@ -1077,6 +1090,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::too_many_lines, reason = "one startup-bound fixture records every concrete owning layer")]
     fn product_values_pass_every_startup_check_and_fit_complete_memory() {
         use skein_io::kernel::{Complete, Fd, Submit};
         use skein_lib::Queue;
@@ -1090,7 +1104,19 @@ mod tests {
             environment_bytes: 835,
             endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
         };
-        let derived = service::profile::derive(&selected, &declarations).expect("all product startup relationships");
+        let mut derived =
+            service::profile::derive(&selected, &declarations).expect("all product startup relationships");
+        let effort = dto
+            .endpoints
+            .iter()
+            .filter_map(|endpoint| endpoint.reasoning_effort.as_ref())
+            .map(|effort| u32::try_from(effort.len()).unwrap())
+            .max()
+            .unwrap_or(0);
+        let events =
+            service::EventLimits::derive(&derived, Capture::Everything, 1, effort, selected.policy.write_deadline)
+                .expect("product event ownership");
+        derived.events = Some(events);
         let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
         let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
         let run = run::worst_case(&derived.domain.run).expect("run bound");
@@ -1153,15 +1179,19 @@ mod tests {
         );
         let service = service::worst_case(limits, &destinations).expect("service bound");
         let roots = limits.domain.run.directories;
-        let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(1)).expect("shell queues");
+        let queue =
+            limits.queue.checked_add(roots).and_then(|n| n.checked_add(2)).expect("shell queues and trace root");
         let shell = Queue::<Complete>::worst_case(queue).expect("complete queue")
             + Queue::<Submit>::worst_case(queue).expect("submit queue")
             + u64::try_from(size_of::<crate::Agent>()).expect("agent cell")
             + u64::from(roots) * u64::try_from(size_of::<Fd>()).expect("root cells");
-        let complete = service + crate::trace::MEMORY_RESERVE + shell;
+        let header = u64::try_from(
+            b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
+        )
+        .unwrap();
+        let complete = service + header + shell;
         println!(
-            "PRODUCT_COMPLETE service={service} trace={} shell={shell} complete={complete} memory={}",
-            crate::trace::MEMORY_RESERVE,
+            "PRODUCT_COMPLETE service={service} startup_header={header} shell={shell} complete={complete} memory={}",
             limits.memory
         );
         parse_value(&document).expect("product declarations pass every startup check");
@@ -1179,6 +1209,14 @@ mod tests {
         let mut memory_refusals = 0;
         for sample in 0..96 {
             let mut document = product_document();
+            // All 96 draws exercise the real bounded DER loader. Loading the
+            // machine's complete certificate store twice for each draw is
+            // unrelated to the drawn memory and quantity relationships.
+            document["endpoints"][0]["trust_der"] = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/protocol-llm/fixtures/root.der")
+                .to_str()
+                .expect("fixture path")
+                .into();
             let payload = rng.next_u64() % 40_960 + 1;
             let declared = &mut document["profile"]["declared"];
             declared["conversations"] = (rng.next_u64() % 6 + 1).into();
@@ -1199,7 +1237,7 @@ mod tests {
                 environment_bytes: 835,
                 endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
             };
-            let limits = match service::profile::derive(&profile, &declarations) {
+            let mut limits = match service::profile::derive(&profile, &declarations) {
                 Ok(limits) => limits,
                 Err(refusal) => {
                     let check = refusal.check().expect("draw names a startup relationship");
@@ -1214,16 +1252,31 @@ mod tests {
             validate::window_first(&profile, &declarations, &limits.domain.session).expect("whole window and batch");
             validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
             assert!(limits.file_bytes >= limits.domain.session.tools.file_bytes);
+            let effort = dto
+                .endpoints
+                .iter()
+                .filter_map(|endpoint| endpoint.reasoning_effort.as_ref())
+                .map(|effort| u32::try_from(effort.len()).unwrap())
+                .max()
+                .unwrap_or(0);
+            let events =
+                service::EventLimits::derive(&limits, Capture::Everything, 1, effort, profile.policy.write_deadline)
+                    .expect("drawn event ownership");
+            limits.events = Some(events);
             let configured = build_endpoints(dto.endpoints, &limits.llm, &profile).expect("drawn endpoints");
             let destinations =
                 llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("drawn native admission");
             let service_bytes = service::worst_case(&limits, &destinations).expect("drawn service bound");
-            // The shell may hold every declared inherited root plus its error
-            // stream. This covers prepare's resource-dependent outer queues.
+            // The shell may hold every inherited root, its error stream and
+            // the append file's temporary root before its first pass.
             let roots = limits.domain.run.directories;
-            let queue = limits.queue.checked_add(roots).and_then(|value| value.checked_add(1)).unwrap();
+            let queue = limits.queue.checked_add(roots).and_then(|value| value.checked_add(2)).unwrap();
+            let header = u64::try_from(
+                b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
+            )
+            .unwrap();
             let complete = service_bytes
-                .checked_add(crate::trace::MEMORY_RESERVE)
+                .checked_add(header)
                 .and_then(|value| value.checked_add(Queue::<Complete>::worst_case(queue)?))
                 .and_then(|value| value.checked_add(Queue::<Submit>::worst_case(queue)?))
                 .and_then(|value| value.checked_add(u64::try_from(size_of::<crate::Agent>()).ok()?))

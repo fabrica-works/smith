@@ -23,6 +23,7 @@ smith-protocol-llm.workspace = true
 smith-protocol-machine.workspace = true
 
 [dev-dependencies]
+skein-heap.workspace = true
 smith-agent-world.workspace = true
 skein-llm-world.workspace = true
 

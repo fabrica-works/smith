@@ -9,7 +9,7 @@
 use alloc::boxed::Box;
 
 use skein_io as io;
-use skein_lib::{Duration, List, Queue, Time, Token, stream};
+use skein_lib::{Duration, List, Queue, Time, Token, bytes, stream};
 use smith_events::{Event, Record};
 
 /// An event destination, named by the shell if IO abandons it.
@@ -71,6 +71,10 @@ pub struct SinkLimits {
     /// Bytes retained per destination, including three authoritative records' reserved room.
     pub output: u32,
     pub records: smith_events::Limits,
+    /// Aggregate owned bytes of one accepted outcome, before JSON escaping.
+    pub answer_bytes: u32,
+    /// One configured or fixed metadata string; provider call id/name use records.string.
+    pub metadata_string: u32,
     pub conversations: u32,
 }
 
@@ -88,10 +92,12 @@ pub struct Ended {
 #[derive(Debug)]
 struct Line {
     bytes: Box<[u8]>,
+    sent: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Pending {
+    /// Whole record credit released only after its final chunk drains.
     bytes: u32,
 }
 
@@ -119,6 +125,7 @@ struct Writer {
     delivery: Delivery,
     stream: Stream,
     lines: Queue<Line>,
+    active: Option<Line>,
     pending: Option<Pending>,
     held: u32,
     loss: u64,
@@ -136,7 +143,7 @@ pub struct Sinks {
     writers: List<Writer>,
     line: u32,
     reserve: u32,
-    /// IO's actual output cap: a full-credit grant proves the previous line drained.
+    /// IO's actual output cap: a full-credit grant proves the previous chunk drained.
     io_output: u32,
     counts: [u64; TYPES],
     ended: bool,
@@ -144,16 +151,17 @@ pub struct Sinks {
 
 const TYPES: usize = 18;
 const AUTHORITATIVE: u32 = 3;
-// Every codec line contains v, type and t_ms, already longer than sixteen bytes.
-const MINIMUM_LINE: u32 = 16;
+// Three authoritative records and the two-record fact hand-off have separate slots.
+const LINE_SLOTS: u32 = 5;
 
 impl Sinks {
     /// Construct the destinations with a checked bound and the actual adopted IO output cap.
     #[must_use]
     pub fn new(limits: &SinkLimits, capture: Capture, io_output: u32) -> Sinks {
         assert!(sinks_worst_case(limits, capture).is_some(), "startup checked the sink's ownership bound");
-        let line = largest_line(&limits.records, capture).expect("startup checked the produced record bound");
-        assert!(io_output >= line, "every line fits the actual adopted IO output cap");
+        let line = largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string)
+            .expect("startup checked the produced record bound");
+        assert!(io_output > 0, "a destination can send at least one byte");
         Sinks {
             limits: *limits,
             capture,
@@ -183,7 +191,8 @@ impl Sinks {
                 token,
                 delivery,
                 stream: Stream::Waiting,
-                lines: Queue::with_capacity(slots(&self.limits).expect("startup checked queue cells")),
+                lines: Queue::with_capacity(LINE_SLOTS),
+                active: None,
                 pending: None,
                 held: 0,
                 loss: 0,
@@ -215,7 +224,7 @@ impl Sinks {
         let mut open = 0_u32;
         for writer in &self.writers {
             match writer.stream {
-                Stream::Closed => {},
+                Stream::Closed => {}
                 Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
                     open = open.checked_add(1).expect("bounded destinations");
                 }
@@ -229,8 +238,20 @@ impl Sinks {
     pub fn has_work(&self) -> bool {
         for writer in &self.writers {
             match writer.stream {
-                Stream::Waiting | Stream::Ready if !writer.lines.is_empty() || writer.pending.is_some() || writer.ended => return true,
-                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp | Stream::Closed => {},
+                Stream::Waiting | Stream::Ready
+                    if !writer.lines.is_empty()
+                        || writer.active.is_some()
+                        || writer.pending.is_some()
+                        || writer.ended =>
+                {
+                    return true;
+                }
+                Stream::Waiting
+                | Stream::Ready
+                | Stream::Demanding
+                | Stream::Closing
+                | Stream::GivenUp
+                | Stream::Closed => {}
             }
         }
         false
@@ -311,7 +332,13 @@ impl Sinks {
     pub fn record(&mut self, record: &Record) {
         assert!(!self.ended, "no record follows the process terminal");
         let capture = match &record.event {
-            Event::RunCompleted(_) => self.capture.encoded(),
+            Event::RunCompleted(answer) => {
+                assert!(
+                    answer_bytes(answer) <= u64::from(self.limits.answer_bytes),
+                    "the run admitted aggregate result ownership"
+                );
+                self.capture.encoded()
+            }
             Event::SessionStarted(_)
             | Event::SessionEnded(_)
             | Event::RunStarted(_)
@@ -336,6 +363,10 @@ impl Sinks {
             Some(bytes) => bytes,
             None => return,
         };
+        assert!(
+            u32::try_from(bytes.len()).expect("encoded line fits u32") <= self.line,
+            "actual source projection fits its owned record bound"
+        );
         let index = kind(&record.event);
         let count = self.counts.get_mut(index).expect("the event has a fixed vocabulary index");
         *count = count.checked_add(1).expect("one process cannot exhaust a record count");
@@ -359,6 +390,10 @@ impl Sinks {
             let bytes = smith_events::write(&record, &smith_events::Capture::None, &self.limits.records)
                 .expect("the settled end fits its checked record bound")
                 .expect("the process terminal survives every capture");
+            assert!(
+                u32::try_from(bytes.len()).expect("encoded end fits u32") <= self.line,
+                "settled end fits the source bound"
+            );
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             offer(writer, bytes, true, self.limits.output, self.reserve, self.line);
         }
@@ -430,7 +465,7 @@ impl Sinks {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             match writer.stream {
                 Stream::Waiting => {
-                    if !writer.lines.is_empty() || writer.pending.is_some() {
+                    if !writer.lines.is_empty() || writer.active.is_some() || writer.pending.is_some() {
                         out.push(io::Request::Stream {
                             stream: writer.token,
                             down: stream::Down::Demand { read: stream::Read::Nothing, room: self.io_output },
@@ -441,20 +476,19 @@ impl Sinks {
                         writer.stream = Stream::Closing;
                     }
                 }
-                Stream::Ready => match writer.lines.pop() {
-                    Some(line) => {
-                        writer.pending = Some(Pending {
-                            bytes: u32::try_from(line.bytes.len()).expect("a line fits its checked byte bound"),
-                        });
-                        out.push(io::Request::Stream { stream: writer.token, down: stream::Down::Send(line.bytes) });
-                        writer.stream = Stream::Waiting;
+                Stream::Ready => {
+                    if writer.active.is_none() {
+                        writer.active = writer.lines.pop();
                     }
-                    None if writer.ended => {
-                        out.push(io::Request::Close { entity: writer.token });
-                        writer.stream = Stream::Closing;
+                    match writer.active.take() {
+                        Some(line) => send_chunk(writer, line, self.io_output, out),
+                        None if writer.ended => {
+                            out.push(io::Request::Close { entity: writer.token });
+                            writer.stream = Stream::Closing;
+                        }
+                        None => {}
                     }
-                    None => {}
-                },
+                }
                 Stream::Demanding | Stream::Closing | Stream::GivenUp | Stream::Closed => {}
             }
         }
@@ -545,7 +579,32 @@ fn offer(writer: &mut Writer, bytes: Box<[u8]>, authoritative: bool, output: u32
     let length = u32::try_from(bytes.len()).expect("a record fits its checked bound");
     writer.held = writer.held.checked_add(length).expect("startup checked retained byte credit");
     assert!(writer.held <= output, "authoritative room was reserved before the run");
-    writer.lines.push(Line { bytes });
+    writer.lines.push(Line { bytes, sent: 0 });
+}
+
+fn send_chunk(writer: &mut Writer, mut line: Line, output: u32, out: &mut Queue<io::Request>) {
+    let length = u32::try_from(line.bytes.len()).expect("a line fits its checked byte bound");
+    let remaining = length.checked_sub(line.sent).expect("sent offset stays within the record");
+    let chunk = remaining.min(output);
+    let end = line.sent.checked_add(chunk).expect("chunk ends within the record");
+    let bytes = if line.sent == 0 && end == length {
+        writer.pending = Some(Pending { bytes: length });
+        line.bytes
+    } else {
+        let start = usize::try_from(line.sent).expect("u32 fits usize");
+        let finish = usize::try_from(end).expect("u32 fits usize");
+        let bytes = bytes::copy_of(line.bytes.get(start..finish).expect("chunk lies within the record"));
+        line.sent = end;
+        if end == length {
+            writer.pending = Some(Pending { bytes: length });
+        } else {
+            writer.pending = Some(Pending { bytes: 0 });
+            writer.active = Some(line);
+        }
+        bytes
+    };
+    out.push(io::Request::Stream { stream: writer.token, down: stream::Down::Send(bytes) });
+    writer.stream = Stream::Waiting;
 }
 
 fn received(writer: &mut Writer, event: io::Event) {
@@ -591,7 +650,12 @@ fn abandon(writer: &mut Writer) {
     }
     writer.abandoned = true;
     writer.notify = true;
-    if writer.pending.take().is_some() {
+    if let Some(pending) = writer.pending.take()
+        && pending.bytes > 0
+    {
+        lost(writer);
+    }
+    if writer.active.take().is_some() {
         lost(writer);
     }
     for _ in 0..writer.lines.capacity() {
@@ -678,12 +742,37 @@ fn names(index: usize) -> &'static [u8] {
     .expect("bounded vocabulary index")
 }
 
-fn slots(limits: &SinkLimits) -> Option<u32> {
-    limits.output.checked_div(MINIMUM_LINE)?.checked_add(AUTHORITATIVE)
+fn answer_bytes(answer: &smith_events::RunCompleted) -> u64 {
+    let result = match &answer.result {
+        Some(result) => result,
+        None => return 0,
+    };
+    let mut bytes = match &result.text {
+        Some(text) => u64::try_from(text.len()).expect("accepted text length fits u64"),
+        None => 0,
+    };
+    if let Some(fields) = &result.fields {
+        for field in fields {
+            bytes = bytes
+                .checked_add(u64::try_from(field.text.len()).expect("accepted field length fits u64"))
+                .expect("run admitted aggregate outcome ownership");
+        }
+    }
+    bytes
 }
 
-pub(crate) fn largest_line(limits: &smith_events::Limits, capture: Capture) -> Option<u32> {
-    let scalar = smith_events::largest_record_for(&smith_events::Capture::None, limits)?;
+pub(crate) fn largest_line(
+    limits: &smith_events::Limits,
+    capture: Capture,
+    answer_bytes: u32,
+    metadata_string: u32,
+) -> Option<u32> {
+    // Only a tool call id and name come from provider strings. Configured model,
+    // charter, result field and fixed vocabulary names use the smaller source cap.
+    // Extra provider room covers both strings even on records without a call.
+    let metadata = smith_events::Limits { string: metadata_string, ..*limits };
+    let provider = limits.string.checked_mul(12)?;
+    let scalar = smith_events::largest_record_for(&smith_events::Capture::None, &metadata)?.checked_add(provider)?;
     match capture {
         Capture::None | Capture::Calls => Some(scalar),
         Capture::Everything => {
@@ -693,11 +782,11 @@ pub(crate) fn largest_line(limits: &smith_events::Limits, capture: Capture) -> O
                 &smith_domain::run::Answer::Parked { spent: smith_domain::run::Spend::ZERO, turns: 0 },
                 Capture::None,
             );
-            Some(scalar.max(smith_events::largest_size(
-                &Event::RunCompleted(answer),
-                &smith_events::Capture::Everything,
-                limits,
-            )?))
+            let shape = smith_events::Limits { content: 0, ..metadata };
+            let bound =
+                smith_events::largest_size(&Event::RunCompleted(answer), &smith_events::Capture::Everything, &shape)?
+                    .checked_add(answer_bytes.checked_mul(6)?)?;
+            Some(scalar.max(bound))
         }
     }
 }
@@ -705,7 +794,7 @@ pub(crate) fn largest_line(limits: &smith_events::Limits, capture: Capture) -> O
 /// Peak heap of the destination queues and their bounded output, including codec construction.
 #[must_use]
 pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
-    if limits.records.items < u32::try_from(TYPES).ok()? {
+    if limits.metadata_string > limits.records.string || limits.records.items < u32::try_from(TYPES).ok()? {
         return None;
     }
     for index in 0..TYPES {
@@ -713,11 +802,11 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
             return None;
         }
     }
-    let line = largest_line(&limits.records, capture)?;
+    let line = largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string)?;
     if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(2)?)? {
         return None;
     }
-    let writer = Queue::<Line>::worst_case(slots(limits)?)?.checked_add(u64::from(limits.output))?;
+    let writer = Queue::<Line>::worst_case(LINE_SLOTS)?.checked_add(u64::from(limits.output))?;
     // The measured writer can retain its encoded body and final newline-owning line together.
     List::<Writer>::worst_case(limits.destinations)?
         .checked_add(u64::from(limits.destinations).checked_mul(writer)?)?
@@ -740,8 +829,15 @@ mod tests {
 
     fn limits(destinations: u32) -> SinkLimits {
         let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
-        let line = largest_line(&records, Capture::None).unwrap();
-        SinkLimits { destinations, output: line.checked_mul(5).unwrap(), records, conversations: 1 }
+        let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
+        SinkLimits {
+            destinations,
+            output: line.checked_mul(5).unwrap(),
+            records,
+            answer_bytes: records.content,
+            metadata_string: records.string,
+            conversations: 1,
+        }
     }
 
     #[test]
@@ -764,9 +860,10 @@ mod tests {
         };
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             let mut limits = limits(1);
-            limits.output = largest_line(&limits.records, capture).unwrap() * 5;
+            limits.output =
+                largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string).unwrap() * 5;
             let token = Token::new(11);
-            let mut sinks = Sinks::new(&limits, capture, limits.output);
+            let mut sinks = Sinks::new(&limits, capture, 7);
             sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
             let answer = crate::answer_record(
                 crate::AnswerMeta {
@@ -817,8 +914,10 @@ mod tests {
     fn the_complete_emitted_vocabulary_must_fit_the_receiving_bounds() {
         let mut bounds = limits(1);
         bounds.records.string = 18;
+        bounds.metadata_string = 18;
         assert!(sinks_worst_case(&bounds, Capture::None).is_none());
         bounds.records.string = 19;
+        bounds.metadata_string = 19;
         assert!(sinks_worst_case(&bounds, Capture::None).is_some());
         bounds.records.items = 17;
         assert!(sinks_worst_case(&bounds, Capture::None).is_none());
@@ -924,6 +1023,7 @@ mod tests {
     fn drain(sinks: &mut Sinks, token: Token) -> Vec<Record> {
         let mut out = Queue::with_capacity(2);
         let mut read = Vec::new();
+        let mut reader = smith_events::Reader::new(&sinks.limits.records).unwrap();
         for _ in 0_u32..10_000 {
             sinks.down(&mut out);
             match out.pop() {
@@ -932,9 +1032,15 @@ mod tests {
                     grant(sinks, token);
                 }
                 Some(io::Request::Stream { down: stream::Down::Send(bytes), .. }) => {
-                    read.push(smith_events::read(&bytes, &sinks.limits.records).unwrap().unwrap());
+                    assert!(bytes.len() <= usize::try_from(sinks.io_output).unwrap());
+                    let line = reader.feed(&bytes).unwrap();
+                    assert_eq!(line.consumed, bytes.len());
+                    if let Some(record) = line.record {
+                        read.push(record);
+                    }
                 }
                 Some(io::Request::Close { .. }) => {
+                    reader.finish().unwrap();
                     sinks.up(io::Event::Closed { owner: token });
                     return read;
                 }
@@ -1000,7 +1106,7 @@ mod tests {
     fn a_failed_stream_counts_queued_inflight_and_later_records_and_notifies_once() {
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, 1);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         sinks.record(&counted(1));
         let mut out = Queue::with_capacity(2);
@@ -1013,6 +1119,12 @@ mod tests {
         let Some(io::Request::Stream { down: stream::Down::Send(_), .. }) = out.pop() else {
             panic!("one owning send")
         };
+        assert!(sinks.writers.get(0).unwrap().active.is_some(), "only a prefix left the owner");
+        assert_eq!(
+            sinks.writers.get(0).unwrap().pending.as_ref().unwrap().bytes,
+            0,
+            "prefixes keep the whole record credit"
+        );
         sinks.record(&counted(2));
         sinks.up(io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
         assert_eq!(sinks.pop_given_up(), Some(Destination::Trace));

@@ -802,6 +802,7 @@ name = "smith-agent-service"
 version = "0.0.0"
 dependencies = [
  "skein-channel",
+ "skein-heap",
  "skein-http",
  "skein-io",
  "skein-lib",

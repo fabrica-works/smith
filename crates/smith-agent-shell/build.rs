@@ -1,9 +1,9 @@
 //! Build identity from the actual source commit; build tooling never runs in the service.
 
-use std::process::Command;
-
 #[expect(clippy::disallowed_types, reason = "compile-time source metadata tooling is not a runtime process effect")]
 fn git(arguments: &[&str]) -> String {
+    use std::process::Command;
+
     let output = Command::new("git").args(arguments).output().expect("git supplies the source identity");
     assert!(output.status.success(), "git source identity query");
     String::from_utf8(output.stdout).expect("git metadata is UTF-8").trim().to_owned()

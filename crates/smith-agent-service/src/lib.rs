@@ -24,7 +24,8 @@ pub mod sinks;
 mod tests;
 
 pub use observations::{
-    ChildShare, budget_record, check_exit, child_completed, child_share, opening_model, reported_usage, request_tool_choice,
+    ChildShare, budget_record, check_exit, child_completed, child_share, opening_model, reported_usage,
+    request_tool_choice,
 };
 
 pub use events::EventLimits;

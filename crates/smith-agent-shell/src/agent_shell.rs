@@ -152,11 +152,21 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .checked_add(extra_operations)
         .ok_or_else(|| derivation_refusal("routes"))?;
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
-        .and_then(|bytes| bytes.checked_add(if configuration.trace.is_some() {
-            // The retained startup header's five strings; its structure is in Agent.
-            u64::try_from(b"smith".len().checked_add(env!("CARGO_PKG_VERSION").len())?
-                .checked_add(env!("SMITH_BUILD").len())?.checked_add(b"standard".len())?).ok()?
-        } else { 0 }))
+        .and_then(|bytes| {
+            bytes.checked_add(if configuration.trace.is_some() {
+                // The retained startup header's five strings; its structure is in Agent.
+                u64::try_from(
+                    b"smith"
+                        .len()
+                        .checked_add(env!("CARGO_PKG_VERSION").len())?
+                        .checked_add(env!("SMITH_BUILD").len())?
+                        .checked_add(b"standard".len())?,
+                )
+                .ok()?
+            } else {
+                0
+            })
+        })
         .and_then(|bytes| bytes.checked_add(Queue::<Complete>::worst_case(queue)?))
         .and_then(|bytes| bytes.checked_add(Queue::<Submit>::worst_case(queue)?))
         .and_then(|bytes| bytes.checked_add(u64::try_from(size_of::<Agent>()).ok()?))
@@ -190,19 +200,19 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .map_err(|fd| format!("agent stream {} cannot be adopted", fd.raw()))?;
     let mut trace_root = None;
     if let Some(trace) = configuration.trace {
-        let fd = match resources.trace {
-            Some(fd) => fd,
-            None => {
-                let path = std::path::absolute(&trace.path).map_err(|error| format!("trace path: {error}"))?;
-                let parent = path.parent().ok_or("trace path has no parent")?;
-                let file = path.file_name().ok_or("trace path has no filename")?;
-                let root = skein_shell::open_root(parent).map_err(|error| format!("trace root: {error:?}"))?;
-                trace_root = Some(root);
-                skein_shell::open_append(root, file.as_encoded_bytes(), 0o600)
-                    .map_err(|error| format!("trace append: {error:?}"))?
-            }
+        let fd = if let Some(fd) = resources.trace {
+            fd
+        } else {
+            let path = std::path::absolute(&trace.path).map_err(|error| format!("trace path: {error}"))?;
+            let parent = path.parent().ok_or("trace path has no parent")?;
+            let file = path.file_name().ok_or("trace path has no filename")?;
+            let root = skein_shell::open_root(parent).map_err(|error| format!("trace root: {error:?}"))?;
+            trace_root = Some(root);
+            skein_shell::open_append(root, file.as_encoded_bytes(), 0o600)
+                .map_err(|error| format!("trace append: {error:?}"))?
         };
-        service.adopt_destination(fd, service::Destination::Trace, trace.delivery)
+        service
+            .adopt_destination(fd, service::Destination::Trace, trace.delivery)
             .map_err(|fd| format!("trace descriptor {} cannot be adopted", fd.raw()))?;
     } else if resources.trace.is_some() {
         return Err("an inherited trace requires a configured destination".into());
@@ -264,7 +274,10 @@ impl Host for Agent {
                 service::Destination::Trace => "trace file",
                 service::Destination::Output => "standard output events",
             };
-            diagnostic(self.errors.as_mut(), &format!("event destination {name} was given up; later records count as lost"));
+            diagnostic(
+                self.errors.as_mut(),
+                &format!("event destination {name} was given up; later records count as lost"),
+            );
         }
         if self.service.pop_usage_unread() {
             diagnostic(self.errors.as_mut(), "process resource usage is unavailable");
@@ -363,8 +376,14 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
     let mut agent = Agent::new(
         configuration,
         Resources {
-            input: Fd::new(0), output: Fd::new(1), signals, seed,
-            pid: skein_shell::process_id(), trace: None, error: None, roots: None,
+            input: Fd::new(0),
+            output: Fd::new(1),
+            signals,
+            seed,
+            pid: skein_shell::process_id(),
+            trace: None,
+            error: None,
+            roots: None,
         },
         errors,
     )?;
