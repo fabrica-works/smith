@@ -68,6 +68,10 @@ fn endpoints() -> Endpoints {
 }
 
 fn endpoints_with_connect(connect: Duration) -> Endpoints {
+    endpoints_with_client(connect, limits().adapter.client)
+}
+
+fn endpoints_with_client(connect: Duration, client: skein_llm::client::Limits) -> Endpoints {
     let mut roots = skein_tls::RootCertStore::empty();
     roots.add(skein_tls::CertificateDer::from(include_bytes!("../fixtures/root.der").to_vec())).expect("fixture root");
     Endpoints::new(
@@ -76,7 +80,7 @@ fn endpoints_with_connect(connect: Duration) -> Endpoints {
             handshake: skein_lib::Duration::from_secs(1),
             name: llm::Endpoint(42),
             destination: skein_llm_connection::Endpoint {
-                limits: limits().adapter.client,
+                limits: client,
                 credential: skein_llm::client::CredentialLimits {
                     access_token: limits().grant_value_bytes,
                     account_id: limits().grant_value_bytes,
@@ -361,4 +365,47 @@ fn the_whole_deadline_precedes_a_later_endpoint_connect_deadline() {
             ..
         })
     ));
+}
+
+#[test]
+fn an_observed_request_is_native_validated_before_its_payload_is_copied() {
+    let limits = limits();
+    for malformed in [false, true] {
+        let mut client = limits.adapter.client;
+        if !malformed {
+            client.request = 1;
+        }
+        let mut component = Component::new(&limits, endpoints_with_client(Duration::from_secs(1), client))
+            .expect("actual endpoint with its own request bound");
+        component
+            .grant(GrantName { account: 0, generation: 1 }, credential(b"private-grant"), Time::from_nanos(100))
+            .expect("valid private grant");
+        let mut request = complete(7, 1, limits.receiving);
+        if let FromDomain::Complete { prompt, observation, .. } = &mut request {
+            *observation = Some(smith_protocol_llm::Observation { first: true, messages: 0, live_text: true });
+            if malformed {
+                prompt.system = vec![0xff].into();
+            }
+        }
+        let mut up = Queue::with_capacity(adapter::MAX_OUT.above);
+        let mut io = Queue::with_capacity(adapter::MAX_OUT.below);
+        component.from_domain(&env(0, &limits), request, &mut up, &mut io);
+        assert!(component.pop_measure().is_none(), "the refused native request is never copied as content");
+        assert!(component.measures_drained(), "no refused handoff remains held");
+        assert!(io.is_empty(), "native preparation refusal never reaches a connection");
+        let Some(ToDomain::Failed { owner, failure, evidence, .. }) = up.pop() else {
+            panic!("one exact preparation refusal");
+        };
+        assert_eq!(owner, Token::new(7));
+        assert_eq!(evidence, llm::Evidence::Unsent);
+        assert_eq!(
+            failure,
+            if malformed {
+                llm::Failure::Invalid
+            } else {
+                llm::Failure::Limit { which: llm::Limit::Path(llm::Cap::Request), bound: 1 }
+            }
+        );
+        assert!(up.is_empty(), "one refusal terminal");
+    }
 }

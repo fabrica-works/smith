@@ -1,6 +1,7 @@
 //! A bounded LLM component over skein's connection pool.
 //! It keeps endpoint names, two grant generations per account, and a context
-//! for each accepted call. It never knows retry policy, host credentials, or
+//! for each accepted call, plus one exact request awaiting its prompt record.
+//! It never knows retry policy, host credentials, or
 //! provider wire grammar. `from_domain`, `from_below`, `fire` and `reclaim`
 //! route one bounded pass; `close` ends the owner's retained connection pool.
 //! Accepted calls have one typed terminal.
@@ -170,6 +171,8 @@ impl Component {
                 || native.history_items > maximum.history_items
                 || native.output_items > maximum.output_items
                 || native.detail_bytes > maximum.detail_bytes
+                || native.strings > maximum.strings
+                || native.answer > maximum.answer
                 || !completion_fits
             {
                 return Err(ComponentError::ClientLimits);
@@ -316,11 +319,7 @@ impl Component {
         Env { now: env.now, wall: env.wall, limits: self.limits.connection }
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        clippy::manual_map,
-        reason = "one domain Complete; the strict subset uses explicit matches"
-    )]
+    #[expect(clippy::too_many_arguments, reason = "one domain Complete")]
     fn start(
         &mut self,
         env: &Env<ComponentLimits>,
@@ -391,12 +390,12 @@ impl Component {
             return;
         }
         let index = options.index;
-        let captured = match observation {
-            Some(observation) => Some(
-                crate::capture::prompt(&translated, observation, &adapter.client)
-                    .expect("the owner's cursor and translated replay were admitted"),
-            ),
-            None => None,
+        let captured = match observed_prompt(&translated, &credential, options, observation) {
+            Ok(captured) => captured,
+            Err(error) => {
+                Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
+                return;
+            }
         };
         match self.active.insert(owner, Active { context, outcome, deliver, observation }) {
             Ok(None) => {}
@@ -658,5 +657,27 @@ impl Component {
             evidence: llm::Evidence::Unsent,
             detail: bytes::copy_of(detail.get(..length).expect("clipped fixed local diagnostic")),
         });
+    }
+}
+
+// Validate the native preparation entrance before copying its observed payload.
+// This is not a transport measurement: bytes remain unobserved until sending.
+fn observed_prompt(
+    translated: &shared::Prompt,
+    credential: &Credential,
+    options: &EndpointOptions,
+    observation: Option<crate::Observation>,
+) -> Result<Option<smith_events::Prompt>, Error> {
+    match observation {
+        Some(observation) => {
+            match shared::client::measure(translated, credential, &options.endpoint, &options.client) {
+                Ok(_) => {}
+                Err(error) => return Err(Error::from_shared(error)),
+            }
+            let prompt = crate::capture::prompt(translated, observation, &options.client)
+                .expect("the owner's cursor and translated replay were admitted");
+            Ok(Some(prompt))
+        }
+        None => Ok(None),
     }
 }

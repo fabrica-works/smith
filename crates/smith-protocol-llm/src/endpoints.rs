@@ -1,6 +1,7 @@
 //! Startup endpoint names and their resolved transport, dialect and options.
 //! This table retains no credential. The service gives the destinations to
-//! skein's connection component and uses names only through this mapping.
+//! skein's connection component and keeps their actual HTTP heads for native
+//! validation before copying an observation, using names through this mapping.
 //! Contract: protocol/agent.md, section 4; protocol/llm.md, sections 2 and 6.
 
 use alloc::boxed::Box;
@@ -98,6 +99,8 @@ pub struct EndpointOptions {
     pub handshake: Duration,
     /// Dialect that owns replay and provider-specific request rules.
     pub provider: Provider,
+    /// Actual destination head used to validate content before its observation is copied.
+    pub endpoint: skein_llm::Endpoint,
     /// Native per-endpoint bounds, including its transport pieces and measured head.
     pub client: skein_llm::client::Limits,
     /// Configured reasoning option, when supported.
@@ -171,6 +174,7 @@ impl Endpoints {
                 return Err(EndpointError::Identity);
             }
             let client = configured.destination.limits;
+            let endpoint = configured.destination.llm.clone();
             destinations.push(configured.destination).or(Err(EndpointError::TooMany))?;
             let option = EndpointOptions {
                 index,
@@ -178,6 +182,7 @@ impl Endpoints {
                 connect: configured.connect,
                 handshake: configured.handshake,
                 provider,
+                endpoint,
                 client,
                 reasoning_effort: configured.reasoning_effort,
                 identity: configured.identity,
@@ -220,6 +225,13 @@ impl Endpoints {
     pub fn option_bytes(&self) -> Option<u64> {
         let mut held = 0_u64;
         for (_, option) in &self.options {
+            held = held.checked_add(u64::try_from(option.endpoint.authority.len()).ok()?)?;
+            held = held.checked_add(u64::try_from(option.endpoint.target.len()).ok()?)?;
+            held = held.checked_add(u64::try_from(size_of_val(option.endpoint.headers.as_ref())).ok()?)?;
+            for header in &option.endpoint.headers {
+                held = held.checked_add(u64::try_from(header.name.len()).ok()?)?;
+                held = held.checked_add(u64::try_from(header.value.len()).ok()?)?;
+            }
             for model in &option.models {
                 held = held.checked_add(u64::try_from(size_of::<ConfiguredModel>()).ok()?)?;
                 held = held.checked_add(u64::try_from(model.name.len()).ok()?)?;
