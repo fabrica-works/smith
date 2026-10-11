@@ -317,9 +317,9 @@ fn heap_tool_completed(limits: &Limits) -> Option<u64> {
     Some(length)
 }
 
-fn heap_check_completed(_limits: &Limits) -> Option<u64> {
+fn heap_check_completed(limits: &Limits) -> Option<u64> {
     let mut length = 0_u64;
-    length = length.checked_add(0_u64)?;
+    length = length.checked_add(u64::from(limits.string))?;
     Some(length)
 }
 
@@ -623,6 +623,13 @@ fn size_command_exit(_capture: &Capture, _limits: &Limits) -> Option<u64> {
     Some(length)
 }
 
+fn size_check_exit(_capture: &Capture, limits: &Limits) -> Option<u64> {
+    let mut length = 2_u64;
+    length = length.checked_add(8)?.checked_add(u64::from(limits.string.max(9)).checked_mul(6)?.checked_add(2)?)?;
+    length = length.checked_add(9)?.checked_add(20)?;
+    Some(length)
+}
+
 fn size_session_started(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
     length = length.checked_add(11)?.checked_add(20_u64)?;
@@ -823,7 +830,7 @@ fn size_check_started(_capture: &Capture, _limits: &Limits) -> Option<u64> {
 fn size_check_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
     length = length.checked_add(7)?.checked_add(20_u64)?;
-    length = length.checked_add(8)?.checked_add(size_command_exit(capture, limits)?)?;
+    length = length.checked_add(8)?.checked_add(size_check_exit(capture, limits)?)?;
     length = length.checked_add(10)?.checked_add(5_u64)?;
     length = length.checked_add(15)?.checked_add(20_u64)?;
     Some(length)

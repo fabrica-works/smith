@@ -463,7 +463,7 @@ fn tool_budget_metadata_is_required_and_exact() {
 
 #[test]
 fn command_exit_requires_exactly_one_code_or_unsigned_signal() {
-    for name in ["tool_completed_signal", "check_completed_signal"] {
+    for name in ["tool_completed_signal"] {
         let (_, record, _) = fixtures::samples().into_iter().find(|(sample, _, _)| *sample == name).expect("fixture");
         let encoded = write(&record, &Capture::Everything, &limits()).expect("bounded").expect("terminal");
         let text = std::str::from_utf8(&encoded).expect("UTF8");
@@ -798,4 +798,88 @@ fn entrance_reserve_and_terminal_wind_down_are_required_metadata_in_every_captur
     ] {
         assert!(read(invalid.as_bytes(), &limits()).is_err(), "required typed field");
     }
+}
+
+#[test]
+fn five_kind_check_exits_are_decoded_without_command_exit_shape() {
+    for (exit, expected) in [
+        ("{\"kind\":\"code\",\"value\":17}", "Code { code: 17 }"),
+        ("{\"kind\":\"signal\",\"value\":18446744073709551615}", "Signal { signal: 18446744073709551615 }"),
+        ("{\"kind\":\"timed_out\"}", "TimedOut"),
+        ("{\"kind\":\"unstarted\"}", "Unstarted"),
+        ("{\"kind\":\"cancelled\"}", "Cancelled"),
+    ] {
+        let line = format!(
+            "{{\"v\":1,\"t_ms\":0,\"type\":\"check.completed\",\"run\":7,\"exit\":{exit},\"passed\":false,\"duration_ms\":19}}\n"
+        );
+        let parsed = read(line.as_bytes(), &limits());
+        let Ok(Some(smith_events::Record { event: Event::CheckCompleted(value), .. })) = parsed else {
+            panic!("check exit {exit} must decode: {parsed:?}");
+        };
+        assert_eq!(format!("{:?}", value.exit), expected);
+    }
+}
+
+#[test]
+fn check_exit_tags_values_and_unknown_kinds_are_bounded() {
+    for (exit, passed) in [
+        ("{\"kind\":\"code\",\"value\":0}", true),
+        ("{\"kind\":\"code\",\"value\":-9223372036854775808}", false),
+        ("{\"kind\":\"code\",\"value\":9223372036854775807}", false),
+        ("{\"kind\":\"signal\",\"value\":0}", false),
+        ("{\"kind\":\"signal\",\"value\":18446744073709551615}", false),
+        ("{\"kind\":\"timed_out\"}", false),
+        ("{\"kind\":\"unstarted\"}", false),
+        ("{\"kind\":\"cancelled\"}", false),
+        ("{\"kind\":\"future🌍\"}", false),
+    ] {
+        let line = format!(
+            "{{\"v\":1,\"type\":\"check.completed\",\"t_ms\":0,\"run\":7,\"exit\":{exit},\"passed\":{passed},\"duration_ms\":19}}"
+        );
+        let record = read(line.as_bytes(), &limits()).expect("valid kind").expect("check terminal");
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let encoded = write(&record, &capture, &limits()).expect("bounded kind").expect("check terminal");
+            assert_eq!(read(&encoded, &limits()).expect("round trip"), Some(record.clone()));
+            assert!(
+                encoded.len()
+                    <= usize::try_from(smith_events::largest_size(&record.event, &capture, &limits()).expect("bound"))
+                        .expect("size")
+            );
+        }
+    }
+    let base = r#"{"v":1,"type":"check.completed","t_ms":0,"run":7,"exit":EXIT,"passed":false,"duration_ms":19}"#;
+    for exit in [
+        "{}",
+        "{\"code\":0}",
+        "{\"signal\":9}",
+        "{\"kind\":null}",
+        "{\"kind\":9}",
+        "{\"kind\":\"code\"}",
+        "{\"kind\":\"signal\"}",
+        "{\"kind\":\"code\",\"value\":null}",
+        "{\"kind\":\"signal\",\"value\":-1}",
+        "{\"kind\":\"code\",\"value\":9223372036854775808}",
+        "{\"kind\":\"signal\",\"value\":18446744073709551616}",
+        "{\"kind\":\"signal\",\"value\":1.5}",
+        "{\"kind\":\"code\",\"kind\":\"signal\",\"value\":0}",
+        "{\"kind\":\"code\",\"value\":0,\"value\":1}",
+    ] {
+        assert!(read(base.replace("EXIT", exit).as_bytes(), &limits()).is_err(), "{exit}");
+    }
+    let bounded = Limits { string: 16, ..limits() };
+    let exact = base.replace("EXIT", "{\"kind\":\"xxxxxxxxxxxxxxxx\"}");
+    let mut record = read(exact.as_bytes(), &bounded).expect("exact unknown cap").expect("check");
+    assert!(write(&record, &Capture::None, &bounded).expect("exact cap").is_some());
+    let too_large = exact.replace("xxxxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxxx");
+    assert_eq!(read(too_large.as_bytes(), &bounded), Err(Error::Shape));
+    let Event::CheckCompleted(check) = &mut record.event else {
+        panic!("check");
+    };
+    check.exit = smith_events::CheckExit::Unknown(b"xxxxxxxxxxxxxxxxx".as_slice().into());
+    assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Limits));
+    let Event::CheckCompleted(check) = &mut record.event else {
+        panic!("check");
+    };
+    check.exit = smith_events::CheckExit::Unknown([255].as_slice().into());
+    assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Text));
 }

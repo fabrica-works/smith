@@ -2,7 +2,7 @@
 //! Contract: protocol/events.md, sections 5.3 and 6.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
     EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
@@ -621,6 +621,28 @@ fn write_command_exit(json: &mut Encoder, value: &CommandExit, _capture: &Captur
     json.object_end();
 }
 
+fn write_check_exit(json: &mut Encoder, value: &CheckExit) {
+    json.object_start();
+    json.key(b"kind");
+    match value {
+        CheckExit::Code { code } => {
+            json.string(b"code");
+            json.key(b"value");
+            json.signed(*code);
+        }
+        CheckExit::Signal { signal } => {
+            json.string(b"signal");
+            json.key(b"value");
+            json.unsigned(*signal);
+        }
+        CheckExit::TimedOut => json.string(b"timed_out"),
+        CheckExit::Unstarted => json.string(b"unstarted"),
+        CheckExit::Cancelled => json.string(b"cancelled"),
+        CheckExit::Unknown(kind) => json.string(kind),
+    }
+    json.object_end();
+}
+
 fn write_block(json: &mut Encoder, value: &Block, _capture: &Capture) {
     json.object_start();
     json.key(b"type");
@@ -759,9 +781,21 @@ fn validate_record(record: &Record, limits: &Limits) -> Result<(), Error> {
         Event::TextDelta(value) => validate_text_delta(value, limits),
         Event::ToolStarted(value) => validate_tool_started(value, limits),
         Event::ToolCompleted(value) => validate_tool_completed(value, limits),
-        Event::CheckStarted(_) | Event::CheckCompleted(_) | Event::MessageRead(_) | Event::MessageUnread(_) => Ok(()),
+        Event::CheckCompleted(value) => validate_check_exit(&value.exit, limits),
+        Event::CheckStarted(_) | Event::MessageRead(_) | Event::MessageUnread(_) => Ok(()),
         Event::MessageReceived(value) => validate_message_received(value, limits),
         Event::Notice(value) => validate_notice(value, limits),
+    }
+}
+
+fn validate_check_exit(value: &CheckExit, limits: &Limits) -> Result<(), Error> {
+    match value {
+        CheckExit::Code { .. }
+        | CheckExit::Signal { .. }
+        | CheckExit::TimedOut
+        | CheckExit::Unstarted
+        | CheckExit::Cancelled => Ok(()),
+        CheckExit::Unknown(kind) => check_text(kind, limits.string),
     }
 }
 
@@ -1748,11 +1782,11 @@ fn encode_check_started(json: &mut Encoder, value: &CheckStarted, _capture: &Cap
     }
 }
 
-fn encode_check_completed(json: &mut Encoder, value: &CheckCompleted, capture: &Capture) {
+fn encode_check_completed(json: &mut Encoder, value: &CheckCompleted, _capture: &Capture) {
     json.key(b"run");
     json.unsigned(value.run);
     json.key(b"exit");
-    write_command_exit(json, &value.exit, capture);
+    write_check_exit(json, &value.exit);
     json.key(b"passed");
     json.boolean(value.passed);
     json.key(b"duration_ms");

@@ -2,7 +2,7 @@
 //! Contract: protocol/events.md, section 6. No stream state is retained.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
     EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,
@@ -883,6 +883,24 @@ fn read_command_exit(tokens: &[Token], _limits: &Limits) -> Result<CommandExit, 
     }
 }
 
+fn read_check_exit(tokens: &[Token], limits: &Limits) -> Result<CheckExit, Error> {
+    object(tokens)?;
+    let kind = text(required(tokens, b"kind")?, limits.string.max(9))?;
+    match kind.as_ref() {
+        b"code" => Ok(CheckExit::Code { code: signed(required(tokens, b"value")?)? }),
+        b"signal" => Ok(CheckExit::Signal { signal: unsigned(required(tokens, b"value")?)? }),
+        b"timed_out" => Ok(CheckExit::TimedOut),
+        b"unstarted" => Ok(CheckExit::Unstarted),
+        b"cancelled" => Ok(CheckExit::Cancelled),
+        _ => {
+            if kind.len() > usize::try_from(limits.string).expect("u32 fits") {
+                return Err(Error::Limits);
+            }
+            Ok(CheckExit::Unknown(kind))
+        }
+    }
+}
+
 fn read_session_started(tokens: &[Token], limits: &Limits) -> Result<SessionStarted, Error> {
     object(tokens)?;
     Ok(SessionStarted {
@@ -1238,7 +1256,7 @@ fn read_check_completed(tokens: &[Token], limits: &Limits) -> Result<CheckComple
     object(tokens)?;
     Ok(CheckCompleted {
         run: unsigned(required(tokens, b"run")?)?,
-        exit: read_command_exit(required(tokens, b"exit")?, limits)?,
+        exit: read_check_exit(required(tokens, b"exit")?, limits)?,
         passed: boolean(required(tokens, b"passed")?)?,
         duration_ms: unsigned(required(tokens, b"duration_ms")?)?,
     })

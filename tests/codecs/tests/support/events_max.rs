@@ -2,7 +2,7 @@
 
 use skein_lib::List;
 use smith_events::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, Clamp, CommandExit, Completion, CompletionFailure, ConversationClosed, ConversationEnd,
     ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass,
     Family, Field, Form, Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Quantity,
@@ -321,7 +321,12 @@ fn max_check_started(_limits: &smith_events::Limits) -> CheckStarted {
 }
 
 fn max_check_completed(limits: &smith_events::Limits) -> CheckCompleted {
-    CheckCompleted { run: u64::MAX, exit: max_command_exit(limits), passed: false, duration_ms: u64::MAX }
+    CheckCompleted {
+        run: u64::MAX,
+        exit: CheckExit::Unknown(payload(limits.string)),
+        passed: false,
+        duration_ms: u64::MAX,
+    }
 }
 
 fn max_notice(limits: &smith_events::Limits) -> Notice {

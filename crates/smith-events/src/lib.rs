@@ -16,7 +16,7 @@ mod write;
 pub use limits::{Limits, largest_record, largest_size, worst_case};
 pub use read::{Line, Reader, read};
 pub use records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
     EffectiveLimit, Event, Evidence, FailureClass, Family, Field, Form, Level, LimitValue, Loss, Message, MessageRead,

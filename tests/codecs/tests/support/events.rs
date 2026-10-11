@@ -2,12 +2,12 @@
 
 use skein_lib::List;
 use smith_events::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckStarted, CommandExit, Completion,
-    CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu,
-    Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode, Model,
-    Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role, RunCompleted,
-    RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted,
-    ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckExit, CheckStarted, CommandExit,
+    Completion, CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
+    Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, Family, Field, Form, Level, Loss, Message, Mode,
+    Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted, ResponseStarted, Role,
+    RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop, TextDelta, ToolChoice,
+    ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 
 fn value_capture(name: &str, spelling: &str) -> Capture {
@@ -582,8 +582,8 @@ fn value_check_started(_name: &str, _spelling: &str) -> CheckStarted {
     CheckStarted { run: u64::MAX, deadline_ms: Some(u64::MAX) }
 }
 
-fn value_check_completed(name: &str, spelling: &str) -> CheckCompleted {
-    CheckCompleted { run: u64::MAX, exit: value_command_exit(name, spelling), passed: true, duration_ms: u64::MAX }
+fn value_check_completed(_name: &str, _spelling: &str) -> CheckCompleted {
+    CheckCompleted { run: u64::MAX, exit: CheckExit::Code { code: i64::MIN }, passed: false, duration_ms: u64::MAX }
 }
 
 fn value_notice(name: &str, spelling: &str) -> Notice {
@@ -1531,12 +1531,24 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         Capture::Everything,
     ));
     let mut check = value_check_completed("", "");
-    check.exit = CommandExit::Signal { signal: u64::MAX };
+    check.exit = CheckExit::Signal { signal: u64::MAX };
     samples.push((
         "check_completed_signal",
         Record { t_ms: 0, event: Event::CheckCompleted(check) },
         Capture::Everything,
     ));
+    for (name, exit, passed) in [
+        ("check_completed_code_zero", CheckExit::Code { code: 0 }, true),
+        ("check_completed_timed_out", CheckExit::TimedOut, false),
+        ("check_completed_unstarted", CheckExit::Unstarted, false),
+        ("check_completed_cancelled", CheckExit::Cancelled, false),
+        ("check_completed_unknown", CheckExit::Unknown("future🌍".as_bytes().into()), false),
+    ] {
+        let mut check = value_check_completed("", "");
+        check.exit = exit;
+        check.passed = passed;
+        samples.push((name, Record { t_ms: 0, event: Event::CheckCompleted(check) }, Capture::Everything));
+    }
     for (name, choice) in [
         ("tool_choice_none", ToolChoice::None),
         ("tool_choice_only", ToolChoice::Only),

@@ -606,7 +606,7 @@ pub struct Completion {
     pub blocks: List<Block>,
 }
 
-/// A command's code or signal, sent by the service with its tool or check terminal.
+/// A command's code or signal, sent by the service with its tool terminal.
 /// Contract: protocol/events.md, section 3.6.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum CommandExit {
@@ -614,6 +614,24 @@ pub enum CommandExit {
     Code { code: i64 },
     /// This signal ended the leader, recorded by the service.
     Signal { signal: u64 },
+}
+
+/// A workspace check's terminal, sent by the service after its start.
+/// Contract: protocol/events.md, sections 3.6 and 6.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum CheckExit {
+    /// The checks exited with this code; only zero passes.
+    Code { code: i64 },
+    /// The machine reported this signal ending the checks.
+    Signal { signal: u64 },
+    /// The checks' deadline passed and their tree was stopped.
+    TimedOut,
+    /// The checks could not start; their spawn detail is an operator notice.
+    Unstarted,
+    /// The run withdrew the checks and stopped their tree before they ended.
+    Cancelled,
+    /// An unrecognized kind retained by a reader, never an inferred terminal.
+    Unknown(Box<[u8]>),
 }
 
 /// One effective bound sent in the startup header; the key names its layer and unit.
@@ -842,7 +860,7 @@ pub struct CheckStarted {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CheckCompleted {
     pub run: u64,
-    pub exit: CommandExit,
+    pub exit: CheckExit,
     pub passed: bool,
     pub duration_ms: u64,
 }
