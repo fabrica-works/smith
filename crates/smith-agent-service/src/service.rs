@@ -23,7 +23,6 @@ struct PendingMessage {
     text: Box<[u8]>,
 }
 
-const TRACE_PROMPT_BYTES: u32 = 65_536;
 const COMPONENT_OWNER_BIT: u64 = 1 << 63;
 
 /// Fixed limits for one agent process and every stage it owns.
@@ -59,8 +58,6 @@ pub struct Config {
     pub llm_endpoints: llm::Endpoints,
     pub environment: machine::Environment,
     pub stream_mode: StreamMode,
-    /// Capture bounded typed prompts for an everything trace.
-    pub capture_prompts: bool,
 }
 
 /// Why startup cannot build a bounded agent service.
@@ -126,8 +123,6 @@ pub struct Service {
     machine_env: Env<machine::Limits>,
     io_env: Env<io::Limits>,
     channel_events: Queue<channel::OpenEvent>,
-    trace_prompt: Option<(Token, Box<[u8]>)>,
-    capture_prompts: bool,
     pending_messages: Queue<PendingMessage>,
     channel_below: Queue<ChannelLower>,
     llm_events: Queue<llm::ToDomain>,
@@ -157,7 +152,6 @@ pub struct Service {
     channel_ended: bool,
     failed: bool,
     failure: Option<Failure>,
-    lost_trace_prompts: u64,
     outcome: Option<run::outcome::OutcomeSpec>,
     delivery: Option<run::outcome::ChangeSpec>,
     pending_start: Option<Box<channel::DecodedStart>>,
@@ -203,7 +197,6 @@ impl Effects {
         let mut service = Service::new(config, seed)?;
         service.domain = None;
         service.channel = None;
-        service.capture_prompts = false;
         Ok(Self { service, installed: Map::with_capacity(accounts) })
     }
 
@@ -366,7 +359,6 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     // Facts pass directly from the domain into the bounded event producer.
     // No second trace queue retains their rich observations.
     let stages = Queue::<channel::OpenEvent>::worst_case(queue)?
-        .checked_add(List::<u8>::worst_case(TRACE_PROMPT_BYTES)?.checked_mul(2)?)?
         .checked_add(Queue::<ChannelLower>::worst_case(queue)?)?
         .checked_add(Queue::<PendingMessage>::worst_case(queue)?)?
         .checked_add(Queue::<llm::ToDomain>::worst_case(queue)?)?
@@ -498,8 +490,6 @@ impl Service {
             machine_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.machine },
             io_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.io },
             channel_events: Queue::with_capacity(limits.queue),
-            trace_prompt: None,
-            capture_prompts: config.capture_prompts,
             pending_messages: Queue::with_capacity(limits.queue),
             channel_below: Queue::with_capacity(limits.queue),
             llm_events: Queue::with_capacity(limits.queue),
@@ -529,7 +519,6 @@ impl Service {
             channel_ended: false,
             failed: false,
             failure: None,
-            lost_trace_prompts: 0,
             outcome: None,
             delivery: None,
             pending_start: None,
@@ -604,17 +593,6 @@ impl Service {
     /// One owned content observation for local capture, never sent to the host.
     pub fn pop_trace_content(&mut self) -> Option<domain::Content> {
         self.domain.as_mut().expect("framed agent owns its domain").pop_content()
-    }
-
-    /// One bounded typed prompt, captured before its ownership passes to LLM.
-    pub fn pop_trace_prompt(&mut self) -> Option<(Token, Box<[u8]>)> {
-        self.trace_prompt.take()
-    }
-
-    /// Prompt records that could not be retained by the local trace slot.
-    #[must_use]
-    pub const fn lost_trace_prompts(&self) -> u64 {
-        self.lost_trace_prompts
     }
 
     /// Number of projected host facts dropped at the channel's output reserve.
@@ -793,95 +771,6 @@ fn credential(value: &[u8]) -> Option<skein_llm::Credential> {
         return None;
     }
     Some(skein_llm::Credential { access_token: Box::from(bearer), account_id: Box::from(account_id) })
-}
-
-/// A bounded local projection of the typed prompt. The trace writer decides
-/// whether to retain it. If it exceeds the trace cap, the record is dropped
-/// whole rather than holding the provider request back.
-fn capture_prompt(prompt: &domain::llm::Prompt) -> Option<Box<[u8]>> {
-    let mut bytes = List::with_capacity(TRACE_PROMPT_BYTES);
-    if !append(&mut bytes, b"model:")
-        || !append(&mut bytes, &prompt.model)
-        || !append(&mut bytes, b"\nsystem:")
-        || !append(&mut bytes, &prompt.system)
-    {
-        return None;
-    }
-    for message in &prompt.messages {
-        let role = match message.role {
-            domain::llm::Role::User => b"\nuser:".as_slice(),
-            domain::llm::Role::Assistant => b"\nassistant:".as_slice(),
-        };
-        if !append(&mut bytes, role) {
-            return None;
-        }
-        for block in &message.content {
-            let kept = match block {
-                domain::llm::Block::Opaque { bytes: opaque } => {
-                    append(&mut bytes, b"\nopaque:") && append(&mut bytes, opaque)
-                }
-                domain::llm::Block::Refusal { text, replay } => {
-                    append(&mut bytes, b"\nrefusal:")
-                        && append(&mut bytes, text)
-                        && append_replay(&mut bytes, replay.as_ref())
-                }
-                domain::llm::Block::Text { text, replay } => {
-                    append(&mut bytes, b"\ntext:")
-                        && append(&mut bytes, text)
-                        && append_replay(&mut bytes, replay.as_ref())
-                }
-                domain::llm::Block::ToolCall { id, name, input, replay } => {
-                    append(&mut bytes, b"\ncall:")
-                        && append(&mut bytes, id)
-                        && append(&mut bytes, b":")
-                        && append(&mut bytes, name)
-                        && append(&mut bytes, b":")
-                        && append(&mut bytes, input)
-                        && append_replay(&mut bytes, replay.as_ref())
-                }
-                domain::llm::Block::ToolResult { id, result } => {
-                    append(&mut bytes, b"\nresult:") && append(&mut bytes, id) && append_result(&mut bytes, result)
-                }
-            };
-            if !kept {
-                return None;
-            }
-        }
-    }
-    Some(bytes.into_boxed())
-}
-
-fn append_replay(bytes: &mut List<u8>, replay: Option<&domain::llm::Replay>) -> bool {
-    match replay {
-        Some(replay) => append(bytes, b"\nreplay:") && append(bytes, &replay.bytes),
-        None => true,
-    }
-}
-
-fn append_result(bytes: &mut List<u8>, result: &domain::llm::Returned) -> bool {
-    match result {
-        domain::llm::Returned::Text { text, error: _, replay } => {
-            append(bytes, b":text:") && append(bytes, text) && append_replay(bytes, replay.as_ref())
-        }
-        domain::llm::Returned::Withdrawn => append(bytes, b":withdrawn"),
-        domain::llm::Returned::Owned { outcome: _ } => append(bytes, b":owned"),
-        domain::llm::Returned::Served { returned: _, error: _ } => append(bytes, b":served"),
-        domain::llm::Returned::Invalid { problem: _ } => append(bytes, b":invalid"),
-        domain::llm::Returned::NotRun { .. } => append(bytes, b":not-run"),
-    }
-}
-
-fn append(bytes: &mut List<u8>, part: &[u8]) -> bool {
-    let Ok(count) = u32::try_from(part.len()) else {
-        return false;
-    };
-    if count > bytes.room() {
-        return false;
-    }
-    for byte in part {
-        bytes.push(*byte).expect("checked room before append");
-    }
-    true
 }
 
 /// Advance io, the components, and the domain once at injected clocks.
@@ -1833,19 +1722,6 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 Some(events) => events.request(service.domain_env.now, owner, &prompt),
                 None => None,
             };
-            if service.capture_prompts {
-                if service.trace_prompt.is_some() {
-                    service.lost_trace_prompts = service.lost_trace_prompts.saturating_add(1);
-                } else {
-                    service.trace_prompt = match capture_prompt(&prompt) {
-                        Some(captured) => Some((owner, captured)),
-                        None => {
-                            service.lost_trace_prompts = service.lost_trace_prompts.saturating_add(1);
-                            None
-                        }
-                    };
-                }
-            }
             let outcome = service.outcome.clone().expect("an admitted Start retains its result contract");
             let request = llm::FromDomain::Complete {
                 owner,
@@ -2272,7 +2148,6 @@ pub const fn failure(service: &Service) -> Option<Failure> {
 mod tests {
     use super::*;
     use skein_lib::Duration;
-    use smith_domain::tools;
 
     #[expect(clippy::too_many_lines, reason = "complete composed test limits keep each owned layer visible")]
     fn limits() -> Limits {
@@ -2392,7 +2267,6 @@ mod tests {
             llm_endpoints,
             environment: machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
             stream_mode: StreamMode::Two,
-            capture_prompts: false,
         }
     }
 
@@ -2445,8 +2319,7 @@ mod tests {
                 llm_endpoints,
                 environment: machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
                 stream_mode: StreamMode::Two,
-                capture_prompts: false,
-            },
+                },
             1,
         );
         let error = result.expect_err("startup refusal");
@@ -2626,33 +2499,4 @@ mod tests {
         assert!(service.io_requests.is_empty());
     }
 
-    #[test]
-    fn typed_prompt_capture_preserves_text_and_tool_input_without_a_credential() {
-        let prompt = domain::llm::Prompt {
-            choice: smith_domain::llm::ToolChoice::Auto,
-            namespace: tools::Namespace::One,
-            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
-            asker: domain::llm::Asker::Main,
-            endpoint: domain::llm::Endpoint(1),
-            model: Box::from(&b"model"[..]),
-            system: Box::from(&b"system instructions"[..]),
-            tools: tools::Grants { inspect: false, modify: false, shell: false },
-            served: Box::new([]),
-            messages: Box::new([domain::llm::Message {
-                role: domain::llm::Role::User,
-                content: Box::new([
-                    domain::llm::Block::Text { text: Box::from(&b"request"[..]), replay: None },
-                    domain::llm::Block::ToolCall {
-                        id: Box::from(&b"id"[..]),
-                        name: Box::from(&b"inspect"[..]),
-                        input: Box::from(&b"input"[..]),
-                        replay: None,
-                    },
-                ]),
-            }]),
-            max_tokens: 10,
-        };
-        let captured = capture_prompt(&prompt).expect("bounded prompt");
-        assert_eq!(&*captured, b"model:model\nsystem:system instructions\nuser:\ntext:request\ncall:id:inspect:input");
-    }
 }

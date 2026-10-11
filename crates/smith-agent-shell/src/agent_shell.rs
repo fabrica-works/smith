@@ -260,7 +260,6 @@ impl Host for Agent {
         service::iterate(&mut self.service, now, wall);
         // Content collection is retired by 02.6; it does not write in this increment.
         while self.service.pop_trace_content().is_some() {}
-        drop(self.service.pop_trace_prompt());
         while let Some(destination) = self.service.pop_given_up() {
             let name = match destination {
                 service::Destination::Trace => "trace file",

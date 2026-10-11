@@ -123,7 +123,6 @@ impl Host for Tracing {
         }
         agent::iterate(&mut self.service, now, wall);
         while self.service.pop_trace_content().is_some() {}
-        drop(self.service.pop_trace_prompt());
         while self.service.root_to_open().is_some() {
             let path = self.service.root_to_open().expect("pending root");
             let host =

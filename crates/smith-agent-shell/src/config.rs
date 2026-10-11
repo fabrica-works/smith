@@ -328,10 +328,6 @@ fn build(document: Document) -> Result<Configuration, String> {
         llm_endpoints,
         environment,
         stream_mode: StreamMode::Two,
-        capture_prompts: match &trace {
-            Some(trace) => trace.capture == Capture::Everything,
-            None => false,
-        },
     };
     let complete = service::worst_case(&config.limits, &config.llm_endpoints).ok_or_else(|| {
         profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })

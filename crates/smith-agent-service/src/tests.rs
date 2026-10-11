@@ -153,7 +153,6 @@ fn standard_profile_builds_a_complete_bounded_service() {
         .expect("empty endpoints"),
         environment: smith_protocol_machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
         stream_mode: skein_channel::StreamMode::Two,
-        capture_prompts: false,
     };
     let bound = crate::worst_case(&configuration.limits, &configuration.llm_endpoints).expect("checked bound");
     assert!(bound > 0);

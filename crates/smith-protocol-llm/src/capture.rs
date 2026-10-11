@@ -109,6 +109,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn typed_prompt_capture_preserves_text_and_tool_input_without_a_credential() {
+        let input = shared::Prompt {
+            model: b"model".to_vec().into(),
+            instructions: b"system instructions".to_vec().into(),
+            tools: Box::new([]),
+            choice: shared::ToolChoice::Auto,
+            messages: Box::new([shared::Message {
+                role: shared::Role::User,
+                content: Box::new([
+                    shared::Block::Text { text: b"request".to_vec().into(), replay: None },
+                    shared::Block::ToolCall {
+                        id: b"id".to_vec().into(),
+                        name: b"inspect".to_vec().into(),
+                        arguments: b"input".to_vec().into(),
+                        replay: None,
+                    },
+                ]),
+            }]),
+            reasoning_effort: None,
+            affinity: None,
+            max_output_tokens: Some(10),
+        };
+        let captured = prompt(
+            &input,
+            Observation { first: true, messages: 0, live_text: true },
+            &skein_llm_world::limits(),
+        ).expect("bounded translated prompt");
+        assert_eq!(captured.system.as_deref(), Some(b"system instructions".as_slice()));
+        assert_eq!(captured.tools.expect("first request carries its names").len(), 0);
+        assert_eq!(captured.messages.get(0).expect("actual task").role, Role::User);
+        assert_eq!(captured.messages.get(0).expect("actual task").blocks.as_slice(), &[
+            Block::Text { text: b"request".to_vec().into() },
+            Block::Call { call: b"id".to_vec().into(), tool: b"inspect".to_vec().into(), input: b"input".to_vec().into() },
+        ]);
+    }
+
+    #[test]
     fn completed_content_preserves_cut_arguments_and_provider_block_order() {
         let input = shared::Completion {
             content: vec![

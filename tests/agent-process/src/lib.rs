@@ -219,7 +219,6 @@ pub fn configuration() -> agent::Config {
         environment: smith_protocol_machine::Environment::encode(&[], &limits().machine)
             .expect("empty environment fits"),
         stream_mode: StreamMode::Two,
-        capture_prompts: false,
     }
 }
 
