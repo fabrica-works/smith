@@ -37,9 +37,22 @@ fn message(message: &Message) -> api::Message {
 }
 
 #[test]
-#[expect(clippy::wildcard_enum_match_arm, reason = "select content from an independently checked complete stream")]
 fn request_new_parts_and_completions_reconstruct_every_native_request() {
+    reconstruct(false);
+}
+
+#[test]
+fn actual_anthropic_live_text_joins_the_native_completion_blocks() {
+    reconstruct(true);
+}
+
+#[expect(clippy::wildcard_enum_match_arm, reason = "select content from an independently checked complete stream")]
+fn reconstruct(anthropic: bool) {
     let mut world = World::new(37, &charter());
+    world.private_grant();
+    if anthropic {
+        world.anthropic();
+    }
     world.initial_message(902, b"task", b"Keep \"quotes\" and a newline.\nALPHA");
     world.observe_facts(TraceCase::ChildAnswered, 4);
     world.check_memory();
@@ -80,7 +93,7 @@ fn request_new_parts_and_completions_reconstruct_every_native_request() {
                 // Codex sends no output cap. The independent OpenAI peer
                 // supplies its configured model ceiling for that absent field;
                 // this content reconstruction does not equate the two sources.
-                assert_eq!(query.max_tokens, 4096);
+                assert_eq!(query.max_tokens, if anthropic { 512 } else { 4096 });
                 assert_eq!(started.output_tokens, 512);
                 requests += 1;
             }
@@ -99,7 +112,11 @@ fn request_new_parts_and_completions_reconstruct_every_native_request() {
                         // This independent Codex peer emits Added/Done with
                         // complete text, and no TextDelta SSE event. The native
                         // Anthropic component story separately joins live pieces.
-                        assert!(deltas.remove(&key).is_none());
+                        if anthropic {
+                            assert_eq!(deltas.remove(&key).expect("actual native live pieces"), text.to_vec());
+                        } else {
+                            assert!(deltas.remove(&key).is_none());
+                        }
                         assert_eq!(text.as_ref(), b"actual child answer");
                         text_blocks += 1;
                     }
@@ -118,6 +135,9 @@ fn request_new_parts_and_completions_reconstruct_every_native_request() {
     assert_eq!(text_blocks, 1, "the child supplies actual text while main calls tools");
     assert!(queries.is_empty());
     assert!(deltas.is_empty());
+    let trace = std::str::from_utf8(world.trace_bytes()).expect("actual UTF-8 JSON lines");
+    assert!(!trace.contains("native-private-bearer-02.6"), "actual granted bearer bytes never reach the stream");
+    assert!(!trace.contains("native-private-account-02.6"), "actual granted account bytes never reach the stream");
     world.assert_agent_clean();
 }
 
@@ -180,4 +200,53 @@ fn native_capture_policies_keep_execution_and_select_only_their_content() {
         assert_eq!(calls, 2);
         world.assert_agent_clean();
     }
+}
+
+#[test]
+#[expect(clippy::wildcard_enum_match_arm, reason = "select starts and terminals from the independently checked stream")]
+fn three_conversations_starting_completions_in_one_pass_are_each_recorded() {
+    let mut world = World::new(39, &charter());
+    world.initial_message(904, b"task", b"ALPHA");
+    world.observe_facts(TraceCase::ThreeChildren, 8);
+    world.check_memory();
+    assert!(world.settle());
+    world.assert_event_conformance();
+    assert_eq!(world.peer_queries().len(), 5, "main, three actual children, final main");
+    let children: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::ConversationOpened(opened) if opened.parent.is_some() => Some(opened.conversation),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(children.len(), 3);
+    let mut starts = Vec::new();
+    let mut completions = Vec::new();
+    for record in world.records() {
+        match &record.event {
+            Event::ResponseStarted(started) if children.contains(&started.conversation) => {
+                assert!(started.prompt.is_some(), "each hand-off has its own owned new part");
+                starts.push((started.conversation, started.response, record.t_ms));
+            }
+            Event::ResponseCompleted(completed) if children.contains(&completed.conversation) => {
+                let content = completed.completion.as_ref().expect("each actual child completion has content");
+                assert!(
+                    content
+                        .blocks
+                        .iter()
+                        .any(|block| matches!(block, Block::Text { text } if text.as_ref() == b"actual child answer"))
+                );
+                completions.push((completed.conversation, completed.response));
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(starts.len(), 3);
+    assert_eq!(completions.len(), 3);
+    assert!(starts.iter().all(|start| start.2 == starts[0].2), "one batch's request hand-offs share their pass clock");
+    for (conversation, response, _) in starts {
+        assert_eq!(completions.iter().filter(|pair| **pair == (conversation, response)).count(), 1);
+    }
+    world.assert_agent_clean();
 }

@@ -90,7 +90,7 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
         let answer = world.answer().expect("one answer crossed the host channel");
         let ended = &terminal(&world).status;
         match case {
-            TraceCase::Accepted | TraceCase::ChildAnswered => {
+            TraceCase::Accepted | TraceCase::ChildAnswered | TraceCase::ThreeChildren => {
                 assert!(
                     matches!(answer.result(), RunResult::Accepted(_)),
                     "answer={:?}; records={:?}",

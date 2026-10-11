@@ -57,6 +57,22 @@ pub fn configured_transport(
     latency: Duration,
     transport: Transport,
 ) -> llm::Peer {
+    configured_dialect(scripts, credential, latency, transport, false)
+}
+
+/// Select Anthropic's real byte codec for the native live-text scenario.
+#[must_use]
+pub fn configured_anthropic(scripts: Box<[api::Script]>, credential: skein_llm::Credential) -> llm::Peer {
+    configured_dialect(scripts, credential, Duration::ZERO, Transport::Plaintext, true)
+}
+
+fn configured_dialect(
+    scripts: Box<[api::Script]>,
+    credential: skein_llm::Credential,
+    latency: Duration,
+    transport: Transport,
+    anthropic: bool,
+) -> llm::Peer {
     let mut config = skein_llm_world::fake::config();
     config.latency_min = latency;
     config.latency_max = latency;
@@ -73,8 +89,12 @@ pub fn configured_transport(
         provider::Config {
             echo: skein_llm::openai::Echo::NONE,
             usage_fields: documents::UsageFields::ALL,
-            provider: documents::Provider::OpenAi,
-            path: skein_llm_world::call(1).endpoint.target,
+            provider: if anthropic { documents::Provider::Anthropic } else { documents::Provider::OpenAi },
+            path: if anthropic {
+                skein_llm::Endpoint::anthropic().target
+            } else {
+                skein_llm_world::call(1).endpoint.target
+            },
             headers: Box::new([]),
         },
         credential,

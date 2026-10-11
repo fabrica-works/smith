@@ -167,6 +167,10 @@ pub fn service(seed: u64) -> agent::Service {
 /// The shared lower configuration for direct, spawned and colocated process worlds.
 #[must_use]
 pub fn configuration() -> agent::Config {
+    configuration_for(false)
+}
+
+fn configuration_for(anthropic: bool) -> agent::Config {
     let mut endpoints = List::with_capacity(1);
     endpoints
         .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 })
@@ -184,7 +188,7 @@ pub fn configuration() -> agent::Config {
                 },
                 address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 443)),
                 transport: skein_llm_connection::Transport::Plaintext,
-                llm: skein_llm_world::call(7).endpoint,
+                llm: if anthropic { skein_llm::Endpoint::anthropic() } else { skein_llm_world::call(7).endpoint },
             },
             account: 0,
             reasoning_effort: None,
@@ -253,7 +257,7 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
-    start_workspace_message(charter, turns, workspace, None)
+    start_workspace_message(charter, turns, workspace, None, &scenario_credential(false, false))
 }
 
 pub(crate) fn start_workspace_message(
@@ -261,6 +265,7 @@ pub(crate) fn start_workspace_message(
     turns: u32,
     workspace: bool,
     message: Option<&smith_channel::Message>,
+    credential: &skein_llm::Credential,
 ) -> skein_channel::Frame {
     let limits = smith_channel::CEILINGS;
     let window = smith_channel::Window::new(&limits, smith_channel::WindowParts { turns, bytes: 1_000_000_000 })
@@ -276,7 +281,7 @@ pub(crate) fn start_workspace_message(
                     valid: Duration::from_secs(7200),
                     value: smith_channel::GrantValue::new(
                         &limits,
-                        smith_channel::GrantValueParts { credential: Box::from(&b"\0\x03acctoken"[..]) },
+                        smith_channel::GrantValueParts { credential: grant_bytes(credential) },
                     )
                     .expect("credential envelope"),
                 },
@@ -336,6 +341,28 @@ pub(crate) fn start_workspace_message(
     let mut frame = frame_writer(0x0100, u32::try_from(body.len()).expect("body length")).expect("Start frame");
     frame.put(&body).expect("measured frame");
     frame.finish().expect("full frame")
+}
+
+fn scenario_credential(anthropic: bool, private_grant: bool) -> skein_llm::Credential {
+    skein_llm::Credential {
+        access_token: Box::from(if private_grant {
+            b"native-private-bearer-02.6".as_slice()
+        } else {
+            b"token".as_slice()
+        }),
+        account_id: if anthropic {
+            Box::new([])
+        } else {
+            Box::from(if private_grant { b"native-private-account-02.6".as_slice() } else { b"acc".as_slice() })
+        },
+    }
+}
+
+fn grant_bytes(credential: &skein_llm::Credential) -> Box<[u8]> {
+    let mut bytes = u16::try_from(credential.account_id.len()).expect("fixture credential").to_be_bytes().to_vec();
+    bytes.extend_from_slice(&credential.account_id);
+    bytes.extend_from_slice(&credential.access_token);
+    bytes.into_boxed_slice()
 }
 
 /// A concrete charter within the process limits, with one report contract.
