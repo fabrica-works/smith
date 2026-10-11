@@ -287,12 +287,19 @@ and the host's:
 | `verdict` | string | how it ended, without what it said: a workspace tool's outcome kind (`read`, `listed`, `found`, `written`, `edited`, `exited`, `conflict`, `missing`, `too_large`, `timed_out`, `failed`, `cancelled`, ...), `result` or `error` for a served or host tool, `invalid`, `not_run` or `withdrawn` |
 | `exit` | object, optional | a command's end: `code`, or `signal` |
 | `bytes` | integer | the result's payload |
-| `omitted_bytes` | integer | what its render bound cut (limits.md, section 6) |
-| `clamped` | bool | the call's requested budget or deadline was lowered to its ceiling |
+| `omitted_bytes` | integer | what the tool's own caps left out of its result: a command's output beyond its kept head and tail, or a read beyond its window. What the render bound later cuts is told with the request that renders it, not here |
+| `clamped` | bool | the call's requested budget or deadline was lowered to its ceiling, as the tool's outcome records it |
 | `duration_ms` | integer | from `tool.started` |
 | `child` | object, optional | for `sub_agent`, under every policy: `conversation`; `stop`, how the child ended: `end`, an answer it chose to give, `budget`, an answer its share ended (domain/run.md, 5.3), or, unanswered, `failed` or `closed`; `turns`, `time_ms`, `spent` and `usage` |
 | `delivery` | string, optional | for `deliver`, or a `finish` that delivered: `delivered`, `nothing`, `refused`, `failed` or `stale` (domain/run.md, 8.2) |
-| `result` | string | under `everything`: the result as the model read it |
+| `result` | string | under `everything`: the result as the tool answered it, before rendering |
+
+A tool's terminal tells what the tool observed when it ended. Rendering
+happens later, when the result goes into the next request, and may never
+happen if the session closes first. So the result as the model read it,
+and the bytes its render bound cut, are told with the request that
+rendered it: in that request's new part, each rendered result with its
+cut (under `everything`; 3.11).
 
 **`check.started`** (`run`, `deadline_ms`) and **`check.completed`**
 (`run`, `exit`, `passed`, `duration_ms`), for the workspace's checks
