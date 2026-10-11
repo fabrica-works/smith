@@ -132,6 +132,7 @@ struct Writer {
 pub struct Sinks {
     limits: SinkLimits,
     capture: Capture,
+    responses: crate::responses::Book,
     writers: List<Writer>,
     line: u32,
     reserve: u32,
@@ -156,6 +157,7 @@ impl Sinks {
         Sinks {
             limits: *limits,
             capture,
+            responses: crate::responses::Book::new(limits.conversations),
             writers: List::with_capacity(limits.destinations),
             line,
             reserve: line.checked_mul(AUTHORITATIVE).expect("startup checked authoritative credit"),
@@ -199,7 +201,13 @@ impl Sinks {
         for writer in &self.writers {
             match writer.delivery {
                 Delivery::Complete if !writer.abandoned && !writer.ended => {
-                    if !room(writer, self.limits.output, self.reserve, self.line) {
+                    if !room(
+                        writer,
+                        self.limits.output,
+                        self.reserve,
+                        self.line.checked_mul(2).expect("startup checked two fact records"),
+                    ) || writer.lines.room() < AUTHORITATIVE.checked_add(2).expect("bounded fact reserve")
+                    {
                         return false;
                     }
                 }
@@ -207,6 +215,53 @@ impl Sinks {
             }
         }
         true
+    }
+
+    /// Retain the actual opening's identity and model before its first request.
+    /// The owner projects this value from the run's opening and configured endpoint.
+    pub fn conversation(&mut self, at: Time, origin: Time, opened: smith_events::ConversationOpened) {
+        self.responses.opened(at, &opened);
+        self.record(&Record {
+            t_ms: at.saturating_since(origin).as_nanos() / 1_000_000,
+            event: Event::ConversationOpened(opened),
+        });
+    }
+
+    /// Assign one response identity at the actual hand-off to the LLM component.
+    /// Prompt content and transport measures remain outside this increment.
+    pub fn request(&mut self, now: Time, origin: Time, owner: Token, prompt: &smith_domain::llm::Prompt) {
+        let record = self.responses.request(now, origin, owner, prompt);
+        self.record(&record);
+    }
+
+    /// Retain only the typed completion's raw Usage and rejection counts before the domain consumes it.
+    pub fn received(&mut self, owner: Token, completion: &smith_domain::llm::Completion) {
+        self.responses.received(owner, completion);
+    }
+
+    /// Keep an actual root terminal until the gathered session facts have drained.
+    pub fn conversation_ended(&mut self, at: Time, owner: Token, end: smith_domain::run::End) {
+        self.responses.root_ended(at, owner, end);
+    }
+
+    /// Close one opening refused before its session admitted, after all gathered facts drained.
+    pub fn facts_drained(&mut self, origin: Time) -> bool {
+        match self.responses.facts_drained(origin) {
+            Some(record) => {
+                self.record(&record);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Join actual session terminals and their accepted Usage/charge to a handed-off response.
+    /// One fact yields at most two records, reserved by takes before the caller drains it.
+    pub fn session(&mut self, origin: Time, fact: &smith_domain::session::Fact) {
+        let records = self.responses.fact(origin, fact);
+        for record in &records {
+            self.record(record);
+        }
     }
 
     /// Encode one record to every destination, counting it once per type.
@@ -618,7 +673,7 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         }
     }
     let line = largest_line(&limits.records, capture)?;
-    if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(1)?)? {
+    if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(2)?)? {
         return None;
     }
     let writer = Queue::<Line>::worst_case(slots(limits)?)?.checked_add(u64::from(limits.output))?;
@@ -627,7 +682,8 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         .checked_add(u64::from(limits.destinations).checked_mul(writer)?)?
         .checked_add(u64::from(line).checked_mul(2)?)?
         .checked_add(List::<smith_events::Count>::worst_case(u32::try_from(TYPES).ok()?)?)?
-        .checked_add(u64::try_from(TYPES).ok()?.checked_mul(u64::from(limits.records.string))?)
+        .checked_add(u64::try_from(TYPES).ok()?.checked_mul(u64::from(limits.records.string))?)?
+        .checked_add(crate::responses::worst_case(limits.conversations, limits.records.string)?)
 }
 
 #[cfg(test)]
