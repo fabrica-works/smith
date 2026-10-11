@@ -1,8 +1,10 @@
 //! Bounded joins between logical session facts and actual LLM hand-offs.
 //! Each live conversation keeps its opening model, current intent and at most
 //! one provider attempt. Intents can be revised before hand-off; only `request`
-//! assigns a run-wide response number. No prompt or transport measurement is
-//! retained. Contracts: protocol/events.md, sections 3.4–3.5 and 4.
+//! assigns a run-wide response number. Raw usage is counted before accounting;
+//! rejected reports remain in nullable totals, with sticky per-field overflow.
+//! No prompt or transport measurement is
+//! retained. Contracts: protocol/events.md, sections 3.4–3.5, 3.10 and 4.
 
 #![expect(
     clippy::manual_let_else,
@@ -29,6 +31,7 @@ pub(crate) struct Scope {
 pub(crate) struct Book {
     conversations: Map<Token, Conversation>,
     next: u64,
+    reported: crate::observations::Reported,
 }
 
 #[derive(Debug)]
@@ -41,7 +44,7 @@ struct Conversation {
     intent: Option<Intent>,
     attempt: Attempt,
     spent: u64,
-    reported: llm::Usage,
+    reported: crate::observations::Reported,
     admitted: bool,
     root_end: Option<(Time, run::End)>,
 }
@@ -82,7 +85,11 @@ enum Attempt {
 
 impl Book {
     pub(crate) fn new(conversations: u32) -> Book {
-        Book { conversations: Map::with_capacity(conversations), next: 1 }
+        Book {
+            conversations: Map::with_capacity(conversations),
+            next: 1,
+            reported: crate::observations::Reported::NONE,
+        }
     }
 
     pub(crate) fn opened(&mut self, at: Time, owner: Token, opening: &ConversationOpened) {
@@ -99,7 +106,7 @@ impl Book {
                     intent: None,
                     attempt: Attempt::Idle,
                     spent: 0,
-                    reported: llm::Usage::NONE,
+                    reported: crate::observations::Reported::NONE,
                     admitted: false,
                     root_end: None,
                 },
@@ -157,7 +164,7 @@ impl Book {
         }
     }
 
-    pub(crate) fn received(&mut self, owner: Token, completion: &llm::Completion) {
+    pub(crate) fn received(&mut self, owner: Token, completion: &llm::Completion) -> Token {
         let mut found = None;
         for (name, conversation) in &self.conversations {
             match &conversation.attempt {
@@ -168,10 +175,10 @@ impl Book {
                 Attempt::Idle | Attempt::Started(_) | Attempt::Answered { .. } | Attempt::Failed { .. } => {}
             }
         }
-        let conversation = self
-            .conversations
-            .get_mut(&found.expect("typed answer retains its hand-off identity"))
-            .expect("found above");
+        let conversation_owner = found.expect("typed answer retains its hand-off identity");
+        let conversation = self.conversations.get_mut(&conversation_owner).expect("found above");
+        conversation.reported.add(completion.usage);
+        self.reported.add(completion.usage);
         match &mut conversation.attempt {
             Attempt::Started(started) => {
                 let (oversized, cut) = rejected_calls(completion);
@@ -182,6 +189,11 @@ impl Book {
                 unreachable!("found active hand-off above")
             }
         }
+        conversation_owner
+    }
+
+    pub(crate) fn reported(&self) -> Usage {
+        self.reported.usage()
     }
 
     pub(crate) fn root_ended(&mut self, at: Time, owner: Token, end: run::End) {
@@ -225,7 +237,7 @@ impl Book {
                 which: None,
                 failure: None,
                 turns: 0,
-                usage: crate::reported_usage(conversation.reported),
+                usage: conversation.reported.usage(),
                 spent: 0,
                 duration_ms: millis(at, conversation.opened),
             }),
@@ -267,8 +279,6 @@ impl Book {
             }
             session::FactKind::Used { opener, usage } => {
                 let conversation = self.conversations.get_mut(&opener).expect("charge follows opening");
-                conversation.reported = crate::observations::add_reported(conversation.reported, usage)
-                    .expect("accepted source reported totals fit");
                 let spent =
                     fact.response.expect("charge has response identity").spent.expect("Used has the accepted charge");
                 conversation.spent = conversation
@@ -326,7 +336,7 @@ impl Book {
                             },
                             failure,
                             turns: u64::from(turns),
-                            usage: crate::reported_usage(conversation.reported),
+                            usage: conversation.reported.usage(),
                             spent: conversation.spent,
                             duration_ms: millis(fact.at, conversation.opened),
                         }),
@@ -533,7 +543,7 @@ pub(crate) fn worst_case(conversations: u32, string: u32) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(
         clippy::disallowed_macros,
         clippy::disallowed_types,
@@ -545,11 +555,11 @@ mod tests {
     use alloc::boxed::Box;
     use skein_lib::Duration;
 
-    fn at(millis: u64) -> Time {
+    pub(crate) fn at(millis: u64) -> Time {
         Time::ZERO.checked_add(Duration::from_millis(millis)).unwrap()
     }
 
-    fn opened(owner: u64, thread: u64) -> ConversationOpened {
+    pub(crate) fn opened(owner: u64, thread: u64) -> ConversationOpened {
         ConversationOpened {
             run: 7,
             conversation: owner,
@@ -570,7 +580,7 @@ mod tests {
         }
     }
 
-    fn prompt(thread: u32) -> llm::Prompt {
+    pub(crate) fn prompt(thread: u32) -> llm::Prompt {
         llm::Prompt {
             endpoint: llm::Endpoint(0),
             affinity: llm::Affinity { key: [0; 16], thread },
@@ -586,7 +596,7 @@ mod tests {
         }
     }
 
-    fn fact(millis: u64, kind: session::FactKind, turn: u64, spent: Option<u64>) -> session::Fact {
+    pub(crate) fn fact(millis: u64, kind: session::FactKind, turn: u64, spent: Option<u64>) -> session::Fact {
         session::Fact {
             at: at(millis),
             kind,
@@ -723,7 +733,7 @@ mod tests {
         assert!(book.scope(owner).is_none());
     }
 
-    fn actual_completion() -> llm::Completion {
+    pub(crate) fn actual_completion() -> llm::Completion {
         llm::Completion {
             reasoning_dropped: Box::new([]),
             content: Box::new([

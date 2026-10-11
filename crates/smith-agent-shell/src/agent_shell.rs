@@ -271,6 +271,15 @@ impl Host for Agent {
                 &format!("event destination {name} was given up; later records count as lost"),
             );
         }
+        if let Some(overflow) = self.service.pop_accounting_overflow() {
+            let line = match overflow {
+                smith_domain::run::Overflow::Spend => "run accounting failed: spend overflow",
+                smith_domain::run::Overflow::Usage => {
+                    "run accounting failed: usage overflow; overflowing reported totals are unavailable"
+                }
+            };
+            diagnostic(self.errors.as_mut(), line);
+        }
         if self.service.pop_usage_unread() {
             diagnostic(self.errors.as_mut(), "process resource usage is unavailable");
         }

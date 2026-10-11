@@ -100,6 +100,10 @@ impl Book {
         call.metadata.id.clone()
     }
 
+    pub(crate) fn child_received(&mut self, owner: Token, usage: smith_domain::llm::Usage) {
+        self.children.received(owner, usage);
+    }
+
     pub(crate) fn child_ended(&mut self, owner: Token, end: smith_domain::run::End, at: Time) {
         self.children.ended(owner, end, at);
     }
@@ -709,6 +713,7 @@ mod tests {
                         },
                     ),
                 ] {
+                    book.child_received(child, usage);
                     book.fact(
                         Time::ZERO,
                         &session::Fact {

@@ -309,8 +309,14 @@ impl Sinks {
     }
 
     /// Retain only the typed completion's raw Usage and rejection counts before the domain consumes it.
-    pub fn received(&mut self, owner: Token, completion: &smith_domain::llm::Completion) {
-        self.responses.received(owner, completion);
+    pub fn received(&mut self, owner: Token, completion: &smith_domain::llm::Completion) -> Token {
+        self.responses.received(owner, completion)
+    }
+
+    /// All raw reported counters across this invocation, independently of accepted charges.
+    #[must_use]
+    pub fn reported(&self) -> smith_events::Usage {
+        self.responses.reported()
     }
 
     /// Keep an actual root terminal until the gathered session facts have drained.

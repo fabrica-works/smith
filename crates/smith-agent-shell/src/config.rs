@@ -1116,6 +1116,9 @@ mod tests {
         let events =
             service::EventLimits::derive(&derived, Capture::Everything, 1, effort, selected.policy.write_deadline)
                 .expect("product event ownership");
+        println!("PRODUCT_EVENTS string={} content={} items={} encoded_line={} metadata_string={}",
+            events.sinks.records.string, events.sinks.records.content, events.sinks.records.items,
+            events.sinks.line_ceiling(Capture::Everything).unwrap(), events.sinks.metadata_string);
         derived.events = Some(events);
         let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
         let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");

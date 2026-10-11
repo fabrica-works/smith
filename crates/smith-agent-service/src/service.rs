@@ -578,6 +578,14 @@ impl Service {
         }
     }
 
+    /// A typed run accounting failure for the shell operator, drained once.
+    pub fn pop_accounting_overflow(&mut self) -> Option<run::Overflow> {
+        match &mut self.events {
+            Some(events) => events.pop_overflow_notice(),
+            None => None,
+        }
+    }
+
     /// An unread process usage terminal, reported once without changing the answer.
     pub fn pop_usage_unread(&mut self) -> bool {
         core::mem::replace(&mut self.usage_unread, false)
@@ -1324,7 +1332,8 @@ fn component_up(service: &mut Service) {
         match event {
             llm::ToDomain::Completed { owner, completion } => {
                 if let Some(events) = &mut service.events {
-                    events.sinks.received(owner, &completion);
+                    let conversation = events.sinks.received(owner, &completion);
+                    events.received(conversation, completion.usage);
                 }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }
@@ -1509,7 +1518,8 @@ fn domain_down(service: &mut Service) {
             Some(events) if !events.sinks.takes() => break,
             Some(_) | None => {}
         }
-        if service.channel_events.room() < channel_max.to_domain
+        if !channel_takes(service)
+            || service.channel_events.room() < channel_max.to_domain
             || service.channel_below.room() < channel_max.below
             || service.llm_events.room() < llm::MAX_OUT.above
             || service.llm_below.room() < llm::MAX_OUT.below
@@ -1532,6 +1542,14 @@ fn domain_down(service: &mut Service) {
         Some(_) | None => {}
     }
     drain_facts(service);
+}
+
+/// A queued request waits on kernel output credit; a colocated runtime has no channel.
+fn channel_takes(service: &Service) -> bool {
+    match &service.channel {
+        Some(channel) => channel.takes(),
+        None => true,
+    }
 }
 
 /// A single take offers each observation to the independent sinks. The trace
@@ -2089,7 +2107,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         || !service.llm_events.is_empty()
         || !service.machine_events.is_empty()
         || !service.domain_events.is_empty()
-        || !service.domain_requests.is_empty()
+        || (!service.domain_requests.is_empty() && channel_takes(service))
         || !service.channel_below.is_empty()
         || !service.llm_below.is_empty()
         || !service.machine_below.is_empty()

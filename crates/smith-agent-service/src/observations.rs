@@ -1,11 +1,72 @@
-//! Pure scalar fact projections for the bounded event producer. No provider,
+//! Scalar fact projections and bounded raw-report totals for the event producer. No provider,
 //! native call text, credential or sink state is known here; the caller supplies
 //! the process clock origin. Budget records enter through [`budget_record`].
-//! Contract: protocol/events.md, sections 3.8 and 4.
+//! Contracts: protocol/events.md, sections 3.8, 3.10 and 4.
 
 use skein_lib::Time;
 use smith_domain::run;
 use smith_events::{BudgetStage, BudgetStanding, Event, Quantity, Record, Reserve};
+
+/// Reported totals kept independently of accepted accounting, including sticky overflow.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Reported {
+    counts: [Count; 5],
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Count {
+    Absent,
+    Value(u64),
+    Overflow,
+}
+
+impl Reported {
+    pub(crate) const NONE: Self = Self { counts: [Count::Absent; 5] };
+
+    pub(crate) fn add(&mut self, usage: smith_domain::llm::Usage) {
+        let received = [
+            usage.input_tokens,
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
+            usage.output_tokens,
+            usage.reasoning_tokens,
+        ];
+        for (index, received) in received.into_iter().enumerate() {
+            let count = self.counts.get_mut(index).expect("five reported counters");
+            *count = match *count {
+                Count::Overflow => Count::Overflow,
+                Count::Absent => match received {
+                    Some(value) => Count::Value(value),
+                    None => Count::Absent,
+                },
+                Count::Value(previous) => match received {
+                    Some(value) => match previous.checked_add(value) {
+                        Some(total) => Count::Value(total),
+                        None => Count::Overflow,
+                    },
+                    None => Count::Value(previous),
+                },
+            };
+        }
+    }
+
+    pub(crate) const fn usage(self) -> smith_events::Usage {
+        smith_events::Usage {
+            input_tokens: count_value(self.counts[0]),
+            cache_read_tokens: count_value(self.counts[1]),
+            cache_write_tokens: count_value(self.counts[2]),
+            output_tokens: count_value(self.counts[3]),
+            reasoning_tokens: count_value(self.counts[4]),
+        }
+    }
+}
+
+const fn count_value(count: Count) -> Option<u64> {
+    match count {
+        Count::Absent | Count::Overflow => None,
+        Count::Value(value) => Some(value),
+    }
+}
 
 /// The actual settled checks' exit, with a passing result only for code zero.
 /// The run keeps cancellation and deadline expiry distinct after its tree stops.
@@ -46,30 +107,6 @@ pub const fn reported_usage(usage: smith_domain::llm::Usage) -> smith_events::Us
         cache_write_tokens: usage.cache_write_tokens,
         output_tokens: usage.output_tokens,
         reasoning_tokens: usage.reasoning_tokens,
-    }
-}
-
-/// Checked sums of supplied counters; an absent report does not erase earlier observations.
-pub(crate) fn add_reported(
-    previous: smith_domain::llm::Usage,
-    received: smith_domain::llm::Usage,
-) -> Option<smith_domain::llm::Usage> {
-    Some(smith_domain::llm::Usage {
-        input_tokens: add_count(previous.input_tokens, received.input_tokens).ok()?,
-        output_tokens: add_count(previous.output_tokens, received.output_tokens).ok()?,
-        cache_read_tokens: add_count(previous.cache_read_tokens, received.cache_read_tokens).ok()?,
-        cache_write_tokens: add_count(previous.cache_write_tokens, received.cache_write_tokens).ok()?,
-        reasoning_tokens: add_count(previous.reasoning_tokens, received.reasoning_tokens).ok()?,
-    })
-}
-
-fn add_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>, ()> {
-    match previous {
-        Some(previous) => match received {
-            Some(received) => Ok(Some(previous.checked_add(received).ok_or(())?)),
-            None => Ok(Some(previous)),
-        },
-        None => Ok(received),
     }
 }
 

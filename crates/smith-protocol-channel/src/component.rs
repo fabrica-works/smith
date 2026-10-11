@@ -390,6 +390,14 @@ impl Component {
         Ok(())
     }
 
+    /// Whether one largest authoritative frame can enter the bounded channel.
+    /// The service checks before taking a request; facts keep this same byte reserve.
+    #[must_use]
+    pub fn takes(&self) -> bool {
+        let room = self.machine.room();
+        room.frames > 0 && room.bytes >= self.fact_reserve_bytes
+    }
+
     /// Offer a content-free domain observation without spending reserved output room.
     pub fn send_fact(
         &mut self,

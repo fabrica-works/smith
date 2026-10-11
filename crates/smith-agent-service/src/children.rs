@@ -1,4 +1,4 @@
-//! Scalar child joins from actual opening, provider usage and settled root facts.
+//! Scalar child joins from actual opening, raw provider usage and settled root facts.
 //! Each retained entry belongs to one live provider call, until its enclosing
 //! terminal. It keeps no child text, feedback or prompts, and never derives a
 //! child answer from wording. Contracts: protocol/events.md, sections3.6/3.10;
@@ -17,7 +17,7 @@ struct Child {
     budget: bool,
     stop: smith_events::ChildStop,
     turns: u32,
-    usage: llm::Usage,
+    usage: crate::observations::Reported,
     spent: u64,
     time_ms: u64,
     ended: bool,
@@ -46,7 +46,7 @@ impl Book {
                     budget: false,
                     stop: smith_events::ChildStop::Closed,
                     turns: 0,
-                    usage: llm::Usage::NONE,
+                    usage: crate::observations::Reported::NONE,
                     spent: 0,
                     time_ms: 0,
                     ended: false,
@@ -54,6 +54,12 @@ impl Book {
             )
             .expect("one child per provider call still owing a terminal");
         assert!(previous.is_none(), "an actual child opens once");
+    }
+
+    pub(crate) fn received(&mut self, owner: Token, usage: llm::Usage) {
+        if let Some(child) = self.children.get_mut(&owner) {
+            child.usage.add(usage);
+        }
     }
 
     pub(crate) fn session(&mut self, fact: &session::Fact) {
@@ -88,9 +94,7 @@ impl Book {
                     | session::Yield::Malformed => false,
                 };
             }
-            session::FactKind::Used { usage, .. } => {
-                child.usage =
-                    crate::observations::add_reported(child.usage, usage).expect("accepted source token sums fit");
+            session::FactKind::Used { .. } => {
                 let spent = fact
                     .response
                     .expect("actual provider charge accompanies Used")
@@ -186,7 +190,7 @@ impl Book {
             turns: u64::from(child.turns),
             time_ms: child.time_ms,
             spent: child.spent,
-            usage: crate::reported_usage(child.usage),
+            usage: child.usage.usage(),
         })
     }
 

@@ -84,6 +84,7 @@ pub(crate) struct Producer {
     admitted: Option<u64>,
     activation: Option<u64>,
     answer_at: Option<Time>,
+    overflow_notice: Option<run::Overflow>,
     wind_down: bool,
     unread: u64,
     check_at: Option<Time>,
@@ -132,6 +133,7 @@ impl Producer {
             admitted: None,
             activation: None,
             answer_at: None,
+            overflow_notice: None,
             wind_down: false,
             unread: 0,
             check_at: None,
@@ -199,6 +201,10 @@ impl Producer {
             },
             contract,
         });
+    }
+
+    pub(crate) fn pop_overflow_notice(&mut self) -> Option<run::Overflow> {
+        self.overflow_notice.take()
     }
 
     pub(crate) fn answer_at(&self) -> Option<Time> {
@@ -374,6 +380,10 @@ impl Producer {
         crate::opening_model(model, name, effort)
     }
 
+    pub(crate) fn received(&mut self, owner: Token, usage: domain::llm::Usage) {
+        self.calls.child_received(owner, usage);
+    }
+
     pub(crate) fn request(&mut self, now: Time, owner: Token, prompt: &domain::llm::Prompt) {
         self.sinks.request(now, self.origin(), owner, prompt);
     }
@@ -381,7 +391,7 @@ impl Producer {
     pub(crate) fn answer(&mut self, now: Time, started: Time, answer: &run::Answer, read: Option<Token>) {
         assert!(self.answer_at.is_none(), "one actual answer per invocation");
         self.answer_at = Some(now);
-        let record = crate::answer_record(
+        let mut record = crate::answer_record(
             crate::AnswerMeta {
                 run: self.activation(),
                 wind_down: self.wind_down,
@@ -395,6 +405,24 @@ impl Producer {
             answer,
             self.capture,
         );
+        record.usage = self.sinks.reported();
+        self.overflow_notice = match answer {
+            run::Answer::Failed { failure, .. } => match failure {
+                run::Failure::Budget(exhausted) => match exhausted {
+                    run::Exhausted::Overflow(overflow) => Some(*overflow),
+                    run::Exhausted::Turns
+                    | run::Exhausted::Spend
+                    | run::Exhausted::Time
+                    | run::Exhausted::Tokens(_) => None,
+                },
+                run::Failure::Model(_)
+                | run::Failure::Policy(_)
+                | run::Failure::Cancelled
+                | run::Failure::Stale
+                | run::Failure::Transcript(_) => None,
+            },
+            run::Answer::Accepted { .. } | run::Answer::Parked { .. } | run::Answer::Refused(_) => None,
+        };
         self.sinks.record(&Record {
             t_ms: now.saturating_since(self.origin()).as_nanos() / 1_000_000,
             event: Event::RunCompleted(record),
@@ -446,4 +474,139 @@ pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
             u64::from(limits.domain.run.host_tools.checked_add(1)?)
                 .checked_mul(u64::from(events.sinks.records.string))?,
         )
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::disallowed_macros,
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = "programming-model.md section10.2: bounded deterministic source fixtures use ordinary Rust"
+    )]
+
+    use super::*;
+    use crate::responses::tests::{actual_completion, at, fact, opened, prompt};
+    use crate::sinks::tests::{drain_ready, limits};
+    use smith_domain::session;
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "two independent raw-accounting terminal controls exercise the complete producer and wire"
+    )]
+    fn refused_raw_totals_and_overflow_reach_the_wire_answer_and_operator_once() {
+        for overflow in [false, true] {
+            let bounds = limits(1);
+            let destination = Token::new(400);
+            let owner = Token::new(11);
+            let mut producer = Producer {
+                sinks: Sinks::new(&bounds, Capture::Calls, bounds.output),
+                names: channel::Endpoints::new(List::with_capacity(0)),
+                efforts: Map::with_capacity(0),
+                calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session),
+                capture: Capture::Calls,
+                origin: Some(Time::ZERO),
+                start: None,
+                admitted: Some(7),
+                activation: Some(7),
+                answer_at: None,
+                overflow_notice: None,
+                wind_down: false,
+                unread: 0,
+                check_at: None,
+            };
+            producer
+                .sinks
+                .add(crate::sinks::Destination::Trace, destination, crate::sinks::Delivery::Complete)
+                .unwrap();
+            producer.sinks.conversation(at(1), Time::ZERO, owner, opened(11, 0));
+            drop(drain_ready(&mut producer.sinks, destination));
+            for turn in 1..=if overflow { 2 } else { 1 } {
+                let mut completion = actual_completion();
+                if overflow {
+                    completion.usage.input_tokens = Some(if turn == 1 { u64::MAX - 1 } else { 2 });
+                }
+                producer.sinks.session(
+                    Time::ZERO,
+                    &fact(
+                        2,
+                        session::FactKind::CompletionStarted {
+                            opener: owner,
+                            attempt: 0,
+                            messages: 0,
+                            max_tokens: 7,
+                            choice: session::Choice::Only,
+                        },
+                        turn,
+                        None,
+                    ),
+                );
+                producer.sinks.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
+                drop(drain_ready(&mut producer.sinks, destination));
+                let actual_owner = producer.sinks.received(Token::new(99), &completion);
+                producer.received(actual_owner, completion.usage);
+                producer.sinks.session(
+                    Time::ZERO,
+                    &fact(
+                        5,
+                        session::FactKind::CompletionAnswered {
+                            opener: owner,
+                            stop: completion.stop,
+                            blocks: 2,
+                            calls: 2,
+                            invalid: 2,
+                        },
+                        turn,
+                        None,
+                    ),
+                );
+                let end = if overflow && turn == 1 {
+                    session::FactKind::Used { opener: owner, usage: completion.usage }
+                } else {
+                    session::FactKind::Ended {
+                        opener: owner,
+                        end: if overflow { session::End::UsageOverflow } else { session::End::PriceOverflow },
+                        turns: u32::from(overflow),
+                        usage: domain::llm::Usage::ZERO,
+                    }
+                };
+                producer
+                    .sinks
+                    .session(Time::ZERO, &fact(5, end, turn, if overflow && turn == 1 { Some(0) } else { None }));
+                let records = drain_ready(&mut producer.sinks, destination);
+                if !(overflow && turn == 1) {
+                    let Event::ConversationClosed(closed) = &records.last().unwrap().event else {
+                        panic!("actual conversation terminal")
+                    };
+                    assert_eq!(closed.usage.input_tokens, if overflow { None } else { Some(17) });
+                    assert_eq!(closed.usage.output_tokens, Some(if overflow { 38 } else { 19 }));
+                }
+            }
+            let cause = if overflow { run::Overflow::Usage } else { run::Overflow::Spend };
+            producer.answer(
+                at(7),
+                at(1),
+                &run::Answer::Failed {
+                    failure: run::Failure::Budget(run::Exhausted::Overflow(cause)),
+                    spent: run::Spend::ZERO,
+                    turns: u32::from(overflow),
+                },
+                None,
+            );
+            let records = drain_ready(&mut producer.sinks, destination);
+            let Event::RunCompleted(answer) = &records[0].event else { panic!("actual wire answer") };
+            assert_eq!(answer.usage.input_tokens, if overflow { None } else { Some(17) });
+            assert_eq!(answer.usage.output_tokens, Some(if overflow { 38 } else { 19 }));
+            assert_eq!(answer.usage.cache_read_tokens, None);
+            assert_eq!(answer.usage.cache_write_tokens, Some(0));
+            assert_eq!(answer.usage.reasoning_tokens, Some(if overflow { 6 } else { 3 }));
+            assert_eq!(
+                answer.failure.as_ref().unwrap().which.as_deref(),
+                Some(if overflow { b"usage_overflow".as_slice() } else { b"spend_overflow".as_slice() })
+            );
+            assert_eq!(producer.pop_overflow_notice(), Some(cause));
+            assert_eq!(producer.pop_overflow_notice(), None);
+        }
+    }
 }

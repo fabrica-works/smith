@@ -1,4 +1,6 @@
-//! Constrained output and acknowledgement windows never remove trace facts.
+//! Constrained output never removes failed or child trace facts.
+//! Failed runs also retain the existing withheld-ACK window sweep; the two-turn
+//! child uses the original eight-turn credit while its output slots vary.
 use smith_agent_process_world::{TraceCase, World, charter};
 
 fn vocabulary(world: &World) -> Vec<(Box<[u8]>, u64)> {
@@ -17,8 +19,11 @@ fn seeded_output_and_acknowledgement_windows_count_projection_loss_without_chang
             roomy.observe_facts(case, 8);
             assert!(roomy.settle());
             let mut constrained = World::new(seed, &charter());
-            constrained.observe_facts(case, 1 + u32::try_from(seed % 8).expect("small window"));
-            constrained.acknowledgement_window(1 + u32::try_from(seed % 8).expect("small window"));
+            let frames = 1 + u32::try_from(seed % 8).expect("small window");
+            constrained.observe_facts(case, frames);
+            if case == TraceCase::Failed {
+                constrained.acknowledgement_window(1 + u32::try_from(seed % 8).expect("small window"));
+            }
             assert!(constrained.settle());
             constrained.assert_event_conformance();
             roomy.assert_event_conformance();
