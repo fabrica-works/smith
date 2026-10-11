@@ -295,6 +295,14 @@ in its own scope; aggregate or child-return totals never charge it again.
 
 ## Smoke probes and deciding observations
 
+`smoke-tools` version 2 gives both variants an ordered sequence and explicitly
+continues the main steps after the child's returned result. Its requirements,
+deciding checks, seed, model tier, effort, quotas and receiving caps are unchanged
+from version 1. Three recorded child model omissions triggered the new version;
+the unavailable prompt and feedback content does not establish their cause.
+Both variants restart calibration on version 2: ten passes within at most twelve
+attempts each. Version 1 tasks, results and calibration evidence remain historical.
+
 `smoke.toml` currently selects five probes. `failures/one-turn` is authored
 and checked offline but enters the suite only after proven product 10.5.
 It expects the product's entrance refusal, exit2 and a typed invalid budget

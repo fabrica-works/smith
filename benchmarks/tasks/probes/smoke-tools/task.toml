@@ -1,11 +1,11 @@
 id = "smoke-tools"
-version = 1
+version = 2
 protected = ["README.md"]
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
-prompt = "List the directory . once, read ./README.md, and invoke shell exactly once to run printenv SMITH_BENCH_NONCE > smoke-env.txt; command -v cargo >> smoke-env.txt. Check that shell exits successfully, then finish with the frozen README token. Do not edit README.md or use any extra shell call.\n"
+prompt = "Complete these steps in order: (1) list the directory . exactly once; (2) read ./README.md and retain its frozen token; (3) invoke shell exactly once with printenv SMITH_BENCH_NONCE > smoke-env.txt; command -v cargo >> smoke-env.txt; (4) check that shell exited successfully; (5) finish with the frozen README token. The list, read, and shell steps are required before finish. This message supplies the complete task: continue through all steps without calling wait or pausing for another user message. Do not edit README.md or make any additional shell call.\n"
 seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
 guards = ["domain/tools.md, section 2", "domain/tools.md, section 5", "protocol/events.md, section 5"]
 deciding = ["end", "exit-code", "answer", "pattern:smoke-env.txt", "tool-call", "stream-whole", "paired", "spend-sums", "usage-sums", "nothing-lost", "tree-ended", "protected-unchanged"]
@@ -72,7 +72,7 @@ SMITH_BENCH_NONCE = "SMITH_SMOKE_NONCE_012"
 
 [[variant]]
 name = "child"
-prompt = "First delegate one read-only child with max_turns 2 to read README.md and report its token, and wait for its result. Then list . once, read README.md, invoke shell exactly once to run printenv SMITH_BENCH_NONCE > smoke-env.txt; command -v cargo >> smoke-env.txt, and finish with ALPHA. Do not modify README.md.\n"
+prompt = "Complete these steps in order: (1) delegate exactly one read-only child with max_turns 2 to read ./README.md and report its frozen token; receive the child's returned result before proceeding; (2) as the main agent, list the directory . exactly once; (3) as the main agent, read ./README.md; (4) as the main agent, invoke shell exactly once with printenv SMITH_BENCH_NONCE > smoke-env.txt; command -v cargo >> smoke-env.txt; (5) check that shell exited successfully; (6) finish with ALPHA. The child's returned answer completes the delegation step; immediately continue the main-agent steps even if that answer reports a budget stop. The child does not replace the main agent's required list, read, shell, and finish steps. This message supplies the complete task: do not call wait or pause for another user message after the child returns. Do not modify README.md or make any additional shell call.\n"
 deciding = ["conversation-opened"]
 [[variant.event]]
 check = "conversation-opened"
