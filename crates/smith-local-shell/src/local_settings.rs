@@ -434,24 +434,45 @@ pub fn read(global: &Path, workspace: Option<&Path>) -> Result<Settings, String>
         || settings.chat == "."
         || settings.chat == ".."
         || settings.chat.contains(['/', '\\', '\0'])
-        || settings.models.is_empty()
-        || settings.models.iter().any(|model| {
-            model.endpoint.is_empty()
-                || model.name.is_empty()
-                || model.price_unit == 0
-                || model.window == 0
-                || model.output == 0
-                || model.reasoning_item == 0
-                || !matches!(model.oversized_reasoning.as_deref(), None | Some("fail" | "drop"))
-                || model.head == 0
-                || model.idle == 0
-        })
-        || settings.budget.turns == 0
-        || settings.budget.seconds == 0
-        || settings.waiting_seconds == 0
-        || settings.title_field.is_empty()
     {
-        return Err("local settings contain an empty or zero required value".into());
+        return Err("chat must be a nonempty filename other than . or ..".into());
+    }
+    if settings.models.is_empty() {
+        return Err("models must contain at least one declaration".into());
+    }
+    for (index, model) in settings.models.iter().enumerate() {
+        for (name, value) in [("endpoint", &model.endpoint), ("name", &model.name)] {
+            if value.is_empty() {
+                return Err(format!("models[{index}].{name} must be nonempty"));
+            }
+        }
+        for (name, value) in [
+            ("price_unit", u64::from(model.price_unit)),
+            ("window", u64::from(model.window)),
+            ("output", u64::from(model.output)),
+            ("reasoning_item", u64::from(model.reasoning_item)),
+            ("head", model.head),
+            ("idle", model.idle),
+        ] {
+            if value == 0 {
+                return Err(format!("models[{index}].{name}=0 must be positive"));
+            }
+        }
+        if !matches!(model.oversized_reasoning.as_deref(), None | Some("fail" | "drop")) {
+            return Err(format!("models[{index}].oversized_reasoning must be fail or drop"));
+        }
+    }
+    for (name, value) in [
+        ("budget.turns", u64::from(settings.budget.turns)),
+        ("budget.seconds", settings.budget.seconds),
+        ("waiting_seconds", settings.waiting_seconds),
+    ] {
+        if value == 0 {
+            return Err(format!("{name}=0 must be positive"));
+        }
+    }
+    if settings.title_field.is_empty() {
+        return Err("title_field must be nonempty".into());
     }
     if !settings.agent.is_object() {
         return Err("local agent configuration must be an object".into());
@@ -733,4 +754,19 @@ mod tests {
         assert_eq!(mounted.directories[0].host, prepared.paths[0]);
         assert_eq!(mounted.directories[0].host.first(), Some(&b'/'));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn zero_model_output_names_the_required_setting() {
+    let path = std::env::temp_dir().join(format!("smith-output-refusal-{}.json", std::process::id()));
+    let document = serde_json::json!({"agent":{},"chat":"test","instructions":"test",
+        "models":[{"endpoint":"main","name":"test","window":8192,"output":0,"reasoning_item":2048,
+            "head":60000,"idle":30000,"input_price":1,"cached_price":1,"output_price":1,"price_unit":1}],
+        "budget":{"turns":8,"spend":100,"seconds":60},"waiting_seconds":30});
+    fs::write(&path, serde_json::to_vec(&document).expect("fixture JSON")).expect("write fixture");
+    let refusal = read(&path, None).expect_err("zero output refuses");
+    fs::remove_file(path).expect("remove fixture");
+    assert!(refusal.contains("models[0].output"), "{refusal}");
+    assert!(refusal.contains('0') && refusal.contains("positive"), "{refusal}");
 }

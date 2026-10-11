@@ -38,8 +38,8 @@ fn main() -> ExitCode {
         Ok(Exit::Code(code)) => ExitCode::from(code),
         Ok(Exit::Signal(_)) => ExitCode::FAILURE,
         Err(why) => {
-            eprintln!("smith: {why}");
-            ExitCode::FAILURE
+            eprintln!("smith: {}", why.detail());
+            ExitCode::from(why.exit_code())
         }
     }
 }

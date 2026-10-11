@@ -16,4 +16,4 @@ pub mod local_tokens;
 mod local_auth_tests;
 
 pub use local_host::{Local, Resources};
-pub use local_shell::run;
+pub use local_shell::{Failure, run};

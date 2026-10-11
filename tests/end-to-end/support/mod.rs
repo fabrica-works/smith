@@ -424,7 +424,23 @@ pub fn refusal(scratch: &Scratch, arguments: Vec<std::ffi::OsString>) -> Vec<u8>
     refusal_program(Path::new(env!("CARGO_BIN_EXE_smith")), scratch, arguments)
 }
 
+#[must_use]
 pub fn refusal_program(program: &Path, scratch: &Scratch, arguments: Vec<std::ffi::OsString>) -> Vec<u8> {
+    let refusal_code = if arguments.first().is_some_and(|command| command == "local") { 2 } else { 1 };
+    refusal_program_code(program, scratch, arguments, refusal_code)
+}
+
+#[must_use]
+pub fn refusal_code(scratch: &Scratch, arguments: Vec<std::ffi::OsString>, code: u8) -> Vec<u8> {
+    refusal_program_code(Path::new(env!("CARGO_BIN_EXE_smith")), scratch, arguments, code)
+}
+
+fn refusal_program_code(
+    program: &Path,
+    scratch: &Scratch,
+    arguments: Vec<std::ffi::OsString>,
+    refusal_code: u8,
+) -> Vec<u8> {
     assert_no_children();
     let clock = Clock::new();
     let now = clock.now().now;
@@ -445,7 +461,7 @@ pub fn refusal_program(program: &Path, scratch: &Scratch, arguments: Vec<std::ff
     let Process::Binary(binary) = outcome.procs.first().expect("binary process") else {
         unreachable!("binary observer")
     };
-    assert_eq!(binary.exit_status(), Some(Exit::Code(1)), "startup refusal fails the invocation");
+    assert_eq!(binary.exit_status(), Some(Exit::Code(refusal_code)), "startup refusal keeps its command category");
     let Process::Script(Proc::Terminal(person)) = outcome.procs.get(1).expect("terminal process") else {
         unreachable!("person")
     };

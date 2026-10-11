@@ -1,7 +1,8 @@
 //! Local host command and shell effects (protocol/hosts.md, sections 5.1–5.6).
 //! The shell owns paths, file descriptors and child launch. The local service
 //! owns chat and run decisions. One Skein kernel loop drives terminal input,
-//! signals, the hosted agent and their deadlines.
+//! signals, the hosted agent and their deadlines. Startup configuration refusals
+//! remain distinct from host failures (shell.md, sections 4.1 and 5.3).
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -22,45 +23,78 @@ use crate::{
     local_settings,
 };
 
-pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&Path>) -> Result<Exit, String> {
-    let settings = local_settings::read(settings_path, workspace_settings)?;
-    if settings.delivery_environment.len() > 64
-        || settings.delivery_environment.iter().map(String::len).sum::<usize>() > 4096
-        || settings.delivery_environment.iter().any(|entry| !entry.contains('=') || entry.contains('\0'))
-    {
-        return Err("delivery environment exceeds its bounds or has invalid entries".into());
+/// A local invocation failure, returned by the shell before or during host setup.
+#[derive(Debug)]
+pub enum Failure {
+    /// A settings or derived-limit refusal; the binary reports its named detail and exits 2.
+    Configuration { detail: String },
+    /// A host effect failure; the binary reports its detail and preserves exit 1.
+    Host { detail: String },
+}
+
+impl Failure {
+    /// The existing interactive invocation category for this failure.
+    #[must_use]
+    pub const fn exit_code(&self) -> u8 {
+        match self {
+            Self::Configuration { .. } => 2,
+            Self::Host { .. } => 1,
+        }
     }
+
+    /// The setting, limit or host operation that refused the invocation.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Configuration { detail } | Self::Host { detail } => detail,
+        }
+    }
+}
+
+fn configuration(detail: String) -> Failure {
+    Failure::Configuration { detail }
+}
+
+fn host_failure(detail: String) -> Failure {
+    Failure::Host { detail }
+}
+
+/// Validate local startup and drive the host, preserving the host's actual exit.
+pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&Path>) -> Result<Exit, Failure> {
+    let settings = local_settings::read(settings_path, workspace_settings).map_err(configuration)?;
+    validate_delivery_environment(&settings.delivery_environment)?;
     let mut delivery_roots = Vec::with_capacity(settings.directories.len());
     for directory in &settings.directories {
         delivery_roots.push(
             skein_shell::open_root(Path::new(&directory.path))
-                .map_err(|error| format!("delivery root {}: {error}", directory.path))?,
+                .map_err(|error| host_failure(format!("delivery root {}: {error}", directory.path)))?,
         );
     }
-    let agent_bytes = local_settings::agent_document(&settings)?;
-    let agent_config = config::parse(&agent_bytes)?;
+    let agent_bytes = local_settings::agent_document(&settings).map_err(configuration)?;
+    let agent_config = config::parse(&agent_bytes).map_err(configuration)?;
     let endpoints = agent_config.service.channel_endpoints.clone();
-    let mut prepared = policy(&settings, &agent_config.service)?;
-    fs::create_dir_all(state_root).map_err(|error| format!("state directory: {error}"))?;
+    let mut prepared = policy(&settings, &agent_config.service).map_err(configuration)?;
+    fs::create_dir_all(state_root).map_err(|error| host_failure(format!("state directory: {error}")))?;
     let agent_path = state_root.join("agent.json");
-    save_agent_config(&agent_path, &agent_bytes)?;
+    save_agent_config(&agent_path, &agent_bytes).map_err(host_failure)?;
     let chat_path = state_root.join(&settings.chat);
-    let token_path = token_directory(settings.token_directory.as_deref())?;
-    let parent = token_path.parent().ok_or("token directory has no parent")?;
-    fs::create_dir_all(parent).map_err(|error| format!("token directory parent: {error}"))?;
+    let token_path = token_directory(settings.token_directory.as_deref()).map_err(host_failure)?;
+    let parent = token_path.parent().ok_or_else(|| host_failure("token directory has no parent".into()))?;
+    fs::create_dir_all(parent).map_err(|error| host_failure(format!("token directory parent: {error}")))?;
     let mut effect_roots = Vec::new();
     if settings.in_process {
         for directory in &settings.directories {
             effect_roots.push(
                 skein_shell::open_root(Path::new(&directory.path))
-                    .map_err(|error| format!("agent root {}: {error}", directory.path))?,
+                    .map_err(|error| host_failure(format!("agent root {}: {error}", directory.path)))?,
             );
         }
     }
-    let launch_root = skein_shell::open_root(Path::new(".")).map_err(|error| format!("launch root: {error}"))?;
-    let executable = std::env::current_exe().map_err(|error| format!("agent program path: {error}"))?;
-    let largest_turn =
-        smith_domain::max_turn_bytes(&agent_config.service.limits.domain).ok_or("agent turn bound overflows")?;
+    let launch_root =
+        skein_shell::open_root(Path::new(".")).map_err(|error| host_failure(format!("launch root: {error}")))?;
+    let executable = std::env::current_exe().map_err(|error| host_failure(format!("agent program path: {error}")))?;
+    let largest_turn = smith_domain::max_turn_bytes(&agent_config.service.limits.domain)
+        .ok_or_else(|| configuration("agent turn bound overflows".into()))?;
     let host_limits = service::profile::host_limits(
         &agent_config.profile,
         largest_turn,
@@ -69,19 +103,23 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }
-    let mut limits = service_limits(prepared.limits, host_limits, &agent_config.service)?;
+    let mut limits = service_limits(prepared.limits, host_limits, &agent_config.service).map_err(configuration)?;
     if settings.in_process {
-        limits.inline = Some(service::InlineLimits::new(&agent_config.service).ok_or_else(|| {
-            profile_refusal(smith_agent_service::profile::Refusal::Derived {
-                limit: smith_agent_service::profile::LimitName::deployment(
-                    smith_agent_service::profile::Layer::Service,
-                    "local_worst_case",
-                ),
-            })
-        })?);
+        limits.inline = Some(
+            service::InlineLimits::new(&agent_config.service)
+                .ok_or_else(|| {
+                    profile_refusal(smith_agent_service::profile::Refusal::Derived {
+                        limit: smith_agent_service::profile::LimitName::deployment(
+                            smith_agent_service::profile::Layer::Service,
+                            "local_worst_case",
+                        ),
+                    })
+                })
+                .map_err(configuration)?,
+        );
     }
-    service::profile::memory(&limits, agent_config.memory).map_err(profile_refusal)?;
-    let seed = skein_shell::seed().map_err(|error| format!("local seed failed (errno {error})"))?;
+    service::profile::memory(&limits, agent_config.memory).map_err(profile_refusal).map_err(configuration)?;
+    let seed = skein_shell::seed().map_err(|error| host_failure(format!("local seed failed (errno {error})")))?;
     let local_config = service::Config {
         agent: service::AgentConfig::Spawned,
         local: prepared.config,
@@ -96,9 +134,9 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
             directory: Box::from(&b"."[..]),
         },
     };
-    let signals =
-        skein_shell::open_termination_signals().map_err(|error| format!("local signals failed (errno {error})"))?;
-    let oauth_entropy = oauth_entropy()?;
+    let signals = skein_shell::open_termination_signals()
+        .map_err(|error| host_failure(format!("local signals failed (errno {error})")))?;
+    let oauth_entropy = oauth_entropy().map_err(host_failure)?;
     let lower = settings.in_process.then_some(agent_config.service);
     let mut local_service = Local::within_memory(
         local_config,
@@ -120,8 +158,18 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         agent_config.memory,
     )?;
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
-        .map_err(|error| format!("local kernel: {error}"))?;
+        .map_err(|error| host_failure(format!("local kernel: {error}")))?;
     Ok(drive(&mut kernel, &Clock::new(), &mut local_service))
+}
+
+fn validate_delivery_environment(entries: &[String]) -> Result<(), Failure> {
+    if entries.len() > 64
+        || entries.iter().map(String::len).sum::<usize>() > 4096
+        || entries.iter().any(|entry| !entry.contains('=') || entry.contains('\0'))
+    {
+        return Err(configuration("delivery_environment exceeds its bounds or has invalid entries".into()));
+    }
+    Ok(())
 }
 
 /// Collect the fixed startup entropy required by the OAuth composition.

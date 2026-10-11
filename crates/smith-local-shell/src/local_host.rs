@@ -90,7 +90,7 @@ impl Local {
         resources: Resources,
         errors: Box<dyn Write>,
     ) -> Result<Self, String> {
-        Self::within_memory(config, lower, resources, errors, u64::MAX)
+        Self::within_memory(config, lower, resources, errors, u64::MAX).map_err(|failure| failure.detail().to_owned())
     }
 
     /// Refuse the complete shell footprint above the caller's memory before stream adoption.
@@ -105,7 +105,7 @@ impl Local {
         resources: Resources,
         errors: Box<dyn Write>,
         available_bytes: u64,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, crate::local_shell::Failure> {
         let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
         config.agent = match lower {
             Some(configuration) => {
@@ -114,19 +114,20 @@ impl Local {
                     config.limits.local.unsaved,
                     config.local.budget.time,
                 )
-                .ok_or_else(|| derivation_refusal("local_worst_case"))?;
+                .ok_or_else(|| configuration_failure(derivation_refusal("local_worst_case")))?;
                 config.limits.inline = Some(
-                    service::InlineLimits::new(&configuration).ok_or_else(|| derivation_refusal("local_worst_case"))?,
+                    service::InlineLimits::new(&configuration)
+                        .ok_or_else(|| configuration_failure(derivation_refusal("local_worst_case")))?,
                 );
                 service::AgentConfig::Inline { configuration, roots: resources.effect_roots }
             }
             None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
-            None => return Err("spawned mode cannot adopt inline roots".into()),
+            None => return Err(configuration_failure("spawned mode cannot adopt inline roots".into())),
         };
         if resources.accounts.len() > usize::try_from(config.limits.local.smith.accounts).expect("account bound fits")
             || resources.accounts.iter().any(|account| account.account_id.len() > 1024)
         {
-            return Err("local accounts exceed their configured bounds".into());
+            return Err(configuration_failure("local accounts exceed their configured bounds".into()));
         }
         for (position, account) in resources.accounts.iter().enumerate() {
             if resources
@@ -136,35 +137,42 @@ impl Local {
                 .iter()
                 .any(|prior| prior.number == account.number)
             {
-                return Err("local account numbers must be unique".into());
+                return Err(configuration_failure("local account numbers must be unique".into()));
             }
         }
         let endpoints = config.endpoints.clone();
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
-        let outer_queue = queue.checked_mul(2).ok_or_else(|| derivation_refusal("local_queue"))?;
+        let outer_queue =
+            queue.checked_mul(2).ok_or_else(|| configuration_failure(derivation_refusal("local_queue")))?;
         let io_limits = config.limits.process.io;
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
-            return Err("local IO limits cannot carry OAuth TLS records".into());
+            return Err(configuration_failure("local IO limits cannot carry OAuth TLS records".into()));
         }
         let operations = io::operations(&io_limits)
             .and_then(|count| count.checked_mul(2))
             .and_then(|count| count.checked_add(64))
             .and_then(|count| count.checked_add(lower_routes))
-            .ok_or_else(|| derivation_refusal("local_routes"))?;
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
         let worst = accounted_memory(
             &config.limits,
-            u32::try_from(resources.accounts.len()).map_err(|_| derivation_refusal("account_worst_case"))?,
+            u32::try_from(resources.accounts.len())
+                .map_err(|_| configuration_failure(derivation_refusal("account_worst_case")))?,
             lower_routes,
-        )?;
-        smith_agent_service::profile::validate::memory(worst, available_bytes).map_err(profile_refusal)?;
-        let service =
-            service::Service::new(config, resources.seed).map_err(|error| format!("local service: {error:?}"))?;
+        )
+        .map_err(configuration_failure)?;
+        smith_agent_service::profile::validate::memory(worst, available_bytes)
+            .map_err(profile_refusal)
+            .map_err(configuration_failure)?;
+        let service = service::Service::new(config, resources.seed)
+            .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
         let store = Store::new(resources.state_directory, endpoints, 1 << 20)
-            .map_err(|error| format!("chat store: {error}"))?;
-        let tokens = Tokens::new(&resources.token_directory, token_limits())?;
+            .map_err(|error| host_failure(format!("chat store: {error}")))?;
+        let tokens = Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?;
         let mut writer = io::Io::new(&io_limits);
-        let output = writer.adopt_write_pipe(resources.output).map_err(|_| "terminal output cannot be adopted")?;
+        let output = writer
+            .adopt_write_pipe(resources.output)
+            .map_err(|_| host_failure("terminal output cannot be adopted".into()))?;
         let requests = Queue::with_capacity(queue);
         let accounts = resources
             .accounts
@@ -172,7 +180,8 @@ impl Local {
             .into_iter()
             .enumerate()
             .map(|(position, account)| Auth::new(account, position, resources.oauth_entropy))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(host_failure)?;
         let mut local = Self {
             service,
             store,
@@ -204,11 +213,11 @@ impl Local {
         local
             .service
             .adopt_terminal(resources.input, resources.signals)
-            .map_err(|fd| format!("local terminal {} cannot be adopted", fd.raw()))?;
+            .map_err(|fd| host_failure(format!("local terminal {} cannot be adopted", fd.raw())))?;
         local
             .service
             .adopt_delivery_roots(resources.delivery_roots, resources.delivery_environment)
-            .map_err(|error| format!("delivery directories: {error:?}"))?;
+            .map_err(|error| host_failure(format!("delivery directories: {error:?}")))?;
         Ok(local)
     }
 
@@ -644,4 +653,12 @@ fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) 
         .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
         .ok_or_else(|| derivation_refusal("local_worst_case"))?;
     Ok(worst)
+}
+
+fn configuration_failure(detail: String) -> crate::local_shell::Failure {
+    crate::local_shell::Failure::Configuration { detail }
+}
+
+fn host_failure(detail: String) -> crate::local_shell::Failure {
+    crate::local_shell::Failure::Host { detail }
 }
