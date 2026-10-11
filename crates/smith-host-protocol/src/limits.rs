@@ -82,7 +82,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     for version in &schema.versions {
         duplicate = duplicate.checked_add(List::<skein_channel::Kind>::worst_case(version.kinds.capacity())?)?;
     }
-    let bytes = skein_channel::worst_case(&schema, &limits.channel)?
+    let bytes = skein_channel::worst_case(&schema, skein_channel::Role::Initiator, &limits.channel)?
         .checked_add(duplicate)?
         .checked_add(smith_protocol_channel::Endpoints::worst_case(limits.endpoints, limits.charter.llm_endpoint)?)?
         .checked_add(Queue::<skein_channel::Event>::worst_case(8)?)?

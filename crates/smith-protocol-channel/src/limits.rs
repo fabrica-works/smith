@@ -119,7 +119,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     for version in &schema.versions {
         duplicate = duplicate.checked_add(List::<skein_channel::Kind>::worst_case(version.kinds.capacity())?)?;
     }
-    let bytes = skein_channel::worst_case(&schema, &limits.channel)?
+    let bytes = skein_channel::worst_case(&schema, skein_channel::Role::Responder, &limits.channel)?
         .checked_add(duplicate)?
         .checked_add(u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<crate::Endpoint>()).ok()?)?)?
         .checked_add(u64::from(limits.endpoints).checked_mul(u64::from(smith_charter::CEILINGS.llm_endpoint))?)?
