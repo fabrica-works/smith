@@ -157,6 +157,7 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
         EventCheck::RunCompleted { status, class, which: None, reason: None } => {
             terminal(records, status, class.as_deref())
         }
+        EventCheck::ToolResultBytes { .. } => missing("legacy tool result has no authoritative payload byte count"),
         EventCheck::UsageSums => missing("legacy raw run usage totals do not prove complete per-response sums"),
         EventCheck::NoRequest => missing("legacy CompletionStarted is logical intent, not an actual native HTTP start"),
         EventCheck::NoRun => missing("legacy trace cannot prove an empty native startup event capture"),

@@ -79,6 +79,8 @@ pub enum EventCheck {
         exit: Option<i64>,
         clamped: Option<bool>,
     },
+    /// An actual tool terminal retains at least this many result bytes.
+    ToolResultBytes { tool: String, at_least: u64 },
     /// Response usage sums match each authoritative run total.
     UsageSums,
     /// No tool ends with any of these verdicts.
@@ -139,6 +141,7 @@ impl EventCheck {
             Self::FilePieces { .. } => "file-pieces",
             Self::OversizedWrite { .. } => "oversized-write",
             Self::ToolCall { .. } => "tool-call",
+            Self::ToolResultBytes { .. } => "tool-result-bytes",
             Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",
             Self::Completions { .. } => "completions",

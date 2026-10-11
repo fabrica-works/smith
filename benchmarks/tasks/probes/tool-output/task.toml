@@ -1,0 +1,132 @@
+id = "tool-output"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 180
+prompt = "Run sh test.sh using exactly one shell call. Choose an output budget large enough to identify the failing assertion in its output, which exceeds ten kilobytes. Finish by naming that assertion, its expected value and its observed value. Do not edit any file or delegate.\n"
+seed_sha256 = "21b8a7fa41617116df102cffd13c9c5e5a52da0c14594966a5400efd53bff9c5"
+guards = ["domain/tools.md, section 3", "domain/tools.md, section 5"]
+protected = ["test.sh", "manual.txt"]
+deciding = ["end", "exit-code", "answer", "tool-call", "tool-result-bytes", "protected-unchanged", "stream-whole", "tree-ended"]
+[budget]
+seconds = 150
+turns = 8
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 1
+calls_per_response = 4
+tool_payload = 4096
+read_window = 4096
+file_bytes = 1048576
+guide = 16384
+shell_output = 16384
+shell_head = 8192
+shell_tail = 8192
+llm_pool = 134217728
+memory = 2147483648
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "(?is)budget_total.*17.*19"
+[[outcome]]
+check = "protected"
+path = "test.sh"
+[[outcome]]
+check = "protected"
+path = "manual.txt"
+[[outcome]]
+check = "protected"
+path = "range.txt"
+[[event]]
+check = "tool-call"
+tool = "shell"
+count = { exactly = 1 }
+verdict = "exited"
+exit = 1
+[[event]]
+check = "tool-result-bytes"
+tool = "shell"
+at_least = 10241
+
+[[variant]]
+name = "test-output"
+
+[[variant]]
+name = "quote"
+replace_checks = true
+prompt = "Quote exactly the sentence on the line beginning QUOTE: in manual.txt, near line 700. Use at most two read calls, selecting bounded windows rather than loading the whole file. Do not modify any file, run shell, search or delegate. Then finish with the sentence.\n"
+deciding = ["end", "exit-code", "answer", "tool-call", "protected-unchanged", "stream-whole", "tree-ended"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "The copper heron carries seven blue lanterns across the silent harbor\\."
+[[variant.outcome]]
+check = "protected"
+path = "manual.txt"
+[[variant.outcome]]
+check = "protected"
+path = "test.sh"
+[[variant.outcome]]
+check = "protected"
+path = "range.txt"
+[[variant.event]]
+check = "tool-call"
+tool = "read"
+count = { at-most = 2 }
+verdict = "read"
+
+[[variant]]
+name = "utf-8"
+replace_checks = true
+prompt = "In range.txt replace the en dash between 10 and 12 with an ASCII hyphen using exactly one edit call, matching it on the first attempt. Read the file first if needed. Do not write the file wholesale, run shell or delegate. Finish with RANGE FIXED.\n"
+deciding = ["end", "exit-code", "answer", "file-digest:range.txt", "tool-call", "protected-unchanged", "stream-whole", "tree-ended"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "RANGE FIXED"
+[[variant.outcome]]
+check = "file-digest"
+path = "range.txt"
+sha256 = "29715478f3069651b6195203c1fe28e259c4e0759f53606359d1dff68cfa3235"
+[[variant.outcome]]
+check = "protected"
+path = "manual.txt"
+[[variant.outcome]]
+check = "protected"
+path = "test.sh"
+[[variant.event]]
+check = "tool-call"
+tool = "edit"
+count = { exactly = 1 }
+verdict = "edited"
+
+[[variant.event]]
+check = "tool-call"
+tool = "write"
+count = { exactly = 0 }
+[[variant.event]]
+check = "tool-call"
+tool = "shell"
+count = { exactly = 0 }

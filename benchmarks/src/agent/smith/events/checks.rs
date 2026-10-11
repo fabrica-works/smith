@@ -252,6 +252,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         if let EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } = check {
             return provider_failure(observer, *status_at_least, *status_at_most, *detail_bytes_at_most);
         }
+        if let EventCheck::ToolResultBytes { tool, at_least } = check {
+            return tool_result_bytes(observer, tool, *at_least);
+        }
         evaluate_complete(observer, check, task, currency)
     };
     let evidence = if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
@@ -269,6 +272,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
         EventCheck::UsageSums => super::usage_sums::check(observer),
         EventCheck::ToolCall { .. } => tool_call(observer, check),
+        EventCheck::ToolResultBytes { tool, at_least } => tool_result_bytes(observer, tool, *at_least).passed,
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ToolCompleted(value) if verdicts.iter().any(|verdict| verdict.as_bytes() == names::verdict(&value.verdict))))),
         EventCheck::Completions { count, before } => measured(count.holds(u64::try_from(observer.sessions.iter()
@@ -378,4 +382,43 @@ fn provider_failure(observer: &Observer, minimum: u16, maximum: u16, detail_boun
         }
     }
     CheckVerdict { check: "provider-failure".into(), passed: measured(found_terminal && passed), evidence }
+}
+
+fn tool_result_bytes(observer: &Observer, tool: &str, bound: u64) -> CheckVerdict {
+    let mut found = false;
+    let mut evidence = Vec::new();
+    for session in &observer.sessions {
+        for record in &session.records {
+            if let Event::ToolStarted(start) = &record.event
+                && start.tool.as_ref() == tool.as_bytes()
+            {
+                let Some(end) = session
+                    .records
+                    .iter()
+                    .filter_map(|record| if let Event::ToolCompleted(end) = &record.event { Some(end) } else { None })
+                    .find(|end| {
+                        end.run == start.run
+                            && end.conversation == start.conversation
+                            && end.call == start.call
+                            && end.tool == start.tool
+                    })
+                else {
+                    return CheckVerdict {
+                        check: "tool-result-bytes".into(),
+                        passed: unavailable("tool result has no matching terminal"),
+                        evidence,
+                    };
+                };
+                evidence.push(format!(
+                    "run={} conversation={} call={} payload_bytes={} at_least={bound}",
+                    start.run,
+                    start.conversation,
+                    String::from_utf8_lossy(&start.call),
+                    end.bytes
+                ));
+                found |= end.bytes >= bound;
+            }
+        }
+    }
+    CheckVerdict { check: "tool-result-bytes".into(), passed: measured(found), evidence }
 }

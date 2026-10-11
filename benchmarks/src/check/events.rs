@@ -96,6 +96,11 @@ pub(super) fn checks(
                     named(file, &format!("{key}.verdict"), value, VERDICTS)?;
                 }
             }
+            EventCheck::ToolResultBytes { tool, at_least } => {
+                if tool.trim().is_empty() || *at_least == 0 {
+                    return Err(Refusal::new(file, &key, "tool and result byte bound must be nonempty"));
+                }
+            }
             EventCheck::NoVerdict { verdicts } => {
                 for value in verdicts {
                     named(file, &format!("{key}.verdicts"), value, VERDICTS)?;
