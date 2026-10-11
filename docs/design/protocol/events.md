@@ -297,7 +297,7 @@ and the host's:
 **`check.started`** (`run`, `deadline_ms`) and **`check.completed`**
 (`run`, `exit`, `passed`, `duration_ms`), for the workspace's checks
 (domain/run.md, 8.1). Every `check.started` has one `check.completed`,
-whose `exit` says how the checks ended, as one of four kinds:
+whose `exit` says how the checks ended, as one of five kinds:
 
 - `{"kind":"code","value":n}`: the checks' process exited with code `n`;
 - `{"kind":"signal","value":n}`: a signal ended it, with its number, which
@@ -305,7 +305,10 @@ whose `exit` says how the checks ended, as one of four kinds:
 - `{"kind":"timed_out"}`: their deadline passed, and their tree was
   stopped, whether or not a process had started;
 - `{"kind":"unstarted"}`: they never started, because the spawn failed.
-  The failure's detail goes in an `operator` notice.
+  The failure's detail goes in an `operator` notice;
+- `{"kind":"cancelled"}`: the run withdrew them before they ended, by a
+  cancel, a drop or a wind-down, before or after their process started.
+  Their tree was stopped.
 
 `passed` is true only for code 0. A command's `exit` in `tool.completed`
 keeps its own shape.
