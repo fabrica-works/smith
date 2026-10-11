@@ -1040,12 +1040,8 @@ mod tests {
         assert_eq!(parse_value(&document).err().as_deref(), Some("model oversized_reasoning must be fail or drop"));
     }
 
-    #[test]
-    fn product_values_pass_every_startup_check_and_fit_complete_memory() {
-        use skein_io::kernel::{Complete, Fd, Submit};
-        use skein_lib::Queue;
-
-        let document = serde_json::json!({
+    fn product_document() -> serde_json::Value {
+        serde_json::json!({
           "profile":{"name":"standard","declared":{
             "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
             "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
@@ -1056,9 +1052,17 @@ mod tests {
             "models":[{"name":"gpt-6-luna","window":272_000,"output":32000,"reasoning_item":65536,"head":60000,"idle":300_000}]}],
           "environment":[{"name":"X","value":"x".repeat(833)}],
           "trace":{"path":"/tmp/unused-diagnostic-trace","capture":"everything"}
-        });
-        // Record the derived owners even if a lower construction contract is
-        // not yet available. This is partial evidence, never memory admission.
+        })
+    }
+
+    #[test]
+    fn product_values_pass_every_startup_check_and_fit_complete_memory() {
+        use skein_io::kernel::{Complete, Fd, Submit};
+        use skein_lib::Queue;
+
+        let document = product_document();
+        // Record each owner and the complete checked process bound before
+        // checking the concrete parser's startup relationships.
         let dto: Document = serde_json::from_value(document.clone()).expect("product DTO");
         let selected = build_profile(&dto.profile).expect("product profile");
         let declarations = service::profile::Configuration {
@@ -1076,8 +1080,9 @@ mod tests {
             let client = endpoint.limits;
             let native = client.native();
             println!(
-                "PRODUCT_NATIVE fixed={:?} openai_scratch={:?} anthropic_scratch={:?} request={} answer={} reasoning={} tokens={} output_items={} history_items={} receiving={} skip={}",
+                "PRODUCT_NATIVE fixed={:?} encoding_scratch={:?} openai_receiving={:?} anthropic_receiving={:?} request={} answer={} reasoning={} tokens={} output_items={} history_items={} receiving={} skip={}",
                 skein_llm::client::worst_case(&client),
+                skein_llm::client::encoding_worst_case(&client),
                 skein_llm::openai::worst_case(&native),
                 skein_llm::anthropic::worst_case(&native),
                 client.request,
@@ -1126,5 +1131,87 @@ mod tests {
         );
         parse_value(&document).expect("product declarations pass every startup check");
         assert!(complete <= limits.memory, "complete {complete} > declared {}", limits.memory);
+    }
+    #[test]
+    fn drawn_declarations_are_named_or_fit_complete_process_memory() {
+        use service::profile::{Check, validate};
+        use skein_io::kernel::{Complete, Fd, Submit};
+        use skein_lib::{Queue, Rng};
+
+        let mut rng = Rng::new(4_170_005);
+        let mut admitted = 0;
+        let mut relationship_refusals = 0;
+        let mut memory_refusals = 0;
+        for sample in 0..96 {
+            let mut document = product_document();
+            let payload = rng.next_u64() % 40_960 + 1;
+            let declared = &mut document["profile"]["declared"];
+            declared["conversations"] = (rng.next_u64() % 6 + 1).into();
+            declared["tool_payload"] = payload.into();
+            declared["file_bytes"] = (rng.next_u64() % 1_048_576 + payload).into();
+            declared["calls_per_response"] = (rng.next_u64() % 16 + 1).into();
+            declared["read_window"] =
+                if sample % 6 == 0 { (payload + 1).into() } else { (rng.next_u64() % payload + 1).into() };
+            // Draw both the declared memory ceiling and the quantities which
+            // determine the owned bytes. Some otherwise valid draws must fail.
+            declared["memory"] = if sample % 6 == 1 { 1_u64.into() } else { 2_147_483_648_u64.into() };
+            let model = &mut document["endpoints"][0]["models"][0];
+            model["window"] = (rng.next_u64() % 272_000 + 272_000).into();
+            model["output"] = (rng.next_u64() % 32_000 + 32_000).into();
+            let dto: Document = serde_json::from_value(document.clone()).expect("drawn DTO");
+            let profile = build_profile(&dto.profile).expect("positive drawn declarations");
+            let declarations = service::profile::Configuration {
+                environment_bytes: 835,
+                endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
+            };
+            let limits = match service::profile::derive(&profile, &declarations) {
+                Ok(limits) => limits,
+                Err(refusal) => {
+                    let check = refusal.check().expect("draw names a startup relationship");
+                    let words = profile_refusal(refusal);
+                    assert!(words.starts_with(check.name()), "{words}");
+                    assert_eq!(parse_value(&document).err().as_deref(), Some(words.as_str()));
+                    relationship_refusals += 1;
+                    continue;
+                }
+            };
+            validate::declarations(&profile, &declarations).expect("all drawn declaration comparisons");
+            validate::window_first(&profile, &declarations, &limits.domain.session).expect("whole window and batch");
+            validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
+            let configured = build_endpoints(dto.endpoints, &limits.llm, &profile).expect("drawn endpoints");
+            let destinations =
+                llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("drawn native admission");
+            let service_bytes = service::worst_case(&limits, &destinations).expect("drawn service bound");
+            // The shell may hold every declared inherited root plus its error
+            // stream. This covers prepare's resource-dependent outer queues.
+            let roots = limits.domain.run.directories;
+            let queue = limits.queue.checked_add(roots).and_then(|value| value.checked_add(1)).unwrap();
+            let complete = service_bytes
+                .checked_add(crate::trace::MEMORY_RESERVE)
+                .and_then(|value| value.checked_add(Queue::<Complete>::worst_case(queue)?))
+                .and_then(|value| value.checked_add(Queue::<Submit>::worst_case(queue)?))
+                .and_then(|value| value.checked_add(u64::try_from(size_of::<crate::Agent>()).ok()?))
+                .and_then(|value| value.checked_add(u64::from(roots) * u64::try_from(size_of::<Fd>()).ok()?))
+                .expect("drawn complete bound");
+            match validate::memory(complete, limits.memory) {
+                Ok(()) => {
+                    assert!(complete <= profile.declared.memory.unwrap());
+                    parse_value(&document).expect("all concrete startup comparisons");
+                    admitted += 1;
+                }
+                Err(refusal) => {
+                    assert_eq!(refusal.check(), Some(Check::Memory));
+                    let words = profile_refusal(refusal);
+                    assert!(words.contains(&format!("service.worst_case={complete} bytes")), "{words}");
+                    assert!(words.contains(&format!("declared.memory={} bytes", limits.memory)), "{words}");
+                    assert!(complete > limits.memory);
+                    memory_refusals += 1;
+                }
+            }
+        }
+        assert!(admitted > 0 && relationship_refusals > 0 && memory_refusals > 0);
+        println!(
+            "DRAWN_STARTUP samples=96 admitted={admitted} relationship_refusals={relationship_refusals} memory_refusals={memory_refusals}"
+        );
     }
 }
