@@ -292,14 +292,15 @@ and the host's:
 | `duration_ms` | integer | from `tool.started` |
 | `child` | object, optional | for `sub_agent`, under every policy: `conversation`; `stop`, how the child ended: `end`, an answer it chose to give, `budget`, an answer its share ended (domain/run.md, 5.3), or, unanswered, `failed` or `closed`; `turns`, `time_ms`, `spent` and `usage` |
 | `delivery` | string, optional | for `deliver`, or a `finish` that delivered: `delivered`, `nothing`, `refused`, `failed` or `stale` (domain/run.md, 8.2) |
-| `result` | string | under `everything`: the result as the tool answered it, before rendering |
 
 A tool's terminal tells what the tool observed when it ended. Rendering
 happens later, when the result goes into the next request, and may never
 happen if the session closes first. So the result as the model read it,
 and the bytes its render bound cut, are told with the request that
 rendered it: in that request's new part, each rendered result with its
-cut (under `everything`; 3.11).
+cut (under `everything`; 3.11). `tool.completed` carries no result text.
+A tool's typed outcome has no text of its own before rendering, and the
+rendered one is the record of what the model saw.
 
 **`check.started`** (`run`, `deadline_ms`) and **`check.completed`**
 (`run`, `exit`, `passed`, `duration_ms`), for the workspace's checks
