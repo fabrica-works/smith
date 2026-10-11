@@ -423,12 +423,9 @@ fn startup_containment_requires_a_string_and_bounds_unknown_values() {
 
 #[test]
 fn tool_budget_and_command_exit_metadata_survive_every_capture_policy() {
-    for (name, mut record, _) in fixtures::samples().into_iter().filter(|(name, _, _)| {
+    for (name, record, _) in fixtures::samples().into_iter().filter(|(name, _, _)| {
         ["tool_completed_signal", "tool_completed_unclamped", "check_completed_signal"].contains(name)
     }) {
-        if let Event::ToolCompleted(value) = &mut record.event {
-            value.result = None;
-        }
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             let encoded = write(&record, &capture, &limits()).expect("bounded metadata").expect("terminal");
             assert_eq!(read(&encoded, &limits()).expect("valid metadata"), Some(record.clone()), "{name}");

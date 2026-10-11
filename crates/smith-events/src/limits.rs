@@ -318,7 +318,6 @@ fn heap_tool_completed(limits: &Limits) -> Option<u64> {
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(0_u64)?;
     length = length.checked_add(u64::from(limits.string))?;
-    length = length.checked_add(u64::from(limits.content))?;
     Some(length)
 }
 
@@ -819,9 +818,6 @@ fn size_tool_completed(capture: &Capture, limits: &Limits) -> Option<u64> {
         .checked_add(4_u64.checked_mul(20)?)?
         .checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(8))?
         .checked_add(size_usage(capture, limits)?)?;
-    if *capture == Capture::Everything {
-        length = length.checked_add(10)?.checked_add(u64::from(limits.content).checked_mul(6)?.checked_add(2)?)?;
-    }
     Some(length)
 }
 

@@ -312,7 +312,6 @@ fn max_tool_completed(limits: &smith_events::Limits) -> ToolCompleted {
             usage: max_usage(limits),
         }),
         delivery: Some(Delivered::Unknown(payload(limits.string))),
-        result: Some(payload(limits.content)),
     }
 }
 

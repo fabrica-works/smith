@@ -320,7 +320,6 @@ impl Book {
                 duration_ms: millis(at, call.at),
                 child: self.children.take(metadata.owner),
                 delivery: call.delivery,
-                result: None,
             }),
         }
     }
@@ -466,6 +465,12 @@ mod tests {
     use crate::sinks::{Capture, Delivery, Destination, Ended};
     use skein_lib::Duration;
 
+    fn no_tool_result(record: &Record, capture: Capture) {
+        let limits = crate::sinks::tests::limits(1).records;
+        let line = smith_events::write(record, &capture.encoded(), &limits).unwrap().unwrap();
+        assert!(!core::str::from_utf8(&line).unwrap().contains("\"result\":"));
+    }
+
     fn fixture(capture: Capture) -> (Book, Sinks, Token, Token, session::ToolCall) {
         let mut profile = crate::profile::standard();
         profile.declared.memory = Some(1_u64 << 40_u32);
@@ -602,7 +607,7 @@ mod tests {
                 assert_eq!(started.input_bytes, 1234);
                 assert_eq!(started.deadline_ms, Some(100));
                 assert_eq!(started.input, None);
-                assert_eq!(completed.result, None);
+                no_tool_result(records.get(1).expect("terminal"), capture);
                 assert_eq!(completed.verdict, expected);
                 assert_eq!(completed.exit, exit);
                 assert_eq!(
@@ -801,7 +806,7 @@ mod tests {
                         reasoning_tokens: Some(1)
                     }
                 );
-                assert_eq!(completed.result, None);
+                no_tool_result(terminal, capture);
                 assert!(book.calls.is_empty());
             }
         }

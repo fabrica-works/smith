@@ -1,5 +1,6 @@
 //! Versioned JSON-line event codec, with owned bounded records and no domain dependencies.
 //! No process state or credential is known here. `write` measures and encodes a line;
+//! `write_with_ceiling` uses its owner's joint bound with the same semantic caps.
 //! `read` checks its version and decodes a line without retaining stream state.
 //! Contract: protocol/events.md, sections 3, 5.3, 6 and 8.
 
@@ -25,7 +26,7 @@ pub use records::{
     RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
     ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
-pub use write::write;
+pub use write::{write, write_with_ceiling};
 
 /// The event vocabulary version emitted and accepted by this codec.
 pub const VERSION: u64 = 1;

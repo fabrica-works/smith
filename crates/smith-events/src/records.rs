@@ -819,7 +819,6 @@ pub struct ToolCompleted {
     pub duration_ms: u64,
     pub child: Option<ChildCompleted>,
     pub delivery: Option<Delivered>,
-    pub result: Option<Box<[u8]>>,
 }
 
 /// The settled child result the service joins to its enclosing tool terminal.

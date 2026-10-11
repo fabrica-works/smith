@@ -18,6 +18,19 @@ use skein_lib::{List, Writer};
 
 /// Encode one line, or omit live text when capture does not request it.
 pub fn write(record: &Record, capture: &Capture, limits: &Limits) -> Result<Option<Box<[u8]>>, Error> {
+    let capacity = crate::limits::largest_size(&record.event, capture, limits).ok_or(Error::Limits)?;
+    write_with_ceiling(record, capture, limits, capacity)
+}
+
+/// Encode within the owner's joint line ceiling, including the newline;
+/// independent string, content and list caps still validate the whole record.
+pub fn write_with_ceiling(
+    record: &Record,
+    capture: &Capture,
+    limits: &Limits,
+    encoded_line: u32,
+) -> Result<Option<Box<[u8]>>, Error> {
+    let bounded = skein_json::writer::Limits { depth: 16, length: encoded_line.checked_sub(1).ok_or(Error::Limits)? };
     match &record.event {
         Event::TextDelta(_) if *capture != Capture::Everything => return Ok(None),
         Event::Budget(_)
@@ -40,8 +53,6 @@ pub fn write(record: &Record, capture: &Capture, limits: &Limits) -> Result<Opti
         | Event::Notice(_) => {}
     }
     validate_record(record, limits)?;
-    let capacity = crate::limits::largest_size(&record.event, capture, limits).ok_or(Error::Limits)?;
-    let bounded = skein_json::writer::Limits { depth: 16, length: capacity.checked_sub(1).ok_or(Error::Limits)? };
     let mut measure = Encoder::measure(&bounded);
     encode(&mut measure, record, capture);
     let length = match measure.measured() {
@@ -1241,9 +1252,6 @@ fn validate_tool_completed(value: &ToolCompleted, limits: &Limits) -> Result<(),
     if let Some(item) = &value.delivery {
         validate_delivered(item, limits)?;
     }
-    if let Some(item) = &value.result {
-        check_text(item, limits.content)?;
-    }
     Ok(())
 }
 
@@ -1761,12 +1769,6 @@ fn encode_tool_completed(json: &mut Encoder, value: &ToolCompleted, capture: &Ca
     if let Some(item) = &value.delivery {
         json.key(b"delivery");
         write_delivered(json, item, capture);
-    }
-    if *capture == Capture::Everything
-        && let Some(item) = &value.result
-    {
-        json.key(b"result");
-        json.string(item);
     }
 }
 

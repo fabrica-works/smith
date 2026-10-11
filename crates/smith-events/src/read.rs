@@ -1251,10 +1251,6 @@ fn read_tool_completed(tokens: &[Token], limits: &Limits) -> Result<ToolComplete
             Some(item) => Some(read_delivered(item, limits)?),
             None => None,
         },
-        result: match field(tokens, b"result")? {
-            Some(item) => Some(text(item, limits.content)?),
-            None => None,
-        },
     })
 }
 

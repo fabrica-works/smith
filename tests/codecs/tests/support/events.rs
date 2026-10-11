@@ -574,7 +574,6 @@ fn value_tool_completed(name: &str, spelling: &str) -> ToolCompleted {
         duration_ms: u64::MAX,
         child: None,
         delivery: Some(value_delivered(name, spelling)),
-        result: Some(Box::from("sample\n\"🌍".as_bytes())),
     }
 }
 
@@ -1748,7 +1747,6 @@ fn child_terminal(name: &'static str, stop: smith_events::ChildStop) -> (&'stati
                     },
                 }),
                 delivery: None,
-                result: None,
             }),
         },
         Capture::Everything,

@@ -78,6 +78,27 @@ fn another_version_is_named() {
 const END_WITH_UNREAD_USAGE: &[u8] = b"{\"v\":1,\"type\":\"session.ended\",\"t_ms\":7,\"exit\":0,\"answered\":true,\"teardown_ms\":2,\"emitted\":{\"session.ended\":1},\"loss\":{\"events\":0,\"channel\":null},\"cpu_ms\":null,\"peak_rss_bytes\":null}\n";
 
 #[test]
+fn joint_writer_ceiling_round_trips_and_never_weakens_semantic_caps() {
+    let limits = Limits { string: 524_288, content: 13_056_000, items: 52_754 };
+    let ceiling = u32::try_from(END_WITH_UNREAD_USAGE.len()).expect("terminal length");
+    let record = crate::read_with_ceiling(END_WITH_UNREAD_USAGE, &limits, ceiling).unwrap().unwrap();
+    assert_eq!(write(&record, &Capture::Everything, &limits), Err(Error::Limits));
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let line = crate::write_with_ceiling(&record, &capture, &limits, ceiling).unwrap().unwrap();
+        assert_eq!(line.as_ref(), END_WITH_UNREAD_USAGE);
+        assert_eq!(crate::write_with_ceiling(&record, &capture, &limits, ceiling - 1), Err(Error::Limits));
+        assert_eq!(crate::write_with_ceiling(&record, &capture, &limits, 0), Err(Error::Limits));
+    }
+    let input = b"{\"v\":1,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":2,\"label\":\"abc\",\"text\":\"ab\"}\n";
+    let message = crate::read_with_ceiling(input, &limits, 1024).unwrap().unwrap();
+    for restrictive in [Limits { string: 2, ..limits }, Limits { content: 1, ..limits }] {
+        assert_eq!(crate::write_with_ceiling(&message, &Capture::Everything, &restrictive, 1024), Err(Error::Limits));
+    }
+    let restrictive = Limits { items: 0, ..limits };
+    assert_eq!(crate::write_with_ceiling(&record, &Capture::Everything, &restrictive, 1024), Err(Error::Limits));
+}
+
+#[test]
 fn unread_resource_usage_is_null_and_round_trips_without_changing_the_terminal() {
     let limits = Limits { string: 64, content: 1024, items: 4 };
     let record =
