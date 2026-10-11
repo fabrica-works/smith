@@ -127,7 +127,7 @@ impl Producer {
             sinks: Sinks::new(&events.sinks, events.capture, limits.io.output),
             names,
             efforts,
-            calls: crate::calls::Book::new(&limits.domain.session),
+            calls: crate::calls::Book::new(&limits.domain.session, events.capture),
             messages: crate::messages::Book::new(limits, events.capture),
             capture: events.capture,
             origin: None,
@@ -370,8 +370,9 @@ impl Producer {
         crate::opening_model(model, name, effort)
     }
 
-    pub(crate) fn received(&mut self, owner: Token, usage: domain::llm::Usage) {
-        self.calls.child_received(owner, usage);
+    pub(crate) fn received(&mut self, owner: Token, completion: &domain::llm::Completion) {
+        self.calls.child_received(owner, completion.usage);
+        self.calls.received(owner, completion);
     }
 
     pub(crate) fn request(
@@ -476,6 +477,7 @@ pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
     crate::sinks::sinks_worst_case(&events.sinks, events.capture)?
         .checked_add(crate::messages::worst_case(limits, events.capture)?)?
         .checked_add(crate::calls::worst_case(&limits.domain.session, events.sinks.records.string)?)?
+        .checked_add(crate::inputs::worst_case(&limits.domain.session, events.capture)?)?
         .checked_add(channel::Endpoints::worst_case(limits.channel.endpoints, limits.channel.charter.llm_endpoint)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.channel.endpoints)?)?
         .checked_add(u64::from(limits.channel.endpoints).checked_mul(u64::from(events.sinks.records.string))?)?
@@ -516,7 +518,7 @@ mod tests {
                 sinks: Sinks::new(&bounds, Capture::Calls, bounds.output),
                 names: channel::Endpoints::new(List::with_capacity(0)),
                 efforts: Map::with_capacity(0),
-                calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session),
+                calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session, Capture::Calls),
                 messages: crate::messages::Book::disabled(),
                 capture: Capture::Calls,
                 origin: Some(Time::ZERO),
@@ -558,7 +560,7 @@ mod tests {
                 producer.sinks.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
                 drop(drain_ready(&mut producer.sinks, destination));
                 let actual_owner = producer.sinks.received(Token::new(99), &completion);
-                producer.received(actual_owner, completion.usage);
+                producer.received(actual_owner, &completion);
                 producer.sinks.session(
                     Time::ZERO,
                     &fact(

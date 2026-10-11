@@ -15,6 +15,7 @@ mod answers;
 mod calls;
 mod children;
 mod events;
+mod inputs;
 mod messages;
 mod observations;
 mod responses;

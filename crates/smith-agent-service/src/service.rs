@@ -1288,7 +1288,7 @@ fn llm_events_up(service: &mut Service) {
                 if let Some(events) = &mut service.events {
                     events.sinks.attempt_ready(owner);
                     let conversation = events.sinks.received(owner, &completion);
-                    events.received(conversation, completion.usage);
+                    events.received(conversation, &completion);
                 }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }

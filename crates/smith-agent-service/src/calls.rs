@@ -1,7 +1,8 @@
 //! Bounded provider call joins for event starts and terminals.
 //! The book keeps the session-issued owner, actual provider identity, public
 //! conversation scope and start time until the terminal fact. It never owns
-//! tool input, result content or a rendered result. Workspace caps arrive from
+//! result content or a rendered result. Selected provider arguments wait in a
+//! bounded input book until their actual start. Workspace caps arrive from
 //! the tool's terminal; delegated content remains outside this projection.
 //! Contracts: protocol/events.md, sections 3.1, 3.6 and 5; domain/run.md, section 11.
 
@@ -52,10 +53,11 @@ pub(crate) struct Book {
     bound: u64,
     children: crate::children::Book,
     landing: Option<Token>,
+    inputs: crate::inputs::Book,
 }
 
 impl Book {
-    pub(crate) fn new(limits: &session::Limits) -> Book {
+    pub(crate) fn new(limits: &session::Limits, capture: crate::sinks::Capture) -> Book {
         let bounds = Bounds::derive(limits).expect("admitted session batch bounds fit");
         Book {
             calls: Map::with_capacity(bounds.slots),
@@ -63,7 +65,12 @@ impl Book {
             bound: bounds.bytes,
             children: crate::children::Book::new(bounds.slots),
             landing: None,
+            inputs: crate::inputs::Book::new(limits, capture),
         }
+    }
+
+    pub(crate) fn received(&mut self, owner: Token, completion: &smith_domain::llm::Completion) {
+        self.inputs.received(owner, completion);
     }
 
     /// Join a validated root ask to its already observed actual provider call.
@@ -170,6 +177,10 @@ impl Book {
             | session::FactKind::DelegateAnswered { opener, .. }
             | session::FactKind::DelegateCancelled { opener }
             | session::FactKind::DelegateWithheld { opener } => opener,
+            session::FactKind::Ended { opener, .. } => {
+                self.inputs.ended(opener);
+                return;
+            }
             session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
@@ -179,7 +190,6 @@ impl Book {
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
-            | session::FactKind::Ended { .. }
             | session::FactKind::Tools {
                 fact:
                     tools::FactKind::Opened { .. }
@@ -197,7 +207,7 @@ impl Book {
         match fact.kind {
             session::FactKind::Tools { fact: tools::FactKind::Started { .. }, .. }
             | session::FactKind::DelegateStarted { .. } => {
-                sinks.record(&self.started(origin, fact.at, scope, metadata));
+                sinks.record(&self.started(origin, fact.at, opener, scope, metadata));
             }
             session::FactKind::Tools {
                 fact: tools::FactKind::Answered { verdict, bytes, omitted_bytes, clamped, .. },
@@ -206,7 +216,7 @@ impl Book {
                 // An entrance refusal settles the session's actual call in
                 // the same step, without a lower work-start fact or IO.
                 if !self.calls.contains_key(&metadata.owner) {
-                    sinks.record(&self.started(origin, fact.at, scope, metadata));
+                    sinks.record(&self.started(origin, fact.at, opener, scope, metadata));
                 }
                 let terminal = Terminal {
                     verdict: verdict_kind(verdict),
@@ -261,7 +271,8 @@ impl Book {
         }
     }
 
-    fn started(&mut self, origin: Time, at: Time, scope: Scope, metadata: &session::ToolCall) -> Record {
+    fn started(&mut self, origin: Time, at: Time, opener: Token, scope: Scope, metadata: &session::ToolCall) -> Record {
+        let input = self.inputs.take(opener, metadata);
         let bytes = metadata_bytes(metadata);
         self.bytes = self.bytes.checked_add(bytes).expect("bounded call identity sum fits");
         assert!(self.bytes <= self.bound, "actual source batches bound copied provider identity");
@@ -293,7 +304,7 @@ impl Book {
                 effect,
                 deadline_ms: Some(millis(metadata.deadline, at)),
                 input_bytes: metadata.input_bytes,
-                input: None,
+                input,
             }),
         }
     }
@@ -478,7 +489,7 @@ mod tests {
         source.sessions = 1;
         source.parallel_tools = 2;
         source.completion_bytes = 1024;
-        let book = Book::new(&source);
+        let book = Book::new(&source, capture);
         let limits = crate::sinks::tests::limits(1);
         let mut sinks = Sinks::new(&limits, capture, 7);
         let destination = Token::new(999);

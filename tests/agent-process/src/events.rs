@@ -9,8 +9,14 @@ use smith_events::{Event, Record};
     clippy::too_many_lines,
     reason = "one exhaustive Smith record referee keeps all18 pairings and actual count/charge checks together"
 )]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the inner lookback selects one preceding provider call; the outer referee checks every event"
+)]
 pub fn check(records: &[Record]) {
-    assert!(matches!(records.first().expect("stream header").event, Event::SessionStarted(_)));
+    let Event::SessionStarted(header) = &records.first().expect("stream header").event else {
+        panic!("session.started is first");
+    };
     let Event::SessionEnded(end) = &records.last().expect("stream end").event else { panic!("session.ended is last") };
     assert_eq!(end.loss.events, 0, "complete destination loses no record");
     let mut observed = std::collections::BTreeMap::<&[u8], u64>::new();
@@ -24,7 +30,7 @@ pub fn check(records: &[Record]) {
     let mut spent = 0_u64;
     let mut usage = [None; 5];
     let mut reported_usage = false;
-    for record in records {
+    for (position, record) in records.iter().enumerate() {
         *observed.entry(name(&record.event)).or_default() += 1;
         match &record.event {
             Event::SessionStarted(_) => assert_eq!(observed.get(b"session.started".as_slice()), Some(&1)),
@@ -104,7 +110,39 @@ pub fn check(records: &[Record]) {
                 let identity = (call.run, call.conversation, call.call.clone());
                 assert!(!calls.contains(&identity));
                 calls.push(identity);
-                assert_eq!(call.input, None, "call content belongs to02.6");
+                match header.capture {
+                    smith_events::Capture::Calls | smith_events::Capture::Everything => {
+                        let input = call.input.as_ref().expect("the actual call carries its provider arguments");
+                        assert_eq!(u64::try_from(input.len()).expect("bounded input length"), call.input_bytes);
+                        if header.capture == smith_events::Capture::Everything {
+                            let arguments = records
+                                .iter()
+                                .take(position)
+                                .rev()
+                                .find_map(|record| match &record.event {
+                                    Event::ResponseCompleted(response)
+                                        if response.run == call.run && response.conversation == call.conversation =>
+                                    {
+                                        response.completion.as_ref().and_then(|completion| {
+                                            completion.blocks.iter().find_map(|block| match block {
+                                                smith_events::Block::Call { call: name, tool, input }
+                                                    if name == &call.call && tool == &call.tool =>
+                                                {
+                                                    Some(input)
+                                                }
+                                                _ => None,
+                                            })
+                                        })
+                                    }
+                                    _ => None,
+                                })
+                                .expect("the independently decoded provider completion contains the actual call");
+                            assert_eq!(input, arguments, "call inputs equal the provider's original arguments");
+                        }
+                    }
+                    smith_events::Capture::None => assert!(call.input.is_none()),
+                    smith_events::Capture::Unknown(_) => panic!("the fixture selects a known capture policy"),
+                }
             }
             Event::ToolCompleted(call) => {
                 let identity = (call.run, call.conversation, call.call.clone());
