@@ -67,6 +67,7 @@ pub struct Observer {
     sessions: Vec<Session>,
     fault: Option<String>,
     unknown: bool,
+    finished: bool,
 }
 
 fn fault(error: impl Into<String>) -> HarnessFault {
@@ -88,7 +89,13 @@ fn codec(error: smith_events::Error) -> HarnessFault {
 impl Observer {
     /// Reserve the codec's bounded line before reading; invalid limits refuse.
     pub fn new(limits: &smith_events::Limits) -> Result<Self, HarnessFault> {
-        Ok(Self { reader: Reader::new(limits).map_err(codec)?, sessions: Vec::new(), fault: None, unknown: false })
+        Ok(Self {
+            reader: Reader::new(limits).map_err(codec)?,
+            sessions: Vec::new(),
+            fault: None,
+            unknown: false,
+            finished: false,
+        })
     }
 
     /// Reserve the arm's writer-derived byte ceiling, including the final newline.
@@ -99,12 +106,14 @@ impl Observer {
             sessions: Vec::new(),
             fault: None,
             unknown: false,
+            finished: false,
         })
     }
 
     /// Consume complete lines in order, retaining a partial line across chunks.
     /// Unknown records and fields remain subject to the codec's version check.
     pub fn feed(&mut self, mut bytes: &[u8]) -> Result<Vec<Seen>, HarnessFault> {
+        self.finished = false;
         if let Some(error) = &self.fault {
             return Err(fault(error.clone()));
         }
@@ -144,7 +153,15 @@ impl Observer {
             let error = codec(error);
             self.fault = Some(error.what.clone());
             error
-        })
+        })?;
+        self.finished = true;
+        Ok(())
+    }
+
+    /// A settled capture contains no known, unknown or partial startup record.
+    #[must_use]
+    pub fn ended_without_run(&self) -> bool {
+        self.finished && self.sessions.is_empty() && !self.unknown && self.fault.is_none()
     }
 
     /// Retain exact typed records for checks and recorded-output audits.

@@ -346,7 +346,7 @@ mod tests {
         let encoded = smith_local_shell::local_settings::agent_document(&local).expect("local generates its models");
         let configured =
             smith_agent_shell::config::parse(&encoded).expect("shipped agent accepts the local-generated document");
-        assert_eq!(configured.profile.declared.file_bytes, 1_048_576);
+        native_failure_settings(&current, configured.profile.declared.file_bytes);
         task.smith.insert("output".into(), toml::Value::Integer(1024));
         let changed = render(&task, Shape::LocalDeclared).expect("declared output override");
         assert_eq!(changed["models"][0]["output"], 1024);
@@ -365,5 +365,33 @@ mod tests {
         task.budget.seconds = Some(11);
         assert!(render(&task, Shape::LocalJson).is_err());
         std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    fn native_failure_settings(base: &Value, file_bytes: u32) {
+        assert_eq!(file_bytes, 1_048_576);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let task = crate::read_task(&root.join("tasks/probes/failures/task.toml")).expect("authored failures");
+        for name in ["unknown-model", "derived-limit", "bad-setting"] {
+            let task = task.with_variant(name).expect("variant");
+            let mut settings = base.clone();
+            overrides(Shape::LocalReserved, &mut settings, &task.smith).expect("render native invalid input");
+            let path = std::env::temp_dir().join(format!("smith-failure-settings-{}-{name}.json", std::process::id()));
+            assert!(!path.exists(), "fixture path is owned by this test");
+            std::fs::write(&path, serde_json::to_vec(&settings).expect("native JSON")).expect("private fixture");
+            let local = smith_local_shell::local_settings::read(&path, None);
+            std::fs::remove_file(path).expect("remove own input fixture");
+            let result = local
+                .and_then(|local| smith_local_shell::local_settings::agent_document(&local))
+                .and_then(|encoded| smith_agent_shell::config::parse(&encoded));
+            if name == "unknown-model" {
+                result.expect("fully declared model reaches provider selection");
+            } else {
+                let error = match result {
+                    Err(error) => error,
+                    Ok(_) => panic!("native startup accepted the authored invalid setting"),
+                };
+                assert!(error.contains(if name == "bad-setting" { "output" } else { "read-in-payload" }), "{error}");
+            }
+        }
     }
 }

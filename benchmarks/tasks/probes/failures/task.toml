@@ -38,16 +38,10 @@ memory = 2147483648
 [[variant]]
 name = "one-turn"
 budget = { seconds = 600, turns = 1 }
-deciding = ["end", "exit-code", "last-line", "run-completed", "no-request", "stream-whole", "tree-ended"]
+deciding = ["end", "run-completed", "no-request", "stream-whole", "tree-ended"]
 [[variant.outcome]]
 check = "end"
 end = "refused"
-[[variant.outcome]]
-check = "exit-code"
-code = 2
-[[variant.outcome]]
-check = "last-line"
-pattern = "(?i)budget.*reserve|reserve.*budget"
 [[variant.event]]
 check = "run-completed"
 status = "refused"
@@ -59,16 +53,10 @@ check = "no-request"
 [[variant]]
 name = "unknown-model"
 smith = { model = "smith-bench-nonexistent-model-2026-10-11" }
-deciding = ["end", "exit-code", "last-line", "run-completed", "stream-whole", "tree-ended"]
+deciding = ["end", "run-completed", "stream-whole", "tree-ended"]
 [[variant.outcome]]
 check = "end"
 end = "failed"
-[[variant.outcome]]
-check = "exit-code"
-code = 1
-[[variant.outcome]]
-check = "last-line"
-pattern = "(?i)smith:.*smith-bench-nonexistent-model-2026-10-11.*(invalid|not.found|unknown|does.not.exist|not.supported)"
 [[variant.event]]
 check = "run-completed"
 status = "failed"
@@ -77,7 +65,7 @@ class = "model"
 [[variant]]
 name = "derived-limit"
 smith = { read_window = 40961 }
-deciding = ["end", "exit-code", "last-line", "tree-ended"]
+deciding = ["end", "exit-code", "last-line", "no-run", "tree-ended"]
 [[variant.outcome]]
 check = "end"
 end = "refused"
@@ -87,11 +75,13 @@ code = 2
 [[variant.outcome]]
 check = "last-line"
 pattern = "(?i)smith:.*read.in.payload.*40961.*40960"
+[[variant.event]]
+check = "no-run"
 
 [[variant]]
 name = "bad-setting"
 smith = { output = 0 }
-deciding = ["end", "exit-code", "last-line", "no-request", "tree-ended"]
+deciding = ["end", "exit-code", "last-line", "no-run", "tree-ended"]
 [[variant.outcome]]
 check = "end"
 end = "refused"
@@ -102,4 +92,4 @@ code = 2
 check = "last-line"
 pattern = "(?i)smith:.*output.*(positive|zero|0)"
 [[variant.event]]
-check = "no-request"
+check = "no-run"

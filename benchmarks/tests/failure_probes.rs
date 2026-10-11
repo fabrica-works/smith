@@ -13,10 +13,15 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&root.join("tasks/probes/failures/task.toml"), &root.join("../docs/design"))
         .expect("authored task and unchanged seed");
-    for (name, code) in [("unknown-model", 1), ("derived-limit", 2), ("bad-setting", 2), ("one-turn", 2)] {
-        let variant = task.with_variant(name).expect("authored failure variant");
-        assert!(variant.outcome.contains(&OutcomeCheck::ExitCode { code }));
+    for name in ["unknown-model", "one-turn"] {
+        let variant = task.with_variant(name).expect("interactive failure variant");
+        assert!(!variant.deciding.iter().any(|name| name == "exit-code" || name == "last-line"));
+    }
+    for name in ["derived-limit", "bad-setting"] {
+        let variant = task.with_variant(name).expect("startup failure variant");
+        assert!(variant.outcome.contains(&OutcomeCheck::ExitCode { code: 2 }));
         assert!(variant.deciding.iter().any(|name| name == "last-line"));
+        assert!(variant.event.contains(&EventCheck::NoRun));
     }
     let unknown = task.with_variant("unknown-model").expect("provider failure");
     assert_eq!(unknown.smith["model"].as_str(), Some("smith-bench-nonexistent-model-2026-10-11"));
@@ -26,11 +31,15 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
     assert!(!derived.event.iter().any(|check| matches!(check, EventCheck::RunCompleted { .. })));
     let bad = task.with_variant("bad-setting").expect("invalid native setting");
     assert_eq!(bad.smith["output"].as_integer(), Some(0));
-    assert!(bad.event.contains(&EventCheck::NoRequest));
+    assert!(bad.event.contains(&EventCheck::NoRun));
     let mut empty = Observer::new(&common::events::LIMITS).expect("reader");
     empty.finish().expect("empty native capture framed completely");
     assert!(matches!(empty.check(&EventCheck::NoRequest, "task").passed, Measure::Unavailable { .. }));
+    assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: true });
     assert!(matches!(empty.classify(Exit::Code(2), Forced::No).end, End::HarnessError { .. }));
+    empty.feed(b"{\"v\":1,\"type\":\"future.record\",\"t_ms\":0}\n").expect("unknown native record");
+    empty.finish().expect("complete unknown line");
+    assert_eq!(empty.check(&EventCheck::NoRun, "task").passed, Measure::Observed { value: false });
 }
 
 #[test]
@@ -56,6 +65,14 @@ fn model_failure_requires_the_run_class_and_the_actual_matching_exit() {
     assert_eq!(observer.check(&check, "task").passed, Measure::Observed { value: true });
     assert!(matches!(observer.classify(Exit::Code(1), Forced::No).end, End::Failed { .. }));
     assert!(matches!(observer.classify(Exit::Code(0), Forced::No).end, End::HarnessError { .. }));
+    if let Event::SessionStarted(value) = &mut records[0].event {
+        value.mode = smith_events::Mode::Chat;
+    }
+    if let Event::SessionEnded(value) = &mut records[7].event {
+        value.exit = 0;
+    }
+    assert!(matches!(observe(&records).classify(Exit::Code(0), Forced::No).end, End::Failed { .. }));
+    assert!(matches!(observe(&records).classify(Exit::Code(1), Forced::No).end, End::HarnessError { .. }));
     if let Event::RunCompleted(value) = &mut records[6].event {
         value.failure.as_mut().expect("failure").class = AnswerClass::Policy;
     }

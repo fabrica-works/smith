@@ -233,6 +233,13 @@ fn block_counts(observer: &Observer, oversized: Option<crate::Count>, cut: Optio
 }
 
 pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, currency: Option<u64>) -> CheckVerdict {
+    if *check == EventCheck::NoRun {
+        return CheckVerdict {
+            check: check.name().into(),
+            passed: measured(observer.ended_without_run()),
+            evidence: vec!["Explicit startup-only predicate; no terminal is synthesized".into()],
+        };
+    }
     let passed = if observer.sessions.is_empty()
         || observer.fault.is_some()
         || observer.sessions.iter().any(|session| super::usage::incomplete(session).is_some())
@@ -289,6 +296,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
                 && class.as_ref().is_none_or(|class| value.failure.as_ref().is_some_and(|value| names::answer(&value.class) == class.as_bytes()))))
         }
         EventCheck::NoRequest => measured(!records.iter().any(|record| matches!(record.event, Event::ResponseStarted(_)))),
+        EventCheck::NoRun => measured(false),
         EventCheck::NothingBeforeTask => super::messages::before_task(observer, task),
         EventCheck::HandledOnce => measured(records.iter().any(|record| matches!(record.event, Event::MessageReceived(_)))
             && observer.sessions.iter().all(|session| super::messages::terminals(session, true).is_empty())),

@@ -154,6 +154,14 @@ pub(super) fn classify(observer: &Observer, exit: Exit, forced: Forced) -> Class
     if session.started.mode == Mode::Agent {
         expected = i32::from(!ended.answered);
     }
+    // Interactive chat reports run failures as records; shell.md section4.3
+    // assigns class-specific process codes to the headless Exec face only.
+    if session.started.mode == Mode::Chat {
+        expected = match i32::try_from(ended.exit) {
+            Ok(code) => code,
+            Err(_) => return error("interactive session exit exceeds the process code range"),
+        };
+    }
     if ended.exit != i64::from(expected) || exit != Exit::Code(expected) {
         return error(format!(
             "run.completed expects exit {expected}, session reports {}, tree reports {exit:?}",

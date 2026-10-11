@@ -103,6 +103,8 @@ pub enum EventCheck {
     RunCompleted { status: String, class: Option<String>, reason: Option<String> },
     /// The process refuses before making a provider request.
     NoRequest,
+    /// A configured startup refusal emits no run or provider event stream.
+    NoRun,
 }
 
 impl EventCheck {
@@ -133,6 +135,7 @@ impl EventCheck {
             Self::NoFailure { .. } => "no-failure",
             Self::RunCompleted { .. } => "run-completed",
             Self::NoRequest => "no-request",
+            Self::NoRun => "no-run",
         }
     }
 }

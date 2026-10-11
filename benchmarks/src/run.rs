@@ -25,6 +25,8 @@ mod outcomes;
 
 mod passive;
 
+mod startup;
+
 /// An adapter's prepared pipe invocation and author-supplied harness policies.
 /// Arguments already name the planned scratch paths; the runner owns its cwd.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -574,11 +576,12 @@ fn observe(
             .map_err(|error| error.to_string())?
             .format(&time::format_description::well_known::Rfc3339)
             .map_err(|error| error.to_string())?;
+    startup::finish(process)?;
     let classification = process.observing.as_ref().map_or_else(
         || process.observer.classify(process.exit, process.forced),
         |observing| observing.classify(process.exit, process.forced),
     );
-    result.outcome.end = classification.end;
+    result.outcome.end = startup::classify(process, task).unwrap_or(classification.end);
     result.outcome.warnings = classification.warnings;
     result.outcome.exit = Measure::Observed { value: process.exit };
     result.outcome.forced = process.forced;

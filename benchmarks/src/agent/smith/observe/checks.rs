@@ -149,6 +149,7 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
         EventCheck::RunCompleted { status, class, reason: None } => terminal(records, status, class.as_deref()),
         EventCheck::UsageSums => missing("legacy raw run usage totals do not prove complete per-response sums"),
         EventCheck::NoRequest => missing("legacy CompletionStarted is logical intent, not an actual native HTTP start"),
+        EventCheck::NoRun => missing("legacy trace cannot prove an empty native startup event capture"),
         EventCheck::FirstRequestHoldsTask
         | EventCheck::NothingBeforeTask
         | EventCheck::HandledOnce

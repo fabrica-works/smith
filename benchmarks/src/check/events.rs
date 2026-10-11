@@ -138,7 +138,8 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
             | EventCheck::MainAfterChild
             | EventCheck::FinalTurn
             | EventCheck::BudgetVisible
-            | EventCheck::NoRequest => {}
+            | EventCheck::NoRequest
+            | EventCheck::NoRun => {}
         }
     }
     Ok(())
