@@ -75,6 +75,10 @@ pub struct SinkLimits {
     pub answer_bytes: u32,
     /// One configured or fixed metadata string; provider call id/name use records.string.
     pub metadata_string: u32,
+    /// Entries in authoritative metadata lists, independently of content blocks.
+    pub metadata_items: u32,
+    /// Joint line bound for actual observed content, including its envelope and newline.
+    pub observation_line: u32,
     pub conversations: u32,
 }
 
@@ -83,7 +87,12 @@ impl SinkLimits {
     /// Receivers carry this value alongside the independent semantic record caps.
     #[must_use]
     pub fn line_ceiling(&self, capture: Capture) -> Option<u32> {
-        largest_line(&self.records, capture, self.answer_bytes, self.metadata_string)
+        let metadata = smith_events::Limits { items: self.metadata_items, ..self.records };
+        let scalar = largest_line(&metadata, capture, self.answer_bytes, self.metadata_string)?;
+        match capture {
+            Capture::None => Some(scalar),
+            Capture::Calls | Capture::Everything => Some(scalar.max(self.observation_line)),
+        }
     }
 }
 
@@ -905,14 +914,28 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         .checked_add(u64::from(limits.destinations).checked_mul(writer)?)?
         .checked_add(u64::from(line).checked_mul(2)?)?
         .checked_add(List::<smith_events::Count>::worst_case(u32::try_from(TYPES).ok()?)?)?
-        .checked_add(u64::try_from(TYPES).ok()?.checked_mul(u64::from(limits.records.string))?)?
-        .checked_add(crate::responses::worst_case(limits.conversations, limits.records.string)?)
+        .checked_add(emitted_names_bytes()?)?
+        .checked_add(Map::<Token, Record>::worst_case(limits.conversations)?)?
+        .checked_add(u64::from(limits.conversations).checked_mul(u64::from(limits.metadata_string).checked_mul(3)?)?)?
+        .checked_add(crate::responses::worst_case(limits.conversations, limits.metadata_string)?)
+}
+
+fn emitted_names_bytes() -> Option<u64> {
+    let mut bytes = 0_u64;
+    for index in 0..TYPES {
+        bytes = bytes.checked_add(u64::try_from(names(index).len()).ok()?)?;
+    }
+    Some(bytes)
 }
 
 fn authoritative_credit(limits: &SinkLimits, capture: Capture) -> Option<u32> {
     // These three records never contain a provider call id/name or a prompt.
     // The accepted answer is the only captured payload they can retain.
-    let metadata = smith_events::Limits { string: limits.metadata_string, ..limits.records };
+    let metadata = smith_events::Limits {
+        string: limits.metadata_string,
+        content: limits.answer_bytes,
+        items: limits.metadata_items,
+    };
     largest_line(&metadata, capture, limits.answer_bytes, limits.metadata_string)?.checked_mul(AUTHORITATIVE)
 }
 
@@ -940,6 +963,8 @@ pub(crate) mod tests {
             records,
             answer_bytes: records.content,
             metadata_string: records.string,
+            metadata_items: records.items,
+            observation_line: 0,
             conversations: 1,
         }
     }

@@ -44,16 +44,30 @@ impl EventLimits {
             .max(charter.run_result_label_some)
             .max(option_bytes)
             .max(46);
-        let string = metadata_string.max(limits.llm.adapter.client.strings);
-        let content = u32::try_from(limits.domain.run.outcome_bytes).ok()?;
-        let items = charter.run_result_fields.max(limits.domain.run.host_tools).max(18);
+        let client = limits.llm.adapter.client;
+        let string = metadata_string.max(client.strings).max(limits.channel.bodies.message_label);
+        let answer_bytes = u32::try_from(limits.domain.run.outcome_bytes).ok()?;
+        let metadata_items = charter.run_result_fields.max(limits.domain.run.host_tools).max(18);
+        let content = answer_bytes.max(client.answer).max(limits.channel.bodies.message_text).max(client.detail_bytes);
+        let items = metadata_items.max(client.output_items);
         let records = smith_events::Limits { string, content, items };
+        let metadata = smith_events::Limits { string, content: answer_bytes, items: metadata_items };
+        let scalar = crate::sinks::largest_line(&metadata, Capture::None, answer_bytes, metadata_string)?;
+        // One completion's blocks share the Client's answer bytes. A message
+        // receipt owns only that channel message's exact label and text.
+        let observed = client
+            .answer
+            .checked_mul(6)?
+            .checked_add(client.output_items.checked_mul(128)?)?
+            .max(limits.channel.bodies.message_text.checked_mul(6)?);
         let mut sinks = SinkLimits {
             destinations,
             output: 0,
             records,
-            answer_bytes: content,
+            answer_bytes,
             metadata_string,
+            metadata_items,
+            observation_line: scalar.checked_add(observed)?,
             conversations: limits.domain.run.conversations,
         };
         sinks.output = crate::sinks::output_bound(&sinks, capture)?;
@@ -474,19 +488,30 @@ fn message_refusal(reason: run::MessageRefusal) -> smith_events::MessageRefusal 
 
 pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
     let events = limits.events?;
+    // The component moves each observed completion into the response join.
+    // It stays there until the corresponding accounting/terminal fact, and
+    // moves into the terminal record without a second payload copy.
+    let completions = match events.capture {
+        Capture::None | Capture::Calls => 0,
+        Capture::Everything => u64::from(events.sinks.conversations).checked_mul(
+            List::<smith_events::Block>::worst_case(limits.llm.adapter.client.output_items)?
+                .checked_add(u64::from(limits.llm.adapter.client.answer))?,
+        )?,
+    };
     crate::sinks::sinks_worst_case(&events.sinks, events.capture)?
+        .checked_add(completions)?
         .checked_add(crate::messages::worst_case(limits, events.capture)?)?
         .checked_add(crate::calls::worst_case(&limits.domain.session, events.sinks.records.string)?)?
         .checked_add(crate::inputs::worst_case(&limits.domain.session, events.capture)?)?
         .checked_add(channel::Endpoints::worst_case(limits.channel.endpoints, limits.channel.charter.llm_endpoint)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.channel.endpoints)?)?
-        .checked_add(u64::from(limits.channel.endpoints).checked_mul(u64::from(events.sinks.records.string))?)?
+        .checked_add(u64::from(limits.channel.endpoints).checked_mul(u64::from(events.sinks.metadata_string))?)?
         .checked_add(List::<smith_events::Family>::worst_case(4)?)?
         .checked_add(List::<Box<[u8]>>::worst_case(limits.domain.run.host_tools)?)?
         .checked_add(List::<smith_events::Form>::worst_case(4)?)?
         .checked_add(
             u64::from(limits.domain.run.host_tools.checked_add(1)?)
-                .checked_mul(u64::from(events.sinks.records.string))?,
+                .checked_mul(u64::from(events.sinks.metadata_string))?,
         )
 }
 

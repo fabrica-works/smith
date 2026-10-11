@@ -36,11 +36,12 @@ struct Bounds {
 impl Bounds {
     fn derive(limits: &session::Limits) -> Option<Bounds> {
         // The source session run slab holds two batches per session;
-        // identities share the completion's aggregate ownership, not one
-        // maximum provider string for every possible call.
+        // Provider identities are unchanged by application decoding and share
+        // the raw answer's aggregate bytes. Decoded calls and replay envelopes
+        // are never retained in this book.
         Some(Bounds {
             slots: limits.sessions.checked_mul(limits.parallel_tools)?.checked_mul(2)?,
-            bytes: u64::from(limits.sessions).checked_mul(2)?.checked_mul(limits.completion_bytes)?,
+            bytes: u64::from(limits.sessions).checked_mul(2)?.checked_mul(limits.answer_bytes)?,
         })
     }
 }

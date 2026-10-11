@@ -29,6 +29,8 @@ mod tests {
             records: smith_events::Limits { string: 65536, content: 16384, items: 32 },
             answer_bytes: 16384,
             metadata_string: 64,
+            metadata_items: 32,
+            observation_line: 0,
             conversations: 6,
         };
         let record = Record {
