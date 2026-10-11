@@ -747,6 +747,7 @@ dependencies = [
  "smith-channel",
  "smith-charter",
  "smith-domain",
+ "smith-events",
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",

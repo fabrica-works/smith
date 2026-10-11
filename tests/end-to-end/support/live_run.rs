@@ -70,26 +70,19 @@ impl Referee<Process> for Judge {
         if self.reviewed || !procs.iter().all(Host::is_empty) {
             return;
         }
-        let trace = std::fs::read(self.directory.join("agent-trace.jsonl")).expect("live agent trace");
-        assert!(trace.starts_with(&self.trace_prefix), "durable trace prefix stays unchanged");
-        let records: Vec<serde_json::Value> =
-            std::str::from_utf8(trace.get(self.trace_prefix.len()..).expect("trace prefix preserved"))
-                .expect("trace UTF-8")
-                .lines()
-                .map(|line| serde_json::from_str(line).expect("trace JSONL"))
-                .collect();
+        let records = super::read_trace(&self.directory, &self.trace_prefix);
         assert!(
-            records.iter().any(|record| record["type"] == "call" && record["name"] == "66696e697368"),
+            records.iter().any(|record| matches!(&record.event,
+                smith_events::Event::ToolStarted(started) if started.tool.as_ref() == b"finish")),
             "the shipped live agent actually called finish"
         );
         assert!(
-            records.iter().any(|record| record["type"] == "fact"
-                && record["fact"].as_str().is_some_and(|fact| fact.starts_with("Run { fact: Returned {")
-                    && fact.contains(if self.expectation.before.is_some() {
-                        "result: Delivered"
-                    } else {
-                        "result: Accepted"
-                    }))),
+            records.iter().any(|record| matches!(&record.event,
+                smith_events::Event::ToolCompleted(completed)
+                if completed.tool.as_ref() == b"finish"
+                    && completed.verdict == smith_events::Verdict::Result
+                    && (self.expectation.before.is_none()
+                        || completed.delivery == Some(smith_events::Delivered::Delivered)))),
             "the live agent received its accepted or delivered finish terminal"
         );
         if let Some(before) = &self.expectation.before {

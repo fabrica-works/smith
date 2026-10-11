@@ -167,8 +167,8 @@ fn check_child_returns(world: &World) {
     let mut returns = 0_u32;
     for fact in world.facts_seen() {
         let FactKind::Returned { call, result, .. } = fact.kind else { continue };
-        let (smith_domain_run::facts::Return::Answered { used } | smith_domain_run::facts::Return::Unanswered { used }) =
-            result
+        let (smith_domain_run::facts::Return::Answered { used, .. }
+        | smith_domain_run::facts::Return::Unanswered { used }) = result
         else {
             continue;
         };

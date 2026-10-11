@@ -49,6 +49,30 @@ pub const fn reported_usage(usage: smith_domain::llm::Usage) -> smith_events::Us
     }
 }
 
+/// Checked sums of supplied counters; an absent report does not erase earlier observations.
+pub(crate) fn add_reported(
+    previous: smith_domain::llm::Usage,
+    received: smith_domain::llm::Usage,
+) -> Option<smith_domain::llm::Usage> {
+    Some(smith_domain::llm::Usage {
+        input_tokens: add_count(previous.input_tokens, received.input_tokens).ok()?,
+        output_tokens: add_count(previous.output_tokens, received.output_tokens).ok()?,
+        cache_read_tokens: add_count(previous.cache_read_tokens, received.cache_read_tokens).ok()?,
+        cache_write_tokens: add_count(previous.cache_write_tokens, received.cache_write_tokens).ok()?,
+        reasoning_tokens: add_count(previous.reasoning_tokens, received.reasoning_tokens).ok()?,
+    })
+}
+
+fn add_count(previous: Option<u64>, received: Option<u64>) -> Result<Option<u64>, ()> {
+    match previous {
+        Some(previous) => match received {
+            Some(received) => Ok(Some(previous.checked_add(received).ok_or(())?)),
+            None => Ok(Some(previous)),
+        },
+        None => Ok(received),
+    }
+}
+
 /// Tool selection of the actual surviving request handed to the LLM component.
 /// Logical completion-intent facts do not establish a provider request start.
 #[must_use]

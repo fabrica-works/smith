@@ -190,7 +190,11 @@ pub enum Return {
     /// No capacity is currently available; a later call may fit.
     Busy,
     /// The sub-agent answered or the run supplied its terminal, as classified by the enclosing fact.
-    Answered { used: Used },
+    Answered {
+        used: Used,
+        /// Bytes the child's own answer cap omitted before its tool result was rendered.
+        cut: u64,
+    },
     /// The sub-agent ended without an accepted answer.
     Unanswered { used: Used },
     /// The entrance or operation was refused with the enclosing typed reason.
@@ -307,7 +311,7 @@ pub(crate) fn tell(
 /// The two child answers include their settled usage; other returns are told from requests.
 pub(crate) fn child_returned(facts: &mut Facts, run: Token, call: Token, result: &Returned, used: Used) {
     let result = match result {
-        Returned::Answered { .. } => Return::Answered { used },
+        Returned::Answered { cut, .. } => Return::Answered { used, cut: *cut },
         Returned::Unanswered { .. } => Return::Unanswered { used },
         Returned::Waited { .. }
         | Returned::Withheld
@@ -365,5 +369,46 @@ fn answered(answer: &Answer) -> Answered {
         Answer::Refused(refusal) => Answered::Refused(*refusal),
         Answer::Accepted { .. } => Answered::Accepted,
         Answer::Failed { failure, .. } => Answered::Failed(*failure),
+    }
+}
+
+#[cfg(test)]
+mod carrier_tests {
+    #![allow(
+        clippy::disallowed_macros,
+        clippy::disallowed_methods,
+        clippy::disallowed_types,
+        reason = "programming-model.md section10.2: deterministic source-carrier test uses ordinary Rust"
+    )]
+
+    use super::*;
+    use crate::boundary::Stop;
+    use crate::budget::Budget;
+
+    #[test]
+    fn a_child_answer_fact_preserves_the_actual_tool_cap_omission() {
+        let used = Used { turns: 2, time: Duration::from_millis(19), spend: 7 };
+        let actual = Returned::Answered {
+            text: b"kept".as_slice().into(),
+            cut: 17,
+            stop: Stop::EndTurn,
+            used,
+            left: Budget { turns: 3, spend: 11, time: Duration::from_secs(1) },
+        };
+        let mut facts = Facts::with_capacity(1);
+        facts.begin(Time::from_nanos(23_000_000));
+        child_returned(&mut facts, Token::new(31), Token::new(43), &actual, used);
+        let fact = facts.pop().expect("one actual child terminal");
+        assert_eq!(fact.at, Time::from_nanos(23_000_000));
+        let FactKind::Returned { run, call, result: Return::Answered { used: observed, .. } } = fact.kind else {
+            panic!("one child answer")
+        };
+        assert_eq!((run, call, observed), (Token::new(31), Token::new(43), used));
+        // This assertion compiles unchanged on the current parent, where the
+        // scalar is lost: its runtime failure is the carrier's parent proof.
+        assert!(format!("{:?}", fact.kind).contains("cut: 17"), "actual cut was lost: {:?}", fact.kind);
+        assert_eq!(facts.pop(), None);
+        let Returned::Answered { text, .. } = actual else { panic!("source answer") };
+        assert_eq!(text.as_ref(), b"kept", "the scalar fact leaves source content unchanged");
     }
 }

@@ -189,6 +189,7 @@ smith-agent-shell.workspace = true
 smith-local-shell.workspace = true
 
 [dev-dependencies]
+smith-events.workspace = true
 smith-bench = { path = "benchmarks" }
 smith-agent-shell.workspace = true
 skein-world.workspace = true

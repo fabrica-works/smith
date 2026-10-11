@@ -90,7 +90,7 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
         let answer = world.answer().expect("one answer crossed the host channel");
         let ended = &terminal(&world).status;
         match case {
-            TraceCase::Accepted => {
+            TraceCase::Accepted | TraceCase::ChildAnswered => {
                 assert!(
                     matches!(answer.result(), RunResult::Accepted(_)),
                     "answer={:?}; records={:?}",
@@ -122,4 +122,60 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
         }
         world.assert_agent_clean();
     }
+}
+
+#[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the test selects three typed records from a checked complete stream"
+)]
+fn a_real_child_joins_its_actual_opening_response_usage_and_enclosing_tool_terminal() {
+    let mut world = World::new(19, &charter());
+    world.observe_facts(TraceCase::ChildAnswered, 4);
+    world.check_memory();
+    assert!(world.settle());
+    assert!(matches!(world.answer().expect("actual host answer").result(), RunResult::Accepted(_)));
+    world.assert_event_conformance();
+    let children: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::ConversationOpened(opened) if opened.kind == smith_events::ConversationKind::Child => Some(opened),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(children.len(), 1, "one actual delegated opening");
+    let child = children[0];
+    assert_eq!(child.parent, Some(0));
+    assert!(child.call.is_some());
+    assert_eq!(child.requested.as_ref().expect("actual child ask").turns, Some(2));
+    assert_eq!(child.requested.as_ref().expect("actual child ask").seconds, Some(30));
+    let completions: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::ToolCompleted(completed) if completed.child.is_some() => Some(completed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completions.len(), 1);
+    let completed = completions[0];
+    assert_eq!(Some(&completed.call), child.call.as_ref());
+    let actual = completed.child.as_ref().expect("actual child terminal");
+    assert_eq!(actual.conversation, child.conversation);
+    assert_eq!(actual.stop, smith_events::ChildStop::End);
+    assert_eq!(actual.turns, 1);
+    let responses: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::ResponseCompleted(response) if response.conversation == child.conversation => Some(response),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(actual.usage, responses[0].usage);
+    assert_eq!(actual.spent, responses[0].spent);
+    assert_eq!(completed.omitted_bytes, 0, "short actual answer fits its tool cap");
+    world.assert_agent_clean();
 }

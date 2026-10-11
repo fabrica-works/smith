@@ -595,6 +595,8 @@ pub enum TraceCase {
     Parked,
     /// The parent signals after observing admission.
     Cancelled,
+    /// A real delegated child answers before main's accepted finish.
+    ChildAnswered,
 }
 
 impl TraceCase {
@@ -605,11 +607,15 @@ impl TraceCase {
             Self::Refused => 2,
             Self::Parked => 3,
             Self::Cancelled => 4,
+            Self::ChildAnswered => 5,
         }
     }
 
     fn peer(self) -> skein_fake_peers::llm::Peer {
         use skein_fake_llm_domain::api;
+        if self == Self::ChildAnswered {
+            return child_peer();
+        }
         let turns = match self {
             Self::Accepted => vec![api::Turn {
                 lines: Box::new([api::Line::Call {
@@ -635,6 +641,7 @@ impl TraceCase {
                 },
             ],
             Self::Failed | Self::Refused | Self::Cancelled => return fake::peer(),
+            Self::ChildAnswered => unreachable!("selected actual child scripts above"),
         };
         fake::configured(
             Box::new([api::Script { cue: Box::new([]), turns: turns.into() }]),
@@ -642,6 +649,73 @@ impl TraceCase {
             Duration::ZERO,
         )
     }
+}
+
+fn child_peer() -> skein_fake_peers::llm::Peer {
+    use skein_fake_llm_domain::api;
+    fake::configured(
+        Box::new([
+            api::Script {
+                cue: b"@event-child".as_slice().into(),
+                turns: Box::new([api::Turn {
+                    lines: Box::new([api::Line::Text { text: b"actual child answer".as_slice().into() }]),
+                    finish: api::Finish::Stop,
+                    tokens: 1,
+                }]),
+            },
+            api::Script {
+                cue: b"@event-main".as_slice().into(),
+                turns: Box::new([
+                    api::Turn {
+                        lines: Box::new([
+                            api::Line::Call {
+                                name: b"sub_agent".as_slice().into(),
+                                arguments: br#"{"brief":"@event-child","tools":[],"max_turns":2,"max_seconds":30}"#
+                                    .as_slice()
+                                    .into(),
+                            },
+                        ]),
+                        finish: api::Finish::ToolCalls,
+                        tokens: 1,
+                    },
+                    api::Turn {
+                        lines: Box::new([api::Line::Call {
+                            name: b"finish".as_slice().into(),
+                            arguments: br#"{"form":"report","text":"done","fields":{}}"#.as_slice().into(),
+                        }]),
+                        finish: api::Finish::ToolCalls,
+                        tokens: 1,
+                    },
+                ]),
+            },
+        ]),
+        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        Duration::ZERO,
+    )
+}
+
+fn child_charter(bytes: &[u8]) -> Box<[u8]> {
+    let mut parts = smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(bytes))
+        .expect("source charter")
+        .into_parts();
+    parts.instructions = b"@event-main".as_slice().into();
+    let mut budget = parts.budget.into_parts();
+    budget.turns = 8;
+    budget.spend = 100;
+    parts.budget = smith_charter::Budget::new(&smith_charter::CEILINGS, budget).expect("child budget");
+    let mut models = skein_lib::List::with_capacity(1);
+    models.push(parts.main.clone()).expect("one permitted child model");
+    parts.models = models;
+    let mut tools = parts.tools.into_parts();
+    let mut families = tools.families.into_parts();
+    families.skein_bools[0] = true;
+    families.skein_bools[3] = true;
+    tools.families = smith_charter::Families::new(&smith_charter::CEILINGS, families).expect("child authority");
+    parts.tools = smith_charter::Tools::new(&smith_charter::CEILINGS, tools).expect("tools");
+    let charter = smith_charter::Charter::new(&smith_charter::CEILINGS, parts).expect("child charter");
+    let mut writer = skein_lib::Writer::new(usize::try_from(charter.measure()).expect("wire size"));
+    charter.encode(&mut writer).expect("wire");
+    writer.finish()
 }
 
 fn environment_peer() -> skein_fake_peers::llm::Peer {
@@ -752,6 +826,9 @@ impl World {
     pub fn observe_facts(&mut self, case: TraceCase, frames: u32) {
         self.tracing = Some((case, frames));
         self.cancel = case == TraceCase::Cancelled;
+        if case == TraceCase::ChildAnswered {
+            self.charter = child_charter(&self.charter);
+        }
         if case == TraceCase::Parked || case == TraceCase::Refused {
             let mut parts =
                 smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(&self.charter))
@@ -845,7 +922,13 @@ impl World {
             answer_facts: 0,
             full_completion: self.full_completion,
             tracing: self.tracing,
-            maximum_queries: if self.environment || self.tracing.is_some() { 2 } else { 1 },
+            maximum_queries: if matches!(self.tracing, Some((TraceCase::ChildAnswered, _))) {
+                3
+            } else if self.environment || self.tracing.is_some() {
+                2
+            } else {
+                1
+            },
             expected: skein_world::Expectations::new(self.seed, vec![Terminal { hang_up: self.hang_up }]),
         };
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory).with_machine(Machine {

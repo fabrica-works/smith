@@ -4,11 +4,12 @@
 
 use smith_events::{Event, Record};
 
+/// Check Smith's independently decoded process stream identities, cardinalities and response sums.
 #[expect(
     clippy::too_many_lines,
     reason = "one exhaustive Smith record referee keeps all18 pairings and actual count/charge checks together"
 )]
-pub(super) fn check(records: &[Record]) {
+pub fn check(records: &[Record]) {
     assert!(matches!(records.first().expect("stream header").event, Event::SessionStarted(_)));
     let Event::SessionEnded(end) = &records.last().expect("stream end").event else { panic!("session.ended is last") };
     assert_eq!(end.loss.events, 0, "complete destination loses no record");
@@ -85,7 +86,8 @@ pub(super) fn check(records: &[Record]) {
                     for (sum, value) in usage.iter_mut().zip(actual) {
                         *sum = match (*sum, value) {
                             (Some(sum), Some(value)) => Some(sum.checked_add(value).expect("bounded usage")),
-                            (None, _) | (_, None) => None,
+                            (None, Some(value)) => Some(value),
+                            (sum, None) => sum,
                         };
                     }
                 } else {

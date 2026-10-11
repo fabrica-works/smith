@@ -381,6 +381,8 @@ pub fn charter() -> Box<[u8]> {
 
 pub use world::{TraceCase, World};
 
+pub use events::check as assert_event_conformance;
+
 mod world;
 
 #[cfg(test)]

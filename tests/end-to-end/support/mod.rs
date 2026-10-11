@@ -334,17 +334,56 @@ pub fn run_with_provider(
     assert!(outcome.procs.iter().all(Host::is_empty), "binary and scripted processes drained");
     let seen = observations(&outcome.procs, scenario.launch.authenticated);
     before.assert_binary_expected(&scenario, &seen);
-    let trace = std::fs::read_to_string(scratch.path().join("agent-trace.jsonl")).expect("agent's trace");
-    assert!(trace.as_bytes().starts_with(&old_trace), "the existing trace remains an unchanged prefix");
-    let lines: Vec<serde_json::Value> =
-        trace[old_trace.len()..].lines().map(|line| serde_json::from_str(line).expect("trace JSONL")).collect();
+    let records = read_trace(scratch.path(), &old_trace);
     assert!(
-        lines.iter().any(|record| record["type"] == "call" && record["name"] == "66696e697368"),
+        records.iter().any(|record| matches!(&record.event,
+            smith_events::Event::ToolStarted(started) if started.tool.as_ref() == b"finish")),
         "agent actually called finish"
     );
-    assert!(!trace.contains("access-new") && !trace.contains("refresh-new"), "trace excludes credentials");
+    let trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).expect("agent trace");
+    for credential in [b"access-new".as_slice(), b"refresh-new".as_slice()] {
+        assert!(!trace.windows(credential.len()).any(|bytes| bytes == credential), "trace excludes credentials");
+    }
     assert_no_children();
     seen
+}
+
+/// Decode actual append bytes within the producer's configured receiving bounds.
+/// Each appended invocation is checked independently; a prior prefix stays untouched.
+#[must_use]
+pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> {
+    let document = std::fs::read(directory.join("agent.json")).expect("actual agent configuration");
+    let configuration = smith_agent_shell::config::parse(&document).expect("actual producer configuration");
+    let limits = configuration.service.limits.events.expect("configured event producer").sinks.records;
+    let bytes = std::fs::read(directory.join("agent-trace.jsonl")).expect("actual append trace");
+    assert!(bytes.starts_with(prefix), "durable trace prefix stays unchanged");
+    let mut reader = smith_events::Reader::new(&limits)
+        .unwrap_or_else(|why| panic!("configured receiving bounds {limits:?}: {why:?}"));
+    let mut records = Vec::new();
+    for chunk in bytes.get(prefix.len()..).expect("prefix retained").chunks(7) {
+        let mut remaining = chunk;
+        while !remaining.is_empty() {
+            let line = reader.feed(remaining).expect("typed producer line");
+            assert!(line.consumed > 0, "bounded reader makes progress");
+            remaining = remaining.get(line.consumed..).expect("consumed input");
+            if line.complete {
+                records.push(line.record.expect("the writing version names a known record"));
+            }
+        }
+    }
+    reader.finish().expect("the append file ends between complete records");
+    let mut beginning = 0_usize;
+    for (index, record) in records.iter().enumerate() {
+        if matches!(&record.event, smith_events::Event::SessionEnded(_)) {
+            smith_agent_process_world::assert_event_conformance(
+                records.get(beginning..=index).expect("one actual process stream"),
+            );
+            beginning = index.checked_add(1).expect("bounded trace inventory");
+        }
+    }
+    assert_eq!(beginning, records.len(), "each native invocation has its authoritative end");
+    assert!(!records.is_empty(), "the shipped process wrote its configured trace");
+    records
 }
 
 struct Refusal {

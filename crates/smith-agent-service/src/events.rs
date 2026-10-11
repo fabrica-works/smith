@@ -237,10 +237,29 @@ impl Producer {
             run::facts::FactKind::Opened { run: _, conversation, kind } => {
                 let opening = opening.as_ref().expect("actual Run::Open metadata accompanied the fact");
                 assert_eq!(opening.activation, self.activation(), "opening carries this actual Start activation");
-                let (kind, parent, call) = match kind {
-                    run::facts::Kind::Main => (smith_events::ConversationKind::Main, None, None),
-                    run::facts::Kind::Child { .. } => {
-                        unreachable!("child call identity wiring follows this checkpoint")
+                let (kind, parent, call, requested, share, clamped) = match kind {
+                    run::facts::Kind::Main => {
+                        (smith_events::ConversationKind::Main, None, None, None, None, List::with_capacity(0))
+                    }
+                    run::facts::Kind::Child { parent, call, granted, .. } => {
+                        let parent = self.sinks.scope(parent).expect("actual parent conversation precedes child");
+                        let id = self.calls.child_opened(
+                            conversation,
+                            u64::from(opening.ordinal),
+                            call,
+                            parent,
+                            granted,
+                            fact.at,
+                        );
+                        let share = crate::child_share(kind).expect("actual child share");
+                        (
+                            smith_events::ConversationKind::Child,
+                            Some(parent.conversation),
+                            Some(id),
+                            Some(share.requested),
+                            Some(share.share),
+                            share.clamped,
+                        )
                     }
                 };
                 self.sinks.conversation(
@@ -255,15 +274,29 @@ impl Producer {
                         call,
                         thread: u64::from(opening.ordinal),
                         model: self.model(&opening.llm),
-                        requested: None,
-                        share: None,
-                        clamped: List::with_capacity(0),
+                        requested,
+                        share,
+                        clamped,
                     },
                 );
                 return;
             }
             run::facts::FactKind::Ended { conversation, end, .. } => {
+                self.calls.child_ended(conversation, end, fact.at);
                 self.sinks.conversation_ended(fact.at, conversation, end);
+                return;
+            }
+            run::facts::FactKind::Called { conversation, call, ask, .. } => {
+                let scope = self.sinks.scope(conversation).expect("actual asker conversation remains alive");
+                self.calls.called(call, scope, ask);
+                return;
+            }
+            run::facts::FactKind::Returned { call, result, .. } => {
+                self.calls.returned(call, result);
+                return;
+            }
+            run::facts::FactKind::Delivered { status, .. } => {
+                self.calls.delivered(status);
                 return;
             }
             run::facts::FactKind::Budget { standing, .. } => {
@@ -322,9 +355,6 @@ impl Producer {
             }
             run::facts::FactKind::MessageFence { .. }
             | run::facts::FactKind::Prepared { .. }
-            | run::facts::FactKind::Called { .. }
-            | run::facts::FactKind::Returned { .. }
-            | run::facts::FactKind::Delivered { .. }
             | run::facts::FactKind::Answered { .. } => return,
         };
         self.sinks.record(&Record { t_ms: fact.at.saturating_since(origin).as_nanos() / 1_000_000, event });

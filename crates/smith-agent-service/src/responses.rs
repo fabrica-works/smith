@@ -41,6 +41,7 @@ struct Conversation {
     intent: Option<Intent>,
     attempt: Attempt,
     spent: u64,
+    reported: llm::Usage,
     admitted: bool,
     root_end: Option<(Time, run::End)>,
 }
@@ -98,6 +99,7 @@ impl Book {
                     intent: None,
                     attempt: Attempt::Idle,
                     spent: 0,
+                    reported: llm::Usage::NONE,
                     admitted: false,
                     root_end: None,
                 },
@@ -223,7 +225,7 @@ impl Book {
                 which: None,
                 failure: None,
                 turns: 0,
-                usage: crate::reported_usage(llm::Usage::ZERO),
+                usage: crate::reported_usage(conversation.reported),
                 spent: 0,
                 duration_ms: millis(at, conversation.opened),
             }),
@@ -265,6 +267,8 @@ impl Book {
             }
             session::FactKind::Used { opener, usage } => {
                 let conversation = self.conversations.get_mut(&opener).expect("charge follows opening");
+                conversation.reported = crate::observations::add_reported(conversation.reported, usage)
+                    .expect("accepted source reported totals fit");
                 let spent =
                     fact.response.expect("charge has response identity").spent.expect("Used has the accepted charge");
                 conversation.spent = conversation
@@ -300,7 +304,7 @@ impl Book {
                     records.push(cancelled(conversation, origin, started, fact.at)).expect("one cancellation");
                 }
             }
-            session::FactKind::Ended { opener, end, turns, usage } => {
+            session::FactKind::Ended { opener, end, turns, usage: _ } => {
                 let mut conversation = match self.conversations.remove(&opener) {
                     Some(conversation) => conversation,
                     None => return records,
@@ -322,7 +326,7 @@ impl Book {
                             },
                             failure,
                             turns: u64::from(turns),
-                            usage: crate::reported_usage(usage),
+                            usage: crate::reported_usage(conversation.reported),
                             spent: conversation.spent,
                             duration_ms: millis(fact.at, conversation.opened),
                         }),
@@ -867,5 +871,96 @@ mod tests {
         book.opened(at(6), Token::new(12), &opened(12, 1));
         book.root_ended(at(7), Token::new(12), run::End::Busy);
         assert!(book.facts_drained(Time::ZERO).is_some());
+    }
+    #[test]
+    fn conversation_totals_keep_each_reported_counter_and_no_report_remains_unknown() {
+        for reported in [false, true] {
+            let mut book = Book::new(1);
+            let owner = Token::new(11);
+            book.opened(at(1), owner, &opened(11, 0));
+            let sources = [
+                llm::Usage {
+                    input_tokens: Some(3),
+                    output_tokens: None,
+                    cache_read_tokens: Some(0),
+                    cache_write_tokens: None,
+                    reasoning_tokens: None,
+                },
+                llm::Usage {
+                    input_tokens: None,
+                    output_tokens: Some(5),
+                    cache_read_tokens: None,
+                    cache_write_tokens: Some(2),
+                    reasoning_tokens: Some(1),
+                },
+            ];
+            if reported {
+                for (index, usage) in sources.into_iter().enumerate() {
+                    let request = Token::new(u64::try_from(index).unwrap() + 99);
+                    intent(&mut book, owner, session::Choice::Auto, 0);
+                    book.request(at(3), Time::ZERO, request, &prompt(0));
+                    let completion = llm::Completion {
+                        content: Box::new([]),
+                        stop: llm::Stop::EndTurn,
+                        usage,
+                        reasoning_dropped: Box::new([]),
+                    };
+                    book.received(request, &completion);
+                    book.fact(
+                        Time::ZERO,
+                        &fact(
+                            4,
+                            session::FactKind::CompletionAnswered {
+                                opener: owner,
+                                stop: completion.stop,
+                                blocks: 0,
+                                calls: 0,
+                                invalid: 0,
+                            },
+                            1,
+                            None,
+                        ),
+                    );
+                    let terminal =
+                        book.fact(Time::ZERO, &fact(5, session::FactKind::Used { opener: owner, usage }, 1, Some(7)));
+                    let Event::ResponseCompleted(actual) = &terminal.get(0).unwrap().event else {
+                        panic!("actual provider report")
+                    };
+                    assert_eq!(actual.usage, crate::reported_usage(usage));
+                }
+            }
+            let records = book.fact(
+                Time::ZERO,
+                &fact(
+                    9,
+                    session::FactKind::Ended {
+                        opener: owner,
+                        end: session::End::Closed,
+                        turns: if reported { 2 } else { 0 },
+                        usage: llm::Usage::NONE,
+                    },
+                    1,
+                    None,
+                ),
+            );
+            let Event::ConversationClosed(ended) = &records.get(0).unwrap().event else {
+                panic!("one actual conversation end")
+            };
+            assert_eq!(ended.spent, if reported { 14 } else { 0 });
+            assert_eq!(
+                ended.usage,
+                if reported {
+                    Usage {
+                        input_tokens: Some(3),
+                        output_tokens: Some(5),
+                        cache_read_tokens: Some(0),
+                        cache_write_tokens: Some(2),
+                        reasoning_tokens: Some(1),
+                    }
+                } else {
+                    unknown_usage()
+                }
+            );
+        }
     }
 }

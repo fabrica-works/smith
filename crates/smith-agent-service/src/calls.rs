@@ -7,6 +7,7 @@
 
 #![expect(clippy::manual_let_else, reason = "bounded production entries keep explicit Option terminals")]
 
+use alloc::boxed::Box;
 use skein_lib::{List, Map, Time, Token};
 use smith_domain::{session, tools};
 use smith_events::{Event, Record, ToolCompleted, ToolStarted};
@@ -19,6 +20,9 @@ struct Call {
     metadata: session::ToolCall,
     scope: Scope,
     at: Time,
+    delivery: Option<smith_events::Delivered>,
+    clamped: bool,
+    omitted_bytes: u64,
 }
 
 /// Actual session batch capacities and aggregate provider metadata ownership.
@@ -46,16 +50,113 @@ pub(crate) struct Book {
     calls: Map<Token, Call>,
     bytes: u64,
     bound: u64,
+    children: crate::children::Book,
+    landing: Option<Token>,
 }
 
 impl Book {
     pub(crate) fn new(limits: &session::Limits) -> Book {
         let bounds = Bounds::derive(limits).expect("admitted session batch bounds fit");
-        Book { calls: Map::with_capacity(bounds.slots), bytes: 0, bound: bounds.bytes }
+        Book {
+            calls: Map::with_capacity(bounds.slots),
+            bytes: 0,
+            bound: bounds.bytes,
+            children: crate::children::Book::new(bounds.slots),
+            landing: None,
+        }
+    }
+
+    /// Join a validated root ask to its already observed actual provider call.
+    pub(crate) fn called(&mut self, owner: Token, scope: Scope, ask: smith_domain::run::facts::Asked) {
+        let call = self.calls.get(&owner).expect("session delegation precedes the causal root ask");
+        assert_eq!(call.scope.run, scope.run, "the root call belongs to its provider activation");
+        assert_eq!(call.scope.conversation, scope.conversation, "the root call belongs to its provider asker");
+        match ask {
+            smith_domain::run::facts::Asked::Deliver | smith_domain::run::facts::Asked::Finish => {
+                assert!(self.landing.is_none(), "main's landing is an exclusive writer");
+                self.landing = Some(owner);
+            }
+            smith_domain::run::facts::Asked::Wait
+            | smith_domain::run::facts::Asked::Host
+            | smith_domain::run::facts::Asked::SubAgent => {}
+        }
+    }
+
+    /// Actual provider identity of the call which opened this child.
+    pub(crate) fn child_opened(
+        &mut self,
+        owner: Token,
+        number: u64,
+        call_owner: Token,
+        parent: Scope,
+        granted: smith_domain::run::Granted,
+        at: Time,
+    ) -> Box<[u8]> {
+        let call = self.calls.get_mut(&call_owner).expect("actual delegated sub-agent call precedes opening");
+        assert_eq!(call.scope.run, parent.run, "the child and its call belong to the same activation");
+        assert_eq!(call.scope.conversation, parent.conversation, "the child keeps its actual provider asker");
+        call.clamped = lowered(granted.turns_set) || lowered(granted.time_set);
+        self.children.opened(owner, number, call_owner, at);
+        call.metadata.id.clone()
+    }
+
+    pub(crate) fn child_ended(&mut self, owner: Token, end: smith_domain::run::End, at: Time) {
+        self.children.ended(owner, end, at);
+    }
+
+    pub(crate) fn returned(&mut self, owner: Token, result: smith_domain::run::facts::Return) {
+        self.children.returned(owner, result);
+        match result {
+            smith_domain::run::facts::Return::Answered { cut, .. } => {
+                self.calls.get_mut(&owner).expect("actual child retains its enclosing provider call").omitted_bytes =
+                    cut;
+            }
+            smith_domain::run::facts::Return::Crossed
+            | smith_domain::run::facts::Return::Waited
+            | smith_domain::run::facts::Return::Withheld
+            | smith_domain::run::facts::Return::HostAnswered
+            | smith_domain::run::facts::Return::HostTooLarge
+            | smith_domain::run::facts::Return::HostUnknown
+            | smith_domain::run::facts::Return::HostRejected
+            | smith_domain::run::facts::Return::Delivered
+            | smith_domain::run::facts::Return::Nothing
+            | smith_domain::run::facts::Return::DeliveryRefused
+            | smith_domain::run::facts::Return::Accepted
+            | smith_domain::run::facts::Return::Rejected
+            | smith_domain::run::facts::Return::ChecksFailed
+            | smith_domain::run::facts::Return::Stale
+            | smith_domain::run::facts::Return::DeliveryFailed
+            | smith_domain::run::facts::Return::Cancelled
+            | smith_domain::run::facts::Return::TimedOut
+            | smith_domain::run::facts::Return::Busy
+            | smith_domain::run::facts::Return::Unanswered { .. }
+            | smith_domain::run::facts::Return::Refused => {}
+        }
+        if self.landing == Some(owner) {
+            self.landing = None;
+        }
+        if let Some(delivery) = returned_delivery(result) {
+            let call = self.calls.get_mut(&owner).expect("root terminal keeps its actual provider call");
+            call.delivery = Some(delivery);
+        }
+    }
+
+    /// Root deliveries are serialized main writes; no name or text parser joins them.
+    pub(crate) fn delivered(&mut self, status: smith_domain::run::DeliveryStatus) {
+        let owner = self.landing.expect("actual delivery belongs to the exclusive main landing");
+        let call = self.calls.get_mut(&owner).expect("landing retains its provider call");
+        call.delivery = Some(match status {
+            smith_domain::run::DeliveryStatus::Delivered => smith_events::Delivered::Delivered,
+            smith_domain::run::DeliveryStatus::Nothing => smith_events::Delivered::Nothing,
+            smith_domain::run::DeliveryStatus::Refused => smith_events::Delivered::Refused,
+            smith_domain::run::DeliveryStatus::Failed(_) => smith_events::Delivered::Failed,
+            smith_domain::run::DeliveryStatus::Stale => smith_events::Delivered::Stale,
+        });
     }
 
     /// Project only a fact with actual provider metadata; kit lifecycle is not a call.
     pub(crate) fn fact(&mut self, origin: Time, fact: &session::Fact, sinks: &mut Sinks) {
+        self.children.session(fact);
         let opener = match fact.kind {
             session::FactKind::Tools {
                 opener,
@@ -162,7 +263,10 @@ impl Book {
         assert!(self.bytes <= self.bound, "actual source batches bound copied provider identity");
         let old = self
             .calls
-            .insert(metadata.owner, Call { metadata: metadata.clone(), scope, at })
+            .insert(
+                metadata.owner,
+                Call { metadata: metadata.clone(), scope, at, delivery: None, clamped: false, omitted_bytes: 0 },
+            )
             .expect("source session run slab bounds active event calls");
         assert!(old.is_none(), "one provider start per actual session call owner");
         let source = match metadata.source {
@@ -204,11 +308,14 @@ impl Book {
                 verdict: terminal.verdict,
                 exit: terminal.exit,
                 bytes: terminal.bytes,
-                omitted_bytes: terminal.omitted_bytes,
-                clamped: terminal.clamped,
+                omitted_bytes: terminal
+                    .omitted_bytes
+                    .checked_add(call.omitted_bytes)
+                    .expect("bounded actual tool omissions"),
+                clamped: terminal.clamped || call.clamped,
                 duration_ms: millis(at, call.at),
-                child: None,
-                delivery: None,
+                child: self.children.take(metadata.owner),
+                delivery: call.delivery,
                 result: None,
             }),
         }
@@ -221,6 +328,39 @@ struct Terminal {
     bytes: u64,
     omitted_bytes: u64,
     clamped: bool,
+}
+
+fn lowered(set: smith_domain::run::Set) -> bool {
+    match set {
+        smith_domain::run::Set::Asked | smith_domain::run::Set::Pool => false,
+        smith_domain::run::Set::Reserve | smith_domain::run::Set::Deadline => true,
+    }
+}
+
+fn returned_delivery(result: smith_domain::run::facts::Return) -> Option<smith_events::Delivered> {
+    match result {
+        smith_domain::run::facts::Return::Delivered => Some(smith_events::Delivered::Delivered),
+        smith_domain::run::facts::Return::Nothing => Some(smith_events::Delivered::Nothing),
+        smith_domain::run::facts::Return::DeliveryRefused => Some(smith_events::Delivered::Refused),
+        smith_domain::run::facts::Return::DeliveryFailed => Some(smith_events::Delivered::Failed),
+        smith_domain::run::facts::Return::Stale => Some(smith_events::Delivered::Stale),
+        smith_domain::run::facts::Return::Crossed
+        | smith_domain::run::facts::Return::Waited
+        | smith_domain::run::facts::Return::Withheld
+        | smith_domain::run::facts::Return::HostAnswered
+        | smith_domain::run::facts::Return::HostTooLarge
+        | smith_domain::run::facts::Return::HostUnknown
+        | smith_domain::run::facts::Return::HostRejected
+        | smith_domain::run::facts::Return::Accepted
+        | smith_domain::run::facts::Return::Rejected
+        | smith_domain::run::facts::Return::ChecksFailed
+        | smith_domain::run::facts::Return::Cancelled
+        | smith_domain::run::facts::Return::TimedOut
+        | smith_domain::run::facts::Return::Busy
+        | smith_domain::run::facts::Return::Answered { .. }
+        | smith_domain::run::facts::Return::Unanswered { .. }
+        | smith_domain::run::facts::Return::Refused => None,
+    }
 }
 
 fn millis(at: Time, since: Time) -> u64 {
@@ -302,6 +442,7 @@ fn verdict_kind(verdict: tools::Verdict) -> smith_events::Verdict {
 pub(crate) fn worst_case(limits: &session::Limits, string: u32) -> Option<u64> {
     let bounds = Bounds::derive(limits)?;
     Map::<Token, Call>::worst_case(bounds.slots)?
+        .checked_add(crate::children::worst_case(bounds.slots)?)?
         .checked_add(bounds.bytes)?
         .checked_add(List::<Record>::worst_case(2)?)?
         .checked_add(u64::from(string).checked_mul(4)?)
@@ -464,6 +605,272 @@ mod tests {
                     (completed.bytes, completed.omitted_bytes, completed.clamped, completed.duration_ms),
                     (13, omitted, clamped, 11)
                 );
+            }
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one15-case child control keeps the actual three-layer typed source join together"
+    )]
+    fn actual_child_terminals_join_public_identity_reported_usage_and_omissions_under_every_capture() {
+        use smith_domain::run;
+        let used = run::facts::Used { turns: 2, spend: 18, time: Duration::from_millis(13) };
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            for (result, yielded, end, expected, omitted) in [
+                (
+                    run::facts::Return::Answered { used, cut: 17 },
+                    session::Yield::Done,
+                    run::End::Closed,
+                    smith_events::ChildStop::End,
+                    17,
+                ),
+                (
+                    run::facts::Return::Answered { used, cut: 17 },
+                    session::Yield::Budget,
+                    run::End::Closed,
+                    smith_events::ChildStop::Budget,
+                    17,
+                ),
+                (
+                    run::facts::Return::Unanswered { used },
+                    session::Yield::Done,
+                    run::End::Budget(run::Exhausted::Turns),
+                    smith_events::ChildStop::Failed,
+                    0,
+                ),
+                (
+                    run::facts::Return::Cancelled,
+                    session::Yield::Done,
+                    run::End::Closed,
+                    smith_events::ChildStop::Closed,
+                    0,
+                ),
+                (
+                    run::facts::Return::TimedOut,
+                    session::Yield::Done,
+                    run::End::Closed,
+                    smith_events::ChildStop::Closed,
+                    0,
+                ),
+            ] {
+                let (mut book, mut sinks, destination, opener, mut metadata) = fixture(capture);
+                metadata.source = session::ToolSource::Run;
+                book.fact(
+                    Time::ZERO,
+                    &session::Fact {
+                        at: Time::from_nanos(3_000_000),
+                        kind: session::FactKind::DelegateStarted { opener, block: 0 },
+                        call: Some(metadata.clone()),
+                        response: None,
+                    },
+                    &mut sinks,
+                );
+                let scope = sinks.scope(opener).unwrap();
+                book.called(metadata.owner, scope, run::facts::Asked::SubAgent);
+                let child = Token::new(92);
+                let actual_id = book.child_opened(
+                    child,
+                    19,
+                    metadata.owner,
+                    scope,
+                    run::Granted {
+                        turns: 2,
+                        time: Duration::from_millis(30),
+                        spend: 18,
+                        turns_set: run::Set::Reserve,
+                        time_set: run::Set::Asked,
+                    },
+                    Time::from_nanos(5_000_000),
+                );
+                assert_eq!(actual_id, metadata.id);
+                for (number, charge, usage) in [
+                    (
+                        1,
+                        7,
+                        smith_domain::llm::Usage {
+                            input_tokens: Some(3),
+                            output_tokens: None,
+                            cache_read_tokens: Some(0),
+                            cache_write_tokens: None,
+                            reasoning_tokens: None,
+                        },
+                    ),
+                    (
+                        2,
+                        11,
+                        smith_domain::llm::Usage {
+                            input_tokens: None,
+                            output_tokens: Some(5),
+                            cache_read_tokens: None,
+                            cache_write_tokens: Some(2),
+                            reasoning_tokens: Some(1),
+                        },
+                    ),
+                ] {
+                    book.fact(
+                        Time::ZERO,
+                        &session::Fact {
+                            at: Time::from_nanos(9_000_000),
+                            kind: session::FactKind::Used { opener: child, usage },
+                            call: None,
+                            response: Some(session::ResponseInfo { number, spent: Some(charge) }),
+                        },
+                        &mut sinks,
+                    );
+                }
+                let answered = result == run::facts::Return::Answered { used, cut: 17 };
+                if answered {
+                    book.fact(
+                        Time::ZERO,
+                        &session::Fact {
+                            at: Time::from_nanos(17_000_000),
+                            kind: session::FactKind::Yielded { opener: child, stop: yielded },
+                            call: None,
+                            response: None,
+                        },
+                        &mut sinks,
+                    );
+                }
+                book.fact(
+                    Time::ZERO,
+                    &session::Fact {
+                        at: Time::from_nanos(18_000_000),
+                        kind: session::FactKind::Ended {
+                            opener: child,
+                            end: session::End::Closed,
+                            turns: 2,
+                            usage: smith_domain::llm::Usage::NONE,
+                        },
+                        call: None,
+                        response: None,
+                    },
+                    &mut sinks,
+                );
+                book.child_ended(child, end, Time::from_nanos(18_000_000));
+                book.returned(metadata.owner, result);
+                let terminal = if result == run::facts::Return::Cancelled {
+                    session::FactKind::DelegateCancelled { opener }
+                } else {
+                    session::FactKind::DelegateAnswered { opener, bytes: 23, error: !answered }
+                };
+                book.fact(
+                    Time::ZERO,
+                    &session::Fact {
+                        at: Time::from_nanos(21_000_000),
+                        kind: terminal,
+                        call: Some(metadata.clone()),
+                        response: None,
+                    },
+                    &mut sinks,
+                );
+                sinks.ended(
+                    Time::from_nanos(23_000_000),
+                    Time::ZERO,
+                    &Ended {
+                        exit: 0,
+                        answered: true,
+                        teardown: Some(Duration::ZERO),
+                        usage: skein_io::Measured::Unread,
+                        channel: None,
+                    },
+                );
+                let records = drain(&mut sinks, destination);
+                let [_, terminal, _] = records.as_slice() else { panic!("paired call and end") };
+                let Event::ToolCompleted(completed) = &terminal.event else { panic!("typed completion") };
+                assert_eq!((completed.run, completed.conversation), (77, 0));
+                assert_eq!(completed.call, metadata.id);
+                assert_eq!(completed.omitted_bytes, omitted);
+                assert!(completed.clamped);
+                let child = completed.child.as_ref().unwrap();
+                assert_eq!((child.conversation, child.turns, child.time_ms, child.spent), (19, 2, 13, 18));
+                assert_eq!(child.stop, expected);
+                assert_eq!(
+                    child.usage,
+                    smith_events::Usage {
+                        input_tokens: Some(3),
+                        output_tokens: Some(5),
+                        cache_read_tokens: Some(0),
+                        cache_write_tokens: Some(2),
+                        reasoning_tokens: Some(1)
+                    }
+                );
+                assert_eq!(completed.result, None);
+                assert!(book.calls.is_empty());
+            }
+        }
+    }
+    #[test]
+    fn actual_main_deliveries_keep_the_exclusive_provider_call_under_every_capture() {
+        use smith_domain::run;
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            for (status, returned, expected) in [
+                (run::DeliveryStatus::Delivered, run::facts::Return::Delivered, smith_events::Delivered::Delivered),
+                (run::DeliveryStatus::Nothing, run::facts::Return::Nothing, smith_events::Delivered::Nothing),
+                (run::DeliveryStatus::Refused, run::facts::Return::DeliveryRefused, smith_events::Delivered::Refused),
+                (
+                    run::DeliveryStatus::Failed(run::DeliveryReason::Unknown),
+                    run::facts::Return::DeliveryFailed,
+                    smith_events::Delivered::Failed,
+                ),
+                (run::DeliveryStatus::Stale, run::facts::Return::Stale, smith_events::Delivered::Stale),
+            ] {
+                for ask in [run::facts::Asked::Finish, run::facts::Asked::Deliver] {
+                    let (mut book, mut sinks, destination, opener, mut metadata) = fixture(capture);
+                    metadata.source = session::ToolSource::Run;
+                    metadata.name = if ask == run::facts::Asked::Finish {
+                        b"finish".as_slice().into()
+                    } else {
+                        b"deliver".as_slice().into()
+                    };
+                    book.fact(
+                        Time::ZERO,
+                        &session::Fact {
+                            at: Time::from_nanos(3_000_000),
+                            kind: session::FactKind::DelegateStarted { opener, block: 0 },
+                            call: Some(metadata.clone()),
+                            response: None,
+                        },
+                        &mut sinks,
+                    );
+                    book.called(metadata.owner, Scope { run: 77, conversation: 0 }, ask);
+                    book.delivered(status);
+                    book.returned(
+                        metadata.owner,
+                        if ask == run::facts::Asked::Finish { run::facts::Return::Accepted } else { returned },
+                    );
+                    book.fact(
+                        Time::ZERO,
+                        &session::Fact {
+                            at: Time::from_nanos(9_000_000),
+                            kind: session::FactKind::DelegateAnswered { opener, bytes: 23, error: false },
+                            call: Some(metadata.clone()),
+                            response: None,
+                        },
+                        &mut sinks,
+                    );
+                    sinks.ended(
+                        Time::from_nanos(11_000_000),
+                        Time::ZERO,
+                        &Ended {
+                            exit: 0,
+                            answered: true,
+                            teardown: Some(Duration::ZERO),
+                            usage: skein_io::Measured::Unread,
+                            channel: None,
+                        },
+                    );
+                    let records = drain(&mut sinks, destination);
+                    let [_, terminal, _] = records.as_slice() else { panic!("paired provider call and process end") };
+                    let Event::ToolCompleted(completed) = &terminal.event else { panic!("actual provider terminal") };
+                    assert_eq!(completed.call, metadata.id);
+                    assert_eq!(completed.tool, metadata.name);
+                    assert_eq!(completed.delivery, Some(expected.clone()));
+                    assert_eq!(completed.child, None);
+                    assert_eq!((completed.omitted_bytes, completed.clamped), (0, false));
+                    assert!(book.calls.is_empty() && book.landing.is_none());
+                }
             }
         }
     }

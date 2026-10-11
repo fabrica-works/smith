@@ -1658,6 +1658,16 @@ fn a_sub_agent_answers_with_its_last_message_once_it_has_ended() {
     );
     h.domain.reclaim();
     assert_eq!((h.domain.conversations(), h.domain.calls()), (1, 0));
+    let mut returned = 0_u32;
+    while let Some(fact) = h.pop_fact() {
+        if let crate::facts::FactKind::Returned { call, result: Return::Answered { cut, .. }, .. } = fact.kind
+            && call == Token::new(7)
+        {
+            assert_eq!(cut, 14, "actual child cap omission");
+            returned += 1;
+        }
+    }
+    assert_eq!(returned, 1, "the actual child cap reaches its fact once");
 }
 
 #[test]
@@ -2155,6 +2165,7 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
             run,
             call: Token::new(7),
             result: Return::Answered {
+                cut: 0,
                 used: crate::facts::Used { turns: 1, time: Duration::from_secs(5), spend: 100 },
             },
         },
