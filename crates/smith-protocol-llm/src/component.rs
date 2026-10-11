@@ -129,12 +129,11 @@ fn capture_worst_case(limits: &ComponentLimits) -> Option<u64> {
     )?;
     let tools = u64::from(client.tools).checked_mul(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?;
     let prompt = u64::from(client.request).checked_add(history)?.checked_add(tools)?;
-    let completion = u64::from(client.output_items)
-        .checked_mul(
-            u64::try_from(size_of::<smith_events::Block>())
-                .ok()?
-                .checked_add(u64::from(client.strings).checked_mul(2)?)?,
-        )?
+    // The Client admits the sum of text, call IDs/names/arguments and replay
+    // token payload under answer, rather than one full string per block.
+    // Capture omits replay payload. A separate answer allowance covers text
+    // deltas emitted alongside completed blocks by either provider decoder.
+    let completion = List::<smith_events::Block>::worst_case(client.output_items)?
         .checked_add(u64::from(client.answer).checked_mul(2)?)?
         .checked_mul(u64::from(limits.connection.calls))?;
     Queue::<crate::Measure>::worst_case(MEASURES)?.checked_add(prompt)?.checked_add(completion)
