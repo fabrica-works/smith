@@ -14,6 +14,115 @@ use smith_bench::{End, Forced, Measure, ScopeKind};
 mod common;
 
 #[test]
+fn the_first_request_pin_renders_only_the_probes_empty_instructions() {
+    use smith_bench::agent::Context;
+    use smith_bench::arm::ArmRef;
+
+    let directory = root("first-request-settings");
+    let source = directory.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("synthetic login directory");
+    let auth = unissued_auth();
+    std::fs::write(source.join("auth.json"), &auth).expect("synthetic source only");
+    let guard = smith_bench::guard::Guard::new(
+        &directory.join("user"),
+        &directory.join("config"),
+        &directory.join("state"),
+        &[],
+    )
+    .expect("fixture guard");
+    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let suite = smith_bench::read_suite(&project.join("suites/first-request.toml")).expect("dedicated suite");
+    assert_eq!(suite.agents[0].config, "first-request");
+    let pin_file = project.join("agents/smith").join(format!("{}.pin.toml", suite.agents[0].config));
+    let pin = smith_bench::read_configuration(&pin_file).expect("selected committed pin");
+    let task = smith_bench::read_task(&project.join("tasks/probes/first-request/task.toml")).expect("original task");
+    let model = smith_bench::ModelChoice { model: Some("selected-model".into()), effort: Some("low".into()) };
+    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
+    let environment = vec![("NAMED".into(), "exact-value".into())];
+    let mut context = Context {
+        guard: &guard,
+        private: &private,
+        pin: &pin,
+        pin_file: &pin_file,
+        task: &task,
+        variant: None,
+        model: &model,
+        arm: &arm,
+        installed_version: match &arm {
+            ArmRef::Built(build) => &build.arm.commit,
+            ArmRef::Installed { .. } => unreachable!("fixture arm"),
+        },
+        home: &source,
+        wall: skein_lib::Wall::from_nanos(100_000_000_000),
+        lifetime: Duration::from_secs(20),
+        environment: &environment,
+    };
+    let first = smith_bench::agent::smith::prepare(&context).expect("actual first-request native preparation");
+    assert_eq!(first.rendered["instructions"], "", "empty brief must not demand AGENTS/read calls");
+    let converted = match first.credential {
+        Credential::Record(Some(borrowed)) => borrowed,
+        Credential::Record(None) => panic!("synthetic credential prepared"),
+    };
+    assert!(converted.finish(&guard).expect("no process was started").source_unchanged);
+    std::fs::remove_dir_all(private.root.join("smith")).expect("remove first unused preparation");
+    let old_file = project.join("agents/smith/smoke.pin.toml");
+    let old = smith_bench::read_configuration(&old_file).expect("unchanged smoke pin");
+    context.pin = &old;
+    context.pin_file = &old_file;
+    let prepared = smith_bench::agent::smith::prepare(&context).expect("old native preparation");
+    let mut expected = prepared.rendered;
+    expected["instructions"] = serde_json::json!("");
+    assert_eq!(first.rendered, expected, "all other native fields remain identical");
+    assert_eq!(
+        smith_bench::read_suite(&project.join("suites/calibrate.toml")).expect("other probes").agents[0].config,
+        "smoke"
+    );
+    match prepared.credential {
+        Credential::Record(Some(borrowed)) => {
+            assert!(borrowed.finish(&guard).expect("unused preparation").source_unchanged);
+        }
+        Credential::Record(None) => panic!("synthetic credential prepared"),
+    }
+    assert_eq!(std::fs::read(source.join("auth.json")).expect("source unchanged"), auth);
+    std::fs::remove_dir_all(directory).expect("remove fixture");
+}
+
+fn unissued_auth() -> Vec<u8> {
+    use base64::Engine;
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"exp\":500}");
+    serde_json::to_vec(&serde_json::json!({"auth_mode":"chatgpt","last_refresh":"2000-01-01T00:00:00Z",
+        "tokens":{"id_token":"UNISSUED_ID","access_token":format!("header.{claims}.signature"),
+        "account_id":"UNISSUED_ACCOUNT","refresh_token":"UNISSUED_REFRESH_MUST_NOT_COPY"}}))
+    .expect("fixture")
+}
+
+fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::Build {
+    use smith_bench::arm::{ArmBinary, BuiltArm};
+    let commit = std::process::Command::new("git")
+        .args(["-C", repository.to_str().expect("path"), "rev-parse", "HEAD"])
+        .output()
+        .expect("source identity");
+    assert!(commit.status.success());
+    let commit = String::from_utf8(commit.stdout).expect("hexadecimal").trim().to_owned();
+    let executable = b"unexecuted rendering fixture\n";
+    use sha2::{Digest, Sha256};
+    let digest = format!("{:x}", Sha256::digest(executable));
+    let path = directory.join(smith_bench::arm::arm_name(&commit, &digest).expect("fixture identity"));
+    std::fs::create_dir(&path).expect("unexecuted arm directory");
+    std::fs::write(path.join("smith"), executable).expect("unexecuted bytes");
+    let arm = BuiltArm {
+        version: 1,
+        commit,
+        sha256: digest.clone(),
+        toolchain: "unexecuted test fixture".into(),
+        binaries: vec![ArmBinary { name: "smith".into(), sha256: digest }],
+    };
+    std::fs::write(path.join("arm.json"), serde_json::to_vec(&arm).expect("manifest")).expect("fixture manifest");
+    smith_bench::arm::read_build(&path.join("smith")).expect("actual manifest verification")
+}
+
+#[test]
 fn a_terminal_peer_can_close_its_stdio_before_the_leader_exits_without_hangup() {
     let directory = root("terminal-before-exit");
     std::fs::create_dir(&directory).expect("private fixture directory");
