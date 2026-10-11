@@ -9,7 +9,7 @@
 use alloc::boxed::Box;
 
 use skein_io as io;
-use skein_lib::{List, Queue, Token, stream};
+use skein_lib::{Duration, List, Queue, Time, Token, stream};
 use smith_events::{Event, Record};
 
 /// An event destination, named by the shell if IO abandons it.
@@ -74,6 +74,17 @@ pub struct SinkLimits {
     pub conversations: u32,
 }
 
+/// The settled process terminal supplied by the service after its last child closes.
+/// Unread IO usage stays unknown; it never changes the answer or the exit.
+#[derive(Clone, Copy, Debug)]
+pub struct Ended {
+    pub exit: u8,
+    pub answered: bool,
+    pub teardown: Option<Duration>,
+    pub usage: io::Measured,
+    pub channel: Option<u64>,
+}
+
 #[derive(Debug)]
 struct Line {
     bytes: Box<[u8]>,
@@ -126,6 +137,7 @@ pub struct Sinks {
     /// IO's actual output cap: a full-credit grant proves the previous line drained.
     io_output: u32,
     counts: [u64; TYPES],
+    ended: bool,
 }
 
 const TYPES: usize = 18;
@@ -149,6 +161,7 @@ impl Sinks {
             reserve: line.checked_mul(AUTHORITATIVE).expect("startup checked authoritative credit"),
             io_output,
             counts: [0; TYPES],
+            ended: false,
         }
     }
 
@@ -199,6 +212,7 @@ impl Sinks {
     /// Encode one content-free record to every destination, counting it once per type.
     /// The owner calls this only while takes holds, except for the three authoritative records.
     pub fn record(&mut self, record: &Record) {
+        assert!(!self.ended, "no record follows the process terminal");
         let bytes = match smith_events::write(record, &smith_events::Capture::None, &self.limits.records)
             .expect("typed sources fit startup's receiving bounds")
         {
@@ -213,6 +227,25 @@ impl Sinks {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             offer(writer, bytes.clone(), authoritative, self.limits.output, self.reserve, self.line);
         }
+    }
+
+    /// Emit one authoritative end, with each destination's own loss, then close its stream.
+    /// The owner supplies the process clock origin, independently of drain time.
+    pub fn ended(&mut self, now: Time, started: Time, ended: &Ended) {
+        assert!(!self.ended, "one authoritative end per process");
+        self.ended = true;
+        let count = self.counts.get_mut(1).expect("session.ended vocabulary index");
+        *count = count.checked_add(1).expect("one process cannot exhaust a record count");
+        for index in 0..self.writers.len() {
+            let loss = self.writers.get(index).expect("bounded destinations").loss;
+            let record = ended_record(now, started, ended, self.emitted(), loss);
+            let bytes = smith_events::write(&record, &smith_events::Capture::None, &self.limits.records)
+                .expect("the settled end fits its checked record bound")
+                .expect("the process terminal survives every capture");
+            let writer = self.writers.get_mut(index).expect("bounded destinations");
+            offer(writer, bytes, true, self.limits.output, self.reserve, self.line);
+        }
+        self.finish();
     }
 
     /// The emitted table, including authoritative types and the end record itself once made.
@@ -334,6 +367,39 @@ impl Sinks {
             }
         }
         true
+    }
+}
+
+fn ended_record(now: Time, started: Time, ended: &Ended, emitted: List<smith_events::Count>, loss: u64) -> Record {
+    let (cpu_ms, peak_rss_bytes) = match ended.usage {
+        io::Measured::Read(usage) => (
+            Some(smith_events::Cpu {
+                user: usage.own.user.as_nanos() / 1_000_000,
+                system: usage.own.system.as_nanos() / 1_000_000,
+                children_user: usage.children.user.as_nanos() / 1_000_000,
+                children_system: usage.children.system.as_nanos() / 1_000_000,
+            }),
+            Some(smith_events::PeakRss {
+                self_bytes: usage.own.peak_rss_bytes,
+                children: usage.children.peak_rss_bytes,
+            }),
+        ),
+        io::Measured::Unread => (None, None),
+    };
+    Record {
+        t_ms: now.saturating_since(started).as_nanos() / 1_000_000,
+        event: Event::SessionEnded(smith_events::SessionEnded {
+            exit: i64::from(ended.exit),
+            answered: ended.answered,
+            teardown_ms: match ended.teardown {
+                Some(duration) => Some(duration.as_nanos() / 1_000_000),
+                None => None,
+            },
+            emitted,
+            loss: smith_events::Loss { events: loss, channel: ended.channel },
+            cpu_ms,
+            peak_rss_bytes,
+        }),
     }
 }
 
@@ -504,6 +570,11 @@ pub fn sinks_worst_case(limits: &SinkLimits) -> Option<u64> {
     if limits.records.items < u32::try_from(TYPES).ok()? {
         return None;
     }
+    for index in 0..TYPES {
+        if u32::try_from(names(index).len()).ok()? > limits.records.string {
+            return None;
+        }
+    }
     let line = smith_events::largest_record_for(&smith_events::Capture::None, &limits.records)?;
     if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(1)?)? {
         return None;
@@ -512,7 +583,9 @@ pub fn sinks_worst_case(limits: &SinkLimits) -> Option<u64> {
     // The measured writer can retain its encoded body and final newline-owning line together.
     List::<Writer>::worst_case(limits.destinations)?
         .checked_add(u64::from(limits.destinations).checked_mul(writer)?)?
-        .checked_add(u64::from(line).checked_mul(2)?)
+        .checked_add(u64::from(line).checked_mul(2)?)?
+        .checked_add(List::<smith_events::Count>::worst_case(u32::try_from(TYPES).ok()?)?)?
+        .checked_add(u64::try_from(TYPES).ok()?.checked_mul(u64::from(limits.records.string))?)
 }
 
 #[cfg(test)]
@@ -530,6 +603,102 @@ mod tests {
         let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
         let line = smith_events::largest_record_for(&smith_events::Capture::None, &records).unwrap();
         SinkLimits { destinations, output: line * 5, records, conversations: 1 }
+    }
+
+    #[test]
+    fn the_complete_emitted_vocabulary_must_fit_the_receiving_bounds() {
+        let mut bounds = limits(1);
+        bounds.records.string = 18;
+        assert!(sinks_worst_case(&bounds).is_none());
+        bounds.records.string = 19;
+        assert!(sinks_worst_case(&bounds).is_some());
+        bounds.records.items = 17;
+        assert!(sinks_worst_case(&bounds).is_none());
+    }
+
+    #[test]
+    fn settled_end_preserves_read_or_unread_resources_and_the_actual_exit() {
+        let measured = io::kernel::Usage {
+            own: io::kernel::Resources {
+                user: Duration::from_nanos(1_000_000),
+                system: Duration::from_nanos(2_000_000),
+                peak_rss_bytes: 5,
+            },
+            children: io::kernel::Resources {
+                user: Duration::from_nanos(3_000_000),
+                system: Duration::from_nanos(4_000_000),
+                peak_rss_bytes: 6,
+            },
+        };
+        for usage in [io::Measured::Read(measured), io::Measured::Unread] {
+            for exit in [0, 1] {
+                let limits = limits(1);
+                let token = Token::new(11);
+                let mut sinks = Sinks::new(&limits, limits.output);
+                sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
+                sinks.record(&counted(1));
+                let ended = Ended {
+                    exit,
+                    answered: exit == 0,
+                    teardown: if exit == 0 { Some(Duration::from_nanos(3_000_000)) } else { None },
+                    usage,
+                    channel: Some(7),
+                };
+                sinks.ended(Time::from_nanos(12_000_000), Time::from_nanos(2_000_000), &ended);
+                let records = drain(&mut sinks, token);
+                assert!(sinks.closed());
+                assert_eq!(records.len(), 2);
+                let last = records.last().unwrap();
+                assert_eq!(last.t_ms, 10);
+                let Event::SessionEnded(end) = &last.event else { panic!("one final process end") };
+                assert_eq!(end.exit, i64::from(exit));
+                assert_eq!(end.answered, exit == 0);
+                assert_eq!(end.teardown_ms, if exit == 0 { Some(3) } else { None });
+                assert_eq!(end.loss, smith_events::Loss { events: 0, channel: Some(7) });
+                assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), 2);
+                assert_eq!(
+                    end.emitted.iter().find(|entry| entry.record.as_ref() == b"session.ended").unwrap().count,
+                    1
+                );
+                match usage {
+                    io::Measured::Read(_) => {
+                        assert_eq!(
+                            end.cpu_ms,
+                            Some(smith_events::Cpu { user: 1, system: 2, children_user: 3, children_system: 4 })
+                        );
+                        assert_eq!(end.peak_rss_bytes, Some(smith_events::PeakRss { self_bytes: 5, children: 6 }));
+                    }
+                    io::Measured::Unread => {
+                        assert_eq!(end.cpu_ms, None);
+                        assert_eq!(end.peak_rss_bytes, None);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn each_settled_end_reports_its_destination_loss_and_counts_itself_once() {
+        let limits = limits(2);
+        let token = Token::new(11);
+        let mut sinks = Sinks::new(&limits, limits.output);
+        sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
+        sinks.add(Destination::Output, Token::new(12), Delivery::BestEffort).unwrap();
+        sinks.up(io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
+        sinks.up(io::Event::Closed { owner: Token::new(12) });
+        for name in 0..10_000 {
+            sinks.record(&counted(name));
+        }
+        let ended = Ended { exit: 0, answered: true, teardown: None, usage: io::Measured::Unread, channel: None };
+        sinks.ended(Time::ZERO, Time::ZERO, &ended);
+        let records = drain(&mut sinks, token);
+        let Event::SessionEnded(end) = &records.last().unwrap().event else { panic!("end is last") };
+        assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), 10_001);
+        assert_eq!(records.len() as u64 + end.loss.events, 10_001);
+        assert_eq!(sinks.writers.get(1).unwrap().loss, 10_001);
+        assert_eq!(sinks.pop_given_up(), Some(Destination::Output));
+        assert_eq!(sinks.pop_given_up(), None);
+        assert!(sinks.closed());
     }
 
     fn counted(name: u64) -> Record {
