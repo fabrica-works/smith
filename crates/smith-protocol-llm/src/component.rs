@@ -381,7 +381,7 @@ impl Component {
                 connection::Event::Block { call, block: _ } => {
                     self.next.insert(call).expect("one pending demand per admitted call");
                 }
-                connection::Event::Completed { call, completion } => {
+                connection::Event::Completed { call, completion, measures: _ } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => {
@@ -396,7 +396,7 @@ impl Component {
                         None => {}
                     }
                 }
-                connection::Event::Failed { call, failure, evidence, detail } => {
+                connection::Event::Failed { call, failure, evidence, detail, measures: _ } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => match crate::failed(active.context, call, failure, evidence, detail) {
@@ -408,7 +408,7 @@ impl Component {
                         None => {}
                     }
                 }
-                connection::Event::Cancelled { call } => {
+                connection::Event::Cancelled { call, measures: _ } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => match crate::cancelled(active.context, call) {
