@@ -9,7 +9,7 @@
 use alloc::boxed::Box;
 
 use skein_io as io;
-use skein_lib::{Duration, List, Queue, Time, Token, bytes, stream};
+use skein_lib::{Duration, List, Map, Queue, Time, Token, bytes, stream};
 use smith_events::{Event, Record};
 
 /// An event destination, named by the shell if IO abandons it.
@@ -149,6 +149,7 @@ pub struct Sinks {
     limits: SinkLimits,
     capture: Capture,
     responses: crate::responses::Book,
+    pending: Map<Token, Record>,
     writers: List<Writer>,
     line: u32,
     reserve: u32,
@@ -174,6 +175,7 @@ impl Sinks {
             limits: *limits,
             capture,
             responses: crate::responses::Book::new(limits.conversations),
+            pending: Map::with_capacity(limits.conversations),
             writers: List::with_capacity(limits.destinations),
             line,
             reserve: line.checked_mul(AUTHORITATIVE).expect("startup checked authoritative credit"),
@@ -302,10 +304,76 @@ impl Sinks {
     }
 
     /// Assign one response identity at the actual hand-off to the LLM component.
-    /// Prompt content and transport measures remain outside this increment.
-    pub fn request(&mut self, now: Time, origin: Time, owner: Token, prompt: &smith_domain::llm::Prompt) {
+    /// Everything keeps its start until the component observes the translated prompt.
+    pub fn request(
+        &mut self,
+        now: Time,
+        origin: Time,
+        owner: Token,
+        prompt: &smith_domain::llm::Prompt,
+    ) -> Option<smith_protocol_llm::Observation> {
         let record = self.responses.request(now, origin, owner, prompt);
-        self.record(&record);
+        match self.capture {
+            Capture::None | Capture::Calls => {
+                self.record(&record);
+                None
+            }
+            Capture::Everything => {
+                let previous = self.pending.insert(owner, record).expect("one pending start per admitted conversation");
+                assert!(previous.is_none(), "one actual hand-off per owner");
+                Some(self.responses.observation(owner))
+            }
+        }
+    }
+
+    /// Drain an actual component observation before its domain terminal is consumed.
+    pub(crate) fn measure(&mut self, origin: Time, measure: smith_protocol_llm::Measure) {
+        match measure {
+            smith_protocol_llm::Measure::Prompt { at: _, owner, prompt } => {
+                let mut record = self.pending.remove(&owner).expect("observed prompt follows its actual hand-off");
+                let messages = match &mut record.event {
+                    Event::ResponseStarted(started) => {
+                        started.prompt = Some(prompt);
+                        u32::try_from(started.messages).expect("actual prompt count fits admitted history")
+                    }
+                    Event::SessionStarted(_)
+                    | Event::SessionEnded(_)
+                    | Event::RunStarted(_)
+                    | Event::RunCompleted(_)
+                    | Event::ConversationOpened(_)
+                    | Event::ConversationClosed(_)
+                    | Event::ResponseCompleted(_)
+                    | Event::TextDelta(_)
+                    | Event::ToolStarted(_)
+                    | Event::ToolCompleted(_)
+                    | Event::CheckStarted(_)
+                    | Event::CheckCompleted(_)
+                    | Event::MessageReceived(_)
+                    | Event::MessageRead(_)
+                    | Event::MessageUnread(_)
+                    | Event::Notice(_)
+                    | Event::Budget(_) => unreachable!("pending entries are response starts"),
+                };
+                self.responses.prompt_recorded(owner, messages);
+                self.record(&record);
+            }
+            smith_protocol_llm::Measure::Completion { at: _, owner, completion } => {
+                self.responses.completion(owner, completion);
+            }
+            smith_protocol_llm::Measure::Delta { at, owner, block, text } => {
+                let record = self.responses.delta(at, origin, owner, block, text);
+                self.record(&record);
+            }
+        }
+    }
+
+    /// A failure before prompt translation still tells its handed-off start exactly once.
+    #[expect(clippy::single_match, reason = "bounded production entries keep explicit Option matches")]
+    pub(crate) fn attempt_ready(&mut self, owner: Token) {
+        match self.pending.remove(&owner) {
+            Some(record) => self.record(&record),
+            None => {}
+        }
     }
 
     /// Retain only the typed completion's raw Usage and rejection counts before the domain consumes it.
@@ -345,7 +413,6 @@ impl Sinks {
     }
 
     /// Encode one record to every destination, counting it once per type.
-    /// Only an accepted result's text and fields are captured until the content increment.
     /// The owner calls this only while takes holds, except for the three authoritative records.
     pub fn record(&mut self, record: &Record) {
         assert!(!self.ended, "no record follows the process terminal");
@@ -373,7 +440,7 @@ impl Sinks {
             | Event::MessageRead(_)
             | Event::MessageUnread(_)
             | Event::Notice(_)
-            | Event::Budget(_) => smith_events::Capture::None,
+            | Event::Budget(_) => self.capture.encoded(),
         };
         let bytes = match smith_events::write(record, &capture, &self.limits.records)
             .expect("typed sources fit startup's receiving bounds")
@@ -895,9 +962,11 @@ pub(crate) mod tests {
                 capture,
             );
             sinks.record(&Record { t_ms: 37, event: Event::RunCompleted(answer) });
-            // Everything grants only the newly moved accepted-result content in 02.5.
+            // The same policy grants the request's content in 02.6.
             let request =
                 golden(include_bytes!("../../smith-events/golden/v1/response_started_everything.jsonl"), &limits);
+            let Event::ResponseStarted(expected) = &request.event else { panic!("golden request") };
+            let expected = expected.prompt.clone();
             sinks.record(&request);
             sinks.finish();
             let records = drain(&mut sinks, token);
@@ -924,7 +993,7 @@ pub(crate) mod tests {
                 assert_eq!(result.fields, None);
             }
             let Event::ResponseStarted(request) = &records[1].event else { panic!("typed request") };
-            assert_eq!(request.prompt, None, "prompt content belongs to 02.6");
+            assert_eq!(request.prompt, if capture == Capture::Everything { expected } else { None });
         }
     }
 

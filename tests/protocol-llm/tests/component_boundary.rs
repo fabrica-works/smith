@@ -131,6 +131,7 @@ fn complete(owner: u64, generation: u64, bounds: Receiving) -> FromDomain {
         bounds,
         outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
         deliver: None,
+        observation: None,
     }
 }
 

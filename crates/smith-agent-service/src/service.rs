@@ -973,6 +973,10 @@ fn lower_events(service: &mut Service) {
             Some(event) => event,
             None => break,
         };
+        if !service.llm.measures_drained() && llm_io(service, &event) {
+            service.io_events.push(event);
+            continue;
+        }
         route_io_event(service, event);
     }
     for _ in 0..service.file_events.capacity() {
@@ -1004,6 +1008,7 @@ fn cleanup(service: &mut Service) {
     }
     if !service.cleanup_started
         && service.io_requests.room() >= 3
+        && service.llm.measures_drained()
         && service.llm_events.room() >= llm::MAX_OUT.above
         && service.llm_below.room() >= llm::MAX_OUT.below
     {
@@ -1284,7 +1289,40 @@ fn machine_up(service: &mut Service) {
     }
 }
 
+fn llm_io(service: &Service, event: &io::Event) -> bool {
+    let owner = match io_event_owner(event) {
+        Some(owner) => owner,
+        None => return false,
+    };
+    if service.pipe_routes.contains_key(&owner) || owner.raw() & COMPONENT_OWNER_BIT == 0 {
+        return false;
+    }
+    let id = Id::<Owner>::from_token(Token::new(owner.raw() & !COMPONENT_OWNER_BIT));
+    match service.owners.get(id) {
+        Some(Owner::Llm(_)) => true,
+        Some(Owner::Machine(_)) | None => false,
+    }
+}
+
+fn llm_measures(service: &mut Service) {
+    for _ in 0..llm::MAX_OUT.above.checked_add(1).expect("one start plus the bounded routed batch") {
+        match &service.events {
+            Some(events) if !events.sinks.takes() => break,
+            Some(_) | None => {}
+        }
+        let measure = match service.llm.pop_measure() {
+            Some(measure) => measure,
+            None => break,
+        };
+        match &mut service.events {
+            Some(events) => events.sinks.measure(events.origin(), measure),
+            None => unreachable!("only an event owner selects component observations"),
+        }
+    }
+}
+
 fn component_up(service: &mut Service) {
+    llm_measures(service);
     let channel_max = channel::max_out(&service.limits.channel);
     if service.channel_events.room() >= channel_max.to_domain
         && service.channel_below.room() >= channel_max.below
@@ -1297,11 +1335,13 @@ fn component_up(service: &mut Service) {
         None => false,
     };
     if (service.llm.has_work() || llm_due)
+        && service.llm.measures_drained()
         && service.llm_events.room() >= llm::MAX_OUT.above
         && service.llm_below.room() >= llm::MAX_OUT.below
     {
         service.llm.fire(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
     }
+    llm_measures(service);
     let machine_max = machine::max_out(&service.limits.machine);
     let machine_due = match service.machine.next_deadline() {
         Some(at) => at <= service.machine_env.now,
@@ -1323,8 +1363,19 @@ fn component_up(service: &mut Service) {
         };
         channel_event(service, event);
     }
+    llm_events_up(service);
+    machine_up(service);
+}
+
+#[expect(clippy::single_match, reason = "bounded production entries keep explicit Option matches")]
+fn llm_events_up(service: &mut Service) {
     for _ in 0..service.llm_events.capacity() {
-        if service.domain_events.room() == 0
+        match &service.events {
+            Some(events) if !events.sinks.takes() => break,
+            Some(_) | None => {}
+        }
+        if !service.llm.measures_drained()
+            || service.domain_events.room() == 0
             || service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
             || service.channel_below.room() < channel::max_out(&service.limits.channel).below
         {
@@ -1337,15 +1388,26 @@ fn component_up(service: &mut Service) {
         match event {
             llm::ToDomain::Completed { owner, completion } => {
                 if let Some(events) = &mut service.events {
+                    events.sinks.attempt_ready(owner);
                     let conversation = events.sinks.received(owner, &completion);
                     events.received(conversation, completion.usage);
                 }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }
             llm::ToDomain::Failed { owner, failure, evidence, detail } => {
+                match &mut service.events {
+                    Some(events) => events.sinks.attempt_ready(owner),
+                    None => {}
+                }
                 service.domain_events.push(domain::Event::Failed { owner, failure, evidence, detail });
             }
-            llm::ToDomain::Cancelled { owner } => service.domain_events.push(domain::Event::Cancelled { owner }),
+            llm::ToDomain::Cancelled { owner } => {
+                match &mut service.events {
+                    Some(events) => events.sinks.attempt_ready(owner),
+                    None => {}
+                }
+                service.domain_events.push(domain::Event::Cancelled { owner });
+            }
             llm::ToDomain::Text { owner: _, bytes } => {
                 if service.channel.is_none() {
                     continue;
@@ -1369,7 +1431,6 @@ fn component_up(service: &mut Service) {
             }
         }
     }
-    machine_up(service);
 }
 
 fn channel_event(service: &mut Service, event: channel::OpenEvent) {
@@ -1524,6 +1585,7 @@ fn domain_down(service: &mut Service) {
             Some(_) | None => {}
         }
         if !channel_takes(service)
+            || !service.llm.measures_drained()
             || service.channel_events.room() < channel_max.to_domain
             || service.channel_below.room() < channel_max.below
             || service.llm_events.room() < llm::MAX_OUT.above
@@ -1767,9 +1829,10 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             max_failure_bytes,
             decoded_call_bytes,
         } => {
-            if let Some(events) = &mut service.events {
-                events.request(service.domain_env.now, owner, &prompt);
-            }
+            let observation = match &mut service.events {
+                Some(events) => events.request(service.domain_env.now, owner, &prompt),
+                None => None,
+            };
             if service.capture_prompts {
                 if service.trace_prompt.is_some() {
                     service.lost_trace_prompts = service.lost_trace_prompts.saturating_add(1);
@@ -1797,6 +1860,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 },
                 outcome,
                 deliver: service.delivery.clone(),
+                observation,
             };
             service.llm.from_domain(&service.llm_env, request, &mut service.llm_events, &mut service.llm_below);
         }
@@ -2096,6 +2160,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
     due || end_pending(service)
         || service.io.is_ready()
         || service.llm.has_work()
+        || !service.llm.measures_drained()
         || match &service.events {
             Some(events) => events.sinks.has_work(),
             None => false,
@@ -2170,6 +2235,7 @@ fn settled(service: &Service, streams: u32) -> bool {
         && service.channel_events.is_empty()
         && service.channel_below.is_empty()
         && service.llm_events.is_empty()
+        && service.llm.measures_drained()
         && service.llm_below.is_empty()
         && service.machine_events.is_empty()
         && service.machine_below.is_empty()

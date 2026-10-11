@@ -55,6 +55,7 @@ struct Active {
     context: Context,
     outcome: run::outcome::OutcomeSpec,
     deliver: Option<run::outcome::ChangeSpec>,
+    observation: Option<crate::Observation>,
 }
 
 /// Named endpoints, grants and the connection child for active calls.
@@ -66,6 +67,7 @@ pub struct Component {
     next: Set<Token>,
     connection: connection::Component,
     events: Queue<connection::Event>,
+    measures: Queue<crate::Measure>,
 }
 
 impl fmt::Debug for Component {
@@ -90,6 +92,8 @@ pub struct MaxOut {
 /// A fire pass may issue one pending Next and advance one child phase.
 pub const MAX_OUT: MaxOut = MaxOut { above: 128, below: 128 };
 
+const MEASURES: u32 = MAX_OUT.above + 1;
+
 /// Checked retained pool, grant, context, and event-queue ownership, using
 /// configured endpoints to count their request heads and credential bounds.
 #[must_use]
@@ -113,7 +117,27 @@ pub fn component_worst_case(limits: &ComponentLimits, endpoints: &Endpoints) -> 
         .tool_bytes
         .checked_add(limits.contract_bytes)?
         .checked_mul(u64::from(limits.connection.connections))?;
-    base.checked_add(retained)?.checked_add(entrance)
+    base.checked_add(retained)?.checked_add(entrance)?.checked_add(capture_worst_case(limits)?)
+}
+
+fn capture_worst_case(limits: &ComponentLimits) -> Option<u64> {
+    let client = limits.adapter.client;
+    let history = u64::from(client.history_items).checked_mul(
+        u64::try_from(size_of::<smith_events::Message>())
+            .ok()?
+            .checked_add(u64::try_from(size_of::<smith_events::Block>()).ok()?)?,
+    )?;
+    let tools = u64::from(client.tools).checked_mul(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?;
+    let prompt = u64::from(client.request).checked_add(history)?.checked_add(tools)?;
+    let completion = u64::from(client.output_items)
+        .checked_mul(
+            u64::try_from(size_of::<smith_events::Block>())
+                .ok()?
+                .checked_add(u64::from(client.strings).checked_mul(2)?)?,
+        )?
+        .checked_add(u64::from(client.answer).checked_mul(2)?)?
+        .checked_mul(u64::from(limits.connection.calls))?;
+    Queue::<crate::Measure>::worst_case(MEASURES)?.checked_add(prompt)?.checked_add(completion)
 }
 
 impl Component {
@@ -154,7 +178,19 @@ impl Component {
             next: Set::with_capacity(limits.connection.connections),
             connection,
             events: Queue::with_capacity(MAX_OUT.above),
+            measures: Queue::with_capacity(MEASURES),
         })
+    }
+
+    /// The oldest content observation; the service drains these before routing terminals.
+    pub fn pop_measure(&mut self) -> Option<crate::Measure> {
+        self.measures.pop()
+    }
+
+    /// Whether every retained observation was drained before another component entrance.
+    #[must_use]
+    pub fn measures_drained(&self) -> bool {
+        self.measures.is_empty()
     }
 
     /// Install a validated generation from the channel or a colocated host.
@@ -170,15 +206,16 @@ impl Component {
         to_domain: &mut Queue<ToDomain>,
         io: &mut Queue<IoRequest>,
     ) {
+        assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
         match request {
-            FromDomain::Complete { owner, grant, prompt, deadlines, bounds, outcome, deliver } => {
-                self.start(env, owner, grant, prompt, deadlines, bounds, outcome, deliver, to_domain, io);
+            FromDomain::Complete { owner, grant, prompt, deadlines, bounds, outcome, deliver, observation } => {
+                self.start(env, owner, grant, prompt, deadlines, bounds, outcome, deliver, observation, to_domain, io);
             }
             FromDomain::Cancel { owner } => {
                 self.next.remove(&owner);
                 let child_env = self.child_env(env);
                 self.connection.down(&child_env, connection::Request::Cancel { call: owner }, &mut self.events, io);
-                self.route(to_domain);
+                self.route(env.now, to_domain);
             }
         }
     }
@@ -191,20 +228,22 @@ impl Component {
         to_domain: &mut Queue<ToDomain>,
         io: &mut Queue<IoRequest>,
     ) {
+        assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
         let child_env = self.child_env(env);
         self.connection.up(&child_env, event, &mut self.events, io);
-        self.route(to_domain);
+        self.route(env.now, to_domain);
     }
 
     /// Advance one bounded pass of deadlines and buffered connection work.
     pub fn fire(&mut self, env: &Env<ComponentLimits>, to_domain: &mut Queue<ToDomain>, io: &mut Queue<IoRequest>) {
+        assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
         let child_env = self.child_env(env);
         match self.next.pop_first() {
             Some(call) => self.connection.down(&child_env, connection::Request::Next { call }, &mut self.events, io),
             None => {}
         }
         self.connection.fire(&child_env, &mut self.events, io);
-        self.route(to_domain);
+        self.route(env.now, to_domain);
     }
 
     /// The next child deadline, if any.
@@ -226,16 +265,21 @@ impl Component {
 
     /// The owner has ended its run; close every retained physical connection.
     pub fn close(&mut self, env: &Env<ComponentLimits>, to_domain: &mut Queue<ToDomain>, io: &mut Queue<IoRequest>) {
+        assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
         let child_env = self.child_env(env);
         self.connection.down(&child_env, connection::Request::Close, &mut self.events, io);
-        self.route(to_domain);
+        self.route(env.now, to_domain);
     }
 
     fn child_env(&self, env: &Env<ComponentLimits>) -> Env<connection::Limits> {
         Env { now: env.now, wall: env.wall, limits: self.limits.connection }
     }
 
-    #[expect(clippy::too_many_arguments, reason = "one domain Complete and its two output queues")]
+    #[expect(
+        clippy::too_many_arguments,
+        clippy::manual_map,
+        reason = "one domain Complete; the strict subset uses explicit matches"
+    )]
     fn start(
         &mut self,
         env: &Env<ComponentLimits>,
@@ -246,6 +290,7 @@ impl Component {
         bounds: Receiving,
         outcome: run::outcome::OutcomeSpec,
         deliver: Option<run::outcome::ChangeSpec>,
+        observation: Option<crate::Observation>,
         to_domain: &mut Queue<ToDomain>,
         io: &mut Queue<IoRequest>,
     ) {
@@ -305,12 +350,23 @@ impl Component {
             return;
         }
         let index = options.index;
-        match self.active.insert(owner, Active { context, outcome, deliver }) {
+        let captured = match observation {
+            Some(observation) => Some(
+                crate::capture::prompt(&translated, observation, &adapter.client)
+                    .expect("the owner's cursor and translated replay were admitted"),
+            ),
+            None => None,
+        };
+        match self.active.insert(owner, Active { context, outcome, deliver, observation }) {
             Ok(None) => {}
             Ok(Some(_)) | Err(_) => {
                 Self::local_failure(owner, llm::Failure::ApplicationLimit, bounds.max_failure_bytes, to_domain);
                 return;
             }
+        }
+        match captured {
+            Some(prompt) => self.measures.push(crate::Measure::Prompt { at: env.now, owner, prompt }),
+            None => {}
         }
         let deadlines = connection::Deadlines {
             connect: Some(options.connect),
@@ -334,10 +390,10 @@ impl Component {
             io,
         );
         self.next.insert(owner).expect("one pending demand per admitted call");
-        self.route(to_domain);
+        self.route(env.now, to_domain);
     }
 
-    fn route(&mut self, to_domain: &mut Queue<ToDomain>) {
+    fn route(&mut self, now: Time, to_domain: &mut Queue<ToDomain>) {
         for _ in 0..MAX_OUT.above {
             let event = match self.events.pop() {
                 Some(event) => event,
@@ -369,13 +425,7 @@ impl Component {
                     Self::refusal(call, error, maximum, to_domain);
                 }
                 connection::Event::Delta { call, delta } => {
-                    match delta {
-                        shared::Delta::Text { text, .. } | shared::Delta::Reasoning { text, .. } => {
-                            let count = u32::try_from(text.len()).unwrap_or(u32::MAX);
-                            to_domain.push(ToDomain::Text { owner: call, bytes: count });
-                        }
-                        shared::Delta::ToolArguments { .. } => {}
-                    }
+                    self.delta(now, call, delta, to_domain);
                     self.next.insert(call).expect("one pending demand per admitted call");
                 }
                 connection::Event::Block { call, block: _ } => {
@@ -385,6 +435,15 @@ impl Component {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => {
+                            match active.observation {
+                                Some(_) => {
+                                    let completion =
+                                        crate::capture::completion(&completion, &active.context.limits.client)
+                                            .expect("the actual client admitted its bounded blocks and replay");
+                                    self.measures.push(crate::Measure::Completion { at: now, owner: call, completion });
+                                }
+                                None => {}
+                            }
                             let resolved = self.resolve(&completion, &active);
                             match crate::completion(active.context, call, completion, resolved) {
                                 Ok(event) => Self::domain_event(event, to_domain),
@@ -421,6 +480,30 @@ impl Component {
                     }
                 }
             }
+        }
+    }
+
+    fn delta(&mut self, now: Time, call: Token, delta: shared::Delta, to_domain: &mut Queue<ToDomain>) {
+        match delta {
+            shared::Delta::Text { index, content_index: _, text } => {
+                let count = u32::try_from(text.len()).expect("the client admitted a u32 text bound");
+                to_domain.push(ToDomain::Text { owner: call, bytes: count });
+                let live = match self.active.get(&call) {
+                    Some(active) => match active.observation {
+                        Some(observation) => observation.live_text,
+                        None => false,
+                    },
+                    None => false,
+                };
+                if live {
+                    self.measures.push(crate::Measure::Delta { at: now, owner: call, block: index, text });
+                }
+            }
+            shared::Delta::Reasoning { text, .. } => {
+                let count = u32::try_from(text.len()).expect("the client admitted a u32 text bound");
+                to_domain.push(ToDomain::Text { owner: call, bytes: count });
+            }
+            shared::Delta::ToolArguments { .. } => {}
         }
     }
 

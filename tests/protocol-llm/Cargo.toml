@@ -10,6 +10,7 @@ publish.workspace = true
 skein-lib.workspace = true
 skein-json.workspace = true
 smith-domain.workspace = true
+smith-events.workspace = true
 smith-protocol-llm.workspace = true
 smith-host-domain.workspace = true
 smith-host-world.workspace = true

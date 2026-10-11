@@ -72,6 +72,8 @@ pub struct Peer {
     bindings: BTreeMap<Token, Binding>,
     /// Accepted calls have one independently observed terminal, in arrival order.
     pub terminals: Vec<ToDomain>,
+    /// Content actually emitted before a terminal by the component.
+    pub measures: Vec<smith_protocol_llm::Measure>,
 }
 
 impl Peer {
@@ -122,11 +124,34 @@ impl Peer {
             below: Queue::with_capacity(smith_protocol_llm::MAX_OUT.below),
             bindings: BTreeMap::new(),
             terminals: Vec::new(),
+            measures: Vec::new(),
         }
     }
 
     /// Admit one actual call with caller-selected model and whole deadlines.
     pub fn start(&mut self, owner: u64, head: u64, idle: u64, whole: u64) {
+        self.start_selected(owner, head, idle, whole, None);
+    }
+
+    /// Admit a call whose actual translated content and text deltas are requested.
+    pub fn start_observed(&mut self, owner: u64, head: u64, idle: u64, whole: u64) {
+        self.start_selected(
+            owner,
+            head,
+            idle,
+            whole,
+            Some(smith_protocol_llm::Observation { first: true, messages: 0, live_text: true }),
+        );
+    }
+
+    fn start_selected(
+        &mut self,
+        owner: u64,
+        head: u64,
+        idle: u64,
+        whole: u64,
+        observation: Option<smith_protocol_llm::Observation>,
+    ) {
         self.component.from_domain(
             &self.env,
             FromDomain::Complete {
@@ -161,6 +186,7 @@ impl Peer {
                     failure: None,
                 },
                 deliver: None,
+                observation,
             },
             &mut self.above,
             &mut self.below,
@@ -177,7 +203,13 @@ impl Peer {
     /// Drive bounded lower settlement until no immediate work remains.
     pub fn pump(&mut self) {
         for _ in 0..10_000 {
+            while let Some(measure) = self.component.pop_measure() {
+                self.measures.push(measure);
+            }
             while let Some(request) = self.below.pop() {
+                while let Some(measure) = self.component.pop_measure() {
+                    self.measures.push(measure);
+                }
                 match request {
                     IoRequest::Connect { owner, .. } => {
                         let socket = Token::new(100 + u64::try_from(self.bindings.len()).expect("few bindings"));
@@ -244,12 +276,18 @@ impl Peer {
                         &mut self.above,
                         &mut self.below,
                     );
+                    while let Some(measure) = self.component.pop_measure() {
+                        self.measures.push(measure);
+                    }
                 }
             }
             while let Some(event) = self.above.pop() {
                 if !matches!(event, ToDomain::Text { .. }) {
                     self.terminals.push(event);
                 }
+            }
+            while let Some(measure) = self.component.pop_measure() {
+                self.measures.push(measure);
             }
             self.component.fire(&self.env, &mut self.above, &mut self.below);
             self.component.reclaim();

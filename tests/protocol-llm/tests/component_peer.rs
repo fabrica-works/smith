@@ -66,7 +66,7 @@ fn limits() -> ComponentLimits {
 }
 
 #[expect(clippy::too_many_lines, reason = "the protocol story drives the component, io and fake peer")]
-fn run(dialect: Provider, calls: bool) {
+fn run(dialect: Provider, calls: bool, observed: bool) {
     let mut call = skein_llm_world::call(7);
     match dialect {
         Provider::OpenAiCodex => {}
@@ -163,6 +163,7 @@ fn run(dialect: Provider, calls: bool) {
     let mut received = 0_usize;
     let mut owner = None;
     let mut completed = 0_u32;
+    let mut captured = Vec::new();
     provider::start(&mut peer, &mut service, &peer_credential, &peer_env, &mut peer_up, &mut peer_down);
     component.from_domain(
         &env,
@@ -193,11 +194,19 @@ fn run(dialect: Provider, calls: bool) {
             bounds: limits().receiving,
             outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
             deliver: None,
+            observation: observed.then_some(smith_protocol_llm::Observation {
+                first: true,
+                messages: 0,
+                live_text: true,
+            }),
         },
         &mut up,
         &mut io,
     );
     for _ in 0_u32..40_000 {
+        while let Some(measure) = component.pop_measure() {
+            captured.push(measure);
+        }
         if let Some(event) = up.pop() {
             match event {
                 ToDomain::Text { owner, bytes } => {
@@ -326,6 +335,9 @@ fn run(dialect: Provider, calls: bool) {
         if domain.is_due(fake_env.now) {
             fake::fire(&mut domain, &fake_env, &mut replies);
         }
+        while let Some(measure) = component.pop_measure() {
+            captured.push(measure);
+        }
         if component.has_work() {
             component.fire(&env, &mut up, &mut io);
         }
@@ -335,24 +347,90 @@ fn run(dialect: Provider, calls: bool) {
     }
     assert_eq!(service.count(), 1, "the independent fake decoded the call");
     assert_eq!(completed, 1);
+    if observed {
+        let mut prompt_count = 0;
+        let mut completion_count = 0;
+        let mut deltas = Vec::new();
+        for measure in captured {
+            match measure {
+                smith_protocol_llm::Measure::Prompt { at: _, owner, prompt } => {
+                    assert_eq!(owner, Token::new(7));
+                    assert_eq!(prompt.system.as_deref(), Some(b"connection-world".as_slice()));
+                    assert_eq!(prompt.messages.len(), 1);
+                    assert_eq!(
+                        prompt.messages.get(0).expect("first actual message").blocks.as_slice(),
+                        &[smith_events::Block::Text { text: b"hi".to_vec().into() }]
+                    );
+                    assert_eq!(
+                        prompt
+                            .tools
+                            .expect("first prompt carries its tool names")
+                            .iter()
+                            .any(|name| name.as_ref() == b"read"),
+                        calls
+                    );
+                    prompt_count += 1;
+                }
+                smith_protocol_llm::Measure::Delta { at: _, owner, block, text } => {
+                    assert_eq!(owner, Token::new(7));
+                    assert_eq!(block, 0);
+                    deltas.extend_from_slice(&text);
+                }
+                smith_protocol_llm::Measure::Completion { at: _, owner, completion } => {
+                    assert_eq!(owner, Token::new(7));
+                    if calls {
+                        assert!(completion.blocks.iter().any(|block| matches!(block, smith_events::Block::Call { tool, input, .. } if tool.as_ref() == b"read" && input.as_ref() == br#"{"path":"README.md"}"#)));
+                    } else {
+                        match dialect {
+                            Provider::OpenAiCodex => assert!(
+                                deltas.is_empty(),
+                                "the shared fake Codex renderer emits Added/Done, without text deltas"
+                            ),
+                            Provider::Anthropic => assert_eq!(deltas, b"scripted answer"),
+                        }
+                        assert_eq!(
+                            completion.blocks.as_slice(),
+                            &[smith_events::Block::Text { text: b"scripted answer".to_vec().into() }]
+                        );
+                    }
+                    completion_count += 1;
+                }
+            }
+        }
+        assert_eq!((prompt_count, completion_count), (1, 1));
+    } else {
+        assert!(captured.is_empty());
+    }
 }
 
 #[test]
 fn codex_fake_peer_over_tls() {
-    run(Provider::OpenAiCodex, false);
+    run(Provider::OpenAiCodex, false, false);
 }
 
 #[test]
 fn anthropic_fake_peer_over_tls() {
-    run(Provider::Anthropic, false);
+    run(Provider::Anthropic, false, false);
 }
 
 #[test]
 fn codex_tool_input_is_typed_through_the_owned_connection() {
-    run(Provider::OpenAiCodex, true);
+    run(Provider::OpenAiCodex, true, false);
 }
 
 #[test]
 fn anthropic_tool_input_is_typed_through_the_owned_connection() {
-    run(Provider::Anthropic, true);
+    run(Provider::Anthropic, true, false);
+}
+
+#[test]
+fn captured_native_codex_text_and_calls_keep_actual_prompt_and_deltas() {
+    run(Provider::OpenAiCodex, false, true);
+    run(Provider::OpenAiCodex, true, true);
+}
+
+#[test]
+fn captured_native_anthropic_text_and_calls_keep_actual_prompt_and_deltas() {
+    run(Provider::Anthropic, false, true);
+    run(Provider::Anthropic, true, true);
 }

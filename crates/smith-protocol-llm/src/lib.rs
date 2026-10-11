@@ -19,6 +19,7 @@
 extern crate alloc;
 
 mod boundary;
+mod capture;
 mod completion;
 mod component;
 mod contract;
@@ -37,6 +38,7 @@ mod tools;
 mod types;
 
 pub use boundary::{Below, BelowEvent, FromDomain, ToDomain};
+pub use capture::{Measure, Observation};
 pub use completion::completion;
 pub use component::{Component, ComponentError, ComponentLimits, MAX_OUT, MaxOut, component_worst_case};
 pub use contract::{decode_deliver, decode_finish, deliver_schema, finish_schema};

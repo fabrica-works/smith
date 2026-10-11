@@ -384,8 +384,13 @@ impl Producer {
         self.calls.child_received(owner, usage);
     }
 
-    pub(crate) fn request(&mut self, now: Time, owner: Token, prompt: &domain::llm::Prompt) {
-        self.sinks.request(now, self.origin(), owner, prompt);
+    pub(crate) fn request(
+        &mut self,
+        now: Time,
+        owner: Token,
+        prompt: &domain::llm::Prompt,
+    ) -> Option<smith_protocol_llm::Observation> {
+        self.sinks.request(now, self.origin(), owner, prompt)
     }
 
     pub(crate) fn answer(&mut self, now: Time, started: Time, answer: &run::Answer, read: Option<Token>) {

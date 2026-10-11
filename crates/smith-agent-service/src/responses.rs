@@ -3,14 +3,17 @@
 //! one provider attempt. Intents can be revised before hand-off; only `request`
 //! assigns a run-wide response number. Raw usage is counted before accounting;
 //! rejected reports remain in nullable totals, with sticky per-field overflow.
-//! No prompt or transport measurement is
-//! retained. Contracts: protocol/events.md, sections 3.4–3.5, 3.10 and 4.
+//! A content cursor skips already recorded completions; original completion
+//! blocks wait for their terminal. No provider replay bytes are retained.
+//! Contracts: protocol/events.md, sections 3.4–3.5, 3.10–3.11 and 4.
 
 #![expect(
     clippy::manual_let_else,
     clippy::manual_map,
     reason = "the strict subset keeps bounded entries explicit and uses no closures"
 )]
+
+use alloc::boxed::Box;
 
 use skein_lib::{List, Map, Time, Token};
 use smith_domain::{llm, run, session};
@@ -47,6 +50,7 @@ struct Conversation {
     reported: crate::observations::Reported,
     admitted: bool,
     root_end: Option<(Time, run::End)>,
+    recorded: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -55,12 +59,13 @@ struct Intent {
     retry: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct Started {
     number: u64,
     at: Time,
     owner: Token,
     received: Option<Received>,
+    completion: Option<smith_events::Completion>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -68,6 +73,7 @@ struct Received {
     usage: llm::Usage,
     oversized: u64,
     cut: u64,
+    blocks: u64,
 }
 
 /// The actual hand-off's one terminal, completed only after accepted accounting.
@@ -109,6 +115,7 @@ impl Book {
                     reported: crate::observations::Reported::NONE,
                     admitted: false,
                     root_end: None,
+                    recorded: None,
                 },
             )
             .expect("one join row per bounded live conversation");
@@ -144,7 +151,8 @@ impl Book {
         let intent = conversation.intent.take().expect("each actual request has a surviving logical intent");
         let number = self.next;
         self.next = self.next.checked_add(1).expect("a process cannot exhaust response names");
-        conversation.attempt = Attempt::Started(Started { number, at: now, owner: request_owner, received: None });
+        conversation.attempt =
+            Attempt::Started(Started { number, at: now, owner: request_owner, received: None, completion: None });
         Record {
             t_ms: millis(now, origin),
             event: Event::ResponseStarted(ResponseStarted {
@@ -160,6 +168,69 @@ impl Book {
                 output_tokens: u64::from(prompt.max_tokens),
                 tool_choice: crate::request_tool_choice(&prompt.choice),
                 prompt: None,
+            }),
+        }
+    }
+
+    fn owner_for(&self, request_owner: Token) -> Option<Token> {
+        for (owner, conversation) in &self.conversations {
+            let started = match &conversation.attempt {
+                Attempt::Idle => continue,
+                Attempt::Started(started) | Attempt::Answered { started, .. } | Attempt::Failed { started, .. } => {
+                    started
+                }
+            };
+            if started.owner == request_owner {
+                return Some(*owner);
+            }
+        }
+        None
+    }
+
+    pub(crate) fn observation(&self, request_owner: Token) -> smith_protocol_llm::Observation {
+        let owner = self.owner_for(request_owner).expect("actual request retains its conversation");
+        let conversation = self.conversations.get(&owner).expect("found above");
+        match conversation.recorded {
+            Some(messages) => smith_protocol_llm::Observation { first: false, messages, live_text: true },
+            None => smith_protocol_llm::Observation { first: true, messages: 0, live_text: true },
+        }
+    }
+
+    pub(crate) fn prompt_recorded(&mut self, request_owner: Token, messages: u32) {
+        let owner = self.owner_for(request_owner).expect("prompt belongs to an actual request");
+        self.conversations.get_mut(&owner).expect("found above").recorded = Some(messages);
+    }
+
+    pub(crate) fn completion(&mut self, request_owner: Token, completion: smith_events::Completion) {
+        let owner = self.owner_for(request_owner).expect("completion belongs to an actual request");
+        let conversation = self.conversations.get_mut(&owner).expect("found above");
+        let started = match &mut conversation.attempt {
+            Attempt::Started(started) => started,
+            Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
+                unreachable!("capture precedes the domain terminal")
+            }
+        };
+        assert!(started.completion.is_none(), "one observed completion per actual request");
+        started.completion = Some(completion);
+    }
+
+    pub(crate) fn delta(&self, at: Time, origin: Time, request_owner: Token, block: u32, text: Box<[u8]>) -> Record {
+        let owner = self.owner_for(request_owner).expect("delta belongs to an actual request");
+        let conversation = self.conversations.get(&owner).expect("found above");
+        let response = match &conversation.attempt {
+            Attempt::Started(started) => started.number,
+            Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
+                unreachable!("deltas precede the domain terminal")
+            }
+        };
+        Record {
+            t_ms: millis(at, origin),
+            event: Event::TextDelta(smith_events::TextDelta {
+                run: conversation.run,
+                conversation: conversation.number,
+                response,
+                block: u64::from(block),
+                text,
             }),
         }
     }
@@ -183,12 +254,22 @@ impl Book {
             Attempt::Started(started) => {
                 let (oversized, cut) = rejected_calls(completion);
                 assert!(started.received.is_none(), "one typed component answer per actual hand-off");
-                started.received = Some(Received { usage: completion.usage, oversized, cut });
+                let blocks = u64::try_from(completion.content.len())
+                    .expect("bounded blocks")
+                    .checked_add(u64::try_from(completion.reasoning_dropped.len()).expect("bounded drops"))
+                    .expect("bounded original completion blocks");
+                started.received = Some(Received { usage: completion.usage, oversized, cut, blocks });
             }
             Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
                 unreachable!("found active hand-off above")
             }
         }
+        conversation.recorded = match conversation.recorded {
+            Some(messages) => {
+                Some(messages.checked_add(1).expect("the received assistant message fits admitted history"))
+            }
+            None => None,
+        };
         conversation_owner
     }
 
@@ -404,9 +485,9 @@ fn terminal(
             }
             Attempt::Failed { started, at, failure } => (started, at, Outcome::Failed, None, 0, 0, 0, Some(failure)),
         };
-    let (usage, oversized, cut) = match started.received {
-        Some(received) => (crate::reported_usage(received.usage), received.oversized, received.cut),
-        None => (usage, 0, 0),
+    let (usage, oversized, cut, blocks) = match started.received {
+        Some(received) => (crate::reported_usage(received.usage), received.oversized, received.cut, received.blocks),
+        None => (usage, 0, 0, blocks),
     };
     Some(Record {
         t_ms: millis(at, origin),
@@ -429,7 +510,7 @@ fn terminal(
             duration_ms: millis(at, started.at),
             failure,
             retry_ms,
-            completion: None,
+            completion: started.completion,
         }),
     })
 }

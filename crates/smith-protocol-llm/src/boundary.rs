@@ -24,6 +24,8 @@ pub enum FromDomain {
         bounds: crate::Receiving,
         outcome: run::outcome::OutcomeSpec,
         deliver: Option<run::outcome::ChangeSpec>,
+        /// Content selected by the event owner; absent when nothing asks for it.
+        observation: Option<crate::Observation>,
     },
     /// Cancel one outstanding completion.
     Cancel { owner: Token },

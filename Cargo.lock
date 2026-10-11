@@ -1248,8 +1248,10 @@ dependencies = [
  "skein-lib",
  "skein-llm",
  "skein-llm-connection",
+ "skein-llm-world",
  "skein-tls",
  "smith-domain",
+ "smith-events",
 ]
 
 [[package]]
@@ -1271,6 +1273,7 @@ dependencies = [
  "skein-world",
  "smith-domain",
  "smith-domain-tools",
+ "smith-events",
  "smith-host-domain",
  "smith-host-world",
  "smith-protocol-llm",
