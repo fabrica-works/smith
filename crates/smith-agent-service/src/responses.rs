@@ -815,6 +815,7 @@ mod tests {
                 };
                 assert_eq!((closed.turns, closed.spent), (0, 0));
                 assert_eq!(closed.end, ConversationEnd::Overflow);
+                assert_eq!(closed.usage, ended.usage, "a reported terminal belongs to its conversation total");
             }
         }
     }
