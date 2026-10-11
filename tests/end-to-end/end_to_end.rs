@@ -329,7 +329,8 @@ fn a_one_turn_local_run_is_refused_by_the_actor_before_any_completion() {
     assert_eq!(completed.status, smith_events::Status::Refused);
     let failure = completed.failure.as_ref().expect("typed reserve refusal");
     assert_eq!(failure.class, smith_events::AnswerClass::Invalid);
-    assert!(failure.which.as_ref().is_some_and(|name| name.windows(7).any(|part| part == b"reserve")), "{failure:?}");
+    assert_eq!(failure.which.as_deref(), Some(b"budget_reserve_turns".as_slice()));
+    assert_eq!(failure.reason, None, "an admission refusal invents no provider prose");
     assert!(
         !records.iter().any(|record| matches!(&record.event, smith_events::Event::ResponseStarted(_))),
         "reserve refusal starts no completion or provider request"
