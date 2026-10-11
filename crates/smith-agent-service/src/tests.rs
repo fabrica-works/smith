@@ -27,7 +27,7 @@ fn every_settled_check_exit_preserves_its_kind_and_only_zero_passes() {
     }
 }
 
-fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
+pub(crate) fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
     use crate::profile::{Configuration, Endpoint, Model, OversizedReasoning};
     Configuration {
         environment_bytes,
@@ -272,7 +272,7 @@ fn actual_root_budget_facts_encode_without_content_under_every_capture() {
     let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
     for fact in world.facts() {
         let Fact::Run { fact, opening: _ } = fact else { continue };
-        let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO) else { continue };
+        let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO, 1) else { continue };
         budget_count += 1;
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             let line = smith_events::write(&record, &capture, &limits)

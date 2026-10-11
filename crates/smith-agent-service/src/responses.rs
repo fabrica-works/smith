@@ -17,6 +17,13 @@ use smith_events::{
     ResponseCompleted, ResponseStarted, Stop, Usage,
 };
 
+/// Public stream identity of one actual internal conversation owner.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Scope {
+    pub(crate) run: u64,
+    pub(crate) conversation: u64,
+}
+
 /// A bounded response join table, owned by the event sink.
 #[derive(Debug)]
 pub(crate) struct Book {
@@ -27,6 +34,7 @@ pub(crate) struct Book {
 #[derive(Debug)]
 struct Conversation {
     run: u64,
+    number: u64,
     thread: u64,
     model: Model,
     opened: Time,
@@ -76,13 +84,14 @@ impl Book {
         Book { conversations: Map::with_capacity(conversations), next: 1 }
     }
 
-    pub(crate) fn opened(&mut self, at: Time, opening: &ConversationOpened) {
+    pub(crate) fn opened(&mut self, at: Time, owner: Token, opening: &ConversationOpened) {
         let old = self
             .conversations
             .insert(
-                Token::new(opening.conversation),
+                owner,
                 Conversation {
                     run: opening.run,
+                    number: opening.conversation,
                     thread: opening.thread,
                     model: opening.model.clone(),
                     opened: at,
@@ -95,6 +104,11 @@ impl Book {
             )
             .expect("one join row per bounded live conversation");
         assert!(old.is_none(), "each conversation opens once");
+    }
+
+    pub(crate) fn scope(&self, owner: Token) -> Option<Scope> {
+        let conversation = self.conversations.get(&owner)?;
+        Some(Scope { run: conversation.run, conversation: conversation.number })
     }
 
     pub(crate) fn request(&mut self, now: Time, origin: Time, request_owner: Token, prompt: &llm::Prompt) -> Record {
@@ -126,7 +140,7 @@ impl Book {
             t_ms: millis(now, origin),
             event: Event::ResponseStarted(ResponseStarted {
                 run: conversation.run,
-                conversation: owner.raw(),
+                conversation: conversation.number,
                 response: number,
                 turn: intent.turn,
                 attempt: u64::from(intent.retry),
@@ -204,7 +218,7 @@ impl Book {
             t_ms: millis(at, origin),
             event: Event::ConversationClosed(ConversationClosed {
                 run: conversation.run,
-                conversation: owner.raw(),
+                conversation: conversation.number,
                 end,
                 which: None,
                 failure: None,
@@ -257,7 +271,7 @@ impl Book {
                     .spent
                     .checked_add(spent)
                     .expect("session accepted this representable cumulative spend");
-                let record = terminal(conversation, opener, origin, crate::reported_usage(usage), spent, None)
+                let record = terminal(conversation, origin, crate::reported_usage(usage), spent, None)
                     .expect("an accepted charge follows its pending answer");
                 records.push(record).expect("one response terminal");
             }
@@ -274,9 +288,8 @@ impl Book {
             }
             session::FactKind::CompletionRetried { opener, delay, .. } => {
                 let conversation = self.conversations.get_mut(&opener).expect("retry follows opening");
-                let record =
-                    terminal(conversation, opener, origin, unknown_usage(), 0, Some(delay.as_nanos() / 1_000_000))
-                        .expect("a retry follows one pending actual failure");
+                let record = terminal(conversation, origin, unknown_usage(), 0, Some(delay.as_nanos() / 1_000_000))
+                    .expect("a retry follows one pending actual failure");
                 records.push(record).expect("one response terminal");
             }
             session::FactKind::CompletionCancelled { opener } => {
@@ -284,7 +297,7 @@ impl Book {
                 let started = take_started(&mut conversation.attempt);
                 // The domain can abandon an unsent logical intent; that is not a provider attempt.
                 if let Some(started) = started {
-                    records.push(cancelled(conversation, opener, origin, started, fact.at)).expect("one cancellation");
+                    records.push(cancelled(conversation, origin, started, fact.at)).expect("one cancellation");
                 }
             }
             session::FactKind::Ended { opener, end, turns, usage } => {
@@ -292,7 +305,7 @@ impl Book {
                     Some(conversation) => conversation,
                     None => return records,
                 };
-                if let Some(record) = terminal(&mut conversation, opener, origin, unknown_usage(), 0, None) {
+                if let Some(record) = terminal(&mut conversation, origin, unknown_usage(), 0, None) {
                     records.push(record).expect("one pending terminal before end");
                 }
                 let (end, which, failure) = conversation_end(end);
@@ -301,7 +314,7 @@ impl Book {
                         t_ms: millis(fact.at, origin),
                         event: Event::ConversationClosed(ConversationClosed {
                             run: conversation.run,
-                            conversation: opener.raw(),
+                            conversation: conversation.number,
                             end,
                             which: match which {
                                 Some(which) => Some(which.into()),
@@ -363,7 +376,6 @@ fn take_started(attempt: &mut Attempt) -> Option<Started> {
 
 fn terminal(
     conversation: &mut Conversation,
-    owner: Token,
     origin: Time,
     usage: Usage,
     spent: u64,
@@ -386,7 +398,7 @@ fn terminal(
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
             run: conversation.run,
-            conversation: owner.raw(),
+            conversation: conversation.number,
             response: started.number,
             outcome,
             stop,
@@ -408,12 +420,12 @@ fn terminal(
     })
 }
 
-fn cancelled(conversation: &Conversation, owner: Token, origin: Time, started: Started, at: Time) -> Record {
+fn cancelled(conversation: &Conversation, origin: Time, started: Started, at: Time) -> Record {
     Record {
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
             run: conversation.run,
-            conversation: owner.raw(),
+            conversation: conversation.number,
             response: started.number,
             outcome: Outcome::Cancelled,
             stop: None,
@@ -602,7 +614,7 @@ mod tests {
     fn revised_unsent_intent_and_retry_join_once_to_actual_hand_offs() {
         let mut book = Book::new(2);
         let owner = Token::new(11);
-        book.opened(at(1), &opened(11, 0));
+        book.opened(at(1), Token::new(11), &opened(11, 0));
         intent(&mut book, owner, session::Choice::Auto, 0);
         intent(&mut book, owner, session::Choice::Only, 0);
         let first = book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
@@ -644,13 +656,67 @@ mod tests {
             panic!("actual retry hand-off");
         };
         assert_eq!((second.response, second.turn, second.attempt), (2, 1, 1));
-        book.opened(at(38), &opened(12, 1));
+        book.opened(at(38), Token::new(12), &opened(12, 1));
         intent(&mut book, Token::new(12), session::Choice::Only, 0);
         let child = book.request(at(39), Time::ZERO, Token::new(101), &prompt(1));
         let Event::ResponseStarted(child) = child.event else {
             panic!("actual second conversation");
         };
         assert_eq!(child.response, 3);
+    }
+
+    #[test]
+    fn internal_owner_tokens_do_not_replace_public_activation_and_conversation_numbers() {
+        let mut book = Book::new(1);
+        let owner = Token::new(91);
+        let mut opening = opened(0, 0);
+        opening.run = 77;
+        book.opened(at(1), owner, &opening);
+        let scope = book.scope(owner).expect("actual owner joined");
+        assert_eq!((scope.run, scope.conversation), (77, 0));
+        assert!(book.scope(Token::new(0)).is_none(), "public ordinal is not the internal owner");
+        intent(&mut book, owner, session::Choice::Auto, 0);
+        let record = book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
+        let Event::ResponseStarted(record) = record.event else { panic!("actual hand-off") };
+        assert_eq!((record.run, record.conversation), (77, 0));
+        let completion = actual_completion();
+        book.received(Token::new(99), &completion);
+        drop(book.fact(
+            Time::ZERO,
+            &fact(
+                5,
+                session::FactKind::CompletionAnswered {
+                    opener: owner,
+                    stop: completion.stop,
+                    blocks: 2,
+                    calls: 2,
+                    invalid: 2,
+                },
+                1,
+                None,
+            ),
+        ));
+        let records = book
+            .fact(Time::ZERO, &fact(7, session::FactKind::Used { opener: owner, usage: completion.usage }, 1, Some(3)));
+        let Event::ResponseCompleted(record) = &records.as_slice()[0].event else { panic!("actual terminal") };
+        assert_eq!((record.run, record.conversation), (77, 0));
+        let records = book.fact(
+            Time::ZERO,
+            &fact(
+                11,
+                session::FactKind::Ended {
+                    opener: owner,
+                    end: session::End::Closed,
+                    turns: 1,
+                    usage: completion.usage,
+                },
+                1,
+                None,
+            ),
+        );
+        let Event::ConversationClosed(record) = &records.as_slice()[0].event else { panic!("actual conversation end") };
+        assert_eq!((record.run, record.conversation), (77, 0));
+        assert!(book.scope(owner).is_none());
     }
 
     fn actual_completion() -> llm::Completion {
@@ -688,7 +754,7 @@ mod tests {
         for accepted in [false, true] {
             let mut book = Book::new(1);
             let owner = Token::new(11);
-            book.opened(at(1), &opened(11, 0));
+            book.opened(at(1), Token::new(11), &opened(11, 0));
             book.fact(Time::ZERO, &fact(2, session::FactKind::Opened { opener: owner }, 1, None));
             intent(&mut book, owner, session::Choice::Only, 0);
             book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
@@ -754,7 +820,7 @@ mod tests {
         for sent in [false, true] {
             let mut book = Book::new(1);
             let owner = Token::new(11);
-            book.opened(at(1), &opened(11, 0));
+            book.opened(at(1), Token::new(11), &opened(11, 0));
             intent(&mut book, owner, session::Choice::Only, 0);
             if sent {
                 book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
@@ -772,7 +838,7 @@ mod tests {
         }
         let mut book = Book::new(1);
         let owner = Token::new(11);
-        book.opened(at(1), &opened(11, 0));
+        book.opened(at(1), Token::new(11), &opened(11, 0));
         book.root_ended(at(5), owner, run::End::Invalid);
         let Event::ConversationClosed(refused) = book.facts_drained(Time::ZERO).unwrap().event else {
             panic!("refusal closes opening");
@@ -798,7 +864,7 @@ mod tests {
             .is_empty()
         );
         // The same capacity can now admit another refused opening.
-        book.opened(at(6), &opened(12, 1));
+        book.opened(at(6), Token::new(12), &opened(12, 1));
         book.root_ended(at(7), Token::new(12), run::End::Busy);
         assert!(book.facts_drained(Time::ZERO).is_some());
     }

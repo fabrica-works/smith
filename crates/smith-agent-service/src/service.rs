@@ -126,7 +126,6 @@ pub struct Service {
     machine_env: Env<machine::Limits>,
     io_env: Env<io::Limits>,
     channel_events: Queue<channel::OpenEvent>,
-    trace_facts: Queue<domain::Fact>,
     trace_prompt: Option<(Token, Box<[u8]>)>,
     capture_prompts: bool,
     pending_messages: Queue<PendingMessage>,
@@ -158,7 +157,6 @@ pub struct Service {
     channel_ended: bool,
     failed: bool,
     failure: Option<Failure>,
-    lost_trace_facts: u64,
     lost_trace_prompts: u64,
     outcome: Option<run::outcome::OutcomeSpec>,
     delivery: Option<run::outcome::ChangeSpec>,
@@ -365,12 +363,9 @@ pub fn effects_worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option
 #[must_use]
 pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     let queue = limits.queue;
-    // Rule 5: rich observation fields share each producer's answer total.
-    // Queue capacity also holds scalar observations and never multiplies a
-    // whole completion payload. Domain observations are drained every iterate.
+    // Facts pass directly from the domain into the bounded event producer.
+    // No second trace queue retains their rich observations.
     let stages = Queue::<channel::OpenEvent>::worst_case(queue)?
-        .checked_add(Queue::<domain::Fact>::worst_case(queue)?)?
-        .checked_add(u64::from(limits.domain.session.sessions).checked_mul(limits.domain.session.answer_bytes)?)?
         .checked_add(List::<u8>::worst_case(TRACE_PROMPT_BYTES)?.checked_mul(2)?)?
         .checked_add(Queue::<ChannelLower>::worst_case(queue)?)?
         .checked_add(Queue::<PendingMessage>::worst_case(queue)?)?
@@ -503,7 +498,6 @@ impl Service {
             machine_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.machine },
             io_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.io },
             channel_events: Queue::with_capacity(limits.queue),
-            trace_facts: Queue::with_capacity(limits.queue),
             trace_prompt: None,
             capture_prompts: config.capture_prompts,
             pending_messages: Queue::with_capacity(limits.queue),
@@ -535,7 +529,6 @@ impl Service {
             channel_ended: false,
             failed: false,
             failure: None,
-            lost_trace_facts: 0,
             lost_trace_prompts: 0,
             outcome: None,
             delivery: None,
@@ -600,11 +593,6 @@ impl Service {
         &mut self.submissions
     }
 
-    /// One content-free fact offered to a local trace, independent of the channel.
-    pub fn pop_trace_fact(&mut self) -> Option<domain::Fact> {
-        self.trace_facts.pop()
-    }
-
     /// One owned content observation for local capture, never sent to the host.
     pub fn pop_trace_content(&mut self) -> Option<domain::Content> {
         self.domain.as_mut().expect("framed agent owns its domain").pop_content()
@@ -613,12 +601,6 @@ impl Service {
     /// One bounded typed prompt, captured before its ownership passes to LLM.
     pub fn pop_trace_prompt(&mut self) -> Option<(Token, Box<[u8]>)> {
         self.trace_prompt.take()
-    }
-
-    /// Number of local trace facts lost to its bounded service queue.
-    #[must_use]
-    pub const fn lost_trace_facts(&self) -> u64 {
-        self.lost_trace_facts
     }
 
     /// Prompt records that could not be retained by the local trace slot.

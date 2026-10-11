@@ -60,11 +60,11 @@ pub const fn request_tool_choice(choice: &smith_domain::llm::ToolChoice) -> smit
     }
 }
 
-/// A run's actual charge observation, stamped from the process origin for its event sink.
+/// A run's actual charge observation, joined to its Start activation and stamped from the process origin.
 #[must_use]
-pub fn budget_record(fact: &run::facts::Fact, started_at: Time) -> Option<Record> {
-    let (run, standing) = match fact.kind {
-        run::facts::FactKind::Budget { run, standing } => (run, standing),
+pub fn budget_record(fact: &run::facts::Fact, started_at: Time, activation: u64) -> Option<Record> {
+    let standing = match fact.kind {
+        run::facts::FactKind::Budget { run: _, standing } => standing,
         run::facts::FactKind::MessageRead { .. }
         | run::facts::FactKind::MessageFence { .. }
         | run::facts::FactKind::MessageUnread { .. }
@@ -88,7 +88,7 @@ pub fn budget_record(fact: &run::facts::Fact, started_at: Time) -> Option<Record
     Some(Record {
         t_ms: fact.at.saturating_since(started_at).as_nanos() / 1_000_000,
         event: Event::Budget(BudgetStanding {
-            run: run.raw(),
+            run: activation,
             stage,
             turns: Quantity { used: u64::from(standing.turns), limit: u64::from(standing.turns_limit) },
             spend: Quantity { used: standing.spend, limit: standing.spend_limit },

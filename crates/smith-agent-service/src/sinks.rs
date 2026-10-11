@@ -281,12 +281,16 @@ impl Sinks {
 
     /// Retain the actual opening's identity and model before its first request.
     /// The owner projects this value from the run's opening and configured endpoint.
-    pub fn conversation(&mut self, at: Time, origin: Time, opened: smith_events::ConversationOpened) {
-        self.responses.opened(at, &opened);
+    pub fn conversation(&mut self, at: Time, origin: Time, owner: Token, opened: smith_events::ConversationOpened) {
+        self.responses.opened(at, owner, &opened);
         self.record(&Record {
             t_ms: at.saturating_since(origin).as_nanos() / 1_000_000,
             event: Event::ConversationOpened(opened),
         });
+    }
+
+    pub(crate) fn scope(&self, owner: Token) -> Option<crate::responses::Scope> {
+        self.responses.scope(owner)
     }
 
     /// Assign one response identity at the actual hand-off to the LLM component.
@@ -817,7 +821,7 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(
         clippy::disallowed_macros,
         clippy::disallowed_types,
@@ -827,7 +831,7 @@ mod tests {
 
     use super::*;
 
-    fn limits(destinations: u32) -> SinkLimits {
+    pub(crate) fn limits(destinations: u32) -> SinkLimits {
         let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
         let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
         SinkLimits {
@@ -1016,11 +1020,19 @@ mod tests {
         smith_events::read(bytes, &limits.records).unwrap().unwrap()
     }
 
-    fn grant(sinks: &mut Sinks, token: Token) {
+    pub(crate) fn grant(sinks: &mut Sinks, token: Token) {
         sinks.up(io::Event::Stream { owner: token, up: stream::Up::Room });
     }
 
-    fn drain(sinks: &mut Sinks, token: Token) -> Vec<Record> {
+    pub(crate) fn drain(sinks: &mut Sinks, token: Token) -> Vec<Record> {
+        drain_until(sinks, token, true)
+    }
+
+    pub(crate) fn drain_ready(sinks: &mut Sinks, token: Token) -> Vec<Record> {
+        drain_until(sinks, token, false)
+    }
+
+    fn drain_until(sinks: &mut Sinks, token: Token, ended: bool) -> Vec<Record> {
         let mut out = Queue::with_capacity(2);
         let mut read = Vec::new();
         let mut reader = smith_events::Reader::new(&sinks.limits.records).unwrap();
@@ -1044,7 +1056,11 @@ mod tests {
                     sinks.up(io::Event::Closed { owner: token });
                     return read;
                 }
-                None => panic!("writer failed to advance"),
+                None => {
+                    assert!(!ended, "writer failed to advance before close");
+                    reader.finish().unwrap();
+                    return read;
+                }
                 Some(other) => panic!("unexpected append request: {other:?}"),
             }
         }

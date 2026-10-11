@@ -1,55 +1,83 @@
 //! Native trace observations remain complete across host output pressure and
 //! every admitted terminal. The independent channel peer supplies the answer.
+use skein_world::domain::heap::Counting;
 use smith_agent_process_world::{TraceCase, World, charter};
 use smith_channel::RunResult;
-use smith_domain::run::facts::{Answered, FactKind};
+use smith_events::{Event, RunCompleted, Status};
 
-fn terminal(world: &World) -> Answered {
+#[global_allocator]
+static HEAP: Counting = Counting;
+
+fn terminal(world: &World) -> &RunCompleted {
+    world.assert_event_conformance();
     let terminals: Vec<_> = world
-        .facts()
+        .records()
         .iter()
-        .filter_map(|fact| match fact {
-            smith_domain::Fact::Run { fact, opening: _ } => match fact.kind {
-                FactKind::Answered { answer, .. } => Some(answer),
-                FactKind::MessageRead { .. }
-                | FactKind::MessageFence { .. }
-                | FactKind::MessageUnread { .. }
-                | FactKind::MessageReceived { .. }
-                | FactKind::MessageRefused { .. }
-                | FactKind::Admitted { .. }
-                | FactKind::Budget { .. }
-                | FactKind::Prepared { .. }
-                | FactKind::Opened { .. }
-                | FactKind::Ended { .. }
-                | FactKind::Called { .. }
-                | FactKind::Returned { .. }
-                | FactKind::CheckStarted { .. }
-                | FactKind::CheckFinished { .. }
-                | FactKind::Delivered { .. } => None,
-            },
-            smith_domain::Fact::Session { .. } => None,
+        .filter_map(|record| match &record.event {
+            Event::RunCompleted(answer) => Some(answer),
+            Event::Budget(_)
+            | Event::SessionStarted(_)
+            | Event::SessionEnded(_)
+            | Event::RunStarted(_)
+            | Event::ConversationOpened(_)
+            | Event::ConversationClosed(_)
+            | Event::ResponseStarted(_)
+            | Event::ResponseCompleted(_)
+            | Event::TextDelta(_)
+            | Event::ToolStarted(_)
+            | Event::ToolCompleted(_)
+            | Event::CheckStarted(_)
+            | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
+            | Event::Notice(_) => None,
         })
         .collect();
-    assert_eq!(terminals.len(), 1, "one native terminal reaches the trace, after the answer");
+    assert_eq!(terminals.len(), 1, "one typed actual answer, including an entrance refusal");
     assert_eq!(world.trace_loss(), 0, "trace room is independent of channel room");
+    assert!(matches!(world.records().first().expect("header").event, Event::SessionStarted(_)));
+    let Event::SessionEnded(end) = &world.records().last().expect("end").event else { panic!("end is last") };
+    assert_eq!(
+        end.emitted.iter().map(|count| count.count).sum::<u64>(),
+        u64::try_from(world.records().len()).expect("finite records")
+    );
     terminals[0]
 }
 
 #[test]
 fn a_host_slow_to_acknowledge_loses_projected_facts_and_the_trace_keeps_them() {
     let mut narrow = World::new(7, &charter());
-    narrow.observe_facts(TraceCase::Failed, 2);
+    narrow.observe_facts(TraceCase::Failed, 1);
     assert!(narrow.settle());
     let mut wide = World::new(7, &charter());
     wide.observe_facts(TraceCase::Failed, 8);
     assert!(wide.settle());
     assert_eq!(narrow.answer(), wide.answer(), "projection cannot change the run's answer");
-    assert_eq!(terminal(&narrow), terminal(&wide));
-    assert_eq!(narrow.facts(), wide.facts(), "each native emission survives the constrained output window");
+    assert_eq!(terminal(&narrow).status, terminal(&wide).status);
+    assert_eq!(
+        &narrow.records()[..narrow.records().len() - 1],
+        &wide.records()[..wide.records().len() - 1],
+        "each typed emission survives the constrained output window"
+    );
+    let Event::SessionEnded(narrow_end) = &narrow.records().last().expect("narrow end").event else { panic!("end") };
+    let Event::SessionEnded(wide_end) = &wide.records().last().expect("wide end").event else { panic!("end") };
+    assert_eq!(narrow_end.loss.channel, Some(narrow.channel_loss()));
+    assert_eq!(wide_end.loss.channel, Some(wide.channel_loss()));
+    let mut narrow_end = narrow_end.clone();
+    let mut wide_end = wide_end.clone();
+    narrow_end.loss.channel = None;
+    wide_end.loss.channel = None;
+    assert_eq!(narrow_end, wide_end, "only separately asserted channel projection loss changes");
     assert!(narrow.channel_loss() > 0);
     let projected = narrow.observed().iter().filter(|frame| frame.kind == 0x010f).count();
     let wide_projected = wide.observed().iter().filter(|frame| frame.kind == 0x010f).count();
-    assert!(projected < wide_projected, "the constrained channel loses actual projected facts");
+    assert!(
+        projected < wide_projected,
+        "the constrained channel loses actual projected facts: narrow={projected}/loss{} wide={wide_projected}/loss{}",
+        narrow.channel_loss(),
+        wide.channel_loss()
+    );
 }
 
 #[test]
@@ -57,42 +85,39 @@ fn every_answer_kind_reaches_the_trace_with_its_terminal_fact_once() {
     for case in [TraceCase::Accepted, TraceCase::Failed, TraceCase::Refused, TraceCase::Parked, TraceCase::Cancelled] {
         let mut world = World::new(8, &charter());
         world.observe_facts(case, 4);
+        world.check_memory();
         assert!(world.settle(), "{case:?}");
         let answer = world.answer().expect("one answer crossed the host channel");
-        let ended = if case == TraceCase::Refused {
-            assert!(world.facts().is_empty(), "an entrance refusal creates no native run or session");
-            assert_eq!(world.trace_loss(), 0);
-            // The service's actual answer is the refused terminal authority.
-            // Its stream-local run.completed is introduced by increment02.5.
-            None
-        } else {
-            Some(terminal(&world))
-        };
+        let ended = &terminal(&world).status;
         match case {
             TraceCase::Accepted => {
                 assert!(
                     matches!(answer.result(), RunResult::Accepted(_)),
-                    "answer={:?}; facts={:?}",
+                    "answer={:?}; records={:?}",
                     answer.result(),
-                    world.facts()
+                    world.records()
                 );
-                assert_eq!(ended, Some(Answered::Accepted));
+                assert_eq!(ended, &Status::Accepted);
             }
             TraceCase::Failed => {
                 assert!(matches!(answer.result(), RunResult::Failed(_)));
-                assert!(matches!(ended, Some(Answered::Failed(_))));
+                assert_eq!(ended, &Status::Failed);
             }
             TraceCase::Refused => {
                 assert!(matches!(answer.result(), RunResult::Refused(_)));
-                assert_eq!(ended, None);
+                assert_eq!(ended, &Status::Refused);
             }
             TraceCase::Parked => {
                 assert!(matches!(answer.result(), RunResult::Parked));
-                assert_eq!(ended, Some(Answered::Parked));
+                assert_eq!(ended, &Status::Parked);
             }
             TraceCase::Cancelled => {
                 assert!(matches!(answer.result(), RunResult::Failed(_)));
-                assert_eq!(ended, Some(Answered::Failed(smith_domain::run::Failure::Cancelled)));
+                assert_eq!(ended, &Status::Failed);
+                assert_eq!(
+                    terminal(&world).failure.as_ref().expect("cancelled failure").class,
+                    smith_events::AnswerClass::Cancelled
+                );
             }
         }
         world.assert_agent_clean();

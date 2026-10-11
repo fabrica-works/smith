@@ -30,6 +30,7 @@ smith-agent-world.workspace = true
 smith-channel.workspace = true
 smith-charter.workspace = true
 smith-domain.workspace = true
+smith-events.workspace = true
 smith-domain-run.workspace = true
 smith-domain-session.workspace = true
 smith-protocol-channel.workspace = true

@@ -366,11 +366,18 @@ fn make_tracing(spawn: &Spawn, inherited: &Inherited) -> Proc {
     Proc::Tracing(Box::new(crate::tracing::Tracing::new(configuration, inherited)))
 }
 
-fn unused_roots(_spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
-    [b"unused-a", b"unused-b"]
+fn unused_roots(spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
+    let mut roots: Vec<_> = [b"unused-a", b"unused-b"]
         .into_iter()
         .map(|name| skein_world::StartupRoot { name: name.as_slice().into(), path: name.as_slice().into() })
-        .collect()
+        .collect();
+    if spawn.args.len() == 2 {
+        roots.push(skein_world::StartupRoot {
+            name: b"event-trace".as_slice().into(),
+            path: b"event-trace".as_slice().into(),
+        });
+    }
+    roots
 }
 
 struct Spawned {
@@ -381,10 +388,16 @@ struct Spawned {
 struct Machine {
     files: skein_fake_machine::Machine,
     spawns: Vec<Spawned>,
+    next_root: u32,
+    trace_root: Option<u32>,
 }
 impl skein_world::Machine for Machine {
     fn open_root(&mut self, path: &[u8]) -> Result<skein_sim::Handle, kernel::Error> {
-        assert!(matches!(path, b"unused-a" | b"unused-b"), "scenario's unused startup roots");
+        assert!(matches!(path, b"unused-a" | b"unused-b" | b"event-trace"), "scenario startup roots");
+        if path == b"event-trace" {
+            self.trace_root = Some(self.next_root);
+        }
+        self.next_root += 1;
         Ok(skein_sim::Handle::new(self.files.lay(&[]).raw()))
     }
 
@@ -405,6 +418,35 @@ impl skein_world::Machine for Machine {
         }
         skein_fake_machine::step(&mut self.files, call, answers);
     }
+}
+
+// Reads the actual closed append file; no service or simulator decision is consulted.
+fn read_records(machine: &mut Machine) -> Vec<smith_events::Record> {
+    let mut records = Vec::new();
+    if let Some(index) = machine.trace_root {
+        let root = machine.files.reopen_root(index);
+        let file = machine
+            .files
+            .open(root, b"events.jsonl", skein_fake_machine::How::ReadNoFollow)
+            .expect("settled trace exists");
+        let size = u32::try_from(machine.files.stat(file).size).expect("finite trace bytes");
+        let bytes = machine.files.read(file, 0, size).expect("read actual trace file");
+        machine.files.close(file);
+        machine.files.close(root);
+        let mut reader = smith_events::Reader::new(&crate::tracing::event_limits(&crate::limits()).sinks.records)
+            .expect("actual receiving bound");
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let line = reader.feed(&bytes[offset..]).expect("valid event stream");
+            assert!(line.consumed > 0);
+            offset += line.consumed;
+            if let Some(record) = line.record {
+                records.push(record);
+            }
+        }
+        reader.finish().expect("newline-terminated stream");
+    }
+    records
 }
 
 #[derive(Debug)]
@@ -520,7 +562,11 @@ impl skein_world::Referee<Proc> for Referee {
         self.reviewed = parent.peer.observed().len();
         assert!(self.admitted_facts <= 1 && self.answer_facts <= 1, "one fact terminal per activation");
         if !self.hang_up && parent.status.is_some() && self.tracing.is_none() {
-            assert_eq!(self.admitted_facts, 1, "the observed admission agrees with the host");
+            assert_eq!(
+                parent.peer.observed().iter().filter(|frame| frame.kind == 0x0106).count(),
+                1,
+                "the reliable admission frame agrees with the host; its fact projection is best effort"
+            );
         }
         self.expected.observe(now, procs);
     }
@@ -639,6 +685,7 @@ pub struct World {
     window: u32,
     tracing: Option<(TraceCase, u32)>,
     environment: bool,
+    records: Vec<smith_events::Record>,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -655,6 +702,7 @@ impl World {
             window: 8,
             tracing: None,
             environment: false,
+            records: Vec::new(),
         }
     }
 
@@ -738,10 +786,15 @@ impl World {
             .expect("native trace observer")
     }
 
-    /// Facts taken from the service's local trace output, including settlement.
+    /// Typed records decoded from the settled append file, independently of service state.
     #[must_use]
-    pub fn facts(&self) -> &[smith_domain::Fact] {
-        &self.observations().facts
+    pub fn records(&self) -> &[smith_events::Record] {
+        &self.records
+    }
+
+    /// Check record pairings, per-type counts and actual response totals from the file.
+    pub fn assert_event_conformance(&self) {
+        crate::events::check(&self.records);
     }
 
     /// Facts refused by the channel projection, as counted by that component.
@@ -750,10 +803,14 @@ impl World {
         self.observations().channel_loss
     }
 
-    /// Native trace queue overflow, independently counted by the service.
+    /// Destination loss reported in the actual last stream record.
     #[must_use]
     pub fn trace_loss(&self) -> u64 {
-        self.observations().trace_loss
+        let Some(smith_events::Record { event: smith_events::Event::SessionEnded(end), .. }) = self.records.last()
+        else {
+            panic!("session end is last")
+        };
+        end.loss.events
     }
 
     /// Request an actual pidfd termination signal after observed admission.
@@ -791,14 +848,18 @@ impl World {
             maximum_queries: if self.environment || self.tracing.is_some() { 2 } else { 1 },
             expected: skein_world::Expectations::new(self.seed, vec![Terminal { hang_up: self.hang_up }]),
         };
-        let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
-            .with_machine(Machine { files: machine, spawns: Vec::new() });
+        let mut world = skein_world::World::new(self.seed, config, referee, self.memory).with_machine(Machine {
+            files: machine,
+            spawns: Vec::new(),
+            next_root: 1,
+            trace_root: None,
+        });
         world.host_roots(
             HostedProgram {
                 program: b"smith".as_slice().into(),
                 make: if self.tracing.is_some() { make_tracing } else { make },
                 instances: 1,
-                operations: crate::limits().routes.checked_add(4).expect("routes, inherited closes and stderr write"),
+                operations: crate::limits().routes.checked_add(8).expect("routes, startup trace and inherited closes"),
             },
             unused_roots,
         );
@@ -859,7 +920,9 @@ impl World {
             }))
         });
 
-        self.outcome = Some(world.run());
+        let mut outcome = world.run();
+        self.records = read_records(&mut outcome.machine);
+        self.outcome = Some(outcome);
         self.parent().status == Some(kernel::Exit::Code(u8::from(self.hang_up)))
     }
     fn parent(&self) -> &Parent {

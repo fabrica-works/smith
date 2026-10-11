@@ -1,15 +1,12 @@
 //! Constrained output and acknowledgement windows never remove trace facts.
 use smith_agent_process_world::{TraceCase, World, charter};
 
-fn vocabulary(world: &World) -> Vec<String> {
-    world
-        .facts()
-        .iter()
-        .map(|fact| match fact {
-            smith_domain::Fact::Run { fact, opening: _ } => format!("run {:?}", fact.kind),
-            smith_domain::Fact::Session { fact } => format!("session {:?}", fact.kind),
-        })
-        .collect()
+fn vocabulary(world: &World) -> Vec<(Box<[u8]>, u64)> {
+    let Some(smith_events::Record { event: smith_events::Event::SessionEnded(end), .. }) = world.records().last()
+    else {
+        panic!("end is last")
+    };
+    end.emitted.iter().map(|count| (count.record.clone(), count.count)).collect()
 }
 
 #[test]
@@ -19,9 +16,11 @@ fn seeded_output_and_acknowledgement_windows_count_projection_loss_without_chang
         roomy.observe_facts(TraceCase::Failed, 8);
         assert!(roomy.settle());
         let mut constrained = World::new(seed, &charter());
-        constrained.observe_facts(TraceCase::Failed, 2 + u32::try_from(seed % 7).expect("small window"));
+        constrained.observe_facts(TraceCase::Failed, 1 + u32::try_from(seed % 8).expect("small window"));
         constrained.acknowledgement_window(1 + u32::try_from(seed % 8).expect("small window"));
         assert!(constrained.settle());
+        constrained.assert_event_conformance();
+        roomy.assert_event_conformance();
         assert_eq!(constrained.answer(), roomy.answer(), "seed {seed}");
         assert_eq!(vocabulary(&constrained), vocabulary(&roomy), "seed {seed}");
         assert_eq!(constrained.trace_loss(), 0, "seed {seed}");

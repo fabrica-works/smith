@@ -791,6 +791,7 @@ dependencies = [
  "smith-domain",
  "smith-domain-run",
  "smith-domain-session",
+ "smith-events",
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",

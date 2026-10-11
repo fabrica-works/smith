@@ -154,7 +154,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
         .and_then(|bytes| {
             bytes.checked_add(if configuration.trace.is_some() {
-                // The retained startup header's five strings; its structure is in Agent.
+                // The retained startup header's four strings; its structure is in Agent.
                 u64::try_from(
                     b"smith"
                         .len()
@@ -232,14 +232,6 @@ impl Host for Agent {
         }
         if self.result.is_some() && !self.reported {
             self.reported = true;
-            let lost = self
-                .service
-                .lost_channel_facts()
-                .saturating_add(self.service.lost_trace_facts())
-                .saturating_add(self.service.lost_trace_prompts());
-            if lost > 0 {
-                diagnostic(self.errors.as_mut(), &format!("{lost} observations were dropped"));
-            }
             if let Some(Err(why)) = &self.result {
                 diagnostic(self.errors.as_mut(), why);
             }

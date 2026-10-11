@@ -77,10 +77,12 @@ pub(crate) struct Producer {
     pub(crate) sinks: Sinks,
     names: channel::Endpoints,
     efforts: Map<u32, Box<[u8]>>,
+    calls: crate::calls::Book,
     capture: Capture,
     origin: Option<Time>,
     start: Option<Start>,
     admitted: Option<u64>,
+    activation: Option<u64>,
     answer_at: Option<Time>,
     wind_down: bool,
     unread: u64,
@@ -123,10 +125,12 @@ impl Producer {
             sinks: Sinks::new(&events.sinks, events.capture, limits.io.output),
             names,
             efforts,
+            calls: crate::calls::Book::new(&limits.domain.session),
             capture: events.capture,
             origin: None,
             start: None,
             admitted: None,
+            activation: None,
             answer_at: None,
             wind_down: false,
             unread: 0,
@@ -142,7 +146,8 @@ impl Producer {
     }
 
     pub(crate) fn starting(&mut self, start: &channel::DecodedStart) {
-        assert!(self.start.is_none(), "one Start per invocation");
+        assert!(self.activation.is_none(), "one Start per invocation");
+        self.activation = Some(start.activation);
         let charter = &start.charter;
         let mut families = List::with_capacity(4);
         for (allowed, family) in [
@@ -209,17 +214,18 @@ impl Producer {
         let origin = self.origin();
         let (fact, opening) = match fact {
             domain::Fact::Session { fact } => {
+                self.calls.fact(origin, fact, &mut self.sinks);
                 self.sinks.session(origin, fact);
                 return;
             }
             domain::Fact::Run { fact, opening } => (fact, opening),
         };
         let event = match fact.kind {
-            run::facts::FactKind::Admitted { run, resumed } => {
-                self.admitted = Some(run.raw());
+            run::facts::FactKind::Admitted { run: _, resumed } => {
+                self.admitted = Some(self.activation());
                 let start = self.start.take().expect("actual Start retained before its admission");
                 Event::RunStarted(smith_events::RunStarted {
-                    run: run.raw(),
+                    run: self.activation(),
                     resumed,
                     messages: start.messages,
                     main: self.model(&start.llm),
@@ -228,8 +234,9 @@ impl Producer {
                     contract: start.contract,
                 })
             }
-            run::facts::FactKind::Opened { run, conversation, kind } => {
+            run::facts::FactKind::Opened { run: _, conversation, kind } => {
                 let opening = opening.as_ref().expect("actual Run::Open metadata accompanied the fact");
+                assert_eq!(opening.activation, self.activation(), "opening carries this actual Start activation");
                 let (kind, parent, call) = match kind {
                     run::facts::Kind::Main => (smith_events::ConversationKind::Main, None, None),
                     run::facts::Kind::Child { .. } => {
@@ -239,9 +246,10 @@ impl Producer {
                 self.sinks.conversation(
                     fact.at,
                     origin,
+                    conversation,
                     smith_events::ConversationOpened {
-                        run: run.raw(),
-                        conversation: conversation.raw(),
+                        run: self.activation(),
+                        conversation: u64::from(opening.ordinal),
                         kind,
                         parent,
                         call,
@@ -263,12 +271,12 @@ impl Producer {
                     run::Stage::Ordinary => false,
                     run::Stage::WindDown => true,
                 };
-                self.sinks.record(&crate::budget_record(fact, origin).expect("matched budget fact"));
+                self.sinks.record(&crate::budget_record(fact, origin, self.activation()).expect("matched budget fact"));
                 return;
             }
-            run::facts::FactKind::MessageReceived { run, name, bytes } => {
+            run::facts::FactKind::MessageReceived { run: _, name, bytes } => {
                 Event::MessageReceived(smith_events::MessageReceived {
-                    run: run.raw(),
+                    run: self.activation(),
                     name: name.raw(),
                     bytes,
                     refused: None,
@@ -276,9 +284,9 @@ impl Producer {
                     text: None,
                 })
             }
-            run::facts::FactKind::MessageRefused { run, name, bytes, reason } => {
+            run::facts::FactKind::MessageRefused { run: _, name, bytes, reason } => {
                 Event::MessageReceived(smith_events::MessageReceived {
-                    run: run.raw(),
+                    run: self.activation(),
                     name: name.raw(),
                     bytes,
                     refused: Some(message_refusal(reason)),
@@ -286,26 +294,26 @@ impl Producer {
                     text: None,
                 })
             }
-            run::facts::FactKind::MessageRead { run, name, turn } => Event::MessageRead(smith_events::MessageRead {
-                run: run.raw(),
+            run::facts::FactKind::MessageRead { run: _, name, turn } => Event::MessageRead(smith_events::MessageRead {
+                run: self.activation(),
                 name: name.raw(),
                 turn: u64::from(turn),
             }),
-            run::facts::FactKind::MessageUnread { run, name } => {
+            run::facts::FactKind::MessageUnread { run: _, name } => {
                 self.unread = self.unread.checked_add(1).expect("bounded unread messages");
-                Event::MessageUnread(smith_events::MessageUnread { run: run.raw(), name: name.raw() })
+                Event::MessageUnread(smith_events::MessageUnread { run: self.activation(), name: name.raw() })
             }
-            run::facts::FactKind::CheckStarted { run, deadline } => {
+            run::facts::FactKind::CheckStarted { run: _, deadline } => {
                 self.check_at = Some(fact.at);
                 Event::CheckStarted(smith_events::CheckStarted {
-                    run: run.raw(),
+                    run: self.activation(),
                     deadline_ms: Some(deadline.saturating_since(fact.at).as_nanos() / 1_000_000),
                 })
             }
-            run::facts::FactKind::CheckFinished { run, exit } => {
+            run::facts::FactKind::CheckFinished { run: _, exit } => {
                 let (exit, passed) = crate::check_exit(exit);
                 Event::CheckCompleted(smith_events::CheckCompleted {
-                    run: run.raw(),
+                    run: self.activation(),
                     passed,
                     exit,
                     duration_ms: fact.at.saturating_since(self.check_at.take().expect("one check start")).as_nanos()
@@ -320,6 +328,10 @@ impl Producer {
             | run::facts::FactKind::Answered { .. } => return,
         };
         self.sinks.record(&Record { t_ms: fact.at.saturating_since(origin).as_nanos() / 1_000_000, event });
+    }
+
+    fn activation(&self) -> u64 {
+        self.activation.expect("actual decoded Start precedes run observations")
     }
 
     fn model(&self, model: &run::charter::Llm) -> smith_events::Model {
@@ -341,7 +353,7 @@ impl Producer {
         self.answer_at = Some(now);
         let record = crate::answer_record(
             crate::AnswerMeta {
-                run: self.admitted.unwrap_or(1),
+                run: self.activation(),
                 wind_down: self.wind_down,
                 read: match read {
                     Some(read) => Some(read.raw()),
@@ -393,6 +405,7 @@ fn message_refusal(reason: run::MessageRefusal) -> smith_events::MessageRefusal 
 pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
     let events = limits.events?;
     crate::sinks::sinks_worst_case(&events.sinks, events.capture)?
+        .checked_add(crate::calls::worst_case(&limits.domain.session, events.sinks.records.string)?)?
         .checked_add(channel::Endpoints::worst_case(limits.channel.endpoints, limits.channel.charter.llm_endpoint)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.channel.endpoints)?)?
         .checked_add(u64::from(limits.channel.endpoints).checked_mul(u64::from(events.sinks.records.string))?)?
