@@ -238,6 +238,7 @@ mod tests {
     fn native_shapes_keep_task_deadlines_environment_prices_and_named_overrides() {
         one_turn_refusal_reaches_the_product_with_the_default_reserve();
         native_shape_cases();
+        first_request_template_cases();
     }
 
     fn native_shape_cases() {
@@ -342,6 +343,20 @@ mod tests {
         task.smith.clear();
         task.budget.seconds = Some(11);
         assert!(render(&task, Shape::LocalJson).is_err());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    fn first_request_template_cases() {
+        let root = std::env::temp_dir().join(format!("smith-first-request-settings-{}", std::process::id()));
+        std::fs::create_dir(&root).expect("fixture parent");
+        let guard = crate::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+            .expect("guard");
+        let private = crate::isolate::empty(&guard, &root.join("scratch")).expect("scratch");
+        let directory = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let model = crate::ModelChoice { model: Some("selected-model".into()), effort: Some("low".into()) };
+        let arm = ArmRef::Installed { program: "/unused".into() };
+        let environment = vec![("NAMED".into(), "exact-value".into())];
+        let base: Value = serde_json::from_str(include_str!("../../../agents/smith/legacy.json")).expect("template");
         let suite_path = crate::fix::calibration_suite("probes/first-request");
         let suite = crate::read_suite(&suite_path).expect("first-request suite");
         let selected_pin = directory.join("agents/smith").join(format!("{}.pin.toml", suite.agents[0].config));
