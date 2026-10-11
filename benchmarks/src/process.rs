@@ -1,6 +1,7 @@
 //! Attempt output and caller-owned deadlines on Skein's real world.
 //! The pipe observer retains bounded bytes and parsed Codex records, never
 //! agent state. Binary owns process-tree discovery, signals and settlement.
+//! Ended terminal masters stay held until Binary settles the tree.
 //! Contract: benchmarks.md, sections 6, 8 and 10.
 
 use std::os::fd::IntoRawFd;
@@ -74,6 +75,7 @@ struct Output {
     input: Option<Fd>,
     stream: Option<Fd>,
     input_close: InputClose,
+    ended_terminal: Option<Fd>,
     tree: Tree,
     trace: Option<Fd>,
     tracing: bool,
@@ -105,6 +107,7 @@ impl Output {
             input: Some(input),
             stream: Some(output),
             input_close: if input == output { InputClose::AfterAnswer } else { InputClose::AfterPrompt },
+            ended_terminal: None,
             tree: Tree::Running,
             trace: None,
             tracing: false,
@@ -273,8 +276,12 @@ impl Output {
         let fd = self.stream.take().expect("one retained output descriptor");
         if self.terminal() {
             self.input = None;
+            // Closing the master can hang up a leader that has closed its tty
+            // descriptors but has not exited. Binary still owns settlement.
+            self.ended_terminal = Some(fd);
+        } else {
+            self.close(fd);
         }
-        self.close(fd);
     }
 }
 
@@ -347,6 +354,11 @@ impl Host for Output {
             }
         }
         self.write_input();
+        if self.tree == Tree::Settled
+            && let Some(fd) = self.ended_terminal.take()
+        {
+            self.close(fd);
+        }
         if !self.tracing
             && self.trace_poll.is_none_or(|deadline| deadline <= now)
             && let Some(fd) = self.trace
@@ -378,6 +390,7 @@ impl Host for Output {
                     || self.person.ready()
                     || self.person.closing() && self.input_close == InputClose::AfterAnswer)
             || !self.reading && self.stream.is_some()
+            || self.tree == Tree::Settled && self.ended_terminal.is_some()
             || !self.tracing && self.trace.is_some() && self.trace_poll.is_none_or(|deadline| deadline <= now)
     }
     fn next_deadline(&self) -> Option<Time> {
@@ -386,6 +399,7 @@ impl Host for Output {
     fn is_empty(&self) -> bool {
         self.input.is_none()
             && self.stream.is_none()
+            && self.ended_terminal.is_none()
             && self.trace.is_none()
             && !self.tracing
             && !self.reading
