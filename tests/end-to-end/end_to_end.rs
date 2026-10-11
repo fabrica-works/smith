@@ -279,3 +279,59 @@ fn local_chat_store_io_failure_keeps_exit_1() {
     assert!(String::from_utf8_lossy(&output).contains("chat store"), "{}", String::from_utf8_lossy(&output));
     assert_eq!(std::fs::read(chat).expect("unchanged chat file"), b"a file cannot be the chat directory");
 }
+
+#[test]
+fn a_one_turn_local_run_is_refused_by_the_actor_before_any_completion() {
+    let scratch = Scratch::new();
+    let scenario = World::new(63, &scratch, Placement::Spawned, b"Unused").scenario;
+    support::settings(&scratch, &scenario);
+    let mut settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(scratch.path().join("settings.json")).expect("fixture settings"))
+            .expect("fixture JSON");
+    settings["agent"]["profile"]["declared"] = serde_json::json!({
+        "memory":2_147_483_648_u64,"conversations":6,"calls_per_response":16,
+        "tool_payload":40960,"file_bytes":1_048_576,"read_window":32768});
+    settings["models"][0]["window"] = serde_json::json!(272_000);
+    settings["models"][0]["output"] = serde_json::json!(32_000);
+    settings["models"][0]["reasoning_item"] = serde_json::json!(65_536);
+    settings["models"][0]["idle"] = serde_json::json!(300_000);
+    settings["budget"] = serde_json::json!({"turns":1,"spend":1_000_000_000_u64,"seconds":600,
+        "reserve":{"turns":2,"seconds":300}});
+    settings["agent"]["trace"] = serde_json::json!({"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"});
+    std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&settings).expect("settings fixture"))
+        .expect("write local settings");
+    let records = support::refused_run(&scratch);
+    let completed: Vec<_> = records
+        .iter()
+        .filter_map(|record| match &record.event {
+            smith_events::Event::RunCompleted(completed) => Some(completed),
+            smith_events::Event::Budget(_)
+            | smith_events::Event::SessionStarted(_)
+            | smith_events::Event::SessionEnded(_)
+            | smith_events::Event::RunStarted(_)
+            | smith_events::Event::ConversationOpened(_)
+            | smith_events::Event::ConversationClosed(_)
+            | smith_events::Event::ResponseStarted(_)
+            | smith_events::Event::ResponseCompleted(_)
+            | smith_events::Event::TextDelta(_)
+            | smith_events::Event::ToolStarted(_)
+            | smith_events::Event::ToolCompleted(_)
+            | smith_events::Event::CheckStarted(_)
+            | smith_events::Event::CheckCompleted(_)
+            | smith_events::Event::MessageReceived(_)
+            | smith_events::Event::MessageRead(_)
+            | smith_events::Event::MessageUnread(_)
+            | smith_events::Event::Notice(_) => None,
+        })
+        .collect();
+    assert_eq!(completed.len(), 1, "one genuine actor terminal");
+    let completed = completed.first().expect("actual refused run");
+    assert_eq!(completed.status, smith_events::Status::Refused);
+    let failure = completed.failure.as_ref().expect("typed reserve refusal");
+    assert_eq!(failure.class, smith_events::AnswerClass::Invalid);
+    assert!(failure.which.as_ref().is_some_and(|name| name.windows(7).any(|part| part == b"reserve")), "{failure:?}");
+    assert!(
+        !records.iter().any(|record| matches!(&record.event, smith_events::Event::ResponseStarted(_))),
+        "reserve refusal starts no completion or provider request"
+    );
+}

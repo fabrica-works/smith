@@ -438,3 +438,24 @@ fn impossible_completion_or_reserve_spend_refuses_before_local_agent_constructio
         assert_eq!(Domain::new(impossible, &limits, 71).err(), Some(Invalid::Budget(reason)));
     }
 }
+
+#[test]
+fn a_one_turn_configuration_keeps_scalar_and_completion_startup_checks() {
+    let limits = limits();
+    let mut configured = config();
+    configured.models[0].prices.unit = 1;
+    configured.models[0].window = 4000;
+    configured.budget.turns = 1;
+    configured.reserve = run::charter::Reserve { turns: 2, time: Duration::from_secs(1) };
+    configured.budget.spend = 4_127;
+    assert_eq!(configured.validate(&limits), Err(Invalid::Budget(run::BudgetRefusal::Completion { most: 4_128 })));
+    configured.budget.spend = 4_128;
+    assert_eq!(configured.validate(&limits), Ok(()), "the real run still refuses the finishing turns");
+    configured.budget.turns = 0;
+    assert_eq!(configured.validate(&limits), Err(Invalid::Budget(run::BudgetRefusal::Empty(run::Part::Turns))));
+    configured.budget.turns = limits.smith.run.budget.turns + 1;
+    assert_eq!(
+        configured.validate(&limits),
+        Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Turns(limits.smith.run.budget.turns))))
+    );
+}

@@ -2,6 +2,8 @@
 //! sections 5 and 8; domain/run.md, sections 3.1 and 5.3). Configuration owns text,
 //! model names and result policy, but neither credential secrets nor files.
 //! `charter` copies those choices without consulting time or the workspace.
+//! One-turn reserve admission stays with the real run entrance (domain/run.md,
+//! section 9.1); local startup retains budget ceilings and completion affordability.
 
 use alloc::boxed::Box;
 use skein_lib::List;
@@ -212,9 +214,26 @@ impl Config {
         if main.window == 0 || main.output == 0 || main.prices.unit == 0 {
             return Err(Invalid::Models);
         }
-        match run::admit(&self.budget, self.reserve, main, &limits.smith.run.budget, checks) {
+        match self.budget.check(&limits.smith.run.budget) {
             Ok(()) => {}
             Err(reason) => return Err(Invalid::Budget(reason)),
+        }
+        let most = run::most_costly(main).ok_or(Invalid::Budget(run::BudgetRefusal::Reserve(run::Part::Spend)))?;
+        if most > self.budget.spend {
+            return Err(Invalid::Budget(run::BudgetRefusal::Completion { most }));
+        }
+        match run::admit(&self.budget, self.reserve, main, &limits.smith.run.budget, checks) {
+            Ok(()) => {}
+            Err(reason) => match reason {
+                run::BudgetRefusal::Reserve(part) => match part {
+                    run::Part::Turns => {}
+                    run::Part::Spend | run::Part::Time => return Err(Invalid::Budget(reason)),
+                },
+                run::BudgetRefusal::Ceiling(_)
+                | run::BudgetRefusal::Empty(_)
+                | run::BudgetRefusal::Completion { .. }
+                | run::BudgetRefusal::Checks { .. } => return Err(Invalid::Budget(reason)),
+            },
         }
         if self.waiting > limits.smith.run.waiting {
             return Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(limits.smith.run.waiting))));

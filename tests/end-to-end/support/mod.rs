@@ -405,8 +405,26 @@ impl Referee<Process> for Refusal {
             }
         }
     }
-    fn observe(&mut self, now: Time, _procs: &[Process]) {
+    fn observe(&mut self, now: Time, procs: &[Process]) {
         self.now = now;
+        if now >= self.deadline {
+            for process in procs {
+                match process {
+                    Process::Binary(binary) => eprintln!(
+                        "binary exit={:?} empty={} stderr={}",
+                        binary.exit_status(),
+                        binary.is_empty(),
+                        String::from_utf8_lossy(binary.stderr())
+                    ),
+                    Process::Script(Proc::Terminal(person)) => eprintln!(
+                        "terminal empty={} shown={}",
+                        person.is_empty(),
+                        String::from_utf8_lossy(person.shown())
+                    ),
+                    Process::Script(_) => {}
+                }
+            }
+        }
     }
     fn next_deadline(&self) -> Option<Time> {
         Some(self.now.saturating_add(Duration::from_millis(1)).min(self.deadline))
@@ -471,3 +489,44 @@ fn refusal_program_code(
 }
 
 pub mod live_run;
+
+/// Drive the actual local child to a refused run, without any provider process.
+#[must_use]
+pub fn refused_run(scratch: &Scratch) -> Vec<smith_events::Record> {
+    assert_no_children();
+    let clock = Clock::new();
+    let now = clock.now().now;
+    let mut binary = start(
+        vec!["local".into(), scratch.path().join("settings.json").into(), scratch.path().into()],
+        scratch.path(),
+        Mode::Terminal,
+    );
+    let streams = binary.take_streams().expect("actual local terminal");
+    let descriptors = streams.descriptors();
+    let Streams::Terminal { stream } = streams else { unreachable!("local terminal") };
+    let mut world = real::World::new(Refusal { now, deadline: now.saturating_add(Duration::from_secs(3)) });
+    world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
+    world.spawn_with_fds(descriptors, || {
+        Process::Script(Proc::Terminal(Box::new(Terminal::attached(
+            stream,
+            vec![
+                smith_local_process_world::terminal::Action::Send(Box::from(&b"A refused run\n"[..])),
+                smith_local_process_world::terminal::Action::Eof,
+            ],
+        ))))
+    });
+    let outcome = world.run(&clock, Duration::from_secs(4));
+    assert!(outcome.procs.iter().all(Host::is_empty), "local and actual agent drain");
+    let Process::Binary(binary) = outcome.procs.first().expect("binary process") else {
+        unreachable!("binary observer")
+    };
+    assert_eq!(
+        binary.exit_status(),
+        Some(Exit::Code(0)),
+        "input EOF exits the interactive host: {}",
+        String::from_utf8_lossy(binary.stderr())
+    );
+    let records = read_trace(scratch.path(), &[]);
+    assert_no_children();
+    records
+}
