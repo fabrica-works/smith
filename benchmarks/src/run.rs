@@ -438,6 +438,7 @@ fn prepare(
         free_space(clock, machine, &private, prepared)?;
         step = SetupStep::Configuration;
         crate::isolate::environment(machine, &private, &task.environment)?;
+        crate::isolate::login_profile(guard, machine, &private)?;
         step = SetupStep::Seed;
         seed_commit(clock, guard, machine, &private, prepared)?;
         let commit = raw(
@@ -472,6 +473,7 @@ fn prepare(
         copy_cache(clock, guard, machine, &private, prepared)?;
         if !task.grade.is_empty() {
             let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
+            crate::isolate::login_profile(guard, machine, &grading)?;
             grading.warm_cargo.clone_from(&private.warm_cargo);
             grading.warm_target.clone_from(&private.warm_target);
             copy_cache(clock, guard, machine, &grading, prepared)?;

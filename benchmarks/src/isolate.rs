@@ -7,7 +7,9 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::guard::Guard;
@@ -180,6 +182,32 @@ pub fn copy_into(guard: &Guard, source: &Path, destination: &Path) -> Result<(),
         return Err("copy destination must be empty".into());
     }
     copy_seed(guard, source, destination)
+}
+
+/// Restore the machine PATH when a login shell reads this private home.
+/// No inherited profile or instruction file is copied (benchmarks.md, section 6.1).
+pub(crate) fn login_profile(guard: &Guard, machine: &Machine, private: &Private) -> Result<(), String> {
+    let path = machine.path.as_bytes();
+    if path.contains(&0) {
+        return Err("machine PATH contains a NUL".into());
+    }
+    let mut contents = b"export PATH='".to_vec();
+    for byte in path {
+        if *byte == b'\'' {
+            contents.extend_from_slice(b"'\\''");
+        } else {
+            contents.push(*byte);
+        }
+    }
+    contents.extend_from_slice(b"'\n");
+    let destination = guard.write_path(&private.home.join(".profile"))?;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(destination)
+        .and_then(|mut file| file.write_all(&contents))
+        .map_err(|error| format!("private login profile: {error}"))
 }
 
 /// Construct an exact allow-listed environment, refusing private-path overrides.

@@ -134,6 +134,41 @@ fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer
 }
 
 #[test]
+fn login_shells_keep_machine_path_in_setup_agent_and_grading() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (guard, mut machine, root, mut prepared) = fixture("login-path");
+    let tools = root.join("machine's tools $literal");
+    fs::create_dir(&tools).expect("machine tool directory");
+    let tool = tools.join("smith-login-path-fixture");
+    fs::write(&tool, "#!/bin/sh\nexit 0\n").expect("unique machine tool");
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).expect("executable tool");
+    machine.path =
+        std::env::join_paths([tools.as_path(), std::path::Path::new("/usr/bin"), std::path::Path::new("/bin")])
+            .expect("machine PATH");
+    let check = "test \"$(command -v smith-login-path-fixture)\" = \"$TASK_TOOL\" && smith-login-path-fixture";
+    let task = fs::read_to_string(&prepared.task).expect("task");
+    let task = task
+        .replace(
+            "TASK_MARKER='explicit'",
+            &format!("TASK_MARKER='explicit',TASK_TOOL={:?}", tool.to_str().expect("tool path")),
+        )
+        .replace("setup=[", &format!("setup=[['/bin/bash','-lc',{check:?}],"))
+        .replace("command=['sh','-c',", "command=['/bin/bash','-lc',")
+        .replace("test -f answer.txt &&", &format!("{check} && test -f answer.txt &&"));
+    fs::write(&prepared.task, task).expect("login-shell setup and grading");
+    prepared.program = "/bin/bash".into();
+    prepared.identity.binary_sha256 = smith_bench::arm::binary_digest(&prepared.program).expect("bash digest");
+    prepared.arguments[0] = "-lc".into();
+    prepared.arguments[1] = format!("{check} || exit 17; {}", prepared.arguments[1]);
+    let recorded = attempt(&guard, &machine, &root.join("state"), &prepared).expect("settled fake attempt");
+    assert_eq!(recorded.result.outcome.end, End::Completed, "{:?}", recorded.result.outcome);
+    assert_eq!(recorded.result.outcome.grade, Some(Measure::Observed { value: true }));
+    assert!(!scratch_root(&root.join("state"), &prepared).expect("scratch").exists());
+    fs::remove_dir_all(root).expect("remove synthetic story");
+}
+
+#[test]
 fn an_existing_scratch_root_is_refused_and_never_deleted() {
     let (guard, machine, root, prepared) = fixture("existing");
     let scratch = scratch_root(&root.join("state"), &prepared).expect("scratch");
