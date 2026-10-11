@@ -195,6 +195,37 @@ impl Sinks {
         Ok(())
     }
 
+    /// Whether startup can adopt another bounded destination.
+    #[must_use]
+    pub fn room_for_destination(&self) -> bool { self.writers.len() < self.limits.destinations }
+
+    /// Append entities that still owe their physical IO terminal.
+    #[must_use]
+    pub fn open_streams(&self) -> u32 {
+        let mut open = 0_u32;
+        for writer in &self.writers {
+            match writer.stream {
+                Stream::Closed => {},
+                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
+                    open = open.checked_add(1).expect("bounded destinations");
+                }
+            }
+        }
+        open
+    }
+
+    /// Whether a bounded down pass can send a demand, line or close.
+    #[must_use]
+    pub fn has_work(&self) -> bool {
+        for writer in &self.writers {
+            match writer.stream {
+                Stream::Waiting | Stream::Ready if !writer.lines.is_empty() || writer.pending.is_some() || writer.ended => return true,
+                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp | Stream::Closed => {},
+            }
+        }
+        false
+    }
+
     /// Whether every writing complete destination can retain the next counted record.
     #[must_use]
     pub fn takes(&self) -> bool {

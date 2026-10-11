@@ -12,6 +12,7 @@
 extern crate alloc;
 
 mod answers;
+mod events;
 mod observations;
 mod responses;
 mod service;
@@ -25,6 +26,8 @@ mod tests;
 pub use observations::{
     ChildShare, budget_record, child_completed, child_share, opening_model, reported_usage, request_tool_choice,
 };
+
+pub use events::EventLimits;
 
 pub use answers::{AnswerMeta, answer_record};
 
