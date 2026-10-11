@@ -29,7 +29,7 @@ fn config() -> Config {
     local_limits.agent = local::AgentLimits::Spawned(host_limits);
     let queue = local::max_out(&local_limits).max(smith_host_domain::max_out(&host_limits)).max(64);
     let agent_limits = smith_agent_process_world::limits();
-    let process = ProcessLimits {
+    let mut process = ProcessLimits {
         io: skein_io::Limits {
             sockets: 8,
             refusals: 1,
@@ -48,11 +48,14 @@ fn config() -> Config {
             transcript: agent_limits.channel.transcript,
             endpoints: agent_limits.channel.endpoints,
             channel: agent_limits.channel.channel,
+            start_bytes: agent_limits.channel.start_bytes,
             calls: host_limits.calls,
         },
         detail_bytes: host_limits.detail_bytes,
         queue,
     };
+    process.channel.channel.output_bytes =
+        smith_host_protocol::output_bytes(&process.channel).expect("host directional frame");
     Config {
         agent: crate::AgentConfig::Spawned,
         local: local::Config {

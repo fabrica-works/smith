@@ -106,7 +106,7 @@ impl Component {
         if !endpoints.fits(limits.endpoints, limits.charter.llm_endpoint) {
             return Err(Error::Value);
         }
-        let schema = match smith_channel::schema(&limits.bodies) {
+        let schema = match smith_protocol_channel::schema_for_start(&limits.bodies, limits.start_bytes) {
             Ok(schema) => schema,
             Err(error) => return Err(Error::Codec(error)),
         };
@@ -656,6 +656,10 @@ mod tests {
             transcript: smith_transcript::CEILINGS,
             endpoints: 1,
             calls: 1,
+            start_bytes: u32::try_from(
+                smith_channel::v2::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("Start ceiling"),
+            )
+            .expect("Start frame range"),
             channel: skein_channel::Limits {
                 chunk: 8,
                 credential: 0,

@@ -176,6 +176,7 @@ impl HostService {
                 transcript: agent_limits.channel.transcript,
                 endpoints: agent_limits.channel.endpoints,
                 channel: agent_limits.channel.channel,
+                start_bytes: agent_limits.channel.start_bytes,
                 calls: domain_limits.calls,
             },
             root,
@@ -194,6 +195,8 @@ impl HostService {
             crash_requested: false,
             crashed: false,
         };
+        service.process_limits.channel.output_bytes =
+            protocol::output_bytes(&service.process_limits).expect("host directional frame");
         service
             .domain_events
             .push(host::Input::Parent(host::parent::Event::Spawn { client: Token::new(1), start: start() }));

@@ -123,7 +123,6 @@ impl Local {
             None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
             None => return Err("spawned mode cannot adopt inline roots".into()),
         };
-        let mut worst = service::worst_case(&config.limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
         if resources.accounts.len() > usize::try_from(config.limits.local.smith.accounts).expect("account bound fits")
             || resources.accounts.iter().any(|account| account.account_id.len() > 1024)
         {
@@ -144,34 +143,20 @@ impl Local {
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
         let outer_queue = queue.checked_mul(2).ok_or_else(|| derivation_refusal("local_queue"))?;
-        let show_bytes = config.limits.local.show_bytes;
         let io_limits = config.limits.process.io;
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
             return Err("local IO limits cannot carry OAuth TLS records".into());
         }
-        worst = worst
-            .checked_add(
-                local_auth::worst_case()
-                    .and_then(|bound| bound.checked_mul(u64::try_from(resources.accounts.len()).ok()?))
-                    .ok_or_else(|| derivation_refusal("account_worst_case"))?,
-            )
-            .ok_or_else(|| derivation_refusal("account_worst_case"))?;
         let operations = io::operations(&io_limits)
             .and_then(|count| count.checked_mul(2))
             .and_then(|count| count.checked_add(64))
             .and_then(|count| count.checked_add(lower_routes))
             .ok_or_else(|| derivation_refusal("local_routes"))?;
-        worst = worst
-            .checked_add(Store::worst_case().ok_or_else(|| derivation_refusal("store_worst_case"))?)
-            .and_then(|count| count.checked_add(io::worst_case(&io_limits)?))
-            .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
-            .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
-            .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))
-            .and_then(|count| count.checked_add(Queue::<io::Event>::worst_case(queue)?))
-            .and_then(|count| count.checked_add(Queue::<io::Request>::worst_case(queue)?))
-            .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
-            .and_then(|count| count.checked_add(u64::try_from(size_of::<Self>()).ok()?))
-            .ok_or_else(|| derivation_refusal("local_worst_case"))?;
+        let worst = accounted_memory(
+            &config.limits,
+            u32::try_from(resources.accounts.len()).map_err(|_| derivation_refusal("account_worst_case"))?,
+            lower_routes,
+        )?;
         smith_agent_service::profile::validate::memory(worst, available_bytes).map_err(profile_refusal)?;
         let service =
             service::Service::new(config, resources.seed).map_err(|error| format!("local service: {error:?}"))?;
@@ -225,6 +210,14 @@ impl Local {
             .adopt_delivery_roots(resources.delivery_roots, resources.delivery_environment)
             .map_err(|error| format!("delivery directories: {error:?}"))?;
         Ok(local)
+    }
+
+    /// Price the selected local service and every outer shell owner before adopting resources.
+    /// `accounts` counts actual configured OAuth owners; `lower_routes` is zero for a spawned child.
+    /// Contract: protocol/limits.md, sections 3 and 4.
+    #[must_use]
+    pub fn required_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Option<u64> {
+        accounted_memory(limits, accounts, lower_routes).ok()
     }
 
     /// Content-free service facts available to the caller's independent referee.
@@ -619,4 +612,36 @@ fn derivation_refusal(field: &'static str) -> String {
     profile_refusal(smith_agent_service::profile::Refusal::Derived {
         limit: smith_agent_service::profile::LimitName::deployment(smith_agent_service::profile::Layer::Service, field),
     })
+}
+
+/// The constructor and offline startup checks share one complete shell accounting entrance.
+fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<u64, String> {
+    let mut worst = service::worst_case(limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
+    let queue = limits.queue;
+    let show_bytes = limits.local.show_bytes;
+    let io_limits = limits.process.io;
+    worst = worst
+        .checked_add(
+            local_auth::worst_case()
+                .and_then(|bound| bound.checked_mul(u64::from(accounts)))
+                .ok_or_else(|| derivation_refusal("account_worst_case"))?,
+        )
+        .ok_or_else(|| derivation_refusal("account_worst_case"))?;
+    let operations = io::operations(&io_limits)
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_add(64))
+        .and_then(|count| count.checked_add(lower_routes))
+        .ok_or_else(|| derivation_refusal("local_routes"))?;
+    worst = worst
+        .checked_add(Store::worst_case().ok_or_else(|| derivation_refusal("store_worst_case"))?)
+        .and_then(|count| count.checked_add(io::worst_case(&io_limits)?))
+        .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
+        .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
+        .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))
+        .and_then(|count| count.checked_add(Queue::<io::Event>::worst_case(queue)?))
+        .and_then(|count| count.checked_add(Queue::<io::Request>::worst_case(queue)?))
+        .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
+        .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
+        .ok_or_else(|| derivation_refusal("local_worst_case"))?;
+    Ok(worst)
 }

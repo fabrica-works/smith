@@ -154,16 +154,25 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 /// Build this agent's directional schema, using its aggregate Start entrance.
 /// Codec field bounds remain independently checked by their decoders.
 pub fn schema(limits: &Limits) -> Result<skein_channel::Schema, smith_channel::Overflow> {
-    let mut schema = smith_channel::schema(&limits.bodies)?;
+    schema_for_start(&limits.bodies, limits.start_bytes)
+}
+
+/// Build either channel role with the deployment's joint Start body bound.
+/// Codec field ceilings remain independent of this aggregate frame allowance.
+pub fn schema_for_start(
+    bodies: &smith_channel::Limits,
+    start_bytes: u32,
+) -> Result<skein_channel::Schema, smith_channel::Overflow> {
+    let mut schema = smith_channel::schema(bodies)?;
     for version_index in 0..schema.versions.len() {
         let version = schema.versions.get_mut(version_index).expect("indexed version");
         for kind_index in 0..version.kinds.len() {
             let kind = version.kinds.get_mut(kind_index).expect("indexed kind");
             if kind.kind == 0x0100 {
-                if limits.start_bytes == 0 || limits.start_bytes > kind.largest {
+                if start_bytes == 0 || start_bytes > kind.largest {
                     return Err(smith_channel::Overflow::Frame);
                 }
-                kind.largest = limits.start_bytes;
+                kind.largest = start_bytes;
             }
         }
     }

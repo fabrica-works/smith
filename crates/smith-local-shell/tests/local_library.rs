@@ -25,7 +25,7 @@ fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_se
     let inline_out = local::max_out(&policy.limits);
     policy.limits.agent = local::AgentLimits::Spawned(host);
     let queue = local::max_out(&policy.limits).max(inline_out).max(smith_host_domain::max_out(&host)).max(256);
-    let process = service::ProcessLimits {
+    let mut process = service::ProcessLimits {
         io: lower.limits.io,
         channel: smith_host_protocol::Limits {
             bodies: lower.limits.channel.bodies,
@@ -33,11 +33,14 @@ fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_se
             transcript: lower.limits.channel.transcript,
             endpoints: lower.limits.channel.endpoints,
             channel: lower.limits.channel.channel,
+            start_bytes: lower.limits.channel.start_bytes,
             calls: host.calls,
         },
         detail_bytes: host.detail_bytes,
         queue,
     };
+    process.channel.channel.output_bytes =
+        smith_host_protocol::output_bytes(&process.channel).expect("host directional frame");
     (
         service::Config {
             agent: service::AgentConfig::Spawned,

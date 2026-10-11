@@ -14,6 +14,8 @@ pub struct Limits {
     /// Maximum configured endpoint names retained by this component.
     pub endpoints: u32,
     pub channel: skein_channel::Limits,
+    /// Aggregate sent Start body bytes, including the whole saved window.
+    pub start_bytes: u32,
     /// Maximum live calls awaiting one host terminal.
     pub calls: u32,
 }
@@ -77,7 +79,7 @@ pub const fn max_out(_limits: &Limits) -> MaxOut {
 /// Price the machine, the opening event queue and caller output queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    let schema = smith_channel::schema(&limits.bodies).ok()?;
+    let schema = smith_protocol_channel::schema_for_start(&limits.bodies, limits.start_bytes).ok()?;
     let mut duplicate = List::<skein_channel::Version>::worst_case(schema.versions.capacity())?;
     for version in &schema.versions {
         duplicate = duplicate.checked_add(List::<skein_channel::Kind>::worst_case(version.kinds.capacity())?)?;
@@ -92,4 +94,20 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(skein_lib::Map::<crate::component::CallKey, skein_lib::Token>::worst_case(limits.calls)?)?
         .checked_add(skein_lib::Map::<skein_lib::Token, crate::component::CallKey>::worst_case(limits.calls)?)?
         .checked_add(u64::try_from(size_of::<Component>()).ok()?)
+}
+
+/// Largest frame sent by the host, including its fixed framing header.
+#[must_use]
+pub fn output_bytes(limits: &Limits) -> Option<u32> {
+    let schema = smith_protocol_channel::schema_for_start(&limits.bodies, limits.start_bytes).ok()?;
+    let mut largest = 0;
+    for version in &schema.versions {
+        for kind in &version.kinds {
+            match kind.direction {
+                skein_channel::Direction::FromInitiator => largest = largest.max(kind.largest),
+                skein_channel::Direction::FromResponder => (),
+            }
+        }
+    }
+    largest.checked_add(8)
 }

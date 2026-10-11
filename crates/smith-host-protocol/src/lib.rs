@@ -30,6 +30,6 @@ mod translate;
 mod tests;
 
 pub use component::{Component, OpenEvent};
-pub use limits::{Error, Limits, MaxOut, max_out, worst_case};
+pub use limits::{Error, Limits, MaxOut, max_out, output_bytes, worst_case};
 pub use process::{Launch, Process, ProcessEvent, process_worst_case};
 pub use translate::{Values, encode_start};

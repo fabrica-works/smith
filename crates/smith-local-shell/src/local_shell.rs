@@ -69,7 +69,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }
-    let mut limits = service_limits(prepared.limits, host_limits, &agent_config.service);
+    let mut limits = service_limits(prepared.limits, host_limits, &agent_config.service)?;
     if settings.in_process {
         limits.inline = Some(service::InlineLimits::new(&agent_config.service).ok_or_else(|| {
             profile_refusal(smith_agent_service::profile::Refusal::Derived {
@@ -157,9 +157,13 @@ fn policy(
 }
 
 /// Bound the common local IO and the selected child before constructing either.
-fn service_limits(local: local::Limits, host: host::Limits, agent: &smith_agent_service::Config) -> service::Limits {
+fn service_limits(
+    local: local::Limits,
+    host: host::Limits,
+    agent: &smith_agent_service::Config,
+) -> Result<service::Limits, String> {
     let queue = local::max_out(&local).max(host::max_out(&host)).max(256);
-    let process = service::ProcessLimits {
+    let mut process = service::ProcessLimits {
         io: agent.limits.io,
         channel: protocol::Limits {
             bodies: agent.limits.channel.bodies,
@@ -167,12 +171,21 @@ fn service_limits(local: local::Limits, host: host::Limits, agent: &smith_agent_
             transcript: agent.limits.channel.transcript,
             endpoints: agent.limits.channel.endpoints,
             channel: agent.limits.channel.channel,
+            start_bytes: agent.limits.channel.start_bytes,
             calls: host.calls,
         },
         detail_bytes: host.detail_bytes,
         queue,
     };
-    service::Limits { local, inline: None, envelope_bytes: host.answer_bytes, process, queue }
+    process.channel.channel.output_bytes = protocol::output_bytes(&process.channel).ok_or_else(|| {
+        profile_refusal(smith_agent_service::profile::Refusal::Derived {
+            limit: smith_agent_service::profile::LimitName::deployment(
+                smith_agent_service::profile::Layer::Channel,
+                "host_output_bytes",
+            ),
+        })
+    })?;
+    Ok(service::Limits { local, inline: None, envelope_bytes: host.answer_bytes, process, queue })
 }
 
 #[expect(
@@ -210,4 +223,60 @@ fn token_directory(configured: Option<&str>) -> Result<std::path::PathBuf, Strin
 
 fn profile_refusal(refusal: smith_agent_service::profile::Refusal) -> String {
     String::from_utf8(smith_agent_service::profile::words(&refusal).into_vec()).expect("refusal words are UTF-8")
+}
+
+#[cfg(test)]
+#[test]
+fn product_host_startup_and_complete_outer_memory_fit() {
+    let mut environment = Vec::new();
+    for index in 0..10 {
+        environment.push(serde_json::json!({"name":format!("X{index}"),"value":if index == 0 { "x".repeat(853) } else { String::new() }}));
+    }
+    let settings: local_settings::Settings = serde_json::from_value(serde_json::json!({
+      "agent":{
+        "profile":{"name":"standard","declared":{
+          "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
+          "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
+          "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134_217_728,"memory":2_147_483_648_u64},
+          "policy":{"group_stop":250}},
+        "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
+          "address":"127.0.0.1:443","transport":"tls","server_name":"fixture.invalid",
+          "connect":10000,"handshake":10000,"reasoning_effort":"low"}],
+        "environment":environment,"trace":{"path":"/unused-product-trace","capture":"everything"}},
+      "chat":"fixture","instructions":"x".repeat(170),
+      "models":[{"endpoint":"codex","name":"gpt-6-luna","window":272_000,"output":32000,
+        "reasoning_item":65536,"head":60000,"idle":300_000,"input_price":1_250_000,
+        "cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
+      "budget":{"turns":4096,"spend":1_000_000_000_u64,"seconds":300,"reserve":{"turns":2,"seconds":150}},
+      "waiting_seconds":30,"contract":{"form":"report","max":4096},"sub_agents":true,
+      "directories":[{"name":"work","path":"/synthetic/work","writable":true,"git":false}],
+      "accounts":[{"number":0,"account_id":"synthetic"}],"in_process":false
+    }))
+    .expect("synthetic product settings");
+    let agent_bytes = local_settings::agent_document(&settings).expect("agent DTO");
+    let agent = config::parse(&agent_bytes).expect("every actual agent startup comparison");
+    assert_eq!(agent.service.limits.machine.env_bytes, 883);
+    let mut prepared = policy(&settings, &agent.service).expect("product local admission");
+    let largest = smith_domain::max_turn_bytes(&agent.service.limits.domain).expect("turn bytes");
+    let host = service::profile::host_limits(&agent.profile, largest, agent.service.limits.domain.run.message_bytes);
+    prepared.limits.agent = local::AgentLimits::Spawned(host);
+    let limits = service_limits(prepared.limits, host, &agent.service).expect("host directional derivation");
+    service::profile::memory(&limits, agent.memory).expect("all local service startup comparisons");
+    let schema =
+        smith_protocol_channel::schema_for_start(&limits.process.channel.bodies, limits.process.channel.start_bytes)
+            .expect("joint Start schema");
+    schema.check(skein_channel::Role::Initiator, &limits.process.channel.channel).expect("host side admits its Start");
+    let raw =
+        smith_agent_service::worst_case(&agent.service.limits, &agent.service.llm_endpoints).expect("agent owners");
+    let local_service = service::worst_case(&limits).expect("local service owners");
+    let complete = Local::required_memory(&limits, 1, 0).expect("every actual local outer owner");
+    assert!(complete <= 2_147_483_648, "complete local product bound {complete}");
+    println!(
+        "PRODUCT_LOCAL agent_raw={raw} service={local_service} complete={complete} limit=2147483648 host_output={} start={} env=883 accounts=1",
+        limits.process.channel.channel.output_bytes, limits.process.channel.start_bytes
+    );
+    let mut short = limits;
+    short.process.channel.channel.output_bytes -= 1;
+    assert!(service::worst_case(&short).is_none(), "one byte short rejects before adopting streams");
+    assert!(Local::required_memory(&short, 1, 0).is_none());
 }
