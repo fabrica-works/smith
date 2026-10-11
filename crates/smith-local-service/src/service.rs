@@ -807,6 +807,7 @@ fn to_root_request(request: inline::Lower) -> agent::Request {
     match request {
         inline::Lower::Complete {
             owner,
+            name,
             grant,
             prompt,
             deadlines,
@@ -816,6 +817,7 @@ fn to_root_request(request: inline::Lower) -> agent::Request {
             decoded_call_bytes,
         } => agent::Request::Complete {
             owner,
+            name,
             grant,
             prompt,
             deadlines,

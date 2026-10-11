@@ -169,6 +169,8 @@ what its host's protocol layer would do:
   - conventions;
   - a result contract, a report by default;
   - the commands' environment.
+- **A workspace may override them** for itself. Where settings are kept,
+  and in which format, is the binary's (`docs/development/local-host.md`).
 - **The local host puts the effective values in each run's charter,** so
   the domain enforces what the host chose. For a spawned agent it also
   writes the agent's configuration, as generated JSON (agent.md, section

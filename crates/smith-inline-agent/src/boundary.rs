@@ -43,6 +43,7 @@ pub enum Lower {
     /// A completion requested by a run; ends with Completed, Failed or Cancelled.
     Complete {
         owner: Token,
+        name: smith::llm::CompletionName,
         grant: smith::GrantName,
         prompt: smith::llm::Prompt,
         deadlines: smith::session::Deadlines,

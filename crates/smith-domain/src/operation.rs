@@ -3,7 +3,7 @@
 //! These entry points announce actual provider/Spawn issuance and actual terminals,
 //! never a cancellation request or provider/tool syntax.
 
-use crate::{Domain, GrantName, Operation, Request, run, tools};
+use crate::{Domain, Operation, Request, domain::IssuedCompletion, run, tools};
 use skein_lib::{Queue, Time, Token};
 
 pub(crate) fn command(domain: &mut Domain, owner: Token, op: &tools::Op, deadline: Time, out: &mut Queue<Request>) {
@@ -29,23 +29,23 @@ pub(crate) fn command_done(domain: &mut Domain, owner: Token) {
 pub(crate) fn begin_completion(
     domain: &mut Domain,
     owner: Token,
-    grant: GrantName,
+    issued: IssuedCompletion,
     conversation: Token,
     until: Time,
     out: &mut Queue<Request>,
 ) {
-    let inserted = domain.completions.insert(owner, grant).expect("one completion per session");
+    let inserted = domain.completions.insert(owner, issued).expect("one completion per session");
     assert!(inserted.is_none(), "the previous completion ended");
     let host_run = run::host_name(&domain.run, conversation).expect("issued completion retains its run");
     out.push(Request::Long { host_run, operation: Operation::Completion, until });
 }
 
 /// A provider terminal ends the actual issued span before session work proceeds.
-pub(crate) fn completion_done(domain: &mut Domain, owner: Token) -> GrantName {
-    let grant = domain.completions.remove(&owner).expect("provider terminal belongs to an emitted call");
+pub(crate) fn completion_done(domain: &mut Domain, owner: Token) -> IssuedCompletion {
+    let issued = domain.completions.remove(&owner).expect("provider terminal belongs to an emitted call");
     let id = *domain.sessions.get(&owner).expect("session lives through its provider terminal");
     let conversation = domain.peers.get(id).expect("peer lives through its provider terminal").conversation;
     let host_run = run::host_name(&domain.run, conversation).expect("run lives through its session's terminal");
     domain.notices.push(Request::LongDone { host_run });
-    grant
+    issued
 }

@@ -14,13 +14,20 @@ use smith_domain_session as session;
 
 /// Content the protocol projects into the channel's fact payload. The engine
 /// applies capture policy; the agent's queue drops and counts overflow.
+/// Provider observations carry the issued completion snapshot alongside its
+/// session owner token. Neither later completions nor lost facts can rename
+/// queued observations. `Request::Complete` supplies each start independently
+/// of capture, including retries that produce no text (domain/session.md,
+/// sections 3–4). Tool observations keep their operation owner instead.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Content {
     /// Owned bounded text in its original provider position.
-    Text { owner: Token, text: Box<[u8]> },
+    Text { owner: Token, completion: crate::llm::CompletionName, text: Box<[u8]> },
     /// Provider tool-call content observed at the root boundary; capture never authorizes or executes it.
     Call {
         owner: Token,
+        /// The issued completion snapshot, independent of fact delivery and later session state.
+        completion: crate::llm::CompletionName,
         id: Box<[u8]>,
         name: Box<[u8]>,
         /// Provider-written tool-argument bytes, retained exactly for replay.
@@ -29,7 +36,7 @@ pub enum Content {
     /// Content observation of a typed IO terminal; capture may drop it without changing decisions.
     Tool { owner: Token, done: crate::tools::Done },
     /// Content observation of provider-reported usage; charging does not depend on capture.
-    Usage { owner: Token, usage: crate::llm::Usage },
+    Usage { owner: Token, completion: crate::llm::CompletionName, usage: crate::llm::Usage },
 }
 
 pub(crate) fn done_bytes(done: &crate::tools::Done) -> u64 {

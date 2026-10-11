@@ -362,6 +362,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
             }
             smith::Request::Complete {
                 owner,
+                name,
                 grant,
                 prompt,
                 deadlines,
@@ -378,6 +379,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                     agent: id.token(),
                     request: Lower::Complete {
                         owner,
+                        name,
                         grant,
                         prompt,
                         deadlines,

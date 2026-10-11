@@ -803,6 +803,7 @@ dependencies = [
 name = "smith-agent-service"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "skein-channel",
  "skein-heap",
  "skein-http",

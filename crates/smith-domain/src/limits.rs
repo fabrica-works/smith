@@ -7,8 +7,7 @@ use skein_lib::{Id, Map, Queue, Set, Slab, Token};
 use smith_domain_run::{self as run, Ask};
 use smith_domain_session as session;
 
-use crate::GrantName;
-use crate::domain::{Credential, Flight, Handoff, StartContext, TurnHandoff};
+use crate::domain::{Credential, Flight, Handoff, IssuedCompletion, StartContext, TurnHandoff};
 use crate::facts::Fact;
 use crate::peer::{self, Peer};
 
@@ -101,7 +100,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let flights = Map::<Token, Flight>::worst_case(flights(limits)?)?
         .checked_add(u64::from(flights(limits)?).checked_mul(session_limits.delegated_result_bytes)?)?
         .checked_add(Map::<u32, Credential>::worst_case(limits.accounts)?)?
-        .checked_add(Map::<Token, GrantName>::worst_case(run_limits.conversations)?)?
+        .checked_add(Map::<Token, IssuedCompletion>::worst_case(run_limits.conversations)?)?
         .checked_add(Queue::<crate::Request>::worst_case(2)?)?
         .checked_add(Map::<Token, Token>::worst_case(commands(limits)?)?)?;
     let ready = Set::<Handoff>::worst_case(handoffs(limits)?)?.checked_mul(2)?;

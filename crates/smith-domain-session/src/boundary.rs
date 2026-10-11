@@ -194,6 +194,8 @@ pub enum Request {
     /// Ask an LLM for its next message, ended by one completion or call terminal.
     Complete {
         owner: Token,
+        /// Session-owned completion identity; emitted even when no content follows.
+        name: crate::llm::CompletionName,
         /// First user message supplied by the opener.
         prompt: Prompt,
         /// Model progress deadlines and the enclosing session's expiry.

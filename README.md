@@ -5,44 +5,18 @@ it. A host supplies a charter, tools, messages, result contracts and a
 budget; smith supplies the conversation and run mechanics. Its design
 starts at [domain/README.md](docs/design/domain/README.md).
 
-The repository contains the 05s1 workspace foundation and the 05s2 copy
-baseline: agent, run, session and tools domains, provider and OAuth codecs,
-fake LLM peers, component worlds and the composed agent on a scripted typed
-host. The [copy ledger](docs/development/migration-05s2.md) records the named
-source and the preserved stories. The first 05s4 increment adds
-[generic result contracts](docs/development/migration-05s4-results.md),
-including real reports and declared failures. The next increment adds
-[generic checked delivery](docs/development/migration-05s4-delivery.md),
-including mid-run delivery and actual host evidence during shutdown.
-[Declared opaque host tools](docs/development/migration-05s4-host-tools.md)
-now carry bounded schemas, effects and exact input/result bytes through stable
-operation names and settled bounded recovery, retaining actual terminal rights
-during withdrawal and shutdown. The standalone
-[V2 host supervision kit](docs/development/migration-05s6-host.md) now relays
-opaque starts, messages and numbered turns, supervises contained agent processes
-and retains actual call/delivery rights through shutdown. The
-[messages and concrete resume increment](docs/development/migration-05s4-messages.md)
-is being implemented through the real root/run/session worlds: named FIFO input,
-settled wait/wake/park, concrete V2 Turns and post-transcript answers, with
-receiving ownership reserved before effects. Its early compiler checkpoint is
-not a final gate claim. Live channel, scalar pricing, optional workspace and
-conventions, the local host and the executable remain later increments of
-temper's `05s-smith.md` migration plan.
-
-The design now assigns provider clients and generic LLM peers to skein's
-`skein-llm` and shared fake crates. The copied provider/OAuth crates remain
-temporary source until the [05s2a replacement](docs/development/migration-05s2a.md)
-passes its implementation review and gates. Smith's adapter owns application
-tools and conversation translation; the caller owns credential acquisition.
-
 ## Layout
 
-- `crates/`: domain and protocol crates, added with their implementations.
-- `testing/`: smith-specific fakes, added with the worlds that use them.
-- `tests/`: worlds and their focused and `fuzzy_*.rs` test binaries; no
-  integration tests live under `crates/*/tests`.
+- `src/`: the `smith` binary.
+- `crates/`: the domain, protocol, service and shell libraries.
+- `tests/`: worlds and their focused and `fuzzy_*.rs` test binaries; the
+  binary's end-to-end and live tests are in `tests/end-to-end/`.
 - `docs/design/domain/`: the run, session, tools and host contracts.
-- `docs/development/workflow.md`: exact-tip review, checks and budgets.
+- `docs/design/protocol/`: the protocol layer: channel, charter,
+  transcripts, LLM calls, the agent process and hosts.
+- `docs/development/workflow.md`: the checks before merging, the suites'
+  budgets and the live suite.
+- `docs/development/local-host.md`: running `smith local`.
 
 smith follows skein's foundation documents: programming-model.md for the
 Rust subset and ownership, testing-strategy.md for independent worlds,
@@ -65,20 +39,11 @@ cargo nextest run --workspace --profile fuzzy
 Focused tests have a 15-second workspace budget; fuzzy tests have 60
 seconds. `--profile measure -j 1` measures a suite serially without the
 gate's timeout. Each world keeps its own fakes and independent
-expectations; generic harness mechanisms are reused from `skein_world::domain`
+expectations; generic harness mechanisms are reused from `skein_world`
 and tested in skein.
 
-Dependencies on skein use `https://git.ekanayaka.io/ai/skein.git`, with
-canonical URLs in the workspace manifest and the revision pinned in `Cargo.lock`.
-smith and temper must resolve the same
-skein revision when composed. Changes to shared mechanisms land in skein
-first; smith and temper then take that revision through their own gates.
-
-The shared-harness and fake-checkout dependency revision is
-unpublished. Local validation supplies the exact locked commit through
-Cargo's git cache and runs offline. A fresh machine cannot fetch that
-revision from the canonical URL until its upstream publication is
-authorized; the manifest keeps the canonical URL and no local path patch.
-
-No smith remote is configured yet. Branches and review stay local until
-the forge repository is provisioned.
+Dependencies on skein use `https://git.ekanayaka.io/ai/skein.git` without
+`rev`, `branch` or `tag`; `Cargo.lock` pins the revision. smith, jig and
+temper must resolve the same skein revision when composed. Changes to
+shared mechanisms land in skein first; smith and its consumers then take
+that revision through their own gates.

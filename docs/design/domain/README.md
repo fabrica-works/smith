@@ -1,13 +1,11 @@
 # smith
 
-Provisional, 2026-10-05, revised 2026-10-09. smith is a kit for
-building flexible LLM agents, and a standard agent built from it. Like
-temper, it is built on skein and follows skein's foundation documents.
-It grew from temper's agent (temper's `docs/design/domain/agent.md`
-before this split), and temper is its first host. Nothing here depends
-on temper: temper is named only as an example, and section 7 says where
-temper's agent went. How smith is built from temper's code is temper's
-migration plan (temper's `docs/plans/next-domain/`).
+Provisional, 2026-10-05. smith is a kit for building flexible LLM
+agents, and a standard agent built from it. Like temper, it is built on
+skein and follows skein's foundation documents. It grew from temper's
+agent, and temper is its first host. Nothing here depends on temper:
+temper is named only as an example, and section 7 says what changed from
+temper's agent.
 
 ## 1. In one page
 
@@ -173,7 +171,7 @@ io is skein's: contained process trees, files, HTTP, pipes. The
 protocol layer's design is in `docs/design/protocol/`.
 
 **What goes to skein.** smith and temper share skein; what both would
-otherwise each keep goes there, as generic kit, when it is extracted:
+otherwise each keep goes there, as generic kit:
 
 - **framed channels:** frames over any stream, an opening that agrees a
   version, bounds sealed by constructors, a channel's state machine; and
@@ -258,28 +256,7 @@ first (run.md, 5.1); tools compiled in are an open question (section 8).
 
 ## 7. From temper
 
-temper's agent, as its `docs/design/domain/agent.md` described it before
-this split:
-
-| temper's agent.md | Now |
-|---|---|
-| 1. In one page | this page, section 1; temper's own in temper's agent.md, section 1 |
-| 2. The agent in the system | run.md, section 2; host.md, section 2; temper's place in temper's agent.md, section 2 |
-| 3. Structure | section 4 |
-| 4.1 Charter | run.md, 3.1 and 3.2; temper's charter in temper's agent.md, section 4 |
-| 4.2 What a run does | run.md, section 4 |
-| 4.3 Messages and the engine's tools | run.md, 5.2 and section 6; temper's tools in temper's agent.md, 4.3 |
-| 4.4 Finishing | run.md, sections 7 and 8; pushing in temper's agent.md, section 6 |
-| 4.5 Waiting, parking, resuming | run.md, section 6 |
-| 5. Sessions | session.md |
-| 6. Tools | tools.md |
-| 7. Facts | run.md, section 11 |
-| 8. Below the domain | each document's; the channel in host.md, section 3 |
-| 9. The world | each document's |
-| 10. Open questions | run.md, section 15; session.md, section 11; tools.md, section 8 |
-| 11. From today | each document's "From temper" |
-
-What changes in becoming smith, for temper's migration:
+What changes from temper's agent:
 
 - **Closed tool sets open.** A run served `finish` and sub-agents, and
   the design added the engine's tools by name; now a run serves `finish`,

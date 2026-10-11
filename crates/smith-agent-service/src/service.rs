@@ -1774,6 +1774,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
         }
         domain::Request::Complete {
             owner,
+            name: _,
             grant,
             prompt,
             deadlines,

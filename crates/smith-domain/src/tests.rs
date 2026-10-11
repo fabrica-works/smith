@@ -409,6 +409,11 @@ impl Harness {
     /// Starts a run of `charter` for call `call`, and has it find no guide:
     /// the run's token, and main's first call to its LLM.
     fn admit(&mut self, call: u64, charter: Charter) -> (Token, Token, Prompt) {
+        let (run, owner, prompt, _) = self.admit_named(call, charter);
+        (run, owner, prompt)
+    }
+
+    fn admit_named(&mut self, call: u64, charter: Charter) -> (Token, Token, Prompt, crate::llm::CompletionName) {
         let emitted = self.step(Event::Start {
             messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
@@ -436,8 +441,8 @@ impl Harness {
             [Request::Complete { .. }] => emitted,
             _ => panic!("expected convention probe or prepared main, got {emitted:?}"),
         };
-        let (main, prompt) = completing(prepared);
-        (run, main, prompt)
+        let (main, prompt, name) = completion_retry::named(prepared);
+        (run, main, prompt, name)
     }
 
     /// The session `owner`'s LLM answers with `content`, stopping for tools.
@@ -2041,6 +2046,8 @@ fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
     assert!(harness.turns.is_empty());
     assert_eq!(harness.domain.flights(), 0);
 }
+
+mod completion_retry;
 
 #[test]
 fn each_main_or_child_model_quantity_is_checked_before_admission() {
