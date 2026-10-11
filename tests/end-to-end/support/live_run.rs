@@ -37,7 +37,6 @@ impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
         let exit =
             procs.iter().find_map(|proc| if let Process::Binary(binary) = proc { binary.exit_status() } else { None });
-        let finished = procs.iter().any(|proc| matches!(proc, Process::Script(Proc::Terminal(person)) if person.shown().windows(12).any(|bytes| bytes == b"Tool: finish")));
         for proc in procs {
             match proc {
                 Process::Script(Proc::Terminal(person)) => {
@@ -45,7 +44,7 @@ impl Referee<Process> for Judge {
                         person.finished(exit);
                     }
                 }
-                Process::Script(Proc::Peer(peer)) if exit.is_some() || finished => peer.shutdown(),
+                Process::Script(Proc::Peer(peer)) if exit.is_some() => peer.shutdown(),
                 Process::Binary(_) | Process::Script(_) => {}
             }
         }

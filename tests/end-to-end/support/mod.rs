@@ -96,9 +96,6 @@ impl Referee<Process> for Judge {
                 None
             }
         });
-        let finished_turn = procs.iter().any(
-            |p| matches!(p, Process::Script(Proc::Terminal(p)) if p.shown().windows(12).any(|b| b == b"Tool: finish")),
-        );
         for proc in procs {
             match proc {
                 Process::Script(Proc::Terminal(p)) => {
@@ -106,7 +103,7 @@ impl Referee<Process> for Judge {
                         p.finished(exit);
                     }
                 }
-                Process::Script(Proc::Peer(p)) if exit.is_some() || finished_turn => p.shutdown(),
+                Process::Script(Proc::Peer(p)) if exit.is_some() => p.shutdown(),
                 Process::Script(Proc::Issuer(p)) if exit.is_some() => p.shutdown(),
                 Process::Script(Proc::Browser(p)) => {
                     if p.pages() == 0

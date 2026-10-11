@@ -2,7 +2,8 @@
 //! It keeps endpoint names, two grant generations per account, and a context
 //! for each accepted call. It never knows retry policy, host credentials, or
 //! provider wire grammar. `from_domain`, `from_below`, `fire` and `reclaim`
-//! route one bounded pass; accepted calls have one typed terminal.
+//! route one bounded pass; `close` ends the owner's retained connection pool.
+//! Accepted calls have one typed terminal.
 //! Contract: protocol/llm.md, sections 1, 6 to 10.
 
 #![expect(clippy::manual_let_else, clippy::single_match, reason = "explicit bounded routing cases")]
@@ -221,6 +222,13 @@ impl Component {
     /// Release settled child slots at the service's reclaim point.
     pub fn reclaim(&mut self) {
         self.connection.reclaim();
+    }
+
+    /// The owner has ended its run; close every retained physical connection.
+    pub fn close(&mut self, env: &Env<ComponentLimits>, to_domain: &mut Queue<ToDomain>, io: &mut Queue<IoRequest>) {
+        let child_env = self.child_env(env);
+        self.connection.down(&child_env, connection::Request::Close, &mut self.events, io);
+        self.route(to_domain);
     }
 
     fn child_env(&self, env: &Env<ComponentLimits>) -> Env<connection::Limits> {

@@ -1002,8 +1002,13 @@ fn cleanup(service: &mut Service) {
     if !service.channel_ended {
         return;
     }
-    if !service.cleanup_started && service.io_requests.room() >= 3 {
+    if !service.cleanup_started
+        && service.io_requests.room() >= 3
+        && service.llm_events.room() >= llm::MAX_OUT.above
+        && service.llm_below.room() >= llm::MAX_OUT.below
+    {
         service.cleanup_started = true;
+        service.llm.close(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
         if let Some(entity) = service.input {
             service.io_requests.push(io::Request::Close { entity });
         }
