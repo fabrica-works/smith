@@ -98,6 +98,7 @@ fn unissued_auth() -> Vec<u8> {
 }
 
 fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::Build {
+    use sha2::{Digest, Sha256};
     use smith_bench::arm::{ArmBinary, BuiltArm};
     let commit = std::process::Command::new("git")
         .args(["-C", repository.to_str().expect("path"), "rev-parse", "HEAD"])
@@ -106,7 +107,6 @@ fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::Buil
     assert!(commit.status.success());
     let commit = String::from_utf8(commit.stdout).expect("hexadecimal").trim().to_owned();
     let executable = b"unexecuted rendering fixture\n";
-    use sha2::{Digest, Sha256};
     let digest = format!("{:x}", Sha256::digest(executable));
     let path = directory.join(smith_bench::arm::arm_name(&commit, &digest).expect("fixture identity"));
     std::fs::create_dir(&path).expect("unexecuted arm directory");
