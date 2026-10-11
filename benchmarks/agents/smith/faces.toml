@@ -67,3 +67,15 @@ credential = "converted"
 record = "access-only"
 facts = "choices"
 receiving = { string = 256000, content = 4096, items = 32, encoded_line = 3148863 }
+
+# This writer validates the native request before capturing its new part.
+# The same phase-one/metadata task declarations derive this joint line ceiling;
+# the semantic caps remain independent and this entry declares no override range.
+[[face]]
+commit = "49505e9d28b21025b2a5a7ca11d52cf507e013af"
+face = "events"
+shape = "local-trace"
+credential = "converted"
+record = "access-only"
+facts = "choices"
+receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
