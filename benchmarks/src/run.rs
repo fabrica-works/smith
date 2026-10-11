@@ -23,6 +23,8 @@ use crate::{
 
 mod outcomes;
 
+mod cache;
+
 mod passive;
 
 mod startup;
@@ -127,6 +129,7 @@ fn blank(identity: Identity) -> AttemptResult {
         },
         health: Health { loss_per_sink: BTreeMap::new(), headroom: BTreeMap::new(), passive_checks: Vec::new() },
         artifacts: Vec::new(),
+        cache: None,
     }
 }
 
@@ -656,6 +659,14 @@ fn observe(
         None => Vec::new(),
     };
     collect_observation(guard, directory, result, process)?;
+    result.cache = cache::observation(process, task);
+    if result.identity.agent == crate::Agent::Codex && result.cache.is_some() {
+        result.outcome.checks.push(crate::CheckVerdict {
+            check: "cache-reuse".into(),
+            passed: Measure::unavailable("cache reuse is judged on a complete three-repetition triplet"),
+            evidence: vec![],
+        });
+    }
     result.outcome.writes_outside_workspace = match &process.observing {
         Some(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
             Measure::unavailable("legacy trace does not expose every shell filesystem effect")
@@ -987,7 +998,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         }
         setup_step = SetupStep::Seed;
         let task = task_for(prepared)?;
-        neutral.task(&task);
+        neutral.task(&task, prepared.identity.agent);
         archive(
             guard,
             &directory,

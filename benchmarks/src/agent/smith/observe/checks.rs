@@ -179,7 +179,10 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
         | EventCheck::SpendWithin { .. } => {
             missing("legacy trace lacks complete typed charge/share/reserve and final-request metadata")
         }
-        EventCheck::CallsInOneResponse { .. } | EventCheck::ChildrenOverlap { .. } => {
+        EventCheck::CallsInOneResponse { .. }
+        | EventCheck::CallsPerResponse { .. }
+        | EventCheck::ChildrenInTurn { .. }
+        | EventCheck::ChildrenOverlap { .. } => {
             missing("legacy trace lacks immutable response joins or complete child lifetime terminals")
         }
     }

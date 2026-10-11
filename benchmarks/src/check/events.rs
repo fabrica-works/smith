@@ -161,7 +161,14 @@ pub(super) fn checks(
                     return Err(Refusal::new(file, &key, "tool and cardinality must be nonempty"));
                 }
             }
-            EventCheck::ChildrenOverlap { at_least } | EventCheck::ChildShare { turns_at_most: at_least } => {
+            EventCheck::CallsPerResponse { tool, .. } => {
+                if tool.trim().is_empty() {
+                    return Err(Refusal::new(file, &key, "tool name is empty"));
+                }
+            }
+            EventCheck::ChildrenOverlap { at_least }
+            | EventCheck::ChildrenInTurn { count: at_least }
+            | EventCheck::ChildShare { turns_at_most: at_least } => {
                 if *at_least == 0 {
                     return Err(Refusal::new(file, &key, "cardinality must be positive"));
                 }

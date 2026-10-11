@@ -692,15 +692,17 @@ fn cache_reuse_sums_eligible_predecessors_with_exact_misses_and_window_boundarie
     let check = smith_bench::EventCheck::CacheReuse { median_at_least: 0.85, full_misses_per_ten_at_most: 1 };
     let mut values = cache_series();
     let measured = observe(&values).check(&check, "task");
-    assert_eq!(measured.passed, Measure::Observed { value: true });
+    assert!(matches!(measured.passed, Measure::Unavailable { .. }), "one repetition cannot decide a triplet");
     assert!(measured.evidence[0].contains("cache_read=12000; predecessor_prompt=12000; eligible=10; full_misses=0"));
-    // One miss per ten eligible requests passes; two fails.
     for position in [6, 8] {
         if let Event::ResponseCompleted(value) = &mut values[position].event {
             value.usage.input_tokens = Some(1200);
             value.usage.cache_read_tokens = Some(0);
         }
-        assert_eq!(observe(&values).check(&check, "task").passed, Measure::Observed { value: position == 6 });
+        let Measure::Observed { value } = observe(&values).cache_reuse(0.85, 1) else {
+            panic!("exact counts");
+        };
+        assert_eq!(value.full_misses, if position == 6 { 1 } else { 2 });
     }
     // The first request of a new window never inherits the old predecessor.
     if let Event::ResponseStarted(value) = &mut values[7].event {
@@ -711,20 +713,18 @@ fn cache_reuse_sums_eligible_predecessors_with_exact_misses_and_window_boundarie
             value.window = 2;
         }
     }
-    let result = observe(&values).check(&check, "task");
-    assert_eq!(result.passed, Measure::Observed { value: false });
-    assert!(result.evidence[0].contains("eligible=9; full_misses=1"));
-    let check = smith_bench::EventCheck::CacheReuse { median_at_least: 0.85, full_misses_per_ten_at_most: 2 };
-    assert_eq!(observe(&values).check(&check, "task").passed, Measure::Observed { value: true });
+    let Measure::Observed { value } = observe(&values).cache_reuse(0.85, 1) else {
+        panic!("exact counts");
+    };
+    assert_eq!((value.eligible, value.full_misses), (9, 1));
 }
 
 fn cache_reuse_does_not_invent_usage_or_join_other_conversations() {
-    let check = smith_bench::EventCheck::CacheReuse { median_at_least: 0.85, full_misses_per_ten_at_most: 1 };
     let mut values = cache_series();
     if let Event::ResponseCompleted(value) = &mut values[4].event {
         value.usage.cache_write_tokens = None;
     }
-    assert!(matches!(observe(&values).check(&check, "task").passed, Measure::Unavailable { .. }));
+    assert!(matches!(observe(&values).cache_reuse(0.85, 1), Measure::Unavailable { .. }));
     let mut values = cache_series();
     if let Event::ResponseStarted(value) = &mut values[5].event {
         value.conversation = 7;
@@ -732,7 +732,7 @@ fn cache_reuse_does_not_invent_usage_or_join_other_conversations() {
     if let Event::ResponseCompleted(value) = &mut values[6].event {
         value.conversation = 7;
     }
-    assert!(matches!(observe(&values).check(&check, "task").passed, Measure::Unavailable { .. }));
+    assert!(matches!(observe(&values).cache_reuse(0.85, 1), Measure::Unavailable { .. }));
     // A child on a separate thread supplies no predecessor to main.
     let mut values = balanced();
     let mut child = values[2].clone();
@@ -757,7 +757,7 @@ fn cache_reuse_does_not_invent_usage_or_join_other_conversations() {
     for (position, value) in values.iter_mut().enumerate() {
         value.t_ms = u64::try_from(position).expect("small position");
     }
-    assert!(matches!(observe(&values).check(&check, "task").passed, Measure::Unavailable { .. }));
+    assert!(matches!(observe(&values).cache_reuse(0.85, 1), Measure::Unavailable { .. }));
 }
 
 fn spend_ceiling_uses_exact_currency_and_never_charges_terminals_again() {

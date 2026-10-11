@@ -1,0 +1,2 @@
+value=13
+next=node-silver.txt

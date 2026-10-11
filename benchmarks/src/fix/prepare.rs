@@ -39,7 +39,7 @@ pub(super) fn build(request: &Prepared) -> Result<Build, String> {
 pub(super) fn one_arm(requests: &[Prepared], repetitions: usize) -> Result<Build, String> {
     inputs(requests)?;
     if requests.len() != repetitions {
-        return Err("calibration requires exactly ten changed requests and one control before dispatch".into());
+        return Err(format!("calibration requires {repetitions} physical requests for this logical repetition count"));
     }
     let first = build(&requests[0])?;
     for request in &requests[1..] {

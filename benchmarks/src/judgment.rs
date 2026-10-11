@@ -59,18 +59,32 @@ pub fn judge(result: &AttemptResult) -> Judgment {
         Some(Measure::Observed { value: true }) | None => {}
         Some(Measure::LowerBound { .. } | Measure::Unavailable { .. }) => incomplete = true,
     }
-    if incomplete { Judgment::Incomplete } else { Judgment::Pass }
+    if incomplete || crate::cache::selected(result) { Judgment::Incomplete } else { Judgment::Pass }
 }
 
 /// A suite fails on any failed run, then reports any remaining incompleteness.
 #[must_use]
 pub fn judge_suite(results: &[AttemptResult], incomplete: bool) -> Judgment {
     let mut missing = incomplete || results.is_empty();
+    let mut caches: std::collections::BTreeMap<(&str, &str), Vec<&AttemptResult>> = std::collections::BTreeMap::new();
     for result in results {
-        match judge(result) {
-            Judgment::Fail => return Judgment::Fail,
-            Judgment::Incomplete => missing = true,
-            Judgment::Pass => {}
+        if crate::cache::selected(result) {
+            caches.entry((&result.identity.task, &result.identity.arm)).or_default().push(result);
+        } else {
+            match judge(result) {
+                Judgment::Fail => return Judgment::Fail,
+                Judgment::Incomplete => missing = true,
+                Judgment::Pass => {}
+            }
+        }
+    }
+    for group in caches.values() {
+        for (verdict, _) in crate::cache::triplets(group) {
+            match verdict {
+                Judgment::Fail => return Judgment::Fail,
+                Judgment::Incomplete => missing = true,
+                Judgment::Pass => {}
+            }
         }
     }
     if missing { Judgment::Incomplete } else { Judgment::Pass }

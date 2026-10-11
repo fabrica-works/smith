@@ -32,10 +32,16 @@ pub(super) struct Neutral {
 }
 
 impl Neutral {
-    pub(super) fn task(&mut self, task: &Task) {
+    pub(super) fn task(&mut self, task: &Task, agent: crate::Agent) {
         self.checks = task.outcome.iter().filter(|check| neutral(check)).cloned().collect();
         self.waived.clone_from(&task.waives);
         self.deciding.clone_from(&task.deciding);
+        if agent != crate::Agent::Smith
+            && task.event.iter().any(|check| matches!(check, crate::EventCheck::CacheReuse { .. }))
+        {
+            self.deciding
+                .retain(|name| !task.event.iter().any(|check| check.name() == name && check.name() != "cache-reuse"));
+        }
     }
 
     pub(super) fn observed(
@@ -81,5 +87,22 @@ impl Neutral {
             &self.checks,
             &ended,
         ));
+    }
+}
+
+#[cfg(test)]
+mod cache_pair_tests {
+    use super::*;
+
+    #[test]
+    fn codex_cache_pair_keeps_neutral_outcomes_and_triplet_statistics() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let task = crate::check_task(&root.join("tasks/probes/cache-reuse/task.toml"), &root.join("../docs/design"))
+            .expect("task");
+        let mut neutral = Neutral::default();
+        neutral.task(&task, crate::Agent::Codex);
+        assert_eq!(neutral.deciding, ["end", "exit-code", "answer", "cache-reuse"]);
+        neutral.task(&task, crate::Agent::Smith);
+        assert_eq!(neutral.deciding, task.deciding);
     }
 }

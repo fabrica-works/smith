@@ -70,3 +70,7 @@ pub mod run;
 pub mod batch;
 
 pub mod fix;
+
+mod cache;
+
+pub use cache::{CacheObservation, CacheTriplet};

@@ -60,6 +60,9 @@ pub struct ArmSummary {
     pub counts_by_end: BTreeMap<String, u32>,
     pub passes: PassCounts,
     pub metrics: BTreeMap<String, MetricSummary>,
+    /// Canonical cache triplets retain each repetition and the deciding median.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cache_triplets: Vec<crate::CacheTriplet>,
 }
 
 /// One like-input metric comparison supplied by the seeded bootstrap.
@@ -179,6 +182,16 @@ fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
             values.insert(format!("tokens/{convention}/{name}"), measure_u64(value));
         }
     }
+    if let Some(cache) = &result.cache {
+        values.insert(
+            "cache/reuse".into(),
+            match cache {
+                Measure::Observed { value } => observed(value.reuse()),
+                Measure::LowerBound { missing, .. } => Measure::unavailable(missing.join("; ")),
+                Measure::Unavailable { reason } => Measure::unavailable(reason),
+            },
+        );
+    }
     values
 }
 
@@ -258,7 +271,7 @@ fn end_name(end: &End) -> &'static str {
     }
 }
 
-fn same_inputs(left: &Identity, right: &Identity) -> bool {
+pub(crate) fn same_inputs(left: &Identity, right: &Identity) -> bool {
     left.task_version == right.task_version
         && left.seed_sha256 == right.seed_sha256
         && left.prompt_sha256 == right.prompt_sha256
@@ -289,8 +302,16 @@ fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
         setup: 0,
         interval_95: Measure::unavailable("no eligible checks"),
     };
+    let cache_triplets = if results.iter().any(|result| crate::cache::selected(result)) {
+        crate::cache::triplets(results)
+    } else {
+        Vec::new()
+    };
     for result in results {
         *counts.entry(end_name(&result.outcome.end).into()).or_insert(0_u32) += 1;
+        if !cache_triplets.is_empty() {
+            continue;
+        }
         match &result.outcome.end {
             End::Budget { .. } => passes.budget += 1,
             End::Refused { .. } => passes.setup += 1,
@@ -299,6 +320,13 @@ fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
                 Some(false) => passes.failed += 1,
                 None => passes.unavailable += 1,
             },
+        }
+    }
+    for (verdict, _) in &cache_triplets {
+        match verdict {
+            crate::Judgment::Pass => passes.passed += 1,
+            crate::Judgment::Fail => passes.failed += 1,
+            crate::Judgment::Incomplete => passes.unavailable += 1,
         }
     }
     if passes.unavailable == 0 {
@@ -329,6 +357,7 @@ fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
         counts_by_end: counts,
         passes,
         metrics,
+        cache_triplets: cache_triplets.into_iter().map(|(_, summary)| summary).collect(),
     })
 }
 

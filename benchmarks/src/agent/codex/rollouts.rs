@@ -14,6 +14,8 @@ use crate::{Convention, ScopeKind, TokenLedger, TokenRecord, Usage};
 
 use super::ParseError;
 
+mod cache;
+
 const MAX_THREADS: usize = 4096;
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 
@@ -137,6 +139,7 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
     let mut parents = BTreeMap::new();
     let mut ancestors = BTreeSet::new();
     let mut responses = BTreeMap::new();
+    let mut order = Vec::new();
     for (offset, line) in text.lines().enumerate() {
         let value: serde_json::Value = serde_json::from_str(line)
             .map_err(|error| bad("rollout", &format!("line {}", offset + 1), error.to_string()))?;
@@ -157,6 +160,9 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
                 )
                 .map_err(|error| bad(kind, "payload.usage", error.to_string()))?;
                 let usage = native.usage().map_err(|reason| bad(kind, "payload.usage", reason))?;
+                if !responses.contains_key(&response) {
+                    order.push(response.clone());
+                }
                 if let Some(previous) = responses.insert(response.clone(), usage.clone())
                     && previous != usage
                 {
@@ -175,7 +181,13 @@ pub fn parse_rollout(bytes: &[u8], thread: &str) -> Result<(Link, Vec<ResponseUs
             .expect("owner metadata checked")
             .clone()
             .map_or(Link::Unlinked, |parent| Link::Linked { parent }),
-        responses.into_iter().map(|(response, usage)| ResponseUsage { response, usage }).collect(),
+        order
+            .into_iter()
+            .map(|response| {
+                let usage = responses.remove(&response).expect("observed response");
+                ResponseUsage { response, usage }
+            })
+            .collect(),
     ))
 }
 

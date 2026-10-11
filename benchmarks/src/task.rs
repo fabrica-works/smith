@@ -119,6 +119,10 @@ pub enum EventCheck {
     SpendWithin { ceiling_usd: f64 },
     /// One provider answer contains this many calls of the named tool.
     CallsInOneResponse { tool: String, at_least: u32 },
+    /// Each captured response has at most this many calls of the named tool.
+    CallsPerResponse { tool: String, at_most: u32 },
+    /// Every child returns before its successor is opened.
+    ChildrenInTurn { count: u32 },
     /// This many child conversations overlap on the emission clock.
     ChildrenOverlap { at_least: u32 },
     /// No response has this completion failure class.
@@ -163,6 +167,8 @@ impl EventCheck {
             Self::BudgetVisible => "budget-visible",
             Self::SpendWithin { .. } => "spend-within",
             Self::CallsInOneResponse { .. } => "calls-in-one-response",
+            Self::CallsPerResponse { .. } => "calls-per-response",
+            Self::ChildrenInTurn { .. } => "children-in-turn",
             Self::ChildrenOverlap { .. } => "children-overlap",
             Self::NoFailure { .. } => "no-failure",
             Self::RunCompleted { .. } => "run-completed",

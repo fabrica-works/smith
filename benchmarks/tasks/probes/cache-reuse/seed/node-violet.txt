@@ -1,0 +1,2 @@
+value=19
+next=node-maple.txt

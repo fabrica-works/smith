@@ -37,6 +37,7 @@ mod budget;
 mod headroom;
 
 mod cache;
+mod cache_shape;
 
 mod spend;
 
@@ -377,4 +378,24 @@ pub(super) fn reported_spend(observer: &Observer, currency: u64) -> Result<crate
         crate::Measure::LowerBound { value, missing }
     };
     Ok(crate::Spend { basis: crate::SpendBasis::Notional, usd })
+}
+
+impl Observer {
+    /// One repetition's exact cache observations; thresholds bind its triplet.
+    #[must_use]
+    pub fn cache_reuse(
+        &self,
+        median_at_least: f64,
+        full_misses_per_ten_at_most: u32,
+    ) -> crate::Measure<crate::CacheObservation> {
+        if self.fault.is_some()
+            || self.unknown
+            || self.sessions.is_empty()
+            || self.sessions.iter().any(|session| usage::incomplete(session).is_some())
+        {
+            crate::Measure::unavailable("incomplete event stream prevents exact cache observations")
+        } else {
+            cache::observation(self, median_at_least, full_misses_per_ten_at_most)
+        }
+    }
 }

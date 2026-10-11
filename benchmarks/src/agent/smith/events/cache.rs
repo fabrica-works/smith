@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use smith_events::{Event, Outcome, Usage};
 
-use crate::{CheckVerdict, Measure};
+use crate::{CacheObservation, CheckVerdict, Measure};
 
 use super::Observer;
 
@@ -76,23 +76,45 @@ fn measured(observer: &Observer) -> Result<(u128, u128, u64, u64), String> {
     Ok((reads, predecessors, eligible, misses))
 }
 
+pub(super) fn observation(
+    observer: &Observer,
+    median_at_least: f64,
+    full_misses_per_ten_at_most: u32,
+) -> Measure<CacheObservation> {
+    let counts = measured(observer).and_then(|(reads, prompts, eligible, full_misses)| {
+        let cache_read = u64::try_from(reads).map_err(|_| "cache reads exceed serialized count bound")?;
+        let predecessor_prompt = u64::try_from(prompts).map_err(|_| "cache prompts exceed serialized count bound")?;
+        Ok(CacheObservation {
+            cache_read,
+            predecessor_prompt,
+            eligible,
+            full_misses,
+            median_at_least,
+            full_misses_per_ten_at_most,
+        })
+    });
+    match counts {
+        Ok(value) => Measure::Observed { value },
+        Err(reason) => Measure::unavailable(reason),
+    }
+}
+
 pub(super) fn check(observer: &Observer, median_at_least: f64, full_misses_per_ten_at_most: u32) -> CheckVerdict {
-    let (passed, evidence) = match measured(observer) {
-        Ok((reads, predecessors, eligible, misses)) => {
-            // Keep the exact integer inputs next to the floating ratio. This is
-            // one repetition's R; the probe summary takes the median of repeats.
-            let read = reads.to_string().parse::<f64>().expect("u128 converts to finite f64");
-            let predecessor = predecessors.to_string().parse::<f64>().expect("u128 converts to finite f64");
-            let reuse = read / predecessor;
-            let miss_rate = u128::from(misses) * 10 <= u128::from(full_misses_per_ten_at_most) * u128::from(eligible);
-            (
-                Measure::Observed { value: reuse >= median_at_least && miss_rate },
-                vec![format!(
-                    "reuse={reuse}; cache_read={reads}; predecessor_prompt={predecessors}; eligible={eligible}; full_misses={misses}"
-                )],
-            )
-        }
-        Err(reason) => (Measure::unavailable(reason), Vec::new()),
+    let measurement = observation(observer, median_at_least, full_misses_per_ten_at_most);
+    let evidence = match &measurement {
+        Measure::Observed { value } => vec![format!(
+            "reuse={}; cache_read={}; predecessor_prompt={}; eligible={}; full_misses={}; triplet judgment pending",
+            value.reuse(),
+            value.cache_read,
+            value.predecessor_prompt,
+            value.eligible,
+            value.full_misses
+        )],
+        Measure::LowerBound { .. } | Measure::Unavailable { .. } => Vec::new(),
     };
-    CheckVerdict { check: "cache-reuse".into(), passed, evidence }
+    CheckVerdict {
+        check: "cache-reuse".into(),
+        passed: Measure::unavailable("cache reuse is judged on a complete three-repetition triplet"),
+        evidence,
+    }
 }

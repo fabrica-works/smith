@@ -341,6 +341,9 @@ pub struct AttemptResult {
     pub outcome: Outcome,
     pub health: Health,
     pub artifacts: Vec<Artifact>,
+    /// Cache-probe observations, with an expected but missing measurement retained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<Measure<crate::CacheObservation>>,
 }
 
 /// Read a result with strict fields and the one supported format version.

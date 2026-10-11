@@ -16,6 +16,8 @@ pub(crate) fn calibration_suite(probe: &str) -> std::path::PathBuf {
         "first-request.toml"
     } else if probe.starts_with("probes/failures/") {
         "failures.toml"
+    } else if probe == "probes/cache-reuse" || probe == "probes/cache-reuse/children" {
+        "cache-reuse.toml"
     } else {
         "calibrate.toml"
     };
@@ -176,20 +178,37 @@ pub fn calibrate(probe: &str, changed: &Path, control: &Path, seed: u64) -> Resu
     let suite = calibration_suite(probe);
     let after_requests = crate::batch::probe_requests(&suite, changed, seed, probe, 10)?;
     let before_requests = crate::batch::probe_requests(&suite, control, seed, probe, 1)?;
-    let after_arm = prepare::one_arm(&after_requests, 10)?;
-    let before_arm = prepare::one_arm(&before_requests, 1)?;
+    let physical =
+        crate::read_task(&after_requests[0].task).map_err(|error| error.to_string())?.repetitions.unwrap_or(1);
+    let count = 10_u32.checked_mul(physical).ok_or("calibration repetitions overflow")?;
+    let after_arm = prepare::one_arm(&after_requests, usize::try_from(count).expect("u32 fits usize"))?;
+    let before_arm = prepare::one_arm(&before_requests, usize::try_from(physical).expect("u32 fits usize"))?;
     if !prepare::same_input(&after_requests[0].identity, &before_requests[0].identity) {
         return Err("calibration control changes frozen task inputs".into());
     }
     if after_arm.arm == before_arm.arm {
         return Err("calibration control must differ from the changed arm".into());
     }
-    let after = crate::batch::run_probe(&suite, changed, seed, probe, 10)?;
     let before = crate::batch::run_probe(&suite, control, seed, probe, 1)?;
-    let after_verdict = actual(&after_arm, &after.results, &after)?.verdict;
     let before_verdict = actual(&before_arm, &before.results, &before)?.verdict;
+    if before.results.iter().any(crate::cache::selected) && !crate::cache::control_failure(&before.results) {
+        let verdict = if before_verdict == Judgment::Pass { Judgment::Fail } else { Judgment::Incomplete };
+        return Ok((
+            verdict,
+            format!(
+                "Finding: cache control did not establish a failing cache criterion; improvement unshown.\n{}",
+                crate::cache::notes(&before.results)
+            ),
+        ));
+    }
+    let after = crate::batch::run_probe(&suite, changed, seed, probe, 10)?;
+    let after_verdict = actual(&after_arm, &after.results, &after)?.verdict;
     let verdict = match (after_verdict, before_verdict) {
-        (Judgment::Pass, Judgment::Fail) if after.results.len() == 10 && !after.incomplete && !before.incomplete => {
+        (Judgment::Pass, Judgment::Fail)
+            if after.results.len() == usize::try_from(count).expect("u32 fits usize")
+                && !after.incomplete
+                && !before.incomplete =>
+        {
             Judgment::Pass
         }
         (Judgment::Incomplete, _) | (_, Judgment::Incomplete) => Judgment::Incomplete,
@@ -197,6 +216,9 @@ pub fn calibrate(probe: &str, changed: &Path, control: &Path, seed: u64) -> Resu
     };
     let mut text = format!("Calibration: {probe} {verdict:?}\n");
     for (phase, batch) in [("after", after), ("control", before)] {
+        if batch.results.iter().any(crate::cache::selected) {
+            text.push_str(&crate::cache::notes(&batch.results));
+        }
         for result in batch.results {
             writeln!(
                 text,

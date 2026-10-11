@@ -34,6 +34,10 @@ fn requests(directory: &Path) -> Result<Vec<Prepared>, String> {
 }
 
 fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prepared>, String> {
+    order(suite, requests, seed, false)
+}
+
+fn order(suite: &Suite, requests: Vec<Prepared>, seed: u64, logical: bool) -> Result<Vec<Prepared>, String> {
     let mut groups: BTreeMap<String, BTreeMap<String, Vec<Prepared>>> = BTreeMap::new();
     let mut ids = BTreeSet::new();
     let run = requests.first().map(|request| request.identity.run.clone());
@@ -57,10 +61,12 @@ fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prep
         for attempts in &mut arms {
             attempts.sort_by(|left, right| left.identity.attempt.cmp(&right.identity.attempt));
         }
-        let repetitions = crate::read_task(&arms[0][0].task)
-            .map_err(|error| error.to_string())?
-            .repetitions
-            .unwrap_or(suite.repetitions);
+        let authored = crate::read_task(&arms[0][0].task).map_err(|error| error.to_string())?.repetitions;
+        let repetitions = if logical {
+            suite.repetitions.checked_mul(authored.unwrap_or(1)).ok_or("probe repetition count overflow")?
+        } else {
+            authored.unwrap_or(suite.repetitions)
+        };
         if arms.iter().any(|attempts| attempts.len() != usize::try_from(repetitions).expect("u32 fits usize")) {
             return Err("each prepared task/arm must supply its declared repetition count".into());
         }
@@ -294,7 +300,7 @@ fn dispatch(
 /// Requests are immutable JSON documents; agent adapters add them when ready.
 pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Batch, String> {
     let suite = crate::read_suite(suite_file).map_err(|error| error.to_string())?;
-    run_suite(suite_file, &suite, prepared_directory, seed)
+    run_suite(suite_file, &suite, prepared_directory, seed, false)
 }
 
 /// Run one authored probe with explicit repetitions, retaining the common suite supervisor.
@@ -306,7 +312,7 @@ pub fn run_probe(
     repetitions: u32,
 ) -> Result<Batch, String> {
     let suite = probe_suite(suite_file, probe, repetitions)?;
-    run_suite(suite_file, &suite, prepared_directory, seed)
+    run_suite(suite_file, &suite, prepared_directory, seed, true)
 }
 
 fn probe_suite(suite_file: &Path, probe: &str, repetitions: u32) -> Result<Suite, String> {
@@ -330,13 +336,20 @@ pub(crate) fn probe_requests(
     let suite = probe_suite(suite_file, probe, repetitions)?;
     let requests = requests(prepared_directory)?;
     check_requests(suite_file, &suite, &requests)?;
-    ordered(&suite, requests, seed)
+    order(&suite, requests, seed, true)
 }
 
-fn run_suite(suite_file: &Path, suite: &Suite, prepared_directory: &Path, seed: u64) -> Result<Batch, String> {
+fn run_suite(
+    suite_file: &Path,
+    suite: &Suite,
+    prepared_directory: &Path,
+    seed: u64,
+    logical: bool,
+) -> Result<Batch, String> {
     let requests = requests(prepared_directory)?;
     check_requests(suite_file, suite, &requests)?;
-    let mut requests: VecDeque<_> = ordered(suite, requests, seed)?.into();
+    let ordered = if logical { order(suite, requests, seed, true)? } else { ordered(suite, requests, seed)? };
+    let mut requests: VecDeque<_> = ordered.into();
     if requests.iter().any(|request| {
         requests.iter().any(|candidate| {
             candidate.identity.run == request.identity.run
@@ -381,9 +394,9 @@ fn run_suite(suite_file: &Path, suite: &Suite, prepared_directory: &Path, seed: 
             break;
         }
         let result = dispatch(&guard, &machine, &state, &clock, &executable, &request, remaining)?;
-        incomplete |= crate::judge(&result) == crate::Judgment::Incomplete;
+        incomplete |= crate::cache::repetition(&result) == crate::Judgment::Incomplete;
         let key = format!("{}/{}", request.identity.task, request.identity.arm);
-        if request.identity.task.starts_with("probes/") {
+        if request.identity.task.starts_with("probes/") && !crate::cache::selected(&result) {
             if let Some(passed) = crate::summary::passed(&result) {
                 if let Some(first) = reruns.remove(&request.identity.attempt) {
                     probes.insert(key, crate::probe_verdict(first, Some(passed)));
@@ -412,6 +425,7 @@ fn run_suite(suite_file: &Path, suite: &Suite, prepared_directory: &Path, seed: 
             break;
         }
     }
+    cache_verdicts(&results, &mut incomplete, &mut probes);
     Ok(Batch { results, incomplete, probes })
 }
 
@@ -629,5 +643,65 @@ mod native_suite_pin_tests {
         request.identity.model.requested_model = "smith-bench-nonexistent-model-2026-10-11".into();
         let valid = check_requests(&suite_file, &suite, std::slice::from_ref(request));
         assert!(valid.is_ok(), "truthful authored provider rejection identity admitted: {valid:?}");
+    }
+}
+
+fn cache_verdicts(
+    results: &[AttemptResult],
+    incomplete: &mut bool,
+    probes: &mut BTreeMap<String, crate::ProbeVerdict>,
+) {
+    let mut caches: BTreeMap<String, Vec<&AttemptResult>> = BTreeMap::new();
+    for result in results {
+        if crate::cache::selected(result) {
+            caches.entry(format!("{}/{}", result.identity.task, result.identity.arm)).or_default().push(result);
+        }
+    }
+    for (key, group) in caches {
+        let verdicts = crate::cache::triplets(&group);
+        *incomplete |= verdicts.iter().any(|(verdict, _)| *verdict == crate::Judgment::Incomplete);
+        let pass = verdicts.iter().all(|(verdict, _)| *verdict == crate::Judgment::Pass);
+        probes.insert(key, if pass { crate::ProbeVerdict::Passed } else { crate::ProbeVerdict::Regression });
+    }
+}
+
+#[cfg(test)]
+mod cache_order_tests {
+    use super::*;
+
+    #[test]
+    fn logical_calibration_requires_thirty_runs_but_one_suite_triplet_requires_three() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut suite = crate::read_suite(&root.join("suites/cache-reuse.toml")).expect("cache suite");
+        suite.repetitions = 10;
+        let result = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("fixture");
+        let requests: Vec<_> = (0..30)
+            .map(|position| {
+                let mut identity = result.identity.clone();
+                identity.attempt = format!("{position:02}");
+                Prepared {
+                    task: root.join("tasks/probes/cache-reuse/task.toml"),
+                    identity,
+                    program: "/nonexecuted".into(),
+                    arguments: vec![],
+                    codex_home: None,
+                    configuration: None,
+                    teardown_ms: 0,
+                    grace_ms: 1,
+                    settlement_ms: 1,
+                    setup_deadline_seconds: 1,
+                    max_stdout_bytes: 4096,
+                    max_stderr_bytes: 4096,
+                    disk_estimate_bytes: 4096,
+                    force_walk: true,
+                }
+            })
+            .collect();
+        assert_eq!(order(&suite, requests.clone(), 1, true).expect("ten triplets").len(), 30);
+        assert!(order(&suite, requests[..29].to_vec(), 1, true).is_err());
+        assert!(ordered(&suite, requests.clone(), 1).is_err(), "suite task's authored repetition count is three");
+        assert_eq!(ordered(&suite, requests[..3].to_vec(), 1).expect("one triplet").len(), 3);
+        suite.repetitions = 1;
+        assert_eq!(order(&suite, requests[..3].to_vec(), 1, true).expect("one control triplet").len(), 3);
     }
 }

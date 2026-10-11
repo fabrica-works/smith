@@ -288,6 +288,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::ConversationOpened { kind, count } => measured(count.holds(u64::try_from(records.iter().filter(|record|
             matches!(&record.event, Event::ConversationOpened(value) if names::kind(&value.kind) == kind.as_bytes())).count()).expect("scopes fit"))),
         EventCheck::CallsInOneResponse { tool, at_least } => calls_one_response(observer, tool, *at_least),
+        EventCheck::CallsPerResponse { tool, at_most } => super::cache_shape::calls_per_response(observer, tool, *at_most),
+        EventCheck::ChildrenInTurn { count } => super::cache_shape::children_in_turn(observer, *count),
         EventCheck::ChildrenOverlap { at_least } => children_overlap(observer, *at_least),
         EventCheck::NoFailure { class } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ResponseCompleted(value) if value.failure.as_ref().is_some_and(|value| names::failure(&value.class) == class.as_bytes())))),
