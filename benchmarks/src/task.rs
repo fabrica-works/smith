@@ -115,6 +115,10 @@ pub enum EventCheck {
     ChildShare { turns_at_most: u32 },
     /// Prompt budget text agrees with snapshots and children avoid the reserve.
     BudgetVisible,
+    /// The last child usage's told remainder matches its writing-step budget.
+    BudgetTold,
+    /// Main's report repeats the last remainder it was actually told.
+    BudgetReport,
     /// Reported spend does not exceed this notional dollar ceiling.
     SpendWithin { ceiling_usd: f64 },
     /// One provider answer contains this many calls of the named tool.
@@ -165,6 +169,8 @@ impl EventCheck {
             Self::FinalTurn => "final-turn",
             Self::ChildShare { .. } => "child-share",
             Self::BudgetVisible => "budget-visible",
+            Self::BudgetTold => "budget-told",
+            Self::BudgetReport => "budget-report",
             Self::SpendWithin { .. } => "spend-within",
             Self::CallsInOneResponse { .. } => "calls-in-one-response",
             Self::CallsPerResponse { .. } => "calls-per-response",

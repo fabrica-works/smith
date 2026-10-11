@@ -20,6 +20,8 @@ pub(crate) fn calibration_suite(probe: &str) -> std::path::PathBuf {
         "cache-reuse.toml"
     } else if probe == "probes/parallel-read" || probe.starts_with("probes/parallel-children") {
         "parallel.toml"
+    } else if probe.starts_with("probes/budget/") {
+        "budget.toml"
     } else {
         "calibrate.toml"
     };

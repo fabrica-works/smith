@@ -184,6 +184,8 @@ pub(super) fn checks(
             | EventCheck::MainAfterChild
             | EventCheck::FinalTurn
             | EventCheck::BudgetVisible
+            | EventCheck::BudgetTold
+            | EventCheck::BudgetReport
             | EventCheck::NoRequest
             | EventCheck::NoRun => {}
         }

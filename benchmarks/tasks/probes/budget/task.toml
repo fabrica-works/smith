@@ -4,7 +4,7 @@ kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
-prompt = "Delegate the requested read-only survey, wait for its answer, then finish with ALPHA.\n"
+prompt = "Delegate one read-only child to survey part01.txt through part10.txt in order, reading one file per completion without batching, shell, or nested delegation. Wait for its answer, then finish with ALPHA and its full or partial report.\n"
 seed_sha256 = "e0c90592e3e1e61142c5e7493c84a33b4d39f6a0d38e3ff3227f61da6922198f"
 guards = ["domain/run.md, section 5.3", "domain/run.md, section 9"]
 deciding = ["end", "exit-code", "answer", "run-completed"]
@@ -52,7 +52,7 @@ status = "accepted"
 [[variant]]
 name = "child-quota"
 prompt = "Delegate one read-only child with max_turns 2. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report the sum. Wait for its answer, then finish with ALPHA and the child's partial or full report.\n"
-deciding = ["child-share", "conversation-opened"]
+deciding = ["child-share", "conversation-opened", "main-after-child"]
 [[variant.event]]
 check = "child-share"
 turns_at_most = 2
@@ -61,13 +61,63 @@ check = "conversation-opened"
 kind = "child"
 count = { exactly = 1 }
 
+[[variant.event]]
+check = "main-after-child"
+
 [[variant]]
 name = "wrap-up"
 prompt = "Delegate one read-only child with max_turns 3. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report its sum. Wait for the child's budget-stopped report, then finish with ALPHA and that report.\n"
-deciding = ["final-turn", "conversation-opened"]
+deciding = ["final-turn", "conversation-opened", "main-after-child"]
 [[variant.event]]
 check = "final-turn"
 [[variant.event]]
 check = "conversation-opened"
 kind = "child"
 count = { exactly = 1 }
+[[variant.event]]
+check = "main-after-child"
+
+[[variant]]
+name = "starvation"
+prompt = "Delegate one read-only child with max_turns 64 to survey part01.txt through part10.txt, exactly one read per completion without batching, shell, or nested delegation. The run has only six turns including your finishing reserve: let the effective child share clamp, wait for its full or partial report, and finish with ALPHA and what it learned. Do not abandon the child or finish before its return.\n"
+deciding = ["main-after-child", "conversation-opened"]
+[variant.budget]
+seconds = 300
+turns = 6
+[[variant.event]]
+check = "main-after-child"
+[[variant.event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 1 }
+
+[[variant]]
+name = "spend"
+prompt = "Read part01.txt through part10.txt in order, following their next links with one file read per completion. No listing, batched reads, shell, changes, or delegation. Sum the values and finish with ALPHA and the full or partial sum. Respect the notional spend ceiling and finish with what you have when the ordinary budget ends.\n"
+deciding = ["spend-within", "usage-sums"]
+[variant.budget]
+seconds = 300
+turns = 40
+spend = 1.0
+[[variant.event]]
+check = "spend-within"
+ceiling_usd = 1.0
+[[variant.event]]
+check = "usage-sums"
+
+[[variant]]
+name = "visibility"
+prompt = "Delegate one read-only child with max_turns 2 to read part01.txt and report its value. Wait for its return. In the child's native usage line, find the last ordinary-left turns and time you were told. Finish with exactly ALPHA, that turns count, and that time in whole seconds (for less than a second use 0). For example ALPHA 6 7. Report what you were told before this reporting completion, excluding spend. No other child, read, shell, or change.\n"
+deciding = ["budget-visible", "budget-told", "budget-report", "conversation-opened", "main-after-child"]
+[[variant.event]]
+check = "budget-visible"
+[[variant.event]]
+check = "budget-told"
+[[variant.event]]
+check = "budget-report"
+[[variant.event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 1 }
+[[variant.event]]
+check = "main-after-child"

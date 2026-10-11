@@ -349,6 +349,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
             super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most).passed,
         EventCheck::FinalTurn => super::final_turn::check(observer),
         EventCheck::BudgetVisible => super::budget::check(observer),
+        EventCheck::BudgetTold => super::budget_report::check(observer, false),
+        EventCheck::BudgetReport => super::budget_report::check(observer, true),
         EventCheck::MainAfterChild => super::scopes::main_after_child(observer),
         EventCheck::ChildShare { turns_at_most } => super::scopes::child_share(observer, *turns_at_most),
         EventCheck::SpendWithin { ceiling_usd } => match currency {

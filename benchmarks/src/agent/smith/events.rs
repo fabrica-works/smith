@@ -33,6 +33,7 @@ mod scopes;
 mod final_turn;
 
 mod budget;
+mod budget_report;
 
 mod headroom;
 

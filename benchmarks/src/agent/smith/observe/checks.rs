@@ -176,6 +176,8 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
         | EventCheck::FinalTurn
         | EventCheck::ChildShare { .. }
         | EventCheck::BudgetVisible
+        | EventCheck::BudgetTold
+        | EventCheck::BudgetReport
         | EventCheck::SpendWithin { .. } => {
             missing("legacy trace lacks complete typed charge/share/reserve and final-request metadata")
         }
