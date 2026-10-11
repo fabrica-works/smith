@@ -92,7 +92,14 @@ pub struct MaxOut {
 /// A fire pass may issue one pending Next and advance one child phase.
 pub const MAX_OUT: MaxOut = MaxOut { above: 128, below: 128 };
 
-const MEASURES: u32 = MAX_OUT.above + 1;
+// One prompt plus at most completion content and terminal measures for each
+// routed event. Deltas need only one cell. The service drains before re-entry.
+const MEASURES: u32 = MAX_OUT
+    .above
+    .checked_mul(2)
+    .expect("two measure cells per routed event")
+    .checked_add(1)
+    .expect("one translated prompt beside routed measures");
 
 /// Checked retained pool, grant, context, and event-queue ownership, using
 /// configured endpoints to count their request heads and credential bounds.
@@ -181,7 +188,7 @@ impl Component {
         })
     }
 
-    /// The oldest content observation; the service drains these before routing terminals.
+    /// The oldest content or transport observation; drained before routing terminals.
     pub fn pop_measure(&mut self) -> Option<crate::Measure> {
         self.measures.pop()
     }
@@ -430,10 +437,11 @@ impl Component {
                 connection::Event::Block { call, block: _ } => {
                     self.next.insert(call).expect("one pending demand per admitted call");
                 }
-                connection::Event::Completed { call, completion, measures: _ } => {
+                connection::Event::Completed { call, completion, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
                         Some(active) => {
+                            self.measures.push(crate::Measure::Terminal { owner: call, measures });
                             match active.observation {
                                 Some(_) => {
                                     let completion =
@@ -454,27 +462,33 @@ impl Component {
                         None => {}
                     }
                 }
-                connection::Event::Failed { call, failure, evidence, detail, measures: _ } => {
+                connection::Event::Failed { call, failure, evidence, detail, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
-                        Some(active) => match crate::failed(active.context, call, failure, evidence, detail) {
-                            Ok(event) => Self::domain_event(event, to_domain),
-                            Err(error) => {
-                                Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
+                        Some(active) => {
+                            self.measures.push(crate::Measure::Terminal { owner: call, measures });
+                            match crate::failed(active.context, call, failure, evidence, detail) {
+                                Ok(event) => Self::domain_event(event, to_domain),
+                                Err(error) => {
+                                    Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
+                                }
                             }
-                        },
+                        }
                         None => {}
                     }
                 }
-                connection::Event::Cancelled { call, measures: _ } => {
+                connection::Event::Cancelled { call, measures } => {
                     self.next.remove(&call);
                     match self.active.remove(&call) {
-                        Some(active) => match crate::cancelled(active.context, call) {
-                            Ok(event) => Self::domain_event(event, to_domain),
-                            Err(error) => {
-                                Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
+                        Some(active) => {
+                            self.measures.push(crate::Measure::Terminal { owner: call, measures });
+                            match crate::cancelled(active.context, call) {
+                                Ok(event) => Self::domain_event(event, to_domain),
+                                Err(error) => {
+                                    Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
+                                }
                             }
-                        },
+                        }
                         None => {}
                     }
                 }

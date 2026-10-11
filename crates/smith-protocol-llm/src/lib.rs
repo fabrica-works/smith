@@ -58,5 +58,7 @@ pub use stated::Stated;
 pub use tools::{fixed_schema_bytes, schemas, schemas_for_contract};
 pub use types::{Context, Error, ResolvedCall, ToolKind, ToolSchema};
 
+pub use skein_llm_connection::Measures;
+
 #[cfg(test)]
 mod tests;

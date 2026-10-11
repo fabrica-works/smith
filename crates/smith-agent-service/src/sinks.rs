@@ -329,6 +329,9 @@ impl Sinks {
     /// Drain an actual component observation before its domain terminal is consumed.
     pub(crate) fn measure(&mut self, origin: Time, measure: smith_protocol_llm::Measure) {
         match measure {
+            smith_protocol_llm::Measure::Terminal { owner, measures } => {
+                self.responses.measured(owner, measures);
+            }
             smith_protocol_llm::Measure::Prompt { at: _, owner, prompt } => {
                 let mut record = self.pending.remove(&owner).expect("observed prompt follows its actual hand-off");
                 let messages = match &mut record.event {

@@ -74,6 +74,8 @@ pub struct Peer {
     pub terminals: Vec<ToDomain>,
     /// Content actually emitted before a terminal by the component.
     pub measures: Vec<smith_protocol_llm::Measure>,
+    /// Plaintext request bytes independently received on the peer's sockets.
+    pub request_bytes: u64,
 }
 
 impl Peer {
@@ -125,6 +127,7 @@ impl Peer {
             bindings: BTreeMap::new(),
             terminals: Vec::new(),
             measures: Vec::new(),
+            request_bytes: 0,
         }
     }
 
@@ -242,7 +245,13 @@ impl Peer {
                                     );
                                 }
                             }
-                            Down::Send(_) | Down::Finish => {}
+                            Down::Send(bytes) => {
+                                self.request_bytes = self
+                                    .request_bytes
+                                    .checked_add(u64::try_from(bytes.len()).expect("native bounded send length"))
+                                    .expect("bounded fixture sends");
+                            }
+                            Down::Finish => {}
                         }
                     }
                     IoRequest::Close { entity } | IoRequest::Abort { entity } => {

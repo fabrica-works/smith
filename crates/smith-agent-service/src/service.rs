@@ -1196,7 +1196,9 @@ fn llm_io(service: &Service, event: &io::Event) -> bool {
 }
 
 fn llm_measures(service: &mut Service) {
-    for _ in 0..llm::MAX_OUT.above.checked_add(1).expect("one start plus the bounded routed batch") {
+    let routed = llm::MAX_OUT.above.checked_mul(2).expect("content and transport measures per routed event");
+    let maximum = routed.checked_add(1).expect("one start plus the bounded routed batch");
+    for _ in 0..maximum {
         match &service.events {
             Some(events) if !events.sinks.takes() => break,
             Some(_) | None => {}
@@ -1207,7 +1209,12 @@ fn llm_measures(service: &mut Service) {
         };
         match &mut service.events {
             Some(events) => events.sinks.measure(events.origin(), measure),
-            None => unreachable!("only an event owner selects component observations"),
+            None => match measure {
+                llm::Measure::Terminal { .. } => {}
+                llm::Measure::Prompt { .. } | llm::Measure::Completion { .. } | llm::Measure::Delta { .. } => {
+                    unreachable!("only an event owner selects component content")
+                }
+            },
         }
     }
 }

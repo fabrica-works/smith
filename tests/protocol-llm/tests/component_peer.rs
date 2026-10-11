@@ -347,11 +347,28 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
     }
     assert_eq!(service.count(), 1, "the independent fake decoded the call");
     assert_eq!(completed, 1);
+    let mut terminal_count = 0;
+    let mut content = Vec::new();
+    for measure in captured {
+        match measure {
+            smith_protocol_llm::Measure::Terminal { owner, measures } => {
+                assert_eq!(owner, Token::new(7));
+                assert!(measures.request_bytes.expect("the native client encoded its request") > 0);
+                assert!(measures.first_byte.is_some(), "the TLS peer supplied plaintext bytes");
+                assert!(measures.largest_gap.is_some(), "the peer supplied multiple SSE events");
+                terminal_count += 1;
+            }
+            other @ (smith_protocol_llm::Measure::Prompt { .. }
+            | smith_protocol_llm::Measure::Completion { .. }
+            | smith_protocol_llm::Measure::Delta { .. }) => content.push(other),
+        }
+    }
+    assert_eq!(terminal_count, 1, "transport observations do not depend on content capture");
     if observed {
         let mut prompt_count = 0;
         let mut completion_count = 0;
         let mut deltas = Vec::new();
-        for measure in captured {
+        for measure in content {
             match measure {
                 smith_protocol_llm::Measure::Prompt { at: _, owner, prompt } => {
                     assert_eq!(owner, Token::new(7));
@@ -395,11 +412,12 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
                     }
                     completion_count += 1;
                 }
+                smith_protocol_llm::Measure::Terminal { .. } => unreachable!("separated above"),
             }
         }
         assert_eq!((prompt_count, completion_count), (1, 1));
     } else {
-        assert!(captured.is_empty());
+        assert!(content.is_empty(), "disabled capture retains no content");
     }
 }
 

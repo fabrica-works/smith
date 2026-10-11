@@ -32,6 +32,8 @@ pub enum Measure {
     Completion { at: Time, owner: Token, completion: Completion },
     /// A text or refusal piece; the service joins its request's response identity.
     Delta { at: Time, owner: Token, block: u32, text: Box<[u8]> },
+    /// The connection's observed transport measures, including absent observations.
+    Terminal { owner: Token, measures: skein_llm_connection::Measures },
 }
 
 pub(crate) fn prompt(

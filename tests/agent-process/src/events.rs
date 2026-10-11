@@ -94,9 +94,11 @@ pub fn check(records: &[Record]) {
                     usage = actual;
                     reported_usage = true;
                 }
-                assert_eq!(response.request_bytes, None, "transport measures belong to02.6");
-                assert_eq!(response.first_byte_ms, None);
-                assert_eq!(response.largest_gap_ms, None);
+                if response.outcome == smith_events::Outcome::Completed {
+                    assert!(response.request_bytes.expect("actual completed request was encoded") > 0);
+                    assert!(response.first_byte_ms.is_some(), "the native peer sent plaintext response bytes");
+                    assert!(response.largest_gap_ms.is_some(), "the native peer sent multiple SSE events");
+                }
             }
             Event::ToolStarted(call) => {
                 let identity = (call.run, call.conversation, call.call.clone());

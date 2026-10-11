@@ -38,6 +38,8 @@ fn a_waiting_call_arms_only_whole_and_cancels_without_disturbing_the_next() {
     peer.cancel(2);
     peer.cancel(2);
     assert!(matches!(peer.terminals.as_slice(), [ToDomain::Cancelled { owner }] if *owner == Token::new(2)));
+    assert!(matches!(peer.measures.as_slice(), [smith_protocol_llm::Measure::Terminal { owner, measures }]
+        if *owner == Token::new(2) && *measures == smith_protocol_llm::Measures::none()));
     peer.complete(100);
     peer.complete(100);
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(1)));
@@ -55,6 +57,8 @@ fn a_waiting_whole_expiry_is_unsent_and_leaves_the_running_call_live() {
     assert!(matches!(peer.terminals.as_slice(), [ToDomain::Failed {
         owner, failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, evidence: llm::Evidence::Unsent, ..
     }] if *owner == Token::new(2)));
+    assert!(matches!(peer.measures.as_slice(), [smith_protocol_llm::Measure::Terminal { owner, measures }]
+        if *owner == Token::new(2) && *measures == smith_protocol_llm::Measures::none()));
     assert_eq!(peer.connections(), 1);
     peer.complete(100);
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(1)));

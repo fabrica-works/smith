@@ -4,7 +4,9 @@
 //! assigns a run-wide response number. Raw usage is counted before accounting;
 //! rejected reports remain in nullable totals, with sticky per-field overflow.
 //! A content cursor skips already recorded completions; original completion
-//! blocks wait for their terminal. No provider replay bytes are retained.
+//! blocks and observed transport measures wait for their terminal. Unknown
+//! measures remain absent, and observed zero durations remain zero. No provider
+//! replay bytes are retained.
 //! Contracts: protocol/events.md, sections 3.4–3.5, 3.10–3.11 and 4.
 
 #![expect(
@@ -66,6 +68,7 @@ struct Started {
     owner: Token,
     received: Option<Received>,
     completion: Option<smith_events::Completion>,
+    measures: Option<smith_protocol_llm::Measures>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -151,8 +154,14 @@ impl Book {
         let intent = conversation.intent.take().expect("each actual request has a surviving logical intent");
         let number = self.next;
         self.next = self.next.checked_add(1).expect("a process cannot exhaust response names");
-        conversation.attempt =
-            Attempt::Started(Started { number, at: now, owner: request_owner, received: None, completion: None });
+        conversation.attempt = Attempt::Started(Started {
+            number,
+            at: now,
+            owner: request_owner,
+            received: None,
+            completion: None,
+            measures: None,
+        });
         Record {
             t_ms: millis(now, origin),
             event: Event::ResponseStarted(ResponseStarted {
@@ -212,6 +221,19 @@ impl Book {
         };
         assert!(started.completion.is_none(), "one observed completion per actual request");
         started.completion = Some(completion);
+    }
+
+    pub(crate) fn measured(&mut self, request_owner: Token, measures: smith_protocol_llm::Measures) {
+        let owner = self.owner_for(request_owner).expect("transport measures belong to an actual request");
+        let conversation = self.conversations.get_mut(&owner).expect("found above");
+        let started = match &mut conversation.attempt {
+            Attempt::Started(started) => started,
+            Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
+                unreachable!("transport measures precede the domain terminal")
+            }
+        };
+        assert!(started.measures.is_none(), "one connection terminal per actual request");
+        started.measures = Some(measures);
     }
 
     pub(crate) fn delta(&self, at: Time, origin: Time, request_owner: Token, block: u32, text: Box<[u8]>) -> Record {
@@ -489,6 +511,7 @@ fn terminal(
         Some(received) => (crate::reported_usage(received.usage), received.oversized, received.cut, received.blocks),
         None => (usage, 0, 0, blocks),
     };
+    let measures = transport(started.measures);
     Some(Record {
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
@@ -504,9 +527,9 @@ fn terminal(
             cut,
             usage,
             spent,
-            request_bytes: None,
-            first_byte_ms: None,
-            largest_gap_ms: None,
+            request_bytes: measures.request_bytes,
+            first_byte_ms: duration_ms(measures.first_byte),
+            largest_gap_ms: duration_ms(measures.largest_gap),
             duration_ms: millis(at, started.at),
             failure,
             retry_ms,
@@ -516,6 +539,7 @@ fn terminal(
 }
 
 fn cancelled(conversation: &Conversation, origin: Time, started: Started, at: Time) -> Record {
+    let measures = transport(started.measures);
     Record {
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
@@ -531,14 +555,28 @@ fn cancelled(conversation: &Conversation, origin: Time, started: Started, at: Ti
             cut: 0,
             usage: unknown_usage(),
             spent: 0,
-            request_bytes: None,
-            first_byte_ms: None,
-            largest_gap_ms: None,
+            request_bytes: measures.request_bytes,
+            first_byte_ms: duration_ms(measures.first_byte),
+            largest_gap_ms: duration_ms(measures.largest_gap),
             duration_ms: millis(at, started.at),
             failure: None,
             retry_ms: None,
             completion: None,
         }),
+    }
+}
+
+fn transport(measures: Option<smith_protocol_llm::Measures>) -> smith_protocol_llm::Measures {
+    match measures {
+        Some(measures) => measures,
+        None => smith_protocol_llm::Measures::none(),
+    }
+}
+
+fn duration_ms(duration: Option<skein_lib::Duration>) -> Option<u64> {
+    match duration {
+        Some(duration) => Some(duration.as_nanos() / 1_000_000),
+        None => None,
     }
 }
 
@@ -964,6 +1002,97 @@ pub(crate) mod tests {
         book.root_ended(at(7), Token::new(12), run::End::Busy);
         assert!(book.facts_drained(Time::ZERO).is_some());
     }
+    #[test]
+    fn observed_transport_values_survive_each_terminal_and_absent_fields_stay_unknown() {
+        let sources = [
+            smith_protocol_llm::Measures::none(),
+            smith_protocol_llm::Measures {
+                request_bytes: Some(u64::from(u32::MAX) + 1),
+                first_byte: Some(Duration::ZERO),
+                largest_gap: Some(Duration::from_nanos(7_999_999)),
+            },
+            smith_protocol_llm::Measures { request_bytes: Some(91), first_byte: None, largest_gap: None },
+        ];
+        for outcome in [Outcome::Completed, Outcome::Failed, Outcome::Cancelled] {
+            for measures in sources {
+                let mut book = Book::new(1);
+                let owner = Token::new(11);
+                let request = Token::new(99);
+                book.opened(at(1), owner, &opened(11, 0));
+                intent(&mut book, owner, session::Choice::Only, 0);
+                book.request(at(3), Time::ZERO, request, &prompt(0));
+                book.measured(request, measures);
+                let records = match outcome {
+                    Outcome::Completed => {
+                        let completion = actual_completion();
+                        book.received(request, &completion);
+                        book.fact(
+                            Time::ZERO,
+                            &fact(
+                                4,
+                                session::FactKind::CompletionAnswered {
+                                    opener: owner,
+                                    stop: completion.stop,
+                                    blocks: 2,
+                                    calls: 2,
+                                    invalid: 2,
+                                },
+                                1,
+                                None,
+                            ),
+                        );
+                        book.fact(
+                            Time::ZERO,
+                            &fact(5, session::FactKind::Used { opener: owner, usage: completion.usage }, 1, Some(23)),
+                        )
+                    }
+                    Outcome::Failed => {
+                        book.fact(
+                            Time::ZERO,
+                            &fact(
+                                4,
+                                session::FactKind::CompletionFailed {
+                                    opener: owner,
+                                    failure: llm::Failure::Unavailable,
+                                    evidence: llm::Evidence::Unknown,
+                                },
+                                1,
+                                None,
+                            ),
+                        );
+                        book.fact(
+                            Time::ZERO,
+                            &fact(
+                                5,
+                                session::FactKind::CompletionRetried {
+                                    opener: owner,
+                                    attempt: 1,
+                                    delay: Duration::from_millis(9),
+                                },
+                                1,
+                                None,
+                            ),
+                        )
+                    }
+                    Outcome::Cancelled => book
+                        .fact(Time::ZERO, &fact(5, session::FactKind::CompletionCancelled { opener: owner }, 1, None)),
+                    Outcome::Unknown(_) => unreachable!("the fixture names the three actual terminals"),
+                };
+                let Event::ResponseCompleted(response) = &records.as_slice()[0].event else {
+                    panic!("one actual response terminal");
+                };
+                assert_eq!(records.len(), 1);
+                assert_eq!(response.outcome, outcome);
+                assert_eq!(response.request_bytes, measures.request_bytes);
+                assert_eq!(response.first_byte_ms, measures.first_byte.map(|duration| duration.as_nanos() / 1_000_000));
+                assert_eq!(
+                    response.largest_gap_ms,
+                    measures.largest_gap.map(|duration| duration.as_nanos() / 1_000_000)
+                );
+            }
+        }
+    }
+
     #[test]
     fn conversation_totals_keep_each_reported_counter_and_no_report_remains_unknown() {
         for reported in [false, true] {
