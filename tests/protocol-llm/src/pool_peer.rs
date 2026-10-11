@@ -206,13 +206,9 @@ impl Peer {
     /// Drive bounded lower settlement until no immediate work remains.
     pub fn pump(&mut self) {
         for _ in 0..10_000 {
-            while let Some(measure) = self.component.pop_measure() {
-                self.measures.push(measure);
-            }
+            drain_measures(&mut self.component, &self.env, &mut self.measures, &mut self.above, &mut self.below);
             while let Some(request) = self.below.pop() {
-                while let Some(measure) = self.component.pop_measure() {
-                    self.measures.push(measure);
-                }
+                drain_measures(&mut self.component, &self.env, &mut self.measures, &mut self.above, &mut self.below);
                 match request {
                     IoRequest::Connect { owner, .. } => {
                         let socket = Token::new(100 + u64::try_from(self.bindings.len()).expect("few bindings"));
@@ -285,9 +281,13 @@ impl Peer {
                         &mut self.above,
                         &mut self.below,
                     );
-                    while let Some(measure) = self.component.pop_measure() {
-                        self.measures.push(measure);
-                    }
+                    drain_measures(
+                        &mut self.component,
+                        &self.env,
+                        &mut self.measures,
+                        &mut self.above,
+                        &mut self.below,
+                    );
                 }
             }
             while let Some(event) = self.above.pop() {
@@ -295,9 +295,7 @@ impl Peer {
                     self.terminals.push(event);
                 }
             }
-            while let Some(measure) = self.component.pop_measure() {
-                self.measures.push(measure);
-            }
+            drain_measures(&mut self.component, &self.env, &mut self.measures, &mut self.above, &mut self.below);
             self.component.fire(&self.env, &mut self.above, &mut self.below);
             self.component.reclaim();
             if !delivered && !self.component.has_work() && self.above.is_empty() && self.below.is_empty() {
@@ -350,5 +348,27 @@ impl Peer {
             &mut self.below,
         );
         self.pump();
+    }
+}
+
+// A scripted observer keeps the prompt before releasing its native handoff.
+fn drain_measures(
+    component: &mut smith_protocol_llm::Component,
+    env: &skein_lib::Env<smith_protocol_llm::ComponentLimits>,
+    measures: &mut Vec<smith_protocol_llm::Measure>,
+    above: &mut skein_lib::Queue<smith_protocol_llm::ToDomain>,
+    below: &mut skein_lib::Queue<skein_io::Request>,
+) {
+    while let Some(measure) = component.pop_measure() {
+        let prompt = match &measure {
+            smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
+            smith_protocol_llm::Measure::Completion { .. }
+            | smith_protocol_llm::Measure::Delta { .. }
+            | smith_protocol_llm::Measure::Terminal { .. } => None,
+        };
+        measures.push(measure);
+        if let Some(owner) = prompt {
+            component.prompt_recorded(env, owner, above, below);
+        }
     }
 }

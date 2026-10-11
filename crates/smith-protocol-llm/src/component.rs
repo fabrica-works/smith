@@ -58,6 +58,14 @@ struct Active {
     observation: Option<crate::Observation>,
 }
 
+// One translated request waits while its owner encodes the observed new part.
+// The credential stays inside this component and is never an observation.
+struct Prepared {
+    owner: Token,
+    whole: Time,
+    request: connection::Request,
+}
+
 /// Named endpoints, grants and the connection child for active calls.
 pub struct Component {
     limits: ComponentLimits,
@@ -68,6 +76,7 @@ pub struct Component {
     connection: connection::Component,
     events: Queue<connection::Event>,
     measures: Queue<crate::Measure>,
+    prepared: Option<Prepared>,
 }
 
 impl fmt::Debug for Component {
@@ -185,6 +194,7 @@ impl Component {
             connection,
             events: Queue::with_capacity(MAX_OUT.above),
             measures: Queue::with_capacity(MEASURES),
+            prepared: None,
         })
     }
 
@@ -196,7 +206,32 @@ impl Component {
     /// Whether every retained observation was drained before another component entrance.
     #[must_use]
     pub fn measures_drained(&self) -> bool {
-        self.measures.is_empty()
+        self.measures.is_empty() && self.prepared.is_none()
+    }
+
+    /// The owner encoded this prompt observation; release its exact request to the connection.
+    pub fn prompt_recorded(
+        &mut self,
+        env: &Env<ComponentLimits>,
+        owner: Token,
+        to_domain: &mut Queue<ToDomain>,
+        io: &mut Queue<IoRequest>,
+    ) {
+        let mut prepared = self.prepared.take().expect("one translated request owes its prompt observation");
+        assert_eq!(prepared.owner, owner, "the observed prompt belongs to the held request");
+        match &mut prepared.request {
+            connection::Request::Start { deadlines, .. } => {
+                deadlines.whole = Some(prepared.whole.saturating_since(env.now));
+            }
+            connection::Request::Next { .. }
+            | connection::Request::Cancel { .. }
+            | connection::Request::Close
+            | connection::Request::Abort => unreachable!("only a Start waits on a prompt observation"),
+        }
+        let child_env = self.child_env(env);
+        self.connection.down(&child_env, prepared.request, &mut self.events, io);
+        self.next.insert(owner).expect("one pending demand per admitted call");
+        self.route(env.now, to_domain);
     }
 
     /// Install a validated generation from the channel or a colocated host.
@@ -261,7 +296,7 @@ impl Component {
     /// Whether buffered child work remains ready without another io answer.
     #[must_use]
     pub fn has_work(&self) -> bool {
-        !self.events.is_empty() || !self.next.is_empty() || self.connection.has_work()
+        !self.events.is_empty() || !self.next.is_empty() || self.prepared.is_some() || self.connection.has_work()
     }
 
     /// Release settled child slots at the service's reclaim point.
@@ -374,6 +409,7 @@ impl Component {
             Some(prompt) => self.measures.push(crate::Measure::Prompt { at: env.now, owner, prompt }),
             None => {}
         }
+        let whole = deadlines.whole;
         let deadlines = connection::Deadlines {
             connect: Some(options.connect),
             handshake: Some(options.handshake),
@@ -381,21 +417,33 @@ impl Component {
             idle: Some(deadlines.idle),
             whole: Some(deadlines.whole.saturating_since(env.now)),
         };
+        let request = connection::Request::Start {
+            call: owner,
+            endpoint: index,
+            prompt: translated,
+            credential,
+            deadlines,
+            drop_reasoning,
+        };
+        self.submit(env, Prepared { owner, whole, request }, observation.is_some(), to_domain, io);
+    }
+
+    fn submit(
+        &mut self,
+        env: &Env<ComponentLimits>,
+        prepared: Prepared,
+        observed: bool,
+        to_domain: &mut Queue<ToDomain>,
+        io: &mut Queue<IoRequest>,
+    ) {
+        if observed {
+            assert!(self.prepared.is_none(), "the owner releases each prompt before the next entrance");
+            self.prepared = Some(prepared);
+            return;
+        }
         let child_env = self.child_env(env);
-        self.connection.down(
-            &child_env,
-            connection::Request::Start {
-                call: owner,
-                endpoint: index,
-                prompt: translated,
-                credential,
-                deadlines,
-                drop_reasoning,
-            },
-            &mut self.events,
-            io,
-        );
-        self.next.insert(owner).expect("one pending demand per admitted call");
+        self.connection.down(&child_env, prepared.request, &mut self.events, io);
+        self.next.insert(prepared.owner).expect("one pending demand per admitted call");
         self.route(env.now, to_domain);
     }
 

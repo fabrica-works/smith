@@ -1202,6 +1202,10 @@ fn llm_measures(service: &mut Service) {
             Some(measure) => measure,
             None => break,
         };
+        let prompt_owner = match &measure {
+            llm::Measure::Prompt { owner, .. } => Some(*owner),
+            llm::Measure::Completion { .. } | llm::Measure::Delta { .. } | llm::Measure::Terminal { .. } => None,
+        };
         match &mut service.events {
             Some(events) => events.sinks.measure(events.origin(), measure),
             None => match measure {
@@ -1210,6 +1214,9 @@ fn llm_measures(service: &mut Service) {
                     unreachable!("only an event owner selects component content")
                 }
             },
+        }
+        if let Some(owner) = prompt_owner {
+            service.llm.prompt_recorded(&service.llm_env, owner, &mut service.llm_events, &mut service.llm_below);
         }
     }
 }

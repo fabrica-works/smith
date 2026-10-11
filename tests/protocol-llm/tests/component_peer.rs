@@ -203,9 +203,23 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
         &mut up,
         &mut io,
     );
+    if observed {
+        assert!(io.is_empty(), "the observed prompt is recorded before the request reaches the connection");
+        assert!(up.is_empty(), "a provider terminal cannot precede its recorded prompt");
+        assert!(!component.measures_drained(), "the held handoff owes its actual prompt observation");
+    }
     for _ in 0_u32..40_000 {
         while let Some(measure) = component.pop_measure() {
+            let prompt = match &measure {
+                smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
+                smith_protocol_llm::Measure::Completion { .. }
+                | smith_protocol_llm::Measure::Delta { .. }
+                | smith_protocol_llm::Measure::Terminal { .. } => None,
+            };
             captured.push(measure);
+            if let Some(owner) = prompt {
+                component.prompt_recorded(&env, owner, &mut up, &mut io);
+            }
         }
         if let Some(event) = up.pop() {
             match event {
@@ -336,7 +350,16 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
             fake::fire(&mut domain, &fake_env, &mut replies);
         }
         while let Some(measure) = component.pop_measure() {
+            let prompt = match &measure {
+                smith_protocol_llm::Measure::Prompt { owner, .. } => Some(*owner),
+                smith_protocol_llm::Measure::Completion { .. }
+                | smith_protocol_llm::Measure::Delta { .. }
+                | smith_protocol_llm::Measure::Terminal { .. } => None,
+            };
             captured.push(measure);
+            if let Some(owner) = prompt {
+                component.prompt_recorded(&env, owner, &mut up, &mut io);
+            }
         }
         if component.has_work() {
             component.fire(&env, &mut up, &mut io);
