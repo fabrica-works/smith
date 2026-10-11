@@ -1388,17 +1388,29 @@ fn the_runs_deadline_fires_before_the_sessions_expiry_at_the_same_instant() {
 #[test]
 fn the_facts_of_both_child_domains_are_gathered() {
     let mut h = Harness::new();
-    let (_run, _main, _prompt) = h.admit(7, charter());
+    let (_run, _main, prompt) = h.admit(7, charter());
     let mut run = 0_u32;
     let mut sessions = 0_u32;
+    let mut opened = 0_u32;
     for _ in 0..64_u32 {
         match h.pop_fact() {
-            Some(Fact::Run { .. }) => run += 1,
+            Some(Fact::Run { opening, .. }) => {
+                run += 1;
+                if let Some(opening) = opening {
+                    opened += 1;
+                    assert_eq!(opening.activation, 1);
+                    assert_eq!(opening.ordinal, 0);
+                    assert_eq!(opening.llm.model, prompt.model);
+                    assert_eq!(opening.llm.endpoint.0, prompt.endpoint.0);
+                    assert_eq!(opening.ordinal, prompt.affinity.thread);
+                }
+            }
             Some(Fact::Session { .. }) => sessions += 1,
             None => break,
         }
     }
     assert!(run > 0 && sessions > 0, "{run} of the run's, {sessions} of the sessions'");
+    assert_eq!(opened, 1, "one actual main opening precedes the provider request");
     assert_eq!(h.domain.content_lost(), 0);
 }
 

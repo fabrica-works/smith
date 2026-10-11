@@ -271,7 +271,7 @@ fn budget_prose(world: &World, settings: &Settings, child_bill: u64) {
     let mut child_open = None;
     let mut child_return = None;
     for fact in world.facts() {
-        let smith_domain::Fact::Run { fact } = fact else { continue };
+        let smith_domain::Fact::Run { fact, opening: _ } = fact else { continue };
         match fact.kind {
             run::facts::FactKind::Admitted { .. } => admitted_at = Some(fact.at),
             run::facts::FactKind::Opened { kind: run::facts::Kind::Main, .. } => main_open = Some(fact.at),

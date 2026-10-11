@@ -10,7 +10,7 @@ use smith_domain::{self as domain, run, session, tools};
 /// Project one domain observation to a bounded public kind and count.
 pub(crate) fn project(fact: &domain::Fact) -> Option<(FactKind, u64)> {
     match fact {
-        domain::Fact::Run { fact } => match &fact.kind {
+        domain::Fact::Run { fact, opening: _ } => match &fact.kind {
             run::facts::FactKind::Admitted { .. } => Some((FactKind::Admitted, 1)),
             run::facts::FactKind::Answered { .. } => Some((FactKind::Ended, 1)),
             run::facts::FactKind::Called { .. } => Some((FactKind::ToolStarted, 1)),

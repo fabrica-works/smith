@@ -81,7 +81,7 @@ impl Trace {
         // The legacy Debug face retains classifications only. Provider identity
         // belongs to the bounded typed event stream that replaces this adapter.
         let description = match fact {
-            domain::Fact::Run { fact } => format!("Run {{ fact: {:?} }}", fact.kind),
+            domain::Fact::Run { fact, opening: _ } => format!("Run {{ fact: {:?} }}", fact.kind),
             domain::Fact::Session { fact } => format!("Session {{ fact: {:?} }}", fact.kind),
         };
         self.offer(json!({ "type": "fact", "at_ns": fact.emitted().as_nanos(), "fact": description }).to_string());
@@ -233,6 +233,7 @@ mod tests {
     fn legacy_fact_hook_preserves_emission_time_and_kind_shape_without_metadata_content() {
         let (mut trace, receiver) = trace(Capture::None);
         trace.fact(&domain::Fact::Run {
+            opening: None,
             fact: domain::run::facts::Fact {
                 at: skein_lib::Time::from_nanos(17),
                 kind: domain::run::facts::FactKind::Admitted { run: Token::new(1), resumed: true },

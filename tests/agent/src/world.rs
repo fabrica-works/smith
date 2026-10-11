@@ -1764,9 +1764,9 @@ impl World {
                         })
                         .expect("bounded observed usage");
                 }
-                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Opened { .. }, .. } } => opened += 1,
-                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Ended { .. }, .. } } => ended += 1,
-                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Answered { .. }, .. } } => answered += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Opened { .. }, .. }, opening: _ } => opened += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Ended { .. }, .. }, opening: _ } => ended += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Answered { .. }, .. }, opening: _ } => answered += 1,
                 Fact::Run { .. } | Fact::Session { .. } => {}
             }
         }

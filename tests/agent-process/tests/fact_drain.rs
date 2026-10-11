@@ -9,7 +9,7 @@ fn terminal(world: &World) -> Answered {
         .facts()
         .iter()
         .filter_map(|fact| match fact {
-            smith_domain::Fact::Run { fact } => match fact.kind {
+            smith_domain::Fact::Run { fact, opening: _ } => match fact.kind {
                 FactKind::Answered { answer, .. } => Some(answer),
                 FactKind::MessageRead { .. }
                 | FactKind::MessageFence { .. }

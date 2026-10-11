@@ -40,6 +40,7 @@ fn admission_records_actual_history_independently_of_the_restore_binding() {
         for fact in world.facts() {
             if let smith_domain::Fact::Run {
                 fact: run::facts::Fact { kind: run::facts::FactKind::Admitted { resumed, .. }, .. },
+                opening: _,
             } = fact
             {
                 values.push(*resumed);

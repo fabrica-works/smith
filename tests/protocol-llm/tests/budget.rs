@@ -316,7 +316,7 @@ fn child_result(world: &World, settings: &Settings) -> Vec<u8> {
     let mut opened = None;
     let mut returned = None;
     for entry in world.facts() {
-        let smith_domain::Fact::Run { fact } = entry else { continue };
+        let smith_domain::Fact::Run { fact, opening: _ } = entry else { continue };
         if let run::facts::FactKind::Admitted { .. } = fact.kind {
             admission = Some(fact.at);
         }

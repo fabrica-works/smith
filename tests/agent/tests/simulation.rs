@@ -26,7 +26,7 @@ fn count(world: &World, predicate: impl Fn(&run::facts::FactKind) -> bool) -> us
         .facts()
         .iter()
         .filter(|fact| match fact {
-            Fact::Run { fact } => predicate(&fact.kind),
+            Fact::Run { fact, opening: _ } => predicate(&fact.kind),
             Fact::Session { .. } => false,
         })
         .count()

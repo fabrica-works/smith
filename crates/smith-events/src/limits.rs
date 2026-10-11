@@ -45,7 +45,12 @@ pub fn largest_size(event: &Event, capture: &Capture, limits: &Limits) -> Option
 /// Largest encoded line over all record kinds under full capture.
 #[must_use]
 pub fn largest_record(limits: &Limits) -> Option<u32> {
-    let capture = &Capture::Everything;
+    largest_record_for(&Capture::Everything, limits)
+}
+
+/// Largest encoded line over all record kinds under the supplied capture policy.
+#[must_use]
+pub fn largest_record_for(capture: &Capture, limits: &Limits) -> Option<u32> {
     let mut length = size_budget_standing(limits)?.checked_add(59)?;
     length = length.max(size_session_started(capture, limits)?.checked_add(68)?);
     length = length.max(size_session_ended(capture, limits)?.checked_add(66)?);

@@ -6,7 +6,7 @@ fn vocabulary(world: &World) -> Vec<String> {
         .facts()
         .iter()
         .map(|fact| match fact {
-            smith_domain::Fact::Run { fact } => format!("run {:?}", fact.kind),
+            smith_domain::Fact::Run { fact, opening: _ } => format!("run {:?}", fact.kind),
             smith_domain::Fact::Session { fact } => format!("session {:?}", fact.kind),
         })
         .collect()

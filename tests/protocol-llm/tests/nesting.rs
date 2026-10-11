@@ -61,7 +61,7 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
             .count();
         assert!(feedback >= 2, "main's agents field and child's unoffered call each receive the nesting explanation");
         assert_eq!(
-            world.facts().iter().filter(|fact| matches!(fact, smith_domain::Fact::Run { fact } if matches!(fact.kind, run::facts::FactKind::Opened { .. }))).count(),
+            world.facts().iter().filter(|fact| matches!(fact, smith_domain::Fact::Run { fact, opening: _ } if matches!(fact.kind, run::facts::FactKind::Opened { .. }))).count(),
             4,
             "only main and the three legitimate children open"
         );

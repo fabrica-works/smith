@@ -474,7 +474,7 @@ fn the_request_after_a_crossed_finish_contains_the_call_answer_and_queued_messag
             );
         } else {
             assert!(world.facts().iter().any(|fact| matches!(fact, smith_domain::Fact::Run {
-                fact: run::facts::Fact { kind: run::facts::FactKind::MessageUnread { name, .. }, .. }
+                fact: run::facts::Fact { kind: run::facts::FactKind::MessageUnread { name, .. }, .. }, opening: _
             } if *name == Token::new(0))));
         }
     }

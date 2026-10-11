@@ -409,7 +409,8 @@ pub(crate) fn gather(domain: &mut Domain, limits: &Limits) {
         let Some(fact) = domain.run.pop_fact() else {
             break;
         };
-        keep(domain, Fact::Run { fact });
+        let opening = opening(domain, &fact);
+        keep(domain, Fact::Run { fact, opening });
     }
     for _ in 0..limits.session.facts {
         let Some(fact) = domain.session.pop_fact() else {
@@ -421,4 +422,58 @@ pub(crate) fn gather(domain: &mut Domain, limits: &Limits) {
 
 fn keep(domain: &mut Domain, fact: Fact) {
     domain.facts.push(fact);
+}
+
+/// Gather precedes hand-off: the actual Open is still owned by the child's output queue.
+fn opening(domain: &Domain, fact: &run::facts::Fact) -> Option<crate::Opening> {
+    let conversation = match fact.kind {
+        run::facts::FactKind::Opened { conversation, .. } => conversation,
+        run::facts::FactKind::MessageRead { .. }
+        | run::facts::FactKind::MessageFence { .. }
+        | run::facts::FactKind::MessageUnread { .. }
+        | run::facts::FactKind::MessageReceived { .. }
+        | run::facts::FactKind::MessageRefused { .. }
+        | run::facts::FactKind::Admitted { .. }
+        | run::facts::FactKind::Prepared { .. }
+        | run::facts::FactKind::Budget { .. }
+        | run::facts::FactKind::Ended { .. }
+        | run::facts::FactKind::Called { .. }
+        | run::facts::FactKind::Returned { .. }
+        | run::facts::FactKind::CheckStarted { .. }
+        | run::facts::FactKind::CheckFinished { .. }
+        | run::facts::FactKind::Delivered { .. }
+        | run::facts::FactKind::Answered { .. } => return None,
+    };
+    for request in &domain.run_out {
+        match request {
+            run::Request::Open { conversation: opened, opening } => {
+                if *opened == conversation {
+                    return Some(crate::Opening {
+                        activation: opening.activation,
+                        ordinal: opening.ordinal,
+                        llm: opening.llm.clone(),
+                    });
+                }
+            }
+            run::Request::CompletionReady { .. }
+            | run::Request::MessageRefused { .. }
+            | run::Request::Waiting { .. }
+            | run::Request::Turn { .. }
+            | run::Request::HostCall { .. }
+            | run::Request::WithdrawHost { .. }
+            | run::Request::Admitted { .. }
+            | run::Request::Answer { .. }
+            | run::Request::Say { .. }
+            | run::Request::Close { .. }
+            | run::Request::Read { .. }
+            | run::Request::Probe { .. }
+            | run::Request::Check { .. }
+            | run::Request::Abort { .. }
+            | run::Request::Checking { .. }
+            | run::Request::ChecksEnded { .. }
+            | run::Request::Deliver { .. }
+            | run::Request::Return { .. } => {}
+        }
+    }
+    unreachable!("each opened fact accompanies its actual Open before hand-off")
 }

@@ -184,7 +184,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Rule 5: parent drains child facts after every entrance. Facts own only
     // provider IDs/names from one answer per producer, never whole completions.
     let facts = Queue::<Fact>::worst_case(facts(limits)?)?
-        .checked_add(u64::from(run_limits.conversations).checked_mul(limits.session.answer_bytes)?)?;
+        .checked_add(u64::from(run_limits.conversations).checked_mul(limits.session.answer_bytes)?)?
+        // Each queued opening copies a model name already checked against Config.
+        .checked_add(u64::from(facts(limits)?).checked_mul(limits.configured_model_bytes)?)?;
     let content = Queue::<crate::Content>::worst_case(limits.session.facts)?
         .checked_add(u64::from(run_limits.conversations).checked_add(1)?.checked_mul(limits.session.history_bytes)?)?;
     children

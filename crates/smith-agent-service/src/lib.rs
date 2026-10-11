@@ -15,6 +15,7 @@ mod observations;
 mod service;
 
 pub mod profile;
+pub mod sinks;
 
 #[cfg(test)]
 mod tests;

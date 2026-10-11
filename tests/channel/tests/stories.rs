@@ -683,6 +683,7 @@ fn facts_are_dropped_under_pressure_and_waiting_still_passes() {
     let mut kept = 0_u64;
     for _ in 0..12 {
         let fact = smith_domain::Fact::Run {
+            opening: None,
             fact: smith_domain::run::facts::Fact {
                 at: skein_lib::Time::from_nanos(7),
                 kind: smith_domain::run::facts::FactKind::Admitted { run: skein_lib::Token::new(1), resumed: false },
@@ -1033,6 +1034,7 @@ fn a_fact_projects_its_emission_time_relative_to_the_activation_start() {
     world.agent_admits();
     world.settle();
     let fact = smith_domain::Fact::Run {
+        opening: None,
         fact: smith_domain::run::facts::Fact {
             at: skein_lib::Time::from_nanos(91),
             kind: smith_domain::run::facts::FactKind::CheckStarted {
@@ -1095,6 +1097,7 @@ fn facts_outside_actual_admission_are_counted_without_failing_the_channel() {
     let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
     world.settle();
     let fact = smith_domain::Fact::Run {
+        opening: None,
         fact: smith_domain::run::facts::Fact {
             at: skein_lib::Time::ZERO,
             kind: smith_domain::run::facts::FactKind::CheckFinished {

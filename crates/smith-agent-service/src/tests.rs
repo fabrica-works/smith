@@ -254,7 +254,7 @@ fn actual_root_budget_facts_encode_without_content_under_every_capture() {
     let mut budget_count = 0_u32;
     let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
     for fact in world.facts() {
-        let Fact::Run { fact } = fact else { continue };
+        let Fact::Run { fact, opening: _ } = fact else { continue };
         let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO) else { continue };
         budget_count += 1;
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {

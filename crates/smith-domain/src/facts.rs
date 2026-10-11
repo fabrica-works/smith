@@ -1,7 +1,7 @@
 //! What the agent tells whoever watches it (domain/run.md, section 11): the
 //! child domains' facts, content-free, gathered after every entry point into one
-//! bounded queue the loop drains at its own pace. What does not fit is dropped
-//! and counted, and nothing the domain decides depends on it.
+//! bounded queue the loop drains at its own pace. The owner reserves room
+//! before each entrance; every observation is preserved until it is drained.
 //!
 //! The run names a conversation by its token for it, and the sessions name
 //! theirs by their opener's, which is the same token: the facts of a
@@ -78,12 +78,14 @@ fn fixed(count: usize, size: usize) -> u64 {
 pub enum Fact {
     /// In the run child domain.
     Run {
-        /// Content-free child observation, dropped and counted if the queue is full.
+        /// Content-free child observation preserved in the owner's reserved room.
         fact: run::Fact,
+        /// Actual opening metadata, copied before the request passes to its session.
+        opening: Option<Opening>,
     },
     /// In the session child domain, or its tools.
     Session {
-        /// Content-free child observation, dropped and counted if the queue is full.
+        /// Content-free child observation preserved in the owner's reserved room.
         fact: session::Fact,
     },
 }
@@ -93,8 +95,17 @@ impl Fact {
     #[must_use]
     pub const fn emitted(&self) -> Time {
         match self {
-            Fact::Run { fact } => fact.at,
+            Fact::Run { fact, opening: _ } => fact.at,
             Fact::Session { fact } => fact.at,
         }
     }
+}
+
+/// The run's actual conversation opening, sent with its opened fact to the parent's sinks.
+/// The model name is one of the root's checked configured declarations; no prompt is retained.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Opening {
+    pub activation: u64,
+    pub ordinal: u32,
+    pub llm: smith_domain_run::charter::Llm,
 }
