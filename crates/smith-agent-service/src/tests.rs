@@ -133,6 +133,94 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
     assert!(limits.session.budget.time >= Duration::from_secs(3600));
 }
 
+fn actual_entrance_answer(
+    charter: smith_domain::run::Charter,
+    limits: &smith_domain::run::Limits,
+) -> smith_domain::run::Answer {
+    use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
+    use smith_domain::run;
+    let mut domain = run::Domain::new(limits, 0);
+    let mut out = Queue::with_capacity(run::MAX_OUT);
+    run::step(
+        &mut domain,
+        &Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits },
+        run::Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            identity: None,
+            activation: 1,
+            window: run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter,
+            workspace: None,
+            transcript: None,
+            resumed: false,
+        },
+        &mut out,
+    );
+    let Some(run::Request::Answer { answer, read, .. }) = out.pop() else { panic!("the actual start refuses") };
+    assert_eq!(read, None);
+    assert!(out.is_empty(), "a refused entrance emits no admission, conversation or provider request");
+    answer
+}
+
+#[test]
+fn actual_reserve_refusals_keep_their_part_through_every_capture() {
+    use skein_lib::Duration;
+    use smith_domain::run;
+    let mut profile = crate::profile::standard();
+    profile.declared.memory = Some(u64::MAX);
+    let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain.run;
+    let mut turns = priced_charter();
+    turns.budget.turns = 1;
+    turns.reserve.turns = 2;
+    let mut time = priced_charter();
+    time.reserve.time = time.budget.time;
+    let mut spend = priced_charter();
+    spend.reserve.turns = 2;
+    spend.budget.spend = run::reserve_spend(spend.reserve, &spend.llm).expect("representable actual reserve");
+    let mut empty = priced_charter();
+    empty.budget.turns = 0;
+    for (charter, refusal, which) in [
+        (turns, run::BudgetRefusal::Reserve(run::Part::Turns), b"budget_reserve_turns".as_slice()),
+        (time, run::BudgetRefusal::Reserve(run::Part::Time), b"budget_reserve_time".as_slice()),
+        (spend, run::BudgetRefusal::Reserve(run::Part::Spend), b"budget_reserve_spend".as_slice()),
+        (empty, run::BudgetRefusal::Empty(run::Part::Turns), b"budget".as_slice()),
+    ] {
+        let answer = actual_entrance_answer(charter, &limits);
+        assert_eq!(answer, run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Budget(refusal))));
+        for (capture, wire_capture) in [
+            (crate::sinks::Capture::None, smith_events::Capture::None),
+            (crate::sinks::Capture::Calls, smith_events::Capture::Calls),
+            (crate::sinks::Capture::Everything, smith_events::Capture::Everything),
+        ] {
+            let projected = crate::answer_record(
+                crate::AnswerMeta { run: 1, wind_down: false, read: None, unread: 0, elapsed: Duration::ZERO },
+                &answer,
+                capture,
+            );
+            assert_eq!(projected.status, smith_events::Status::Refused);
+            assert_eq!(
+                (projected.turns, projected.spent, projected.read, projected.result.as_ref()),
+                (0, 0, None, None)
+            );
+            let failure = projected.failure.as_ref().expect("actual invalid refusal");
+            assert_eq!(failure.class, smith_events::AnswerClass::Invalid);
+            assert_eq!(failure.which.as_deref(), Some(which), "preserve the actual reserve part");
+            assert_eq!(failure.reason, None, "content-free classification, not provider prose");
+            let record = smith_events::Record { t_ms: 0, event: smith_events::Event::RunCompleted(projected) };
+            let receiving = smith_events::Limits { string: 64, content: 128, items: 4 };
+            let wire = smith_events::write_with_ceiling(&record, &wire_capture, &receiving, 4096)
+                .expect("bounded wire")
+                .expect("authoritative refusal");
+            assert_eq!(
+                smith_events::read_with_ceiling(&wire, &receiving, 4096).expect("actual codec").expect("known record"),
+                record
+            );
+        }
+    }
+}
+
 #[test]
 fn standard_profile_builds_a_complete_bounded_service() {
     let limits = crate::profile::derive(

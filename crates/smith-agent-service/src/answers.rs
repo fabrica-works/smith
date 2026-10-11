@@ -121,7 +121,17 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
         run::Invalid::Workspace => b"workspace",
         run::Invalid::Grants => b"grants",
         run::Invalid::Outcome => b"outcome",
-        run::Invalid::Budget(_) => b"budget",
+        run::Invalid::Budget(why) => match why {
+            run::BudgetRefusal::Reserve(part) => match part {
+                run::Part::Turns => b"budget_reserve_turns",
+                run::Part::Spend => b"budget_reserve_spend",
+                run::Part::Time => b"budget_reserve_time",
+            },
+            run::BudgetRefusal::Ceiling(_)
+            | run::BudgetRefusal::Empty(_)
+            | run::BudgetRefusal::Checks { .. }
+            | run::BudgetRefusal::Completion { .. } => b"budget",
+        },
         run::Invalid::Price(_) => b"price",
         run::Invalid::Llm => b"llm",
         run::Invalid::Conversation => b"conversation",
