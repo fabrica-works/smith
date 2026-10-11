@@ -2070,7 +2070,8 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         Some(deadline) => deadline <= now,
         None => false,
     };
-    due || service.io.is_ready()
+    due || end_pending(service)
+        || service.io.is_ready()
         || service.llm.has_work()
         || match &service.events {
             Some(events) => events.sinks.has_work(),
@@ -2121,18 +2122,23 @@ pub fn done(service: &Service) -> Option<bool> {
 }
 
 fn finish_events(service: &mut Service) {
-    match service.ending {
-        Ending::Running => {}
-        Ending::Measuring | Ending::Closing => return,
-    }
-    let streams = match &service.events {
-        Some(events) => events.sinks.open_streams(),
-        None => return,
-    };
-    if settled(service, streams) && service.io_requests.room() > 0 {
+    if end_pending(service) {
         service.io_requests.push(io::Request::Usage { owner: USAGE_OWNER });
         service.ending = Ending::Measuring;
     }
+}
+
+/// Reclaim can settle the last child after the down pass; the next pass must run.
+fn end_pending(service: &Service) -> bool {
+    match service.ending {
+        Ending::Running => {}
+        Ending::Measuring | Ending::Closing => return false,
+    }
+    let streams = match &service.events {
+        Some(events) => events.sinks.open_streams(),
+        None => return false,
+    };
+    settled(service, streams) && service.io_requests.room() > 0
 }
 
 /// All non-destination children have reported closed; only these streams may remain.
@@ -2501,6 +2507,34 @@ mod tests {
         assert_eq!(done(&service), None);
         service.operations.remove(&Token::new(77));
         assert_eq!(done(&service), Some(true));
+    }
+
+    #[test]
+    fn a_settled_event_producer_is_runnable_before_its_usage_request() {
+        let mut configuration = configuration();
+        configuration.limits.events = Some(
+            crate::events::EventLimits::derive(
+                &configuration.limits,
+                crate::sinks::Capture::Calls,
+                1,
+                0,
+                Duration::from_secs(1),
+            )
+            .expect("bounded event configuration"),
+        );
+        let mut service = Service::new(configuration, 1).expect("bounded producer service");
+        service.channel_ended = true;
+        service.answer_sent = true;
+        assert!(settled(&service, 0), "all non-destination entities have been reclaimed");
+        assert!(work_pending(&service, Time::ZERO), "usage must be requested before the kernel waits");
+        finish_events(&mut service);
+        match service.io_requests.pop() {
+            Some(io::Request::Usage { owner }) => assert_eq!(owner, USAGE_OWNER),
+            unexpected => panic!("one process usage request: {unexpected:?}"),
+        }
+        assert!(!end_pending(&service), "the requested usage terminal is owed exactly once");
+        finish_events(&mut service);
+        assert!(service.io_requests.is_empty());
     }
 
     #[test]

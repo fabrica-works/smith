@@ -354,10 +354,12 @@ pub fn run_with_provider(
 pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> {
     let document = std::fs::read(directory.join("agent.json")).expect("actual agent configuration");
     let configuration = smith_agent_shell::config::parse(&document).expect("actual producer configuration");
-    let limits = configuration.service.limits.events.expect("configured event producer").sinks.records;
+    let events = configuration.service.limits.events.expect("configured event producer");
+    let limits = events.sinks.records;
+    let ceiling = events.sinks.line_ceiling(events.capture).expect("actual writer-derived line ceiling");
     let bytes = std::fs::read(directory.join("agent-trace.jsonl")).expect("actual append trace");
     assert!(bytes.starts_with(prefix), "durable trace prefix stays unchanged");
-    let mut reader = smith_events::Reader::new(&limits)
+    let mut reader = smith_events::Reader::with_ceiling(&limits, ceiling)
         .unwrap_or_else(|why| panic!("configured receiving bounds {limits:?}: {why:?}"));
     let mut records = Vec::new();
     for chunk in bytes.get(prefix.len()..).expect("prefix retained").chunks(7) {
@@ -381,7 +383,12 @@ pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> 
             beginning = index.checked_add(1).expect("bounded trace inventory");
         }
     }
-    assert_eq!(beginning, records.len(), "each native invocation has its authoritative end");
+    assert_eq!(
+        beginning,
+        records.len(),
+        "each native invocation has its authoritative end; record types {:?}",
+        records.iter().map(|record| std::mem::discriminant(&record.event)).collect::<Vec<_>>()
+    );
     assert!(!records.is_empty(), "the shipped process wrote its configured trace");
     records
 }

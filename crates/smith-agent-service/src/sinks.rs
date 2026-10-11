@@ -78,6 +78,15 @@ pub struct SinkLimits {
     pub conversations: u32,
 }
 
+impl SinkLimits {
+    /// The writer's joint encoded-line ceiling, including the terminating newline.
+    /// Receivers carry this value alongside the independent semantic record caps.
+    #[must_use]
+    pub fn line_ceiling(&self, capture: Capture) -> Option<u32> {
+        largest_line(&self.records, capture, self.answer_bytes, self.metadata_string)
+    }
+}
+
 /// The settled process terminal supplied by the service after its last child closes.
 /// Unread IO usage stays unknown; it never changes the answer or the exit.
 #[derive(Clone, Copy, Debug)]
@@ -159,8 +168,7 @@ impl Sinks {
     #[must_use]
     pub fn new(limits: &SinkLimits, capture: Capture, io_output: u32) -> Sinks {
         assert!(sinks_worst_case(limits, capture).is_some(), "startup checked the sink's ownership bound");
-        let line = largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string)
-            .expect("startup checked the produced record bound");
+        let line = limits.line_ceiling(capture).expect("startup checked the produced record bound");
         assert!(io_output > 0, "a destination can send at least one byte");
         Sinks {
             limits: *limits,
@@ -806,7 +814,7 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
             return None;
         }
     }
-    let line = largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string)?;
+    let line = limits.line_ceiling(capture)?;
     if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(2)?)? {
         return None;
     }
