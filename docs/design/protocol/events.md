@@ -132,8 +132,15 @@ conversation, which is `conversation`.
 | `aborted` | bool | a termination signal turned graceful closes into aborts |
 | `emitted` | object | per record type, how many the process made |
 | `loss` | object | per sink, records not delivered: `events`, this destination's; `channel`, facts not projected, or null without a channel |
-| `cpu_ms` | object | `user` and `system`, the process's own; `children_user` and `children_system`, its reaped children's |
-| `peak_rss_bytes` | object | `self`, the process's largest resident size; `children`, the largest of its reaped children's |
+| `cpu_ms` | object or null | `user` and `system`, the process's own; `children_user` and `children_system`, its reaped children's; null when the process could not read its usage |
+| `peak_rss_bytes` | object or null | `self`, the process's largest resident size; `children`, the largest of its reaped children's; null when the process could not read its usage |
+
+A usage the process could not read (skein io's `Measured::Unread`) is
+told as null in both fields, never as zero. It changes nothing else:
+`session.ended` is still written, once and authoritative, and the run's
+and the session's terminals and the exit code are those the run
+earned. Resource usage is an observation, not an outcome. The shell
+also writes an `operator` notice saying that usage could not be read.
 
 ### 3.3 Runs
 
