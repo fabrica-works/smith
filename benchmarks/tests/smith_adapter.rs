@@ -70,7 +70,10 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
             face,
             credential: CredentialShape::Converted(TokenShape::AccessOnly),
             facts: smith_bench::agent::smith::legacy::FactShape::Kinds,
-            receiving: Some(smith_bench::agent::smith::Receiving { string: 128, content: 1024, items: 16 }),
+            receiving: Some(serde_json::from_value(serde_json::json!({
+                "string":524_288,"content":4096,"items":32,
+                "encoded_line":records.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("record lines")
+            })).expect("immutable writer-derived receiving ceiling")),
         },
         rendered: serde_json::json!({}),
         program: "/bin/sh".into(),

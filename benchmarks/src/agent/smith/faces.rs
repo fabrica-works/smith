@@ -24,21 +24,23 @@ pub enum Face {
 }
 
 /// Immutable receiving bounds pinned with the face that writes the stream.
-/// The caller supplies semantic bounds; overflow refuses before inference.
+/// The arm supplies semantic caps and the writer-derived aggregate line ceiling.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Receiving {
     pub string: u32,
     pub content: u32,
     pub items: u32,
+    /// The writer's complete encoded line in bytes, including its newline.
+    pub encoded_line: u32,
 }
 
 impl Receiving {
-    /// Preserve each bound exactly and check the codec's complete line capacity.
+    /// Preserve semantic caps exactly; the separate aggregate ceiling must be nonzero.
     pub fn limits(self) -> Result<smith_events::Limits, String> {
         let limits = smith_events::Limits { string: self.string, content: self.content, items: self.items };
-        if self.string == 0 || self.content == 0 || self.items == 0 || smith_events::largest_record(&limits).is_none() {
-            return Err("event receiving bounds do not fit the codec's complete line capacity".into());
+        if self.string == 0 || self.content == 0 || self.items == 0 || self.encoded_line == 0 {
+            return Err("event receiving semantic caps and encoded-line ceiling must be positive".into());
         }
         Ok(limits)
     }

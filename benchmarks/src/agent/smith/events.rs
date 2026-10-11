@@ -90,6 +90,17 @@ impl Observer {
         Ok(Self { reader: Reader::new(limits).map_err(codec)?, sessions: Vec::new(), fault: None, unknown: false })
     }
 
+    /// Reserve the arm's writer-derived byte ceiling, including the final newline.
+    /// Semantic field and list caps remain checked by the codec independently.
+    pub fn with_ceiling(limits: &smith_events::Limits, encoded_line: u32) -> Result<Self, HarnessFault> {
+        Ok(Self {
+            reader: Reader::with_ceiling(limits, encoded_line).map_err(codec)?,
+            sessions: Vec::new(),
+            fault: None,
+            unknown: false,
+        })
+    }
+
     /// Consume complete lines in order, retaining a partial line across chunks.
     /// Unknown records and fields remain subject to the codec's version check.
     pub fn feed(&mut self, mut bytes: &[u8]) -> Result<Vec<Seen>, HarnessFault> {

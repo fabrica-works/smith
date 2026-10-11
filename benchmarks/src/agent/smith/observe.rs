@@ -102,7 +102,7 @@ impl Observing {
                     .receiving
                     .ok_or_else(|| HarnessFault { what: "event face lacks its immutable receiving bounds".into() })?;
                 let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
-                Observer::Events(super::events::Observer::new(&limits)?)
+                Observer::Events(super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?)
             }
         };
         Ok(Self { prepared, observer, records: Vec::new() })

@@ -203,6 +203,58 @@ fn unknown_types_are_skipped_and_version_or_partial_records_fault() {
     assert!(Observer::new(&invalid).is_err(), "receiving cardinalities must fit the codec bound");
 }
 
+fn writer_ceiling_is_independent_and_preserves_every_semantic_cap() {
+    use smith_bench::agent::smith::Receiving;
+
+    let records = balanced();
+    let encoded = bytes(&records);
+    let ceiling = u32::try_from(encoded.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("lines"))
+        .expect("bounded writer bytes");
+    let receiving = Receiving { string: 524_288, content: 4096, items: 32, encoded_line: ceiling };
+    let limits = receiving.limits().expect("joint aggregate caps");
+    assert!(smith_events::largest_record(&limits).is_none(), "independent-maxima overflow is not this writer's bound");
+    assert_eq!(
+        limits,
+        smith_events::Limits { string: receiving.string, content: receiving.content, items: receiving.items }
+    );
+    let mut observer = Observer::with_ceiling(&limits, receiving.encoded_line).expect("actual writer ceiling");
+    for chunk in encoded.chunks(17) {
+        observer.feed(chunk).expect("chunked bounded stream");
+    }
+    observer.finish().expect("complete stream");
+    assert_eq!(observer.sessions()[0].records, records);
+    let mut short = Observer::with_ceiling(&limits, ceiling - 1).expect("smaller nonzero cap");
+    assert!(short.feed(&encoded).is_err(), "one byte below actual longest line must refuse");
+    assert!(Observer::with_ceiling(&limits, 0).is_err());
+    for bounded in [
+        smith_events::Limits { string: 1, ..limits },
+        smith_events::Limits { content: 1, ..limits },
+        smith_events::Limits { items: 1, ..limits },
+    ] {
+        let mut observer = Observer::with_ceiling(&bounded, ceiling).expect("semantic cap independent of byte cap");
+        assert!(observer.feed(&encoded).is_err(), "encoded room cannot bypass a semantic cap");
+    }
+    for missing in ["string", "content", "items", "encoded_line"] {
+        let mut value = serde_json::to_value(receiving).expect("typed receiving record");
+        value.as_object_mut().expect("object").remove(missing);
+        assert!(
+            serde_json::from_value::<Receiving>(value).is_err(),
+            "missing {missing} never receives a guessed default"
+        );
+    }
+    for zero in [
+        Receiving { string: 0, ..receiving },
+        Receiving { content: 0, ..receiving },
+        Receiving { items: 0, ..receiving },
+        Receiving { encoded_line: 0, ..receiving },
+    ] {
+        assert!(zero.limits().is_err());
+    }
+    let mut overflow = serde_json::to_value(receiving).expect("typed receiving record");
+    overflow["encoded_line"] = serde_json::json!(u64::from(u32::MAX) + 1);
+    assert!(serde_json::from_value::<Receiving>(overflow).is_err(), "ceiling never narrows");
+}
+
 fn passive_negatives_preserve_loss_scope_and_exact_spend() {
     let mut values = balanced();
     if let Event::RunCompleted(value) = &mut values[6].event {
@@ -1279,6 +1331,7 @@ fn typed_event_stream_classification_usage_and_author_predicates() {
     repeated_usage_is_immutable_but_duplicate_terminals_break_pairing();
     child_and_compaction_usage_belongs_to_its_native_scope_and_run();
     unknown_types_are_skipped_and_version_or_partial_records_fault();
+    writer_ceiling_is_independent_and_preserves_every_semantic_cap();
     passive_negatives_preserve_loss_scope_and_exact_spend();
     observed_passive_contradictions_survive_loss_but_missing_records_do_not();
     author_predicates_use_typed_records_and_missing_content_stays_unavailable();
