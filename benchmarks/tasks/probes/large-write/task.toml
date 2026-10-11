@@ -66,7 +66,7 @@ stop = "max_tokens"
 name = "oversized"
 replace_checks = true
 prompt = "First attempt exactly one write of payload.txt with exactly 50000 ASCII A characters and no newline, in one call. After the oversized refusal, create the same file in pieces: write an initial piece and append the remaining piece with edit, keeping each call within the declared payload, until it contains exactly those 50000 characters. Never use shell or delegate. Then finish with ALPHA.\n"
-deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "blocks", "no-stop", "run-completed"]
+deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "blocks", "tool-call", "no-stop", "run-completed"]
 [[variant.outcome]]
 check = "end"
 end = "completed"
@@ -83,6 +83,16 @@ sha256 = "50cbe91e7bc072a7a58eef057cad901d2d3eb30e544a6f30ad0b2bd32274f753"
 [[variant.event]]
 check = "blocks"
 oversized = { exactly = 1 }
+[[variant.event]]
+check = "tool-call"
+tool = "write"
+count = { at-least = 1 }
+verdict = "written"
+[[variant.event]]
+check = "tool-call"
+tool = "edit"
+count = { at-least = 1 }
+verdict = "edited"
 [[variant.event]]
 check = "no-stop"
 stop = "max_tokens"
