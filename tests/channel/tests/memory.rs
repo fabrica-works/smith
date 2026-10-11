@@ -29,6 +29,8 @@ fn channel_limits() -> skein_channel::Limits {
 fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
     let channel = channel_limits();
     let host_limits = host::Limits {
+        start_bytes: u32::try_from(smith_channel::Start::worst_case_bytes(&CEILINGS).expect("fixture Start bound"))
+            .expect("fixture frame"),
         bodies: CEILINGS,
         charter: smith_charter::CEILINGS,
         transcript: smith_transcript::CEILINGS,

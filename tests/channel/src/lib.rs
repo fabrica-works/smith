@@ -433,6 +433,10 @@ impl World {
                 transcript: smith_transcript::CEILINGS,
                 endpoints: 1,
                 channel,
+                start_bytes: u32::try_from(
+                    smith_channel::Start::worst_case_bytes(&host_bodies).expect("fixture Start bound"),
+                )
+                .expect("fixture frame"),
                 calls: 8,
             },
             mode,
