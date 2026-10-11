@@ -65,21 +65,21 @@ impl Book {
 }
 
 fn slots(limits: &crate::Limits) -> Option<u32> {
-    limits.channel.bodies.start_messages.checked_add(limits.queue)
+    limits.channel.bodies.start_messages.checked_add(1)
 }
 
 pub(crate) fn worst_case(limits: &crate::Limits, capture: Capture) -> Option<u64> {
     match capture {
         Capture::None | Capture::Calls => Queue::<Message>::worst_case(0),
         Capture::Everything => {
-            // Initial messages share the admitted aggregate Start, rather than
-            // each taking a maximum Start. Later inputs occupy the event queue.
-            let later = u64::from(limits.channel.bodies.message_label)
-                .checked_add(u64::from(limits.channel.bodies.message_text))?
-                .checked_mul(u64::from(limits.queue))?;
-            Queue::<Message>::worst_case(slots(limits)?)?
-                .checked_add(u64::from(limits.channel.start_bytes))?
-                .checked_add(later)
+            // One root entrance's facts drain before the next entrance. Start
+            // copies only its messages, never the charter or restore history.
+            let message = u64::from(limits.channel.bodies.message_label)
+                .checked_add(u64::from(limits.channel.bodies.message_text))?;
+            let initial = message
+                .checked_mul(u64::from(limits.channel.bodies.start_messages))?
+                .min(u64::from(limits.channel.start_bytes));
+            Queue::<Message>::worst_case(slots(limits)?)?.checked_add(initial.max(message))
         }
     }
 }

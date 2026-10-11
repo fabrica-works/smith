@@ -37,7 +37,7 @@ impl Book {
         Book {
             conversations: Map::with_capacity(sessions),
             blocks: limits.completion_blocks,
-            bytes: limits.completion_bytes,
+            bytes: limits.answer_bytes,
         }
     }
 
@@ -68,7 +68,7 @@ impl Book {
                         bytes = bytes.checked_add(payload).expect("bounded completion payload sum");
                         assert!(
                             bytes <= self.bytes,
-                            "captured valid arguments are a subset of the admitted completion"
+                            "captured valid arguments are a subset of the raw provider answer"
                         );
                         inputs
                             .push(Input { call: id.clone(), tool: name.clone(), text: Some(input.clone()) })
@@ -108,9 +108,8 @@ pub(crate) fn worst_case(limits: &session::Limits, capture: Capture) -> Option<u
     match capture {
         Capture::None => Some(0),
         Capture::Calls | Capture::Everything => Map::<Token, List<Input>>::worst_case(limits.sessions)?.checked_add(
-            u64::from(limits.sessions).checked_mul(
-                List::<Input>::worst_case(limits.completion_blocks)?.checked_add(limits.completion_bytes)?,
-            )?,
+            u64::from(limits.sessions)
+                .checked_mul(List::<Input>::worst_case(limits.completion_blocks)?.checked_add(limits.answer_bytes)?)?,
         ),
     }
 }

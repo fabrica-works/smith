@@ -740,11 +740,6 @@ impl Service {
                 .expect("grant count was checked at Start");
         }
         self.run_started = self.domain_env.now;
-        if let Some(events) = &mut self.events {
-            for message in &start.messages {
-                events.message(message.name, &message.label, &message.text);
-            }
-        }
         self.domain_events.push(domain::Event::Start {
             messages: start.messages,
             reply_to: ReplyTo::new(Token::new(1)),
@@ -1357,9 +1352,6 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
         }
         channel::OpenEvent::Message { name, label, text } => {
             if let Some(run) = service.admitted {
-                if let Some(events) = &mut service.events {
-                    events.message(name, &label, &text);
-                }
                 service.domain_events.push(domain::Event::Message { run, name, label, text });
             } else {
                 service.pending_messages.push(PendingMessage { name, label, text });
@@ -1416,10 +1408,12 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
 }
 
 fn domain_up(service: &mut Service) {
+    drain_facts(service);
     let maximum = domain::max_out(&service.limits.domain);
     let facts = domain::max_facts(&service.limits.domain);
     for _ in 0..service.limits.domain.run.conversations {
         if !service.domain.as_ref().expect("framed agent owns its domain").is_ready()
+            || service.domain.as_ref().expect("framed agent owns its domain").has_facts()
             || service.domain_requests.room() < maximum
             || service.domain.as_ref().expect("framed agent owns its domain").facts_room() < facts
         {
@@ -1431,9 +1425,11 @@ fn domain_up(service: &mut Service) {
             &mut service.domain_requests,
         );
         drain_legacy_content(service);
+        drain_facts(service);
     }
     for _ in 0..service.domain_events.capacity() {
         if service.domain_requests.room() < maximum
+            || service.domain.as_ref().expect("framed agent owns its domain").has_facts()
             || service.domain.as_ref().expect("framed agent owns its domain").facts_room() < facts
         {
             break;
@@ -1442,6 +1438,7 @@ fn domain_up(service: &mut Service) {
             Some(event) => event,
             None => break,
         };
+        observe_messages(service, &event);
         domain::step(
             service.domain.as_mut().expect("framed agent owns its domain"),
             &service.domain_env,
@@ -1449,8 +1446,10 @@ fn domain_up(service: &mut Service) {
             &mut service.domain_requests,
         );
         drain_legacy_content(service);
+        drain_facts(service);
     }
     if service.domain.as_ref().expect("framed agent owns its domain").is_due(service.domain_env.now)
+        && !service.domain.as_ref().expect("framed agent owns its domain").has_facts()
         && service.domain_requests.room() >= maximum
         && service.domain.as_ref().expect("framed agent owns its domain").facts_room() >= facts
     {
@@ -1460,6 +1459,37 @@ fn domain_up(service: &mut Service) {
             &mut service.domain_requests,
         );
         drain_legacy_content(service);
+        drain_facts(service);
+    }
+}
+
+// A capture copy waits only on this entrance's facts, never in the input
+// queue. The next entrance is held until every prior fact reaches its sinks.
+fn observe_messages(service: &mut Service, event: &domain::Event) {
+    let events = match &mut service.events {
+        Some(events) => events,
+        None => return,
+    };
+    match event {
+        domain::Event::Start { messages, .. } => {
+            for message in messages {
+                events.message(message.name, &message.label, &message.text);
+            }
+        }
+        domain::Event::Message { name, label, text, .. } => events.message(*name, label, text),
+        domain::Event::HostReturned { .. }
+        | domain::Event::Acknowledge { .. }
+        | domain::Event::Grant { .. }
+        | domain::Event::Cancel { .. }
+        | domain::Event::Delivered { .. }
+        | domain::Event::Completed { .. }
+        | domain::Event::Failed { .. }
+        | domain::Event::Cancelled { .. }
+        | domain::Event::Done { .. }
+        | domain::Event::Read { .. }
+        | domain::Event::Probed { .. }
+        | domain::Event::Checked { .. }
+        | domain::Event::Aborted { .. } => {}
     }
 }
 
@@ -1492,9 +1522,6 @@ fn domain_down(service: &mut Service) {
                 Some(message) => message,
                 None => break,
             };
-            if let Some(events) = &mut service.events {
-                events.message(name, &label, &text);
-            }
             service.domain_events.push(domain::Event::Message { run, name, label, text });
         }
     }
