@@ -208,10 +208,10 @@ pub enum Seen {
         ///
         /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
         owner: Token,
-        /// Zero is the only passing code; timeout and cancellation never pass.
+        /// Zero is the only passing code; an abort carries no process exit.
         ///
         /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
-        exit: Exit,
+        exit: Option<Exit>,
     },
     /// The host sees a push request and snapshots exactly the checkout bytes.
     ///
@@ -375,7 +375,7 @@ impl Expectations for Meeting {
                 judge.check(self.phase == Phase::Running, "checks precede the host answer");
                 let tree = self.checking.remove(&owner);
                 judge.check(tree.is_some(), "check terminal names pending IO");
-                if exit == (Exit::Code { code: 0 }) {
+                if exit == Some(Exit::Code { code: 0 }) {
                     self.passed.insert(owner, tree.unwrap_or_default());
                 }
             }

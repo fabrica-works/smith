@@ -54,7 +54,11 @@ fn a_push_without_passing_checks_is_rejected() {
 fn a_host_that_lands_different_bytes_is_rejected() {
     let mut referee = started();
     referee.observe(Time::ZERO, Seen::Checking { owner: Token::new(2), tree: b"asked".to_vec() }, &mut Vec::new());
-    referee.observe(Time::ZERO, Seen::Checked { owner: Token::new(2), exit: Exit::Code { code: 0 } }, &mut Vec::new());
+    referee.observe(
+        Time::ZERO,
+        Seen::Checked { owner: Token::new(2), exit: Some(Exit::Code { code: 0 }) },
+        &mut Vec::new(),
+    );
     referee.observe(
         Time::ZERO,
         Seen::Pushing {
@@ -232,7 +236,7 @@ fn mid_history() -> Referee<Meeting> {
             },
         },
         Seen::Checking { owner, tree: b"checked".to_vec() },
-        Seen::Checked { owner, exit: Exit::Code { code: 0 } },
+        Seen::Checked { owner, exit: Some(Exit::Code { code: 0 }) },
         Seen::Pushing { finishing: false, owner, name, tree: b"checked".to_vec() },
     ];
     for observation in observations {
@@ -300,7 +304,7 @@ fn duplicate_terminal_and_reused_durable_name_are_rejected_after_positive_prefix
     let mut referee = mid_history();
     let owner = Token::new(71);
     referee.observe(Time::ZERO, Seen::Checking { owner, tree: b"checked".to_vec() }, &mut Vec::new());
-    referee.observe(Time::ZERO, Seen::Checked { owner, exit: Exit::Code { code: 0 } }, &mut Vec::new());
+    referee.observe(Time::ZERO, Seen::Checked { owner, exit: Some(Exit::Code { code: 0 }) }, &mut Vec::new());
     broken(
         referee,
         Seen::Pushing {
@@ -318,7 +322,7 @@ fn changed_bytes_between_check_and_submission_are_rejected_after_positive_check(
     let mut referee = started();
     let owner = Token::new(72);
     referee.observe(Time::ZERO, Seen::Checking { owner, tree: b"checked".to_vec() }, &mut Vec::new());
-    referee.observe(Time::ZERO, Seen::Checked { owner, exit: Exit::Code { code: 0 } }, &mut Vec::new());
+    referee.observe(Time::ZERO, Seen::Checked { owner, exit: Some(Exit::Code { code: 0 }) }, &mut Vec::new());
     pending_host_answer(&referee);
     broken(
         referee,

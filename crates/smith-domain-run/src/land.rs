@@ -69,7 +69,7 @@ pub(crate) fn checked(
         Stage::Checking { check } => {
             let passed = match ran.exit {
                 Exit::Code { code: 0 } => true,
-                Exit::Code { .. } | Exit::Signalled | Exit::TimedOut | Exit::Unstarted => false,
+                Exit::Code { .. } | Exit::Signalled { .. } | Exit::TimedOut | Exit::Unstarted => false,
             };
             let required = match &run.charter.outcome.change {
                 Some(spec) => spec.checks_must_pass,

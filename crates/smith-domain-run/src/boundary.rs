@@ -594,8 +594,8 @@ pub enum Exit {
         /// Typed or byte-valued terminal classification in the enclosing boundary.
         code: u8,
     },
-    /// A signal killed it.
-    Signalled,
+    /// IO reports the number of the signal that killed the checks.
+    Signalled { signal: u32 },
     /// Its deadline passed, and io stopped it.
     TimedOut,
     /// It could not be started.

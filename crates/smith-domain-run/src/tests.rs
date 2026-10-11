@@ -1140,9 +1140,33 @@ fn a_change_can_be_delivered_after_failing_checks_when_its_contract_allows_it() 
         panic!("the second check still runs: {requests:?}");
     };
     assert_eq!(program.root, Token::new(901));
-    let requests = harness
-        .step(Event::Checked { owner, ran: Ran { exit: Exit::Signalled, output: bytes(b"second failed"), cut: 0 } });
+    let requests = harness.step(Event::Checked {
+        owner,
+        ran: Ran { exit: Exit::Signalled { signal: 15 }, output: bytes(b"second failed"), cut: 0 },
+    });
     let [Request::Deliver { .. }] = requests.as_ref() else { panic!("delivery follows both checks: {requests:?}") };
+    let mut check_exits = List::with_capacity(2);
+    for fact in facts(&mut harness).as_ref() {
+        match fact {
+            Fact::CheckFinished { exit, .. } => check_exits.push(*exit).expect("two requested checks"),
+            Fact::MessageRead { .. }
+            | Fact::MessageFence { .. }
+            | Fact::MessageUnread { .. }
+            | Fact::MessageReceived { .. }
+            | Fact::MessageRefused { .. }
+            | Fact::Admitted { .. }
+            | Fact::Prepared { .. }
+            | Fact::Opened { .. }
+            | Fact::Budget { .. }
+            | Fact::Ended { .. }
+            | Fact::Called { .. }
+            | Fact::Returned { .. }
+            | Fact::CheckStarted { .. }
+            | Fact::Delivered { .. }
+            | Fact::Answered { .. } => {}
+        }
+    }
+    assert_eq!(check_exits.as_slice(), [Exit::Code { code: 1 }, Exit::Signalled { signal: 15 }]);
     assert_eq!(
         harness.step(Event::Delivered { owner, delivery: delivered() }).as_ref(),
         [returned(7, Returned::Delivered(receipts())), Request::Close { peer: Token::new(100) }]

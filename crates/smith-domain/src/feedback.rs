@@ -382,7 +382,7 @@ fn render_exit(text: &mut Text, exit: run::Exit) {
             text.put(b"code:");
             text.number(u64::from(code));
         }
-        run::Exit::Signalled => text.put(b"signalled"),
+        run::Exit::Signalled { .. } => text.put(b"signalled"),
         run::Exit::TimedOut => text.put(b"timed-out"),
         run::Exit::Unstarted => text.put(b"unstarted"),
     }

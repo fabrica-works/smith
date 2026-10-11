@@ -1566,7 +1566,7 @@ impl World {
             Event::Failed { .. } | Event::Cancelled { .. } => self.observe(Seen::CompletionEnded { owner }),
             Event::Checked { ran, .. } => {
                 self.checked.push(ran.exit == (run::Exit::Code { code: 0 }));
-                self.observe(Seen::Checked { owner, exit: ran.exit });
+                self.observe(Seen::Checked { owner, exit: Some(ran.exit) });
             }
             Event::Delivered { delivery: push, .. } => {
                 self.pushes.push(push.clone());
@@ -1577,7 +1577,7 @@ impl World {
                 }
                 self.observe(Seen::Delivered { owner, push: push.clone(), tree: landed });
             }
-            Event::Aborted { .. } => self.observe(Seen::Checked { owner, exit: run::Exit::Signalled }),
+            Event::Aborted { .. } => self.observe(Seen::Checked { owner, exit: None }),
             Event::HostReturned { .. }
             | Event::Message { .. }
             | Event::Acknowledge { .. }

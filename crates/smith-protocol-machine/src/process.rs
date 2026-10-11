@@ -453,7 +453,7 @@ fn run_exit(exit: Option<kernel::Exit>, timed_out: bool, failed: bool) -> run::E
     }
     match exit {
         Some(kernel::Exit::Code(code)) => run::Exit::Code { code },
-        Some(kernel::Exit::Signal(_)) => run::Exit::Signalled,
+        Some(kernel::Exit::Signal(signal)) => run::Exit::Signalled { signal },
         None => run::Exit::Unstarted,
     }
 }
@@ -659,5 +659,30 @@ fn directory_failure(error: kernel::Error) -> tools::Done {
         kernel::Error::TimedOut => tools::Done::TimedOut,
         kernel::Error::Cancelled => tools::Done::Cancelled,
         _ => tools::Done::Failed { fault: tools::Fault::Other },
+    }
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use super::{Process, Purpose, ToDomain, kernel};
+    use skein_lib::{Time, Token};
+
+    // Ordinary harness formatting inspects the typed terminal without requiring
+    // the repaired variant to exist on the defect's parent (testing-strategy.md, 2.1).
+    #[expect(
+        clippy::disallowed_macros,
+        reason = "programming-model.md 10.2: test-only Debug inspection runs on the unrepaired parent too"
+    )]
+    #[test]
+    fn a_check_ended_by_a_signal_keeps_its_number() {
+        for signal in [1, 15, 27, u32::MAX] {
+            let mut process = Process::new(Purpose::Check, Time::ZERO, 0, 0, None);
+            process.exit = Some(kernel::Exit::Signal(signal));
+            let ToDomain::Checked { owner, ran } = process.answer(Token::new(7)) else {
+                panic!("a check has a checked terminal");
+            };
+            assert_eq!(owner, Token::new(7));
+            assert_eq!(alloc::format!("{:?}", ran.exit), alloc::format!("Signalled {{ signal: {signal} }}"));
+        }
     }
 }

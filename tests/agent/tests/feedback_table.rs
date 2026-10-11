@@ -175,7 +175,7 @@ fn every_delivery_reason_and_check_exit_is_visible() {
     );
     for (exit, label) in [
         (run::Exit::Code { code: 7 }, "code:7"),
-        (run::Exit::Signalled, "signalled"),
+        (run::Exit::Signalled { signal: 15 }, "signalled"),
         (run::Exit::TimedOut, "timed-out"),
         (run::Exit::Unstarted, "unstarted"),
     ] {

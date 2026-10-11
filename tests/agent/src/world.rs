@@ -1655,7 +1655,7 @@ impl World {
             Event::Checked { ran, .. } => {
                 self.checked.push(ran.exit == (run::Exit::Code { code: 0 }));
                 self.check_terminals.push(self.now);
-                self.observe(Seen::Checked { owner, exit: ran.exit });
+                self.observe(Seen::Checked { owner, exit: Some(ran.exit) });
             }
             Event::Delivered { delivery: push, .. } => {
                 self.pushes.push(push.clone());
@@ -1668,7 +1668,7 @@ impl World {
             }
             Event::Aborted { .. } => {
                 self.check_terminals.push(self.now);
-                self.observe(Seen::Checked { owner, exit: run::Exit::Signalled });
+                self.observe(Seen::Checked { owner, exit: None });
             }
             Event::HostReturned { .. }
             | Event::Message { .. }
