@@ -383,7 +383,9 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     let roots = List::<run::Directory>::worst_case(limits.machine.roots)?
         .checked_add(host_bytes)?
         .checked_add(List::<Token>::worst_case(limits.machine.roots)?)?;
-    domain::worst_case(&limits.domain)?
+    // The service drains the legacy observer after every root entrance.
+    // Typed event capture has separate ownership in the LLM and event sinks.
+    domain::worst_case_drained_content(&limits.domain, limits.llm.receiving.max_completion_bytes)?
         .checked_add(channel::worst_case(&limits.channel)?)?
         .checked_add(llm::component_worst_case(&limits.llm, endpoints)?)?
         .checked_add(machine::worst_case(&limits.machine)?)?
@@ -588,11 +590,6 @@ impl Service {
     /// Submissions to hand to the kernel after an iteration.
     pub const fn submissions(&mut self) -> &mut Queue<kernel::Submit> {
         &mut self.submissions
-    }
-
-    /// One owned content observation for local capture, never sent to the host.
-    pub fn pop_trace_content(&mut self) -> Option<domain::Content> {
-        self.domain.as_mut().expect("framed agent owns its domain").pop_content()
     }
 
     /// Number of projected host facts dropped at the channel's output reserve.
@@ -1418,6 +1415,7 @@ fn domain_up(service: &mut Service) {
             &service.domain_env,
             &mut service.domain_requests,
         );
+        drain_legacy_content(service);
     }
     for _ in 0..service.domain_events.capacity() {
         if service.domain_requests.room() < maximum
@@ -1435,6 +1433,7 @@ fn domain_up(service: &mut Service) {
             event,
             &mut service.domain_requests,
         );
+        drain_legacy_content(service);
     }
     if service.domain.as_ref().expect("framed agent owns its domain").is_due(service.domain_env.now)
         && service.domain_requests.room() >= maximum
@@ -1445,6 +1444,19 @@ fn domain_up(service: &mut Service) {
             &service.domain_env,
             &mut service.domain_requests,
         );
+        drain_legacy_content(service);
+    }
+}
+
+// The root's optional legacy observer is not the typed event stream. Its
+// standalone API remains available to domain hosts; this composed service
+// captures provider content before decoding and drains each root entrance.
+fn drain_legacy_content(service: &mut Service) {
+    for _ in 0..service.limits.domain.session.facts {
+        match service.domain.as_mut().expect("framed agent owns its domain").pop_content() {
+            Some(_) => {}
+            None => break,
+        }
     }
 }
 
@@ -2319,7 +2331,7 @@ mod tests {
                 llm_endpoints,
                 environment: machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
                 stream_mode: StreamMode::Two,
-                },
+            },
             1,
         );
         let error = result.expect_err("startup refusal");
@@ -2498,5 +2510,4 @@ mod tests {
         finish_events(&mut service);
         assert!(service.io_requests.is_empty());
     }
-
 }

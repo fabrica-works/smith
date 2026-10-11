@@ -131,18 +131,23 @@ mod tests {
             affinity: None,
             max_output_tokens: Some(10),
         };
-        let captured = prompt(
-            &input,
-            Observation { first: true, messages: 0, live_text: true },
-            &skein_llm_world::limits(),
-        ).expect("bounded translated prompt");
+        let captured =
+            prompt(&input, Observation { first: true, messages: 0, live_text: true }, &skein_llm_world::limits())
+                .expect("bounded translated prompt");
         assert_eq!(captured.system.as_deref(), Some(b"system instructions".as_slice()));
         assert_eq!(captured.tools.expect("first request carries its names").len(), 0);
         assert_eq!(captured.messages.get(0).expect("actual task").role, Role::User);
-        assert_eq!(captured.messages.get(0).expect("actual task").blocks.as_slice(), &[
-            Block::Text { text: b"request".to_vec().into() },
-            Block::Call { call: b"id".to_vec().into(), tool: b"inspect".to_vec().into(), input: b"input".to_vec().into() },
-        ]);
+        assert_eq!(
+            captured.messages.get(0).expect("actual task").blocks.as_slice(),
+            &[
+                Block::Text { text: b"request".to_vec().into() },
+                Block::Call {
+                    call: b"id".to_vec().into(),
+                    tool: b"inspect".to_vec().into(),
+                    input: b"input".to_vec().into()
+                },
+            ]
+        );
     }
 
     #[test]

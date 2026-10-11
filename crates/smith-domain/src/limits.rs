@@ -208,6 +208,16 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(content)
 }
 
+/// The root's footprint for an owner that drains optional content after every
+/// step, resume and fire. The owner admits each completion within
+/// `completion_bytes`; one input can copy that completion or one tool terminal,
+/// never both. Queue cells remain allocated at the domain's ordinary capacity.
+#[must_use]
+pub fn worst_case_drained_content(limits: &Limits, completion_bytes: u64) -> Option<u64> {
+    let retained = u64::from(limits.run.conversations).checked_add(1)?.checked_mul(limits.session.history_bytes)?;
+    worst_case(limits)?.checked_sub(retained)?.checked_add(limits.session.history_bytes.max(completion_bytes))
+}
+
 /// Deferred concrete payload outside session while one complete delegate batch
 /// owns its pre-effect receiving credit. Actual queued bytes are separately
 /// allocated and priced; no post-effect history-full result is discarded.
