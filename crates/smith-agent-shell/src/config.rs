@@ -1116,6 +1116,20 @@ mod tests {
             derived.domain.session.completion_bytes
         );
         let limits = &derived;
+        assert!(limits.file_bytes >= limits.domain.session.tools.file_bytes);
+        println!(
+            "PRODUCT_FILE_IO whole={} tools={} machine={} bound={}",
+            limits.file_bytes,
+            limits.domain.session.tools.file_bytes,
+            limits.machine.file_bytes,
+            skein_io::file_layer::FileIo::worst_case(
+                limits.file_slots,
+                limits.file_read,
+                limits.file_entries,
+                limits.file_bytes
+            )
+            .expect("whole-file driver bound")
+        );
         let service = service::worst_case(limits, &destinations).expect("service bound");
         let roots = limits.domain.run.directories;
         let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(1)).expect("shell queues");
@@ -1178,6 +1192,7 @@ mod tests {
             validate::declarations(&profile, &declarations).expect("all drawn declaration comparisons");
             validate::window_first(&profile, &declarations, &limits.domain.session).expect("whole window and batch");
             validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
+            assert!(limits.file_bytes >= limits.domain.session.tools.file_bytes);
             let configured = build_endpoints(dto.endpoints, &limits.llm, &profile).expect("drawn endpoints");
             let destinations =
                 llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("drawn native admission");

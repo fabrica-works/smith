@@ -139,7 +139,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         file_slots: 32,
         file_read: 65_536,
         file_entries: 64,
-        file_bytes: 65_536,
+        file_bytes: domain.session.tools.file_bytes,
         file_timeout: Duration::from_secs(30),
         queue,
         routes,

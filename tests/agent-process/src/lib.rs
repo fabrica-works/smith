@@ -223,8 +223,20 @@ pub fn configuration() -> agent::Config {
 /// The scripted channel initiator used by agent startup stories.
 #[must_use]
 pub fn host() -> ScriptedPeer {
-    let limits = limits().channel;
-    let schema = smith_channel::schema(&limits.bodies).expect("schema");
+    let mut limits = limits().channel;
+    let schema = channel::schema_for_start(&limits.bodies, limits.start_bytes).expect("joint Start schema");
+    // The scripted host sends the initiator's kinds, with the same joint
+    // Start as the agent receives (protocol/limits.md, section 3, rule 6).
+    let mut largest = 0;
+    for version in &schema.versions {
+        for kind in &version.kinds {
+            match kind.direction {
+                skein_channel::Direction::FromInitiator => largest = largest.max(kind.largest),
+                skein_channel::Direction::FromResponder => (),
+            }
+        }
+    }
+    limits.channel.output_bytes = largest.checked_add(8).expect("host frame");
     ScriptedPeer::new(schema, Role::Initiator, limits.channel, 2, Box::new([])).expect("scripted host")
 }
 

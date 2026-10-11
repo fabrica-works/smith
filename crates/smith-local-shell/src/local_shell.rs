@@ -268,6 +268,27 @@ fn product_host_startup_and_complete_outer_memory_fit() {
     schema.check(skein_channel::Role::Initiator, &limits.process.channel.channel).expect("host side admits its Start");
     let raw =
         smith_agent_service::worst_case(&agent.service.limits, &agent.service.llm_endpoints).expect("agent owners");
+    let agent_limits = &agent.service.limits;
+    assert!(agent_limits.file_bytes >= agent_limits.domain.session.tools.file_bytes);
+    let roots = agent_limits.domain.run.directories;
+    let shell_queue = agent_limits.queue.checked_add(roots).and_then(|value| value.checked_add(1)).unwrap();
+    let agent_shell = skein_lib::Queue::<skein_io::kernel::Complete>::worst_case(shell_queue).unwrap()
+        + skein_lib::Queue::<skein_io::kernel::Submit>::worst_case(shell_queue).unwrap()
+        + u64::try_from(size_of::<smith_agent_shell::Agent>()).unwrap()
+        + u64::from(roots) * u64::try_from(size_of::<Fd>()).unwrap();
+    let agent_complete = raw + smith_agent_shell::trace::MEMORY_RESERVE + agent_shell;
+    assert!(agent_complete <= agent.memory, "complete agent product bound {agent_complete}");
+    println!(
+        "PRODUCT_AGENT_ACTUAL raw={raw} trace={} shell={agent_shell} complete={agent_complete} file_io={:?} whole={} env=883",
+        smith_agent_shell::trace::MEMORY_RESERVE,
+        skein_io::file_layer::FileIo::worst_case(
+            agent_limits.file_slots,
+            agent_limits.file_read,
+            agent_limits.file_entries,
+            agent_limits.file_bytes
+        ),
+        agent_limits.file_bytes
+    );
     let local_service = service::worst_case(&limits).expect("local service owners");
     let complete = Local::required_memory(&limits, 1, 0).expect("every actual local outer owner");
     assert!(complete <= 2_147_483_648, "complete local product bound {complete}");

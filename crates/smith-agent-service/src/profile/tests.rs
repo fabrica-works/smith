@@ -40,6 +40,50 @@ fn declarations() -> Configuration {
 }
 
 #[test]
+fn declared_whole_file_read_reaches_the_kernel_open() {
+    use skein_io::{file, file_layer, kernel};
+    use skein_lib::{Queue, Time, Token};
+
+    for whole_file in [1_048_576, 65_537, 65_536, 256] {
+        let mut profile = profile();
+        profile.declared.file_bytes = whole_file;
+        let limits = super::derive(&profile, &declarations()).expect("valid whole-file declaration");
+        let mut files = file_layer::FileIo::with_whole_limit(
+            limits.file_slots,
+            limits.file_read,
+            limits.file_entries,
+            limits.file_bytes,
+            limits.file_timeout,
+        );
+        let descriptor = kernel::Fd::new(7);
+        let root = files.adopt_root(descriptor).expect("root slot");
+        let owner = Token::new(11);
+        let mut events = Queue::with_capacity(4);
+        let mut submissions = Queue::with_capacity(4);
+        file_layer::down(
+            &mut files,
+            Time::ZERO,
+            file::Request::Load {
+                owner,
+                root,
+                path: Box::from(b"README.md".as_slice()),
+                max: limits.domain.session.tools.file_bytes,
+                no_follow: false,
+            },
+            &mut events,
+            &mut submissions,
+        );
+        assert!(events.pop().is_none(), "whole-file cap {whole_file} refused before open");
+        let open = submissions.pop().expect("admitted load opens its file");
+        assert_eq!(
+            open.kind,
+            kernel::Op::Open { root: descriptor, path: Box::from(b"README.md".as_slice()), how: kernel::OpenHow::Read }
+        );
+        assert!(submissions.pop().is_none());
+    }
+}
+
+#[test]
 fn read_past_payload_retains_both_names_values_and_units() {
     let mut profile = profile();
     profile.declared.read_window = 1025;

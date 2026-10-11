@@ -436,6 +436,7 @@ struct Referee {
     answer_facts: usize,
     full_completion: bool,
     tracing: Option<(TraceCase, u32)>,
+    maximum_queries: usize,
     expected: skein_world::Expectations<Proc, Terminal>,
 }
 impl skein_world::Referee<Proc> for Referee {
@@ -467,10 +468,7 @@ impl skein_world::Referee<Proc> for Referee {
             "one admission for one Start"
         );
         let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
-        assert!(
-            fake::queries(peer).count() <= if self.tracing.is_some() { 2 } else { 1 },
-            "bounded completion scenario"
-        );
+        assert!(fake::queries(peer).count() <= self.maximum_queries, "bounded completion scenario");
         if !self.hang_up && parent.status.is_some() {
             if matches!(self.tracing, Some((TraceCase::Refused, _))) {
                 assert!(!parent.admitted(), "an entrance refusal has no admission");
@@ -790,6 +788,7 @@ impl World {
             answer_facts: 0,
             full_completion: self.full_completion,
             tracing: self.tracing,
+            maximum_queries: if self.environment || self.tracing.is_some() { 2 } else { 1 },
             expected: skein_world::Expectations::new(self.seed, vec![Terminal { hang_up: self.hang_up }]),
         };
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory)
