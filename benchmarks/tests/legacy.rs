@@ -327,6 +327,8 @@ fn native_kind_facts_are_selected_without_changing_frozen_flag_records() {
 #[test]
 fn legacy_recordings_terminals_and_emission_metadata() {
     baseline_recordings_map_calls_completion_attempts_tools_and_main_terminals();
+    legacy_predicates_prove_only_trace_visible_counts_and_counterexamples();
+    legacy_passive_checks_name_missing_evidence_and_acceptance_exit_agreement();
     child_finish_is_never_main_and_authoritative_run_answers_survive_missing_call_facts();
     emission_metadata_shapes_preserve_legacy_run_and_child_observations();
     everything_content_preserves_bytes_and_legacy_exit_uses_observed_terminals();
@@ -345,6 +347,115 @@ fn legacy_debug_and_strict_shape_contracts() {
     malformed_message_facts_poison_the_legacy_observer();
     optional_usage_rejects_mixed_partial_and_malformed_shapes();
 }
+
+fn legacy_observer(stream: &str) -> smith_bench::agent::smith::Observing {
+    use smith_bench::agent::smith::legacy::{FactShape, Shape};
+    use smith_bench::agent::smith::{Credential, CredentialShape, Face, FaceSince, Observing, Prepared};
+    let face = Face::Legacy(Shape::LocalJson);
+    let mut observer = Observing::new(Prepared {
+        face,
+        settings: "unissued-settings".into(),
+        credential: Credential::Record(None),
+        trace: None,
+        registry: FaceSince {
+            commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
+            face,
+            credential: CredentialShape::Converted(smith_bench::credential::TokenShape::Legacy),
+            facts: FactShape::Flags,
+            receiving: None,
+        },
+        rendered: serde_json::json!({}),
+        program: "/bin/false".into(),
+        state: "unissued-state".into(),
+        teardown: skein_lib::Duration::from_millis(40),
+    })
+    .expect("frozen outside face");
+    for line in stream.lines() {
+        observer.feed_line(line).expect("recorded trace");
+    }
+    observer
+}
+
+fn checked_legacy(stream: &str, checks: &[smith_bench::EventCheck]) -> Vec<smith_bench::CheckVerdict> {
+    legacy_observer(stream).checks(checks, "task")
+}
+
+fn legacy_predicates_prove_only_trace_visible_counts_and_counterexamples() {
+    use smith_bench::{Before, Count, EventCheck};
+    let checks = [
+        EventCheck::Completions { count: Count::AtLeast(1), before: Before::Finish },
+        EventCheck::Completions { count: Count::Exactly(0), before: Before::Answer },
+        EventCheck::Completions { count: Count::AtMost(100), before: Before::Answer },
+        EventCheck::ConversationOpened { kind: "main".into(), count: Count::AtLeast(1) },
+        EventCheck::ToolCall {
+            tool: "read".into(),
+            count: Some(Count::AtLeast(1)),
+            input_bytes_at_least: None,
+            verdict: None,
+            exit: None,
+            clamped: None,
+        },
+        EventCheck::ToolCall {
+            tool: "read".into(),
+            count: None,
+            input_bytes_at_least: Some(1_000_000),
+            verdict: None,
+            exit: None,
+            clamped: None,
+        },
+        EventCheck::NoVerdict { verdicts: vec!["written".into()] },
+        EventCheck::NoVerdict { verdicts: vec!["bad_path".into()] },
+        EventCheck::NoStop { stop: "tools".into() },
+        EventCheck::NoStop { stop: "max_tokens".into() },
+        EventCheck::RunCompleted { status: "failed".into(), class: None },
+        EventCheck::RunCompleted { status: "accepted".into(), class: None },
+        EventCheck::NoRequest,
+    ];
+    let values = checked_legacy(TOOLS, &checks);
+    for index in [0, 3, 4] {
+        assert_eq!(values[index].passed, Measure::Observed { value: true }, "{}", values[index].check);
+    }
+    for index in [1, 5, 6, 8] {
+        assert_eq!(values[index].passed, Measure::Observed { value: false }, "{}", values[index].check);
+    }
+    for index in [2, 7, 9, 10, 11, 12] {
+        assert!(matches!(values[index].passed, Measure::Unavailable { .. }), "{}", values[index].check);
+    }
+    let failed = fact("Session { fact: CompletionFailed { opener: Token(0), failure: Limit, evidence: Unknown } }");
+    let values = checked_legacy(
+        &failed,
+        &[EventCheck::NoFailure { class: "limit".into() }, EventCheck::NoFailure { class: "unauthorized".into() }],
+    );
+    assert_eq!(values[0].passed, Measure::Observed { value: false });
+    assert!(matches!(values[1].passed, Measure::Unavailable { .. }));
+    let accepted = fact("Run { fact: Answered { run: Token(0), answer: Accepted } }");
+    let values = checked_legacy(&accepted, &[EventCheck::RunCompleted { status: "failed".into(), class: None }]);
+    assert_eq!(values[0].passed, Measure::Observed { value: false });
+    let values = checked_legacy("", &checks);
+    assert!(values.iter().all(|value| matches!(value.passed, Measure::Unavailable { .. })));
+}
+
+fn legacy_passive_checks_name_missing_evidence_and_acceptance_exit_agreement() {
+    let observer = legacy_observer(COMPLETED);
+    let good = observer.health(Exit::Code(0), Forced::No).expect("legacy health");
+    assert_eq!(good.headroom.len(), 7);
+    assert!(matches!(good.loss_per_sink["trace"], Measure::Unavailable { .. }));
+    for check in &good.passive_checks {
+        if check.check == "exit-agrees" {
+            assert_eq!(check.passed, Measure::Observed { value: true });
+        } else {
+            assert!(matches!(check.passed, Measure::Unavailable { .. }), "{}", check.check);
+        }
+    }
+    let bad = observer.health(Exit::Code(1), Forced::No).expect("legacy health");
+    assert_eq!(
+        bad.passive_checks.iter().find(|check| check.check == "exit-agrees").expect("exit").passed,
+        Measure::Observed { value: false }
+    );
+    let missing = legacy_observer("").health(Exit::Code(1), Forced::No).expect("missing health");
+    assert!(missing.passive_checks.iter().all(|check| matches!(check.passed, Measure::Unavailable { .. })));
+}
+
 fn choice_intents_are_ancestry_selected_and_never_provider_attempt_counts() {
     use smith_bench::agent::smith::legacy::{FactShape, parse_line_for};
     use smith_domain_session::{Choice, FactKind};
@@ -372,6 +483,10 @@ fn choice_intents_are_ancestry_selected_and_never_provider_attempt_counts() {
     let old =
         fact("Session { fact: CompletionStarted { opener: Token(0), attempt: 0, messages: 1, max_tokens: 4096 } }");
     assert!(parse_line_for(&old, FactShape::Choices).is_err(), "current choice is required");
+    let counts = legacy_observer(TOOLS).counts();
+    assert!(matches!(counts.provider_attempts, Measure::Unavailable { .. }));
+    assert!(matches!(counts.retries, Measure::Unavailable { .. }));
+    assert!(matches!(counts.responses, Measure::LowerBound { value, .. } if value > 0));
 }
 
 fn actual_everything_recording_counts_response_usage_once_and_preserves_acceptance() {
@@ -394,16 +509,19 @@ fn actual_everything_recording_counts_response_usage_once_and_preserves_acceptan
             face,
             credential: CredentialShape::Converted(smith_bench::credential::TokenShape::Legacy),
             facts: FactShape::Choices,
+            receiving: None,
         },
         rendered: serde_json::json!({}),
         program: "/bin/false".into(),
         state: "unissued-recorded-state".into(),
         teardown: skein_lib::Duration::from_millis(40),
-    });
+    })
+    .expect("recorded outside face");
     for line in stream.lines() {
         observer.feed_line(line).expect("actual current Debug record");
     }
-    assert!(observer.observer.accepted().is_some());
+    let smith_bench::agent::smith::Observer::Legacy(native) = &observer.observer else { panic!("legacy") };
+    assert!(native.accepted().is_some());
     assert_eq!(observer.observer.classify(smith_bench::Exit::Code(0), Forced::No).end, End::Completed);
     let counts = observer.counts();
     assert!(matches!(counts.responses, Measure::LowerBound { value: 3, .. }));

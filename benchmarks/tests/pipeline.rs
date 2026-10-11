@@ -23,6 +23,11 @@ fn fixture(story: &str) -> (Guard, Machine, PathBuf, Prepared) {
     let digest = smith_bench::seed_digest(&task.join("seed")).expect("digest");
     let prompt = "Complete the replay task.\n";
     fs::write(task.join("task.toml"), format!("id='recorded'\nversion=1\nkind='probe'\ntier='small'\ndeadline_seconds=1\nprompt={prompt:?}\nseed_sha256='{digest}'\nprotected=['protected.txt']\nenvironment={{TASK_MARKER='explicit'}}\nsetup=[['sh','-c','test \"$TASK_MARKER\" = explicit && printf warmed > \"$CARGO_HOME/warm\" && printf target > \"$CARGO_TARGET_DIR/warm\" && printf setup > setup.txt && git add setup.txt && git -c user.name=setup -c user.email=setup@example.invalid -c gc.auto=0 -c maintenance.auto=false commit -qm setup']]\n[[outcome]]\ncheck='file-content'\npath='answer.txt'\ncontent=\"changed\\n\"\n[[grade]]\ncommand=['sh','-c','test -f answer.txt && test ! -e \"$HOME/agent-only\" && test \"$(cat \"$CARGO_HOME/warm\")\" = warmed && test \"$(cat \"$CARGO_TARGET_DIR/warm\")\" = target && printf grader-only > changed-by-grader']\ndeadline_seconds=1\nmax_output_bytes=4096\n")).expect("manifest");
+    {
+        use std::io::Write;
+        fs::OpenOptions::new().append(true).open(task.join("task.toml")).expect("append neutral checks")
+            .write_all(b"\n[[outcome]]\ncheck='end'\nend='completed'\n[[outcome]]\ncheck='exit-code'\ncode=0\n[[outcome]]\ncheck='answer'\npattern='bounded saturating arithmetic'\n[[outcome]]\ncheck='last-line'\npattern='^settled replay$'\n").expect("neutral task checks");
+    }
     let mut identity = smith_bench::read_result(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json"),
     )
@@ -35,7 +40,7 @@ fn fixture(story: &str) -> (Guard, Machine, PathBuf, Prepared) {
     identity.prompt_sha256 = format!("{:x}", Sha256::digest(prompt));
     identity.binary_sha256 = smith_bench::arm::binary_digest(&PathBuf::from("/bin/dash")).expect("shell digest");
     let recording = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/codex/completed.jsonl");
-    let prepared = Prepared { task: task.join("task.toml"), identity, program: "/bin/dash".into(), arguments: vec!["-c".into(), "cat >/dev/null; test \"$(cat \"$CARGO_HOME/warm\")\" = warmed; test \"$(cat \"$CARGO_TARGET_DIR/warm\")\" = target; printf 'changed\\n' > answer.txt; git add answer.txt; git -c user.name=replay -c user.email=replay@example.invalid -c gc.auto=0 -c maintenance.auto=false commit -qm 'Agent commit'; printf untracked > new.txt; printf poisoned > \"$CARGO_HOME/warm\"; printf poisoned > \"$CARGO_TARGET_DIR/warm\"; printf marker > \"$HOME/agent-only\"; cat \"$1\"".into(), "replay".into(), recording.to_str().expect("recording UTF-8").into()], codex_home: None, configuration: None, teardown_ms: 100, grace_ms: 30, settlement_ms: 200, setup_deadline_seconds: 1, max_stdout_bytes: 16384, max_stderr_bytes: 4096, disk_estimate_bytes: 65536, force_walk: true };
+    let prepared = Prepared { task: task.join("task.toml"), identity, program: "/bin/dash".into(), arguments: vec!["-c".into(), "cat >/dev/null; test \"$(cat \"$CARGO_HOME/warm\")\" = warmed; test \"$(cat \"$CARGO_TARGET_DIR/warm\")\" = target; printf 'changed\\n' > answer.txt; git add answer.txt; git -c user.name=replay -c user.email=replay@example.invalid -c gc.auto=0 -c maintenance.auto=false commit -qm 'Agent commit'; printf untracked > new.txt; printf poisoned > \"$CARGO_HOME/warm\"; printf poisoned > \"$CARGO_TARGET_DIR/warm\"; printf marker > \"$HOME/agent-only\"; printf 'settled replay\\n' >&2; cat \"$1\"".into(), "replay".into(), recording.to_str().expect("recording UTF-8").into()], codex_home: None, configuration: None, teardown_ms: 100, grace_ms: 30, settlement_ms: 200, setup_deadline_seconds: 1, max_stdout_bytes: 16384, max_stderr_bytes: 4096, disk_estimate_bytes: 65536, force_walk: true };
     let guard =
         Guard::new(&root.join("user-home"), &root.join("user-config"), &root.join("user-state"), &[]).expect("guard");
     let machine = Machine { path: "/usr/bin:/bin".into(), rustup_home: None };
@@ -73,7 +78,9 @@ fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer
         },
     )
     .expect("fresh attempt process");
-    assert_eq!(process.exit, smith_bench::Exit::Code(0), "{:?}", process.stderr);
+    // The replay proves grading/archive behavior, but its root-only records
+    // include a historical absolute FileChange outside this fresh workspace.
+    assert_eq!(process.exit, smith_bench::Exit::Code(1), "{:?}", process.stderr);
     let directory = root.join("state/smith-bench/runs/archives/one");
     let result = smith_bench::read_result(&directory.join("result.json")).expect("attempt archive");
     let recorded = smith_bench::run::Recorded { result, directory, incomplete: smith_bench::run::Incomplete::No };
@@ -81,7 +88,7 @@ fn grading_and_archives_keep_agent_commits_and_untracked_files_outside_the_timer
     assert_eq!(recorded.incomplete, smith_bench::run::Incomplete::No);
     assert_eq!(recorded.result.outcome.grade, Some(Measure::Observed { value: true }));
     assert_eq!(recorded.result.outcome.protected_files_changed, Measure::Observed { value: Vec::new() });
-    assert!(recorded.result.outcome.checks.iter().all(|check| check.passed == Measure::Observed { value: true }));
+    check_replay_judgments(&recorded.result);
     let diff = fs::read_to_string(recorded.directory.join("diff.patch")).expect("seed diff");
     assert!(diff.contains("answer.txt") && diff.contains("new.txt") && diff.contains("setup.txt"));
     assert!(!diff.contains("changed-by-grader"));
@@ -142,4 +149,43 @@ fn an_existing_scratch_root_is_refused_and_never_deleted() {
     assert_eq!(recorded.incomplete, smith_bench::run::Incomplete::Setup(smith_bench::isolate::SetupStep::Scratch));
     assert_eq!(fs::read_to_string(scratch.join("sentinel")).expect("retained original"), "keep");
     fs::remove_dir_all(root).expect("remove synthetic story");
+}
+
+fn check_replay_judgments(result: &smith_bench::AttemptResult) {
+    assert!(
+        result
+            .health
+            .passive_checks
+            .iter()
+            .any(|check| check.check == "protected-unchanged" && check.passed == Measure::Observed { value: true })
+    );
+    assert!(
+        result
+            .health
+            .passive_checks
+            .iter()
+            .any(|check| check.check == "benchmark-unread" && matches!(check.passed, Measure::Unavailable { .. }))
+    );
+    assert!(
+        result
+            .outcome
+            .checks
+            .iter()
+            .filter(|check| !result.health.passive_checks.iter().any(|passive| passive.check == check.check))
+            .all(|check| check.passed == Measure::Observed { value: true })
+    );
+    assert!(
+        result
+            .outcome
+            .checks
+            .iter()
+            .any(|check| check.check == "nothing-outside" && check.passed == Measure::Observed { value: false })
+    );
+    assert!(
+        result
+            .health
+            .passive_checks
+            .iter()
+            .any(|check| check.check == "nothing-outside" && check.passed == Measure::Observed { value: false })
+    );
 }

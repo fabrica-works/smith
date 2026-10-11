@@ -104,10 +104,31 @@ pub fn changed(before: &Snapshot, after: &Snapshot, path: &Path) -> bool {
     before.iter().filter(|(name, _)| name.starts_with(path)).ne(after.iter().filter(|(name, _)| name.starts_with(path)))
 }
 
+mod outcomes;
+
+/// Settled process evidence alongside the files an outcome check reads.
+#[derive(Clone, Debug)]
+pub struct Ended {
+    pub end: crate::End,
+    pub exit: Measure<Exit>,
+    /// A bounded complete UTF-8 stderr line; never parsed for observations.
+    pub last_line: Option<String>,
+    /// The actual native result text or Codex's final root message.
+    pub answer: Option<String>,
+    /// Source digest comparison after private credential removal.
+    pub login_unchanged: Measure<bool>,
+}
+
 /// Judge outcome bytes and protected files after the agent's tree has ended.
 /// A pattern is a Rust regular expression, supplied by the task author.
 #[must_use]
-pub fn checks(workspace: &Path, before: &Snapshot, after: &Snapshot, checks: &[OutcomeCheck]) -> Vec<CheckVerdict> {
+pub fn checks(
+    workspace: &Path,
+    before: &Snapshot,
+    after: &Snapshot,
+    checks: &[OutcomeCheck],
+    ended: &Ended,
+) -> Vec<CheckVerdict> {
     checks
         .iter()
         .map(|check| {
@@ -117,6 +138,11 @@ pub fn checks(workspace: &Path, before: &Snapshot, after: &Snapshot, checks: &[O
                 OutcomeCheck::Absent { path } => ("absent", path),
                 OutcomeCheck::Pattern { path, .. } => ("pattern", path),
                 OutcomeCheck::Protected { path } => ("protected", path),
+                OutcomeCheck::End { .. }
+                | OutcomeCheck::ExitCode { .. }
+                | OutcomeCheck::LastLine { .. }
+                | OutcomeCheck::Answer { .. }
+                | OutcomeCheck::LoginUnchanged => return outcomes::check(check, ended),
             };
             let value = match check {
                 OutcomeCheck::FileContent { path, content } => file(workspace, path)
@@ -136,6 +162,11 @@ pub fn checks(workspace: &Path, before: &Snapshot, after: &Snapshot, checks: &[O
                     })
                 }
                 OutcomeCheck::Protected { path } => Ok(before.contains_key(path) && !changed(before, after, path)),
+                OutcomeCheck::End { .. }
+                | OutcomeCheck::ExitCode { .. }
+                | OutcomeCheck::LastLine { .. }
+                | OutcomeCheck::Answer { .. }
+                | OutcomeCheck::LoginUnchanged => unreachable!("neutral checks return above"),
             };
             let (passed, detail) = match value {
                 Ok(passed) => (passed, Vec::new()),

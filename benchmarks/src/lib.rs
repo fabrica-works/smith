@@ -8,6 +8,7 @@
 mod check;
 mod formats;
 mod models;
+mod passive;
 mod result;
 mod stats;
 mod suite;
@@ -50,9 +51,12 @@ pub use summary::{
 };
 pub use tokens::{Convention, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
 
+pub use passive::{HeadroomOf, Passive};
+
 pub use check::{ManifestCounts, check_benchmark_tree, check_task, check_tree, seed_digest};
 pub use task::{
-    Budget, Calibration, Estimate, EventCheck, Grade, Kind, OutcomeCheck, Refusal, Task, Variant, read_task,
+    Before, Budget, Calibration, Count, Estimate, EventCheck, Grade, Kind, OutcomeCheck, Refusal, Task, Variant,
+    read_task,
 };
 
 #[cfg(test)]

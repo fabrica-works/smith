@@ -14,7 +14,6 @@ fn rollout(thread: &str, parent: Option<&str>) -> Vec<u8> {
     format!("{metadata}\n{usage}\n{usage}\n").into_bytes()
 }
 
-#[test]
 fn immutable_response_ids_deduplicate_without_adding_turn_totals() {
     let (_, responses) = parse_rollout(&rollout("root", None), "root").expect("pinned shape");
     assert_eq!(responses.len(), 1);
@@ -32,7 +31,6 @@ fn immutable_response_ids_deduplicate_without_adding_turn_totals() {
     assert_eq!(total.usage.reasoning, Measure::Observed { value: 6 });
 }
 
-#[test]
 fn an_unlinked_child_keeps_its_scope_unavailable_and_the_total_a_lower_bound() {
     let (_, responses) = parse_rollout(&rollout("root", None), "root").expect("root");
     let (_, child_usage) = parse_rollout(&rollout("child", None), "child").expect("child");
@@ -50,7 +48,6 @@ fn an_unlinked_child_keeps_its_scope_unavailable_and_the_total_a_lower_bound() {
     assert!(matches!(total.usage.fresh, Measure::LowerBound { value: 15, .. }));
 }
 
-#[test]
 fn known_usage_shape_changes_and_foreign_thread_records_refuse() {
     let text = String::from_utf8(rollout("root", None)).expect("JSON UTF-8");
     assert!(parse_rollout(text.replace("\"cached_input_tokens\":5,", "").as_bytes(), "root").is_err());
@@ -71,7 +68,6 @@ fn private(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("smith-codex-adapter-{}-{name}", std::process::id()))
 }
 
-#[test]
 fn read_only_collection_follows_only_the_named_roots_descendants() {
     let home = private("named");
     std::fs::create_dir_all(home.join("sessions")).expect("private fixture");
@@ -99,7 +95,6 @@ fn read_only_collection_follows_only_the_named_roots_descendants() {
     std::fs::remove_dir_all(home).expect("fixture cleanup");
 }
 
-#[test]
 fn a_named_path_cannot_read_credentials_or_an_unrelated_file() {
     let home = private("path");
     std::fs::create_dir_all(&home).expect("fixture directory");
@@ -116,7 +111,6 @@ fn a_named_path_cannot_read_credentials_or_an_unrelated_file() {
     std::fs::remove_dir_all(home).expect("fixture cleanup");
 }
 
-#[test]
 fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     use smith_bench::agent::{Context, Prepared};
     use smith_bench::arm::ArmRef;
@@ -189,7 +183,6 @@ fn synthetic_auth(expires: u64) -> Vec<u8> {
     .expect("fixture")
 }
 
-#[test]
 fn access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_file() {
     use std::os::unix::fs::PermissionsExt;
     let root = private("credentials");
@@ -229,7 +222,6 @@ fn access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_fi
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }
 
-#[test]
 fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home() {
     let root = private("expiry");
     let source = root.join("user/.codex");
@@ -253,7 +245,6 @@ fn credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home()
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }
 
-#[test]
 fn changed_user_auth_is_reported_after_private_credentials_are_removed() {
     let root = private("changed-source");
     let source = root.join("user/.codex");
@@ -275,7 +266,6 @@ fn changed_user_auth_is_reported_after_private_credentials_are_removed() {
     std::fs::remove_dir_all(root).expect("fixture cleanup");
 }
 
-#[test]
 fn repeated_session_metadata_keeps_its_parent_and_refuses_conflicts() {
     let stream = rollout("root", Some("parent"));
     let text = String::from_utf8(stream).expect("UTF-8");
@@ -294,7 +284,6 @@ fn repeated_session_metadata_keeps_its_parent_and_refuses_conflicts() {
     );
 }
 
-#[test]
 fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fault() {
     let home = private("raw-fault");
     std::fs::create_dir_all(home.join("sessions")).expect("private fixture");
@@ -319,7 +308,8 @@ fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fau
         workspace: home.clone(),
         teardown: skein_lib::Duration::ZERO,
     });
-    let smith_bench::agent::Observing::Codex(mut observing) = prepared.observe() else {
+    let smith_bench::agent::Observing::Codex(mut observing) = prepared.observe().expect("prepared Codex observer")
+    else {
         panic!("Codex observer");
     };
     observing.observer.observe_line(r#"{"type":"thread.started","thread_id":"root"}"#).expect("named root");
@@ -332,7 +322,6 @@ fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fau
     std::fs::remove_dir_all(home).expect("fixture cleanup");
 }
 
-#[test]
 fn a_childs_inherited_parent_header_never_replaces_the_childs_ownership() {
     let child = String::from_utf8(rollout("child", Some("root"))).expect("child");
     let inherited = r#"{"type":"session_meta","payload":{"id":"root","parent_thread_id":null}}"#;
@@ -344,7 +333,6 @@ fn a_childs_inherited_parent_header_never_replaces_the_childs_ownership() {
     assert!(parse_rollout(stream.replace("\"id\":\"root\"", "\"id\":\"foreign\"").as_bytes(), "child").is_err());
 }
 
-#[test]
 fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope() {
     let root = "01a121d2-5c3c-74b1-865b-66d8c6f41c3a";
     let child = "01a121d2-6e5a-7e30-abd0-133d08c8c960";
@@ -368,7 +356,6 @@ fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope()
     assert_eq!(collected.response_count(), Measure::Observed { value: 6 });
 }
 
-#[test]
 fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential() {
     use smith_bench::credential::TokenShape;
     use std::os::unix::fs::PermissionsExt;
@@ -442,4 +429,22 @@ fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential
     );
     assert!(!refused.exists(), "early renewal refuses before creating a private token directory");
     std::fs::remove_dir_all(root).expect("fixture cleanup");
+}
+
+#[test]
+fn pinned_adapters_usage_collection_and_private_credentials() {
+    immutable_response_ids_deduplicate_without_adding_turn_totals();
+    an_unlinked_child_keeps_its_scope_unavailable_and_the_total_a_lower_bound();
+    known_usage_shape_changes_and_foreign_thread_records_refuse();
+    read_only_collection_follows_only_the_named_roots_descendants();
+    a_named_path_cannot_read_credentials_or_an_unrelated_file();
+    the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home();
+    access_only_credentials_are_private_and_never_copy_a_refresh_or_other_home_file();
+    credentials_expiring_before_the_hard_deadline_refuse_before_creating_a_home();
+    changed_user_auth_is_reported_after_private_credentials_are_removed();
+    repeated_session_metadata_keeps_its_parent_and_refuses_conflicts();
+    malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fault();
+    a_childs_inherited_parent_header_never_replaces_the_childs_ownership();
+    captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope();
+    smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential();
 }

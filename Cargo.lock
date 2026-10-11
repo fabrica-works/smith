@@ -882,6 +882,7 @@ dependencies = [
  "smith-agent-shell",
  "smith-domain-run",
  "smith-domain-session",
+ "smith-events",
  "smith-local-shell",
  "time",
  "toml",

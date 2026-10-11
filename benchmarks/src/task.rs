@@ -34,11 +34,139 @@ pub enum OutcomeCheck {
     Pattern { path: PathBuf, pattern: String },
     /// The named seed file must retain its original bytes.
     Protected { path: PathBuf },
+    /// The settled attempt's terminal classification must have this name.
+    End { end: String },
+    /// The settled process must return this code, rather than a signal.
+    ExitCode { code: i32 },
+    /// Standard error's last retained complete line must match the pattern.
+    LastLine { pattern: String },
+    /// The actual final result text must match the pattern.
+    Answer { pattern: String },
+    /// The borrowed source login's digest must remain unchanged.
+    LoginUnchanged,
 }
 
-/// A typed check of smith's records, extended when a probe names a check.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub enum EventCheck {}
+/// A typed check over smith records, supplied by a task author.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "check", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum EventCheck {
+    /// Calls of one tool match the supplied cardinality and terminal metadata.
+    ToolCall {
+        tool: String,
+        count: Option<Count>,
+        input_bytes_at_least: Option<u64>,
+        verdict: Option<String>,
+        exit: Option<i64>,
+        clamped: Option<bool>,
+    },
+    /// No tool ends with any of these verdicts.
+    NoVerdict { verdicts: Vec<String> },
+    /// Completions have this cardinality before the named boundary.
+    Completions { count: Count, before: Before },
+    /// The first captured request's new messages contain the task.
+    FirstRequestHoldsTask,
+    /// No response or wait precedes receipt of the task message.
+    NothingBeforeTask,
+    /// Every request has exactly one read or refused terminal.
+    HandledOnce,
+    /// Every person exchange produces one completion.
+    CompletionPerExchange,
+    /// No completed response has this stop classification.
+    NoStop { stop: String },
+    /// Response blocks have the supplied oversized and cut cardinalities.
+    Blocks { oversized: Option<Count>, cut: Option<Count> },
+    /// Conversations of this native kind have this cardinality.
+    ConversationOpened { kind: String, count: Count },
+    /// No measured prompt exceeds its conversation's declared window.
+    PromptWithinWindow,
+    /// Warmed responses satisfy the calibrated cache reuse thresholds.
+    CacheReuse { median_at_least: f64, full_misses_per_ten_at_most: u32 },
+    /// Main completes after its child returns within the run budget.
+    MainAfterChild,
+    /// A budget ending retains text and requests no tools in its final turn.
+    FinalTurn,
+    /// The child stays within its opening's declared completion share.
+    ChildShare { turns_at_most: u32 },
+    /// Prompt budget text agrees with snapshots and children avoid the reserve.
+    BudgetVisible,
+    /// Reported spend does not exceed this notional dollar ceiling.
+    SpendWithin { ceiling_usd: f64 },
+    /// One provider answer contains this many calls of the named tool.
+    CallsInOneResponse { tool: String, at_least: u32 },
+    /// This many child conversations overlap on the emission clock.
+    ChildrenOverlap { at_least: u32 },
+    /// No response has this completion failure class.
+    NoFailure { class: String },
+    /// The authoritative run terminal has this status and optional failure class.
+    RunCompleted { status: String, class: Option<String> },
+    /// The process refuses before making a provider request.
+    NoRequest,
+}
+
+impl EventCheck {
+    /// The stable task and result name of this typed predicate.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::ToolCall { .. } => "tool-call",
+            Self::NoVerdict { .. } => "no-verdict",
+            Self::Completions { .. } => "completions",
+            Self::FirstRequestHoldsTask => "first-request-holds-task",
+            Self::NothingBeforeTask => "nothing-before-task",
+            Self::HandledOnce => "handled-once",
+            Self::CompletionPerExchange => "completion-per-exchange",
+            Self::NoStop { .. } => "no-stop",
+            Self::Blocks { .. } => "blocks",
+            Self::ConversationOpened { .. } => "conversation-opened",
+            Self::PromptWithinWindow => "prompt-within-window",
+            Self::CacheReuse { .. } => "cache-reuse",
+            Self::MainAfterChild => "main-after-child",
+            Self::FinalTurn => "final-turn",
+            Self::ChildShare { .. } => "child-share",
+            Self::BudgetVisible => "budget-visible",
+            Self::SpendWithin { .. } => "spend-within",
+            Self::CallsInOneResponse { .. } => "calls-in-one-response",
+            Self::ChildrenOverlap { .. } => "children-overlap",
+            Self::NoFailure { .. } => "no-failure",
+            Self::RunCompleted { .. } => "run-completed",
+            Self::NoRequest => "no-request",
+        }
+    }
+}
+
+/// A task author's bound on one event cardinality.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Count {
+    /// Exactly this cardinality.
+    Exactly(u32),
+    /// At most this cardinality.
+    AtMost(u32),
+    /// At least this cardinality.
+    AtLeast(u32),
+}
+
+impl Count {
+    /// Compare an observed cardinality without narrowing its unit.
+    #[must_use]
+    pub fn holds(self, observed: u64) -> bool {
+        match self {
+            Self::Exactly(value) => observed == u64::from(value),
+            Self::AtMost(value) => observed <= u64::from(value),
+            Self::AtLeast(value) => observed >= u64::from(value),
+        }
+    }
+}
+
+/// The boundary up to which a task counts completions.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Before {
+    /// Every completion up to the authoritative answer.
+    Answer,
+    /// Those preceding the first finish tool.
+    Finish,
+}
 
 /// A command the author gives the grader after the agent's tree has ended.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -91,7 +219,7 @@ pub struct Variant {
     #[serde(default)]
     pub event: Vec<EventCheck>,
     #[serde(default)]
-    pub waives: Vec<String>,
+    pub waives: Vec<crate::Passive>,
     pub budget: Option<Budget>,
 }
 
@@ -130,7 +258,7 @@ pub struct Task {
     #[serde(default)]
     pub grade: Vec<Grade>,
     #[serde(default)]
-    pub waives: Vec<String>,
+    pub waives: Vec<crate::Passive>,
     pub repetitions: Option<u32>,
     #[serde(default)]
     pub variant: Vec<Variant>,

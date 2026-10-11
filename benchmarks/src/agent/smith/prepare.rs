@@ -78,7 +78,13 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
         .find(|path| path.join(".git").exists())
         .ok_or_else(|| configuration("Smith pin needs its source repository for arm ancestry"))?;
     let registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
-    let Face::Legacy(shape) = registry.face;
+    let shape = match registry.face {
+        Face::Legacy(shape) => shape,
+        Face::Events(super::events::Shape::LocalTrace) => super::legacy::Shape::LocalReserved,
+        Face::Events(super::events::Shape::Exec | super::events::Shape::Chat) => {
+            return Err(configuration("this event front end awaits its shipped product invocation"));
+        }
+    };
     let bytes = fs::read(directory.join(&pin.pin.configuration)).map_err(|error| configuration(error.to_string()))?;
     if bytes.len() > 65_536 {
         return Err(configuration("Smith settings template exceeds its bound"));

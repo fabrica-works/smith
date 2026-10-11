@@ -19,6 +19,29 @@ use super::legacy::{FactShape, Shape};
 pub enum Face {
     /// Structured Debug records from the local host's spawned agent.
     Legacy(Shape),
+    /// Versioned records from the binary's selected event front end.
+    Events(super::events::Shape),
+}
+
+/// Immutable receiving bounds pinned with the face that writes the stream.
+/// The caller supplies semantic bounds; overflow refuses before inference.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Receiving {
+    pub string: u32,
+    pub content: u32,
+    pub items: u32,
+}
+
+impl Receiving {
+    /// Preserve each bound exactly and check the codec's complete line capacity.
+    pub fn limits(self) -> Result<smith_events::Limits, String> {
+        let limits = smith_events::Limits { string: self.string, content: self.content, items: self.items };
+        if self.string == 0 || self.content == 0 || self.items == 0 || smith_events::largest_record(&limits).is_none() {
+            return Err("event receiving bounds do not fit the codec's complete line capacity".into());
+        }
+        Ok(limits)
+    }
 }
 
 /// How this arm receives its credential without touching the source login.
@@ -37,12 +60,21 @@ pub struct FaceSince {
     pub credential: CredentialShape,
 
     pub facts: FactShape,
+    pub receiving: Option<Receiving>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum FaceKind {
     Legacy,
+    Events,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum EntryShape {
+    Legacy(Shape),
+    Events(super::events::Shape),
 }
 
 #[derive(Deserialize)]
@@ -56,11 +88,13 @@ enum CredentialKind {
 struct Entry {
     commit: String,
     face: FaceKind,
-    shape: Shape,
+    shape: EntryShape,
     credential: CredentialKind,
     record: TokenShape,
     #[serde(default)]
     facts: FactShape,
+    #[serde(default)]
+    receiving: Option<Receiving>,
 }
 
 #[derive(Deserialize)]
@@ -88,20 +122,37 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
                 return Err("Smith face registry requires full source commits".into());
             }
         }
-        Ok(registry
-            .face
-            .into_iter()
-            .map(|entry| FaceSince {
-                commit: entry.commit,
-                face: match entry.face {
-                    FaceKind::Legacy => Face::Legacy(entry.shape),
+        let mut faces = Vec::new();
+        for entry in registry.face {
+            let face = match entry.face {
+                FaceKind::Legacy => match entry.shape {
+                    EntryShape::Legacy(shape) => {
+                        if entry.receiving.is_some() {
+                            return Err("legacy face cannot declare event receiving bounds".into());
+                        }
+                        Face::Legacy(shape)
+                    }
+                    EntryShape::Events(_) => return Err("legacy face requires a legacy invocation shape".into()),
                 },
+                FaceKind::Events => match entry.shape {
+                    EntryShape::Events(shape) => {
+                        entry.receiving.ok_or("events face requires pinned receiving bounds")?.limits()?;
+                        Face::Events(shape)
+                    }
+                    EntryShape::Legacy(_) => return Err("events face requires an events invocation shape".into()),
+                },
+            };
+            faces.push(FaceSince {
+                commit: entry.commit,
+                face,
                 credential: match entry.credential {
                     CredentialKind::Converted => CredentialShape::Converted(entry.record),
                 },
                 facts: entry.facts,
-            })
-            .collect())
+                receiving: entry.receiving,
+            });
+        }
+        Ok(faces)
     })();
     load.map_err(|reason| Setup { step: SetupStep::Configuration, reason })
 }

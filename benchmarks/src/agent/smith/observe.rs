@@ -8,8 +8,45 @@ use std::collections::BTreeMap;
 use crate::agent::{HarnessFault, Seen};
 use crate::{Convention, Counts, Measure, ScopeKind, Spend, SpendBasis, TokenLedger, TokenRecord, Usage};
 
-use super::legacy::{Event, Observation, Observer, Value};
+use super::legacy::{Event, Observation, Observer as LegacyObserver, Value};
 use super::{Face, Prepared};
+
+mod checks;
+
+mod health;
+
+/// The format selected by the verified native face; the formats never mix.
+#[derive(Debug)]
+pub enum Observer {
+    /// The frozen Debug vocabulary, retained until historical back-fill ends.
+    Legacy(LegacyObserver),
+    /// The codec's typed incremental process stream.
+    Events(super::events::Observer),
+}
+
+impl Observer {
+    /// Reconcile the selected stream with the actual settled exit.
+    #[must_use]
+    pub fn classify(&self, exit: crate::Exit, forced: crate::Forced) -> crate::Classification {
+        match self {
+            Self::Legacy(observer) => observer.classify(exit, forced),
+            Self::Events(observer) => observer.classify(exit, forced),
+        }
+    }
+
+    /// Preserve legacy loss as unknown; typed sessions report their own loss.
+    #[must_use]
+    pub fn loss(&self) -> Measure<u64> {
+        match self {
+            Self::Legacy(observer) => observer.loss(),
+            Self::Events(observer) => observer
+                .health(crate::Exit::Code(0), crate::Forced::No, 0)
+                .loss_per_sink
+                .remove("events")
+                .unwrap_or_else(|| Measure::unavailable("event loss was not reported")),
+        }
+    }
+}
 
 /// An observer paired with the private invocation that selected its face.
 #[derive(Debug)]
@@ -56,16 +93,29 @@ fn usage(value: &Value) -> Result<Usage, String> {
 
 impl Observing {
     /// Retain an outside observer with no knowledge of the running domains.
-    #[must_use]
-    pub fn new(prepared: Prepared) -> Self {
-        let observer = Observer::new(prepared.registry.facts);
-        Self { prepared, observer, records: Vec::new() }
+    pub fn new(prepared: Prepared) -> Result<Self, HarnessFault> {
+        let observer = match prepared.face {
+            Face::Legacy(_) => Observer::Legacy(LegacyObserver::new(prepared.registry.facts)),
+            Face::Events(_) => {
+                let receiving = prepared
+                    .registry
+                    .receiving
+                    .ok_or_else(|| HarnessFault { what: "event face lacks its immutable receiving bounds".into() })?;
+                let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
+                Observer::Events(super::events::Observer::new(&limits)?)
+            }
+        };
+        Ok(Self { prepared, observer, records: Vec::new() })
     }
 
     /// Consume one complete native line and report only observed script cues.
     pub fn feed_line(&mut self, line: &str) -> Result<Vec<Seen>, HarnessFault> {
-        let answered = self.observer.accepted().is_some() || self.observer.answer().is_some();
-        let observation = self.observer.observe_line(line).map_err(|error| HarnessFault { what: error.to_string() })?;
+        let observer = match &mut self.observer {
+            Observer::Events(observer) => return observer.feed(format!("{line}\n").as_bytes()),
+            Observer::Legacy(observer) => observer,
+        };
+        let answered = observer.accepted().is_some() || observer.answer().is_some();
+        let observation = observer.observe_line(line).map_err(|error| HarnessFault { what: error.to_string() })?;
         let mut seen = Vec::new();
         match &observation {
             Some(Observation::Fact { event: Event::CompletionAnswered { .. }, .. }) => seen.push(Seen::Response),
@@ -78,7 +128,7 @@ impl Observing {
             }
             Some(_) | None => {}
         }
-        if !answered && (self.observer.accepted().is_some() || self.observer.answer().is_some()) {
+        if !answered && (observer.accepted().is_some() || observer.answer().is_some()) {
             seen.push(Seen::Answer);
         }
         if let Some(observation) = observation {
@@ -87,9 +137,38 @@ impl Observing {
         Ok(seen)
     }
 
+    /// Preserve each selected face's passive evidence and name its missing fields.
+    #[must_use]
+    pub fn health(&self, exit: crate::Exit, forced: crate::Forced) -> Option<crate::Health> {
+        match &self.observer {
+            Observer::Legacy(observer) => Some(health::legacy(observer, exit, forced)),
+            Observer::Events(observer) => {
+                Some(observer.health(exit, forced, self.prepared.teardown.as_nanos() / 1_000_000))
+            }
+        }
+    }
+
+    /// Author checks keep unavailable evidence where the selected format omits it.
+    #[must_use]
+    pub fn checks(&self, checks: &[crate::EventCheck], task: &str) -> Vec<crate::CheckVerdict> {
+        checks
+            .iter()
+            .map(|check| match &self.observer {
+                // The supported LocalTrace invocation renders LocalReserved's
+                // micro-dollar rates. Other invocations refuse before here.
+                Observer::Events(observer) => observer.check_with_currency(check, task, 1_000_000),
+                Observer::Legacy(_) => checks::evaluate(&self.records, check),
+            })
+            .collect()
+    }
+
     /// Counts are lower bounds because the old writer cannot report loss.
     #[must_use]
     pub fn counts(&self) -> Counts {
+        match &self.observer {
+            Observer::Events(observer) => return observer.counts(),
+            Observer::Legacy(_) => {}
+        }
         let mut counts = Counts {
             responses: lower(0),
             provider_attempts: Measure::unavailable(
@@ -138,6 +217,10 @@ impl Observing {
 
     /// Count content usage once for each trace-visible completion ordinal.
     pub fn tokens(&self) -> Result<Vec<TokenRecord>, String> {
+        match &self.observer {
+            Observer::Events(observer) => return observer.tokens().map_err(|error| error.what),
+            Observer::Legacy(_) => {}
+        }
         let mut ledger = TokenLedger::default();
         let mut scopes = BTreeMap::new();
         let mut ordinals = BTreeMap::<u64, u64>::new();
@@ -223,6 +306,10 @@ impl Observing {
 
     /// Price retained scoped usage with the arm's archived notional list rates.
     pub fn spend(&self, records: &[TokenRecord]) -> Result<Spend, String> {
+        match &self.observer {
+            Observer::Events(observer) => return super::events::reported_spend(observer, 1_000_000),
+            Observer::Legacy(_) => {}
+        }
         let Some(total) = records.iter().find(|record| record.role == ScopeKind::Total) else {
             return Ok(Spend {
                 basis: SpendBasis::Priced,
@@ -255,7 +342,10 @@ impl Observing {
                 amount = amount.checked_add(u128::from(value) * u128::from(rate)).ok_or("notional spend overflow")?;
             }
         }
-        let Face::Legacy(shape) = self.prepared.face;
+        let shape = match self.prepared.face {
+            Face::Legacy(shape) => shape,
+            Face::Events(_) => return Err("event face cannot price legacy usage".into()),
+        };
         let currency = match shape {
             super::legacy::Shape::LocalJson | super::legacy::Shape::LocalDeclared => 1_u64,
             super::legacy::Shape::LocalPriced

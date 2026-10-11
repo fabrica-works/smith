@@ -108,3 +108,34 @@ fn named_rollouts_survive_seeded_truncation_corruption_and_response_repetition()
         assert_eq!(parse_rollout(repeated.as_bytes(), thread).expect("immutable repeats"), original);
     }
 }
+
+#[test]
+fn typed_event_chunks_preserve_records_under_seeded_cuts_and_corruption() {
+    use smith_bench::agent::smith::events::Observer as Events;
+    let limits = smith_events::Limits { string: 128, content: 1024, items: 16 };
+    let stream = include_bytes!("../../crates/smith-events/golden/v1/session_started_effective_limits.jsonl");
+    let mut rng = Rng::new(0xe7e0_0020);
+    for _ in 0..128 {
+        let mut observer = Events::new(&limits).expect("bounds");
+        let mut at = 0_usize;
+        while at < stream.len() {
+            let length = usize::try_from(rng.below(31) + 1).expect("small chunk");
+            let end = at.saturating_add(length).min(stream.len());
+            observer.feed(&stream[at..end]).expect("arbitrary byte boundary");
+            at = end;
+        }
+        observer.finish().expect("framing");
+        assert_eq!(observer.sessions().len(), 1);
+        let cut = usize::try_from(rng.below(u64::try_from(stream.len()).expect("length"))).expect("index");
+        let mut partial = Events::new(&limits).expect("bounds");
+        let _ = partial.feed(&stream[..cut]);
+        if cut > 0 {
+            assert!(partial.finish().is_err());
+        }
+        let mut corrupt = stream.to_vec();
+        corrupt[cut] = u8::try_from(rng.below(128)).expect("ASCII");
+        let mut observer = Events::new(&limits).expect("bounds");
+        let _ = observer.feed(&corrupt);
+        let _ = observer.finish();
+    }
+}

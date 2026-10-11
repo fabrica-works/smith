@@ -16,6 +16,7 @@ regex = "1"
 base64 = "0.22"
 rusqlite = { version = "0.37", features = ["bundled"] }
 time = { version = "0.3", features = ["formatting"] }
+smith-events.workspace = true
 skein-lib.workspace = true
 skein-world.workspace = true
 skein-io.workspace = true

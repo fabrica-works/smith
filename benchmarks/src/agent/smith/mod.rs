@@ -3,6 +3,8 @@
 
 pub mod legacy;
 
+pub mod events;
+
 mod faces;
 
 mod settings;
@@ -11,8 +13,8 @@ mod prepare;
 
 mod observe;
 
-pub use faces::{CredentialShape, Face, FaceSince, face};
+pub use faces::{CredentialShape, Face, FaceSince, Receiving, face};
 
 pub use prepare::{Credential, Prepared, prepare};
 
-pub use observe::Observing;
+pub use observe::{Observer, Observing};

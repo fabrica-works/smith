@@ -65,7 +65,7 @@ fn a_prepared_adapter_observes_the_answer_through_the_common_supervisor() {
         &Clock::new(),
         replay("exit 0"),
         Box::from(&b"offline replay\n"[..]),
-        Capture::Agent(Box::new(prepared.observe())),
+        Capture::Agent(Box::new(prepared.observe().expect("prepared replay observer"))),
         bounds(),
     )
     .expect("paired replay settles");

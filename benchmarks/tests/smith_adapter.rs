@@ -11,6 +11,8 @@ use smith_bench::credential::TokenShape;
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced, Measure, ScopeKind};
 
+mod common;
+
 fn root(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("smith-bench-legacy-{}-{name}", std::process::id()))
 }
@@ -27,12 +29,13 @@ fn observing(trace: &Path) -> Observing {
             face,
             credential: CredentialShape::Converted(TokenShape::Legacy),
             facts: smith_bench::agent::smith::legacy::FactShape::Flags,
+            receiving: None,
         },
         rendered: serde_json::json!({"models":[{"input_price":10,"cached_price":1,"output_price":80,"price_unit":8_000_000}]}),
         program: "/bin/sh".into(),
         state: trace.with_extension("state"),
         teardown: Duration::from_millis(40),
-    })
+    }).expect("legacy observing")
 }
 
 fn bounds() -> Bounds {
@@ -45,6 +48,81 @@ fn bounds() -> Bounds {
         stderr: 4096,
         force_walk: true,
     }
+}
+
+#[test]
+fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries() {
+    let directory = root("events");
+    std::fs::create_dir(&directory).expect("private fixture directory");
+    let trace = directory.join("trace.jsonl");
+    let replay = directory.join("codec-control.jsonl");
+    let records = common::events::bytes(&common::events::balanced());
+    std::fs::write(&trace, []).expect("empty append stream");
+    std::fs::write(&replay, &records).expect("synthetic codec records");
+    let face = Face::Events(smith_bench::agent::smith::events::Shape::LocalTrace);
+    let prepared = Prepared {
+        face,
+        settings: directory.join("settings.json"),
+        credential: Credential::Record(None),
+        trace: Some(trace.clone()),
+        registry: FaceSince {
+            commit: "30259d89b88834ed3edaaa08b3f320d2252bbb9a".into(),
+            face,
+            credential: CredentialShape::Converted(TokenShape::AccessOnly),
+            facts: smith_bench::agent::smith::legacy::FactShape::Kinds,
+            receiving: Some(smith_bench::agent::smith::Receiving { string: 128, content: 1024, items: 16 }),
+        },
+        rendered: serde_json::json!({}),
+        program: "/bin/sh".into(),
+        state: directory.join("state"),
+        teardown: bounds().teardown,
+    };
+    let observer = Observing::new(prepared).expect("checked event receiving bounds");
+    let command = Command {
+        program: "/bin/sh".into(),
+        arguments: vec![
+            "-c".into(),
+            "IFS= read -r prompt; cat \"$1\" >> \"$2\"; if IFS= read -r extra; then exit 9; fi".into(),
+            "codec-replay".into(),
+            replay.into_os_string(),
+            trace.into_os_string(),
+        ],
+        environment: vec![("PATH".into(), "/usr/bin:/bin".into())],
+        directory: directory.clone(),
+    };
+    let result = execute(
+        &Clock::new(),
+        command,
+        Box::from(&b"task\n"[..]),
+        Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(observer))),
+        bounds(),
+    )
+    .expect("real replay tree settles");
+    assert_eq!(result.forced, Forced::No);
+    assert_eq!(result.trace, records);
+    assert!(result.answered.is_some());
+    assert_eq!(result.error, None);
+    let Some(smith_bench::agent::Observing::Smith(native)) = result.observing.as_deref() else {
+        panic!("selected native face retained");
+    };
+    assert_eq!(native.observer.classify(result.exit, result.forced).end, End::Completed);
+    assert_eq!(native.counts().responses, Measure::Observed { value: 1 });
+    let health = native.health(result.exit, result.forced).expect("typed passive evidence");
+    for check in &health.passive_checks {
+        if check.check == "teardown"
+            || (check.check.starts_with("headroom/")
+                && !matches!(check.check.as_str(), "headroom/prompt-tokens" | "headroom/spend"))
+        {
+            assert!(matches!(check.passed, Measure::Unavailable { .. }), "{}", check.check);
+        } else {
+            assert_eq!(check.passed, Measure::Observed { value: true }, "{}", check.check);
+        }
+    }
+    assert_eq!(health.headroom.len(), 7);
+    let spend = native.spend(&native.tokens().expect("exact response usage")).expect("reported notional spend");
+    assert_eq!(spend.basis, smith_bench::SpendBasis::Notional);
+    assert_eq!(spend.usd, Measure::Observed { value: 0.000_003 });
+    std::fs::remove_dir_all(directory).expect("replay fixture removed");
 }
 
 #[test]
@@ -211,7 +289,7 @@ fn native_kind_parent_links_keep_child_response_usage_in_its_actual_scope() {
     use smith_domain_run::{Granted, Set, Share};
     let mut prepared = observing(Path::new("/unused-native-kind-trace")).prepared;
     prepared.registry.facts = FactShape::Kinds;
-    let mut observer = Observing::new(prepared);
+    let mut observer = Observing::new(prepared).expect("prepared legacy observer");
     for native in [
         FactKind::Opened { run: Token::new(0), conversation: Token::new(0), kind: Kind::Main },
         FactKind::Opened {

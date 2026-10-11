@@ -21,6 +21,10 @@ use crate::{
     SpendBasis, Task, Timing,
 };
 
+mod outcomes;
+
+mod passive;
+
 /// An adapter's prepared pipe invocation and author-supplied harness policies.
 /// Arguments already name the planned scratch paths; the runner owns its cwd.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -571,7 +575,8 @@ fn observe(
     workspace: &Path,
     result: &mut AttemptResult,
     process: &mut ProcessResult,
-) -> Result<(), String> {
+    task: &Task,
+) -> Result<crate::grade::Ended, String> {
     result.identity.started_utc =
         time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(process.start_wall.as_nanos()))
             .map_err(|error| error.to_string())?
@@ -598,11 +603,13 @@ fn observe(
     if !process.trace.is_empty() {
         archive(guard, directory, result, "trace.jsonl", &process.trace)?;
     }
+    let mut login_unchanged = Measure::unavailable("this invocation did not borrow a source login");
     if let Some(observing) = &mut process.observing {
         match observing.as_mut() {
             crate::agent::Observing::Codex(observing) => {
                 if let Some(borrowed) = observing.prepared.borrowed.take() {
                     let proof = borrowed.finish(guard)?;
+                    login_unchanged = Measure::Observed { value: proof.source_unchanged };
                     archive(
                         guard,
                         directory,
@@ -616,6 +623,7 @@ fn observe(
                 let crate::agent::smith::Credential::Record(borrowed) = &mut observing.prepared.credential;
                 if let Some(borrowed) = borrowed.take() {
                     let proof = borrowed.finish(guard)?;
+                    login_unchanged = Measure::Observed { value: proof.source_unchanged };
                     archive(
                         guard,
                         directory,
@@ -624,7 +632,20 @@ fn observe(
                         &serde_json::to_vec_pretty(&proof).map_err(|error| error.to_string())?,
                     )?;
                 }
-                result.health.loss_per_sink.insert("trace".into(), observing.observer.loss());
+                if let Some(health) = observing.health(process.exit, process.forced) {
+                    result.health = health;
+                } else {
+                    result.health.loss_per_sink.insert("trace".into(), observing.observer.loss());
+                }
+                match observing.prepared.face {
+                    crate::agent::smith::Face::Legacy(_) => result.health.passive_checks.push(passive::teardown(
+                        &result.timing.teardown_ms,
+                        observing.prepared.teardown.as_nanos() / 1_000_000,
+                        process.forced,
+                    )),
+                    crate::agent::smith::Face::Events(_) => {}
+                }
+                result.outcome.checks.extend(observing.checks(&task.event, &task.prompt));
             }
         }
     }
@@ -641,25 +662,26 @@ fn observe(
         }
         Some(_) | None => scope(process, workspace),
     };
-    if let Measure::LowerBound { value, missing: _ } = &result.outcome.writes_outside_workspace {
-        result.health.passive_checks.push(crate::CheckVerdict {
-            check: "scope".into(),
-            passed: if value.is_empty() {
-                Measure::unavailable("the selected stream does not show every filesystem effect")
-            } else {
-                Measure::Observed { value: false }
-            },
-            evidence: value.iter().map(|path| path.display().to_string()).collect(),
-        });
-    }
-    let ended_cleanly =
-        process.tree.live_at_leader_exit.as_ref().is_some_and(Vec::is_empty) && process.forced == Forced::No;
-    result.health.passive_checks.push(crate::CheckVerdict {
-        check: "process-tree-ended".into(),
-        passed: Measure::Observed { value: ended_cleanly },
-        evidence: vec![format!("{:?}", process.tree)],
-    });
-    Ok(())
+    result.health.passive_checks.push(passive::scope(&result.outcome.writes_outside_workspace));
+    result.health.passive_checks.push(passive::tree(process));
+    Ok(settled_outcome(process, &result.outcome, login_unchanged))
+}
+
+fn settled_outcome(process: &ProcessResult, outcome: &Outcome, login_unchanged: Measure<bool>) -> crate::grade::Ended {
+    let answer = if matches!(outcome.end, End::Completed) {
+        process
+            .observing
+            .as_ref()
+            .map_or_else(|| process.observer.answer().map(str::to_owned), |observing| observing.answer())
+    } else {
+        None
+    };
+    let last_line = if process.error.is_none() {
+        std::str::from_utf8(&process.stderr).ok().and_then(|text| text.lines().last()).map(str::to_owned)
+    } else {
+        None
+    };
+    crate::grade::Ended { end: outcome.end.clone(), exit: outcome.exit.clone(), last_line, answer, login_unchanged }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -740,7 +762,9 @@ fn source_arm(work: Work<'_>, identity: &Identity) -> Result<(crate::arm::ArmRef
         }
         crate::Agent::Smith => {
             let build = crate::arm::read_build(&work.prepared.program)?;
-            if build.arm.commit != identity.agent_version || identity.smith_face != Some(crate::SmithFace::Legacy) {
+            if build.arm.commit != identity.agent_version
+                || !matches!(identity.smith_face, Some(crate::SmithFace::Legacy | crate::SmithFace::Events))
+            {
                 return Err("Smith built arm differs from the planned full source version".into());
             }
             let version = build.arm.commit.clone();
@@ -808,6 +832,15 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 step = error.step;
                 error.reason
             })?;
+        if let crate::agent::Prepared::Smith(native) = &prepared {
+            let selected = match native.face {
+                crate::agent::smith::Face::Legacy(_) => crate::SmithFace::Legacy,
+                crate::agent::smith::Face::Events(_) => crate::SmithFace::Events,
+            };
+            if result.identity.smith_face != Some(selected) {
+                return Err("Smith identity names a different face than its source registry".into());
+            }
+        }
         archive_preparation(&prepared, work, result)?;
         let invocation = prepared.command();
         environment.extend(invocation.environment);
@@ -818,7 +851,7 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 environment,
                 directory: work.private.workspace.clone(),
             },
-            Capture::Agent(Box::new(prepared.observe())),
+            Capture::Agent(Box::new(prepared.observe().map_err(|error| error.what)?)),
             invocation.teardown,
         ))
     })();
@@ -830,10 +863,12 @@ fn afterwards(
     seed: &crate::grade::Snapshot,
     revision: String,
     result: &mut AttemptResult,
+    ended: &crate::grade::Ended,
 ) -> Result<(), String> {
     let Work { clock, guard, machine, private, task, prepared, directory } = work;
     let after = crate::grade::snapshot(&private.workspace)?;
-    result.outcome.checks = crate::grade::checks(&private.workspace, seed, &after, &task.outcome);
+    let file_checks: Vec<_> = task.outcome.iter().filter(|check| !outcomes::neutral(check)).cloned().collect();
+    result.outcome.checks.extend(crate::grade::checks(&private.workspace, seed, &after, &file_checks, ended));
     let changed: Vec<_> =
         task.protected.iter().filter(|path| crate::grade::changed(seed, &after, path)).cloned().collect();
     result.outcome.protected_files_changed = Measure::Observed { value: changed };
@@ -944,6 +979,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
     let existed = root.exists();
     let mut result = blank(prepared.identity.clone());
     let mut inference = false;
+    let mut neutral = outcomes::Neutral::default();
     let mut setup_step = SetupStep::Scratch;
     let work = (|| {
         if existed {
@@ -951,6 +987,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         }
         setup_step = SetupStep::Seed;
         let task = task_for(prepared)?;
+        neutral.task(&task);
         archive(
             guard,
             &directory,
@@ -999,12 +1036,14 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             },
         )?;
         inference = true;
-        observe(guard, &directory, &private.workspace, &mut result, &mut process)?;
+        let observed = observe(guard, &directory, &private.workspace, &mut result, &mut process, &task);
+        let ended = neutral.observed(observed, &process, &result.outcome)?;
         afterwards(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
             &seed,
             revision,
             &mut result,
+            ended,
         )?;
         Ok(())
     })();
@@ -1018,6 +1057,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             result.outcome.end = End::HarnessError { what: format!("owned workspace deletion failed: {error}") };
         }
     }
+    neutral.finish(&mut result);
     let incomplete =
         if matches!(result.outcome.end, End::Refused { .. }) { Incomplete::Setup(setup_step) } else { Incomplete::No };
     let bytes = crate::render_result(&result)?;

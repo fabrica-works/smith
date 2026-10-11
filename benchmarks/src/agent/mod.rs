@@ -114,16 +114,15 @@ impl Prepared {
     }
 
     /// Move preparation into its matching observer before execution.
-    #[must_use]
-    pub fn observe(self) -> Observing {
+    pub fn observe(self) -> Result<Observing, HarnessFault> {
         match self {
-            Self::Codex(prepared) => Observing::Codex(codex::Observing {
+            Self::Codex(prepared) => Ok(Observing::Codex(codex::Observing {
                 prepared,
                 observer: codex::Observer::default(),
                 collected: None,
                 collection_error: None,
-            }),
-            Self::Smith(prepared) => Observing::Smith(smith::Observing::new(prepared)),
+            })),
+            Self::Smith(prepared) => smith::Observing::new(prepared).map(Observing::Smith),
         }
     }
 }
@@ -134,6 +133,38 @@ impl Observing {
         match self {
             Self::Codex(observing) => observing.feed_line(line),
             Self::Smith(observing) => observing.feed_line(line),
+        }
+    }
+
+    /// The actual root final message, where the selected stream retains it.
+    #[must_use]
+    pub fn answer(&self) -> Option<String> {
+        match self {
+            Self::Codex(observing) => observing.observer.answer().map(str::to_owned),
+            Self::Smith(observing) => match &observing.observer {
+                smith::Observer::Legacy(_) => None,
+                smith::Observer::Events(observer) => observer
+                    .sessions()
+                    .last()?
+                    .records
+                    .iter()
+                    .rev()
+                    .find_map(|record| {
+                        if let smith_events::Event::RunCompleted(value) = &record.event {
+                            Some(
+                                value
+                                    .result
+                                    .as_ref()
+                                    .and_then(|result| result.text.as_deref())
+                                    .and_then(|text| std::str::from_utf8(text).ok())
+                                    .map(str::to_owned),
+                            )
+                        } else {
+                            None
+                        }
+                    })
+                    .flatten(),
+            },
         }
     }
 

@@ -2,6 +2,8 @@
 //! `check_tree` finds task manifests; `check_task` verifies prompts, frozen
 //! seeds and design guards, following benchmarks.md, sections 5.2 and 14.
 
+mod events;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -125,6 +127,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         check_path(file, "protected", path)?;
     }
     check_outcomes(file, "outcome", &task.outcome)?;
+    events::checks(file, "event", &task.event)?;
     for (index, grade) in task.grade.iter().enumerate() {
         if grade.command.is_empty() || grade.deadline_seconds == 0 || grade.max_output_bytes == 0 {
             return Err(Refusal::new(
@@ -152,6 +155,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
             check_budget(file, &format!("{key}.budget"), budget)?;
         }
         check_outcomes(file, &format!("{key}.outcome"), &variant.outcome)?;
+        events::checks(file, &format!("{key}.event"), &variant.event)?;
     }
     match task.kind {
         Kind::Probe => {}
@@ -237,6 +241,18 @@ fn check_outcomes(file: &Path, key: &str, outcomes: &[OutcomeCheck]) -> Result<(
             | OutcomeCheck::Absent { path }
             | OutcomeCheck::Pattern { path, pattern: _ }
             | OutcomeCheck::Protected { path } => path,
+            OutcomeCheck::End { end } => {
+                if !["completed", "failed", "budget", "refused", "timeout", "harness-error"].contains(&end.as_str()) {
+                    return Err(Refusal::new(file, &format!("{key}.end"), "unknown terminal classification"));
+                }
+                continue;
+            }
+            OutcomeCheck::LastLine { pattern } | OutcomeCheck::Answer { pattern } => {
+                regex::Regex::new(pattern)
+                    .map_err(|error| Refusal::new(file, &format!("{key}.pattern"), error.to_string()))?;
+                continue;
+            }
+            OutcomeCheck::ExitCode { .. } | OutcomeCheck::LoginUnchanged => continue,
             OutcomeCheck::FileDigest { path, sha256 } => {
                 if !valid_digest(sha256) {
                     return Err(Refusal::new(

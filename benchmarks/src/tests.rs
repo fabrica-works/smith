@@ -23,7 +23,7 @@ effort = "low"
 setup = [["cargo", "test", "--offline"]]
 protected = ["Cargo.toml"]
 repetitions = 3
-waives = ["limit"]
+waives = ["no-limit-failure"]
 [[outcome]]
 check = "file-content"
 path = "answer.txt"
@@ -770,9 +770,9 @@ fn task_documents_and_frozen_seed_contracts() {
     a_calibration_requires_ten_distinct_passes();
     a_seed_digest_freezes_names_content_and_executable_permissions();
     a_seed_symlink_cannot_reach_hidden_inputs();
+    suite_resolution_and_guard_budget_contracts();
 }
 
-#[test]
 fn suite_resolution_and_guard_budget_contracts() {
     a_suite_resolves_task_variants_selectors_and_configuration_pins();
     a_suite_refuses_unknown_tasks_agents_tiers_and_empty_selectors();
@@ -792,21 +792,58 @@ fn token_ledger_and_result_shape_contracts() {
     measurements_require_reasons_and_the_ledger_requires_a_root_and_one_convention();
     result_readers_refuse_versions_unknown_shapes_and_trailing_documents();
     smith_exit_codes_reconcile_answers_deadlines_and_own_budgets();
+    seeded_statistics_and_probe_verdict_contracts();
+    summary_baseline_and_comparison_contracts();
 }
 
-#[test]
 fn seeded_statistics_and_probe_verdict_contracts() {
     the_probe_rerun_rule_reports_regressions_and_quarantines_disagreement();
+    task_waivers_keep_raw_passive_failures_and_unavailable_judgments();
     seeded_blocks_and_audit_samples_reproduce_and_keep_every_disagreement();
     bootstrap_intervals_and_effects_reproduce_from_the_seed();
     exact_pass_intervals_hold_at_empty_and_extreme_counts();
 }
 
-#[test]
 fn summary_baseline_and_comparison_contracts() {
     summaries_include_failed_attempt_metrics_and_report_budget_and_setup_apart();
     summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates();
     baselines_raise_drift_notices_and_refuse_mixed_configurations();
     matching_committed_medians_replace_estimates_and_stale_pins_do_not();
     summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart();
+}
+
+fn task_waivers_keep_raw_passive_failures_and_unavailable_judgments() {
+    use crate::{CheckVerdict, End, Forced, Measure, Passive};
+    let mut result = recorded_result();
+    result.outcome.end = End::Completed;
+    result.outcome.forced = Forced::No;
+    result.health.passive_checks = vec![
+        CheckVerdict {
+            check: Passive::NoLimitFailure.name().into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec!["actual limit record".into()],
+        },
+        CheckVerdict {
+            check: Passive::Paired.name().into(),
+            passed: Measure::unavailable("unknown loss"),
+            evidence: Vec::new(),
+        },
+        CheckVerdict {
+            check: Passive::Teardown.name().into(),
+            passed: Measure::Observed { value: false },
+            evidence: vec!["forced".into()],
+        },
+    ];
+    let original = result.health.clone();
+    let checks = crate::passive::judge(&result.health, &[Passive::NoLimitFailure], &result.outcome);
+    assert_eq!(checks.len(), 2);
+    assert!(matches!(checks[0].passed, Measure::Unavailable { .. }));
+    assert_eq!(checks[1].passed, Measure::Observed { value: false });
+    assert_eq!(result.health, original, "waivers preserve raw evidence");
+    result.outcome.forced = Forced::Terminated;
+    let checks = crate::passive::judge(&result.health, &[], &result.outcome);
+    assert_eq!(checks.len(), 2, "accepted force keeps a warning, not a teardown failure");
+    assert_eq!(checks[0].passed, Measure::Observed { value: false });
+    result.outcome.end = End::Timeout;
+    assert_eq!(crate::passive::judge(&result.health, &[], &result.outcome).len(), 3);
 }
