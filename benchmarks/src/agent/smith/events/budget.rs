@@ -1,5 +1,6 @@
 //! Budget prose joins its immutable opening and the latest run-scoped charge.
-//! Child returns join their actual parent call; missing capture or links remain
+//! Child returns join rendered results in their actual parent's next request;
+//! their usage retains the return-time budget. Missing capture or links remain
 //! unavailable. Millisecond projections retain their submillisecond uncertainty,
 //! never guessed nanoseconds (domain/run.md, sections5.3/9.2; protocol/events.md,
 //! sections3.4/3.6/3.8; benchmarks.md, section11.1).
@@ -130,15 +131,14 @@ fn share(opening: &ConversationOpened, value: &BudgetStanding, at: u64, now: u64
     Ok(true)
 }
 
-fn usage(tool: &ToolCompleted, value: &BudgetStanding, at: u64, now: u64) -> Checked {
+fn usage(tool: &ToolCompleted, text: &[u8], value: &BudgetStanding, at: u64, now: u64) -> Checked {
     let child = tool.child.as_ref().expect("child return selected");
     let stopped = match &child.stop {
         ChildStop::Budget => "yes",
         ChildStop::End | ChildStop::Failed | ChildStop::Closed => "no",
         ChildStop::Unknown(_) => return Err("returned child stop is unknown"),
     };
-    let result = tool.result.as_ref().ok_or("returned child usage text was not captured")?;
-    let text = std::str::from_utf8(result).map_err(|_| "returned child usage text is not UTF-8")?;
+    let text = std::str::from_utf8(text).map_err(|_| "returned child usage text is not UTF-8")?;
     let left = value.turns.limit.saturating_sub(value.turns.used).saturating_sub(value.reserve.turns);
     Ok(Duration::recorded(child.time_ms).prose().iter().any(|used| {
         ordinary_time(value, at, now).prose().iter().any(|time| {
@@ -167,9 +167,18 @@ struct State<'a> {
     budgets: BTreeMap<u64, (&'a BudgetStanding, u64)>,
     openings: BTreeMap<(u64, u64), (&'a ConversationOpened, u64)>,
     systems: BTreeMap<(u64, u64), Box<[u8]>>,
+    pending: BTreeMap<(u64, u64, Box<[u8]>), Returned<'a>>,
     returned: BTreeSet<(u64, u64)>,
     winding: BTreeSet<u64>,
     winding_note: BTreeSet<u64>,
+}
+
+/// A child terminal and the budget used when its feedback was made.
+struct Returned<'a> {
+    tool: &'a ToolCompleted,
+    budget: &'a BudgetStanding,
+    budget_at: u64,
+    at: u64,
 }
 
 impl<'a> State<'a> {
@@ -203,6 +212,20 @@ impl<'a> State<'a> {
             return Err("opening kind is unknown");
         }
         let prompt = value.prompt.as_ref().ok_or("budget request prompt was not captured")?;
+        for message in &prompt.messages {
+            for block in &message.blocks {
+                if let smith_events::Block::Result { call, text, .. } = block {
+                    let identity = (value.run, value.conversation, call.clone());
+                    if let Some(returned) = self.pending.remove(&identity) {
+                        if !usage(returned.tool, text, returned.budget, returned.budget_at, returned.at)? {
+                            return Ok(false);
+                        }
+                        let child = returned.tool.child.as_ref().expect("retained child return");
+                        self.returned.insert((value.run, child.conversation));
+                    }
+                }
+            }
+        }
         if let Some(system) = &prompt.system {
             if let Some(previous) = self.systems.get(&identity) {
                 if previous != system {
@@ -244,7 +267,7 @@ impl<'a> State<'a> {
         Ok(true)
     }
 
-    fn returned(&mut self, value: &ToolCompleted, now: u64) -> Checked {
+    fn returned(&mut self, value: &'a ToolCompleted, now: u64) -> Checked {
         let child = value.child.as_ref().expect("child return selected");
         let identity = (value.run, child.conversation);
         let (opening, _) = self.openings.get(&identity).ok_or("child return lacks its actual opening")?;
@@ -252,10 +275,11 @@ impl<'a> State<'a> {
             return Err("child return does not join its actual parent call");
         }
         let (budget, at) = self.budgets.get(&value.run).ok_or("child usage lacks a preceding run budget")?;
-        if !usage(value, budget, *at, now)? {
+        let identity = (value.run, value.conversation, value.call.clone());
+        let returned = Returned { tool: value, budget, budget_at: *at, at: now };
+        if self.pending.insert(identity, returned).is_some() {
             return Ok(false);
         }
-        self.returned.insert(identity);
         Ok(true)
     }
 

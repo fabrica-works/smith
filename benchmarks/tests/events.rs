@@ -993,13 +993,41 @@ fn build_visible_child() -> Vec<Record> {
                 reasoning_tokens: None,
             },
         });
-        value.result = Some(Box::from(&b"stop=budget\nSurvey complete.\n\nChild usage: used 2 turns and less than a second; stopped for budget: yes; ordinary left 6 turns and 7 seconds."[..]));
     }
     let mut closed = values[6].clone();
     if let Event::ConversationClosed(value) = &mut closed.event {
         value.conversation = 1;
     }
-    values.splice(6..6, [opened, request, response, snapshot, returned, closed]);
+    let mut rendered = values[3].clone();
+    if let Event::ResponseStarted(value) = &mut rendered.event {
+        value.response = 2;
+        let prompt = value.prompt.as_mut().expect("rendered parent request");
+        prompt.system = None;
+        let mut blocks = skein_lib::List::with_capacity(1);
+        blocks.push(smith_events::Block::Result {
+                call: Box::from(&b"child-call"[..]),
+                error: false,
+                text: Box::from(&b"stop=budget\nSurvey complete.\n\nChild usage: used 2 turns and less than a second; stopped for budget: yes; ordinary left 6 turns and 7 seconds."[..]),
+            }).expect("child result");
+        prompt.messages = skein_lib::List::with_capacity(1);
+        prompt
+            .messages
+            .push(smith_events::Message { role: smith_events::Role::User, blocks })
+            .expect("rendered message");
+    }
+    let mut answered = values[4].clone();
+    if let Event::ResponseCompleted(value) = &mut answered.event {
+        value.response = 2;
+        value.spent = 0;
+        value.usage = smith_events::Usage {
+            input_tokens: Some(0),
+            cache_read_tokens: Some(0),
+            cache_write_tokens: Some(0),
+            output_tokens: Some(0),
+            reasoning_tokens: None,
+        };
+    }
+    values.splice(6..6, [opened, request, response, snapshot, returned, closed, rendered, answered]);
     for (index, value) in values.iter_mut().enumerate() {
         value.t_ms = u64::try_from(index).expect("small index");
     }
@@ -1011,8 +1039,11 @@ fn budget_visibility_joins_immutable_openings_and_latest_child_usage_without_res
     assert_eq!(observe_visibility(&visible_budget()).check(&check, "task").passed, Measure::Observed { value: true });
     let mut values = visible_child();
     assert_eq!(observe_visibility(&values).check(&check, "task").passed, Measure::Observed { value: true });
-    if let Event::ToolCompleted(value) = &mut values[10].event {
-        value.result = Some(Box::from(&b"\n\nChild usage: used 2 turns and less than a second; stopped for budget: yes; ordinary left 7 turns and 7 seconds."[..]));
+    if let Event::ResponseStarted(value) = &mut values[12].event {
+        let message = value.prompt.as_mut().expect("prompt").messages.get_mut(0).expect("rendered message");
+        if let smith_events::Block::Result { text, .. } = message.blocks.get_mut(0).expect("rendered block") {
+            *text = Box::from(&b"\n\nChild usage: used 2 turns and less than a second; stopped for budget: yes; ordinary left 7 turns and 7 seconds."[..]);
+        }
     }
     assert_eq!(
         observe_visibility(&values).check(&check, "task").passed,
@@ -1020,10 +1051,42 @@ fn budget_visibility_joins_immutable_openings_and_latest_child_usage_without_res
         "an older snapshot is not the returned child's report"
     );
     let mut values = visible_child();
-    if let Event::ToolCompleted(value) = &mut values[10].event {
-        value.result = None;
+    if let Event::ResponseStarted(value) = &mut values[12].event {
+        value.prompt.as_mut().expect("prompt").messages = skein_lib::List::with_capacity(0);
     }
     assert!(matches!(observe_visibility(&values).check(&check, "task").passed, Measure::Unavailable { .. }));
+    let mut values = visible_child();
+    if let Event::ResponseStarted(value) = &mut values[12].event {
+        let message = value.prompt.as_mut().expect("prompt").messages.get_mut(0).expect("rendered message");
+        if let smith_events::Block::Result { call, .. } = message.blocks.get_mut(0).expect("rendered block") {
+            *call = Box::from(&b"foreign-rendered-call"[..]);
+        }
+    }
+    assert!(
+        matches!(observe_visibility(&values).check(&check, "task").passed, Measure::Unavailable { .. }),
+        "rendered text must join the actual parent call"
+    );
+    let mut values = visible_child();
+    let mut later = values[9].clone();
+    later.t_ms = values[12].t_ms;
+    if let Event::Budget(value) = &mut later.event {
+        value.turns.used = 3;
+        value.time_ms.used = 2000;
+    }
+    values.insert(12, later);
+    assert_eq!(
+        observe_visibility(&values).check(&check, "task").passed,
+        Measure::Observed { value: true },
+        "the suffix keeps the return-time budget even when a later request follows another snapshot"
+    );
+    for capture in [smith_events::Capture::None, smith_events::Capture::Calls] {
+        let mut values = visible_child();
+        common::events::inventory(&mut values);
+        assert!(
+            matches!(captured(&values, &capture, &LIMITS).check(&check, "task").passed, Measure::Unavailable { .. }),
+            "without captured request content, budget visibility is unavailable"
+        );
+    }
     let mut values = visible_child();
     if let Event::ToolCompleted(value) = &mut values[10].event {
         value.call = Box::from(&b"foreign"[..]);
