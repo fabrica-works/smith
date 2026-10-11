@@ -7,6 +7,19 @@ use skein_lib::Time;
 use smith_domain::run;
 use smith_events::{BudgetStage, BudgetStanding, Event, Quantity, Record, Reserve};
 
+/// The actual settled checks' exit, with a passing result only for code zero.
+/// The run keeps cancellation and deadline expiry distinct after its tree stops.
+#[must_use]
+pub fn check_exit(exit: run::Exit) -> (smith_events::CheckExit, bool) {
+    match exit {
+        run::Exit::Code { code } => (smith_events::CheckExit::Code { code: i64::from(code) }, code == 0),
+        run::Exit::Signalled { signal } => (smith_events::CheckExit::Signal { signal: u64::from(signal) }, false),
+        run::Exit::TimedOut => (smith_events::CheckExit::TimedOut, false),
+        run::Exit::Unstarted => (smith_events::CheckExit::Unstarted, false),
+        run::Exit::Cancelled => (smith_events::CheckExit::Cancelled, false),
+    }
+}
+
 /// The actual opening's model, joined to the configured endpoint name and effort.
 /// The caller supplies configured metadata; no endpoint or model is inferred.
 #[must_use]

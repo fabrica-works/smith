@@ -144,6 +144,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         queue,
         routes,
         memory,
+        events: None,
     };
     validate::machine(&limits.machine, &limits.domain.session.tools)?;
     Ok(limits)

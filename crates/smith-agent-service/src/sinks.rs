@@ -197,7 +197,17 @@ impl Sinks {
 
     /// Whether startup can adopt another bounded destination.
     #[must_use]
-    pub fn room_for_destination(&self) -> bool { self.writers.len() < self.limits.destinations }
+    pub fn room_for_destination(&self, destination: Destination) -> bool {
+        if self.writers.len() >= self.limits.destinations {
+            return false;
+        }
+        for writer in &self.writers {
+            if writer.destination == destination {
+                return false;
+            }
+        }
+        true
+    }
 
     /// Append entities that still owe their physical IO terminal.
     #[must_use]
@@ -672,7 +682,7 @@ fn slots(limits: &SinkLimits) -> Option<u32> {
     limits.output.checked_div(MINIMUM_LINE)?.checked_add(AUTHORITATIVE)
 }
 
-fn largest_line(limits: &smith_events::Limits, capture: Capture) -> Option<u32> {
+pub(crate) fn largest_line(limits: &smith_events::Limits, capture: Capture) -> Option<u32> {
     let scalar = smith_events::largest_record_for(&smith_events::Capture::None, limits)?;
     match capture {
         Capture::None | Capture::Calls => Some(scalar),

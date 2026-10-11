@@ -20,6 +20,31 @@ use crate::sinks::{Capture, SinkLimits, Sinks};
 pub struct EventLimits {
     pub sinks: SinkLimits,
     pub capture: Capture,
+    /// IO's stall deadline for each adopted destination.
+    pub write_deadline: Duration,
+}
+
+impl EventLimits {
+    /// Derive receiving and destination ownership from the admitted source bounds.
+    /// `option_bytes` is the shell's measured largest configured effort string.
+    pub fn derive(limits: &crate::Limits, capture: Capture, destinations: u32, option_bytes: u32, write_deadline: Duration) -> Option<EventLimits> {
+        let charter = limits.channel.charter;
+        let string = limits.llm.adapter.client.strings
+            .max(charter.llm_endpoint).max(charter.llm_model).max(charter.host_tool_name)
+            .max(charter.field_name).max(charter.run_result_label_some).max(option_bytes).max(46);
+        let content = u32::try_from(limits.domain.run.outcome_bytes).ok()?;
+        let items = charter.run_result_fields.max(limits.domain.run.host_tools).max(18);
+        let records = smith_events::Limits { string, content, items };
+        let line = crate::sinks::largest_line(&records, capture)?;
+        let sinks = SinkLimits {
+            destinations,
+            output: line.checked_mul(5)?,
+            records,
+            conversations: limits.domain.run.conversations,
+        };
+        crate::sinks::sinks_worst_case(&sinks, capture)?;
+        Some(EventLimits { sinks, capture, write_deadline })
+    }
 }
 
 #[derive(Debug)]
@@ -69,7 +94,7 @@ impl Producer {
         assert!(self.origin.is_none(), "one process startup before its first pass");
         self.origin = Some(now);
         self.sinks.record(&Record { t_ms: 0, event: Event::SessionStarted(header) });
-        self.notice(now, smith_events::NoticeKind::NotContained, None, None, None);
+        self.notice(now, smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()), None, None, None);
     }
 
     pub(crate) fn starting(&mut self, start: &channel::DecodedStart) {
@@ -105,6 +130,8 @@ impl Producer {
             contract,
         });
     }
+
+    pub(crate) fn answer_at(&self) -> Option<Time> { self.answer_at }
 
     pub(crate) fn origin(&self) -> Time { self.origin.expect("session.started precedes the first service pass") }
 
@@ -160,10 +187,9 @@ impl Producer {
                 Event::CheckStarted(smith_events::CheckStarted { run: run.raw(), deadline_ms: Some(deadline.saturating_since(fact.at).as_nanos() / 1_000_000) })
             }
             run::facts::FactKind::CheckFinished { run, exit } => {
-                let code = match exit { run::Exit::Code { code } => code,
-                    run::Exit::Signalled | run::Exit::TimedOut | run::Exit::Unstarted => unreachable!("authoritative check-exit carrier decision pending") };
-                Event::CheckCompleted(smith_events::CheckCompleted { run: run.raw(), passed: code == 0,
-                    exit: smith_events::CommandExit::Code { code: i64::from(code) },
+                let (exit, passed) = crate::check_exit(exit);
+                Event::CheckCompleted(smith_events::CheckCompleted { run: run.raw(), passed,
+                    exit,
                     duration_ms: fact.at.saturating_since(self.check_at.take().expect("one check start")).as_nanos() / 1_000_000 })
             }
             run::facts::FactKind::MessageFence { .. } | run::facts::FactKind::Prepared { .. }
@@ -205,10 +231,9 @@ impl Producer {
 fn message_refusal(reason: run::MessageRefusal) -> smith_events::MessageRefusal {
     match reason {
         run::MessageRefusal::TooLarge => smith_events::MessageRefusal::TooLarge,
-        run::MessageRefusal::InboxFull => smith_events::MessageRefusal::InboxFull,
+        run::MessageRefusal::Full => smith_events::MessageRefusal::InboxFull,
         run::MessageRefusal::NameInUse => smith_events::MessageRefusal::NameInUse,
         run::MessageRefusal::Ending => smith_events::MessageRefusal::Ending,
-        run::MessageRefusal::StartRefused => smith_events::MessageRefusal::StartRefused,
     }
 }
 

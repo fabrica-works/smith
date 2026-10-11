@@ -104,6 +104,8 @@ pub fn configured(
             error: Some(inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1),
             signals: inherited.signal,
             seed,
+            pid: 101,
+            trace: None,
             roots: Some(inherited.roots.iter().map(|(_, fd)| *fd).collect()),
         },
         Box::new(errors),

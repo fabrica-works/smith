@@ -1,5 +1,5 @@
 //! Shared agent startup and shell pass (protocol/agent.md, sections 4–6).
-//! It keeps the service, trace writer, inherited mount descriptors and error
+//! It keeps the service, startup header, inherited mount descriptors and error
 //! output. It never keeps credentials outside the service or knows the driving
 //! kernel, simulator or neighbours. `Agent::read` reads startup settings;
 //! `Agent::new` adopts caller resources; `Host::iterate` runs the same pass in
@@ -10,11 +10,11 @@ use std::path::Path;
 
 use service::profile::{Layer, LimitName, Refusal};
 use skein_io::kernel::{Complete, Exit, Fd, Op, Submit};
-use skein_lib::{Queue, Time, Token, Wall};
+use skein_lib::{List, Queue, Time, Token, Wall};
 use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
 use smith_agent_service as service;
 
-use crate::{config, trace};
+use crate::config;
 
 /// Channel and signal descriptors handed by the caller to one agent invocation.
 pub struct Resources {
@@ -22,6 +22,11 @@ pub struct Resources {
     pub output: Fd,
     pub signals: Fd,
     pub seed: u64,
+    /// The process identity read by startup, or supplied by a simulated process.
+    pub pid: u32,
+    /// An already opened append descriptor for the configured trace, when the
+    /// caller supplies startup effects. The invocation owns its close.
+    pub trace: Option<Fd>,
     /// An inherited stderr descriptor whose close the invocation owns; the
     /// supplied writer owns the diagnostic bytes.
     pub error: Option<Fd>,
@@ -33,7 +38,8 @@ pub struct Resources {
 /// The binary's agent and shell effects, hosted by a kernel or world until settlement.
 pub struct Agent {
     service: service::Service,
-    trace: Option<trace::Trace>,
+    header: Option<smith_events::SessionStarted>,
+    trace_root: Option<Fd>,
     roots: Option<std::vec::IntoIter<Fd>>,
     errors: Box<dyn Write>,
     error: Option<Fd>,
@@ -50,7 +56,8 @@ pub struct Agent {
 
 struct Prepared {
     service: service::Service,
-    trace: Option<trace::Trace>,
+    header: Option<smith_events::SessionStarted>,
+    trace_root: Option<Fd>,
     worst: u64,
     operations: u32,
     queue: u32,
@@ -81,7 +88,8 @@ impl Agent {
         };
         Ok(Self {
             service: prepared.service,
-            trace: prepared.trace,
+            header: prepared.header,
+            trace_root: prepared.trace_root,
             roots: resources.roots.map(|roots| roots.into_vec().into_iter()),
             errors,
             error: resources.error,
@@ -133,6 +141,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
     let extra_operations = u32::try_from(root_count)
         .map_err(|_| derivation_refusal("inherited_roots"))?
         .checked_add(u32::from(resources.error.is_some()))
+        .and_then(|count| count.checked_add(u32::from(configuration.trace.is_some() && resources.trace.is_none())))
         .ok_or_else(|| derivation_refusal("routes"))?;
     let queue =
         configuration.service.limits.queue.checked_add(extra_operations).ok_or_else(|| derivation_refusal("queue"))?;
@@ -142,25 +151,63 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .routes
         .checked_add(extra_operations)
         .ok_or_else(|| derivation_refusal("routes"))?;
-    let reserve = if configuration.trace.is_some() { trace::MEMORY_RESERVE } else { 0 };
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
-        .and_then(|bytes| bytes.checked_add(reserve))
+        .and_then(|bytes| bytes.checked_add(if configuration.trace.is_some() {
+            // The retained startup header's five strings; its structure is in Agent.
+            u64::try_from(b"smith".len().checked_add(env!("CARGO_PKG_VERSION").len())?
+                .checked_add(env!("SMITH_BUILD").len())?.checked_add(b"standard".len())?).ok()?
+        } else { 0 }))
         .and_then(|bytes| bytes.checked_add(Queue::<Complete>::worst_case(queue)?))
         .and_then(|bytes| bytes.checked_add(Queue::<Submit>::worst_case(queue)?))
         .and_then(|bytes| bytes.checked_add(u64::try_from(size_of::<Agent>()).ok()?))
         .and_then(|bytes| bytes.checked_add(u64::try_from(root_count.checked_mul(size_of::<Fd>())?).ok()?))
         .ok_or_else(|| derivation_refusal("worst_case"))?;
     service::profile::validate::memory(worst, configuration.memory).map_err(config::profile_refusal)?;
-    let trace = match configuration.trace {
-        Some(config) => Some(trace::Trace::open(config)?),
-        None => None,
+    let profile = match configuration.profile.name {
+        service::profile::Name::Standard => b"standard".as_slice(),
     };
+    let header = configuration.trace.as_ref().map(|trace| smith_events::SessionStarted {
+        wall_ms: 0,
+        agent: smith_events::Agent {
+            name: b"smith".as_slice().into(),
+            version: env!("CARGO_PKG_VERSION").as_bytes().into(),
+            build: env!("SMITH_BUILD").as_bytes().into(),
+        },
+        mode: smith_events::Mode::Agent,
+        containment: smith_events::Containment::Groups,
+        pid: u64::from(resources.pid),
+        profile: profile.into(),
+        capture: trace.capture.encoded(),
+        delivery: trace.delivery.encoded(),
+        versions: smith_events::Versions { events: smith_events::VERSION, channel: 2, charter: 2, transcript: 3 },
+        // Effective projection is owned by 04.7; no draft inventory is announced.
+        limits: List::with_capacity(0),
+    });
     let mut service = service::Service::new(configuration.service, resources.seed)
         .map_err(|error| format!("agent configuration cannot start: {error:?}"))?;
     service
         .adopt_streams(resources.input, resources.output, resources.signals)
         .map_err(|fd| format!("agent stream {} cannot be adopted", fd.raw()))?;
-    Ok(Prepared { service, trace, worst, operations, queue })
+    let mut trace_root = None;
+    if let Some(trace) = configuration.trace {
+        let fd = match resources.trace {
+            Some(fd) => fd,
+            None => {
+                let path = std::path::absolute(&trace.path).map_err(|error| format!("trace path: {error}"))?;
+                let parent = path.parent().ok_or("trace path has no parent")?;
+                let file = path.file_name().ok_or("trace path has no filename")?;
+                let root = skein_shell::open_root(parent).map_err(|error| format!("trace root: {error:?}"))?;
+                trace_root = Some(root);
+                skein_shell::open_append(root, file.as_encoded_bytes(), 0o600)
+                    .map_err(|error| format!("trace append: {error:?}"))?
+            }
+        };
+        service.adopt_destination(fd, service::Destination::Trace, trace.delivery)
+            .map_err(|fd| format!("trace descriptor {} cannot be adopted", fd.raw()))?;
+    } else if resources.trace.is_some() {
+        return Err("an inherited trace requires a configured destination".into());
+    }
+    Ok(Prepared { service, header, trace_root, worst, operations, queue })
 }
 
 impl Host for Agent {
@@ -175,13 +222,11 @@ impl Host for Agent {
         }
         if self.result.is_some() && !self.reported {
             self.reported = true;
-            let trace_dropped = self.trace.as_ref().map_or(0, trace::Trace::dropped);
             let lost = self
                 .service
                 .lost_channel_facts()
                 .saturating_add(self.service.lost_trace_facts())
-                .saturating_add(self.service.lost_trace_prompts())
-                .saturating_add(trace_dropped);
+                .saturating_add(self.service.lost_trace_prompts());
             if lost > 0 {
                 diagnostic(self.errors.as_mut(), &format!("{lost} observations were dropped"));
             }
@@ -203,21 +248,26 @@ impl Host for Agent {
         if self.result.is_some() {
             return;
         }
+        if let Some(mut header) = self.header.take() {
+            header.wall_ms = wall.as_nanos() / 1_000_000;
+            self.service.start_session(now, header);
+        }
+        if let Some(root) = self.trace_root.take() {
+            self.close(root);
+        }
         service::iterate(&mut self.service, now, wall);
-        while let Some(fact) = self.service.pop_trace_fact() {
-            if let Some(trace) = &mut self.trace {
-                trace.fact(&fact);
-            }
+        // Content collection is retired by 02.6; it does not write in this increment.
+        while self.service.pop_trace_content().is_some() {}
+        drop(self.service.pop_trace_prompt());
+        while let Some(destination) = self.service.pop_given_up() {
+            let name = match destination {
+                service::Destination::Trace => "trace file",
+                service::Destination::Output => "standard output events",
+            };
+            diagnostic(self.errors.as_mut(), &format!("event destination {name} was given up; later records count as lost"));
         }
-        while let Some(content) = self.service.pop_trace_content() {
-            if let Some(trace) = &mut self.trace {
-                trace.content(content, now.as_nanos());
-            }
-        }
-        if let Some((owner, prompt)) = self.service.pop_trace_prompt()
-            && let Some(trace) = &mut self.trace
-        {
-            trace.prompt(owner, &prompt, now.as_nanos());
+        if self.service.pop_usage_unread() {
+            diagnostic(self.errors.as_mut(), "process resource usage is unavailable");
         }
         while let Some(path) = self.service.root_to_open() {
             let host = std::str::from_utf8(path)
@@ -312,7 +362,10 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
         .inspect_err(|why| diagnostic(errors.as_mut(), why))?;
     let mut agent = Agent::new(
         configuration,
-        Resources { input: Fd::new(0), output: Fd::new(1), signals, seed, error: None, roots: None },
+        Resources {
+            input: Fd::new(0), output: Fd::new(1), signals, seed,
+            pid: skein_shell::process_id(), trace: None, error: None, roots: None,
+        },
         errors,
     )?;
     let mut kernel = Kernel::open(KernelConfig { operations: agent.operations() })

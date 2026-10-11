@@ -45,6 +45,8 @@ pub struct Limits {
     pub routes: u32,
     /// Startup refuses a complete bound above this many heap bytes.
     pub memory: u64,
+    /// Event ownership, absent for a host that has no process stream.
+    pub events: Option<crate::EventLimits>,
 }
 
 /// All startup inputs except the inherited descriptors, which the shell
@@ -110,6 +112,9 @@ enum Operation {
 #[expect(clippy::struct_excessive_bools, reason = "answer, channel, cleanup and root-close progress are independent")]
 pub struct Service {
     limits: Limits,
+    events: Option<crate::events::Producer>,
+    ending: Ending,
+    usage_unread: bool,
     domain: Option<domain::Domain>,
     channel: Option<channel::Component>,
     llm: llm::Component,
@@ -166,6 +171,19 @@ pub struct Service {
     root_close_pending: bool,
     cleanup_started: bool,
 }
+
+/// The process resource read, made after the last non-destination child closes.
+#[derive(Clone, Copy, Debug)]
+enum Ending {
+    /// The service still owns work or has no event destination.
+    Running,
+    /// IO owes the process usage terminal.
+    Measuring,
+    /// The authoritative end was offered once; destinations are closing.
+    Closing,
+}
+
+const USAGE_OWNER: Token = Token::new(u64::MAX - 1);
 
 /// Agent LLM and machine effects owned by a host that keeps the domain itself.
 /// Typed requests have typed terminals, with no channel, frames or agent process
@@ -392,7 +410,8 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
         .checked_add(stages)?
         .checked_add(environment_copies)?
         .checked_add(roots)?
-        .checked_add(pipe_routes)
+        .checked_add(pipe_routes)?
+        .checked_add(match limits.events { Some(_) => crate::events::worst_case(limits)?, None => 0 })
 }
 
 // One physical LLM socket is already included by its connection owner. The
@@ -403,7 +422,8 @@ fn io_ownership(limits: &Limits) -> Option<u64> {
     let physical = limits.llm.connection.connections;
     let other = limits.io.sockets.checked_sub(physical)?;
     let child = limits.llm.connection.io;
-    if other == 0
+    let writers = match limits.events { Some(events) => events.sinks.destinations.checked_add(1)?, None => 1 };
+    if other < writers
         || child.intake != limits.io.intake
         || child.receive != limits.io.receive
         || child.output != limits.io.output
@@ -417,7 +437,7 @@ fn io_ownership(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<Box<[u8]>>::worst_case(limits.io.sends)?)?;
     io::worst_case(&limits.io)?
         .checked_sub(u64::from(physical).checked_mul(socket)?)?
-        .checked_sub(u64::from(other.checked_sub(1)?).checked_mul(u64::from(limits.io.output))?)
+        .checked_sub(u64::from(other.checked_sub(writers)?).checked_mul(u64::from(limits.io.output))?)
 }
 
 impl Service {
@@ -445,6 +465,10 @@ impl Service {
         if memory > limits.memory {
             return Err(ConfigError::MemoryCeiling);
         }
+        let events = match limits.events {
+            Some(_) => Some(crate::events::Producer::new(&limits, config.channel_endpoints.clone(), &config.llm_endpoints, &config.domain.endpoints)),
+            None => None,
+        };
         let channel = match channel::Component::new(&limits.channel, config.stream_mode, config.channel_endpoints) {
             Ok(channel) => channel,
             Err(error) => return Err(ConfigError::Channel(error)),
@@ -458,6 +482,9 @@ impl Service {
         let wall = Wall::EPOCH;
         Ok(Service {
             limits,
+            events,
+            ending: Ending::Running,
+            usage_unread: false,
             domain: Some(domain::Domain::new(&limits.domain, config.domain, seed)),
             channel: Some(channel),
             llm,
@@ -520,6 +547,31 @@ impl Service {
             root_close_pending: false,
             cleanup_started: false,
         })
+    }
+
+    /// Adopt the shell's opened append descriptor under its declared write deadline.
+    pub fn adopt_destination(&mut self, fd: kernel::Fd, destination: crate::sinks::Destination, delivery: crate::sinks::Delivery) -> Result<(), kernel::Fd> {
+        let events = match &mut self.events { Some(events) => events, None => return Err(fd) };
+        if !events.sinks.room_for_destination(destination) { return Err(fd); }
+        let deadline = self.limits.events.expect("producer has configured ownership").write_deadline;
+        let token = self.io.adopt_append(fd, deadline)?;
+        events.sinks.add(destination, token, delivery).expect("destination room checked before descriptor adoption");
+        Ok(())
+    }
+
+    /// Record the shell's actual startup before any service pass.
+    pub fn start_session(&mut self, now: Time, header: smith_events::SessionStarted) {
+        match &mut self.events { Some(events) => events.started(now, header), None => {} }
+    }
+
+    /// One destination abandoned by IO, for the shell's operator line.
+    pub fn pop_given_up(&mut self) -> Option<crate::sinks::Destination> {
+        match &mut self.events { Some(events) => events.sinks.pop_given_up(), None => None }
+    }
+
+    /// An unread process usage terminal, reported once without changing the answer.
+    pub fn pop_usage_unread(&mut self) -> bool {
+        core::mem::replace(&mut self.usage_unread, false)
     }
 
     /// Kernel completions arriving since the last iteration.
@@ -651,6 +703,7 @@ impl Service {
         let token = self.next_send();
         let answer = run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Workspace));
         let read = None;
+        match &mut self.events { Some(events) => events.answer(self.domain_env.now, self.run_started, &answer, read), None => {} }
         if self
             .channel
             .as_mut()
@@ -833,6 +886,8 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     domain_down(service);
     component_down(service);
     cleanup(service);
+    finish_events(service);
+    match &mut service.events { Some(events) => events.sinks.down(&mut service.io_requests), None => {} }
     io_down(service);
     service.io.reclaim();
     service.llm.reclaim();
@@ -974,6 +1029,32 @@ fn cleanup(service: &mut Service) {
 }
 
 fn route_io_event(service: &mut Service, event: io::Event) {
+    match &event {
+        io::Event::Usage { owner, usage } if *owner == USAGE_OWNER => {
+            match service.ending {
+                Ending::Measuring => {},
+                Ending::Running | Ending::Closing => unreachable!("one requested usage terminal"),
+            }
+            service.usage_unread = match usage { io::Measured::Read(_) => false, io::Measured::Unread => true };
+            let channel = match &service.channel { Some(channel) => Some(channel.lost_facts()), None => None };
+            let events = service.events.as_mut().expect("only the event producer requests usage");
+            let teardown = match events.answer_at() { Some(answer) => Some(service.io_env.now.saturating_since(answer)), None => None };
+            events.sinks.ended(service.io_env.now, events.origin(), &crate::sinks::Ended {
+                exit: u8::from(!service.answer_sent || service.failed), answered: service.answer_sent,
+                teardown, usage: *usage, channel,
+            });
+            service.ending = Ending::Closing;
+            return;
+        }
+        _ => {}
+    }
+    match &mut service.events {
+        Some(events) => match io_event_owner(&event) {
+            Some(owner) if events.sinks.owns(owner) => { events.sinks.up(event); return; }
+            Some(_) | None => {}
+        },
+        None => {}
+    }
     match event {
         io::Event::Shutdown { signal: _ } => {
             if let Some(run) = service.admitted {
@@ -1186,6 +1267,7 @@ fn component_up(service: &mut Service) {
         };
         match event {
             llm::ToDomain::Completed { owner, completion } => {
+                match &mut service.events { Some(events) => events.sinks.received(owner, &completion), None => {} }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }
             llm::ToDomain::Failed { owner, failure, evidence, detail } => {
@@ -1253,6 +1335,7 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
                 Some(mounts) => mounts.is_empty(),
                 None => true,
             };
+            match &mut service.events { Some(events) => events.starting(&start), None => {} }
             service.pending_start = Some(start);
             if empty {
                 service.start_ready();
@@ -1361,6 +1444,8 @@ fn domain_up(service: &mut Service) {
 }
 
 fn domain_down(service: &mut Service) {
+    drain_facts(service);
+    match &service.domain { Some(domain) if domain.has_facts() => return, Some(_) | None => {} }
     let channel_max = channel::max_out(&service.limits.channel);
     let machine_max = machine::max_out(&service.limits.machine);
     if let Some(run) = service.admitted {
@@ -1376,6 +1461,7 @@ fn domain_down(service: &mut Service) {
         }
     }
     for _ in 0..service.domain_requests.capacity() {
+        match &service.events { Some(events) if !events.sinks.takes() => break, Some(_) | None => {} }
         if service.channel_events.room() < channel_max.to_domain
             || service.channel_below.room() < channel_max.below
             || service.llm_events.room() < llm::MAX_OUT.above
@@ -1405,6 +1491,7 @@ fn domain_down(service: &mut Service) {
 /// continues through answer and settlement; channel projection owns its phase.
 fn drain_facts(service: &mut Service) {
     for _ in 0..service.limits.queue {
+        match &service.events { Some(events) if !events.sinks.takes() => break, Some(_) | None => {} }
         let fact = match &mut service.domain {
             Some(domain) => match domain.pop_fact() {
                 Some(fact) => fact,
@@ -1420,10 +1507,15 @@ fn drain_facts(service: &mut Service) {
         {
             service.mark_failed(Failure::Send);
         }
-        if service.trace_facts.room() > 0 {
-            service.trace_facts.push(fact);
-        } else {
-            service.lost_trace_facts = service.lost_trace_facts.saturating_add(1);
+        match &mut service.events { Some(events) => events.fact(&fact), None => {} }
+    }
+    let drained = match &service.domain { Some(domain) => !domain.has_facts(), None => true };
+    if drained {
+        match &mut service.events {
+            Some(events) => for _ in 0..service.limits.domain.run.conversations {
+                if !events.sinks.takes() || !events.sinks.facts_drained(events.origin()) { break; }
+            },
+            None => {}
         }
     }
 }
@@ -1526,6 +1618,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
         }
         domain::Request::Answer { to, answer, read } => {
             assert!(to.into_token() == Token::new(1), "one Start reply right per process");
+            match &mut service.events { Some(events) => events.answer(service.domain_env.now, service.run_started, &answer, read), None => {} }
             let token = service.next_send();
             if service
                 .channel
@@ -1595,6 +1688,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             max_failure_bytes,
             decoded_call_bytes,
         } => {
+            match &mut service.events { Some(events) => events.request(service.domain_env.now, owner, &prompt), None => {} }
             if service.capture_prompts {
                 if service.trace_prompt.is_some() {
                     service.lost_trace_prompts = service.lost_trace_prompts.saturating_add(1);
@@ -1920,6 +2014,10 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
     };
     due || service.io.is_ready()
         || service.llm.has_work()
+        || match &service.events {
+            Some(events) => events.sinks.has_work(),
+            None => false,
+        }
         || match &service.domain {
             Some(domain) => domain.is_ready() || domain.has_facts(),
             None => false,
@@ -1951,7 +2049,30 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
 /// answer crossed the channel.
 #[must_use]
 pub fn done(service: &Service) -> Option<bool> {
-    if service.channel_ended
+    if settled(service, 0) && service.io.is_empty()
+        && match &service.events { Some(events) => events.sinks.closed(), None => true }
+    {
+        Some(service.answer_sent && !service.failed)
+    } else {
+        None
+    }
+}
+
+fn finish_events(service: &mut Service) {
+    match service.ending {
+        Ending::Running => {},
+        Ending::Measuring | Ending::Closing => return,
+    }
+    let streams = match &service.events { Some(events) => events.sinks.open_streams(), None => return };
+    if settled(service, streams) && service.io_requests.room() > 0 {
+        service.io_requests.push(io::Request::Usage { owner: USAGE_OWNER });
+        service.ending = Ending::Measuring;
+    }
+}
+
+/// All non-destination children have reported closed; only these streams may remain.
+fn settled(service: &Service, streams: u32) -> bool {
+    service.channel_ended
         && service.channel_events.is_empty()
         && service.channel_below.is_empty()
         && service.llm_events.is_empty()
@@ -1970,7 +2091,7 @@ pub fn done(service: &Service) -> Option<bool> {
         && service.io_submissions.is_empty()
         && service.file_submissions.is_empty()
         && service.completions.is_empty()
-        && service.io.is_empty()
+        && service.io.sockets() == streams
         && service.files.takes()
         && service.files.open_files() == 0
         && service.roots.is_empty()
@@ -1978,11 +2099,6 @@ pub fn done(service: &Service) -> Option<bool> {
         && service.pipe_routes.is_empty()
         && service.operations.is_empty()
         && service.submissions.is_empty()
-    {
-        Some(service.answer_sent && !service.failed)
-    } else {
-        None
-    }
 }
 
 /// The first concrete failure, retained for the shell's final stderr line.
@@ -2101,6 +2217,7 @@ mod tests {
             queue: domain::max_out(&smith_agent_world::LIMITS).max(256),
             routes: io::operations(&io).expect("bounded test IO").checked_add(2).expect("file routes fit"),
             memory: u64::MAX,
+            events: None,
         }
     }
 

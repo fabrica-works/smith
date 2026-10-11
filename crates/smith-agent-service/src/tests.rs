@@ -10,6 +10,23 @@
 use alloc::boxed::Box;
 use skein_lib::List;
 
+#[test]
+fn every_settled_check_exit_preserves_its_kind_and_only_zero_passes() {
+    use smith_domain::run;
+    use smith_events::CheckExit;
+    let cases = [
+        (run::Exit::Code { code: 0 }, CheckExit::Code { code: 0 }, true),
+        (run::Exit::Code { code: 255 }, CheckExit::Code { code: 255 }, false),
+        (run::Exit::Signalled { signal: u32::MAX }, CheckExit::Signal { signal: u64::from(u32::MAX) }, false),
+        (run::Exit::TimedOut, CheckExit::TimedOut, false),
+        (run::Exit::Unstarted, CheckExit::Unstarted, false),
+        (run::Exit::Cancelled, CheckExit::Cancelled, false),
+    ];
+    for (actual, expected, passed) in cases {
+        assert_eq!(crate::check_exit(actual), (expected, passed));
+    }
+}
+
 fn declarations(environment_bytes: u32) -> crate::profile::Configuration {
     use crate::profile::{Configuration, Endpoint, Model, OversizedReasoning};
     Configuration {

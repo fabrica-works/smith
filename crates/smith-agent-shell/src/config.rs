@@ -22,7 +22,7 @@ use smith_protocol_channel as channel;
 use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
-use crate::trace::{Capture, TraceConfig};
+use crate::trace::{Capture, Delivery, TraceConfig};
 use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Layer, LimitName, Per, Refusal};
 
 const CONFIG_BYTES: u64 = 1 << 20;
@@ -124,8 +124,15 @@ struct ModelDocument {
 #[serde(deny_unknown_fields)]
 struct TraceDocument {
     path: String,
+    #[serde(default = "default_capture")]
     capture: String,
+    #[serde(default = "default_delivery")]
+    delivery: String,
 }
+
+fn default_capture() -> String { "none".into() }
+
+fn default_delivery() -> String { "complete".into() }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -231,7 +238,12 @@ fn build(document: Document) -> Result<Configuration, String> {
                 "everything" => Capture::Everything,
                 _ => return Err("trace capture must be none, calls or everything".into()),
             };
-            Some(TraceConfig { path: trace.path.into(), capture })
+            let delivery = match trace.delivery.as_str() {
+                "complete" => Delivery::Complete,
+                "best_effort" => Delivery::BestEffort,
+                _ => return Err("trace delivery must be complete or best_effort".into()),
+            };
+            Some(TraceConfig { path: trace.path.into(), capture, delivery })
         }
         None => None,
     };
@@ -260,7 +272,18 @@ fn build(document: Document) -> Result<Configuration, String> {
         environment_bytes: u32::try_from(environment_bytes).map_err(|_| environment_size_refusal())?,
         endpoints: declarations.into_boxed_slice(),
     };
-    let limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
+    let mut limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
+    if let Some(trace) = &trace {
+        let mut options = 0_u32;
+        for endpoint in &document.endpoints {
+            if let Some(effort) = &endpoint.reasoning_effort { options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?); }
+        }
+        let events = service::EventLimits::derive(&limits, trace.capture, 1, options, profile.policy.write_deadline).ok_or("event ownership overflow")?;
+        let line = events.sinks.output.checked_div(5).ok_or("event output bound")?;
+        limits.io.output = limits.io.output.max(line);
+        limits.llm.connection.io.output = limits.io.output;
+        limits.events = Some(events);
+    }
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
     let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
@@ -296,9 +319,7 @@ fn build(document: Document) -> Result<Configuration, String> {
             None => false,
         },
     };
-    let reserve = if trace.is_some() { crate::trace::MEMORY_RESERVE } else { 0 };
     let complete = service::worst_case(&config.limits, &config.llm_endpoints)
-        .and_then(|bytes| bytes.checked_add(reserve))
         .ok_or_else(|| {
             profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
         })?;
