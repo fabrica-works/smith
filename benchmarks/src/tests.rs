@@ -160,6 +160,8 @@ fn sample_catalogue() -> Vec<crate::CatalogueTask> {
     let mut task = check_task(&manifest, &root.join("../docs/design")).expect("recorded task");
     task.behaviours.push("read".into());
     task.variant.push(crate::Variant {
+        replace_checks: false,
+        deciding: Vec::new(),
         name: "short".into(),
         prompt: None,
         smith: std::collections::BTreeMap::new(),

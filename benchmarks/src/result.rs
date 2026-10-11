@@ -286,6 +286,9 @@ pub struct CheckVerdict {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
+    /// Author-selected deciding check names; advisory observations stay in checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deciding: Vec<String>,
     pub end: End,
     pub exit: Measure<Exit>,
     pub forced: Forced,

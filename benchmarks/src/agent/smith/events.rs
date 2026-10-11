@@ -10,6 +10,7 @@ use crate::agent::{HarnessFault, Seen};
 use crate::{Classification, Counts, Exit, Forced, TokenRecord};
 
 mod usage;
+mod usage_sums;
 
 mod loss;
 

@@ -1,0 +1,13 @@
+name = "calibrate"
+tier = "small"
+design = "single"
+repetitions = 10
+rerun_failed = 1
+max_wall_seconds = 7200
+max_tokens = 3000000
+tasks = ["probes/first-request", "probes/smoke-tools", "probes/large-write", "probes/budget/child-quota", "probes/budget/wrap-up"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "smoke"

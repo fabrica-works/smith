@@ -1,0 +1,1 @@
+Value 1; next part02.txt.

@@ -250,6 +250,7 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
 fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, currency: Option<u64>) -> Measure<bool> {
     let records = records(observer);
     match check {
+        EventCheck::UsageSums => super::usage_sums::check(observer),
         EventCheck::ToolCall { .. } => tool_call(observer, check),
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ToolCompleted(value) if verdicts.iter().any(|verdict| verdict.as_bytes() == names::verdict(&value.verdict))))),
@@ -264,7 +265,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::ChildrenOverlap { at_least } => children_overlap(observer, *at_least),
         EventCheck::NoFailure { class } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ResponseCompleted(value) if value.failure.as_ref().is_some_and(|value| names::failure(&value.class) == class.as_bytes())))),
-        EventCheck::RunCompleted { status, class } => {
+        EventCheck::RunCompleted { status, class, reason } => {
             let terminals: Vec<_> = records.iter().filter_map(|record| match &record.event {
                 Event::RunCompleted(value) => Some(value),
                 Event::MessageReceived(_) | Event::MessageRead(_) | Event::MessageUnread(_) | Event::Budget(_) | Event::SessionStarted(_) | Event::SessionEnded(_) | Event::RunStarted(_)
@@ -272,6 +273,18 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
                 | Event::TextDelta(_) | Event::ToolStarted(_) | Event::ToolCompleted(_) | Event::CheckStarted(_)
                 | Event::CheckCompleted(_) | Event::Notice(_) => None,
             }).collect();
+            if let Some(pattern) = reason {
+                let pattern = regex::Regex::new(pattern).expect("manifest regex checked");
+                for value in &terminals {
+                    let Some(reason) = value.failure.as_ref().and_then(|failure| failure.reason.as_ref()) else {
+                        return unavailable("run failure reason was not captured");
+                    };
+                    let Ok(text) = std::str::from_utf8(reason) else {
+                        return unavailable("run failure reason is not UTF-8");
+                    };
+                    if !pattern.is_match(text) { return measured(false); }
+                }
+            }
             measured(!terminals.is_empty() && terminals.iter().all(|value| names::status(&value.status) == status.as_bytes()
                 && class.as_ref().is_none_or(|class| value.failure.as_ref().is_some_and(|value| names::answer(&value.class) == class.as_bytes()))))
         }

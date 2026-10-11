@@ -223,7 +223,13 @@ fn metric_summary(results: &[&AttemptResult], metric: &str) -> Result<MetricSumm
 
 fn checks_passed(result: &AttemptResult) -> Option<bool> {
     let mut unknown = result.outcome.checks.is_empty();
+    for name in &result.outcome.deciding {
+        unknown |= !result.outcome.checks.iter().any(|check| check.check == *name);
+    }
     for check in &result.outcome.checks {
+        if !result.outcome.deciding.is_empty() && !result.outcome.deciding.contains(&check.check) {
+            continue;
+        }
         match &check.passed {
             Measure::Observed { value: false } => return Some(false),
             Measure::Observed { value: true } => {}
@@ -234,30 +240,10 @@ fn checks_passed(result: &AttemptResult) -> Option<bool> {
 }
 
 pub(crate) fn passed(result: &AttemptResult) -> Option<bool> {
-    match result.outcome.end {
-        End::Completed => {
-            let checks = checks_passed(result);
-            match &result.outcome.grade {
-                Some(Measure::Observed { value: false }) => Some(false),
-                Some(Measure::Observed { value: true }) => {
-                    if result.outcome.checks.is_empty() {
-                        Some(true)
-                    } else {
-                        checks
-                    }
-                }
-                Some(Measure::LowerBound { .. } | Measure::Unavailable { .. }) => {
-                    if checks == Some(false) {
-                        Some(false)
-                    } else {
-                        None
-                    }
-                }
-                None => checks,
-            }
-        }
-        End::Failed { .. } | End::Timeout | End::HarnessError { .. } => Some(false),
-        End::Budget { .. } | End::Refused { .. } => None,
+    match crate::judge(result) {
+        crate::Judgment::Pass => Some(true),
+        crate::Judgment::Fail => Some(false),
+        crate::Judgment::Incomplete => None,
     }
 }
 

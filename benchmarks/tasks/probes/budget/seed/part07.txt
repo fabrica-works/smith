@@ -1,0 +1,1 @@
+Value 7; next part08.txt.

@@ -7,6 +7,7 @@
 
 mod check;
 mod formats;
+mod judgment;
 mod models;
 mod passive;
 mod result;
@@ -50,6 +51,8 @@ pub use summary::{
     read_baseline, read_results, read_summary, summarise, write_summary,
 };
 pub use tokens::{Convention, ScopeKind, TokenCounts, TokenLedger, TokenRecord, Usage};
+
+pub use judgment::{Judgment, judge, judge_suite};
 
 pub use passive::{HeadroomOf, Passive};
 

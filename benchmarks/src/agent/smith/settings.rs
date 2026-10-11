@@ -49,8 +49,8 @@ fn budget(shape: Shape, task: &Task, variant: Option<&Variant>) -> Result<Value,
     }
     let mut value = json!({"turns":requested_turns,"spend":requested_spend,"seconds":requested_seconds});
     if shape == Shape::LocalReserved {
-        if requested_turns <= 2 || requested_seconds <= 1 {
-            return Err("native reserve requires room below total turns and time".into());
+        if requested_seconds <= 1 {
+            return Err("native reserve requires room below total time".into());
         }
         value["reserve"] = json!({"turns":2,"seconds":if requested_seconds>300 {300} else {requested_seconds/2}});
     }
@@ -222,6 +222,18 @@ mod tests {
     use super::*;
     use crate::agent::Context;
     use crate::arm::ArmRef;
+
+    #[test]
+    fn one_turn_refusal_reaches_the_product_with_the_default_reserve() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut task = crate::read_task(&directory.join("tests/recorded/tasks/valid/task.toml")).expect("task");
+        task.budget.turns = Some(1);
+        task.budget.seconds = Some(600);
+        task.deadline_seconds = 630;
+        let refused_input = budget(Shape::LocalReserved, &task, None).expect("product judges entrance reserve");
+        assert_eq!(refused_input["turns"], 1);
+        assert_eq!(refused_input["reserve"], json!({"turns":2,"seconds":300}));
+    }
 
     #[test]
     fn native_shapes_keep_task_deadlines_environment_prices_and_named_overrides() {

@@ -143,7 +143,11 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
                 missing("legacy loss prevents proving no forbidden failure")
             }
         }
-        EventCheck::RunCompleted { status, class } => terminal(records, status, class.as_deref()),
+        EventCheck::RunCompleted { reason: Some(_), .. } => {
+            missing("legacy terminal has no authoritative failure reason")
+        }
+        EventCheck::RunCompleted { status, class, reason: None } => terminal(records, status, class.as_deref()),
+        EventCheck::UsageSums => missing("legacy raw run usage totals do not prove complete per-response sums"),
         EventCheck::NoRequest => missing("legacy CompletionStarted is logical intent, not an actual native HTTP start"),
         EventCheck::FirstRequestHoldsTask
         | EventCheck::NothingBeforeTask

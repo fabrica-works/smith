@@ -1,0 +1,91 @@
+id = "large-write"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Create payload.txt with exactly 32768 ASCII A characters and no newline using exactly one write call containing the complete string. Do not use shell, edit, or delegate. Then finish with ALPHA.\n"
+seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
+guards = ["domain/tools.md, section 3", "protocol/limits.md, section 6"]
+deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "tool-call", "no-stop", "run-completed"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "5ff074ddad88b7fcb4339cb7a3e68341061792869e43673b2de8525a75476bd8"
+[[event]]
+check = "tool-call"
+tool = "write"
+count = { exactly = 1 }
+input_bytes_at_least = 32768
+verdict = "written"
+[[event]]
+check = "no-stop"
+stop = "max_tokens"
+
+[[variant]]
+name = "oversized"
+replace_checks = true
+prompt = "First attempt exactly one write of payload.txt with exactly 50000 ASCII A characters and no newline, in one call. After the oversized refusal, create the same file in pieces: write an initial piece and append the remaining piece with edit, keeping each call within the declared payload, until it contains exactly those 50000 characters. Never use shell or delegate. Then finish with ALPHA.\n"
+deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "blocks", "no-stop", "run-completed"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[variant.outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "50cbe91e7bc072a7a58eef057cad901d2d3eb30e544a6f30ad0b2bd32274f753"
+[[variant.event]]
+check = "blocks"
+oversized = { exactly = 1 }
+[[variant.event]]
+check = "no-stop"
+stop = "max_tokens"
+[[variant.event]]
+check = "run-completed"
+status = "accepted"

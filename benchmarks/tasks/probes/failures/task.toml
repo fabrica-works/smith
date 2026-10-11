@@ -1,0 +1,57 @@
+id = "failures"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 630
+prompt = "Read README.md using one read call, then in your next completion finish with its token. Do not batch the read with finish or make any other call.\n"
+seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
+guards = ["domain/run.md, section 9", "shell.md, section 4.3"]
+
+[budget]
+seconds = 600
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[variant]]
+name = "one-turn"
+budget = { seconds = 600, turns = 1 }
+deciding = ["end", "exit-code", "last-line", "run-completed", "no-request", "stream-whole", "tree-ended"]
+[[variant.outcome]]
+check = "end"
+end = "refused"
+[[variant.outcome]]
+check = "exit-code"
+code = 2
+[[variant.outcome]]
+check = "last-line"
+pattern = "(?i)budget.*reserve|reserve.*budget"
+[[variant.event]]
+check = "run-completed"
+status = "refused"
+class = "invalid"
+reason = "(?i)budget.*reserve|reserve.*budget"
+[[variant.event]]
+check = "no-request"

@@ -80,6 +80,17 @@ fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prep
     Ok(ordered)
 }
 
+fn observed_no_request(result: &AttemptResult) -> bool {
+    ["no-request", "stream-whole"].into_iter().all(|name| {
+        result.outcome.deciding.iter().any(|deciding| deciding == name)
+            && result
+                .outcome
+                .checks
+                .iter()
+                .any(|check| check.check == name && check.passed == Measure::Observed { value: true })
+    })
+}
+
 fn known_tokens(result: &AttemptResult) -> Option<u64> {
     let total = result.tokens.iter().find(|record| record.role == ScopeKind::Total)?;
     // Cache write is already within fresh input; reasoning is within output.
@@ -301,7 +312,7 @@ pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Ba
             break;
         }
         let result = dispatch(&guard, &machine, &state, &clock, &executable, &request, remaining)?;
-        incomplete |= matches!(result.outcome.end, End::Refused { .. });
+        incomplete |= crate::judge(&result) == crate::Judgment::Incomplete;
         let key = format!("{}/{}", request.identity.task, request.identity.arm);
         if request.identity.task.starts_with("probes/") {
             if let Some(passed) = crate::summary::passed(&result) {
@@ -322,11 +333,12 @@ pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Ba
             }
         }
         let tokens = known_tokens(&result);
+        let no_request = observed_no_request(&result);
         results.push(result);
         if let Some(count) = tokens {
             used = used.checked_add(count).ok_or("suite token count overflow")?;
             incomplete |= used > suite.max_tokens;
-        } else {
+        } else if !no_request {
             incomplete = true;
             break;
         }

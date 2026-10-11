@@ -344,7 +344,7 @@ fn author_predicates_use_typed_records_and_missing_content_stays_unavailable() {
         EventCheck::Completions { count: Count::Exactly(1), before: Before::Answer },
         EventCheck::ConversationOpened { kind: "main".into(), count: Count::Exactly(1) },
         EventCheck::NoFailure { class: "limit".into() },
-        EventCheck::RunCompleted { status: "accepted".into(), class: None },
+        EventCheck::RunCompleted { status: "accepted".into(), class: None, reason: None },
         EventCheck::NoStop { stop: "max_tokens".into() },
     ] {
         assert_eq!(observer.check(&check, "task").passed, Measure::Observed { value: true });
@@ -1321,8 +1321,50 @@ fn headroom_maxima_compare_each_conversation_ratio_instead_of_aggregating_usage(
     );
 }
 
+fn smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_zero() {
+    let mut values = balanced();
+    let usage = match &values[4].event {
+        Event::ResponseCompleted(value) => value.usage.clone(),
+        Event::Budget(_)
+        | Event::SessionStarted(_)
+        | Event::SessionEnded(_)
+        | Event::RunStarted(_)
+        | Event::RunCompleted(_)
+        | Event::ConversationOpened(_)
+        | Event::ConversationClosed(_)
+        | Event::ResponseStarted(_)
+        | Event::TextDelta(_)
+        | Event::ToolStarted(_)
+        | Event::ToolCompleted(_)
+        | Event::CheckStarted(_)
+        | Event::CheckCompleted(_)
+        | Event::MessageReceived(_)
+        | Event::MessageRead(_)
+        | Event::MessageUnread(_)
+        | Event::Notice(_) => panic!("response fixture"),
+    };
+    if let Event::RunCompleted(value) = &mut values[6].event {
+        value.usage = usage;
+    }
+    let predicate = smith_bench::EventCheck::UsageSums;
+    assert_eq!(observe(&values).check(&predicate, "task").passed, Measure::Observed { value: true });
+    if let Event::RunCompleted(value) = &mut values[6].event {
+        value.usage.output_tokens = Some(6);
+    }
+    assert_eq!(observe(&values).check(&predicate, "task").passed, Measure::Observed { value: false });
+    if let Event::RunCompleted(value) = &mut values[6].event {
+        value.usage.output_tokens = Some(5);
+    }
+    if let Event::ResponseCompleted(value) = &mut values[4].event {
+        value.usage.cache_read_tokens = None;
+    }
+    assert!(matches!(observe(&values).check(&predicate, "task").passed, Measure::Unavailable { .. }));
+}
+
 #[test]
 fn typed_event_stream_classification_usage_and_author_predicates() {
+    smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_zero();
+    expected_entrance_refusal_requires_captured_reason_and_no_request();
     every_codec_golden_remains_readable_as_outside_recorded_bytes();
     unread_resources_stay_null_and_do_not_change_terminals_or_response_usage();
     emitted_inventory_compares_received_types_with_each_destination_loss();
@@ -1376,4 +1418,43 @@ fn emitted_inventory_compares_received_types_with_each_destination_loss() {
         observer.feed(&bytes(std::slice::from_ref(value))).expect("typed stream");
     }
     assert!(matches!(passed(&observer, "nothing-lost"), Measure::Unavailable { .. }));
+}
+
+fn expected_entrance_refusal_requires_captured_reason_and_no_request() {
+    let original = balanced();
+    let mut values = vec![original[0].clone(), original[6].clone(), original[7].clone()];
+    if let Event::RunCompleted(value) = &mut values[1].event {
+        value.status = smith_events::Status::Refused;
+        value.result = None;
+        value.failure = Some(smith_events::AnswerFailure {
+            class: smith_events::AnswerClass::Invalid,
+            completion: None,
+            account: None,
+            which: Some(Box::from(&b"budget reserve"[..])),
+            reason: Some(Box::from(&b"budget reserve turns 2 must be below total turns 1"[..])),
+        });
+    }
+    if let Event::SessionEnded(value) = &mut values[2].event {
+        value.exit = 2;
+    }
+    let predicate = smith_bench::EventCheck::RunCompleted {
+        status: "refused".into(),
+        class: Some("invalid".into()),
+        reason: Some("budget.*reserve".into()),
+    };
+    let observer = observe_against(&values, None);
+    assert_eq!(
+        observer.classify(Exit::Code(2), Forced::No).end,
+        End::Refused { setup: "budget reserve turns 2 must be below total turns 1".into() }
+    );
+    assert_eq!(observer.check(&predicate, "task").passed, Measure::Observed { value: true });
+    assert_eq!(observer.check(&smith_bench::EventCheck::NoRequest, "task").passed, Measure::Observed { value: true });
+    if let Event::RunCompleted(value) = &mut values[1].event {
+        value.failure.as_mut().expect("invalid refusal").reason = Some(Box::from(&b"unrelated setting"[..]));
+    }
+    assert_eq!(observe_against(&values, None).check(&predicate, "task").passed, Measure::Observed { value: false });
+    if let Event::RunCompleted(value) = &mut values[1].event {
+        value.failure.as_mut().expect("invalid refusal").reason = None;
+    }
+    assert!(matches!(observe_against(&values, None).check(&predicate, "task").passed, Measure::Unavailable { .. }));
 }

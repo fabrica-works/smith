@@ -1,0 +1,63 @@
+id = "first-request"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Write exactly FIRST_REQUEST followed by a newline to first.txt using one write call, then immediately finish with ALPHA. Do not list, read, wait, invoke shell, delegate, or make any other call.\n"
+seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
+guards = ["domain/run.md, section 3", "domain/run.md, section 6"]
+deciding = ["end", "exit-code", "answer", "file-content:first.txt", "first-request-holds-task", "nothing-before-task", "completions", "run-completed"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[outcome]]
+check = "file-content"
+path = "first.txt"
+content = "FIRST_REQUEST\n"
+[[event]]
+check = "first-request-holds-task"
+[[event]]
+check = "nothing-before-task"
+[[event]]
+check = "completions"
+count = { at-most = 2 }
+before = "answer"
+

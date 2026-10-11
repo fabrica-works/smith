@@ -25,6 +25,7 @@ pub(super) const fn neutral(check: &OutcomeCheck) -> bool {
 #[derive(Default)]
 pub(super) struct Neutral {
     checks: Vec<OutcomeCheck>,
+    deciding: Vec<String>,
     waived: Vec<crate::Passive>,
     ended: Option<Ended>,
 }
@@ -33,6 +34,7 @@ impl Neutral {
     pub(super) fn task(&mut self, task: &Task) {
         self.checks = task.outcome.iter().filter(|check| neutral(check)).cloned().collect();
         self.waived.clone_from(&task.waives);
+        self.deciding.clone_from(&task.deciding);
     }
 
     pub(super) fn observed(
@@ -58,6 +60,7 @@ impl Neutral {
     }
 
     pub(super) fn finish(self, result: &mut AttemptResult) {
+        result.outcome.deciding = self.deciding;
         result.health.passive_checks.push(super::passive::protected(&result.outcome.protected_files_changed));
         result.health.passive_checks.push(super::passive::benchmark_unread());
         result.outcome.checks.extend(crate::passive::judge(&result.health, &self.waived, &result.outcome));

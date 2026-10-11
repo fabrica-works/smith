@@ -1,0 +1,73 @@
+id = "budget"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Delegate the requested read-only survey, wait for its answer, then finish with ALPHA.\n"
+seed_sha256 = "e0c90592e3e1e61142c5e7493c84a33b4d39f6a0d38e3ff3227f61da6922198f"
+guards = ["domain/run.md, section 5.3", "domain/run.md, section 9"]
+deciding = ["end", "exit-code", "answer", "run-completed"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[event]]
+check = "run-completed"
+status = "accepted"
+
+[[variant]]
+name = "child-quota"
+prompt = "Delegate one read-only child with max_turns 2. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report the sum. Wait for its answer, then finish with ALPHA and the child's partial or full report.\n"
+deciding = ["child-share", "conversation-opened"]
+[[variant.event]]
+check = "child-share"
+turns_at_most = 2
+[[variant.event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 1 }
+
+[[variant]]
+name = "wrap-up"
+prompt = "Delegate one read-only child with max_turns 3. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report its sum. Wait for the child's budget-stopped report, then finish with ALPHA and that report.\n"
+deciding = ["final-turn", "conversation-opened"]
+[[variant.event]]
+check = "final-turn"
+[[variant.event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 1 }

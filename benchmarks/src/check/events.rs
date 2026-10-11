@@ -107,10 +107,14 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
                 }
             }
             EventCheck::NoFailure { class } => named(file, &format!("{key}.class"), class, FAILURES)?,
-            EventCheck::RunCompleted { status, class } => {
+            EventCheck::RunCompleted { status, class, reason } => {
                 named(file, &format!("{key}.status"), status, &["accepted", "parked", "failed", "refused"])?;
                 if let Some(value) = class {
                     named(file, &format!("{key}.class"), value, ANSWERS)?;
+                }
+                if let Some(pattern) = reason {
+                    regex::Regex::new(pattern)
+                        .map_err(|error| Refusal::new(file, &format!("{key}.reason"), error.to_string()))?;
                 }
             }
             EventCheck::CallsInOneResponse { tool, at_least } => {
@@ -123,7 +127,8 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
                     return Err(Refusal::new(file, &key, "cardinality must be positive"));
                 }
             }
-            EventCheck::Completions { .. }
+            EventCheck::UsageSums
+            | EventCheck::Completions { .. }
             | EventCheck::FirstRequestHoldsTask
             | EventCheck::NothingBeforeTask
             | EventCheck::HandledOnce

@@ -189,26 +189,7 @@ fn attempt_command(request: &Path) -> ExitCode {
     match smith_bench::run::attempt_file(request) {
         Ok(recorded) => {
             println!("{}", recorded.directory.join("result.json").display());
-            if recorded.incomplete != smith_bench::run::Incomplete::No {
-                ExitCode::from(2)
-            } else if matches!(recorded.result.outcome.end, smith_bench::End::Completed)
-                && recorded
-                    .result
-                    .outcome
-                    .checks
-                    .iter()
-                    .all(|check| check.passed == smith_bench::Measure::Observed { value: true })
-                && recorded
-                    .result
-                    .outcome
-                    .grade
-                    .as_ref()
-                    .is_none_or(|grade| *grade == smith_bench::Measure::Observed { value: true })
-            {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
-            }
+            ExitCode::from(smith_bench::judge(&recorded.result).code())
         }
         Err(error) => {
             eprintln!("{error}");
@@ -228,15 +209,7 @@ fn run_command(suite: &Path, prepared: &Path, seed: &str) -> ExitCode {
             for (probe, verdict) in &batch.probes {
                 println!("{probe}: {verdict:?}");
             }
-            if batch.incomplete {
-                ExitCode::from(2)
-            } else if batch.probes.values().any(|verdict| {
-                matches!(verdict, smith_bench::ProbeVerdict::Regression | smith_bench::ProbeVerdict::Rerun)
-            }) {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            }
+            ExitCode::from(smith_bench::judge_suite(&batch.results, batch.incomplete).code())
         }
         Err(error) => {
             eprintln!("{error}");

@@ -128,6 +128,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
     }
     check_outcomes(file, "outcome", &task.outcome)?;
     events::checks(file, "event", &task.event)?;
+    deciding(file, "deciding", &task.deciding, &task.outcome, &task.event)?;
     for (index, grade) in task.grade.iter().enumerate() {
         if grade.command.is_empty() || grade.deadline_seconds == 0 || grade.max_output_bytes == 0 {
             return Err(Refusal::new(
@@ -156,6 +157,17 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         }
         check_outcomes(file, &format!("{key}.outcome"), &variant.outcome)?;
         events::checks(file, &format!("{key}.event"), &variant.event)?;
+        let outcomes = if variant.replace_checks {
+            variant.outcome.clone()
+        } else {
+            task.outcome.iter().chain(&variant.outcome).cloned().collect::<Vec<_>>()
+        };
+        let events = if variant.replace_checks {
+            variant.event.clone()
+        } else {
+            task.event.iter().chain(&variant.event).cloned().collect::<Vec<_>>()
+        };
+        deciding(file, &format!("{key}.deciding"), &variant.deciding, &outcomes, &events)?;
     }
     match task.kind {
         Kind::Probe => {}
@@ -347,4 +359,66 @@ fn seed_files(root: &Path, directory: &Path, files: &mut Vec<PathBuf>) -> Result
         }
     }
     Ok(())
+}
+
+fn deciding(
+    file: &Path,
+    key: &str,
+    names: &[String],
+    outcomes: &[OutcomeCheck],
+    events: &[crate::EventCheck],
+) -> Result<(), Refusal> {
+    let mut allowed = outcomes.iter().map(outcome_name).collect::<BTreeSet<_>>();
+    allowed.extend(events.iter().map(|event| event.name().to_owned()));
+    allowed.extend(
+        [
+            "tree-ended",
+            "protected-unchanged",
+            "nothing-outside",
+            "benchmark-unread",
+            "stream-whole",
+            "exit-agrees",
+            "nothing-lost",
+            "teardown",
+            "paired",
+            "message-terminals",
+            "spend-sums",
+            "no-limit-failure",
+            "headroom/request-bytes",
+            "headroom/prompt-tokens",
+            "headroom/first-byte",
+            "headroom/largest-gap",
+            "headroom/turns",
+            "headroom/spend",
+            "headroom/peak-rss",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    let mut seen = BTreeSet::new();
+    for (index, name) in names.iter().enumerate() {
+        if !allowed.contains(name) || !seen.insert(name) {
+            return Err(Refusal::new(
+                file,
+                &format!("{key}[{index}]"),
+                "expected a unique check declared by this task or a known passive check",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn outcome_name(check: &OutcomeCheck) -> String {
+    match check {
+        OutcomeCheck::FileContent { path, .. } => format!("file-content:{}", path.display()),
+        OutcomeCheck::FileDigest { path, .. } => format!("file-digest:{}", path.display()),
+        OutcomeCheck::Absent { path } => format!("absent:{}", path.display()),
+        OutcomeCheck::Pattern { path, .. } => format!("pattern:{}", path.display()),
+        OutcomeCheck::Protected { path } => format!("protected:{}", path.display()),
+        OutcomeCheck::End { .. } => "end".into(),
+        OutcomeCheck::ExitCode { .. } => "exit-code".into(),
+        OutcomeCheck::LastLine { .. } => "last-line".into(),
+        OutcomeCheck::Answer { .. } => "answer".into(),
+        OutcomeCheck::LoginUnchanged => "login-unchanged".into(),
+    }
 }

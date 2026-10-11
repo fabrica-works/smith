@@ -59,6 +59,8 @@ pub enum EventCheck {
         exit: Option<i64>,
         clamped: Option<bool>,
     },
+    /// Response usage sums match each authoritative run total.
+    UsageSums,
     /// No tool ends with any of these verdicts.
     NoVerdict { verdicts: Vec<String> },
     /// Completions have this cardinality before the named boundary.
@@ -98,7 +100,7 @@ pub enum EventCheck {
     /// No response has this completion failure class.
     NoFailure { class: String },
     /// The authoritative run terminal has this status and optional failure class.
-    RunCompleted { status: String, class: Option<String> },
+    RunCompleted { status: String, class: Option<String>, reason: Option<String> },
     /// The process refuses before making a provider request.
     NoRequest,
 }
@@ -109,6 +111,7 @@ impl EventCheck {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::ToolCall { .. } => "tool-call",
+            Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",
             Self::Completions { .. } => "completions",
             Self::FirstRequestHoldsTask => "first-request-holds-task",
@@ -208,6 +211,12 @@ pub struct Calibration {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
+    /// Replace the base checks and deciding names; absent keeps historical additions.
+    #[serde(default)]
+    pub replace_checks: bool,
+    /// Result check names that decide this variant, added to the base task.
+    #[serde(default)]
+    pub deciding: Vec<String>,
     pub name: String,
     pub prompt: Option<String>,
     #[serde(default)]
@@ -227,6 +236,9 @@ pub struct Variant {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
+    /// Result check names that decide this probe; empty retains historical all-check judgment.
+    #[serde(default)]
+    pub deciding: Vec<String>,
     pub id: String,
     pub version: u32,
     pub kind: Kind,
@@ -263,6 +275,32 @@ pub struct Task {
     #[serde(default)]
     pub variant: Vec<Variant>,
     pub calibration: Option<Calibration>,
+}
+
+impl Task {
+    /// Apply one named authored change, retaining additive checks unless replacement is explicit.
+    pub fn with_variant(&self, name: &str) -> Result<Self, String> {
+        let variant = self.variant.iter().find(|variant| variant.name == name).ok_or("unknown task variant")?;
+        let mut task = self.clone();
+        if let Some(prompt) = &variant.prompt {
+            task.prompt.clone_from(prompt);
+        }
+        if variant.replace_checks {
+            task.deciding.clear();
+            task.outcome.clear();
+            task.event.clear();
+        }
+        task.deciding.extend(variant.deciding.clone());
+        task.environment.extend(variant.environment.clone());
+        task.outcome.extend(variant.outcome.clone());
+        task.event.extend(variant.event.clone());
+        task.waives.extend(variant.waives.clone());
+        task.smith.extend(variant.smith.clone());
+        if let Some(budget) = &variant.budget {
+            task.budget.clone_from(budget);
+        }
+        Ok(task)
+    }
 }
 
 /// A manifest or input refusal returned by the harness to its caller.

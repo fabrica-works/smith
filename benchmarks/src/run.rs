@@ -61,7 +61,7 @@ pub struct Recorded {
 /// Whether preparation prevented this attempt from contributing to a complete suite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Incomplete {
-    /// The attempt reached inference and has its measured terminal.
+    /// The prepared product invocation ran and has its measured terminal.
     No,
     /// Setup refused the attempt at this named preparation step.
     Setup(SetupStep),
@@ -113,6 +113,7 @@ fn blank(identity: Identity) -> AttemptResult {
             usd: Measure::unavailable("adapter has not supplied scoped usage and prices"),
         },
         outcome: Outcome {
+            deciding: Vec::new(),
             end: End::Refused { setup: "preparation incomplete".into() },
             exit: Measure::unavailable(missing),
             forced: Forced::No,
@@ -375,18 +376,7 @@ fn task_for(prepared: &Prepared) -> Result<Task, String> {
     let base = format!("{kind}/{}", task.id);
     if prepared.identity.task != base {
         let name = prepared.identity.task.strip_prefix(&format!("{base}/")).ok_or("prepared task identity differs")?;
-        let variant = task.variant.iter().find(|variant| variant.name == name).ok_or("unknown task variant")?.clone();
-        if let Some(prompt) = variant.prompt {
-            task.prompt = prompt;
-        }
-        task.environment.extend(variant.environment);
-        task.outcome.extend(variant.outcome);
-        task.event.extend(variant.event);
-        task.waives.extend(variant.waives);
-        task.smith.extend(variant.smith);
-        if let Some(budget) = variant.budget {
-            task.budget = budget;
-        }
+        task = task.with_variant(name)?;
     }
     Ok(task)
 }
@@ -1058,8 +1048,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         }
     }
     neutral.finish(&mut result);
-    let incomplete =
-        if matches!(result.outcome.end, End::Refused { .. }) { Incomplete::Setup(setup_step) } else { Incomplete::No };
+    let incomplete = if inference { Incomplete::No } else { Incomplete::Setup(setup_step) };
     let bytes = crate::render_result(&result)?;
     let _: Artifact = crate::grade::archive(guard, &directory, "result.json", bytes.as_bytes())?;
     Ok(Recorded { result, directory, incomplete })
