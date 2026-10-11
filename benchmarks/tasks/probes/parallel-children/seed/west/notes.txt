@@ -1,0 +1,2 @@
+Token: W2
+Review: the field named total is a sum; each directory owns its own data.

@@ -169,33 +169,44 @@ fn calls_one_response(observer: &Observer, tool: &str, at_least: u32) -> Measure
 fn children_overlap(observer: &Observer, at_least: u32) -> Measure<bool> {
     let mut largest = 0_usize;
     for session in &observer.sessions {
-        let mut active = BTreeSet::new();
+        let mut openings = BTreeMap::new();
+        let mut closures = BTreeMap::new();
         for record in &session.records {
-            match &record.event {
-                Event::ConversationOpened(value) if value.kind == ConversationKind::Child => {
-                    active.insert((value.run, value.conversation));
-                    largest = largest.max(active.len());
+            if let Event::ConversationOpened(value) = &record.event
+                && value.kind == ConversationKind::Child
+                && openings.insert((value.run, value.conversation), record.t_ms).is_some()
+            {
+                return unavailable("child conversation has duplicate openings");
+            }
+            if let Event::ConversationClosed(value) = &record.event {
+                closures.insert((value.run, value.conversation), record.t_ms);
+            }
+        }
+        let mut boundaries = BTreeMap::<u64, Vec<(u64, bool)>>::new();
+        for ((run, conversation), start) in openings {
+            let Some(end) = closures.get(&(run, conversation)) else {
+                return unavailable("child closure is required to measure temporal overlap");
+            };
+            if *end < start {
+                return unavailable("child closes before its opening clock");
+            }
+            if *end == start {
+                continue;
+            }
+            let points = boundaries.entry(run).or_default();
+            points.extend([(start, true), (*end, false)]);
+        }
+        for points in boundaries.values_mut() {
+            // Equal-time closures precede openings: touching intervals do not overlap.
+            points.sort_unstable();
+            let mut active = 0_usize;
+            for (_, opening) in points {
+                if *opening {
+                    active += 1;
+                } else {
+                    active = active.checked_sub(1).expect("each positive interval opened first");
                 }
-                Event::ConversationClosed(value) => {
-                    active.remove(&(value.run, value.conversation));
-                }
-                Event::MessageReceived(_)
-                | Event::MessageRead(_)
-                | Event::MessageUnread(_)
-                | Event::Budget(_)
-                | Event::SessionStarted(_)
-                | Event::SessionEnded(_)
-                | Event::RunStarted(_)
-                | Event::RunCompleted(_)
-                | Event::ConversationOpened(_)
-                | Event::ResponseStarted(_)
-                | Event::ResponseCompleted(_)
-                | Event::TextDelta(_)
-                | Event::ToolStarted(_)
-                | Event::ToolCompleted(_)
-                | Event::CheckStarted(_)
-                | Event::CheckCompleted(_)
-                | Event::Notice(_) => {}
+                largest = largest.max(active);
             }
         }
     }

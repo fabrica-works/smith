@@ -1,0 +1,88 @@
+id = "parallel-children"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 390
+prompt = "In your first completion call sub_agent four times together, one read-only child for each directory north, south, east and west. Give each child only read tools, max_turns 3 and the brief to read that directory's notes.txt and report its token; do not give writing or shell authority. Open all four before waiting for any result. Once all children return, finish with ALPHA and the four tokens in north, south, east, west order. Do not do the reads yourself or request another message.\n"
+seed_sha256 = "38d8f22ee5acd560eb30b69cfcf7a059a95cb68bc816978fdc8a7b4d3612a8f9"
+guards = ["domain/run.md, section 5.3", "protocol/limits.md, section 2.2"]
+deciding = ["end", "answer", "conversation-opened", "tool-call", "children-overlap", "no-failure", "stream-whole", "paired", "nothing-lost", "tree-ended", "protected-unchanged"]
+protected = ["north/notes.txt", "south/notes.txt", "east/notes.txt", "west/notes.txt", "review.txt"]
+
+[budget]
+seconds = 360
+turns = 24
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 5
+tool_payload = 4096
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 4096
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "answer"
+pattern = "ALPHA\\s+N7\\s+S4\\s+E9\\s+W2"
+[[event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 4 }
+[[event]]
+check = "tool-call"
+tool = "sub_agent"
+count = { exactly = 4 }
+verdict = "result"
+[[event]]
+check = "children-overlap"
+at_least = 2
+[[event]]
+check = "no-failure"
+class = "limit"
+
+[[variant]]
+name = "reviews"
+prompt = "In your first completion open exactly three read-only sub_agent calls together with max_turns 3. All independently read review.txt: one reviews the arithmetic, one the invariant, and one the risk. Give read tools only. Open all three before waiting for results. After all three reviews return, finish with ALPHA and one sentence covering their findings. Do not write, use shell, delegate sequentially or ask for another message.\n"
+replace_checks = true
+deciding = ["end", "answer", "conversation-opened", "tool-call", "children-overlap", "no-failure", "stream-whole", "paired", "nothing-lost", "tree-ended", "protected-unchanged"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[variant.event]]
+check = "conversation-opened"
+kind = "child"
+count = { exactly = 3 }
+[[variant.event]]
+check = "tool-call"
+tool = "sub_agent"
+count = { exactly = 3 }
+verdict = "result"
+[[variant.event]]
+check = "children-overlap"
+at_least = 2
+[[variant.event]]
+check = "no-failure"
+class = "limit"

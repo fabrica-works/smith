@@ -350,6 +350,7 @@ mod tests {
         let configured =
             smith_agent_shell::config::parse(&encoded).expect("shipped agent accepts the local-generated document");
         native_failure_settings(&current, configured.profile.declared.file_bytes);
+        native_parallel_profiles(&directory, &root, &render);
         task.smith.insert("output".into(), toml::Value::Integer(1024));
         let changed = render(&task, Shape::LocalDeclared).expect("declared output override");
         assert_eq!(changed["models"][0]["output"], 1024);
@@ -399,5 +400,25 @@ mod tests {
                 assert!(error.contains(if name == "bad-setting" { "output" } else { "read-in-payload" }), "{error}");
             }
         }
+    }
+    fn native_parallel_profiles(directory: &Path, root: &Path, render: &impl Fn(&Task, Shape) -> Result<Value, Setup>) {
+        for name in ["parallel-read", "parallel-children"] {
+            let parallel = crate::read_task(&directory.join(format!("tasks/probes/{name}/task.toml")))
+                .expect("authored parallel profile");
+            let rendered = render(&parallel, Shape::LocalReserved).expect("native parallel profile");
+            let path = root.join(format!("{name}.json"));
+            std::fs::write(&path, serde_json::to_vec(&rendered).expect("native JSON")).expect("private fixture");
+            let local = smith_local_shell::local_settings::read(&path, None).expect("shipped public settings reader");
+            let configured = native_agent_configuration(&local);
+            assert_eq!(configured.profile.declared.calls_per_response, if name == "parallel-read" { 20 } else { 16 });
+            assert_eq!(configured.profile.declared.conversations, if name == "parallel-read" { 1 } else { 5 });
+        }
+    }
+
+    fn native_agent_configuration(
+        local: &smith_local_shell::local_settings::Settings,
+    ) -> smith_agent_shell::config::Configuration {
+        let encoded = smith_local_shell::local_settings::agent_document(local).expect("native agent document");
+        smith_agent_shell::config::parse(&encoded).expect("native declarations admitted")
     }
 }

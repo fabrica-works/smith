@@ -1,0 +1,3 @@
+Proposal: add file values independently, then sum the subtotals.
+Invariant: every input is counted once.
+Risk: adding a subtotal twice violates the invariant.

@@ -1,0 +1,57 @@
+id = "parallel-read"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "In your first completion issue exactly twenty read calls together in one response: one for each file part01.txt through part20.txt. Do not split the reads across responses. After all twenty results, add the value in each file and finish with ALPHA followed by the total. Do not delegate, write files, use shell, or ask for another message.\n"
+seed_sha256 = "a0b94ca4747543776f276f9f1c4d0fd8220adc5a96cb6790200936f3f9a7557e"
+guards = ["protocol/limits.md, section 2.2", "protocol/events.md, section 3.6"]
+deciding = ["end", "answer", "tool-call", "calls-in-one-response", "no-failure", "stream-whole", "paired", "nothing-lost", "tree-ended"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 1
+tool_payload = 4096
+file_bytes = 1048576
+calls_per_response = 20
+read_window = 4096
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "answer"
+pattern = "^ALPHA\\s+5190\\s*$"
+[[event]]
+check = "tool-call"
+tool = "read"
+count = { exactly = 20 }
+verdict = "read"
+[[event]]
+check = "calls-in-one-response"
+tool = "read"
+at_least = 20
+[[event]]
+check = "no-failure"
+class = "limit"
