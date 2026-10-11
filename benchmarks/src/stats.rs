@@ -75,9 +75,14 @@ fn validate(values: &[f64]) -> Result<(), String> {
 pub fn median(values: &[f64]) -> Result<f64, String> {
     validate(values)?;
     let mut values = values.to_vec();
+    Ok(sample_median(&mut values))
+}
+
+// Input and resampled values are validated before entering this calculation.
+fn sample_median(values: &mut [f64]) -> f64 {
     values.sort_by(f64::total_cmp);
     let middle = values.len() / 2;
-    Ok(if values.len().is_multiple_of(2) { values[middle - 1] / 2.0 + values[middle] / 2.0 } else { values[middle] })
+    if values.len().is_multiple_of(2) { values[middle - 1] / 2.0 + values[middle] / 2.0 } else { values[middle] }
 }
 
 /// Compute sample standard deviation divided by the arithmetic mean.
@@ -134,9 +139,12 @@ pub fn interleave(arms: usize, repetitions: u32, seed: u64) -> Vec<Vec<usize>> {
         .collect()
 }
 
-fn resample(values: &[f64], random: &mut Rng) -> Vec<f64> {
+fn resample(values: &[f64], random: &mut Rng, sample: &mut Vec<f64>) {
     let bound = u64::try_from(values.len()).expect("observation count fits u64");
-    (0..values.len()).map(|_| values[usize::try_from(random.below(bound)).expect("draw fits index")]).collect()
+    sample.clear();
+    for _ in 0..values.len() {
+        sample.push(values[usize::try_from(random.below(bound)).expect("draw fits index")]);
+    }
 }
 
 /// Bootstrap the ratio of medians; at least five complete observations per arm.
@@ -153,8 +161,12 @@ pub fn bootstrap_ratio(reference: &[f64], candidate: &[f64], seed: u64, resample
     let ratio = median(candidate)? / median(reference)?;
     let mut random = Rng::new(seed);
     let mut ratios = Vec::with_capacity(usize::try_from(resamples).expect("resamples fit usize"));
+    let mut candidate_sample = Vec::with_capacity(candidate.len());
+    let mut reference_sample = Vec::with_capacity(reference.len());
     for _ in 0..resamples {
-        ratios.push(median(&resample(candidate, &mut random))? / median(&resample(reference, &mut random))?);
+        resample(candidate, &mut random, &mut candidate_sample);
+        resample(reference, &mut random, &mut reference_sample);
+        ratios.push(sample_median(&mut candidate_sample) / sample_median(&mut reference_sample));
     }
     if !ratio.is_finite() || ratios.iter().any(|ratio| !ratio.is_finite()) {
         return Err("ratio exceeded finite precision".into());

@@ -5,42 +5,70 @@ use smith_events::{Capture, Event, Limits, Record};
 pub const LIMITS: Limits = Limits { string: 128, content: 1024, items: 16 };
 
 pub fn record(source: &str) -> Record {
-    smith_events::read(source.trim_end().as_bytes(), &LIMITS).expect("codec golden").expect("known record")
+    let line = source.trim_end().as_bytes();
+    // The committed codec golden is the outside line. Retain every semantic
+    // cap while supplying its exact encoded ceiling, including the newline.
+    let ceiling = u32::try_from(line.len() + 1).expect("bounded codec golden");
+    smith_events::read_with_ceiling(line, &LIMITS, ceiling).expect("codec golden").expect("known record")
+}
+
+fn encoded(record: &Record) -> Vec<u8> {
+    // Keep the synthetic semantic envelope and actual emitted inventory; the
+    // independent golden sweep still retains the complete maximum LIMITS.
+    {
+        let items = match &record.event {
+            Event::SessionEnded(ended) => ended.emitted.len().max(4),
+            Event::Budget(_)
+            | Event::SessionStarted(_)
+            | Event::RunStarted(_)
+            | Event::RunCompleted(_)
+            | Event::ConversationOpened(_)
+            | Event::ConversationClosed(_)
+            | Event::ResponseStarted(_)
+            | Event::ResponseCompleted(_)
+            | Event::TextDelta(_)
+            | Event::ToolStarted(_)
+            | Event::ToolCompleted(_)
+            | Event::CheckStarted(_)
+            | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
+            | Event::Notice(_) => 4,
+        };
+        let limits = Limits { items, ..LIMITS };
+        smith_events::write(record, &Capture::Everything, &limits)
+            .expect("typed record")
+            .expect("captured record")
+            .into_vec()
+    }
+}
+
+// Cache only complete immutable wire lines. The key's complete Record equality
+// includes timestamp and every field; every distinct record enters the codec,
+// and each use still enters the real Reader rather than reusing parsed state.
+type EncodedLines = std::collections::BTreeMap<u64, Vec<(Record, Vec<u8>)>>;
+
+std::thread_local! {
+    static ENCODED: std::cell::RefCell<EncodedLines> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
 pub fn bytes(records: &[Record]) -> Vec<u8> {
-    // Keep the synthetic semantic envelope and actual emitted inventory; the
-    // independent golden sweep still retains the complete maximum LIMITS.
-    records
-        .iter()
-        .flat_map(|record| {
-            let items = match &record.event {
-                Event::SessionEnded(ended) => ended.emitted.len().max(4),
-                Event::Budget(_)
-                | Event::SessionStarted(_)
-                | Event::RunStarted(_)
-                | Event::RunCompleted(_)
-                | Event::ConversationOpened(_)
-                | Event::ConversationClosed(_)
-                | Event::ResponseStarted(_)
-                | Event::ResponseCompleted(_)
-                | Event::TextDelta(_)
-                | Event::ToolStarted(_)
-                | Event::ToolCompleted(_)
-                | Event::CheckStarted(_)
-                | Event::CheckCompleted(_)
-                | Event::MessageReceived(_)
-                | Event::MessageRead(_)
-                | Event::MessageUnread(_)
-                | Event::Notice(_) => 4,
-            };
-            let limits = Limits { items, ..LIMITS };
-            smith_events::write(record, &Capture::Everything, &limits)
-                .expect("typed record")
-                .expect("captured record")
-                .into_vec()
-        })
-        .collect()
+    ENCODED.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut bytes = Vec::new();
+        for record in records {
+            let bucket = cache.entry(record.t_ms).or_default();
+            if let Some((_, line)) = bucket.iter().find(|(previous, _)| previous == record) {
+                bytes.extend_from_slice(line);
+            } else {
+                let line = encoded(record);
+                bytes.extend_from_slice(&line);
+                bucket.push((record.clone(), line));
+            }
+        }
+        bytes
+    })
 }
 
 pub fn balanced() -> Vec<Record> {

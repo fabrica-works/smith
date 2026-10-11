@@ -840,3 +840,16 @@ the recorded Everything replay in the existing legacy process, passed in
 0.668seconds; all3 fuzzy parsers passed serially in0.857seconds. The1/5-second
 offline budgets and15/60-second workspace budgets are unchanged. These are
 scoped measurements; the final rebased tip still runs all four workspace gates.
+
+Reliability benchmark increment 00.12 was measured through the serialized
+heavy queue on 2026-10-11 at the authored tip rebased on `7636c64c`:
+all 21 offline focused cases passed in 0.950 seconds and all four fuzzy
+parser sweeps in 0.907 seconds, with no skips (heavy2815). The original
+1/5-second offline and 15/60-second workspace budgets remain unchanged.
+Every original assertion, case and codec golden remains. Synthetic outside
+lines use actual codec-derived ceilings and complete-record equality before
+reusing immutable wire bytes; every occurrence still enters the Reader.
+Bootstrap sampling reuses scratch buffers without changing its seeds, draws,
+sort or arithmetic; 28 exact parent/candidate comparisons agreed (heavy2813).
+Earlier budget overruns remain recorded. These are scoped offline measurements;
+final workspace gates and exact-tip live proof are separate prerequisites.

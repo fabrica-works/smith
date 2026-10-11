@@ -22,6 +22,21 @@ fn passed(observer: &Observer, name: &str) -> Measure<bool> {
         .clone()
 }
 
+fn captured(records: &[Record], capture: &smith_events::Capture, limits: &Limits) -> Observer {
+    let lines: Vec<_> = records
+        .iter()
+        .map(|record| smith_events::write(record, capture, limits).expect("bounded record").expect("metadata retained"))
+        .collect();
+    let ceiling = u32::try_from(lines.iter().map(|line| line.len()).max().expect("outside records"))
+        .expect("bounded encoded lines");
+    let mut observer = Observer::with_ceiling(limits, ceiling).expect("actual writer ceiling");
+    for line in &lines {
+        observer.feed(line).expect("outside captured reader");
+    }
+    observer.finish().expect("complete stream");
+    observer
+}
+
 fn event_chunks_keep_exact_usage_and_authoritative_exits() {
     let values = balanced();
     let mut observer = Observer::new(&LIMITS).expect("receiving bounds");
@@ -60,17 +75,7 @@ fn unread_resources_stay_null_and_do_not_change_terminals_or_response_usage() {
     }
     let limits = Limits { items: original.emitted.len(), ..LIMITS };
     for capture in [smith_events::Capture::None, smith_events::Capture::Calls, smith_events::Capture::Everything] {
-        let mut observer = Observer::new(&limits).expect("actual receiving inventory");
-        for value in &values {
-            observer
-                .feed(
-                    &smith_events::write(value, &capture, &limits)
-                        .expect("nullable record")
-                        .expect("metadata retained"),
-                )
-                .expect("outside nullable reader");
-        }
-        observer.finish().expect("complete exchange");
+        let observer = captured(&values, &capture, &limits);
         let ended = observer.sessions()[0].ended.as_ref().expect("authoritative end retained");
         assert_eq!(ended.cpu_ms, None);
         assert_eq!(ended.peak_rss_bytes, None);
@@ -384,12 +389,7 @@ fn block_cardinalities_use_completion_metadata_under_every_capture_policy() {
         value.completion = None;
     }
     for capture in [smith_events::Capture::None, smith_events::Capture::Calls, smith_events::Capture::Everything] {
-        let mut observer = Observer::new(&LIMITS).expect("receiving limits");
-        for value in &values {
-            let encoded = smith_events::write(value, &capture, &LIMITS).expect("bounded record").expect("metadata");
-            observer.feed(&encoded).expect("actual reader");
-        }
-        observer.finish().expect("complete stream");
+        let observer = captured(&values, &capture, &LIMITS);
         assert_eq!(
             observer
                 .check(&EventCheck::Blocks { oversized: Some(Count::Exactly(2)), cut: Some(Count::AtLeast(3)) }, "task")
@@ -826,20 +826,8 @@ impl Visible {
     }
 }
 
-std::thread_local! {
-    static CHANGED_LINES: std::cell::RefCell<Vec<(Record, Vec<u8>)>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
 fn changed_line(record: &Record) -> Vec<u8> {
-    CHANGED_LINES.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some((_, line)) = cache.iter().find(|(previous, _)| previous == record) {
-            return line.clone();
-        }
-        let line = bytes(std::slice::from_ref(record));
-        cache.push((record.clone(), line.clone()));
-        line
-    })
+    bytes(std::slice::from_ref(record))
 }
 
 static VISIBLE_MAIN: std::sync::LazyLock<Visible> = std::sync::LazyLock::new(|| Visible::new(build_visible_budget()));
