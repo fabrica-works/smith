@@ -162,6 +162,47 @@ relationships between layers (section 4). Domains derive from what they
 are given and never from a lower layer's types: the service passes each
 the numbers it needs.
 
+**How bounds compose.** A worst case is the most that can hold at once,
+not the product of maxima that cannot. On 2026-10-10 the product's
+values derived 421 GB against `memory`'s 2 GiB, and a completion's
+reserve six times a window's history, because bounds were composed that
+way. Every derivation follows these rules:
+
+1. **Joint bounds are charged at their shared total.** Items drawn from
+   one shared quantity are charged at that quantity, plus a fixed cell
+   per item, never as their count times the largest item. A completion's
+   text, call arguments and copied identifiers all come out of one
+   answer, `output` tokens at `TOKEN_BYTES` each. A batch's problems
+   all come out of one contract's names.
+2. **Escape factors apply only to encodings.** `ESCAPE` and a
+   rendering's expansion apply to bytes on the wire or in rendered text.
+   Decoded content held in memory is charged as decoded. The ×4
+   rendering of invalid UTF-8 applies only to bytes that may be invalid.
+3. **Counts come from in-memory items.** skein's containers allocate
+   their capacity when made, so a count is memory. A count bounded by a
+   byte budget is that budget over the smallest item as it is held in
+   memory (its cell), never over the smallest item as encoded on the
+   wire.
+4. **One factor per direction.** Where a token count bounds bytes (a
+   window's history at its threshold, an answer, a request), a token is
+   `TOKEN_BYTES` bytes. Where a byte count bounds tokens (a fresh
+   window, a room), a byte is one token. One comparison never mixes the
+   two.
+5. **Queues are charged at what can be queued at once:** their capacity
+   in cells, plus the payload all their producers can have queued at
+   once (sessions times one record, say). Never their capacity times the
+   largest payload.
+6. **Frames follow this side's limits.** The channel's and io's limits
+   are derived from the agent's own derived limits and from the
+   direction a frame travels. A stream's output holds the largest frame
+   this side writes. A schema's ceilings bound what may be declared,
+   never what is reserved.
+
+Each derivation states which rule it follows where it combines bounds.
+The service's tests hold, for the product's values, that every check
+passes and that the complete worst case fits `memory`, recording the
+number.
+
 ### 3.1 The LLM path: skein
 
 `skein_llm::Limits::derive(&Declared)` (skein's `llm.md`, sections 4.1
@@ -206,14 +247,18 @@ declarations:
   model's;
 - **a window's history:** the messages, blocks and bytes one window may
   hold, set so that the window's check is reached before any of them
-  (domain/session.md, 8.1). Its bytes are skein's request bound for the
-  endpoint's dialect, less the system text and the tools' schemas at
-  their largest and the prompt's allowance, each escaped at its largest;
-  its messages and blocks are skein's history items, less the system
-  text's and the tools'. So a prompt the session admits is within
-  skein's request, and a request-size `Limit` cannot follow a passed
-  admission: should one fire, a fault in this derivation, the session
-  takes it as *context too long* (domain/session.md, section 4). With
+  (domain/session.md, 8.1). Its bytes come from the window's side, by
+  rule 4: the threshold's tokens at `TOKEN_BYTES` bytes each, plus what
+  the window must receive before its next check, which is one
+  completion's reserve beyond its answer and one batch's results. So
+  `window-first` holds by construction. Its messages and blocks are
+  those bytes over a block's cell in memory, by rule 3, and they are
+  also skein's declared history items (skein's `llm.md`, 4.2). A prompt
+  the session admits is within skein's request, because the threshold
+  bounds it in tokens and the request is derived from the same window. A
+  request-size `Limit` cannot follow a passed admission: should one
+  fire, a fault in this derivation, the session takes it as *context too
+  long* (domain/session.md, section 4). With
   compaction, a session holds one window, so this is what a session
   holds, not what a run accumulates;
 - **what a window holds at its opening, and what a compaction carries:**
@@ -222,8 +267,21 @@ declarations:
   to a prompt beyond the bytes the session counts, from the LLM
   component's framing, for the window's check and the budget's
   reservation (domain/run.md, section 9);
+- **a completion's bytes,** by rules 1 and 2:
+  - its answer once, for its text and its calls' encoded arguments;
+  - once more for the decoded arguments and the identifiers copied from
+    it, unescaped and at most the answer's bytes in all;
+  - its reasoning items at the dialect's reasoning bound;
+  - a cell per block.
+
+  Its reserve is the completion's bytes plus one answer's bytes for the
+  details copied from it, and a slot per block, never twice the
+  completion;
 - **a decoded call's bytes:** `calls_per_response` decoded calls, each
-  within one call's input;
+  within one call's input and all within one answer's bytes (rule 1);
+- **a batch's results:** each result within its render bound. Problems
+  that name a contract's fields are charged at that contract's total
+  (rule 1), rendered ×4 only where bytes may be invalid UTF-8 (rule 2);
 - **a failure's detail,** the last failure's, kept for the operator: the
   provider's text within the largest failure detail skein's dialects
   keep (skein's `llm.md`, 4.2), or a limit's name and bound. The session
@@ -297,7 +355,11 @@ terms (channel.md, sections 2 and 7):
 - **a message's frame:** a message at its bound (3.9);
 - **its queue:** the window's turns, the calls in flight (at most
   `conversations`), the notices, the long operations, the answer and a
-  reserve for facts.
+  reserve for facts, charged by rule 5 of section 3;
+- **by direction,** by rule 6. What the agent writes is bounded by its
+  own derived limits. What it reads is bounded by what it admits: a
+  start within the charter's run bound, a message within its bound. The
+  schema's ceilings only bound what may be declared.
 
 The host's terms are checked against these at the opening, not at
 startup: a host that takes less finds out before a run starts.
@@ -416,7 +478,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `fresh-window` | for each declared model, a new window at its largest (smith's own part, the host's part, the task as its instruction and one offer, a summary of `output` tokens, and one offer of held-back messages) and one `output` fit within the window at the compaction threshold, counting a byte as a token (3.9). The parts are derived so that this holds whenever smith's own part fits the room, for every shipped preset among them (`docs/design/shell.md`, 6.1); the check refuses a model whose room smith's own part fills |
 | `compaction-headroom` | for each declared model, the window above its threshold holds one `output`, the summary instruction and a cut result's marker for each of `calls_per_response` results, so the compaction the check calls for always fits, its results cut to what is left (3.9; domain/session.md, 8.1) |
 | `output-in-window` | each model's `output` is less than its `window` |
-| `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound |
+| `window-first` | a window's history reaches the compaction threshold before its message, block or byte bound: the threshold at `TOKEN_BYTES` bytes a token, plus one completion's reserve beyond its answer and one batch's results, within the history's bytes (rule 4 of section 3). It holds by construction for 3.2's derivation, and guards it |
 | `calls-in-transcript` | a message's blocks, derived from `calls_per_response`, are at least a completion's blocks and within the transcript schema's ceiling |
 | `resume-holds-window` | the resume limit holds the most a session holds in one window |
 | `turn-in-transcript` | the largest turn fits the transcript schema's ceilings |
