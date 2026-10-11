@@ -104,6 +104,24 @@ fn known_tokens(result: &AttemptResult) -> Option<u64> {
     Some(used)
 }
 
+fn configuration_matches(pin: &crate::PinnedConfiguration, request: &Prepared) -> Result<bool, String> {
+    if pin.pin.agent != request.identity.agent
+        || pin.pin.provider != request.identity.provider
+        || pin.sha256 != request.identity.configuration_sha256
+    {
+        return Ok(false);
+    }
+    match pin.pin.agent {
+        crate::Agent::Smith if pin.pin.version == "built-arm" => {
+            let build = crate::arm::read_build(&request.program)?;
+            Ok(build.arm.commit == request.identity.agent_version && build.arm.sha256 == request.identity.binary_sha256)
+        }
+        crate::Agent::Smith | crate::Agent::Codex | crate::Agent::ClaudeCode => {
+            Ok(pin.pin.version == request.identity.agent_version)
+        }
+    }
+}
+
 fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let catalogue =
@@ -140,12 +158,11 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         {
             return Err("prepared request names a different task manifest".into());
         }
-        if !pins.iter().any(|pin| {
-            pin.pin.agent == request.identity.agent
-                && pin.pin.provider == request.identity.provider
-                && pin.pin.version == request.identity.agent_version
-                && pin.sha256 == request.identity.configuration_sha256
-        }) {
+        let mut matched = false;
+        for pin in &pins {
+            matched |= configuration_matches(pin, request)?;
+        }
+        if !matched {
             return Err("prepared agent configuration differs from the suite's pins".into());
         }
         let model = models
@@ -265,9 +282,49 @@ fn dispatch(
 /// Requests are immutable JSON documents; agent adapters add them when ready.
 pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Batch, String> {
     let suite = crate::read_suite(suite_file).map_err(|error| error.to_string())?;
+    run_suite(suite_file, &suite, prepared_directory, seed)
+}
+
+/// Run one authored probe with explicit repetitions, retaining the common suite supervisor.
+pub fn run_probe(
+    suite_file: &Path,
+    prepared_directory: &Path,
+    seed: u64,
+    probe: &str,
+    repetitions: u32,
+) -> Result<Batch, String> {
+    let suite = probe_suite(suite_file, probe, repetitions)?;
+    run_suite(suite_file, &suite, prepared_directory, seed)
+}
+
+fn probe_suite(suite_file: &Path, probe: &str, repetitions: u32) -> Result<Suite, String> {
+    if !probe.starts_with("probes/") || repetitions == 0 {
+        return Err("probe dispatch requires a probe selector and positive repetitions".into());
+    }
+    let mut suite = crate::read_suite(suite_file).map_err(|error| error.to_string())?;
+    suite.tasks = vec![probe.into()];
+    suite.select.clear();
+    suite.repetitions = repetitions;
+    Ok(suite)
+}
+
+pub(crate) fn probe_requests(
+    suite_file: &Path,
+    prepared_directory: &Path,
+    seed: u64,
+    probe: &str,
+    repetitions: u32,
+) -> Result<Vec<Prepared>, String> {
+    let suite = probe_suite(suite_file, probe, repetitions)?;
     let requests = requests(prepared_directory)?;
     check_requests(suite_file, &suite, &requests)?;
-    let mut requests: VecDeque<_> = ordered(&suite, requests, seed)?.into();
+    ordered(&suite, requests, seed)
+}
+
+fn run_suite(suite_file: &Path, suite: &Suite, prepared_directory: &Path, seed: u64) -> Result<Batch, String> {
+    let requests = requests(prepared_directory)?;
+    check_requests(suite_file, suite, &requests)?;
+    let mut requests: VecDeque<_> = ordered(suite, requests, seed)?.into();
     if requests.iter().any(|request| {
         requests.iter().any(|candidate| {
             candidate.identity.run == request.identity.run
@@ -347,9 +404,41 @@ pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Ba
 }
 
 #[cfg(test)]
+pub(crate) fn probe_cases() {
+    tests::no_request_requires_selected_complete_observations_without_inventing_tokens();
+    native_suite_pin_tests::native_built_suite_pin_verifies_full_arm_commit_and_binary();
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    pub(super) fn no_request_requires_selected_complete_observations_without_inventing_tokens() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut value = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("fixture");
+        value.tokens.clear();
+        value.outcome.deciding = vec!["no-request".into(), "stream-whole".into()];
+        value.outcome.checks = value
+            .outcome
+            .deciding
+            .iter()
+            .map(|name| crate::CheckVerdict {
+                check: name.clone(),
+                passed: Measure::Observed { value: true },
+                evidence: vec![],
+            })
+            .collect();
+        assert!(observed_no_request(&value));
+        assert_eq!(known_tokens(&value), None, "NoRequest is evidence, not invented numeric usage");
+        value.outcome.checks[1].passed = Measure::unavailable("missing authoritative terminal");
+        assert!(!observed_no_request(&value));
+        value.outcome.checks[1].passed = Measure::LowerBound { value: true, missing: vec!["loss".into()] };
+        assert!(!observed_no_request(&value));
+        value.outcome.checks[1].passed = Measure::Observed { value: true };
+        value.outcome.deciding.pop();
+        assert!(!observed_no_request(&value), "an advisory no-request observation cannot lift a token gap");
+    }
 
     #[test]
     fn prepared_blocks_preserve_seeded_order_unique_ids_and_token_gaps() {
@@ -439,3 +528,75 @@ mod tests {
         fs::remove_dir_all(state).expect("remove dispatch control");
     }
 }
+
+#[cfg(test)]
+mod native_suite_pin_tests {
+    use super::*;
+    use sha2::Digest;
+
+    pub(super) fn native_built_suite_pin_verifies_full_arm_commit_and_binary() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let pin_file = root.join("agents/smith/smoke.pin.toml");
+        let pin = crate::read_configuration(&pin_file).expect("native built-arm pin");
+        let task_file = root.join("tasks/probes/first-request/task.toml");
+        let task = crate::read_task(&task_file).expect("frozen author input");
+        let mut suite = crate::read_suite(&root.join("suites/smoke.toml")).expect("suite");
+        suite.tasks = vec!["probes/first-request".into()];
+        let mut identity =
+            crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("identity fixture").identity;
+        let commit = "a".repeat(40);
+        let bytes = b"synthetic identity fixture; never executed\n";
+        let digest = format!("{:x}", sha2::Sha256::digest(bytes));
+        let directory = std::env::temp_dir()
+            .join(format!("smith-native-suite-pin-{}", std::process::id()))
+            .join(crate::arm::arm_name(&commit, &digest).expect("arm name"));
+        fs::create_dir_all(&directory).expect("isolated identity fixture");
+        fs::write(directory.join("smith"), bytes).expect("non-executed fixture");
+        let arm = crate::arm::BuiltArm {
+            version: 1,
+            commit: commit.clone(),
+            sha256: digest.clone(),
+            toolchain: "synthetic identity control".into(),
+            binaries: vec![crate::arm::ArmBinary { name: "smith".into(), sha256: digest.clone() }],
+        };
+        fs::write(directory.join("arm.json"), serde_json::to_vec(&arm).expect("arm manifest"))
+            .expect("private test manifest");
+        identity.agent = crate::Agent::Smith;
+        identity.provider = crate::Provider::Codex;
+        identity.agent_version = commit;
+        identity.binary_sha256 = digest;
+        identity.configuration_sha256 = pin.sha256;
+        identity.task = "probes/first-request".into();
+        identity.task_version = task.version;
+        identity.seed_sha256 = task.seed_sha256;
+        identity.model.requested_model = "gpt-6-luna".into();
+        identity.model.requested_effort = "low".into();
+        let mut request = Prepared {
+            task: task_file,
+            identity,
+            program: directory.join("smith"),
+            arguments: vec![],
+            codex_home: None,
+            configuration: Some(pin_file),
+            teardown_ms: 1,
+            grace_ms: 1,
+            settlement_ms: 1,
+            setup_deadline_seconds: 1,
+            max_stdout_bytes: 1,
+            max_stderr_bytes: 1,
+            disk_estimate_bytes: 1,
+            force_walk: true,
+        };
+        let suite_file = root.join("suites/smoke.toml");
+        let valid = check_requests(&suite_file, &suite, std::slice::from_ref(&request));
+        // Do not execute or read credentials; this is the real admission seam.
+        assert!(valid.is_ok(), "verified native commit must match built-arm pin: {valid:?}");
+        request.identity.binary_sha256 = "0".repeat(64);
+        assert!(
+            check_requests(&suite_file, &suite, std::slice::from_ref(&request)).is_err(),
+            "changed binary identity refused before dispatch"
+        );
+        fs::remove_dir_all(directory.parent().expect("fixture owner")).expect("cleanup");
+    }
+}
+

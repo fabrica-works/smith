@@ -1344,7 +1344,7 @@ fn smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_z
         | Event::Notice(_) => panic!("response fixture"),
     };
     if let Event::RunCompleted(value) = &mut values[6].event {
-        value.usage = usage;
+        value.usage = usage.clone();
     }
     let predicate = smith_bench::EventCheck::UsageSums;
     assert_eq!(observe(&values).check(&predicate, "task").passed, Measure::Observed { value: true });
@@ -1359,6 +1359,16 @@ fn smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_z
         value.usage.cache_read_tokens = None;
     }
     assert!(matches!(observe(&values).check(&predicate, "task").passed, Measure::Unavailable { .. }));
+    values = balanced();
+    if let Event::RunCompleted(value) = &mut values[6].event {
+        value.usage = usage;
+    }
+    values.insert(5, values[4].clone());
+    assert_eq!(observe(&values).check(&predicate, "task").passed, Measure::Observed { value: true });
+    if let Event::ResponseCompleted(value) = &mut values[5].event {
+        value.conversation += 1;
+    }
+    assert_eq!(observe(&values).check(&predicate, "task").passed, Measure::Observed { value: false });
 }
 
 #[test]

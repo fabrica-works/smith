@@ -764,6 +764,8 @@ fn summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart() {
 
 #[test]
 fn task_documents_and_frozen_seed_contracts() {
+    crate::batch::probe_cases();
+    crate::fix::probe_cases();
     a_task_retains_all_of_its_typed_parts();
     unknown_top_level_keys_name_the_document_and_key();
     unknown_nested_keys_name_their_full_path();

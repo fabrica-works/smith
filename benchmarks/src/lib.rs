@@ -68,3 +68,5 @@ mod tests;
 pub mod run;
 
 pub mod batch;
+
+pub mod fix;

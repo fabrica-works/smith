@@ -292,3 +292,42 @@ From `576a251e`, the registry selects the native Kind-based Debug facts,
 retaining asked/granted share metadata and visible parent links. Frozen arms
 keep their flag-based layout. Linked child response content contributes once
 in its own scope; aggregate or child-return totals never charge it again.
+
+## Smoke probes and deciding observations
+
+`smoke.toml` currently selects five probes. `failures/one-turn` is authored
+and checked offline but enters the suite only after proven product 10.5.
+It expects the product's entrance refusal, exit2 and a typed invalid budget
+reserve record, rather than an admitted run exhausting its budget.
+
+Each probe's `deciding` names select its verdict; advisory observations remain
+in the result. Both `attempt` and `run` return0 when every deciding observation
+is observed true,1 for a deciding false or unexpected failed run, and2 when a
+deciding observation is missing, lower-bound or unavailable. An explicitly
+expected refused/budget diagnostic is judged by its named end/exit checks.
+No unavailable smoke check counts as a pass.
+
+`fix` separates frozen arm building from prepared inference so each uses its
+own machine queue. Both steps retain the exact binary identities:
+
+```sh
+smith-bench fix PROBE PARENT FIX --build-only
+smith-bench fix PROBE PARENT FIX --prepared REQUEST_DIRECTORY SEED
+smith-bench calibrate PROBE --prepared FIX_REQUEST_DIRECTORY --control CONTROL_REQUEST_DIRECTORY SEED
+```
+
+Run the build step under the heavy wrapper and the prepared steps under the
+live wrapper. The runner refuses an unstated invocation; it never invents
+credentials or policies to make a comparison runnable. A fix's report prints
+both immutable arms, run identifiers and its finding, including unavailable
+or setup-refused controls. Calibration requires ten changed-arm passes and a
+failing parent/control; every failure and rerun stays archived. No probe is
+marked calibrated by this offline authoring checkpoint.
+
+`first-request` currently exercises the merged `smith local` typed-input
+invocation and its fixed writable workspace. Its headless and
+without-workspace variants guard `10-product` 10.5 and are reported as
+not yet supported by the current invocation; they are not judged or claimed
+proven by this interactive task. The one-turn startup refusal is authored
+with its product expectation but stays outside both active suites until
+10.5 is merged and proven.

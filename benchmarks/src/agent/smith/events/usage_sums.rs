@@ -20,8 +20,9 @@ pub(super) fn check(observer: &Observer) -> Measure<bool> {
             match &record.event {
                 Event::ResponseCompleted(response) => {
                     let values = counts(&response.usage);
-                    match seen.insert((response.run, response.response), values) {
-                        Some(previous) if previous != values => return Measure::Observed { value: false },
+                    let identity = (response.conversation, values);
+                    match seen.insert((response.run, response.response), identity) {
+                        Some(previous) if previous != identity => return Measure::Observed { value: false },
                         Some(_) => continue,
                         None => {}
                     }

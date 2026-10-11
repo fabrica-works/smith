@@ -223,7 +223,6 @@ mod tests {
     use crate::agent::Context;
     use crate::arm::ArmRef;
 
-    #[test]
     fn one_turn_refusal_reaches_the_product_with_the_default_reserve() {
         let directory = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut task = crate::read_task(&directory.join("tests/recorded/tasks/valid/task.toml")).expect("task");
@@ -237,6 +236,11 @@ mod tests {
 
     #[test]
     fn native_shapes_keep_task_deadlines_environment_prices_and_named_overrides() {
+        one_turn_refusal_reaches_the_product_with_the_default_reserve();
+        native_shape_cases();
+    }
+
+    fn native_shape_cases() {
         let root = std::env::temp_dir().join(format!("smith-settings-{}", std::process::id()));
         std::fs::create_dir(&root).expect("fixture parent");
         let guard = crate::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])

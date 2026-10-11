@@ -124,7 +124,34 @@ fn smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with
 
 #[test]
 fn smoke_probe_documents_and_pass_fail_incomplete_boundary() {
+    fix_body_keeps_both_runs_and_distinguishes_effect_from_unjudged();
     decision_names_keep_advisory_unknown_and_false_evidence_without_deciding_the_probe();
     attempt_and_suite_share_failure_precedence_and_preserve_expected_budget_class();
     smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with_exact_frozen_inputs();
+}
+
+fn fix_body_keeps_both_runs_and_distinguishes_effect_from_unjudged() {
+    use smith_bench::fix::{ProbeRun, Shown, body, report};
+    let before = ProbeRun {
+        arm: smith_bench::arm::ArmRef::Installed { program: "/parent".into() },
+        run: "red/attempt01".into(),
+        verdict: Judgment::Fail,
+        setup_refused: false,
+    };
+    let mut after = ProbeRun {
+        arm: smith_bench::arm::ArmRef::Installed { program: "/fix".into() },
+        run: "green/attempt01".into(),
+        verdict: Judgment::Pass,
+        setup_refused: false,
+    };
+    let value = report("probes/smoke-tools".into(), before.clone(), after.clone());
+    assert_eq!(value.shown, Shown::Effect);
+    assert_eq!(
+        body(&value),
+        "Probe: probes/smoke-tools\nBefore: installed /parent run=red/attempt01 Fail\nAfter: installed /fix run=green/attempt01 Pass\nShown: Effect\n"
+    );
+    after.verdict = Judgment::Incomplete;
+    assert_eq!(report("probe".into(), before.clone(), after.clone()).shown, Shown::Unjudged);
+    after.verdict = Judgment::Fail;
+    assert_eq!(report("probe".into(), before, after).shown, Shown::FailsAfter);
 }
