@@ -307,6 +307,19 @@ deciding observation is missing, lower-bound or unavailable. An explicitly
 expected refused/budget diagnostic is judged by its named end/exit checks.
 No unavailable smoke check counts as a pass.
 
+00.12 can merge after the full 02.5 stream with live proof for the probes whose
+deciding observations it carries: `smoke-tools` (including `child`),
+`large-write` (including `oversized`) and `budget/child-quota`. Their tool,
+usage, share and terminal checks use metadata; accepted main answer text is
+also carried by 02.5. This ordering does not establish a pass for the other
+two active probes. `first-request` needs the first prompt and the actual task
+receipt text, and `budget/wrap-up` requires its final child completion's text
+as well as the budget stop and `tool_choice` none. Those deciding checks
+remain unavailable until 02.6, so their verdict is incomplete (exit 2).
+The five-task suites retain both probes and all their deciding checks; a
+suite with either unresolved probe likewise remains incomplete. Phase 3 can
+prove metadata probes independently while these content probes wait.
+
 `fix` separates frozen arm building from prepared inference so each uses its
 own machine queue. Both steps retain the exact binary identities:
 
