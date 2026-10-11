@@ -47,6 +47,9 @@ fn model_failure_requires_the_run_class_and_the_actual_matching_exit() {
     let mut records = common::events::balanced();
     let failure = AnswerFailure {
         class: AnswerClass::Model,
+        endpoint: None,
+        model: None,
+        attempts: None,
         completion: None,
         account: None,
         which: None,
@@ -79,9 +82,84 @@ fn model_failure_requires_the_run_class_and_the_actual_matching_exit() {
     assert_eq!(observe(&records).check(&check, "task").passed, Measure::Observed { value: false });
 }
 
+#[test]
+fn provider_failure_uses_typed_status_and_retained_bounded_detail() {
+    let check = EventCheck::ProviderFailure { status_at_least: 400, status_at_most: 499, detail_bytes_at_most: 1024 };
+    let mut records = common::events::balanced();
+    let mut failure = smith_events::CompletionFailure {
+        class: smith_events::FailureClass::Invalid,
+        evidence: smith_events::Evidence::Response,
+        retry_after_ms: None,
+        phase: None,
+        limit: None,
+        status: Some(404),
+        detail: Some(Box::from(&b"provider rejected unknown model"[..])),
+    };
+    set_completion_failure(&mut records, &failure);
+    let verdict = observe_provider(&records).check(&check, "task");
+    assert_eq!(verdict.passed, Measure::Observed { value: true });
+    assert!(verdict.evidence[0].contains("HTTP=404 detail_bytes=31 bound=1024"));
+    for (status, detail, expected) in [
+        (Some(400), Some(vec![b'x'; 1024]), Some(true)),
+        (Some(200), Some(b"HTTP 404 unknown model".to_vec()), Some(false)),
+        (Some(404), Some(vec![b'x'; 1025]), Some(false)),
+        (Some(404), Some(vec![]), Some(false)),
+        (None, Some(b"HTTP 404 unknown model".to_vec()), None),
+        (Some(404), None, None),
+    ] {
+        failure.status = status;
+        failure.detail = detail.map(Vec::into_boxed_slice);
+        set_completion_failure(&mut records, &failure);
+        let actual = observe_provider(&records).check(&check, "task").passed;
+        match expected {
+            Some(value) => assert_eq!(actual, Measure::Observed { value }),
+            None => assert!(matches!(actual, Measure::Unavailable { .. })),
+        }
+    }
+    if let Event::RunCompleted(run) = &mut records[6].event {
+        run.failure.as_mut().expect("answer failure").completion = None;
+    }
+    assert!(matches!(observe_provider(&records).check(&check, "task").passed, Measure::Unavailable { .. }));
+}
+
+fn set_completion_failure(records: &mut [smith_events::Record], completion: &smith_events::CompletionFailure) {
+    if let Event::RunCompleted(run) = &mut records[6].event {
+        run.status = Status::Failed;
+        run.result = None;
+        run.failure = Some(AnswerFailure {
+            class: AnswerClass::Model,
+            endpoint: Some(Box::from(&b"codex"[..])),
+            model: Some(Box::from(&b"smith-bench-nonexistent-model-2026-10-11"[..])),
+            attempts: Some(1),
+            completion: Some(completion.clone()),
+            account: None,
+            which: None,
+            reason: None,
+        });
+    }
+    if let Event::SessionEnded(session) = &mut records[7].event {
+        session.exit = 1;
+    }
+}
+
 fn observe(records: &[smith_events::Record]) -> Observer {
     let mut observer = Observer::new(&common::events::LIMITS).expect("reader");
     observer.feed(&common::events::bytes(records)).expect("synthetic codec records");
+    observer.finish().expect("complete framing");
+    observer
+}
+
+// The fixture envelope admits a deliberate 1025-byte defect. The authored
+// predicate still enforces the independently derived native 1024-byte cap.
+fn observe_provider(records: &[smith_events::Record]) -> Observer {
+    let limits = smith_events::Limits { string: 2048, content: 2048, items: 16 };
+    let mut observer = Observer::new(&limits).expect("reader");
+    for record in records {
+        let line = smith_events::write(record, &smith_events::Capture::Everything, &limits)
+            .expect("typed fixture")
+            .expect("retained fixture");
+        observer.feed(&line).expect("real codec fixture");
+    }
     observer.finish().expect("complete framing");
     observer
 }

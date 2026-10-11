@@ -53,7 +53,7 @@ check = "no-request"
 [[variant]]
 name = "unknown-model"
 smith = { model = "smith-bench-nonexistent-model-2026-10-11" }
-deciding = ["end", "run-completed", "stream-whole", "tree-ended"]
+deciding = ["end", "run-completed", "provider-failure", "stream-whole", "tree-ended"]
 [[variant.outcome]]
 check = "end"
 end = "failed"
@@ -61,6 +61,11 @@ end = "failed"
 check = "run-completed"
 status = "failed"
 class = "model"
+[[variant.event]]
+check = "provider-failure"
+status_at_least = 400
+status_at_most = 499
+detail_bytes_at_most = 1024
 
 [[variant]]
 name = "derived-limit"

@@ -12,7 +12,13 @@ mod prepare;
 
 /// Select the probe's committed pin without overriding another probe's instructions.
 pub(crate) fn calibration_suite(probe: &str) -> std::path::PathBuf {
-    let file = if probe == "probes/first-request" { "first-request.toml" } else { "calibrate.toml" };
+    let file = if probe == "probes/first-request" {
+        "first-request.toml"
+    } else if probe.starts_with("probes/failures/") {
+        "failures.toml"
+    } else {
+        "calibrate.toml"
+    };
     Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(file)
 }
 

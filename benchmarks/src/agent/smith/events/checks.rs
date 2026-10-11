@@ -249,6 +249,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         if let EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } = check {
             return super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most);
         }
+        if let EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } = check {
+            return provider_failure(observer, *status_at_least, *status_at_most, *detail_bytes_at_most);
+        }
         evaluate_complete(observer, check, task, currency)
     };
     CheckVerdict { check: check.name().into(), passed, evidence: Vec::new() }
@@ -295,6 +298,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
             measured(!terminals.is_empty() && terminals.iter().all(|value| names::status(&value.status) == status.as_bytes()
                 && class.as_ref().is_none_or(|class| value.failure.as_ref().is_some_and(|value| names::answer(&value.class) == class.as_bytes()))))
         }
+        EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } =>
+            provider_failure(observer, *status_at_least, *status_at_most, *detail_bytes_at_most).passed,
         EventCheck::NoRequest => measured(!records.iter().any(|record| matches!(record.event, Event::ResponseStarted(_)))),
         EventCheck::NoRun => measured(false),
         EventCheck::NothingBeforeTask => super::messages::before_task(observer, task),
@@ -314,4 +319,43 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
             None => unavailable("dollar conversion requires the prepared arm's exact notional currency"),
         },
     }
+}
+
+// Consume the authoritative terminal; never infer a status from diagnostic text.
+fn provider_failure(observer: &Observer, minimum: u16, maximum: u16, detail_bound: u32) -> CheckVerdict {
+    let mut evidence = Vec::new();
+    let mut found_terminal = false;
+    let mut passed = true;
+    for record in records(observer) {
+        if let Event::RunCompleted(run) = &record.event {
+            let Some(failure) = run.failure.as_ref().and_then(|value| value.completion.as_ref()) else {
+                return CheckVerdict {
+                    check: "provider-failure".into(),
+                    passed: unavailable("typed completion failure was not retained"),
+                    evidence,
+                };
+            };
+            let (Some(status), Some(detail)) = (failure.status, failure.detail.as_ref()) else {
+                return CheckVerdict {
+                    check: "provider-failure".into(),
+                    passed: unavailable("actual HTTP status or provider diagnostic was not captured"),
+                    evidence,
+                };
+            };
+            found_terminal = true;
+            passed &= (u64::from(minimum)..=u64::from(maximum)).contains(&status)
+                && !detail.is_empty()
+                && detail.len() <= usize::try_from(detail_bound).expect("bound fits");
+            let retained = &detail[..detail.len().min(usize::try_from(detail_bound).expect("bound fits"))];
+            evidence.push(format!(
+                "run={} HTTP={} detail_bytes={} bound={} detail={}",
+                run.run,
+                status,
+                detail.len(),
+                detail_bound,
+                String::from_utf8_lossy(retained)
+            ));
+        }
+    }
+    CheckVerdict { check: "provider-failure".into(), passed: measured(found_terminal && passed), evidence }
 }

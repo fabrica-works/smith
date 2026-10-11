@@ -397,6 +397,11 @@ fn prepare(
         if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
             return Err("prepared identity differs from the frozen task".into());
         }
+        if task.requested_model(prepared.identity.agent, &prepared.identity.model.requested_model)?
+            != prepared.identity.model.requested_model
+        {
+            return Err("prepared model differs from the authored Smith model override".into());
+        }
         let prompt = task.prompt.as_bytes().to_vec();
         if prompt.is_empty()
             || prompt.len() > 4088

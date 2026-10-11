@@ -384,12 +384,15 @@ mod tests {
                 .and_then(|local| smith_local_shell::local_settings::agent_document(&local))
                 .and_then(|encoded| smith_agent_shell::config::parse(&encoded));
             if name == "unknown-model" {
-                result.expect("fully declared model reaches provider selection");
+                let configured = result.expect("fully declared model reaches provider selection");
+                assert_eq!(configured.service.limits.llm.adapter.client.detail_bytes, 1024);
+                assert!(task.event.contains(&crate::EventCheck::ProviderFailure {
+                    status_at_least: 400,
+                    status_at_most: 499,
+                    detail_bytes_at_most: configured.service.limits.llm.adapter.client.detail_bytes
+                }));
             } else {
-                let error = match result {
-                    Err(error) => error,
-                    Ok(_) => panic!("native startup accepted the authored invalid setting"),
-                };
+                let Err(error) = result else { panic!("native startup accepted the authored invalid setting") };
                 assert!(error.contains(if name == "bad-setting" { "output" } else { "read-in-payload" }), "{error}");
             }
         }

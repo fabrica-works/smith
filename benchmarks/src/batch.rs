@@ -168,8 +168,20 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         let model = models
             .lookup(&root.join("agents/models.toml"), &suite.tier, request.identity.provider)
             .map_err(|error| error.to_string())?;
-        if model.model.as_ref() != Some(&request.identity.model.requested_model)
-            || entry.task.effort.as_ref().or(model.effort.as_ref()) != Some(&request.identity.model.requested_effort)
+        let task = if request.identity.task == entry.name {
+            entry.task.clone()
+        } else {
+            let variant = request
+                .identity
+                .task
+                .strip_prefix(&format!("{}/", entry.name))
+                .ok_or("task variant identity differs")?;
+            entry.task.with_variant(variant)?
+        };
+        let expected_model =
+            task.requested_model(request.identity.agent, model.model.as_deref().ok_or("suite tier has no model")?)?;
+        if expected_model != request.identity.model.requested_model
+            || task.effort.as_ref().or(model.effort.as_ref()) != Some(&request.identity.model.requested_effort)
         {
             return Err("prepared model/effort differs from the suite's tier".into());
         }
@@ -564,7 +576,7 @@ mod native_suite_pin_tests {
         identity.agent = crate::Agent::Smith;
         identity.provider = crate::Provider::Codex;
         identity.agent_version = commit;
-        identity.binary_sha256 = digest;
+        identity.binary_sha256 = digest.clone();
         identity.configuration_sha256 = pin.sha256.clone();
         identity.task = "probes/first-request".into();
         identity.task_version = task.version;
@@ -593,6 +605,29 @@ mod native_suite_pin_tests {
         assert!(valid.is_ok(), "verified native commit must match built-arm pin: {valid:?}");
         request.identity.binary_sha256 = "0".repeat(64);
         assert_eq!(configuration_matches(&pin, &request), Ok(false), "changed binary identity refused by admission");
+        request.identity.binary_sha256 = digest;
+        unknown_model_admission(root, &mut request);
         fs::remove_dir_all(directory.parent().expect("fixture owner")).expect("cleanup");
+    }
+
+    fn unknown_model_admission(root: &Path, request: &mut Prepared) {
+        let suite_file = root.join("suites/failures.toml");
+        let mut suite = crate::read_suite(&suite_file).expect("failure suite");
+        suite.tasks = vec!["probes/failures/unknown-model".into()];
+        let pin_file = root.join("agents/smith/failures.pin.toml");
+        let pin = crate::read_configuration(&pin_file).expect("failure pin");
+        request.task = root.join("tasks/probes/failures/task.toml");
+        let task =
+            crate::read_task(&request.task).expect("failure task").with_variant("unknown-model").expect("variant");
+        request.configuration = Some(pin_file);
+        request.identity.configuration_sha256 = pin.sha256;
+        request.identity.task = "probes/failures/unknown-model".into();
+        request.identity.task_version = task.version;
+        request.identity.seed_sha256 = task.seed_sha256;
+        // The actual closed admission seam refuses a tier-labelled secret override.
+        assert!(check_requests(&suite_file, &suite, std::slice::from_ref(request)).is_err());
+        request.identity.model.requested_model = "smith-bench-nonexistent-model-2026-10-11".into();
+        let valid = check_requests(&suite_file, &suite, std::slice::from_ref(request));
+        assert!(valid.is_ok(), "truthful authored provider rejection identity admitted: {valid:?}");
     }
 }

@@ -101,6 +101,8 @@ pub enum EventCheck {
     NoFailure { class: String },
     /// The authoritative run terminal has this status and optional failure class.
     RunCompleted { status: String, class: Option<String>, reason: Option<String> },
+    /// The run retains actual provider rejection status and bounded diagnostic content.
+    ProviderFailure { status_at_least: u16, status_at_most: u16, detail_bytes_at_most: u32 },
     /// The process refuses before making a provider request.
     NoRequest,
     /// A configured startup refusal emits no run or provider event stream.
@@ -134,6 +136,7 @@ impl EventCheck {
             Self::ChildrenOverlap { .. } => "children-overlap",
             Self::NoFailure { .. } => "no-failure",
             Self::RunCompleted { .. } => "run-completed",
+            Self::ProviderFailure { .. } => "provider-failure",
             Self::NoRequest => "no-request",
             Self::NoRun => "no-run",
         }
@@ -281,6 +284,19 @@ pub struct Task {
 }
 
 impl Task {
+    /// Keep a Smith task's deliberate model override in its frozen identity.
+    pub(crate) fn requested_model<'a>(&'a self, agent: crate::Agent, default: &'a str) -> Result<&'a str, String> {
+        if agent == crate::Agent::Smith
+            && let Some(value) = self.smith.get("model")
+        {
+            return value
+                .as_str()
+                .filter(|model| !model.is_empty())
+                .ok_or_else(|| "Smith model override must be a nonempty string".into());
+        }
+        Ok(default)
+    }
+
     /// Apply one named authored change, retaining additive checks unless replacement is explicit.
     pub fn with_variant(&self, name: &str) -> Result<Self, String> {
         let variant = self.variant.iter().find(|variant| variant.name == name).ok_or("unknown task variant")?;

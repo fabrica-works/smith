@@ -143,6 +143,7 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
                 missing("legacy loss prevents proving no forbidden failure")
             }
         }
+        EventCheck::ProviderFailure { .. } => missing("legacy terminal lacks typed HTTP status and provider detail"),
         EventCheck::RunCompleted { reason: Some(_), .. } => {
             missing("legacy terminal has no authoritative failure reason")
         }

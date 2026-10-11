@@ -117,6 +117,15 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
                         .map_err(|error| Refusal::new(file, &format!("{key}.reason"), error.to_string()))?;
                 }
             }
+            EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } => {
+                if *status_at_least < 100
+                    || *status_at_most > 599
+                    || status_at_least > status_at_most
+                    || *detail_bytes_at_most == 0
+                {
+                    return Err(Refusal::new(file, &key, "HTTP status range and diagnostic bound must be valid"));
+                }
+            }
             EventCheck::CallsInOneResponse { tool, at_least } => {
                 if tool.trim().is_empty() || *at_least == 0 {
                     return Err(Refusal::new(file, &key, "tool and cardinality must be nonempty"));
