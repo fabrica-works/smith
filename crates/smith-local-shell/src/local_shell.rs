@@ -271,16 +271,19 @@ fn product_host_startup_and_complete_outer_memory_fit() {
     let agent_limits = &agent.service.limits;
     assert!(agent_limits.file_bytes >= agent_limits.domain.session.tools.file_bytes);
     let roots = agent_limits.domain.run.directories;
-    let shell_queue = agent_limits.queue.checked_add(roots).and_then(|value| value.checked_add(1)).unwrap();
+    let shell_queue = agent_limits.queue.checked_add(roots).and_then(|value| value.checked_add(2)).unwrap();
     let agent_shell = skein_lib::Queue::<skein_io::kernel::Complete>::worst_case(shell_queue).unwrap()
         + skein_lib::Queue::<skein_io::kernel::Submit>::worst_case(shell_queue).unwrap()
         + u64::try_from(size_of::<smith_agent_shell::Agent>()).unwrap()
         + u64::from(roots) * u64::try_from(size_of::<Fd>()).unwrap();
-    let agent_complete = raw + smith_agent_shell::trace::MEMORY_RESERVE + agent_shell;
+    // The IO writer is already in raw. Startup retains four header strings;
+    // build.rs emits forty commit bytes, plus six only for a dirty build.
+    let startup_header =
+        u64::try_from(b"smith".len() + env!("CARGO_PKG_VERSION").len() + 46 + b"standard".len()).unwrap();
+    let agent_complete = raw + startup_header + agent_shell;
     assert!(agent_complete <= agent.memory, "complete agent product bound {agent_complete}");
     println!(
-        "PRODUCT_AGENT_ACTUAL raw={raw} trace={} shell={agent_shell} complete={agent_complete} file_io={:?} whole={} env=883",
-        smith_agent_shell::trace::MEMORY_RESERVE,
+        "PRODUCT_AGENT_ACTUAL raw={raw} startup_header_bound={startup_header} shell={agent_shell} complete={agent_complete} file_io={:?} whole={} env=883",
         skein_io::file_layer::FileIo::worst_case(
             agent_limits.file_slots,
             agent_limits.file_read,
