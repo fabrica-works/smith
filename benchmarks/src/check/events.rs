@@ -101,6 +101,15 @@ pub(super) fn checks(
                     return Err(Refusal::new(file, &key, "tool and result byte bound must be nonempty"));
                 }
             }
+            EventCheck::ToolTimeout { requested_seconds, deadline_ms, grace_ms, .. } => {
+                if *requested_seconds == 0 || *deadline_ms == 0 || deadline_ms.checked_add(*grace_ms).is_none() {
+                    return Err(Refusal::new(
+                        file,
+                        &key,
+                        "timeout request, bound and grace must fit positive durations",
+                    ));
+                }
+            }
             EventCheck::NoVerdict { verdicts } => {
                 for value in verdicts {
                     named(file, &format!("{key}.verdicts"), value, VERDICTS)?;

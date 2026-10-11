@@ -13,7 +13,7 @@ fn tool_output_inputs_and_deciders_match_the_authored_cases() {
     let task = smith_bench::check_task(&root.join("tasks/probes/tool-output/task.toml"), &root.join("../docs/design"))
         .expect("frozen inputs and checks");
     let suite_file = root.join("suites/tool-output.toml");
-    let suite = smith_bench::read_suite(&suite_file).expect("three independent variants only");
+    let suite = smith_bench::read_suite(&suite_file).expect("four authored variants");
     let catalogue =
         smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design")).expect("frozen catalogue");
     let models = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("tiers");
@@ -21,7 +21,7 @@ fn tool_output_inputs_and_deciders_match_the_authored_cases() {
         smith_bench::validate_suite(&suite_file, &suite, &catalogue, &root.join("agents"), &models)
             .expect("actual selectors")
             .len(),
-        3
+        4
     );
     let output = std::process::Command::new("sh")
         .arg(root.join("tasks/probes/tool-output/seed/test.sh"))
@@ -105,4 +105,106 @@ fn observed(records: &[Record], check: &EventCheck) -> Measure<bool> {
         previous = Some(actual);
     }
     previous.expect("three captures checked")
+}
+
+#[test]
+fn timeouts_require_the_native_equal_bound_exact_request_clamp_and_complete_join() {
+    let check = EventCheck::ToolTimeout { requested_seconds: 9999, deadline_ms: 1000, clamped: true, grace_ms: 250 };
+    let original = common::events::balanced();
+    let mut values = original.clone();
+    let mut start =
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_started_everything.jsonl"));
+    let mut end =
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_completed_everything.jsonl"));
+    if let Event::ToolStarted(value) = &mut start.event {
+        value.run = 0;
+        value.conversation = 0;
+        value.call = Box::from(&b"timeout-call"[..]);
+        value.tool = Box::from(&b"shell"[..]);
+        let input = br#"{"command":"sleep 600","timeout_seconds":9999}"#;
+        value.input = Some(Box::from(input.as_slice()));
+        value.input_bytes = u64::try_from(input.len()).expect("small input");
+        value.deadline_ms = Some(1000);
+    }
+    if let Event::ToolCompleted(value) = &mut end.event {
+        value.run = 0;
+        value.conversation = 0;
+        value.call = Box::from(&b"timeout-call"[..]);
+        value.tool = Box::from(&b"shell"[..]);
+        value.verdict = smith_events::Verdict::TimedOut;
+        value.clamped = true;
+        value.duration_ms = 1001;
+        value.child = None;
+        value.delivery = None;
+    }
+    values.splice(5..5, [start, end]);
+    for (index, record) in values.iter_mut().enumerate() {
+        record.t_ms = u64::try_from(index).expect("small fixture") + if index >= 6 { 1000 } else { 0 };
+    }
+    common::events::inventory(&mut values);
+    for capture in [smith_events::Capture::Calls, smith_events::Capture::Everything] {
+        let verdict = observed_capture(&values, &check, &capture);
+        assert_eq!(verdict.passed, Measure::Observed { value: true });
+        assert!(verdict.evidence[0].contains("requested_seconds=9999 emitted_bound_ms=1000 duration_ms=1001"));
+        for duration in [0, 999, 1251] {
+            let mut changed = values.clone();
+            if let Event::ToolCompleted(value) = &mut changed[6].event {
+                value.duration_ms = duration;
+            }
+            assert_eq!(observed_capture(&changed, &check, &capture).passed, Measure::Observed { value: false });
+        }
+        let mut changed = values.clone();
+        if let Event::ToolStarted(value) = &mut changed[5].event {
+            value.deadline_ms = None;
+        }
+        assert!(matches!(observed_capture(&changed, &check, &capture).passed, Measure::Unavailable { .. }));
+        if let Event::ToolStarted(value) = &mut changed[5].event {
+            value.deadline_ms = Some(2000);
+        }
+        assert_eq!(observed_capture(&changed, &check, &capture).passed, Measure::Observed { value: false });
+        changed = values.clone();
+        if let Event::ToolCompleted(value) = &mut changed[6].event {
+            value.clamped = false;
+        }
+        assert_eq!(observed_capture(&changed, &check, &capture).passed, Measure::Observed { value: false });
+        if let Event::ToolCompleted(value) = &mut changed[6].event {
+            value.clamped = true;
+            value.run = 1;
+        }
+        assert!(matches!(observed_capture(&changed, &check, &capture).passed, Measure::Unavailable { .. }));
+        changed = values.clone();
+        if let Event::ToolStarted(value) = &mut changed[5].event {
+            value.input = Some(Box::from(&br#"{"command":"sleep 600","timeout_seconds":1}"#[..]));
+        }
+        assert_eq!(observed_capture(&changed, &check, &capture).passed, Measure::Observed { value: false });
+        let unclamped =
+            EventCheck::ToolTimeout { requested_seconds: 1, deadline_ms: 1000, clamped: false, grace_ms: 250 };
+        if let Event::ToolCompleted(value) = &mut changed[6].event {
+            value.clamped = false;
+        }
+        assert_eq!(observed_capture(&changed, &unclamped, &capture).passed, Measure::Observed { value: true });
+        if let Event::ToolStarted(value) = &mut changed[5].event {
+            value.input = Some(Box::from(&br#"{"command":"sleep 600","timeout_seconds":1,"output_bytes":99999}"#[..]));
+        }
+        assert_eq!(observed_capture(&changed, &unclamped, &capture).passed, Measure::Observed { value: false });
+    }
+    assert!(matches!(
+        observed_capture(&values, &check, &smith_events::Capture::None).passed,
+        Measure::Unavailable { .. }
+    ));
+}
+
+fn observed_capture(
+    records: &[Record],
+    check: &EventCheck,
+    capture: &smith_events::Capture,
+) -> smith_bench::CheckVerdict {
+    let mut observer = Observer::new(&common::events::LIMITS).expect("reader");
+    for record in records {
+        let line =
+            smith_events::write(record, capture, &common::events::LIMITS).expect("actual Writer").expect("record");
+        observer.feed(&line).expect("actual Reader");
+    }
+    observer.finish().expect("complete stream");
+    observer.check(check, "task")
 }

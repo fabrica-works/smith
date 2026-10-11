@@ -255,6 +255,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         if let EventCheck::ToolResultBytes { tool, at_least } = check {
             return tool_result_bytes(observer, tool, *at_least);
         }
+        if let EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms } = check {
+            return tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms);
+        }
         evaluate_complete(observer, check, task, currency)
     };
     let evidence = if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
@@ -271,6 +274,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::OversizedWrite { .. } => unavailable("oversized write pairing requires its workspace path"),
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
         EventCheck::UsageSums => super::usage_sums::check(observer),
+        EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms } =>
+            tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms).passed,
         EventCheck::ToolCall { .. } => tool_call(observer, check),
         EventCheck::ToolResultBytes { tool, at_least } => tool_result_bytes(observer, tool, *at_least).passed,
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
@@ -421,4 +426,70 @@ fn tool_result_bytes(observer: &Observer, tool: &str, bound: u64) -> CheckVerdic
         }
     }
     CheckVerdict { check: "tool-result-bytes".into(), passed: measured(found), evidence }
+}
+
+// This probe configures the command bound equal to the emitted outer ceiling.
+// An emitted outer ceiling alone never proves a shorter requested duration.
+fn tool_timeout(observer: &Observer, requested: u32, bound: u64, clamped: bool, grace: u64) -> CheckVerdict {
+    let maximum = bound.checked_add(grace).expect("manifest duration checked");
+    let mut count = 0_u64;
+    let mut passed = true;
+    let mut evidence = Vec::new();
+    for session in &observer.sessions {
+        for record in &session.records {
+            if let Event::ToolStarted(start) = &record.event
+                && start.tool.as_ref() == b"shell"
+            {
+                let Some(input) = &start.input else {
+                    return CheckVerdict {
+                        check: "tool-timeout".into(),
+                        passed: unavailable("shell request input was not captured"),
+                        evidence,
+                    };
+                };
+                let Ok(input) = serde_json::from_slice::<serde_json::Value>(input) else {
+                    return CheckVerdict { check: "tool-timeout".into(), passed: measured(false), evidence };
+                };
+                if input.get("timeout_seconds").and_then(serde_json::Value::as_u64) != Some(u64::from(requested)) {
+                    continue;
+                }
+                count = count.checked_add(1).expect("retained shell count fits");
+                let Some(deadline) = start.deadline_ms else {
+                    return CheckVerdict {
+                        check: "tool-timeout".into(),
+                        passed: unavailable("actual shell call bound was not emitted"),
+                        evidence,
+                    };
+                };
+                let Some(end) = session
+                    .records
+                    .iter()
+                    .filter_map(|record| if let Event::ToolCompleted(end) = &record.event { Some(end) } else { None })
+                    .find(|end| {
+                        end.run == start.run
+                            && end.conversation == start.conversation
+                            && end.call == start.call
+                            && end.tool == start.tool
+                    })
+                else {
+                    return CheckVerdict {
+                        check: "tool-timeout".into(),
+                        passed: unavailable("shell timeout lacks its matching terminal"),
+                        evidence,
+                    };
+                };
+                // An explicit output budget could also set the scalar clamp.
+                // This case omits it, so the observed clamp belongs to time.
+                passed &= input.get("output_bytes").is_none()
+                    && deadline == bound
+                    && end.clamped == clamped
+                    && names::verdict(&end.verdict) == b"timed_out"
+                    && end.duration_ms >= bound
+                    && end.duration_ms <= maximum;
+                evidence.push(format!("run={} conversation={} call={} requested_seconds={requested} emitted_bound_ms={deadline} duration_ms={} grace_ms={grace} clamped={}",
+                    start.run, start.conversation, String::from_utf8_lossy(&start.call), end.duration_ms, end.clamped));
+            }
+        }
+    }
+    CheckVerdict { check: "tool-timeout".into(), passed: measured(passed && count == 1), evidence }
 }

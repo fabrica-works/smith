@@ -667,6 +667,11 @@ fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
         let local = smith_local_shell::local_settings::read(&settings_path, None).expect("public startup settings");
         let document = smith_local_shell::local_settings::agent_document(&local).expect("actual agent translation");
         let configured = smith_agent_shell::config::parse(&document).expect("native profile admitted");
+        if variant.name == "timeout" {
+            assert_eq!(configured.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
+            assert_eq!(configured.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
+            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_millis(250));
+        }
         let allowances = configured
             .service
             .domain

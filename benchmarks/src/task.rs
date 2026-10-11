@@ -81,6 +81,8 @@ pub enum EventCheck {
     },
     /// An actual tool terminal retains at least this many result bytes.
     ToolResultBytes { tool: String, at_least: u64 },
+    /// A shell request times out at its emitted bound, with its exact clamp and grace.
+    ToolTimeout { requested_seconds: u32, deadline_ms: u64, clamped: bool, grace_ms: u64 },
     /// Response usage sums match each authoritative run total.
     UsageSums,
     /// No tool ends with any of these verdicts.
@@ -142,6 +144,7 @@ impl EventCheck {
             Self::OversizedWrite { .. } => "oversized-write",
             Self::ToolCall { .. } => "tool-call",
             Self::ToolResultBytes { .. } => "tool-result-bytes",
+            Self::ToolTimeout { .. } => "tool-timeout",
             Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",
             Self::Completions { .. } => "completions",
