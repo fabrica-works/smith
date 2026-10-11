@@ -348,7 +348,7 @@ fn author_predicates_use_typed_records_and_missing_content_stays_unavailable() {
         EventCheck::Completions { count: Count::Exactly(1), before: Before::Answer },
         EventCheck::ConversationOpened { kind: "main".into(), count: Count::Exactly(1) },
         EventCheck::NoFailure { class: "limit".into() },
-        EventCheck::RunCompleted { status: "accepted".into(), class: None, reason: None },
+        EventCheck::RunCompleted { status: "accepted".into(), class: None, which: None, reason: None },
         EventCheck::NoStop { stop: "max_tokens".into() },
     ] {
         assert_eq!(observer.check(&check, "task").passed, Measure::Observed { value: true });
@@ -1532,6 +1532,7 @@ fn expected_entrance_refusal_requires_captured_reason_and_no_request() {
     let predicate = smith_bench::EventCheck::RunCompleted {
         status: "refused".into(),
         class: Some("invalid".into()),
+        which: None,
         reason: Some("budget.*reserve".into()),
     };
     let observer = observe_against(&values, None);

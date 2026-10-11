@@ -144,10 +144,15 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
             }
         }
         EventCheck::ProviderFailure { .. } => missing("legacy terminal lacks typed HTTP status and provider detail"),
+        EventCheck::RunCompleted { which: Some(_), .. } => {
+            missing("legacy terminal has no authoritative typed failure identity")
+        }
         EventCheck::RunCompleted { reason: Some(_), .. } => {
             missing("legacy terminal has no authoritative failure reason")
         }
-        EventCheck::RunCompleted { status, class, reason: None } => terminal(records, status, class.as_deref()),
+        EventCheck::RunCompleted { status, class, which: None, reason: None } => {
+            terminal(records, status, class.as_deref())
+        }
         EventCheck::UsageSums => missing("legacy raw run usage totals do not prove complete per-response sums"),
         EventCheck::NoRequest => missing("legacy CompletionStarted is logical intent, not an actual native HTTP start"),
         EventCheck::NoRun => missing("legacy trace cannot prove an empty native startup event capture"),

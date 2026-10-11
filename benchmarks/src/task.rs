@@ -99,8 +99,8 @@ pub enum EventCheck {
     ChildrenOverlap { at_least: u32 },
     /// No response has this completion failure class.
     NoFailure { class: String },
-    /// The authoritative run terminal has this status and optional failure class.
-    RunCompleted { status: String, class: Option<String>, reason: Option<String> },
+    /// The authoritative run terminal has this status and optional typed failure identity.
+    RunCompleted { status: String, class: Option<String>, which: Option<String>, reason: Option<String> },
     /// The run retains actual provider rejection status and bounded diagnostic content.
     ProviderFailure { status_at_least: u16, status_at_most: u16, detail_bytes_at_most: u32 },
     /// The process refuses before making a provider request.

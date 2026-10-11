@@ -107,10 +107,13 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
                 }
             }
             EventCheck::NoFailure { class } => named(file, &format!("{key}.class"), class, FAILURES)?,
-            EventCheck::RunCompleted { status, class, reason } => {
+            EventCheck::RunCompleted { status, class, which, reason } => {
                 named(file, &format!("{key}.status"), status, &["accepted", "parked", "failed", "refused"])?;
                 if let Some(value) = class {
                     named(file, &format!("{key}.class"), value, ANSWERS)?;
+                }
+                if which.as_ref().is_some_and(|value| value.trim().is_empty()) {
+                    return Err(Refusal::new(file, &format!("{key}.which"), "typed failure identity must be nonempty"));
                 }
                 if let Some(pattern) = reason {
                     regex::Regex::new(pattern)

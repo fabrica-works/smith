@@ -1,5 +1,5 @@
 id = "failures"
-version = 1
+version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
@@ -46,7 +46,7 @@ end = "refused"
 check = "run-completed"
 status = "refused"
 class = "invalid"
-reason = "(?i)budget.*reserve|reserve.*budget"
+which = "budget_reserve_turns"
 [[variant.event]]
 check = "no-request"
 

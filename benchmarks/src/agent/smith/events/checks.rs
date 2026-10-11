@@ -275,7 +275,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::ChildrenOverlap { at_least } => children_overlap(observer, *at_least),
         EventCheck::NoFailure { class } => measured(!records.iter().any(|record| matches!(&record.event,
             Event::ResponseCompleted(value) if value.failure.as_ref().is_some_and(|value| names::failure(&value.class) == class.as_bytes())))),
-        EventCheck::RunCompleted { status, class, reason } => {
+        EventCheck::RunCompleted { status, class, which, reason } => {
             let terminals: Vec<_> = records.iter().filter_map(|record| match &record.event {
                 Event::RunCompleted(value) => Some(value),
                 Event::MessageReceived(_) | Event::MessageRead(_) | Event::MessageUnread(_) | Event::Budget(_) | Event::SessionStarted(_) | Event::SessionEnded(_) | Event::RunStarted(_)
@@ -283,6 +283,14 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
                 | Event::TextDelta(_) | Event::ToolStarted(_) | Event::ToolCompleted(_) | Event::CheckStarted(_)
                 | Event::CheckCompleted(_) | Event::Notice(_) => None,
             }).collect();
+            if let Some(expected) = which {
+                for value in &terminals {
+                    let Some(actual) = value.failure.as_ref().and_then(|failure| failure.which.as_ref()) else {
+                        return unavailable("run failure typed identity was not retained");
+                    };
+                    if actual.as_ref() != expected.as_bytes() { return measured(false); }
+                }
+            }
             if let Some(pattern) = reason {
                 let pattern = regex::Regex::new(pattern).expect("manifest regex checked");
                 for value in &terminals {

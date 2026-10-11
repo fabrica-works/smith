@@ -413,8 +413,8 @@ fn legacy_predicates_prove_only_trace_visible_counts_and_counterexamples() {
         EventCheck::NoVerdict { verdicts: vec!["bad_path".into()] },
         EventCheck::NoStop { stop: "tools".into() },
         EventCheck::NoStop { stop: "max_tokens".into() },
-        EventCheck::RunCompleted { status: "failed".into(), class: None, reason: None },
-        EventCheck::RunCompleted { status: "accepted".into(), class: None, reason: None },
+        EventCheck::RunCompleted { status: "failed".into(), class: None, which: None, reason: None },
+        EventCheck::RunCompleted { status: "accepted".into(), class: None, which: None, reason: None },
         EventCheck::NoRequest,
     ];
     let values = checked_legacy(TOOLS, &checks);
@@ -435,9 +435,18 @@ fn legacy_predicates_prove_only_trace_visible_counts_and_counterexamples() {
     assert_eq!(values[0].passed, Measure::Observed { value: false });
     assert!(matches!(values[1].passed, Measure::Unavailable { .. }));
     let accepted = fact("Run { fact: Answered { run: Token(0), answer: Accepted } }");
-    let values =
-        checked_legacy(&accepted, &[EventCheck::RunCompleted { status: "failed".into(), class: None, reason: None }]);
+    let values = checked_legacy(
+        &accepted,
+        &[EventCheck::RunCompleted { status: "failed".into(), class: None, which: None, reason: None }],
+    );
     assert_eq!(values[0].passed, Measure::Observed { value: false });
+    let typed = EventCheck::RunCompleted {
+        status: "refused".into(),
+        class: Some("invalid".into()),
+        which: Some("budget_reserve_turns".into()),
+        reason: None,
+    };
+    assert!(matches!(checked_legacy(&accepted, &[typed])[0].passed, Measure::Unavailable { .. }));
     let values = checked_legacy("", &checks);
     assert!(values.iter().all(|value| matches!(value.passed, Measure::Unavailable { .. })));
 }
