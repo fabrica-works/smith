@@ -117,9 +117,10 @@ fn actual(build: &Build, results: &[AttemptResult], batch: &crate::batch::Batch)
         arm: ArmRef::Built(build.clone()),
         run,
         verdict: if quarantined { Judgment::Incomplete } else { judge_suite(results, false) },
-        setup_refused: results
-            .iter()
-            .any(|result| matches!(result.outcome.end, End::Refused { .. }) && result.outcome.checks.is_empty()),
+        setup_refused: results.iter().any(|result| {
+            matches!(result.outcome.end, End::Refused { .. })
+                && matches!(result.timing.process_wall_ms, crate::Measure::Unavailable { .. })
+        }),
     })
 }
 
@@ -246,6 +247,14 @@ mod tests {
         batch.results[0].outcome.checks[0].passed = crate::Measure::Observed { value: true };
         batch.probes.insert(key, ProbeVerdict::Passed);
         assert_eq!(actual(&build, &batch.results, &batch).expect("pass").verdict, Judgment::Pass);
+        batch.results[0].outcome.end = End::Refused { setup: "named refusal".into() };
+        batch.results[0].timing.process_wall_ms = crate::Measure::unavailable("product invocation did not run");
+        assert!(
+            actual(&build, &batch.results, &batch).expect("setup refusal").setup_refused,
+            "neutral named checks survive even when setup refuses"
+        );
+        batch.results[0].timing.process_wall_ms = crate::Measure::Observed { value: 1 };
+        assert!(!actual(&build, &batch.results, &batch).expect("measured product refusal").setup_refused);
         batch.results[0].identity.binary_sha256.push('0');
         assert!(
             actual(&build, &batch.results, &batch).is_err(),

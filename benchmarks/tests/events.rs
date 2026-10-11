@@ -8,8 +8,7 @@ use common::events::{LIMITS, balanced, bytes, record};
 
 fn observe(records: &[Record]) -> Observer {
     static ORIGINAL: std::sync::LazyLock<Visible> = std::sync::LazyLock::new(|| Visible::new(balanced()));
-    let original = (records.len() == ORIGINAL.records.len()).then_some(&*ORIGINAL);
-    observe_against(records, original)
+    observe_against(records, Some(&*ORIGINAL))
 }
 
 fn passed(observer: &Observer, name: &str) -> Measure<bool> {
@@ -884,11 +883,12 @@ fn observe_against(records: &[Record], original: Option<&Visible>) -> Observer {
         .max(4);
     let limits = Limits { items, ..LIMITS };
     let mut observer = Observer::new(&limits).expect("receiving bounds");
-    for (position, record) in records.iter().enumerate() {
-        if let Some(original) = original
-            && record == &original.records[position]
-        {
-            observer.feed(&original.lines[position]).expect("unchanged outside record");
+    for record in records {
+        let unchanged = original.and_then(|original| {
+            original.records.iter().zip(&original.lines).find_map(|(value, line)| (value == record).then_some(line))
+        });
+        if let Some(line) = unchanged {
+            observer.feed(line).expect("byte-identical outside record");
         } else {
             observer.feed(&bytes(std::slice::from_ref(record))).expect("changed outside record");
         }

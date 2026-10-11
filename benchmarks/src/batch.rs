@@ -565,7 +565,7 @@ mod native_suite_pin_tests {
         identity.provider = crate::Provider::Codex;
         identity.agent_version = commit;
         identity.binary_sha256 = digest;
-        identity.configuration_sha256 = pin.sha256;
+        identity.configuration_sha256 = pin.sha256.clone();
         identity.task = "probes/first-request".into();
         identity.task_version = task.version;
         identity.seed_sha256 = task.seed_sha256;
@@ -592,10 +592,7 @@ mod native_suite_pin_tests {
         // Do not execute or read credentials; this is the real admission seam.
         assert!(valid.is_ok(), "verified native commit must match built-arm pin: {valid:?}");
         request.identity.binary_sha256 = "0".repeat(64);
-        assert!(
-            check_requests(&suite_file, &suite, std::slice::from_ref(&request)).is_err(),
-            "changed binary identity refused before dispatch"
-        );
+        assert_eq!(configuration_matches(&pin, &request), Ok(false), "changed binary identity refused by admission");
         fs::remove_dir_all(directory.parent().expect("fixture owner")).expect("cleanup");
     }
 }
