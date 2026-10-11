@@ -21,6 +21,7 @@ fn limits() -> Limits {
     Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32_768,
+        history_bytes: u64::from(skein_llm_world::limits().request),
         rendered_result: 2048,
         stated: smith_protocol_llm_world::adapter::stated(),
     }

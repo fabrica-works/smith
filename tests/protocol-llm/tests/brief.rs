@@ -468,6 +468,7 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: adapter::stated(),
         };
@@ -544,10 +545,13 @@ fn five_native_completions_keep_the_wire_prefix_and_replay_each_previous_answer(
 }
 
 #[test]
+#[expect(clippy::too_many_lines, reason = "one native control retains its full large-batch fixture and observations")]
 fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     const THINKING: &[u8] =
         br#"{"type":"thinking","thinking":"Inspect the whole batch.","signature":"fixture-signature"}"#;
     let declared = skein_llm::Declared {
+        tools: 16,
+        history_items: 256,
         window: 342,
         output: 4096,
         reasoning_item: 2048,
@@ -561,7 +565,13 @@ fn anthropic_breakpoints_account_for_thinking_and_a_large_tool_batch() {
     client.http.read = pieces.http.read;
     client.http.send = pieces.http.send;
     client.sse.chunk = pieces.sse.chunk;
-    let bounds = Limits { client, tool_bytes: 32768, rendered_result: client.strings, stated: adapter::stated() };
+    let bounds = Limits {
+        client,
+        tool_bytes: 32768,
+        history_bytes: u64::from(client.request),
+        rendered_result: client.strings,
+        stated: adapter::stated(),
+    };
     let mut settings = Settings {
         job: Job::Waiting,
         waiting: Duration::from_secs(1),
@@ -726,6 +736,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
@@ -822,6 +833,7 @@ fn identityless_resume_keeps_the_recorded_run_key_for_main_and_a_new_child() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: adapter::stated(),
         };

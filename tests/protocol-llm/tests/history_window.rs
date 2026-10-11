@@ -27,6 +27,8 @@ struct Fixture {
 
 fn fixture(provider: skein_llm::Provider) -> Fixture {
     let declared = skein_llm::Declared {
+        tools: 16,
+        history_items: 256,
         window: 512,
         output: 16,
         reasoning_item: 1,
@@ -48,14 +50,13 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
         max_spend: u64::MAX,
         max_time: Duration::from_secs(60),
         tools,
-        request: u64::from(client.request),
-        history_items: client.history_items,
-        own_items: 1,
+        threshold_bytes: u64::from(declared.window) * 8 * 4 / 5,
+        completion_bytes: 4096,
+        answer_bytes: u64::from(client.answer),
+        batch_result_bytes: 4096,
+        delegated_result_bytes: 4096,
         output_items: client.output_items,
-        call_input: client.input,
         detail: client.detail_bytes,
-        own: 0,
-        allowance,
         protocol_allowance: allowance,
         threshold: [4, 5],
     })
@@ -120,6 +121,7 @@ fn history_edge(provider: skein_llm::Provider) {
         let adapter_limits = adapter::Limits {
             client,
             tool_bytes: 1024,
+            history_bytes: u64::from(client.request),
             rendered_result: 1024,
             stated: adapter::Stated::from_tools(&tools, client.input).expect("effective numeric descriptions"),
         };

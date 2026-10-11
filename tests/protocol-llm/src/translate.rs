@@ -192,6 +192,7 @@ pub(crate) fn decode(
     let limits = adapter::Limits {
         client: skein_llm_world::limits(),
         tool_bytes: 32768,
+        history_bytes: u64::from(skein_llm_world::limits().request),
         rendered_result: skein_llm_world::limits().strings,
         stated: crate::adapter::stated(),
     };

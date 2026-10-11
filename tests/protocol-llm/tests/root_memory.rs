@@ -279,6 +279,7 @@ fn wire_limits() -> adapter::Limits {
     adapter::Limits {
         client,
         tool_bytes: 16_384,
+        history_bytes: u64::from(client.request),
         rendered_result: client.strings,
         stated: smith_protocol_llm_world::adapter::stated(),
     }

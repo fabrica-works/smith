@@ -37,7 +37,9 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         let limits = profile::derive(&profile, &declarations).expect("small real model derives");
         let allowance = profile::endpoint_allowance(&profile, &declarations.endpoints[0], &limits.domain.session.tools)
             .expect("actual schemas and provider framing");
-        let client = profile::endpoint_client(&profile, &declarations.endpoints[0]).expect("native client");
+        let client =
+            profile::endpoint_client(&profile, &declarations.endpoints[0], limits.domain.session.history_blocks)
+                .expect("native client");
         let inventory = profile.policy.host_tools.checked_add(10).expect("bounded inventory");
         let framing = smith_protocol_llm::prompt_allowance(declarations.endpoints[0].provider, &client, inventory)
             .expect("provider framing");

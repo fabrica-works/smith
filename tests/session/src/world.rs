@@ -212,6 +212,7 @@ impl Settings {
                 history_messages: 32,
                 history_bytes: 1 << 20,
                 completion_bytes: 4096,
+                answer_bytes: 4096,
                 completion_blocks: 16,
                 failure_bytes: 512,
                 delegated_result_bytes: 16_384,

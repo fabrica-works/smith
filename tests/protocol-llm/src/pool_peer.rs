@@ -17,6 +17,7 @@ fn limits() -> ComponentLimits {
     let adapter = adapter::Limits {
         client,
         tool_bytes: 32_768,
+        history_bytes: u64::from(client.request),
         rendered_result: client.strings,
         stated: crate::adapter::stated(),
     };

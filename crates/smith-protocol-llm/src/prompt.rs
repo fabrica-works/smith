@@ -341,11 +341,37 @@ fn offered(kind: ToolKind, input: &llm::Prompt) -> bool {
 fn history_admitted(messages: &[llm::Message], limits: &Limits) -> Result<(), Error> {
     let maximum = usize::try_from(limits.client.history_items).expect("u32 fits usize");
     let mut blocks = 0_usize;
+    let mut documents = 0_u64;
     for message in messages {
         blocks = blocks.checked_add(message.content.len()).ok_or(Error::Limit)?;
         if blocks > maximum {
             return Err(Error::Limit);
         }
+        for block in &message.content {
+            let replay = match block {
+                llm::Block::Text { replay, .. }
+                | llm::Block::Refusal { replay, .. }
+                | llm::Block::ToolCall { replay, .. } => replay.as_ref(),
+                llm::Block::ToolResult { result, .. } => match result {
+                    llm::Returned::Text { replay, .. } => replay.as_ref(),
+                    llm::Returned::Owned { .. }
+                    | llm::Returned::Invalid { .. }
+                    | llm::Returned::NotRun { .. }
+                    | llm::Returned::Withdrawn
+                    | llm::Returned::Served { .. } => None,
+                },
+                llm::Block::Opaque { bytes } => {
+                    documents = documents.checked_add(size(bytes.len())?).ok_or(Error::Limit)?;
+                    None
+                }
+            };
+            if let Some(replay) = replay {
+                documents = documents.checked_add(size(replay.bytes.len())?).ok_or(Error::Limit)?;
+            }
+        }
+    }
+    if documents > limits.history_bytes {
+        return Err(Error::Limit);
     }
     Ok(())
 }

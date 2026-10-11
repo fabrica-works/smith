@@ -155,14 +155,16 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(convention_paths)?
         .checked_add(workspace_render)?
         .checked_add(authority_cells)?;
+    // Rule 5: queue cells cover the composed step reserve; payload is one
+    // handoff per conversation before its next external completion.
     let run_out = Queue::<run::Request>::worst_case(run_out(limits))?
-        .checked_add(u64::from(run_out(limits)).checked_mul(payload)?)?;
+        .checked_add(u64::from(run_limits.conversations).checked_mul(payload)?)?;
     // Every copied turn/prompt in the child queue and every separate handoff
     // can own record envelopes plus capped block payload concurrently. Start
     // history remains independent while main has not consumed its binding.
     let record = record_payload(limits)?;
     let queued_session = Queue::<session::Request>::worst_case(session_out(limits))?.checked_add(
-        u64::from(session_out(limits))
+        u64::from(run_limits.conversations)
             .checked_mul(record.max(prompt_payload(limits)?).max(u64::from(session_limits.failure_bytes)))?,
     )?;
     let starts = Slab::<StartContext>::worst_case(run_limits.runs)?.checked_add(
@@ -172,17 +174,19 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(run_limits.runs).checked_mul(prompt_payload(limits)?)?)?
         .checked_add(Queue::<crate::Request>::worst_case(2)?)?;
     let turns = Slab::<TurnHandoff>::worst_case(session_out(limits))?
-        .checked_add(u64::from(session_out(limits)).checked_mul(record)?)?;
+        .checked_add(u64::from(run_limits.conversations).checked_mul(record)?)?;
     // Canonical rendering can temporarily retain the complete semantic result
     // beside the allocated text, before it moves into one flight.
     let answers = u64::from(run_limits.answered_calls)
         .checked_mul(u64::try_from(size_of::<crate::AnsweredCall>()).ok()?)?
         .checked_add(u64::from(run_limits.answered_bytes).checked_mul(2)?)?;
     let rendering = payload.checked_add(session_limits.delegated_result_bytes)?.checked_add(answers)?;
+    // Rule 5: parent drains child facts after every entrance. Facts own only
+    // provider IDs/names from one answer per producer, never whole completions.
     let facts = Queue::<Fact>::worst_case(facts(limits)?)?
-        .checked_add(u64::from(facts(limits)?).checked_mul(limits.session.completion_bytes)?)?;
+        .checked_add(u64::from(run_limits.conversations).checked_mul(limits.session.answer_bytes)?)?;
     let content = Queue::<crate::Content>::worst_case(limits.session.facts)?
-        .checked_add(u64::from(limits.session.facts).checked_add(1)?.checked_mul(limits.session.history_bytes)?)?;
+        .checked_add(u64::from(run_limits.conversations).checked_add(1)?.checked_mul(limits.session.history_bytes)?)?;
     children
         .checked_add(
             u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<run::charter::Endpoint>()).ok()?)?,
@@ -300,6 +304,9 @@ pub(crate) fn prompt_payload(limits: &Limits) -> Option<u64> {
     let session_block = u64::try_from(size_of::<session::llm::Block>()).ok()?;
     let blocks = limits.session.history_bytes.checked_div(session_block)?;
     let root_block = u64::try_from(size_of::<crate::llm::Block>()).ok()?;
+    // The source byte total already includes each session Block cell. Root
+    // translation adds only the larger cell's difference, not that cell again.
+    let extra_block = root_block.max(session_block).checked_sub(session_block)?;
     let messages = u64::from(limits.session.history_messages)
         .checked_mul(u64::try_from(size_of::<crate::llm::Message>()).ok()?)?;
     let descriptors = u64::from(limits.run.host_tools)
@@ -308,7 +315,7 @@ pub(crate) fn prompt_payload(limits: &Limits) -> Option<u64> {
     limits
         .session
         .history_bytes
-        .checked_add(blocks.checked_mul(root_block)?)?
+        .checked_add(blocks.checked_mul(extra_block)?)?
         .checked_add(messages)?
         .checked_add(descriptors)?
         .checked_add(limits.run.run_bytes)

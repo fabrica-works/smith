@@ -41,6 +41,9 @@ pub struct Limits {
     /// reserves this and every possible unstarted result before asking the provider.
     pub completion_bytes: u64,
 
+    /// One completion's joint answer payload, supplied by the service.
+    pub answer_bytes: u64,
+
     /// Maximum blocks in a completion; result-slot storage is
     /// reserved independently before the provider request. The adapter's full
     /// translated completion bound must obey both receiving caps.
@@ -118,12 +121,16 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         return None;
     }
     let sessions = Slab::<Session>::worst_case(limits.sessions)?;
+    // Rules 1 and 5: two whole batches per session share their completion
+    // payload; each run owns a cell, not a fresh complete provider answer.
     let runs = Slab::<Run>::worst_case(runs(limits)?)?
-        .checked_add(u64::from(runs(limits)?).checked_mul(limits.completion_bytes)?)?;
+        .checked_add(u64::from(limits.sessions).checked_mul(2)?.checked_mul(limits.completion_bytes)?)?;
     let alarms = Deadlines::<Alarm>::worst_case(alarms(limits)?)?;
     let ready = Ready::worst_case(limits.sessions)?;
+    // Rule 5: the parent drains facts before its next child entrance; copied
+    // call IDs/names share one answer total per emitting session.
     let facts = Queue::<Fact>::worst_case(limits.facts)?
-        .checked_add(u64::from(limits.facts).checked_mul(limits.completion_bytes)?)?;
+        .checked_add(u64::from(limits.sessions).checked_mul(limits.answer_bytes)?)?;
     let tools = tools::worst_case(&limits.tools)?;
     let tools_out = Queue::<tools::Request>::worst_case(tools::max_out(&limits.tools))?;
     // Each session owns its transcript's list and up to its byte limit.
@@ -186,16 +193,14 @@ pub struct Derivation {
     pub max_spend: u64,
     pub max_time: Duration,
     pub tools: tools::Limits,
-    pub request: u64,
-    pub history_items: u32,
-    /// System and offered-tool entries deducted from native history counts.
-    pub own_items: u32,
+    /// Window threshold in decoded bytes, `TOKEN_BYTES` applied by the service.
+    pub threshold_bytes: u64,
+    pub completion_bytes: u64,
+    pub answer_bytes: u64,
+    pub batch_result_bytes: u64,
+    pub delegated_result_bytes: u64,
     pub output_items: u32,
-    pub call_input: u32,
     pub detail: u32,
-    /// Fixed Smith and largest host system/schema bytes, already escaped.
-    pub own: u64,
-    pub allowance: u64,
     /// Receiving ceiling for the actual opening's measured protocol contribution.
     pub protocol_allowance: u64,
     /// Numerator and denominator of the compaction share.
@@ -243,33 +248,21 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
     if inputs.calls_per_response == 0 {
         return Err(Field::ParallelTools);
     }
-    let allowance = inputs.allowance.checked_mul(6).ok_or(Field::Allowance)?;
-    let history_bytes = inputs
-        .request
-        .checked_sub(inputs.own)
-        .ok_or(Field::HistoryBytes)?
-        .checked_sub(allowance)
-        .ok_or(Field::HistoryBytes)?
-        .checked_div(6)
-        .expect("fixed nonzero escaping factor");
-    let history_items = inputs.history_items.checked_sub(inputs.own_items).ok_or(Field::HistoryItems)?;
-    if history_items < 2 || history_bytes == 0 {
-        return Err(Field::HistoryItems);
-    }
     if inputs.output_items == 0 {
         return Err(Field::CompletionBlocks);
     }
-    Ok(Limits {
+    let mut limits = Limits {
         sessions: inputs.conversations,
         spend: inputs.max_spend,
         protocol_allowance: inputs.protocol_allowance,
-        history_messages: history_items,
-        history_blocks: history_items,
-        history_bytes,
-        completion_bytes: 4096,
+        history_messages: 0,
+        history_blocks: 0,
+        history_bytes: 0,
+        completion_bytes: inputs.completion_bytes,
+        answer_bytes: inputs.answer_bytes,
         completion_blocks: inputs.output_items,
         failure_bytes: inputs.detail,
-        delegated_result_bytes: 4_194_304,
+        delegated_result_bytes: inputs.delegated_result_bytes,
         budget: Budget {
             turns: inputs.max_turns,
             input: 1 << 24,
@@ -284,5 +277,22 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         facts: 1024,
         parallel_tools: inputs.calls_per_response.min(4),
         tools: inputs.tools,
-    })
+    };
+    // Rules 1 and 4: the window side bounds decoded history. Receiving beyond
+    // one answer and one complete batch coexist before the next window check.
+    let reserve = completion_reserve(&limits).ok_or(Field::HistoryBytes)?;
+    limits.history_bytes = inputs
+        .threshold_bytes
+        .checked_add(reserve.checked_sub(inputs.answer_bytes).ok_or(Field::HistoryBytes)?)
+        .ok_or(Field::HistoryBytes)?
+        .checked_add(inputs.batch_result_bytes)
+        .ok_or(Field::HistoryBytes)?;
+    // Rule 3: preallocated messages and blocks use an in-memory Block cell.
+    let cell = u64::try_from(size_of::<Block>()).expect("cell fits u64");
+    let items =
+        limits.history_bytes.checked_div(cell).expect("nonzero cell").checked_add(2).ok_or(Field::HistoryItems)?;
+    let items = u32::try_from(items).or(Err(Field::HistoryItems))?;
+    limits.history_messages = items;
+    limits.history_blocks = items;
+    Ok(limits)
 }

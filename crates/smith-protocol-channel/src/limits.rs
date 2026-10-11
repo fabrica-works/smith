@@ -9,6 +9,8 @@ use crate::{Component, OpenEvent};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     pub bodies: smith_channel::Limits,
+    /// Aggregate incoming Start bytes, including its whole saved window.
+    pub start_bytes: u32,
     /// This agent's bounded charter decoder allowances.
     pub charter: smith_charter::v2::Limits,
     /// This agent's bounded saved-turn decoder allowances.
@@ -114,7 +116,7 @@ pub const fn max_out(_limits: &Limits) -> MaxOut {
 /// Price the machine, the opening event queue and caller output queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    let schema = smith_channel::schema(&limits.bodies).ok()?;
+    let schema = schema(limits).ok()?;
     let mut duplicate = List::<skein_channel::Version>::worst_case(schema.versions.capacity())?;
     for version in &schema.versions {
         duplicate = duplicate.checked_add(List::<skein_channel::Kind>::worst_case(version.kinds.capacity())?)?;
@@ -123,12 +125,18 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(duplicate)?
         .checked_add(u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<crate::Endpoint>()).ok()?)?)?
         .checked_add(u64::from(limits.endpoints).checked_mul(u64::from(smith_charter::CEILINGS.llm_endpoint))?)?
-        .checked_add(smith_channel::Start::worst_case_bytes(&limits.bodies)?.checked_mul(2)?)?
-        .checked_add(smith_charter::Charter::worst_case_bytes(&limits.charter)?.checked_mul(2)?)?
+        // Rules 1 and 6: all decoded byte fields share the received frame.
+        // Generated zero-payload prices retain every permitted list cell.
+        // Input, decoded codec values and translated values can coexist.
+        .checked_add(start_cells(&limits.bodies)?.checked_mul(2)?)?
+        .checked_add(charter_cells(&limits.charter)?.checked_mul(2)?)?
         .checked_add(
-            smith_transcript::Turn::worst_case_heap(&limits.transcript)?
-                .checked_mul(u64::from(limits.bodies.start_transcript))?,
+            turn_cells(&limits.transcript)?.checked_mul(u64::from(limits.bodies.start_transcript))?.checked_mul(2)?,
         )?
+        // Body, decoded Start fields, accumulated translated fields, and
+        // the one Charter/Turn currently being decoded. A saved window is
+        // decoded sequentially; codec nodes are priced separately above.
+        .checked_add(u64::from(limits.start_bytes).checked_mul(4)?)?
         .checked_add(Queue::<skein_channel::Event>::worst_case(8)?)?
         .checked_add(Queue::<OpenEvent>::worst_case(1)?)?
         .checked_add(Queue::<Lower>::worst_case(6)?)?;
@@ -141,4 +149,105 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(skein_lib::Map::<(u32, u64), crate::credentials::Secret>::worst_case(limits.grants)?)?
         .checked_add(u64::from(limits.grants).checked_mul(u64::from(limits.bodies.grant_value_credential))?)?
         .checked_add(u64::try_from(size_of::<Component>()).ok()?)
+}
+
+/// Build this agent's directional schema, using its aggregate Start entrance.
+/// Codec field bounds remain independently checked by their decoders.
+pub fn schema(limits: &Limits) -> Result<skein_channel::Schema, smith_channel::Overflow> {
+    let mut schema = smith_channel::schema(&limits.bodies)?;
+    for version_index in 0..schema.versions.len() {
+        let version = schema.versions.get_mut(version_index).expect("indexed version");
+        for kind_index in 0..version.kinds.len() {
+            let kind = version.kinds.get_mut(kind_index).expect("indexed kind");
+            if kind.kind == 0x0100 {
+                if limits.start_bytes == 0 || limits.start_bytes > kind.largest {
+                    return Err(smith_channel::Overflow::Frame);
+                }
+                kind.largest = limits.start_bytes;
+            }
+        }
+    }
+    Ok(schema)
+}
+
+fn start_cells(limits: &smith_channel::Limits) -> Option<u64> {
+    let cells = smith_channel::Limits {
+        directory_name: 0,
+        directory_path: 0,
+        directory_conflicts_item: 0,
+        grant_value_credential: 0,
+        receipt_text: 0,
+        marker_path: 0,
+        delivery_refusal_explanation: 0,
+        delivery_failure_diagnostic: 0,
+        host_reply_text: 0,
+        answered_call_tool: 0,
+        message_label: 0,
+        message_text: 0,
+        start_charter: 0,
+        start_transcript_item: 0,
+        host_ask_tool: 0,
+        host_ask_input: 0,
+        field_name: 0,
+        field_text: 0,
+        turn_body: 0,
+        accepted_result: 0,
+        ..*limits
+    };
+    smith_channel::Start::worst_case_heap(&cells)
+}
+
+fn charter_cells(limits: &smith_charter::v2::Limits) -> Option<u64> {
+    let cells = smith_charter::v2::Limits {
+        section_title: 0,
+        section_body: 0,
+        host_tool_name: 0,
+        host_tool_description: 0,
+        host_tool_input: 0,
+        field_rule_name: 0,
+        item_kind_kind: 0,
+        verdict_rule_label: 0,
+        conventions_guide: 0,
+        conventions_checks: 0,
+        llm_endpoint: 0,
+        llm_model: 0,
+        charter_instructions: 0,
+        field_name: 0,
+        field_text: 0,
+        item_kind: 0,
+        run_result_label_some: 0,
+        run_result_text: 0,
+        ..*limits
+    };
+    smith_charter::Charter::worst_case_heap(&cells)
+}
+
+fn turn_cells(limits: &smith_transcript::v3::Limits) -> Option<u64> {
+    let cells = smith_transcript::v3::Limits {
+        replay_dialect: 0,
+        replay_bytes: 0,
+        text_text: 0,
+        opaque_dialect: 0,
+        opaque_bytes: 0,
+        call_id: 0,
+        call_name: 0,
+        call_input: 0,
+        entry_name: 0,
+        hit_path: 0,
+        hit_text: 0,
+        read_content: 0,
+        command_end_head: 0,
+        command_end_last: 0,
+        working_path_path: 0,
+        other_path_directory: 0,
+        other_path_path: 0,
+        outside_path_path: 0,
+        field_problem_field: 0,
+        said_text: 0,
+        tool_result_id: 0,
+        turn_endpoint: 0,
+        turn_dialect: 0,
+        ..*limits
+    };
+    smith_transcript::Turn::worst_case_heap(&cells)
 }

@@ -54,6 +54,7 @@ const LIMITS: Limits = Limits {
     history_messages: 4,
     history_bytes: 1024,
     completion_bytes: 4096,
+    answer_bytes: 4096,
     completion_blocks: 16,
     failure_bytes: 512,
     delegated_result_bytes: 16_384,
@@ -129,6 +130,10 @@ fn pressure_limits(original: Limits, route: Route, messages: u32) -> (Limits, u6
     let mut limits = Limits {
         tools,
         completion_bytes,
+        // This scripted completion owns its pressure-derived invalid field/ID.
+        // Its joint answer bound follows that actual payload, rather than the
+        // unrelated small constant on the outer fixture.
+        answer_bytes: completion_bytes,
         completion_blocks: original.parallel_tools,
         // A second provider turn may contain calls: its assistant and results
         // need two message cells even when the old V1 driver expected one.
@@ -454,6 +459,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         spend: u64::MAX,
         history_bytes: 16_384,
         completion_bytes: 512,
+        answer_bytes: 512,
         completion_blocks: 2,
         delegated_result_bytes: output,
         ..LIMITS
@@ -560,6 +566,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         spend: u64::MAX,
         history_bytes: 16_384,
         completion_bytes: 256,
+        answer_bytes: 256,
         completion_blocks: 1,
         ..LIMITS
     };
@@ -1088,6 +1095,7 @@ fn the_original_maximum_parallel_width_has_live_result_rights() {
         parallel_tools: width,
         completion_blocks: width,
         completion_bytes: call * u64::from(width),
+        answer_bytes: call * u64::from(width),
         tools: smith_domain_tools::Limits { calls: width, read_bytes: 4096, ..LIMITS.tools },
         ..LIMITS
     };

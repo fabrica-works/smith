@@ -381,8 +381,10 @@ pub(crate) fn ask_cost(ask: &Ask) -> Option<u64> {
 pub(crate) fn payload(limits: &run::Limits) -> Option<u64> {
     let answered = u64::from(limits.answer_bytes);
     let failed = u64::from(limits.check_tail).checked_add(limits.run_bytes)?;
-    let problem = size(size_of::<run::outcome::Problem>())?.checked_add(limits.run_bytes.max(limits.outcome_bytes))?;
-    let rejected = u64::from(run::outcome::Problems::LISTED).checked_mul(problem)?;
+    // Rule 1: problem cells coexist, but names share one contract total.
+    let rejected = u64::from(run::outcome::Problems::LISTED)
+        .checked_mul(size(size_of::<run::outcome::Problem>())?)?
+        .checked_add(limits.run_bytes.max(limits.outcome_bytes))?;
     let refused =
         u64::try_from(run::Marker::CAPACITY).ok()?.checked_add(u64::try_from(run::DeliveryRefusal::CAPACITY).ok()?)?;
     Some(

@@ -19,6 +19,9 @@ pub struct Limits {
     /// Aggregate retained served/application declaration wrappers and all owned fields.
     pub tool_bytes: u64,
 
+    /// Aggregate source history payload admitted by the parent session.
+    pub history_bytes: u64,
+
     /// Maximum rendered tool result, including its cut marker, in bytes.
     pub rendered_result: u32,
 
@@ -102,13 +105,13 @@ pub fn worst_case(limits: &Limits, receiving: &Receiving) -> Option<u64> {
         return None;
     }
     let parts = limits.client.output_items;
-    // All outgoing JSON records together fit the encoded request. Compact
-    // records borrow their text by index; no token owns a second string.
+    // Rules 1 and 2: neutral schema/replay documents share actual source
+    // bytes. Each retained JSON record consumes a source byte; its Compact
+    // cell and decoded text are priced once. Outgoing request escaping does
+    // not expand held documents. The one current parser/packing scratch is
+    // independent below; it is not multiplied over every retained record.
     let compact = u64::try_from(size_of::<skein_json::document::Compact>()).ok()?;
-    let documents = u64::from(limits.client.request)
-        .checked_div(u64::from(skein_llm::ESCAPE))?
-        .checked_add(limits.tool_bytes)?
-        .checked_mul(compact.checked_mul(4)?.checked_add(4)?)?;
+    let documents = limits.history_bytes.checked_add(limits.tool_bytes)?.checked_mul(compact.checked_add(1)?)?;
     let slots = List::<Tool>::worst_case(limits.client.tools)?
         .checked_add(List::<Message>::worst_case(limits.client.history_items)?)?
         .checked_add(List::<Block>::worst_case(limits.client.history_items)?)?

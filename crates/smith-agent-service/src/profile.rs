@@ -63,8 +63,9 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     client.http.send = tls::client::MAX_PLAINTEXT;
     client.sse.chunk = client.http.read;
     let decoded_call_bytes = u64::from(declared.calls_per_response)
-        .checked_mul(u64::from(client.input))
+        .checked_mul(u64::from(declared.tool_payload))
         .ok_or(derived(Layer::Session, "decoded_call_bytes"))?
+        .min(u64::from(client.answer))
         .checked_add(
             u64::from(client.output_items)
                 .checked_mul(u64::try_from(size_of::<domain::llm::Decoded>()).expect("cell fits u64"))
@@ -73,25 +74,14 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         .ok_or(derived(Layer::Session, "decoded_call_bytes"))?;
     let completion =
         llm::completion_worst_case(&client, decoded_call_bytes).ok_or(derived(Layer::Session, "completion_bytes"))?;
-    let bodies = smith_channel::CEILINGS;
-    let output_bytes = channel_output(&bodies)?;
-    let io = io::Limits {
-        sockets: 32,
-        refusals: 4,
-        intake: 19_000,
-        receive: 4096,
-        output: output_bytes.max(19_000),
-        sends: 8,
-        accepts: 1,
-        backlog: 2,
-        close_timeout: policy.close,
-        retry: Duration::from_millis(10),
-    };
-    let mut domain = derive_domain(profile, configuration, &path)?;
-    domain.decoded_call_bytes = decoded_call_bytes;
-    domain.session.completion_bytes = completion;
-    domain.session.delegated_result_bytes =
-        domain::feedback_worst_case(&domain.run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
+    let domain = derive_domain(profile, configuration, &path, completion, decoded_call_bytes)?;
+    client.history_items = domain
+        .session
+        .history_blocks
+        .checked_add(policy.host_tools)
+        .ok_or(derived(Layer::Llm, "history_items"))?
+        .checked_add(11)
+        .ok_or(derived(Layer::Llm, "history_items"))?;
     validate::window_first(profile, configuration, &domain.session)?;
     // The result bound holds whole capped outcomes; native outgoing text has
     // no receiving-string cap. Cutting remains a safeguard at this layer.
@@ -102,6 +92,10 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     )
     .ok_or(derived(Layer::Render, "result"))?;
     validate::render_in_result(rendered_result, rendered_result)?;
+    let bodies = channel_bodies(&domain, &policy)?;
+    let start_bytes = channel_start_bytes(&bodies, &domain)?;
+    let output_bytes = channel_output(&bodies)?;
+    let io = io_limits(output_bytes, &policy);
     let mut charter = smith_charter::CEILINGS;
     charter.charter_brief = policy.sections;
     charter.tools_host = policy.host_tools;
@@ -121,6 +115,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
         domain,
         channel: channel::Limits {
             bodies,
+            start_bytes,
             charter,
             transcript,
             channel: skein_channel::Limits {
@@ -157,7 +152,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
 /// Measure one endpoint's fixed schema, framing and configured option contribution.
 /// The root adds the admitted contract's exact generated-schema bytes to each opening.
 pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools::Limits) -> Result<u64, Refusal> {
-    let client = endpoint_client(profile, endpoint)?;
+    let client = endpoint_client(profile, endpoint, 2)?;
     let inventory = profile.policy.host_tools.checked_add(10).ok_or(derived(Layer::Llm, "prompt_allowance"))?;
     let framing = llm::prompt_allowance(endpoint.provider, &client, inventory)
         .or(Err(derived(Layer::Llm, "prompt_allowance")))?;
@@ -194,15 +189,105 @@ fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
     let version = schema.version(2).ok_or(derived(Layer::Channel, "version"))?;
     let mut largest = 0;
     for kind in &version.kinds {
-        largest = largest.max(kind.largest);
+        match kind.direction {
+            skein_channel::Direction::FromResponder => largest = largest.max(kind.largest),
+            skein_channel::Direction::FromInitiator => {}
+        }
     }
     largest.checked_add(8).ok_or(derived(Layer::Channel, "frame_bytes"))
+}
+
+// Rule 6: active field bounds follow their source domain's admission. Sealed
+// vocabulary maxima remain upper bounds, never an independent reservation.
+fn channel_bodies(domain: &domain::Limits, policy: &Policy) -> Result<smith_channel::Limits, Refusal> {
+    let run = domain.run;
+    let turn = domain::max_turn_bytes(domain)
+        .ok_or(derived(Layer::Channel, "turn_body"))?
+        .checked_mul(2)
+        .ok_or(derived(Layer::Channel, "turn_body"))?;
+    let charter = run.run_bytes.checked_mul(2).ok_or(derived(Layer::Channel, "start_charter"))?;
+    let result = run.outcome_bytes.checked_mul(2).ok_or(derived(Layer::Channel, "accepted_result"))?;
+    let mut bodies = smith_channel::CEILINGS;
+    bodies.directory_name = run.directory_name_bytes;
+    bodies.directory_path = run.host_path_bytes;
+    bodies.directory_conflicts = run.conflicts;
+    bodies.directory_conflicts_item = run.conflict_path_bytes;
+    bodies.workspace_directories = run.directories;
+    bodies.host_reply_text = run.host_reply_bytes;
+    bodies.message_text = run.message_bytes;
+    bodies.start_charter = u32::try_from(charter.min(u64::from(bodies.start_charter)))
+        .or(Err(derived(Layer::Channel, "start_charter")))?;
+    bodies.start_answered = run.answered_calls;
+    bodies.start_grants = ACCOUNTS.checked_mul(2).ok_or(derived(Layer::Channel, "start_grants"))?;
+    bodies.start_messages = run.messages.min(bodies.start_messages);
+    bodies.host_ask_input = run.host_input_bytes;
+    bodies.field_text = u32::try_from(run.outcome_bytes.min(u64::from(bodies.field_text)))
+        .or(Err(derived(Layer::Channel, "field_text")))?;
+    bodies.deliver_ask_fields = policy.fields;
+    bodies.turn_body =
+        u32::try_from(turn.min(u64::from(bodies.turn_body))).or(Err(derived(Layer::Channel, "turn_body")))?;
+    bodies.start_transcript_item = bodies.turn_body;
+    bodies.accepted_result = u32::try_from(result.min(u64::from(bodies.accepted_result)))
+        .or(Err(derived(Layer::Channel, "accepted_result")))?;
+    Ok(bodies)
+}
+
+// Rule 6: saved turns share one whole window. Scalar and length fields
+// fit twice their owning record cells; individual codec bounds stay sealed.
+fn channel_start_bytes(bodies: &smith_channel::Limits, domain: &domain::Limits) -> Result<u32, Refusal> {
+    let refusal = derived(Layer::Channel, "start_bytes");
+    let mut empty_transcript = *bodies;
+    empty_transcript.start_transcript = 0;
+    let lengths = u64::from(bodies.start_transcript).checked_mul(4).ok_or(refusal)?;
+    let history = domain::max_turn_bytes(domain).ok_or(refusal)?.checked_mul(2).ok_or(refusal)?;
+    let bytes = smith_channel::Start::worst_case_bytes(&empty_transcript)
+        .ok_or(refusal)?
+        .checked_add(lengths)
+        .ok_or(refusal)?
+        .checked_add(history)
+        .ok_or(refusal)?;
+    u32::try_from(bytes).or(Err(refusal))
+}
+
+fn io_limits(output_bytes: u32, policy: &Policy) -> io::Limits {
+    io::Limits {
+        sockets: 32,
+        refusals: 4,
+        intake: 19_000,
+        receive: 4096,
+        output: output_bytes.max(19_000),
+        sends: 8,
+        accepts: 1,
+        backlog: 2,
+        close_timeout: policy.close,
+        retry: Duration::from_millis(10),
+    }
+}
+
+fn threshold_bytes(policy: &Policy, configuration: &Configuration) -> Result<u64, Refusal> {
+    let refusal = derived(Layer::Session, "window_threshold");
+    let mut largest = 0;
+    for endpoint in &configuration.endpoints {
+        for model in &endpoint.models {
+            let bytes = u64::from(model.window)
+                .checked_mul(u64::from(policy.compaction_threshold.numerator))
+                .ok_or(refusal)?
+                .checked_div(u64::from(policy.compaction_threshold.denominator))
+                .ok_or(refusal)?
+                .checked_mul(u64::from(shared::TOKEN_BYTES))
+                .ok_or(refusal)?;
+            largest = largest.max(bytes);
+        }
+    }
+    Ok(largest)
 }
 
 fn derive_domain(
     profile: &Profile,
     configuration: &Configuration,
     path: &path::Path,
+    completion: u64,
+    decoded_call_bytes: u64,
 ) -> Result<domain::Limits, Refusal> {
     let declared = profile.declared;
     let policy = profile.policy;
@@ -254,27 +339,24 @@ fn derive_domain(
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Run, field.name())),
     };
+    let delegated = domain::feedback_worst_case(&run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
+    let parallel = declared.calls_per_response.min(4);
+    let owned = tools::batch_result_worst_case(&tools, parallel).ok_or(derived(Layer::Session, "batch_results"))?;
+    let batch = owned.max(delegated.checked_mul(u64::from(parallel)).ok_or(derived(Layer::Session, "batch_results"))?);
+    let threshold_bytes = threshold_bytes(&policy, configuration)?;
     let session = match session::derive(&session::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         max_turns: policy.max_turns,
         max_spend: policy.max_spend,
         max_time: policy.max_time,
-        request: u64::from(path.request),
-        history_items: path.history_items,
-        own_items: policy.host_tools.checked_add(11).ok_or(derived(Layer::Session, "history_items"))?,
+        threshold_bytes,
+        completion_bytes: completion,
+        answer_bytes: u64::from(path.client.answer),
+        batch_result_bytes: batch,
+        delegated_result_bytes: delegated,
         output_items: path.client.output_items,
-        call_input: path.client.input,
         detail: path.client.detail_bytes,
-        own: parts
-            .own
-            .checked_sub(path.framing)
-            .ok_or(derived(Layer::Session, "history_bytes"))?
-            .checked_add(parts.host)
-            .ok_or(derived(Layer::Session, "history_bytes"))?
-            .checked_mul(u64::from(shared::ESCAPE))
-            .ok_or(derived(Layer::Session, "history_bytes"))?,
-        allowance: path.framing,
         protocol_allowance: parts.own.checked_add(parts.host).ok_or(derived(Layer::Session, "protocol_allowance"))?,
         threshold: [policy.compaction_threshold.numerator, policy.compaction_threshold.denominator],
         tools,
@@ -295,7 +377,7 @@ fn derive_domain(
         accounts: ACCOUNTS,
         endpoints: ENDPOINTS,
         configured_model_bytes,
-        decoded_call_bytes: 4096,
+        decoded_call_bytes,
         skew: Duration::ZERO,
         run,
         session,
@@ -315,6 +397,7 @@ fn component_limits(
     Ok(llm::ComponentLimits {
         adapter: llm::Limits {
             client,
+            history_bytes: domain.session.history_bytes,
             tool_bytes: domain
                 .session
                 .protocol_allowance
@@ -343,7 +426,9 @@ fn component_limits(
             decoded_call_bytes: domain.decoded_call_bytes,
             max_failure_bytes: domain.session.failure_bytes,
         },
-        contract_bytes: 4096,
+        // Outcome and its separately retained delivery contract both come
+        // from the run's admitted aggregate declaration ownership.
+        contract_bytes: domain.run.run_bytes.checked_mul(2).ok_or(derived(Layer::Llm, "contract_bytes"))?,
         accounts: ACCOUNTS,
         grant_value_bytes: 2048,
     })

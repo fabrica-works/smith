@@ -96,7 +96,7 @@ pub fn component_worst_case(limits: &ComponentLimits, endpoints: &Endpoints) -> 
     if limits.accounts == 0 || limits.connection.connections == 0 {
         return None;
     }
-    let per_call = crate::worst_case(&limits.adapter, &limits.receiving)?;
+    let entrance = crate::worst_case(&limits.adapter, &limits.receiving)?;
     let base = connection::worst_case(&limits.connection, endpoints.destinations())?
         .checked_add(Grants::worst_case(limits.accounts, limits.grant_value_bytes)?)?
         .checked_add(Map::<u32, EndpointOptions>::worst_case(limits.connection.endpoints)?)?
@@ -104,9 +104,15 @@ pub fn component_worst_case(limits: &ComponentLimits, endpoints: &Endpoints) -> 
         .checked_add(Map::<Token, Active>::worst_case(limits.connection.connections)?)?
         .checked_add(Set::<Token>::worst_case(limits.connection.connections)?)?
         .checked_add(Queue::<connection::Event>::worst_case(MAX_OUT.above)?)?;
-    base.checked_add(
-        per_call.checked_add(limits.contract_bytes)?.checked_mul(u64::from(limits.connection.connections))?,
-    )
+    // Active keeps declarations and contracts, not the consumed neutral
+    // prompt or parser workspace. Only one component entrance translates or
+    // decodes at once; the connection child owns every retained native Client.
+    let retained = limits
+        .adapter
+        .tool_bytes
+        .checked_add(limits.contract_bytes)?
+        .checked_mul(u64::from(limits.connection.connections))?;
+    base.checked_add(retained)?.checked_add(entrance)
 }
 
 impl Component {

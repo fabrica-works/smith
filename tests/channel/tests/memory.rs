@@ -38,6 +38,8 @@ fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
     };
     let agent_limits = agent::Limits {
         bodies: CEILINGS,
+        start_bytes: u32::try_from(smith_channel::Start::worst_case_bytes(&CEILINGS).expect("fixture Start bound"))
+            .expect("fixture frame"),
         charter: smith_charter::CEILINGS,
         transcript: smith_transcript::CEILINGS,
         channel,

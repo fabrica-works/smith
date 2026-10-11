@@ -24,6 +24,7 @@ fn limits() -> ComponentLimits {
         adapter: adapter::Limits {
             client,
             tool_bytes: 32768,
+            history_bytes: u64::from(client.request),
             rendered_result: client.strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         },
@@ -46,7 +47,11 @@ fn limits() -> ComponentLimits {
                 close_timeout: Duration::from_secs(1),
                 retry: Duration::from_millis(10),
             },
-            tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },
+            tls: skein_tls::client::Limits {
+                read: skein_llm::client::largest_read(&client),
+                send: 4096,
+                records: skein_tls::client::MAX_RECORD,
+            },
         },
         receiving: Receiving {
             max_completion_bytes: adapter::completion_worst_case(&client, decoded_call_bytes).expect("receiving bound"),

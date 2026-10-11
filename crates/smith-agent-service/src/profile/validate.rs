@@ -333,6 +333,8 @@ pub fn window_first(
     // The completion owns its result skeletons, but their dynamic payloads
     // reserve separate credit immediately before the first batch's effects.
     let reserve = reserve
+        .checked_sub(limits.answer_bytes)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "window_receiving") })?
         .checked_add(owned.max(delegated))
         .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Session, "window_receiving") })?;
     for endpoint in &configuration.endpoints {
@@ -345,7 +347,10 @@ pub fn window_first(
                 .ok_or(Refusal::Derived {
                     limit: LimitName { layer: Layer::Session, field: "window_threshold", per },
                 })?;
-            let bytes = threshold
+            let threshold_bytes = threshold.checked_mul(u64::from(skein_llm::TOKEN_BYTES)).ok_or(Refusal::Derived {
+                limit: LimitName { layer: Layer::Session, field: "window_threshold", per },
+            })?;
+            let bytes = threshold_bytes
                 .checked_add(reserve)
                 .ok_or(Refusal::Derived { limit: LimitName { layer: Layer::Session, field: "history_bytes", per } })?;
             at_most(
@@ -354,14 +359,14 @@ pub fn window_first(
                 LimitName { layer: Layer::Session, field: "history_bytes", per }
                     .value(Value::Bytes(limits.history_bytes)),
             )?;
-            let messages = threshold
-                .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Message>()).expect("cell fits"))
+            let messages = threshold_bytes
+                .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Block>()).expect("cell fits"))
                 .expect("nonzero cell")
                 .checked_add(2)
                 .ok_or(Refusal::Derived {
                     limit: LimitName { layer: Layer::Session, field: "history_messages", per },
                 })?;
-            let blocks = threshold
+            let blocks = threshold_bytes
                 .checked_div(u64::try_from(size_of::<smith_domain::session::llm::Block>()).expect("cell fits"))
                 .expect("nonzero cell")
                 .checked_add(u64::from(limits.completion_blocks).checked_mul(2).expect("u32 twice fits u64"))

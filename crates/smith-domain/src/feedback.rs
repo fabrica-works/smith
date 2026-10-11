@@ -100,7 +100,9 @@ fn unchanged(text: Box<[u8]>, error: bool, max_bytes: u64) -> Result<Feedback, F
 #[must_use]
 pub fn feedback_worst_case(limits: &run::Limits) -> Option<u64> {
     let fields = limits.run_bytes.max(limits.outcome_bytes).checked_mul(4)?;
-    let problems = fields.checked_add(256)?.checked_mul(u64::from(Problems::LISTED))?.checked_add(128)?;
+    // Rules 1 and 2: all problem names share the contract/declaration total;
+    // only the names' arbitrary bytes need the invalid-UTF-8 expansion.
+    let problems = fields.checked_add(u64::from(Problems::LISTED).checked_mul(256)?)?.checked_add(128)?;
     let checks = limits.run_bytes.checked_add(u64::from(limits.check_tail))?.checked_mul(4)?.checked_add(256)?;
     let count = u64::from(limits.directories.min(run::MAX_DIRECTORIES));
     let receipts = u64::try_from(run::Receipt::CAPACITY)

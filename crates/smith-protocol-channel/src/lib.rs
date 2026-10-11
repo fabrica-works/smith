@@ -36,7 +36,7 @@ mod tests;
 
 pub use charter::encode_charter;
 pub use component::{Component, OpenEvent};
-pub use limits::{Error, Limits, MaxOut, max_out, worst_case};
+pub use limits::{Error, Limits, MaxOut, max_out, schema, worst_case};
 pub use result::decode_declared;
 pub use transcript::{decode_transcript, decode_turn};
 pub use translate::{

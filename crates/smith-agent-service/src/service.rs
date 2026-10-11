@@ -347,9 +347,12 @@ pub fn effects_worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option
 #[must_use]
 pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     let queue = limits.queue;
+    // Rule 5: rich observation fields share each producer's answer total.
+    // Queue capacity also holds scalar observations and never multiplies a
+    // whole completion payload. Domain observations are drained every iterate.
     let stages = Queue::<channel::OpenEvent>::worst_case(queue)?
         .checked_add(Queue::<domain::Fact>::worst_case(queue)?)?
-        .checked_add(u64::from(queue).checked_mul(limits.domain.session.completion_bytes)?)?
+        .checked_add(u64::from(limits.domain.session.sessions).checked_mul(limits.domain.session.answer_bytes)?)?
         .checked_add(List::<u8>::worst_case(TRACE_PROMPT_BYTES)?.checked_mul(2)?)?
         .checked_add(Queue::<ChannelLower>::worst_case(queue)?)?
         .checked_add(Queue::<PendingMessage>::worst_case(queue)?)?
@@ -379,7 +382,7 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
         .checked_add(channel::worst_case(&limits.channel)?)?
         .checked_add(llm::component_worst_case(&limits.llm, endpoints)?)?
         .checked_add(machine::worst_case(&limits.machine)?)?
-        .checked_add(io::worst_case(&limits.io)?)?
+        .checked_add(io_ownership(limits)?)?
         .checked_add(file_layer::FileIo::worst_case(
             limits.file_slots,
             limits.file_read,
@@ -390,6 +393,31 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
         .checked_add(environment_copies)?
         .checked_add(roots)?
         .checked_add(pipe_routes)
+}
+
+// One physical LLM socket is already included by its connection owner. The
+// service owns IO's tables once. Its other producers are read-only process
+// pipes/input/signals and the single host-channel writer; only that writer
+// can retain output payload outside the LLM sockets (limits.md, section 3).
+fn io_ownership(limits: &Limits) -> Option<u64> {
+    let physical = limits.llm.connection.connections;
+    let other = limits.io.sockets.checked_sub(physical)?;
+    let child = limits.llm.connection.io;
+    if other == 0
+        || child.intake != limits.io.intake
+        || child.receive != limits.io.receive
+        || child.output != limits.io.output
+        || child.sends != limits.io.sends
+    {
+        return None;
+    }
+    let socket = skein_lib::Intake::worst_case(limits.io.intake)?
+        .checked_add(u64::from(limits.io.receive))?
+        .checked_add(u64::from(limits.io.output))?
+        .checked_add(Queue::<Box<[u8]>>::worst_case(limits.io.sends)?)?;
+    io::worst_case(&limits.io)?
+        .checked_sub(u64::from(physical).checked_mul(socket)?)?
+        .checked_sub(u64::from(other.checked_sub(1)?).checked_mul(u64::from(limits.io.output))?)
 }
 
 impl Service {
@@ -1970,6 +1998,7 @@ mod tests {
     use skein_lib::Duration;
     use smith_domain::tools;
 
+    #[expect(clippy::too_many_lines, reason = "complete composed test limits keep each owned layer visible")]
     fn limits() -> Limits {
         let client = skein_llm_world::limits();
         let decoded_call_bytes = 4096;
@@ -1997,6 +2026,10 @@ mod tests {
             domain: smith_agent_world::LIMITS,
             channel: channel::Limits {
                 bodies: channel_bodies,
+                start_bytes: u32::try_from(
+                    smith_channel::Start::worst_case_bytes(&channel_bodies).expect("fixture Start bound"),
+                )
+                .expect("fixture frame"),
                 charter: smith_charter::CEILINGS,
                 transcript: smith_transcript::CEILINGS,
                 channel: skein_channel::Limits {
@@ -2018,6 +2051,7 @@ mod tests {
                 adapter: llm::Limits {
                     client,
                     tool_bytes: 32_768,
+                    history_bytes: u64::from(client.request),
                     rendered_result: client.strings,
                     stated: llm::Stated::from_tools(&smith_agent_world::LIMITS.session.tools, client.input)
                         .expect("test effective quantities fit"),

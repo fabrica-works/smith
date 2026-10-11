@@ -11,14 +11,13 @@ use super::{Configuration, Endpoint, Layer, LimitName, Profile, Refusal};
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Path {
     pub client: client::Limits,
-    pub request: u32,
-    pub history_items: u32,
     pub framing: u64,
 }
 
 /// Derive an endpoint from its largest actual model declarations, before transport pieces.
-pub fn client(profile: &Profile, endpoint: &Endpoint) -> Result<client::Limits, Refusal> {
-    let declared = declarations(profile, endpoint);
+pub fn client(profile: &Profile, endpoint: &Endpoint, history_items: u32) -> Result<client::Limits, Refusal> {
+    let mut declared = declarations(profile, endpoint);
+    declared.history_items = history_items;
     let limits = match shared::Limits::derive(&declared) {
         Ok(limits) => limits,
         Err(violation) => return Err(Refusal::Llm { endpoint: endpoint.number, violation }),
@@ -35,12 +34,12 @@ pub(super) fn path(profile: &Profile, configuration: &Configuration) -> Result<P
         tool_payload: profile.declared.tool_payload,
         calls_per_response: profile.declared.calls_per_response,
         conversations: profile.declared.conversations,
+        tools: profile.policy.host_tools.checked_add(10).expect("validated tool count"),
+        history_items: 2,
     };
     let mut framing = 0_u64;
-    let mut request = u32::MAX;
-    let mut history_items = u32::MAX;
     for endpoint in &configuration.endpoints {
-        let native = client(profile, endpoint)?;
+        let native = client(profile, endpoint, 2)?;
         let tools = profile
             .policy
             .host_tools
@@ -49,8 +48,6 @@ pub(super) fn path(profile: &Profile, configuration: &Configuration) -> Result<P
         let allowance = smith_protocol_llm::prompt_allowance(endpoint.provider, &native, tools)
             .or(Err(Refusal::Derived { limit: LimitName::deployment(Layer::Llm, "prompt_allowance") }))?;
         framing = framing.max(allowance);
-        request = request.min(native.request);
-        history_items = history_items.min(native.history_items);
         let declared = declarations(profile, endpoint);
         largest.window = largest.window.max(declared.window);
         largest.output = largest.output.max(declared.output);
@@ -62,7 +59,7 @@ pub(super) fn path(profile: &Profile, configuration: &Configuration) -> Result<P
     // Codex has the larger fixed response head, event records and metadata;
     // Anthropic's smaller tool spelling permits more represented tools.
     client.tools = client.tools.max(limits.anthropic.tools);
-    Ok(Path { client, request, history_items, framing })
+    Ok(Path { client, framing })
 }
 
 fn declarations(profile: &Profile, endpoint: &Endpoint) -> shared::Declared {
@@ -73,6 +70,8 @@ fn declarations(profile: &Profile, endpoint: &Endpoint) -> shared::Declared {
         tool_payload: profile.declared.tool_payload,
         calls_per_response: profile.declared.calls_per_response,
         conversations: profile.declared.conversations,
+        tools: profile.policy.host_tools.checked_add(10).expect("validated tool count"),
+        history_items: 2,
     };
     for model in &endpoint.models {
         declared.window = declared.window.max(model.window);

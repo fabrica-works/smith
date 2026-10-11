@@ -440,6 +440,10 @@ impl World {
         let agent = Peer::agent(
             &agent::Limits {
                 bodies: agent_bodies,
+                start_bytes: u32::try_from(
+                    smith_channel::Start::worst_case_bytes(&agent_bodies).expect("fixture Start bound"),
+                )
+                .expect("fixture frame"),
                 charter: smith_charter::CEILINGS,
                 transcript: smith_transcript::CEILINGS,
                 channel,

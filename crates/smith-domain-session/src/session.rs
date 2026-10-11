@@ -2256,7 +2256,8 @@ pub(crate) fn provider_reserve(limits: &Limits) -> Option<u64> {
     // simultaneous result assembly are priced separately by worst_case.
     let cell = size_of::<Block>().max(size_of::<Slot>());
     let wrappers = u64::try_from(cell).ok()?.checked_mul(u64::from(limits.completion_blocks))?;
-    let completion = limits.completion_bytes.checked_mul(2)?.checked_add(wrappers)?;
+    // Rules 1 and 2: copied IDs/details share one decoded answer total.
+    let completion = limits.completion_bytes.checked_add(limits.answer_bytes)?.checked_add(wrappers)?;
     let terminal = u64::try_from(size_of::<Failure>())
         .ok()?
         .checked_add(u64::try_from(size_of::<crate::llm::Evidence>()).ok()?)?

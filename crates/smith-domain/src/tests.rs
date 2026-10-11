@@ -109,6 +109,7 @@ const LIMITS: Limits = Limits {
         history_messages: 16,
         history_bytes: 2_097_152,
         completion_bytes: 4096,
+        answer_bytes: 4096,
         completion_blocks: 16,
         failure_bytes: 512,
         delegated_result_bytes: 262_144,
@@ -988,6 +989,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
         session: session::Limits {
             history_bytes: 8192,
             completion_bytes: 128,
+            answer_bytes: 128,
             completion_blocks: 1,
             delegated_result_bytes: crate::feedback_worst_case(&run).expect("complete compatible feedback"),
             ..LIMITS.session
@@ -1786,6 +1788,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
             session: session::Limits {
                 history_bytes: 8192,
                 completion_bytes: 128,
+                answer_bytes: 128,
                 completion_blocks: 1,
                 delegated_result_bytes: crate::feedback_worst_case(&run).unwrap(),
                 ..LIMITS.session

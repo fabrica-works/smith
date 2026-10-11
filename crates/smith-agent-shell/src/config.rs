@@ -324,7 +324,8 @@ fn build_endpoints(
     let mut numbers = std::collections::BTreeSet::new();
     for endpoint in endpoints {
         let declared = build_models(&endpoint)?;
-        let mut client = service::profile::endpoint_client(profile, &declared).map_err(profile_refusal)?;
+        let mut client = service::profile::endpoint_client(profile, &declared, limits.adapter.client.history_items)
+            .map_err(profile_refusal)?;
         if endpoint.name.is_empty()
             || endpoint.name.len()
                 > usize::try_from(smith_charter::CEILINGS.llm_endpoint).expect("endpoint name bound fits usize")
@@ -1041,23 +1042,76 @@ mod tests {
 
     #[test]
     fn product_values_pass_every_startup_check_and_fit_complete_memory() {
+        use skein_io::kernel::{Complete, Fd, Submit};
+        use skein_lib::Queue;
+
         let document = serde_json::json!({
           "profile":{"name":"standard","declared":{
-            "conversations":6,"tool_payload":40960,"file_bytes":1048576,"calls_per_response":16,
+            "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
             "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
-            "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134217728,"memory":2147483648_u64}},
+            "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134_217_728,"memory":2_147_483_648_u64}},
           "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
             "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
             "connect":10000,"handshake":10000,"reasoning_effort":"low",
-            "models":[{"name":"gpt-6-luna","window":272000,"output":32000,"reasoning_item":65536,"head":60000,"idle":300000}]}],
+            "models":[{"name":"gpt-6-luna","window":272_000,"output":32000,"reasoning_item":65536,"head":60000,"idle":300_000}]}],
           "environment":[{"name":"X","value":"x".repeat(833)}],
           "trace":{"path":"/tmp/unused-diagnostic-trace","capture":"everything"}
         });
-        let config = parse_value(&document).expect("product declarations pass every startup check");
-        use skein_io::kernel::{Complete, Submit, Fd};
-        use skein_lib::Queue;
-        let limits = &config.service.limits;
-        let service = service::worst_case(limits, &config.service.llm_endpoints).expect("service bound");
+        // Record the derived owners even if a lower construction contract is
+        // not yet available. This is partial evidence, never memory admission.
+        let dto: Document = serde_json::from_value(document.clone()).expect("product DTO");
+        let selected = build_profile(&dto.profile).expect("product profile");
+        let declarations = service::profile::Configuration {
+            environment_bytes: 835,
+            endpoints: dto.endpoints.iter().map(|endpoint| build_models(endpoint).unwrap()).collect(),
+        };
+        let derived = service::profile::derive(&selected, &declarations).expect("all product startup relationships");
+        let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
+        let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
+        let run = run::worst_case(&derived.domain.run).expect("run bound");
+        let session = domain::session::worst_case(&derived.domain.session).expect("session bound");
+        let tools = domain::tools::worst_case(&derived.domain.session.tools).expect("tools bound");
+        println!("PRODUCT_DOMAIN run={run} session_including_tools={session} tools={tools}");
+        for endpoint in destinations.destinations() {
+            let client = endpoint.limits;
+            let native = client.native();
+            println!(
+                "PRODUCT_NATIVE fixed={:?} openai_scratch={:?} anthropic_scratch={:?} request={} answer={} reasoning={} tokens={} output_items={} history_items={} receiving={} skip={}",
+                skein_llm::client::worst_case(&client),
+                skein_llm::openai::worst_case(&native),
+                skein_llm::anthropic::worst_case(&native),
+                client.request,
+                client.answer,
+                client.reasoning,
+                client.tokens,
+                client.output_items,
+                client.history_items,
+                client.receiving,
+                client.skip
+            );
+        }
+        println!(
+            "PRODUCT_LLM connection={:?} adapter_entrance={:?} tool_bytes={} contract_bytes={}",
+            skein_llm_connection::worst_case(&derived.llm.connection, destinations.destinations()),
+            llm::worst_case(&derived.llm.adapter, &derived.llm.receiving),
+            derived.llm.adapter.tool_bytes,
+            derived.llm.contract_bytes
+        );
+        println!(
+            "PRODUCT_PARTIAL domain={:?} channel={:?} llm={:?} machine={:?} io={:?} start={} output={} history={} history_items={} completion={}",
+            domain::worst_case(&derived.domain),
+            channel::worst_case(&derived.channel),
+            llm::component_worst_case(&derived.llm, &destinations),
+            machine::worst_case(&derived.machine),
+            skein_io::worst_case(&derived.io),
+            derived.channel.start_bytes,
+            derived.channel.channel.output_bytes,
+            derived.domain.session.history_bytes,
+            derived.domain.session.history_blocks,
+            derived.domain.session.completion_bytes
+        );
+        let limits = &derived;
+        let service = service::worst_case(limits, &destinations).expect("service bound");
         let roots = limits.domain.run.directories;
         let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(1)).expect("shell queues");
         let shell = Queue::<Complete>::worst_case(queue).expect("complete queue")
@@ -1065,7 +1119,12 @@ mod tests {
             + u64::try_from(size_of::<crate::Agent>()).expect("agent cell")
             + u64::from(roots) * u64::try_from(size_of::<Fd>()).expect("root cells");
         let complete = service + crate::trace::MEMORY_RESERVE + shell;
-        println!("PRODUCT_COMPLETE service={service} trace={} shell={shell} complete={complete} memory={}", crate::trace::MEMORY_RESERVE, config.memory);
-        assert!(complete <= config.memory, "complete {complete} > declared {}", config.memory);
+        println!(
+            "PRODUCT_COMPLETE service={service} trace={} shell={shell} complete={complete} memory={}",
+            crate::trace::MEMORY_RESERVE,
+            limits.memory
+        );
+        parse_value(&document).expect("product declarations pass every startup check");
+        assert!(complete <= limits.memory, "complete {complete} > declared {}", limits.memory);
     }
 }

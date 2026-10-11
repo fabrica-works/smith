@@ -26,6 +26,7 @@ fn nesting_asked_for_is_answered_as_its_problem_on_actual_provider_requests() {
         let mut bounds = adapter::Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };

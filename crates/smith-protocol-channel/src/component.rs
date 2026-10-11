@@ -114,7 +114,7 @@ impl Component {
         if !endpoints.fits(limits.endpoints, limits.charter.llm_endpoint) {
             return Err(Error::Endpoints);
         }
-        let schema = match smith_channel::schema(&limits.bodies) {
+        let schema = match crate::limits::schema(limits) {
             Ok(schema) => schema,
             Err(error) => return Err(Error::Codec(error)),
         };

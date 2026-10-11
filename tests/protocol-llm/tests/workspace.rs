@@ -169,6 +169,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
@@ -465,6 +466,7 @@ fn utf8_read_feedback_can_be_copied_into_an_edit_in_both_wire_dialects() {
         let mut bounds = Limits {
             client: skein_llm_world::limits(),
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: skein_llm_world::limits().strings,
             stated: smith_protocol_llm_world::adapter::stated(),
         };
@@ -558,6 +560,7 @@ fn the_descriptions_state_each_effective_workspace_limit_on_both_native_wires() 
         let bounds = Limits {
             client,
             tool_bytes: 32768,
+            history_bytes: u64::from(skein_llm_world::limits().request),
             rendered_result: client.strings,
             stated: adapter::Stated::from_tools(caps, client.input).expect("actual numeric quantities"),
         };
@@ -642,6 +645,7 @@ fn namespace_descriptions_and_list_slash_reach_both_native_provider_dialects() {
             let bounds = Limits {
                 client,
                 tool_bytes: 32768,
+                history_bytes: u64::from(skein_llm_world::limits().request),
                 rendered_result: client.strings,
                 stated: adapter::Stated::from_tools(&settings.limits.session.tools, client.input)
                     .expect("valid namespace fixture"),

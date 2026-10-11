@@ -61,6 +61,7 @@ const LIMITS: Limits = Limits {
     history_messages: 8,
     history_bytes: 65_536,
     completion_bytes: 4096,
+    answer_bytes: 4096,
     completion_blocks: 16,
     failure_bytes: 512,
     delegated_result_bytes: 16_384,
@@ -1904,11 +1905,7 @@ fn the_worst_case_is_bounded_or_refused() {
     assert!(bytes > 2 * LIMITS.history_bytes, "every session may hold its bytes");
     let told = worst_case(&Limits { facts: LIMITS.facts + 1, ..LIMITS }).expect("the test limits fit");
     let fact = u64::try_from(size_of::<crate::Fact>()).expect("a size fits");
-    assert_eq!(
-        told - bytes,
-        fact + LIMITS.completion_bytes,
-        "the stamped fact and bounded provider identity are counted"
-    );
+    assert_eq!(told - bytes, fact, "queue cells grow independently of each session's shared answer payload");
     assert_eq!(worst_case(&Limits { sessions: u32::MAX, history_bytes: u64::MAX, ..LIMITS }), None);
 }
 
@@ -2674,7 +2671,7 @@ fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
 }
 
 #[test]
-fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
+fn derived_history_secures_threshold_and_full_receiving_before_effects() {
     let inputs = crate::Derivation {
         conversations: 1,
         calls_per_response: 2,
@@ -2682,28 +2679,40 @@ fn derived_history_removes_escaped_own_and_allowance_before_receiving() {
         max_spend: 100,
         max_time: Duration::from_secs(60),
         tools: LIMITS.tools,
-        request: 6000,
-        history_items: 100,
-        own_items: 11,
+        threshold_bytes: 800,
+        completion_bytes: 600,
+        answer_bytes: 256,
+        batch_result_bytes: 512,
+        delegated_result_bytes: 256,
         output_items: 6,
-        call_input: 256,
         detail: 128,
-        own: 600,
-        allowance: 100,
         protocol_allowance: 100,
         threshold: [4, 5],
     };
     let limits = crate::derive(&inputs).expect("derived window");
-    assert_eq!(limits.history_bytes, 800);
-    assert_eq!(limits.history_messages, 89);
-    assert_eq!(limits.history_blocks, 89);
+    let reserve = crate::completion_reserve(&limits).unwrap();
+    assert_eq!(limits.history_bytes, 800 + reserve - 256 + 512);
+    assert_eq!(
+        limits.history_messages,
+        u32::try_from(limits.history_bytes / u64::try_from(size_of::<Block>()).expect("Block cell fits")).unwrap() + 2
+    );
+    assert_eq!(limits.history_blocks, limits.history_messages);
     assert_eq!(limits.completion_blocks, 6);
     assert_eq!(limits.failure_bytes, 128);
     assert_eq!(limits.protocol_allowance, 100);
-    assert!(limits.history_bytes * 6 + inputs.own + inputs.allowance * 6 <= inputs.request);
-    assert_eq!(crate::derive(&crate::Derivation { request: 1199, ..inputs }), Err(crate::Field::HistoryBytes));
-    assert_eq!(crate::derive(&crate::Derivation { history_items: 12, ..inputs }), Err(crate::Field::HistoryItems));
-    assert_eq!(crate::derive(&crate::Derivation { allowance: u64::MAX, ..inputs }), Err(crate::Field::Allowance));
+    assert_eq!(
+        crate::derive(&crate::Derivation { threshold_bytes: u64::MAX, ..inputs }),
+        Err(crate::Field::HistoryBytes)
+    );
+    let beyond_cells = (u64::from(u32::MAX) + 1) * u64::try_from(size_of::<Block>()).expect("Block cell fits");
+    assert_eq!(
+        crate::derive(&crate::Derivation { threshold_bytes: beyond_cells, ..inputs }),
+        Err(crate::Field::HistoryItems)
+    );
+    assert_eq!(
+        crate::derive(&crate::Derivation { completion_bytes: u64::MAX, ..inputs }),
+        Err(crate::Field::HistoryBytes)
+    );
 }
 
 #[test]

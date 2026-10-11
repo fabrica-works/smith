@@ -34,6 +34,7 @@ pub fn noisy(seed: u64) -> Settings {
             history_messages: pick(4, 16),
             history_bytes: u64::from(pick(2_000, 8_000)),
             completion_bytes: 4096,
+            answer_bytes: 4096,
             completion_blocks: 16,
             failure_bytes: 512,
             delegated_result_bytes: 16_384,

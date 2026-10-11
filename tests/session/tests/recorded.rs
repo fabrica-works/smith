@@ -572,6 +572,7 @@ fn full_history_batch_credit_keeps_maximum_late_results_or_prevents_every_effect
         let mut world = World::new(103, session::max_facts(&smith_session_world::Settings::calm(0).agent));
         world.env.limits.history_bytes = 16_384;
         world.env.limits.completion_bytes = 512;
+        world.env.limits.answer_bytes = 512;
         world.env.limits.completion_blocks = 2;
         world.env.limits.delegated_result_bytes = 2048;
         world.env.limits.parallel_tools = 2;
@@ -684,6 +685,7 @@ fn fullest_history_keeps_maximum_owned_read_list_search_and_shell_after_cancel()
             let mut world = World::new(110 + kind, session::max_facts(&smith_session_world::Settings::calm(0).agent));
             world.env.limits.history_bytes = 16_384;
             world.env.limits.completion_bytes = 512;
+            world.env.limits.answer_bytes = 512;
             world.env.limits.completion_blocks = 1;
             world.env.limits.tools.read_bytes = 4096;
             world.env.limits.tools.list_entries = 8;

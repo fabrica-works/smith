@@ -95,5 +95,12 @@ fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns(
         llm::Usage::ZERO,
     );
     assert_eq!(world.delegated.len(), 1, "fourth-turn finish must be served: {:?}", world.end);
+    world.step(session::Event::Answered {
+        owner: world.delegated[0],
+        text: b"ALPHA".as_slice().into(),
+        error: false,
+        spent: 0,
+    });
+    assert!(world.delegated.is_empty(), "actual finish receiving right has its terminal");
     world.close();
 }

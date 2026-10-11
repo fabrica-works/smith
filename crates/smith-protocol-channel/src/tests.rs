@@ -8,6 +8,10 @@ use crate::{Component, Limits, OpenEvent};
 fn the_agent_demands_the_open_before_the_domain_hears_anything() {
     let limits = Limits {
         bodies: smith_channel::CEILINGS,
+        start_bytes: u32::try_from(
+            smith_channel::Start::worst_case_bytes(&smith_channel::CEILINGS).expect("fixture Start bound"),
+        )
+        .expect("fixture frame"),
         charter: smith_charter::CEILINGS,
         transcript: smith_transcript::CEILINGS,
         endpoints: 0,
