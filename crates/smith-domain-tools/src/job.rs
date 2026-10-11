@@ -96,7 +96,7 @@ pub(crate) fn io_session(domain: &Domain, owner: Token) -> Option<Token> {
 /// What a cell does: go on in another state, or answer the call.
 enum Next {
     Wait(State),
-    Answer { reply_to: ReplyTo, outcome: Outcome },
+    Answer { reply_to: ReplyTo, outcome: Outcome, omitted_bytes: u64 },
 }
 
 #[derive(Debug)]
@@ -258,6 +258,7 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
     let job = jobs.get_mut(id).expect("a job lives until its operation has ended");
     let kit = kits.get_mut(job.kit).expect("a kit lives until its jobs have ended");
     let state = mem::replace(&mut job.state, State::Done);
+    let clamped = state_clamped(&state);
     let next = match state {
         State::Reading { reply_to, place, span } => {
             loaded(&kit.checkout, &mut kit.knowledge, reply_to, place, span, done)
@@ -273,24 +274,33 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
         }
         State::Done => unreachable!("a job that has answered has nothing in flight"),
     };
-    job.state = settle(next, kit::session(kit), job.tool, job.observation, facts, out);
+    job.state = settle(next, kit::session(kit), job, clamped, facts, out);
     follow(kits, jobs, facts, id, out);
+}
+
+/// The applied request caps survive every terminal, including cancellation and timeout.
+fn state_clamped(state: &State) -> bool {
+    match state {
+        State::Reading { span, .. } => facts::bytes_clamped(span.window.clamp),
+        State::Running { timeout, output, .. } => facts::timeout_clamped(*timeout) || facts::bytes_clamped(*output),
+        State::Listing { .. }
+        | State::Searching { .. }
+        | State::Editing { .. }
+        | State::Storing { .. }
+        | State::Done => false,
+    }
 }
 
 /// The state a cell leads to: the one it moves to, or Done once it has
 /// answered the call, which is told as a fact.
-fn settle(
-    next: Next,
-    session: Token,
-    tool: Tool,
-    observation: Option<crate::CallInfo>,
-    facts: &mut Facts,
-    out: &mut Queue<Request>,
-) -> State {
+fn settle(next: Next, session: Token, job: &Job, clamped: bool, facts: &mut Facts, out: &mut Queue<Request>) -> State {
     match next {
         Next::Wait(state) => state,
-        Next::Answer { reply_to, outcome } => {
-            facts.push_call(facts::answered(session, tool, &outcome), observation);
+        Next::Answer { reply_to, outcome, omitted_bytes } => {
+            facts.push_call(
+                facts::answered(session, job.tool, &outcome, facts::Observation { omitted_bytes, clamped }),
+                job.observation,
+            );
             out.push(Request::Answer { to: reply_to, outcome });
             State::Done
         }
@@ -330,7 +340,8 @@ fn loaded(
     let outcome = match done {
         Done::Loaded { content, version } => {
             knowledge.record(place, version);
-            window::read(content, span)
+            let read = window::read(content, span);
+            return Next::Answer { reply_to, outcome: read.outcome, omitted_bytes: read.omitted_bytes };
         }
         Done::Missing => {
             knowledge.forget(&place);
@@ -350,7 +361,7 @@ fn loaded(
         | Done::Exited { .. }
         | Done::Found { .. } => unreachable!("io ends a load with a load's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// Listing, ended: answer with the entries.
@@ -372,7 +383,7 @@ fn scanned(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> 
         | Done::Exited { .. }
         | Done::Found { .. } => unreachable!("io ends a scan with a scan's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// Searching, ended: answer with the lines found, or how rg failed.
@@ -401,7 +412,7 @@ fn found(checkout: &Checkout, reply_to: ReplyTo, place: Place, done: Done) -> Ne
         | Done::Linked
         | Done::TooLarge { .. } => unreachable!("io ends a search with a search's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// Editing, loaded: match the ordered list and store only over this loaded
@@ -419,10 +430,10 @@ fn to_edit(
     let outcome = match done {
         Done::Loaded { content, version } => {
             if kit::closing(kit) {
-                return Next::Answer { reply_to, outcome: Outcome::Cancelled };
+                return Next::Answer { reply_to, outcome: Outcome::Cancelled, omitted_bytes: 0 };
             }
             if deadline <= env.now {
-                return Next::Answer { reply_to, outcome: Outcome::TimedOut };
+                return Next::Answer { reply_to, outcome: Outcome::TimedOut, omitted_bytes: 0 };
             }
             match edit::apply_edits(content, &edits, &env.limits) {
                 Ok((content, replaced)) => {
@@ -452,7 +463,7 @@ fn to_edit(
         | Done::Exited { .. }
         | Done::Found { .. } => unreachable!("io ends a load with a load's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// Storing, ended: answer, and know the version written.
@@ -496,7 +507,7 @@ fn stored(
         | Done::Exited { .. }
         | Done::Found { .. } => unreachable!("io ends a store with a store's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// Running, ended: answer with how the command ended and what it wrote.
@@ -526,7 +537,7 @@ fn exited(
         | Done::TooLarge { .. }
         | Done::Found { .. } => unreachable!("io ends a spawn with a spawn's terminal"),
     };
-    Next::Answer { reply_to, outcome }
+    Next::Answer { reply_to, outcome, omitted_bytes: 0 }
 }
 
 /// The slots the job slab needs under `limits`, or `None` past a `u32`.

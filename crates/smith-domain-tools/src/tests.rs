@@ -623,7 +623,7 @@ fn a_read_answers_with_whole_lines_within_its_limit() {
         (b"a\nbbbbbb\n", span(2, 4), read_of(b"bbbb", 1, 1, 2, true)),
     ];
     for (content, span, expected) in table {
-        assert_eq!(window::read(Box::from(content), span), expected, "{content:?} {span:?}");
+        assert_eq!(window::read(Box::from(content), span).outcome, expected, "{content:?} {span:?}");
     }
 }
 
@@ -1341,9 +1341,23 @@ fn a_kit_tells_what_happens_as_facts() {
     let expected = [
         Fact::Opened { session },
         // Refused at the entrance: answered without having started.
-        Fact::Answered { session, tool: Tool::Read, verdict: Verdict::Outside, bytes: 0 },
+        Fact::Answered {
+            session,
+            tool: Tool::Read,
+            verdict: Verdict::Outside,
+            bytes: 0,
+            omitted_bytes: 0,
+            clamped: false,
+        },
         Fact::Started { session, tool: Tool::Read },
-        Fact::Answered { session, tool: Tool::Read, verdict: Verdict::Read, bytes: 8 },
+        Fact::Answered {
+            session,
+            tool: Tool::Read,
+            verdict: Verdict::Read,
+            bytes: 8,
+            omitted_bytes: 0,
+            clamped: false,
+        },
         Fact::Started { session, tool: Tool::List },
         Fact::Closing { session, running: 1 },
     ];
@@ -1389,7 +1403,14 @@ fn the_last_cancelled_operation_fills_the_complete_two_fact_reserve() {
     assert_eq!(
         tail.as_slice(),
         &[
-            Fact::Answered { session: Token::new(5), tool: Tool::Read, verdict: Verdict::Cancelled, bytes: 0 },
+            Fact::Answered {
+                session: Token::new(5),
+                tool: Tool::Read,
+                verdict: Verdict::Cancelled,
+                bytes: 0,
+                omitted_bytes: 0,
+                clamped: false
+            },
             Fact::Closed { session: Token::new(5) },
         ]
     );
@@ -1448,7 +1469,14 @@ fn fact_emission_times_and_call_context_survive_a_delayed_drain() {
     assert_eq!(facts[3].call, Some(info));
     assert_eq!(
         facts[3].kind,
-        Fact::Answered { session: Token::new(5), tool: Tool::Read, verdict: Verdict::Cancelled, bytes: 0 }
+        Fact::Answered {
+            session: Token::new(5),
+            tool: Tool::Read,
+            verdict: Verdict::Cancelled,
+            bytes: 0,
+            omitted_bytes: 0,
+            clamped: false
+        }
     );
     let mut invalid = authority(ALL);
     invalid.repos[1].root = invalid.repos[0].root;
@@ -1813,4 +1841,146 @@ fn a_requested_command_capture_is_split_in_the_deployments_proportion() {
         assert_eq!(op, Op::Spawn { cwd: place(1, b""), command: bytes(b"test"), head, tail });
         drop(h.end(owner, Done::Cancelled));
     }
+}
+
+#[test]
+fn read_terminal_facts_preserve_window_omission_and_applied_clamps() {
+    let limits = Limits { read_bytes: 4, tool_payload: 8, ..LIMITS };
+    let cases = [
+        (1, crate::Budget::Asked(99), b"a\nb\nc\nd\ne\n".as_slice(), 2, true),
+        (2, crate::Budget::Asked(4), b"a\nb\nc\nd\ne\n".as_slice(), 4, false),
+        (2, crate::Budget::Asked(8), b"a\nb\nc\n".as_slice(), 0, false),
+        (1, crate::Budget::Default, b"abcdef".as_slice(), 2, false),
+        (1, crate::Budget::Asked(99), b"abc".as_slice(), 0, true),
+        (1, crate::Budget::Default, b"abc".as_slice(), 0, false),
+        (20, crate::Budget::Default, b"a\nb\n".as_slice(), 0, false),
+    ];
+    for (offset, window, content, omitted_bytes, clamped) in cases {
+        let mut h = Harness::new(limits);
+        let kit = h.open(5, authority(ALL));
+        drop(told(&mut h));
+        let (owner, _) = h.start(kit, 1, Call::Read { path: path(b"x"), offset, window });
+        let started = told(&mut h);
+        assert_eq!(started.as_slice(), &[Fact::Started { session: Token::new(5), tool: Tool::Read }]);
+        let (_, outcome) = h.end(owner, Done::Loaded { content: bytes(content), version: version(1) });
+        let Outcome::Read { content, .. } = outcome else { panic!("read answer") };
+        assert_eq!(
+            told(&mut h).as_slice(),
+            &[Fact::Answered {
+                session: Token::new(5),
+                tool: Tool::Read,
+                verdict: Verdict::Read,
+                bytes: u64::try_from(content.len()).unwrap(),
+                omitted_bytes,
+                clamped,
+            }],
+            "offset {offset}, window {window:?}",
+        );
+    }
+}
+
+#[test]
+fn command_terminal_facts_preserve_capture_loss_and_clamps_across_all_terminals() {
+    let limits = Limits {
+        shell_output: 8,
+        shell_head: 9,
+        shell_tail: 3,
+        shell_timeout: Duration::from_secs(6),
+        tool_deadline: Duration::from_secs(10),
+        ..LIMITS
+    };
+    for (timeout, output, clamped) in [
+        (crate::Timeout::Default, crate::Budget::Default, false),
+        (crate::Timeout::Asked(Duration::from_secs(15)), crate::Budget::Default, true),
+        (crate::Timeout::Default, crate::Budget::Asked(20), true),
+    ] {
+        for (terminal, verdict, kept, omitted_bytes) in [
+            (
+                Done::Exited { exit: Exit::Code { code: 0 }, head: bytes(b"first"), tail: bytes(b"end"), dropped: 7 },
+                Verdict::Exited { exit: Exit::Code { code: 0 } },
+                8,
+                7,
+            ),
+            (
+                Done::Exited { exit: Exit::Code { code: 0 }, head: bytes(b"ok"), tail: bytes(b""), dropped: 0 },
+                Verdict::Exited { exit: Exit::Code { code: 0 } },
+                2,
+                0,
+            ),
+            (Done::TimedOut, Verdict::TimedOut, 0, 0),
+            (Done::Cancelled, Verdict::Cancelled, 0, 0),
+            (Done::Failed { fault: Fault::Denied }, Verdict::Failed { fault: Fault::Denied }, 0, 0),
+        ] {
+            let mut h = Harness::new(limits);
+            let kit = h.open(5, authority(ALL));
+            drop(told(&mut h));
+            let call = Call::Shell { command: bytes(b"test"), timeout, output };
+            let request = h.step(Event::Call {
+                kit,
+                observation: None,
+                reply_to: ReplyTo::new(Token::new(1)),
+                call,
+                deadline: at(30),
+            });
+            let Some(Request::Io { owner, .. }) = request else { panic!("command spawn") };
+            assert_eq!(told(&mut h).as_slice(), &[Fact::Started { session: Token::new(5), tool: Tool::Shell }]);
+            drop(h.end(owner, terminal));
+            assert_eq!(
+                told(&mut h).as_slice(),
+                &[Fact::Answered {
+                    session: Token::new(5),
+                    tool: Tool::Shell,
+                    verdict,
+                    bytes: kept,
+                    omitted_bytes,
+                    clamped,
+                }]
+            );
+        }
+    }
+}
+
+#[test]
+fn a_clamped_read_retains_its_applied_cap_when_cancelled_or_timed_out() {
+    let limits = Limits { read_bytes: 4, tool_payload: 8, ..LIMITS };
+    for (done, verdict) in [(Done::TimedOut, Verdict::TimedOut), (Done::Cancelled, Verdict::Cancelled)] {
+        let mut h = Harness::new(limits);
+        let kit = h.open(5, authority(ALL));
+        drop(told(&mut h));
+        let (owner, _) = h.start(kit, 1, Call::Read { path: path(b"x"), offset: 1, window: crate::Budget::Asked(99) });
+        drop(told(&mut h));
+        drop(h.end(owner, done));
+        assert_eq!(
+            told(&mut h).as_slice(),
+            &[Fact::Answered {
+                session: Token::new(5),
+                tool: Tool::Read,
+                verdict,
+                bytes: 0,
+                omitted_bytes: 0,
+                clamped: true,
+            }]
+        );
+    }
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_macros,
+    reason = "parent-compatible diagnostic regression is test code, programming-model.md section 10.2"
+)]
+fn read_caps_are_observable_at_the_tools_parent_boundary() {
+    let mut h = Harness::new(Limits { read_bytes: 4, tool_payload: 8, ..LIMITS });
+    let kit = h.open(5, authority(ALL));
+    drop(told(&mut h));
+    let (owner, _) = h.start(kit, 1, Call::Read { path: path(b"x"), offset: 2, window: crate::Budget::Asked(99) });
+    drop(told(&mut h));
+    drop(h.end(owner, Done::Loaded { content: bytes(b"a\nb\nc\nd\ne\nf\n"), version: version(1) }));
+    let terminal = told(&mut h);
+    assert_eq!(terminal.len(), 1, "one actual terminal reaches the parent");
+    // Use the common parent's existing Debug surface to run the same test
+    // before the new fields exist; the typed assertions above check the fixed API.
+    let reported = format!("{:?}", terminal.as_slice()[0]);
+    assert!(reported.contains("omitted_bytes: 2"), "missing actual window observation: {reported}");
+    assert!(reported.contains("clamped: true"), "missing actual lowered-cap observation: {reported}");
 }

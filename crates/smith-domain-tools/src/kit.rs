@@ -124,11 +124,17 @@ pub(crate) fn call(
         Ok(Admitted::Directories) => {
             facts.push_call(FactKind::Started { session: kit.session, tool }, observation);
             let outcome = directories(&kit.checkout, &env.limits);
-            facts.push_call(facts::answered(kit.session, tool, &outcome), observation);
+            facts.push_call(
+                facts::answered(kit.session, tool, &outcome, facts::Observation { omitted_bytes: 0, clamped: false }),
+                observation,
+            );
             out.push(Request::Answer { to: reply_to, outcome });
         }
         Err(outcome) => {
-            facts.push_call(facts::answered(kit.session, tool, &outcome), observation);
+            facts.push_call(
+                facts::answered(kit.session, tool, &outcome, facts::Observation { omitted_bytes: 0, clamped: false }),
+                observation,
+            );
             out.push(Request::Answer { to: reply_to, outcome });
         }
     }

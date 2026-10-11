@@ -973,7 +973,14 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
         by_tools(opener, tools::FactKind::Started { session: owner, tool: read }),
         by_tools(
             opener,
-            tools::FactKind::Answered { session: owner, tool: read, verdict: tools::Verdict::Read, bytes: 1 },
+            tools::FactKind::Answered {
+                session: owner,
+                tool: read,
+                verdict: tools::Verdict::Read,
+                bytes: 1,
+                omitted_bytes: 0,
+                clamped: false,
+            },
         ),
     ]);
 }
@@ -1805,7 +1812,17 @@ fn a_session_tells_what_happens_as_facts() {
             max_tokens: 1024,
             choice: crate::facts::Choice::Auto,
         },
-        by_tools(opener, tools::FactKind::Answered { session: owner, tool: tools::Tool::Read, verdict, bytes: 7 }),
+        by_tools(
+            opener,
+            tools::FactKind::Answered {
+                session: owner,
+                tool: tools::Tool::Read,
+                verdict,
+                bytes: 7,
+                omitted_bytes: 0,
+                clamped: false,
+            },
+        ),
     ]);
     drop(yielded(h.step(Event::Completed { owner, completion: done() })));
     h.told(&[
@@ -2356,7 +2373,9 @@ fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
                 session: owner,
                 tool: tools::Tool::Read,
                 verdict: tools::Verdict::Outside,
-                bytes: 0
+                bytes: 0,
+                omitted_bytes: 0,
+                clamped: false
             }
         }
     );
@@ -2734,4 +2753,59 @@ fn a_native_request_limit_is_context_too_long_without_retry() {
         );
         assert_eq!(harness.domain.next_deadline(), None);
     }
+}
+
+#[test]
+fn delayed_workspace_terminal_facts_keep_tool_caps_before_any_render() {
+    let tools = tools::Limits { read_bytes: 4, tool_payload: 8, ..TOOLS };
+    let mut h = Harness::new(Limits { tools, ..LIMITS });
+    h.env.now = Time::from_nanos(7);
+    let (owner, _) = h.open(1);
+    h.env.now = Time::from_nanos(11);
+    let content = Box::new([tool_call(
+        b"windowed",
+        Call::Read { path: path(b"main.rs"), offset: 2, window: tools::Budget::Asked(99) },
+    )]);
+    let (job, _) = running(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }));
+    h.env.now = Time::from_nanos(13);
+    drop(calling(h.step(ran(job, b"a\nb\nc\nd\ne\nf\n"))));
+    h.env.now = Time::from_nanos(17);
+    drop(yielded(h.step(Event::Completed { owner, completion: done() })));
+    h.env.now = Time::from_nanos(19);
+    drop(h.step(Event::Close { session: owner }));
+    h.env.now = Time::from_nanos(99);
+    let facts = observed_facts(&mut h);
+    let mut terminal = None;
+    let mut started = None;
+    for fact in &facts {
+        if let Fact::Tools { fact: tools::FactKind::Answered { .. }, .. } = fact.kind {
+            assert!(terminal.replace(fact).is_none(), "one actual workspace terminal");
+        }
+        if let Fact::Tools { fact: tools::FactKind::Started { .. }, .. } = fact.kind {
+            assert!(started.replace(fact).is_none(), "one actual workspace start");
+        }
+    }
+    let terminal = terminal.expect("workspace terminal");
+    let started = started.expect("workspace start");
+    assert_eq!(terminal.at, Time::from_nanos(13));
+    assert_eq!(
+        terminal.kind,
+        by_tools(
+            Token::new(1),
+            tools::FactKind::Answered {
+                session: owner,
+                tool: tools::Tool::Read,
+                verdict: tools::Verdict::Read,
+                bytes: 8,
+                omitted_bytes: 2,
+                clamped: true,
+            }
+        )
+    );
+    let metadata = terminal.call.as_ref().expect("actual provider identity retained");
+    assert_eq!(&*metadata.id, b"windowed");
+    assert_eq!(started.at, Time::from_nanos(11));
+    assert_eq!(terminal.call, started.call, "the parent call identity survives terminal settlement");
+    assert_eq!(metadata.source, crate::ToolSource::Workspace);
+    assert_eq!(metadata.effect, Effect::Read);
 }

@@ -812,7 +812,7 @@ pub struct ToolCompleted {
     pub verdict: Verdict,
     pub exit: Option<CommandExit>,
     pub bytes: u64,
-    /// Bytes the render bound omitted from the result, under every capture policy.
+    /// Bytes the tool's own read window or command capture omitted, before rendering.
     pub omitted_bytes: u64,
     /// Whether the requested budget or deadline was lowered to its ceiling.
     pub clamped: bool,

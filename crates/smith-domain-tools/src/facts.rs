@@ -5,7 +5,9 @@
 //!
 //! Facts are a separate step output. The parent reserves [`crate::max_facts`]
 //! slots before each entrance, holding work while its drain is behind; every
-//! observation is preserved and none changes a tool's decision.
+//! observation is preserved and none changes a tool's decision. Applied tool
+//! caps and omitted suffix bytes are retained at the terminal, before rendering
+//! (protocol/events.md, section 3.6); a later render cut is never known here.
 
 use skein_lib::{Queue, Time, Token};
 
@@ -51,6 +53,10 @@ pub enum FactKind {
         verdict: Verdict,
         /// Owned payload bytes charged against the enclosing session limit.
         bytes: u64,
+        /// Bytes omitted by the tool's own read window or command capture, before rendering.
+        omitted_bytes: u64,
+        /// Whether the tool lowered a requested byte budget or deadline to its ceiling.
+        clamped: bool,
     },
     /// The kit is closing, with `running` calls to settle.
     Closing {
@@ -142,29 +148,54 @@ pub enum Verdict {
     NulByte,
 }
 
+/// Scalar observations retained by the job until its tool terminal.
+#[derive(Clone, Copy)]
+pub(crate) struct Observation {
+    pub(crate) omitted_bytes: u64,
+    pub(crate) clamped: bool,
+}
+
+/// Whether the effective byte cap was lowered from the caller's request.
+pub(crate) fn bytes_clamped(clamp: crate::BytesClamp) -> bool {
+    match clamp {
+        crate::BytesClamp::Within => false,
+        crate::BytesClamp::Clamped { .. } => true,
+    }
+}
+
+/// Whether the effective deadline was lowered from the caller's request.
+pub(crate) fn timeout_clamped(clamp: crate::TimeoutClamp) -> bool {
+    match clamp {
+        crate::TimeoutClamp::Within => false,
+        crate::TimeoutClamp::Clamped { .. } => true,
+    }
+}
+
 /// The fact of `outcome` answering a call of `tool` from `session`.
-pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKind {
+pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome, observation: Observation) -> FactKind {
     let (verdict, bytes) = match outcome {
         Outcome::Read { content, .. } => (Verdict::Read, len(content)),
         Outcome::Listed { entries, .. } => {
             let mut bytes: u64 = 0;
             for entry in entries {
-                bytes = bytes.saturating_add(len(entry.name.as_ref()));
+                bytes = bytes.checked_add(len(entry.name.as_ref())).expect("bounded listing bytes fit u64");
             }
             (Verdict::Listed, bytes)
         }
         Outcome::Found { hits, .. } => {
             let mut bytes: u64 = 0;
             for hit in hits {
-                bytes = bytes.saturating_add(len(&hit.path)).saturating_add(len(&hit.text));
+                bytes = bytes.checked_add(len(&hit.path)).expect("bounded search paths fit u64");
+                bytes = bytes.checked_add(len(&hit.text)).expect("bounded search bytes fit u64");
             }
             (Verdict::Found, bytes)
         }
         Outcome::Written { created } => (Verdict::Written { created: *created }, 0),
         Outcome::Edited { replaced } => (Verdict::Edited { replaced: *replaced }, 0),
-        Outcome::Exited { exit, head, tail, dropped: _, timeout: _, output: _ } => {
-            (Verdict::Exited { exit: *exit }, len(head).saturating_add(len(tail)))
-        }
+        Outcome::Exited { exit, head, tail, dropped: _, timeout: _, output: _ } => (
+            Verdict::Exited { exit: *exit },
+            len(head).checked_add(len(tail)).expect("bounded command output fits u64"),
+        ),
         Outcome::NotGranted => (Verdict::NotGranted, 0),
         Outcome::Outside { .. } => (Verdict::Outside, 0),
         Outcome::ReadOnly { .. } => (Verdict::ReadOnly, 0),
@@ -191,11 +222,50 @@ pub(crate) fn answered(session: Token, tool: Tool, outcome: &Outcome) -> FactKin
         Outcome::Busy => (Verdict::Busy, 0),
         Outcome::NulByte => (Verdict::NulByte, 0),
     };
-    FactKind::Answered { session, tool, verdict, bytes }
+    let observed = match outcome {
+        Outcome::Exited { dropped, timeout, output, .. } => Observation {
+            omitted_bytes: *dropped,
+            clamped: observation.clamped || timeout_clamped(*timeout) || bytes_clamped(*output),
+        },
+        Outcome::Read { window, .. } => Observation {
+            omitted_bytes: observation.omitted_bytes,
+            clamped: observation.clamped || bytes_clamped(*window),
+        },
+        Outcome::Listed { .. }
+        | Outcome::Found { .. }
+        | Outcome::Written { .. }
+        | Outcome::Edited { .. }
+        | Outcome::NotGranted
+        | Outcome::Outside { .. }
+        | Outcome::ReadOnly { .. }
+        | Outcome::TooLong
+        | Outcome::NotFound { .. }
+        | Outcome::NotFile
+        | Outcome::Linked
+        | Outcome::Protected
+        | Outcome::NotDirectory { .. }
+        | Outcome::TooLarge { .. }
+        | Outcome::NotRead
+        | Outcome::Stale
+        | Outcome::EditFailed { .. }
+        | Outcome::Failed { .. }
+        | Outcome::TimedOut
+        | Outcome::Cancelled
+        | Outcome::Busy
+        | Outcome::NulByte => observation,
+    };
+    FactKind::Answered {
+        session,
+        tool,
+        verdict,
+        bytes,
+        omitted_bytes: observed.omitted_bytes,
+        clamped: observed.clamped,
+    }
 }
 
 fn len(bytes: &[u8]) -> u64 {
-    u64::try_from(bytes.len()).unwrap_or(u64::MAX)
+    u64::try_from(bytes.len()).expect("bounded tool bytes fit u64")
 }
 
 /// Reserved step observations not yet drained by the parent.
