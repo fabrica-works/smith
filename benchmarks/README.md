@@ -357,3 +357,14 @@ not yet supported by the current invocation; they are not judged or claimed
 proven by this interactive task. The one-turn startup refusal is authored
 with its product expectation but stays outside both active suites until
 10.5 is merged and proven.
+
+Prepare `first-request` with `agents/smith/first-request.pin.toml`. Its
+template has empty instructions, so the empty-brief probe is not given the
+smoke template's conflicting command to read `AGENTS.md` before working.
+Every other native setting and the original task, seed and checks remain
+the same. The named `fix` and `calibrate` commands select
+`suites/first-request.toml` for this probe; an explicit suite run uses that
+same file. Other probe commands retain the calibration suite's smoke pin.
+The five-task suites keep their original coverage and suite-wide pins;
+preparing this isolated probe with the shared smoke pin does not prove its
+task-compatible setup.

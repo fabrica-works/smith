@@ -10,6 +10,12 @@ use crate::{AttemptResult, End, Judgment, judge, judge_suite};
 
 mod prepare;
 
+/// Select the probe's committed pin without overriding another probe's instructions.
+pub(crate) fn calibration_suite(probe: &str) -> std::path::PathBuf {
+    let file = if probe == "probes/first-request" { "first-request.toml" } else { "calibrate.toml" };
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(file)
+}
+
 /// One verified arm's actual probe run, supplied by the common dispatcher.
 #[derive(Clone, Debug)]
 pub struct ProbeRun {
@@ -126,7 +132,7 @@ fn actual(build: &Build, results: &[AttemptResult], batch: &crate::batch::Batch)
 
 /// Run prepared before/after requests on verified arms; never prepare an unstated invocation.
 pub fn run(probe: &str, parent: &str, fix: &str, prepared: &Path, seed: u64) -> Result<FixReport, String> {
-    let suite = Path::new(env!("CARGO_MANIFEST_DIR")).join("suites/calibrate.toml");
+    let suite = calibration_suite(probe);
     let requests = crate::batch::probe_requests(&suite, prepared, seed, probe, 1)?;
     prepare::inputs(&requests)?;
     let mut before = None;
@@ -161,7 +167,7 @@ pub fn run(probe: &str, parent: &str, fix: &str, prepared: &Path, seed: u64) -> 
 
 /// Judge ten changed-arm repetitions and a failing control without claiming calibration from unavailable.
 pub fn calibrate(probe: &str, changed: &Path, control: &Path, seed: u64) -> Result<(Judgment, String), String> {
-    let suite = Path::new(env!("CARGO_MANIFEST_DIR")).join("suites/calibrate.toml");
+    let suite = calibration_suite(probe);
     let after_requests = crate::batch::probe_requests(&suite, changed, seed, probe, 10)?;
     let before_requests = crate::batch::probe_requests(&suite, control, seed, probe, 1)?;
     let after_arm = prepare::one_arm(&after_requests, 10)?;

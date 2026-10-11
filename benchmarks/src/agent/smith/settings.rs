@@ -342,6 +342,55 @@ mod tests {
         task.smith.clear();
         task.budget.seconds = Some(11);
         assert!(render(&task, Shape::LocalJson).is_err());
+        let suite_path = crate::fix::calibration_suite("probes/first-request");
+        let suite = crate::read_suite(&suite_path).expect("first-request suite");
+        let selected_pin = directory.join("agents/smith").join(format!("{}.pin.toml", suite.agents[0].config));
+        let selected = crate::read_configuration(&selected_pin).expect("selected first-request pin");
+        let selected_base: Value = serde_json::from_slice(
+            &std::fs::read(selected_pin.parent().expect("pin directory").join(&selected.pin.configuration))
+                .expect("selected template"),
+        )
+        .expect("selected JSON");
+        let first_task = crate::read_task(&directory.join("tasks/probes/first-request/task.toml"))
+            .expect("unchanged first-request task");
+        let context = Context {
+            guard: &guard,
+            private: &private,
+            pin: &selected,
+            pin_file: &selected_pin,
+            task: &first_task,
+            variant: None,
+            model: &model,
+            arm: &arm,
+            installed_version: "unused",
+            home: &root.join("user/.codex"),
+            wall: skein_lib::Wall::EPOCH,
+            lifetime: skein_lib::Duration::from_secs(20),
+            environment: &environment,
+        };
+        let first_settings = settings(
+            &context,
+            Shape::LocalReserved,
+            &selected_base,
+            "opaque-account",
+            &root.join("trace"),
+            &root.join("tokens"),
+        )
+        .expect("actual first-request native render");
+        assert_eq!(first_settings["instructions"], "", "empty-brief probe must not demand AGENTS/read calls");
+        let mut expected = settings(
+            &context,
+            Shape::LocalReserved,
+            &base,
+            "opaque-account",
+            &root.join("trace"),
+            &root.join("tokens"),
+        )
+        .expect("old native render");
+        expected["instructions"] = json!("");
+        assert_eq!(first_settings, expected, "all other native fields remain identical");
+        assert_eq!(suite.agents[0].config, "first-request");
+        assert_eq!(crate::fix::calibration_suite("probes/smoke-tools"), directory.join("suites/calibrate.toml"));
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }
