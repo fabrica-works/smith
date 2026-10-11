@@ -599,4 +599,3 @@ mod native_suite_pin_tests {
         fs::remove_dir_all(directory.parent().expect("fixture owner")).expect("cleanup");
     }
 }
-
