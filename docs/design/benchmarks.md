@@ -331,6 +331,11 @@ files.
   read-only; then the locale and the agent's home. A task's variables
   reach smith's commands through its settings, which own their
   environment whole, and the others' through their own process.
+  A login shell sees the same `PATH`: the attempt's home holds a
+  `.profile` that sets it to the machine's. Agents that run commands in
+  a login shell would otherwise lose it, since the system profile
+  resets `PATH` (codex-cli 0.160.0 runs each command as `bash -lc`, and
+  Debian's `/etc/profile` drops `~/.cargo/bin`).
 - **Budgets.** smith takes turns, time and spend; Claude Code a spend
   ceiling; Codex none. In a comparison every agent's own limits sit above
   the task's hard deadline, the bound they share. Each result records the
