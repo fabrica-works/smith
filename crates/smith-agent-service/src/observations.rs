@@ -7,6 +7,46 @@ use skein_lib::Time;
 use smith_domain::run;
 use smith_events::{BudgetStage, BudgetStanding, Event, Quantity, Record, Reserve};
 
+/// The actual opening's model, joined to the configured endpoint name and effort.
+/// The caller supplies configured metadata; no endpoint or model is inferred.
+#[must_use]
+#[expect(clippy::manual_map, reason = "the strict subset requires an explicit match instead of a closure")]
+pub fn opening_model(llm: &run::charter::Llm, endpoint: &[u8], effort: Option<&[u8]>) -> smith_events::Model {
+    smith_events::Model {
+        endpoint: endpoint.into(),
+        model: llm.model.clone(),
+        window_tokens: u64::from(llm.window),
+        output_tokens: u64::from(llm.output),
+        effort: match effort {
+            Some(effort) => Some(effort.into()),
+            None => None,
+        },
+    }
+}
+
+/// Exact provider-reported counters, keeping each absent counter unknown.
+#[must_use]
+pub const fn reported_usage(usage: smith_domain::llm::Usage) -> smith_events::Usage {
+    smith_events::Usage {
+        input_tokens: usage.input_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_write_tokens: usage.cache_write_tokens,
+        output_tokens: usage.output_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+    }
+}
+
+/// Tool selection of the actual surviving request handed to the LLM component.
+/// Logical completion-intent facts do not establish a provider request start.
+#[must_use]
+pub const fn request_tool_choice(choice: &smith_domain::llm::ToolChoice) -> smith_events::ToolChoice {
+    match choice {
+        smith_domain::llm::ToolChoice::Auto => smith_events::ToolChoice::Auto,
+        smith_domain::llm::ToolChoice::None => smith_events::ToolChoice::None,
+        smith_domain::llm::ToolChoice::Only(_) => smith_events::ToolChoice::Only,
+    }
+}
+
 /// A run's actual charge observation, stamped from the process origin for its event sink.
 #[must_use]
 pub fn budget_record(fact: &run::facts::Fact, started_at: Time) -> Option<Record> {

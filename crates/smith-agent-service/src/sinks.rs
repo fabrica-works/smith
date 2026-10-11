@@ -131,6 +131,7 @@ struct Writer {
 #[derive(Debug)]
 pub struct Sinks {
     limits: SinkLimits,
+    capture: Capture,
     writers: List<Writer>,
     line: u32,
     reserve: u32,
@@ -148,14 +149,13 @@ const MINIMUM_LINE: u32 = 16;
 impl Sinks {
     /// Construct the destinations with a checked bound and the actual adopted IO output cap.
     #[must_use]
-    pub fn new(limits: &SinkLimits, io_output: u32) -> Sinks {
-        assert!(sinks_worst_case(limits).is_some(), "startup checked the sink's ownership bound");
-        // 02.5 emits no captured content; 02.6 supplies the owning content boundary.
-        let line = smith_events::largest_record_for(&smith_events::Capture::None, &limits.records)
-            .expect("startup checked the content-free record bound");
+    pub fn new(limits: &SinkLimits, capture: Capture, io_output: u32) -> Sinks {
+        assert!(sinks_worst_case(limits, capture).is_some(), "startup checked the sink's ownership bound");
+        let line = largest_line(&limits.records, capture).expect("startup checked the produced record bound");
         assert!(io_output >= line, "every line fits the actual adopted IO output cap");
         Sinks {
             limits: *limits,
+            capture,
             writers: List::with_capacity(limits.destinations),
             line,
             reserve: line.checked_mul(AUTHORITATIVE).expect("startup checked authoritative credit"),
@@ -209,11 +209,32 @@ impl Sinks {
         true
     }
 
-    /// Encode one content-free record to every destination, counting it once per type.
+    /// Encode one record to every destination, counting it once per type.
+    /// Only an accepted result's text and fields are captured until the content increment.
     /// The owner calls this only while takes holds, except for the three authoritative records.
     pub fn record(&mut self, record: &Record) {
         assert!(!self.ended, "no record follows the process terminal");
-        let bytes = match smith_events::write(record, &smith_events::Capture::None, &self.limits.records)
+        let capture = match &record.event {
+            Event::RunCompleted(_) => self.capture.encoded(),
+            Event::SessionStarted(_)
+            | Event::SessionEnded(_)
+            | Event::RunStarted(_)
+            | Event::ConversationOpened(_)
+            | Event::ConversationClosed(_)
+            | Event::ResponseStarted(_)
+            | Event::ResponseCompleted(_)
+            | Event::TextDelta(_)
+            | Event::ToolStarted(_)
+            | Event::ToolCompleted(_)
+            | Event::CheckStarted(_)
+            | Event::CheckCompleted(_)
+            | Event::MessageReceived(_)
+            | Event::MessageRead(_)
+            | Event::MessageUnread(_)
+            | Event::Notice(_)
+            | Event::Budget(_) => smith_events::Capture::None,
+        };
+        let bytes = match smith_events::write(record, &capture, &self.limits.records)
             .expect("typed sources fit startup's receiving bounds")
         {
             Some(bytes) => bytes,
@@ -370,6 +391,7 @@ impl Sinks {
     }
 }
 
+#[expect(clippy::manual_map, reason = "the strict subset requires an explicit match instead of a closure")]
 fn ended_record(now: Time, started: Time, ended: &Ended, emitted: List<smith_events::Count>, loss: u64) -> Record {
     let (cpu_ms, peak_rss_bytes) = match ended.usage {
         io::Measured::Read(usage) => (
@@ -564,9 +586,29 @@ fn slots(limits: &SinkLimits) -> Option<u32> {
     limits.output.checked_div(MINIMUM_LINE)?.checked_add(AUTHORITATIVE)
 }
 
+fn largest_line(limits: &smith_events::Limits, capture: Capture) -> Option<u32> {
+    let scalar = smith_events::largest_record_for(&smith_events::Capture::None, limits)?;
+    match capture {
+        Capture::None | Capture::Calls => Some(scalar),
+        Capture::Everything => {
+            // The record kind controls the size formula; no answer content is allocated here.
+            let answer = crate::answer_record(
+                crate::AnswerMeta { run: 0, wind_down: false, read: None, unread: 0, elapsed: Duration::ZERO },
+                &smith_domain::run::Answer::Parked { spent: smith_domain::run::Spend::ZERO, turns: 0 },
+                Capture::None,
+            );
+            Some(scalar.max(smith_events::largest_size(
+                &Event::RunCompleted(answer),
+                &smith_events::Capture::Everything,
+                limits,
+            )?))
+        }
+    }
+}
+
 /// Peak heap of the destination queues and their bounded output, including codec construction.
 #[must_use]
-pub fn sinks_worst_case(limits: &SinkLimits) -> Option<u64> {
+pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
     if limits.records.items < u32::try_from(TYPES).ok()? {
         return None;
     }
@@ -575,7 +617,7 @@ pub fn sinks_worst_case(limits: &SinkLimits) -> Option<u64> {
             return None;
         }
     }
-    let line = smith_events::largest_record_for(&smith_events::Capture::None, &limits.records)?;
+    let line = largest_line(&limits.records, capture)?;
     if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(1)?)? {
         return None;
     }
@@ -601,19 +643,88 @@ mod tests {
 
     fn limits(destinations: u32) -> SinkLimits {
         let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
-        let line = smith_events::largest_record_for(&smith_events::Capture::None, &records).unwrap();
-        SinkLimits { destinations, output: line * 5, records, conversations: 1 }
+        let line = largest_line(&records, Capture::None).unwrap();
+        SinkLimits { destinations, output: line.checked_mul(5).unwrap(), records, conversations: 1 }
+    }
+
+    #[test]
+    fn only_everything_captures_the_exact_accepted_report_text_and_fields() {
+        let actual = smith_domain::run::Answer::Accepted {
+            outcome: smith_domain::run::outcome::Declared::Report(smith_domain::run::outcome::Report {
+                text: b"Frozen task token: ALPHA.\n\"quoted\"".to_vec().into(),
+                fields: Box::new([smith_domain::run::outcome::Field {
+                    name: b"source".to_vec().into(),
+                    value: b"actual\nreport".to_vec().into(),
+                }]),
+            }),
+            spent: smith_domain::run::Spend {
+                units: 17,
+                input: Some(19),
+                output: Some(23),
+                ..smith_domain::run::Spend::ZERO
+            },
+            turns: 2,
+        };
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let mut limits = limits(1);
+            limits.output = largest_line(&limits.records, capture).unwrap() * 5;
+            let token = Token::new(11);
+            let mut sinks = Sinks::new(&limits, capture, limits.output);
+            sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
+            let answer = crate::answer_record(
+                crate::AnswerMeta {
+                    run: 7,
+                    wind_down: true,
+                    read: Some(31),
+                    unread: 1,
+                    elapsed: Duration::from_millis(29),
+                },
+                &actual,
+                capture,
+            );
+            sinks.record(&Record { t_ms: 37, event: Event::RunCompleted(answer) });
+            // Everything grants only the newly moved accepted-result content in 02.5.
+            let request =
+                golden(include_bytes!("../../smith-events/golden/v1/response_started_everything.jsonl"), &limits);
+            sinks.record(&request);
+            sinks.finish();
+            let records = drain(&mut sinks, token);
+            let Event::RunCompleted(answer) = &records[0].event else { panic!("typed answer") };
+            assert_eq!(answer.status, smith_events::Status::Accepted);
+            assert_eq!(
+                (answer.run, answer.turns, answer.spent, answer.read, answer.unread, answer.duration_ms),
+                (7, 2, 17, Some(31), 1, 29)
+            );
+            assert!(answer.wind_down);
+            assert_eq!(answer.usage.input_tokens, Some(19));
+            assert_eq!(answer.usage.output_tokens, Some(23));
+            assert_eq!(answer.usage.reasoning_tokens, None);
+            let result = answer.result.as_ref().unwrap();
+            assert_eq!(result.form, smith_events::Form::Report);
+            if capture == Capture::Everything {
+                assert_eq!(result.text.as_deref(), Some(b"Frozen task token: ALPHA.\n\"quoted\"".as_slice()));
+                assert_eq!(
+                    result.fields.as_ref().unwrap().as_slice(),
+                    &[smith_events::Field { name: b"source".to_vec().into(), text: b"actual\nreport".to_vec().into() }]
+                );
+            } else {
+                assert_eq!(result.text, None);
+                assert_eq!(result.fields, None);
+            }
+            let Event::ResponseStarted(request) = &records[1].event else { panic!("typed request") };
+            assert_eq!(request.prompt, None, "prompt content belongs to 02.6");
+        }
     }
 
     #[test]
     fn the_complete_emitted_vocabulary_must_fit_the_receiving_bounds() {
         let mut bounds = limits(1);
         bounds.records.string = 18;
-        assert!(sinks_worst_case(&bounds).is_none());
+        assert!(sinks_worst_case(&bounds, Capture::None).is_none());
         bounds.records.string = 19;
-        assert!(sinks_worst_case(&bounds).is_some());
+        assert!(sinks_worst_case(&bounds, Capture::None).is_some());
         bounds.records.items = 17;
-        assert!(sinks_worst_case(&bounds).is_none());
+        assert!(sinks_worst_case(&bounds, Capture::None).is_none());
     }
 
     #[test]
@@ -634,7 +745,7 @@ mod tests {
             for exit in [0, 1] {
                 let limits = limits(1);
                 let token = Token::new(11);
-                let mut sinks = Sinks::new(&limits, limits.output);
+                let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
                 sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
                 sinks.record(&counted(1));
                 let ended = Ended {
@@ -681,7 +792,7 @@ mod tests {
     fn each_settled_end_reports_its_destination_loss_and_counts_itself_once() {
         let limits = limits(2);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
         sinks.add(Destination::Output, Token::new(12), Delivery::BestEffort).unwrap();
         sinks.up(io::Event::Failed { owner: Token::new(12), error: io::Error::Other });
@@ -694,7 +805,7 @@ mod tests {
         let records = drain(&mut sinks, token);
         let Event::SessionEnded(end) = &records.last().unwrap().event else { panic!("end is last") };
         assert_eq!(end.emitted.iter().map(|entry| entry.count).sum::<u64>(), 10_001);
-        assert_eq!(records.len() as u64 + end.loss.events, 10_001);
+        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(end.loss.events).unwrap(), 10_001);
         assert_eq!(sinks.writers.get(1).unwrap().loss, 10_001);
         assert_eq!(sinks.pop_given_up(), Some(Destination::Output));
         assert_eq!(sinks.pop_given_up(), None);
@@ -716,7 +827,7 @@ mod tests {
     fn drain(sinks: &mut Sinks, token: Token) -> Vec<Record> {
         let mut out = Queue::with_capacity(2);
         let mut read = Vec::new();
-        for _ in 0..10_000 {
+        for _ in 0_u32..10_000 {
             sinks.down(&mut out);
             match out.pop() {
                 Some(io::Request::Stream { down: stream::Down::Demand { room, .. }, .. }) => {
@@ -741,7 +852,7 @@ mod tests {
     fn a_slow_complete_destination_preserves_order_and_reserves_authoritative_room() {
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         let mut expected = Vec::new();
         let start = golden(include_bytes!("../../smith-events/golden/v1/session_started_none.jsonl"), &limits);
@@ -767,14 +878,14 @@ mod tests {
         assert_eq!(sinks.writers.get(0).unwrap().loss, 0);
         assert!(sinks.closed());
         let emitted = sinks.emitted();
-        assert_eq!(emitted.iter().map(|entry| entry.count).sum::<u64>(), expected.len() as u64);
+        assert_eq!(emitted.iter().map(|entry| entry.count).sum::<u64>(), u64::try_from(expected.len()).unwrap());
     }
 
     #[test]
     fn best_effort_loses_only_the_counted_records_that_find_it_behind() {
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::BestEffort).unwrap();
         for name in 0..10_000 {
             sinks.record(&counted(name));
@@ -784,7 +895,7 @@ mod tests {
         assert!(lost > 0);
         sinks.finish();
         let records = drain(&mut sinks, token);
-        assert_eq!(records.len() as u64 + lost, 10_000);
+        assert_eq!(u64::try_from(records.len()).unwrap().checked_add(lost).unwrap(), 10_000);
         assert_eq!(sinks.emitted().get(0).unwrap().count, 10_000);
     }
 
@@ -792,15 +903,19 @@ mod tests {
     fn a_failed_stream_counts_queued_inflight_and_later_records_and_notifies_once() {
         let limits = limits(1);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         sinks.record(&counted(1));
         let mut out = Queue::with_capacity(2);
         sinks.down(&mut out);
-        assert!(matches!(out.pop(), Some(io::Request::Stream { down: stream::Down::Demand { .. }, .. })));
+        let Some(io::Request::Stream { down: stream::Down::Demand { .. }, .. }) = out.pop() else {
+            panic!("actual full-credit demand")
+        };
         grant(&mut sinks, token);
         sinks.down(&mut out);
-        assert!(matches!(out.pop(), Some(io::Request::Stream { down: stream::Down::Send(_), .. })));
+        let Some(io::Request::Stream { down: stream::Down::Send(_), .. }) = out.pop() else {
+            panic!("one owning send")
+        };
         sinks.record(&counted(2));
         sinks.up(io::Event::Stream { owner: token, up: stream::Up::Failed(stream::Fault::Other) });
         assert_eq!(sinks.pop_given_up(), Some(Destination::Trace));
@@ -823,7 +938,7 @@ mod tests {
     fn one_destination_failing_does_not_abandon_the_other() {
         let limits = limits(2);
         let token = Token::new(11);
-        let mut sinks = Sinks::new(&limits, limits.output);
+        let mut sinks = Sinks::new(&limits, Capture::None, limits.output);
         sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
         sinks.add(Destination::Output, Token::new(12), Delivery::Complete).unwrap();
         sinks.record(&counted(1));

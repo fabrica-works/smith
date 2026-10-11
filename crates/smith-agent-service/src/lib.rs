@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod answers;
 mod observations;
 mod service;
 
@@ -20,7 +21,11 @@ pub mod sinks;
 #[cfg(test)]
 mod tests;
 
-pub use observations::{ChildShare, budget_record, child_completed, child_share};
+pub use observations::{
+    ChildShare, budget_record, child_completed, child_share, opening_model, reported_usage, request_tool_choice,
+};
+
+pub use answers::{AnswerMeta, answer_record};
 
 pub use service::{
     Config, ConfigError, Effects, Failure, Limits, Service, done, effects_worst_case, failure, iterate, next_deadline,
