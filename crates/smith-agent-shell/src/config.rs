@@ -1038,4 +1038,34 @@ mod tests {
         document["endpoints"][0]["models"][0]["oversized_reasoning"] = "fallback".into();
         assert_eq!(parse_value(&document).err().as_deref(), Some("model oversized_reasoning must be fail or drop"));
     }
+
+    #[test]
+    fn product_values_pass_every_startup_check_and_fit_complete_memory() {
+        let document = serde_json::json!({
+          "profile":{"name":"standard","declared":{
+            "conversations":6,"tool_payload":40960,"file_bytes":1048576,"calls_per_response":16,
+            "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
+            "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134217728,"memory":2147483648_u64}},
+          "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
+            "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
+            "connect":10000,"handshake":10000,"reasoning_effort":"low",
+            "models":[{"name":"gpt-6-luna","window":272000,"output":32000,"reasoning_item":65536,"head":60000,"idle":300000}]}],
+          "environment":[{"name":"X","value":"x".repeat(833)}],
+          "trace":{"path":"/tmp/unused-diagnostic-trace","capture":"everything"}
+        });
+        let config = parse_value(&document).expect("product declarations pass every startup check");
+        use skein_io::kernel::{Complete, Submit, Fd};
+        use skein_lib::Queue;
+        let limits = &config.service.limits;
+        let service = service::worst_case(limits, &config.service.llm_endpoints).expect("service bound");
+        let roots = limits.domain.run.directories;
+        let queue = limits.queue.checked_add(roots).and_then(|n| n.checked_add(1)).expect("shell queues");
+        let shell = Queue::<Complete>::worst_case(queue).expect("complete queue")
+            + Queue::<Submit>::worst_case(queue).expect("submit queue")
+            + u64::try_from(size_of::<crate::Agent>()).expect("agent cell")
+            + u64::from(roots) * u64::try_from(size_of::<Fd>()).expect("root cells");
+        let complete = service + crate::trace::MEMORY_RESERVE + shell;
+        println!("PRODUCT_COMPLETE service={service} trace={} shell={shell} complete={complete} memory={}", crate::trace::MEMORY_RESERVE, config.memory);
+        assert!(complete <= config.memory, "complete {complete} > declared {}", config.memory);
+    }
 }
