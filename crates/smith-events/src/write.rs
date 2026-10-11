@@ -1409,9 +1409,15 @@ fn encode_session_ended(json: &mut Encoder, value: &SessionEnded, capture: &Capt
     json.key(b"loss");
     write_loss(json, &value.loss, capture);
     json.key(b"cpu_ms");
-    write_cpu(json, &value.cpu_ms, capture);
+    match &value.cpu_ms {
+        Some(cpu) => write_cpu(json, cpu, capture),
+        None => json.null(),
+    }
     json.key(b"peak_rss_bytes");
-    write_peak_rss(json, &value.peak_rss_bytes, capture);
+    match &value.peak_rss_bytes {
+        Some(peak_rss) => write_peak_rss(json, peak_rss, capture),
+        None => json.null(),
+    }
 }
 
 fn encode_run_started(json: &mut Encoder, value: &RunStarted, capture: &Capture) {

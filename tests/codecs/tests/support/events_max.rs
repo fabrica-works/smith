@@ -154,8 +154,8 @@ fn max_session_ended(limits: &smith_events::Limits) -> SessionEnded {
         teardown_ms: Some(u64::MAX),
         emitted: max_list_count(limits),
         loss: max_loss(limits),
-        cpu_ms: max_cpu(limits),
-        peak_rss_bytes: max_peak_rss(limits),
+        cpu_ms: Some(max_cpu(limits)),
+        peak_rss_bytes: Some(max_peak_rss(limits)),
     }
 }
 

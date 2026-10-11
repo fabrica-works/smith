@@ -972,8 +972,14 @@ fn read_session_ended(tokens: &[Token], limits: &Limits) -> Result<SessionEnded,
         },
         emitted: read_list_count(required(tokens, b"emitted")?, limits)?,
         loss: read_loss(required(tokens, b"loss")?, limits)?,
-        cpu_ms: read_cpu(required(tokens, b"cpu_ms")?, limits)?,
-        peak_rss_bytes: read_peak_rss(required(tokens, b"peak_rss_bytes")?, limits)?,
+        cpu_ms: match required(tokens, b"cpu_ms")? {
+            [Token::Null] => None,
+            item => Some(read_cpu(item, limits)?),
+        },
+        peak_rss_bytes: match required(tokens, b"peak_rss_bytes")? {
+            [Token::Null] => None,
+            item => Some(read_peak_rss(item, limits)?),
+        },
     })
 }
 

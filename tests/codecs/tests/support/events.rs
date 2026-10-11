@@ -434,8 +434,8 @@ fn value_session_ended(name: &str, spelling: &str) -> SessionEnded {
         teardown_ms: Some(u64::MAX),
         emitted: list_count(name, spelling),
         loss: value_loss(name, spelling),
-        cpu_ms: value_cpu(name, spelling),
-        peak_rss_bytes: value_peak_rss(name, spelling),
+        cpu_ms: Some(value_cpu(name, spelling)),
+        peak_rss_bytes: Some(value_peak_rss(name, spelling)),
     }
 }
 
@@ -1564,6 +1564,16 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
     samples.extend(samples_13());
     samples.extend(samples_14());
     samples.extend(null_samples());
+    for (name, capture) in [
+        ("session_ended_unread_none", Capture::None),
+        ("session_ended_unread_calls", Capture::Calls),
+        ("session_ended_unread_everything", Capture::Everything),
+    ] {
+        let mut end = value_session_ended("", "");
+        end.cpu_ms = None;
+        end.peak_rss_bytes = None;
+        samples.push((name, Record { t_ms: u64::MAX, event: Event::SessionEnded(end) }, capture));
+    }
     samples.push(("session_started_effective_limits", effective_record(), Capture::Everything));
     for (name, spelling) in
         [("containment_groups", "groups"), ("containment_trees", "trees"), ("containment_unknown", "future🌍")]

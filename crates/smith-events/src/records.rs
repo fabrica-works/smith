@@ -656,8 +656,8 @@ pub struct SessionEnded {
     pub teardown_ms: Option<u64>,
     pub emitted: List<Count>,
     pub loss: Loss,
-    pub cpu_ms: Cpu,
-    pub peak_rss_bytes: PeakRss,
+    pub cpu_ms: Option<Cpu>,
+    pub peak_rss_bytes: Option<PeakRss>,
 }
 
 /// The admitted run record the service sends before its conversation records.
