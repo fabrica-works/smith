@@ -128,6 +128,37 @@ fn smoke_probe_documents_and_pass_fail_incomplete_boundary() {
     decision_names_keep_advisory_unknown_and_false_evidence_without_deciding_the_probe();
     attempt_and_suite_share_failure_precedence_and_preserve_expected_budget_class();
     smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with_exact_frozen_inputs();
+    smoke_listing_is_a_minimum_and_shell_stays_exact();
+}
+
+fn smoke_listing_is_a_minimum_and_shell_stays_exact() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let task = smith_bench::read_task(&root.join("tasks/probes/smoke-tools/task.toml")).expect("smoke task");
+    for task in [task.clone(), task.with_variant("child").expect("child task")] {
+        let count = |name: &str| {
+            task.event
+                .iter()
+                .find_map(|check| {
+                    if let smith_bench::EventCheck::ToolCall { tool, count, verdict, .. } = check
+                        && tool == name
+                    {
+                        assert_eq!(verdict.as_deref(), Some(if name == "list" { "listed" } else { "exited" }));
+                        *count
+                    } else {
+                        None
+                    }
+                })
+                .expect("authored tool cardinality")
+        };
+        assert_eq!(count("list"), smith_bench::Count::AtLeast(1), "benchmarks.md 11.1 requires a listing");
+        assert!(!count("list").holds(0));
+        assert!(count("list").holds(1));
+        assert!(count("list").holds(2));
+        assert_eq!(count("shell"), smith_bench::Count::Exactly(1));
+        assert!(!count("shell").holds(0));
+        assert!(count("shell").holds(1));
+        assert!(!count("shell").holds(2));
+    }
 }
 
 fn fix_body_keeps_both_runs_and_distinguishes_effect_from_unjudged() {

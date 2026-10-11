@@ -56,7 +56,7 @@ pattern = "^SMITH_SMOKE_NONCE_012\n/[^\n]*cargo\n$"
 [[event]]
 check = "tool-call"
 tool = "list"
-count = { exactly = 1 }
+count = { at-least = 1 }
 verdict = "listed"
 [[event]]
 check = "tool-call"

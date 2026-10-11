@@ -303,6 +303,11 @@ the unavailable prompt and feedback content does not establish their cause.
 Both variants restart calibration on version 2: ten passes within at most twelve
 attempts each. Version 1 tasks, results and calibration evidence remain historical.
 
+The list cardinality follows benchmarks.md 11.1: at least one successful listing;
+the shell cardinality stays exactly one. The earlier exact-one list predicate
+was a harness defect. Recorded attempts keep both their original verdicts and
+the corrected rejudgment; unavailable call arguments never establish a path.
+
 `smoke.toml` currently selects five probes. `failures/one-turn` is authored
 and checked offline but enters the suite only after proven product 10.5.
 It expects the product's entrance refusal, exit2 and a typed invalid budget
