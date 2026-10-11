@@ -1,5 +1,8 @@
 //! Bounded JSON-line decoding with unknown fields and records skipped.
-//! Contract: protocol/events.md, section 6. No stream state is retained.
+//! The accumulator keeps one partial line; the tokenizer keeps no stream state.
+//! Receiving ceilings come from the writer's joint aggregate, independently of
+//! each field's semantic cap. Contracts: protocol/events.md, section 6;
+//! protocol/limits.md, section 3, rule 1.
 
 use crate::records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
@@ -17,6 +20,7 @@ use crate::{Error, Limits};
 #[derive(Debug)]
 pub struct Reader {
     limits: Limits,
+    encoded_line: u32,
     line: List<u8>,
 }
 
@@ -29,10 +33,17 @@ pub struct Line {
 }
 
 impl Reader {
-    /// Reserve one largest line before accepting bytes from a stream.
+    /// Reserve the independent-maxima bound for callers without a joint writer bound.
     pub fn new(limits: &Limits) -> Result<Reader, Error> {
         let capacity = crate::largest_record(limits).ok_or(Error::Limits)?;
-        Ok(Reader { limits: *limits, line: List::with_capacity(capacity) })
+        Self::with_ceiling(limits, capacity)
+    }
+
+    /// Reserve the writer's encoded-line ceiling, including its final newline.
+    /// Field and list caps remain independent semantic checks; zero refuses.
+    pub fn with_ceiling(limits: &Limits, encoded_line: u32) -> Result<Reader, Error> {
+        let capacity = encoded_line.checked_sub(1).ok_or(Error::Limits)?;
+        Ok(Reader { limits: *limits, encoded_line, line: List::with_capacity(capacity) })
     }
 
     /// Consume through at most one newline, preserving a partial line between calls.
@@ -41,7 +52,7 @@ impl Reader {
         for byte in input {
             consumed = consumed.checked_add(1).ok_or(Error::Limits)?;
             if *byte == b'\n' {
-                let result = read(self.line.as_slice(), &self.limits);
+                let result = read_with_ceiling(self.line.as_slice(), &self.limits, self.encoded_line);
                 self.line.clear();
                 return Ok(Line { consumed, complete: true, record: result? });
             }
@@ -65,7 +76,14 @@ use skein_lib::{Env, List, Queue, Time, Wall, bytes};
 
 /// Read one JSON line. Unknown record types return `None`; every version is checked.
 pub fn read(line: &[u8], limits: &Limits) -> Result<Option<Record>, Error> {
-    let tokens = tokenize(line, limits)?;
+    let encoded_line = crate::largest_record(limits).ok_or(Error::Limits)?;
+    read_with_ceiling(line, limits, encoded_line)
+}
+
+/// Decode within a writer-derived encoded byte ceiling and the supplied semantic caps.
+/// The byte ceiling includes a newline when the supplied line has one; zero refuses.
+pub fn read_with_ceiling(line: &[u8], limits: &Limits, encoded_line: u32) -> Result<Option<Record>, Error> {
+    let tokens = tokenize(line, limits, encoded_line)?;
     let tokens = tokens.as_slice();
     object(tokens)?;
     let version = unsigned(required(tokens, b"v")?)?;
@@ -98,9 +116,8 @@ pub fn read(line: &[u8], limits: &Limits) -> Result<Option<Record>, Error> {
     Ok(Some(Record { t_ms, event }))
 }
 
-fn tokenize(input: &[u8], limits: &Limits) -> Result<List<Token>, Error> {
-    let cap = crate::limits::largest_record(limits).ok_or(Error::Limits)?;
-    if input.len() > usize::try_from(cap).expect("u32 fits") {
+fn tokenize(input: &[u8], limits: &Limits, encoded_line: u32) -> Result<List<Token>, Error> {
+    if encoded_line == 0 || input.len() > usize::try_from(encoded_line).expect("u32 fits") {
         return Err(Error::Limits);
     }
     let env = Env {
@@ -111,7 +128,7 @@ fn tokenize(input: &[u8], limits: &Limits) -> Result<List<Token>, Error> {
             string: limits.string.max(limits.content).max(64),
             number: 20,
             chunk: 256,
-            length: cap,
+            length: encoded_line,
         },
     };
     let mut machine = tokenizer::Tokenizer::new(&env.limits);

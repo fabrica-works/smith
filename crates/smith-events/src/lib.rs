@@ -14,7 +14,7 @@ mod records;
 mod write;
 
 pub use limits::{Limits, largest_record, largest_size, worst_case};
-pub use read::{Line, Reader, read};
+pub use read::{Line, Reader, read, read_with_ceiling};
 pub use records::{
     Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
     CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,

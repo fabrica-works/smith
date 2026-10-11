@@ -6,6 +6,70 @@
 use crate::{Capture, Error, Event, Limits, read, write};
 
 #[test]
+fn actual_producer_receiving_caps_construct_without_a_cartesian_product() {
+    let limits = Limits { string: 524_288, content: 4096, items: 32 };
+    let ceiling = u32::try_from(END_WITH_UNREAD_USAGE.len()).expect("terminal length");
+    let mut reader = crate::Reader::with_ceiling(&limits, ceiling).expect("valid writer-derived receiving bounds");
+    let line = reader.feed(END_WITH_UNREAD_USAGE).expect("actual bounded terminal");
+    assert!(line.complete);
+    assert!(line.record.is_some());
+    reader.finish().expect("complete line");
+}
+
+#[test]
+fn joint_line_ceiling_is_inclusive_and_one_more_byte_refuses_in_both_paths() {
+    let limits = Limits { string: 524_288, content: 4096, items: 32 };
+    let ceiling = u32::try_from(END_WITH_UNREAD_USAGE.len()).expect("terminal length");
+    let expected = crate::read_with_ceiling(END_WITH_UNREAD_USAGE, &limits, ceiling).expect("exact ceiling");
+    assert!(expected.is_some());
+    for chunk in [1, 7, 64, END_WITH_UNREAD_USAGE.len()] {
+        let mut reader = crate::Reader::with_ceiling(&limits, ceiling).expect("joint bound");
+        let mut records = skein_lib::List::with_capacity(1);
+        for bytes in END_WITH_UNREAD_USAGE.chunks(chunk) {
+            let line = reader.feed(bytes).expect("exact ceiling in arbitrary chunks");
+            assert_eq!(line.consumed, bytes.len());
+            if line.complete {
+                records.push(line.record).expect("one complete line");
+            }
+        }
+        assert_eq!(records.as_slice(), core::slice::from_ref(&expected));
+        reader.finish().expect("terminated line");
+    }
+    let over = core::str::from_utf8(END_WITH_UNREAD_USAGE).expect("fixture UTF-8").replace('\n', " \n");
+    assert_eq!(crate::read_with_ceiling(over.as_bytes(), &limits, ceiling), Err(Error::Limits));
+    let mut reader = crate::Reader::with_ceiling(&limits, ceiling).expect("joint bound");
+    assert_eq!(reader.feed(over.as_bytes()).expect_err("one byte above line ceiling"), Error::Limits);
+    reader.finish().expect("refused bytes released");
+    let line = reader.feed(END_WITH_UNREAD_USAGE).expect("next bounded line");
+    assert_eq!(line.record, expected);
+    assert_eq!(crate::Reader::with_ceiling(&limits, 0).expect_err("zero ceiling"), Error::Limits);
+    assert_eq!(crate::read_with_ceiling(END_WITH_UNREAD_USAGE, &limits, 0), Err(Error::Limits));
+}
+
+#[test]
+fn joint_line_bound_never_relaxes_string_content_or_list_caps() {
+    let limits = Limits { string: 32, content: 8, items: 1 };
+    let base = "{\"v\":1,\"type\":\"message.received\",\"t_ms\":0,\"run\":1,\"name\":2,\"bytes\":8,\"label\":\"LABEL\",\"text\":\"12345678\"}\n";
+    let at_cap = base.replace("LABEL", &"x".repeat(32));
+    assert!(crate::read_with_ceiling(at_cap.as_bytes(), &limits, 1024).expect("semantic boundaries").is_some());
+    let metadata_over = base.replace("LABEL", &"x".repeat(33));
+    let content_over = base.replace("12345678", "123456789");
+    let list_over = core::str::from_utf8(END_WITH_UNREAD_USAGE)
+        .expect("fixture UTF-8")
+        .replace("\"session.ended\":1", "\"session.ended\":1,\"run.completed\":1");
+    for (line, expected) in [
+        (metadata_over.as_bytes(), Error::Shape),
+        (content_over.as_bytes(), Error::Shape),
+        (list_over.as_bytes(), Error::Limits),
+    ] {
+        assert_eq!(crate::read_with_ceiling(line, &limits, 1024), Err(expected));
+        let mut reader = crate::Reader::with_ceiling(&limits, 1024).expect("ample aggregate room");
+        assert_eq!(reader.feed(line).expect_err("semantic cap still applies"), expected);
+        reader.finish().expect("semantic refusal releases the partial line");
+    }
+}
+
+#[test]
 fn another_version_is_named() {
     let limits = Limits { string: 64, content: 1024, items: 4 };
     assert_eq!(read(b"{\"v\":2,\"type\":\"future\",\"t_ms\":0}\n", &limits), Err(Error::Version(2)));
