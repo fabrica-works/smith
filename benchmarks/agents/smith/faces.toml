@@ -72,7 +72,7 @@ receiving = { string = 256000, content = 4096, items = 32, encoded_line = 314886
 # The same phase-one/metadata task declarations derive this joint line ceiling;
 # the semantic caps remain independent and this entry declares no override range.
 [[face]]
-commit = "49505e9d28b21025b2a5a7ca11d52cf507e013af"
+commit = "0486bcf3eacb4d63e931cf53333583ae43e4c740"
 face = "events"
 shape = "local-trace"
 credential = "converted"
