@@ -268,6 +268,48 @@ fn verify_arm(directory: &Path, arm: &BuiltArm) -> Result<(), String> {
     Ok(())
 }
 
+/// Read and verify the immutable arm beside its selected product executable.
+pub fn read_build(program: &Path) -> Result<Build, String> {
+    if program.file_name().and_then(|name| name.to_str()) != Some("smith") {
+        return Err("a built smith arm must select its smith executable".into());
+    }
+    let directory = program.parent().ok_or("arm executable needs its immutable directory")?;
+    let manifest = directory.join("arm.json");
+    let metadata = fs::symlink_metadata(&manifest).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.is_symlink() || metadata.len() > 65_536 {
+        return Err("arm manifest must be a bounded ordinary file".into());
+    }
+    let arm: BuiltArm = serde_json::from_slice(&fs::read(&manifest).map_err(|error| error.to_string())?)
+        .map_err(|error| error.to_string())?;
+    if arm.version != 1
+        || directory.file_name().and_then(|name| name.to_str()) != Some(&arm_name(&arm.commit, &arm.sha256)?)
+    {
+        return Err("arm manifest version or immutable directory identity differs".into());
+    }
+    if arm.binaries.is_empty() || arm.binaries.len() > 16 {
+        return Err("arm manifest has an invalid binary inventory".into());
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for binary in &arm.binaries {
+        if binary.name.is_empty()
+            || !binary.name.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+            || !hexadecimal(&binary.sha256, 64)
+            || !names.insert(&binary.name)
+        {
+            return Err("arm manifest has an unsafe or repeated binary identity".into());
+        }
+        let metadata = fs::symlink_metadata(directory.join(&binary.name)).map_err(|error| error.to_string())?;
+        if !metadata.is_file() || metadata.is_symlink() {
+            return Err("arm binary must be an ordinary file".into());
+        }
+    }
+    if !arm.binaries.iter().any(|binary| binary.name == "smith" && binary.sha256 == arm.sha256) {
+        return Err("arm manifest omits its product binary identity".into());
+    }
+    verify_arm(directory, &arm)?;
+    Ok(Build { directory: directory.into(), arm })
+}
+
 fn archive(guard: &Guard, arms: &Path, executables: &[PathBuf], arm: &BuiltArm) -> Result<PathBuf, String> {
     let directory = guard.write_path(&arms.join(arm_name(&arm.commit, &arm.sha256)?))?;
     if directory.exists() {

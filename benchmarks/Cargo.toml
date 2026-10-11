@@ -20,6 +20,13 @@ skein-lib.workspace = true
 skein-world.workspace = true
 skein-io.workspace = true
 skein-shell.workspace = true
+skein-oauth.workspace = true
+
+[dev-dependencies]
+smith-domain-run.workspace = true
+smith-domain-session.workspace = true
+smith-agent-shell = { path = "../crates/smith-agent-shell" }
+smith-local-shell = { path = "../crates/smith-local-shell" }
 
 [lints.rust]
 unsafe_code = "forbid"

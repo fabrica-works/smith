@@ -1,0 +1,34 @@
+{
+  "agent": {
+    "profile": "standard",
+    "memory_bytes": 1000000000000,
+    "grace_ms": 250,
+    "endpoints": [{
+      "name": "codex", "number": 1, "dialect": 1, "account": 0,
+      "provider": "codex", "address": "chatgpt.com:443", "transport": "tls",
+      "server_name": "chatgpt.com", "identity": "plain",
+      "headers": [
+        {"name": "originator", "value": "pi"},
+        {"name": "user-agent", "value": "pi (linux; x86_64)"},
+        {"name": "OpenAI-Beta", "value": "responses=experimental"}
+      ]
+    }],
+    "environment": [],
+    "trace": {"path": "rendered-by-adapter", "capture": "everything"}
+  },
+  "chat": "attempt",
+  "instructions": "Read the workspace's AGENTS.md before working. Complete the person's request and finish with a report. Do not sign in, refresh credentials, or change agent configuration.",
+  "models": [{
+    "endpoint": "codex", "name": "selected-model", "max_tokens": 4096,
+    "input_price": 10, "cached_price": 1, "output_price": 80,
+    "price_unit": 8000000
+  }],
+  "budget": {"turns": 64, "spend": 1, "seconds": 3600},
+  "waiting_seconds": 30,
+  "directories": [],
+  "conventions": {"guide": "AGENTS.md", "checks": ".smith-bench-checks"},
+  "contract": {"form": "report", "max": 4096},
+  "in_process": false,
+  "token_directory": "rendered-by-adapter",
+  "accounts": []
+}

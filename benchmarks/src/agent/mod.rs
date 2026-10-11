@@ -13,6 +13,12 @@ pub mod codex;
 
 pub mod smith;
 
+mod person;
+
+pub use person::{Close, Cue, Script, Trigger};
+
+pub(crate) use person::Person;
+
 /// The frozen inputs an adapter prepares inside one private attempt.
 #[derive(Debug)]
 pub struct Context<'a> {
@@ -32,6 +38,8 @@ pub struct Context<'a> {
     pub wall: skein_lib::Wall,
     /// Hard deadline plus the grace and settlement spans; adapter adds teardown.
     pub lifetime: skein_lib::Duration,
+    /// The runner's exact allow-listed environment, also used by Smith tools.
+    pub environment: &'a [(std::ffi::OsString, std::ffi::OsString)],
 }
 
 /// The adapter's prepared invocation; unsupported agents refuse before this value.
@@ -39,6 +47,8 @@ pub struct Context<'a> {
 pub enum Prepared {
     /// Codex's pinned standalone command, in an attempt-owned home.
     Codex(codex::Prepared),
+    /// Smith's verified built arm and native outside face.
+    Smith(smith::Prepared),
 }
 
 /// The invocation supplied to the common process supervisor.
@@ -69,6 +79,8 @@ pub enum Seen {
 pub enum Observing {
     /// Codex's root JSON stream and subsequent read-only collection.
     Codex(codex::Observing),
+    /// Smith's native trace, read as the process writes it.
+    Smith(smith::Observing),
 }
 
 /// A stream or collection fault, naming its persisted field or file.
@@ -82,10 +94,7 @@ impl Agent {
     pub fn prepare(self, context: &Context<'_>) -> Result<Prepared, crate::isolate::Setup> {
         match self {
             Self::Codex => codex::prepare(context).map(Prepared::Codex),
-            Self::Smith => Err(crate::isolate::Setup {
-                step: crate::isolate::SetupStep::Configuration,
-                reason: "smith driving requires the legacy face increment".into(),
-            }),
+            Self::Smith => smith::prepare(context).map(Prepared::Smith),
             Self::ClaudeCode => Err(crate::isolate::Setup {
                 step: crate::isolate::SetupStep::Configuration,
                 reason: "Claude Code belongs to the next comparison pass".into(),
@@ -100,6 +109,7 @@ impl Prepared {
     pub fn command(&self) -> Invocation {
         match self {
             Self::Codex(prepared) => prepared.command(),
+            Self::Smith(prepared) => prepared.command(),
         }
     }
 
@@ -113,6 +123,7 @@ impl Prepared {
                 collected: None,
                 collection_error: None,
             }),
+            Self::Smith(prepared) => Observing::Smith(smith::Observing::new(prepared)),
         }
     }
 }
@@ -122,6 +133,7 @@ impl Observing {
     pub fn feed_line(&mut self, line: &str) -> Result<Vec<Seen>, HarnessFault> {
         match self {
             Self::Codex(observing) => observing.feed_line(line),
+            Self::Smith(observing) => observing.feed_line(line),
         }
     }
 
@@ -130,6 +142,7 @@ impl Observing {
     pub fn classify(&self, exit: crate::Exit, forced: crate::Forced) -> crate::Classification {
         match self {
             Self::Codex(observing) => observing.observer.classify(exit, forced),
+            Self::Smith(observing) => observing.observer.classify(exit, forced),
         }
     }
 }

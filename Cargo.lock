@@ -876,8 +876,13 @@ dependencies = [
  "sha2",
  "skein-io",
  "skein-lib",
+ "skein-oauth",
  "skein-shell",
  "skein-world",
+ "smith-agent-shell",
+ "smith-domain-run",
+ "smith-domain-session",
+ "smith-local-shell",
  "time",
  "toml",
 ]

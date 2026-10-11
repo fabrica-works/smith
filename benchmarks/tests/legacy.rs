@@ -252,6 +252,75 @@ fn optional_usage_rejects_mixed_partial_and_malformed_shapes() {
     }
 }
 
+fn native_kind_facts_are_selected_without_changing_frozen_flag_records() {
+    use skein_lib::{Duration, Token};
+    use smith_bench::agent::smith::legacy::{FactShape, parse_line_for};
+    use smith_domain_run::facts::{FactKind, Kind, Return, Standing, Used};
+    use smith_domain_run::{Granted, Set, Share, Stage};
+    let run = Token::new(0);
+    let main = FactKind::Opened { run, conversation: Token::new(0), kind: Kind::Main };
+    let child = FactKind::Opened {
+        run,
+        conversation: Token::new(2),
+        kind: Kind::Child {
+            parent: Token::new(0),
+            call: Token::new(9),
+            asked: Share { turns: Some(4), time: Some(Duration::from_millis(1250)) },
+            granted: Granted {
+                turns: 3,
+                time: Duration::from_millis(750),
+                spend: 20,
+                turns_set: Set::Reserve,
+                time_set: Set::Deadline,
+            },
+        },
+    };
+    let standing = FactKind::Budget {
+        run,
+        standing: Standing {
+            stage: Stage::WindDown,
+            turns: 4,
+            turns_limit: 6,
+            spend: 9,
+            spend_limit: 100,
+            time: Duration::from_millis(500),
+            time_limit: Duration::from_secs(3),
+            reserve: smith_domain_run::charter::Reserve { turns: 2, time: Duration::from_secs(1) },
+            reserve_spend: 30,
+        },
+    };
+    let returned = FactKind::Returned {
+        run,
+        call: Token::new(9),
+        result: Return::Answered { used: Used { turns: 1, time: Duration::from_millis(250), spend: 5 } },
+    };
+    let mut observer = Observer::new(FactShape::Kinds);
+    for native in [main, child, standing, returned] {
+        let line = fact(&format!("Run {{ fact: {native:?} }}"));
+        let observation = observer.observe_line(&line).expect("actual native Debug layout");
+        assert!(observation.is_some());
+        if matches!(native, FactKind::Returned { .. }) {
+            assert!(matches!(&observation, Some(Observation::Fact { event: Event::RunReturned {
+                value: Value::Struct { name, fields }, .. }, .. }) if name == "Answered" && fields.contains_key("used")));
+        }
+        if matches!(native, FactKind::Opened { kind: Kind::Child { .. }, .. }) {
+            assert!(matches!(observation, Some(Observation::Fact { event: Event::ConversationOpened {
+                child: true, parent: Some(0), kind: Some(Value::Struct { name, .. }), .. }, .. }) if name == "Child"));
+        }
+        if matches!(native, FactKind::Opened { .. } | FactKind::Budget { .. }) {
+            assert!(parse_line(&line).is_err(), "frozen flags must not guess a later layout");
+        }
+        assert!(
+            parse_line_for(&line.replace("turns_set: Reserve", "turns_set: Deadline"), FactShape::Kinds).is_err()
+                || !line.contains("turns_set")
+        );
+    }
+    let legacy = fact("Run { fact: Opened { run: Token(0), conversation: Token(0), child: false } }");
+    assert!(parse_line_for(&legacy, FactShape::Kinds).is_err());
+    assert!(parse_line(&legacy).is_ok());
+    assert!(observer.accepted().is_none(), "child return never accepts main");
+}
+
 // Related offline assertions share a test process to keep startup overhead
 // inside the one-second harness budget; each named story keeps its assertions.
 
@@ -263,6 +332,9 @@ fn legacy_recordings_terminals_and_emission_metadata() {
     everything_content_preserves_bytes_and_legacy_exit_uses_observed_terminals();
     message_facts_keep_opaque_names_and_fences_without_changing_run_classification();
     optional_usage_preserves_absence_and_zero_alongside_numeric_baseline_records();
+    native_kind_facts_are_selected_without_changing_frozen_flag_records();
+    choice_intents_are_ancestry_selected_and_never_provider_attempt_counts();
+    actual_everything_recording_counts_response_usage_once_and_preserves_acceptance();
 }
 
 #[test]
@@ -272,4 +344,75 @@ fn legacy_debug_and_strict_shape_contracts() {
     known_shape_changes_poison_classification_and_unknown_record_types_are_skipped();
     malformed_message_facts_poison_the_legacy_observer();
     optional_usage_rejects_mixed_partial_and_malformed_shapes();
+}
+fn choice_intents_are_ancestry_selected_and_never_provider_attempt_counts() {
+    use smith_bench::agent::smith::legacy::{FactShape, parse_line_for};
+    use smith_domain_session::{Choice, FactKind};
+    let mut observer = Observer::new(FactShape::Choices);
+    for choice in [Choice::Auto, Choice::Only, Choice::None] {
+        let native = FactKind::CompletionStarted {
+            opener: skein_lib::Token::new(0),
+            attempt: 0,
+            messages: 1,
+            max_tokens: 4096,
+            choice,
+        };
+        let line = fact(&format!("Session {{ fact: {native:?} }}"));
+        let seen = observer.observe_line(&line).expect("current logical intent");
+        assert!(matches!(
+            seen,
+            Some(Observation::Fact {
+                event: Event::CompletionStarted { attempt: 0, choice: Some(Value::Name(_)), .. },
+                ..
+            })
+        ));
+        assert!(parse_line_for(&line, FactShape::Kinds).is_err(), "frozen kind layout rejects choice");
+        assert!(parse_line(&line).is_err(), "frozen flag layout rejects choice");
+    }
+    let old =
+        fact("Session { fact: CompletionStarted { opener: Token(0), attempt: 0, messages: 1, max_tokens: 4096 } }");
+    assert!(parse_line_for(&old, FactShape::Choices).is_err(), "current choice is required");
+}
+
+fn actual_everything_recording_counts_response_usage_once_and_preserves_acceptance() {
+    use sha2::{Digest, Sha256};
+    use smith_bench::agent::smith::legacy::FactShape;
+    use smith_bench::agent::smith::{Credential, CredentialShape, Face, FaceSince, Observing, Prepared};
+    let stream = include_str!("recorded/smith-current/e548-everything.jsonl");
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("recorded/smith-current/manifest.json")).expect("recording provenance");
+    assert_eq!(manifest["sha256"], format!("{:x}", Sha256::digest(stream)));
+    assert_eq!(manifest["provenance"], "recorded");
+    let face = Face::Legacy(smith_bench::agent::smith::legacy::Shape::LocalJson);
+    let mut observer = Observing::new(Prepared {
+        face,
+        settings: "unissued-recorded-settings".into(),
+        credential: Credential::Record(None),
+        trace: None,
+        registry: FaceSince {
+            commit: "e548d6329d17f7b141143a5957f8c95626f354f4".into(),
+            face,
+            credential: CredentialShape::Converted(smith_bench::credential::TokenShape::Legacy),
+            facts: FactShape::Choices,
+        },
+        rendered: serde_json::json!({}),
+        program: "/bin/false".into(),
+        state: "unissued-recorded-state".into(),
+        teardown: skein_lib::Duration::from_millis(40),
+    });
+    for line in stream.lines() {
+        observer.feed_line(line).expect("actual current Debug record");
+    }
+    assert!(observer.observer.accepted().is_some());
+    assert_eq!(observer.observer.classify(smith_bench::Exit::Code(0), Forced::No).end, End::Completed);
+    let counts = observer.counts();
+    assert!(matches!(counts.responses, Measure::LowerBound { value: 3, .. }));
+    assert!(matches!(counts.provider_attempts, Measure::Unavailable { .. }));
+    assert!(matches!(counts.retries, Measure::Unavailable { .. }));
+    let records = observer.tokens().expect("per-response usage joins");
+    let total = records.iter().find(|record| record.role == smith_bench::ScopeKind::Total).expect("total");
+    assert!(matches!(total.usage.fresh, Measure::LowerBound { value: 4796, .. }));
+    assert!(matches!(total.usage.output, Measure::LowerBound { value: 67, .. }));
+    assert!(matches!(total.usage.cache_read, Measure::LowerBound { value: 0, .. }));
+    assert!(matches!(total.usage.cache_write, Measure::LowerBound { value: 0, .. }));
 }

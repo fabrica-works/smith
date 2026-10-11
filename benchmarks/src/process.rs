@@ -3,6 +3,8 @@
 //! agent state. Binary owns process-tree discovery, signals and settlement.
 //! Contract: benchmarks.md, sections 6, 8 and 10.
 
+use std::os::fd::IntoRawFd;
+
 use skein_io::kernel::{Complete, Done, Fd, Op, Signal, Submit};
 use skein_lib::{Duration, Queue, Time, Token, Wall};
 use skein_shell::Clock;
@@ -45,6 +47,8 @@ pub struct ProcessResult {
     pub answered: Option<Time>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+    /// Raw native file trace, retained before any parsing fault is reported.
+    pub trace: Vec<u8>,
     pub observer: codex::Observer,
     pub observing: Option<Box<crate::agent::Observing>>,
     pub error: Option<String>,
@@ -52,14 +56,35 @@ pub struct ProcessResult {
     pub tree: skein_world::end_to_end::TreeStatus,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InputClose {
+    AfterPrompt,
+    AfterAnswer,
+    Sent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tree {
+    Running,
+    Settled,
+}
+
 #[derive(Debug)]
 struct Output {
     input: Option<Fd>,
     stream: Option<Fd>,
+    input_close: InputClose,
+    tree: Tree,
+    trace: Option<Fd>,
+    tracing: bool,
+    trace_at: u64,
+    trace_poll: Option<Time>,
+    trace_bytes: Vec<u8>,
     writing: bool,
     reading: bool,
     closing: u32,
     prompt: Box<[u8]>,
+    person: crate::agent::Person,
     from: u32,
     next: u64,
     maximum: usize,
@@ -74,14 +99,23 @@ struct Output {
 }
 
 impl Output {
-    fn new(input: Fd, output: Fd, prompt: Box<[u8]>, maximum: usize, capture: Capture) -> Self {
+    fn new(input: Fd, output: Fd, mut person: crate::agent::Person, maximum: usize, capture: Capture) -> Self {
+        let prompt = person.line().unwrap_or_else(|| Box::new([]));
         Self {
             input: Some(input),
             stream: Some(output),
+            input_close: if input == output { InputClose::AfterAnswer } else { InputClose::AfterPrompt },
+            tree: Tree::Running,
+            trace: None,
+            tracing: false,
+            trace_at: 0,
+            trace_poll: None,
+            trace_bytes: Vec::new(),
             writing: false,
             reading: false,
             closing: 0,
             prompt,
+            person,
             from: 0,
             next: 1,
             maximum,
@@ -124,7 +158,14 @@ impl Output {
                 Capture::Agent(observing) => match std::str::from_utf8(&self.line) {
                     Ok(line) => match observing.feed_line(line) {
                         Ok(seen) => {
-                            if self.answered.is_none() && seen.contains(&crate::agent::Seen::Answer) {
+                            for observation in &seen {
+                                self.person.see(observation);
+                            }
+                            if self.answered.is_none()
+                                && seen.contains(&crate::agent::Seen::Answer)
+                                && self.person.all_cues()
+                                && usize::try_from(self.from).expect("bounded prompt") == self.prompt.len()
+                            {
                                 self.answered = Some(now);
                             }
                         }
@@ -144,13 +185,96 @@ impl Output {
         if retained < bytes.len() && self.error.is_none() {
             self.error = Some("stdout exceeds the attempt log bound".into());
         }
-        for byte in &bytes[..retained] {
+        if self.terminal() {
+            return;
+        }
+        self.lines(&bytes[..retained], now);
+    }
+
+    fn lines(&mut self, bytes: &[u8], now: Time) {
+        for byte in bytes {
             if *byte == b'\n' {
                 self.line(now);
             } else {
                 self.line.push(*byte);
             }
         }
+    }
+
+    fn trace_receive(&mut self, bytes: &[u8], now: Time) {
+        let available = self.maximum.saturating_sub(self.trace_bytes.len());
+        let retained = bytes.len().min(available);
+        self.trace_bytes.extend_from_slice(&bytes[..retained]);
+        if retained < bytes.len() {
+            self.error.get_or_insert_with(|| "trace exceeds the attempt log bound".into());
+        }
+        self.lines(&bytes[..retained], now);
+    }
+
+    fn terminal(&self) -> bool {
+        self.input_close != InputClose::AfterPrompt
+    }
+
+    fn trace_done(&mut self, buf: &[u8], result: Result<Done, skein_io::kernel::Error>, now: Time) {
+        self.tracing = false;
+        match result {
+            Ok(Done::Count(0)) if self.tree == Tree::Running => {
+                self.trace_poll = Some(now.checked_add(Duration::from_millis(10)).expect("trace polling deadline"));
+            }
+            Ok(Done::Count(0)) => {
+                if !self.line.is_empty() {
+                    self.error.get_or_insert_with(|| "native trace ended with a partial record".into());
+                    self.line.clear();
+                }
+                let fd = self.trace.take().expect("retained trace");
+                self.close(fd);
+                self.trace_poll = None;
+            }
+            Ok(Done::Count(count)) => {
+                self.trace_at = self.trace_at.checked_add(u64::from(count)).expect("bounded trace offset");
+                self.trace_receive(&buf[..usize::try_from(count).expect("bounded read")], now);
+            }
+            other => {
+                self.error.get_or_insert_with(|| format!("trace read: {other:?}"));
+                let fd = self.trace.take().expect("retained trace");
+                self.close(fd);
+            }
+        }
+    }
+
+    fn write_input(&mut self) {
+        if !self.writing
+            && let Some(fd) = self.input
+        {
+            if usize::try_from(self.from).expect("bounded prompt") < self.prompt.len() {
+                self.writing = true;
+                self.submit(Op::PipeWrite { fd, bytes: self.prompt.clone(), from: self.from });
+            } else if self.person.ready() {
+                self.prompt = self.person.line().expect("queued scripted line");
+                self.from = 0;
+                self.writing = true;
+                self.submit(Op::PipeWrite { fd, bytes: self.prompt.clone(), from: 0 });
+            } else if self.terminal() {
+                if self.person.closing() && self.input_close == InputClose::AfterAnswer {
+                    self.input_close = InputClose::Sent;
+                    self.prompt = Box::from(&b"\x04"[..]);
+                    self.from = 0;
+                    self.writing = true;
+                    self.submit(Op::PipeWrite { fd, bytes: self.prompt.clone(), from: 0 });
+                }
+            } else if self.person.closing() {
+                self.input = None;
+                self.close(fd);
+            }
+        }
+    }
+
+    fn stream_end(&mut self) {
+        let fd = self.stream.take().expect("one retained output descriptor");
+        if self.terminal() {
+            self.input = None;
+        }
+        self.close(fd);
     }
 }
 
@@ -174,22 +298,23 @@ impl Host for Output {
                     self.reading = false;
                     match complete.result {
                         Ok(Done::Count(0)) => {
-                            if !self.line.is_empty() {
+                            if !self.terminal() && !self.line.is_empty() {
                                 self.line(now);
                             }
-                            let fd = self.stream.take().expect("one retained output pipe");
-                            self.close(fd);
+                            self.stream_end();
                         }
                         Ok(Done::Count(count)) => {
                             self.receive(&buf[..usize::try_from(count).expect("bounded read")], now);
                         }
                         other => {
-                            self.error.get_or_insert_with(|| format!("stdout read: {other:?}"));
-                            let fd = self.stream.take().expect("one retained output pipe");
-                            self.close(fd);
+                            if !self.terminal() {
+                                self.error.get_or_insert_with(|| format!("stdout read: {other:?}"));
+                            }
+                            self.stream_end();
                         }
                     }
                 }
+                Op::Read { buf, .. } => self.trace_done(&buf, complete.result, now),
                 Op::Close { .. } => {
                     self.closing = self.closing.checked_sub(1).expect("a submitted close");
                     if let Err(error) = complete.result {
@@ -205,7 +330,6 @@ impl Host for Output {
                 | Op::Send { .. }
                 | Op::Shutdown { .. }
                 | Op::Open { .. }
-                | Op::Read { .. }
                 | Op::Write { .. }
                 | Op::Append { .. }
                 | Op::Sync { .. }
@@ -222,16 +346,14 @@ impl Host for Output {
                 | Op::Cancel { .. } => unreachable!("output submits only pipe operations and closes"),
             }
         }
-        if !self.writing
-            && let Some(fd) = self.input
+        self.write_input();
+        if !self.tracing
+            && self.trace_poll.is_none_or(|deadline| deadline <= now)
+            && let Some(fd) = self.trace
         {
-            if usize::try_from(self.from).expect("bounded prompt") < self.prompt.len() {
-                self.writing = true;
-                self.submit(Op::PipeWrite { fd, bytes: self.prompt.clone(), from: self.from });
-            } else {
-                self.input = None;
-                self.close(fd);
-            }
+            self.trace_poll = None;
+            self.tracing = true;
+            self.submit(Op::Read { fd, buf: Box::new([0; 4096]), at: self.trace_at });
         }
         if !self.reading
             && let Some(fd) = self.stream
@@ -247,15 +369,25 @@ impl Host for Output {
     fn submissions(&mut self) -> &mut Queue<Submit> {
         &mut self.submissions
     }
-    fn work_pending(&self, _now: Time) -> bool {
-        !self.completions.is_empty() || !self.writing && self.input.is_some() || !self.reading && self.stream.is_some()
+    fn work_pending(&self, now: Time) -> bool {
+        !self.completions.is_empty()
+            || !self.writing
+                && self.input.is_some()
+                && (!self.terminal()
+                    || usize::try_from(self.from).expect("bounded prompt") < self.prompt.len()
+                    || self.person.ready()
+                    || self.person.closing() && self.input_close == InputClose::AfterAnswer)
+            || !self.reading && self.stream.is_some()
+            || !self.tracing && self.trace.is_some() && self.trace_poll.is_none_or(|deadline| deadline <= now)
     }
     fn next_deadline(&self) -> Option<Time> {
-        None
+        self.trace_poll
     }
     fn is_empty(&self) -> bool {
         self.input.is_none()
             && self.stream.is_none()
+            && self.trace.is_none()
+            && !self.tracing
             && !self.reading
             && !self.writing
             && self.closing == 0
@@ -266,7 +398,7 @@ impl Host for Output {
         u64::MAX
     }
     fn operations(&self) -> u32 {
-        4
+        6
     }
 }
 
@@ -344,6 +476,8 @@ impl Referee<Process> for Policy {
             output.error.get_or_insert_with(|| "stderr exceeds the attempt log bound".into());
         }
         if binary.counts().is_some() {
+            output.tree = Tree::Settled;
+            output.trace_poll = None;
             self.settled = true;
             self.deadline = None;
             return;
@@ -384,6 +518,21 @@ impl Referee<Process> for Policy {
     }
 }
 
+fn trace_file(capture: &Capture) -> Result<Option<std::fs::File>, String> {
+    Ok(match capture {
+        Capture::Agent(observing) => match observing.as_ref() {
+            crate::agent::Observing::Codex(_) => None,
+            crate::agent::Observing::Smith(observing) => Some(
+                std::fs::File::open(
+                    observing.prepared.trace.as_ref().ok_or("Smith native face requires a trace path")?,
+                )
+                .map_err(|error| format!("trace open: {error}"))?,
+            ),
+        },
+        Capture::Raw | Capture::Codex => None,
+    })
+}
+
 /// Run one prepared pipe invocation. Every tree signal and count comes from
 /// Binary; the policy supplies only its deadlines and output observations.
 pub fn execute(
@@ -393,9 +542,36 @@ pub fn execute(
     capture: Capture,
     bounds: Bounds,
 ) -> Result<ProcessResult, String> {
-    if prompt.len() > 4088 || bounds.stdout == 0 || bounds.stderr == 0 || bounds.hard == Duration::ZERO {
+    let close = match &capture {
+        Capture::Agent(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
+            crate::agent::Close::AfterAnswer
+        }
+        Capture::Agent(_) | Capture::Raw | Capture::Codex => crate::agent::Close::AfterPrompt,
+    };
+    let cues = if prompt.is_empty() {
+        Vec::new()
+    } else {
+        vec![crate::agent::Cue {
+            when: crate::agent::Trigger::Start,
+            text: String::from_utf8(prompt.into_vec()).map_err(|_| "prompt must be UTF-8")?,
+        }]
+    };
+    execute_script(clock, command, crate::agent::Script { cues, close }, capture, bounds)
+}
+
+/// Run a bounded scripted person through the same process-tree supervisor.
+pub fn execute_script(
+    clock: &Clock,
+    command: Command,
+    script: crate::agent::Script,
+    capture: Capture,
+    bounds: Bounds,
+) -> Result<ProcessResult, String> {
+    let person = crate::agent::Person::new(script)?;
+    if bounds.stdout == 0 || bounds.stderr == 0 || bounds.hard == Duration::ZERO {
         return Err("invalid attempt prompt, log bound or hard deadline".into());
     }
+    let trace_file = trace_file(&capture)?;
     let started = clock.now();
     let start = started.now;
     let deadline = start.checked_add(bounds.hard).ok_or("hard deadline overflow")?;
@@ -406,11 +582,15 @@ pub fn execute(
         .and_then(|span| span.checked_add(bounds.grace))
         .and_then(|span| span.checked_add(bounds.settlement))
         .ok_or("settlement patience overflow")?;
-    let mut binary =
-        Binary::start_with_tree(command, Mode::Pipes, bounds.stderr, Expectation::Supervise, bounds.force_walk)
-            .map_err(|error| format!("binary start: {error:?}"))?;
+    let mode = if trace_file.is_some() { Mode::Terminal } else { Mode::Pipes };
+    let mut binary = Binary::start_with_tree(command, mode, bounds.stderr, Expectation::Supervise, bounds.force_walk)
+        .map_err(|error| format!("binary start: {error:?}"))?;
     let streams = binary.take_streams().expect("new binary retains its streams");
-    let Streams::Pipes { input, output } = streams else { unreachable!("pipe invocation") };
+    let (input, output) = match streams {
+        Streams::Pipes { input, output } => (input, output),
+        Streams::Terminal { stream } => (stream, stream),
+    };
+    let trace = trace_file.map(|file| Fd::new(file.into_raw_fd()));
     let policy = Policy {
         deadline: Some(deadline),
         teardown: bounds.teardown,
@@ -421,8 +601,15 @@ pub fn execute(
     };
     let mut world = real::World::new(policy);
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
-    world.spawn_with_fds(vec![input, output], || {
-        Process::Output(Box::new(Output::new(input, output, prompt, bounds.stdout, capture)))
+    let mut descriptors = vec![input];
+    if output != input {
+        descriptors.push(output);
+    }
+    descriptors.extend(trace);
+    world.spawn_with_fds(descriptors, || {
+        let mut output_host = Output::new(input, output, person, bounds.stdout, capture);
+        output_host.trace = trace;
+        Process::Output(Box::new(output_host))
     });
     let outcome = world.run(clock, patience);
     let mut processes = outcome.procs.into_iter();
@@ -446,6 +633,7 @@ pub fn execute(
         Capture::Agent(observing) => {
             let observer = match observing.as_ref() {
                 crate::agent::Observing::Codex(observing) => observing.observer.clone(),
+                crate::agent::Observing::Smith(_) => codex::Observer::default(),
             };
             (observer, Some(observing))
         }
@@ -460,6 +648,7 @@ pub fn execute(
         answered: output.answered,
         stdout: output.bytes,
         stderr: binary.stderr().to_vec(),
+        trace: output.trace_bytes,
         observer,
         observing,
         error,

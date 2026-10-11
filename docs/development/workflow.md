@@ -809,3 +809,34 @@ new failed-write story starts with durable history, releases held turns
 without an ACK, settles actual lower work, exits for the failed chat turn,
 and resumes from the unchanged durable prefix. These deterministic controls
 do not supply credentialed smoke evidence. Workspace budgets are unchanged.
+
+Reliability benchmark increment 00.11 checkpoint was measured through the
+serialized heavy queue on 2026-10-09 at source `90305b3a`, rebased on
+`2482a2de`: 46 harness focused tests passed serially in 1.555 seconds.
+Its offline units and recorded parsers, excluding the process-supervisor,
+pipeline and native replay programs, passed 32 tests in 0.601 seconds;
+three fuzzy parser sweeps passed serially in 0.852 seconds. The offline
+1-second focused and 5-second fuzzy budgets and workspace 15/60-second
+budgets are unchanged. The full checkpoint gates passed 1,805 focused tests
+in 3.557 seconds and 30 fuzzy tests in 3.919 seconds with no skips. The
+required live legacy Everything recording with usage remains pending;
+these measurements establish only the offline checkpoint. Later main-answer
+EOF and diagnostic-bound changes require new final rebased-tip gates.
+
+
+The phase2 00.11 reader retains the actual Everything recording from live2396
+on tested e548d632, observed by unmerged harness8bebad16. Its original digest
+and full identities are in `benchmarks/tests/recorded/smith-current/manifest.json`.
+Three response Usage records total4,796 fresh input and67 output tokens;
+content duplicates and session aggregates do not count again. Legacy trace
+loss remains unobservable. The2026-10-10 plan revision makes00.11's acceptance
+offline; native settings merge with that reader, followed by the separately
+gated file_bytes adapter and a main-harness control against main. Historical
+failed controls and the prior checkpoint measurements above remain retained.
+
+Its phase2 affected measurement heavy2405 on2026-10-11 passed48 harness
+focused tests serially in1.568seconds. The32-test offline subset, including
+the recorded Everything replay in the existing legacy process, passed in
+0.668seconds; all3 fuzzy parsers passed serially in0.857seconds. The1/5-second
+offline budgets and15/60-second workspace budgets are unchanged. These are
+scoped measurements; the final rebased tip still runs all four workspace gates.

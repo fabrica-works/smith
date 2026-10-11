@@ -397,95 +397,93 @@ fn prepare(
     prepared: &Prepared,
 ) -> Result<(Private, String), Setup> {
     let mut step = SetupStep::Configuration;
-    let prepared_attempt =
-        (|| {
-            if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
-                return Err("prepared identity differs from the frozen task".into());
+    let prepared_attempt = (|| {
+        if task.version != prepared.identity.task_version || task.seed_sha256 != prepared.identity.seed_sha256 {
+            return Err("prepared identity differs from the frozen task".into());
+        }
+        let prompt = task.prompt.as_bytes().to_vec();
+        if prompt.is_empty()
+            || prompt.len() > 4088
+            || !prompt.ends_with(b"\n")
+            || prompt[..prompt.len() - 1].contains(&b'\n')
+        {
+            return Err("prompt must be one paragraph ending in a newline, under 4088 bytes".into());
+        }
+        if format!("{:x}", Sha256::digest(&prompt)) != prepared.identity.prompt_sha256 {
+            return Err("prompt digest differs".into());
+        }
+        if crate::arm::binary_digest(&prepared.program)? != prepared.identity.binary_sha256 {
+            return Err("prepared binary digest differs".into());
+        }
+        if prepared.identity.agent == crate::Agent::ClaudeCode {
+            return Err("Claude Code belongs to the next comparison pass".into());
+        }
+        if prepared.setup_deadline_seconds == 0 || task.deadline_seconds == 0 {
+            return Err("setup and task require positive author deadlines".into());
+        }
+        for seconds in std::iter::once(prepared.setup_deadline_seconds)
+            .chain(std::iter::once(task.deadline_seconds))
+            .chain(task.grade.iter().map(|grade| grade.deadline_seconds))
+        {
+            if seconds == 0 || seconds.checked_mul(1_000_000_000).is_none() {
+                return Err("author deadline is outside the clock's range".into());
             }
-            let prompt = task.prompt.as_bytes().to_vec();
-            if prompt.is_empty()
-                || prompt.len() > 4088
-                || !prompt.ends_with(b"\n")
-                || prompt[..prompt.len() - 1].contains(&b'\n')
-            {
-                return Err("prompt must be one paragraph ending in a newline, under 4088 bytes".into());
+        }
+        for milliseconds in [prepared.teardown_ms, prepared.grace_ms, prepared.settlement_ms] {
+            if milliseconds.checked_mul(1_000_000).is_none() {
+                return Err("supervision policy is outside the clock's range".into());
             }
-            if format!("{:x}", Sha256::digest(&prompt)) != prepared.identity.prompt_sha256 {
-                return Err("prompt digest differs".into());
-            }
-            if crate::arm::binary_digest(&prepared.program)? != prepared.identity.binary_sha256 {
-                return Err("prepared binary digest differs".into());
-            }
-            if prepared.identity.agent != crate::Agent::Codex {
-                return Err(
-            "this prepared pipe face requires the Codex observer; smith driving is the legacy adapter increment".into(),
-        );
-            }
-            if prepared.setup_deadline_seconds == 0 || task.deadline_seconds == 0 {
-                return Err("setup and task require positive author deadlines".into());
-            }
-            for seconds in std::iter::once(prepared.setup_deadline_seconds)
-                .chain(std::iter::once(task.deadline_seconds))
-                .chain(task.grade.iter().map(|grade| grade.deadline_seconds))
-            {
-                if seconds == 0 || seconds.checked_mul(1_000_000_000).is_none() {
-                    return Err("author deadline is outside the clock's range".into());
-                }
-            }
-            for milliseconds in [prepared.teardown_ms, prepared.grace_ms, prepared.settlement_ms] {
-                if milliseconds.checked_mul(1_000_000).is_none() {
-                    return Err("supervision policy is outside the clock's range".into());
-                }
-            }
-            let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root)
-                .map_err(|refusal| {
-                    step = refusal.step;
-                    refusal.reason
-                })?;
-            step = SetupStep::Space;
-            free_space(clock, machine, &private, prepared)?;
-            step = SetupStep::Configuration;
-            crate::isolate::environment(machine, &private, &task.environment)?;
-            step = SetupStep::Seed;
-            seed_commit(clock, guard, machine, &private, prepared)?;
-            let commit = raw(
+        }
+        let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root).map_err(
+            |refusal| {
+                step = refusal.step;
+                refusal.reason
+            },
+        )?;
+        step = SetupStep::Space;
+        free_space(clock, machine, &private, prepared)?;
+        step = SetupStep::Configuration;
+        crate::isolate::environment(machine, &private, &task.environment)?;
+        step = SetupStep::Seed;
+        seed_commit(clock, guard, machine, &private, prepared)?;
+        let commit = raw(
+            clock,
+            machine,
+            &private,
+            &["git".into(), "rev-parse".into(), "HEAD".into()],
+            prepared.setup_deadline_seconds,
+            prepared,
+        )?;
+        if !succeeded(&commit) {
+            return Err("cannot retain frozen seed commit".into());
+        }
+        let revision = String::from_utf8(commit.stdout).map_err(|error| error.to_string())?.trim().to_owned();
+        let mut warming = private.clone();
+        warming.cargo_home.clone_from(&private.warm_cargo);
+        warming.target.clone_from(&private.warm_target);
+        step = SetupStep::Warm;
+        for command in &task.setup {
+            let result = raw_environment(
                 clock,
                 machine,
-                &private,
-                &["git".into(), "rev-parse".into(), "HEAD".into()],
-                prepared.setup_deadline_seconds,
+                &warming,
+                command,
                 prepared,
+                (prepared.setup_deadline_seconds, &task.environment),
             )?;
-            if !succeeded(&commit) {
-                return Err("cannot retain frozen seed commit".into());
+            if !succeeded(&result) {
+                return Err(format!("setup command failed: {:?}, {:?}", result.exit, result.error));
             }
-            let revision = String::from_utf8(commit.stdout).map_err(|error| error.to_string())?.trim().to_owned();
-            let mut warming = private.clone();
-            warming.cargo_home.clone_from(&private.warm_cargo);
-            warming.target.clone_from(&private.warm_target);
-            step = SetupStep::Warm;
-            for command in &task.setup {
-                let result = raw_environment(
-                    clock,
-                    machine,
-                    &warming,
-                    command,
-                    prepared,
-                    (prepared.setup_deadline_seconds, &task.environment),
-                )?;
-                if !succeeded(&result) {
-                    return Err(format!("setup command failed: {:?}, {:?}", result.exit, result.error));
-                }
-            }
-            copy_cache(clock, guard, machine, &private, prepared)?;
-            if !task.grade.is_empty() {
-                let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
-                grading.warm_cargo.clone_from(&private.warm_cargo);
-                grading.warm_target.clone_from(&private.warm_target);
-                copy_cache(clock, guard, machine, &grading, prepared)?;
-            }
-            Ok((private, revision))
-        })();
+        }
+        copy_cache(clock, guard, machine, &private, prepared)?;
+        if !task.grade.is_empty() {
+            let mut grading = crate::isolate::empty(guard, &private.root.join("grading"))?;
+            grading.warm_cargo.clone_from(&private.warm_cargo);
+            grading.warm_target.clone_from(&private.warm_target);
+            copy_cache(clock, guard, machine, &grading, prepared)?;
+        }
+        Ok((private, revision))
+    })();
     prepared_attempt.map_err(|reason| Setup { step, reason })
 }
 
@@ -557,6 +555,11 @@ fn collect_observation(
                     result.counts.responses = rollouts.response_count();
                 }
             }
+            crate::agent::Observing::Smith(observing) => {
+                result.tokens = observing.tokens()?;
+                result.spend = observing.spend(&result.tokens)?;
+                result.counts = observing.counts();
+            }
         }
     }
     Ok(())
@@ -574,7 +577,10 @@ fn observe(
             .map_err(|error| error.to_string())?
             .format(&time::format_description::well_known::Rfc3339)
             .map_err(|error| error.to_string())?;
-    let classification = process.observer.classify(process.exit, process.forced);
+    let classification = process.observing.as_ref().map_or_else(
+        || process.observer.classify(process.exit, process.forced),
+        |observing| observing.classify(process.exit, process.forced),
+    );
     result.outcome.end = classification.end;
     result.outcome.warnings = classification.warnings;
     result.outcome.exit = Measure::Observed { value: process.exit };
@@ -589,6 +595,9 @@ fn observe(
     }
     archive(guard, directory, result, "stdout.log", &process.stdout)?;
     archive(guard, directory, result, "stderr.log", &process.stderr)?;
+    if !process.trace.is_empty() {
+        archive(guard, directory, result, "trace.jsonl", &process.trace)?;
+    }
     if let Some(observing) = &mut process.observing {
         match observing.as_mut() {
             crate::agent::Observing::Codex(observing) => {
@@ -603,6 +612,20 @@ fn observe(
                     )?;
                 }
             }
+            crate::agent::Observing::Smith(observing) => {
+                let crate::agent::smith::Credential::Record(borrowed) = &mut observing.prepared.credential;
+                if let Some(borrowed) = borrowed.take() {
+                    let proof = borrowed.finish(guard)?;
+                    archive(
+                        guard,
+                        directory,
+                        result,
+                        "credential-proof.json",
+                        &serde_json::to_vec_pretty(&proof).map_err(|error| error.to_string())?,
+                    )?;
+                }
+                result.health.loss_per_sink.insert("trace".into(), observing.observer.loss());
+            }
         }
     }
     result.resources = resources(process)?;
@@ -612,7 +635,12 @@ fn observe(
         None => Vec::new(),
     };
     collect_observation(guard, directory, result, process)?;
-    result.outcome.writes_outside_workspace = scope(process, workspace);
+    result.outcome.writes_outside_workspace = match &process.observing {
+        Some(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
+            Measure::unavailable("legacy trace does not expose every shell filesystem effect")
+        }
+        Some(_) | None => scope(process, workspace),
+    };
     if let Measure::LowerBound { value, missing: _ } = &result.outcome.writes_outside_workspace {
         result.health.passive_checks.push(crate::CheckVerdict {
             check: "scope".into(),
@@ -669,8 +697,57 @@ fn archive_preparation(
                 &serde_json::to_vec_pretty(&prepared.overrides).map_err(|error| error.to_string())?,
             )?;
         }
+        crate::agent::Prepared::Smith(prepared) => {
+            result.identity.user_configuration_sha256 = Measure::unavailable("Smith uses frozen harness settings only");
+            archive(
+                work.guard,
+                work.directory,
+                result,
+                "settings.json",
+                &serde_json::to_vec_pretty(&prepared.rendered).map_err(|error| error.to_string())?,
+            )?;
+            archive(
+                work.guard,
+                work.directory,
+                result,
+                "face.json",
+                &serde_json::to_vec_pretty(&prepared.registry).map_err(|error| error.to_string())?,
+            )?;
+        }
     }
     Ok(())
+}
+
+fn source_arm(work: Work<'_>, identity: &Identity) -> Result<(crate::arm::ArmRef, String), String> {
+    match identity.agent {
+        crate::Agent::Codex => {
+            let version = raw(
+                work.clock,
+                work.machine,
+                work.private,
+                &[work.prepared.program.to_str().ok_or("program path must be UTF-8")?.into(), "--version".into()],
+                work.prepared.setup_deadline_seconds,
+                work.prepared,
+            )?;
+            if !succeeded(&version) {
+                return Err("cannot verify the installed agent version".into());
+            }
+            let version = std::str::from_utf8(&version.stdout).map_err(|error| error.to_string())?.to_owned();
+            if version.trim().strip_prefix("codex-cli ").unwrap_or(version.trim()) != identity.agent_version {
+                return Err("installed version differs from the planned identity".into());
+            }
+            Ok((crate::arm::ArmRef::Installed { program: work.prepared.program.clone() }, version))
+        }
+        crate::Agent::Smith => {
+            let build = crate::arm::read_build(&work.prepared.program)?;
+            if build.arm.commit != identity.agent_version || identity.smith_face != Some(crate::SmithFace::Legacy) {
+                return Err("Smith built arm differs from the planned full source version".into());
+            }
+            let version = build.arm.commit.clone();
+            Ok((crate::arm::ArmRef::Built(build), version))
+        }
+        crate::Agent::ClaudeCode => Err("Claude Code belongs to the next comparison pass".into()),
+    }
 }
 
 fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Capture, Duration), Setup> {
@@ -702,27 +779,13 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
         if pin.sha256 != result.identity.configuration_sha256 || pin.pin.agent != result.identity.agent {
             return Err("adapter configuration differs from the planned identity".into());
         }
-        let version = raw(
-            work.clock,
-            work.machine,
-            work.private,
-            &[work.prepared.program.to_str().ok_or("program path must be UTF-8")?.into(), "--version".into()],
-            work.prepared.setup_deadline_seconds,
-            work.prepared,
-        )?;
-        if !succeeded(&version) {
-            return Err("cannot verify the installed agent version".into());
-        }
-        let version = std::str::from_utf8(&version.stdout).map_err(|error| error.to_string())?;
-        if version.trim().strip_prefix("codex-cli ").unwrap_or(version.trim()) != result.identity.agent_version {
-            return Err("installed version differs from the planned identity".into());
-        }
-        let home = work.prepared.codex_home.as_deref().ok_or("Codex requires its read-only source login directory")?;
+        let (arm, version) = source_arm(work, &result.identity)?;
+        let home =
+            work.prepared.codex_home.as_deref().ok_or("the adapter requires its read-only source login directory")?;
         let model = crate::ModelChoice {
             model: Some(result.identity.model.requested_model.clone()),
             effort: Some(result.identity.model.requested_effort.clone()),
         };
-        let arm = crate::arm::ArmRef::Installed { program: work.prepared.program.clone() };
         let prepared = result
             .identity
             .agent
@@ -735,10 +798,11 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 variant: None,
                 model: &model,
                 arm: &arm,
-                installed_version: version,
+                installed_version: &version,
                 home,
                 wall: work.clock.now().wall,
                 lifetime: credential_lifetime(work)?,
+                environment: &environment,
             })
             .map_err(|error| {
                 step = error.step;
@@ -747,10 +811,6 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
         archive_preparation(&prepared, work, result)?;
         let invocation = prepared.command();
         environment.extend(invocation.environment);
-        match invocation.mode {
-            skein_world::end_to_end::Mode::Pipes => {}
-            skein_world::end_to_end::Mode::Terminal => return Err("this adapter requires the pipe face".into()),
-        }
         Ok((
             Command {
                 program: invocation.program,

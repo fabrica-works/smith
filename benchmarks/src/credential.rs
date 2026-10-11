@@ -1,6 +1,6 @@
 //! Access-only conversion keeps credential values only while preparing a record.
 //! The source login is read-only; no refresh field is deserialized or copied.
-//! `codex` writes one guarded private auth file, and `Borrowed::finish` removes
+//! `codex` and `smith` write guarded private records; `Borrowed::finish` removes
 //! it after genuine tree settlement and checks the source digest.
 //! Contracts: benchmarks.md, section 10; reliability-plan Credentials (95a9807).
 
@@ -59,10 +59,42 @@ pub struct Borrowed {
     pub expires: Wall,
     source: PathBuf,
     digest: String,
+    shape: Shape,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Shape {
+    Codex,
+    Smith(TokenShape),
+}
+
+/// The saved-token codec understood by the selected immutable Smith arm.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TokenShape {
+    /// The baseline's version-one record requires an unusable refresh sentinel.
+    Legacy,
+    /// Access-only version-two records carry no refresh state.
+    AccessOnly,
+}
+
+/// A converted record and the nonsecret account identifier for local settings.
+#[derive(Debug)]
+pub struct SmithCredential {
+    pub borrowed: Borrowed,
+    pub account_id: String,
+}
+
+struct Login {
+    source: PathBuf,
+    auth: Source,
+    digest: String,
+    expires: Wall,
 }
 
 /// The read-only source and private-file observations retained after settlement.
 #[derive(Debug, Serialize)]
+#[expect(clippy::struct_excessive_bools, reason = "independent persisted assertions, not execution states")]
 pub struct Proof {
     pub source_sha256_before: String,
     pub source_sha256_after: String,
@@ -70,6 +102,7 @@ pub struct Proof {
     pub expires_unix_seconds: u64,
     pub credential_removed: bool,
     pub private_refresh_empty: bool,
+    pub private_refresh_unusable: bool,
 }
 
 fn read_source(path: &Path) -> Result<Vec<u8>, String> {
@@ -102,22 +135,48 @@ fn expiry(access: &str) -> Result<Wall, String> {
     Ok(Wall::from_nanos(nanos))
 }
 
+fn login(source_home: &Path, now: Wall, lifetime: Duration) -> Result<Login, String> {
+    let source = source_home.join("auth.json");
+    let bytes = read_source(&source)?;
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let auth: Source = serde_json::from_slice(&bytes).map_err(|_| "Codex auth.json has an invalid shape")?;
+    if auth.auth_mode.is_empty() || auth.tokens.access_token.is_empty() {
+        return Err("Codex login has no authentication mode or access token".into());
+    }
+    let expires = expiry(&auth.tokens.access_token)?;
+    let end = now.as_nanos().checked_add(lifetime.as_nanos()).ok_or("attempt lifetime exceeds the wall clock")?;
+    if expires.as_nanos() <= end {
+        return Err("Codex access token expires before the attempt ends".into());
+    }
+    Ok(Login { source, auth, digest, expires })
+}
+
+fn write_record(guard: &Guard, home: &Path, name: &str, encoded: &[u8]) -> Result<PathBuf, String> {
+    let home = crate::isolate::create_directory(guard, home)?;
+    let credential = guard.write_path(&home.join(name))?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&credential)
+        .map_err(|_| "cannot create private credential record")?;
+    if let Err(error) = file.write_all(encoded).and_then(|()| file.sync_all()) {
+        std::fs::remove_file(guard.write_path(&credential)?).map_err(|_| "cannot remove incomplete credential")?;
+        return Err(format!("cannot write private credential record: {}", error.kind()));
+    }
+    if file.metadata().map_err(|_| "cannot inspect private credential record")?.permissions().mode() & 0o777 != 0o600 {
+        std::fs::remove_file(guard.write_path(&credential)?)
+            .map_err(|_| "cannot remove incorrectly private credential")?;
+        return Err("credential record requires mode 0600".into());
+    }
+    Ok(credential)
+}
+
 /// Convert only allowed Codex fields into a new private attempt-owned home.
 /// `now` is the shell's wall observation; `lifetime` covers the hard deadline.
 pub fn codex(guard: &Guard, source_home: &Path, home: &Path, now: Wall, lifetime: Duration) -> Result<Borrowed, Setup> {
     let converted: Result<Borrowed, String> = (|| {
-        let source = source_home.join("auth.json");
-        let bytes = read_source(&source)?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let source_auth: Source = serde_json::from_slice(&bytes).map_err(|_| "Codex auth.json has an invalid shape")?;
-        if source_auth.auth_mode.is_empty() || source_auth.tokens.access_token.is_empty() {
-            return Err("Codex login has no authentication mode or access token".into());
-        }
-        let expires = expiry(&source_auth.tokens.access_token)?;
-        let end = now.as_nanos().checked_add(lifetime.as_nanos()).ok_or("attempt lifetime exceeds the wall clock")?;
-        if expires.as_nanos() <= end {
-            return Err("Codex access token expires before the attempt ends".into());
-        }
+        let Login { source, auth: source_auth, digest, expires } = login(source_home, now, lifetime)?;
         let last_refresh = time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(now.as_nanos()))
             .map_err(|_| "credential write time is outside the timestamp range")?
             .format(&time::format_description::well_known::Rfc3339)
@@ -135,24 +194,68 @@ pub fn codex(guard: &Guard, source_home: &Path, home: &Path, now: Wall, lifetime
         .map_err(|_| "cannot encode the access-only record")?;
         check_credential_record(&record)?;
         let encoded = serde_json::to_vec(&record).map_err(|_| "cannot encode the access-only record")?;
-        let home = crate::isolate::create_directory(guard, home)?;
-        let credential = guard.write_path(&home.join("auth.json"))?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&credential)
-            .map_err(|_| "cannot create private Codex auth.json")?;
-        if let Err(error) = file.write_all(&encoded).and_then(|()| file.sync_all()) {
-            std::fs::remove_file(guard.write_path(&credential)?).map_err(|_| "cannot remove incomplete auth.json")?;
-            return Err(format!("cannot write private Codex auth.json: {}", error.kind()));
+        let credential = write_record(guard, home, "auth.json", &encoded)?;
+        Ok(Borrowed { credential, expires, source, digest, shape: Shape::Codex })
+    })();
+    converted.map_err(|reason| Setup {
+        step: SetupStep::Credentials,
+        reason: format!("{reason}; run `codex` once before retrying"),
+    })
+}
+
+fn token_limits() -> skein_oauth::Limits {
+    skein_oauth::Limits {
+        document_bytes: 16_384,
+        string_bytes: 8192,
+        token_bytes: 8192,
+        client_bytes: 1024,
+        detail_bytes: 1024,
+        record_bytes: 32_768,
+        depth: 16,
+        tokens: 1024,
+    }
+}
+
+/// Convert a read-only Codex login into the selected Smith arm's private codec.
+pub fn smith(
+    guard: &Guard,
+    source_home: &Path,
+    home: &Path,
+    now: Wall,
+    lifetime: Duration,
+    shape: TokenShape,
+) -> Result<SmithCredential, Setup> {
+    let converted: Result<SmithCredential, String> = (|| {
+        // Local hosts renew sixty seconds before expiry. Include that lead so
+        // a converted record never reaches renewal during the supervised arm.
+        let lifetime = lifetime.checked_add(Duration::from_secs(60)).ok_or("credential renewal lifetime overflow")?;
+        let Login { source, auth, digest, expires } = login(source_home, now, lifetime)?;
+        let account_id = auth.tokens.account_id.filter(|id| !id.is_empty()).ok_or("Codex login has no account id")?;
+        let refresh = match shape {
+            TokenShape::Legacy => Some(crate::guard::UNUSABLE_REFRESH.as_bytes().into()),
+            TokenShape::AccessOnly => None,
+        };
+        let mut encoded = skein_oauth::encode_record(
+            &skein_oauth::SavedToken {
+                key: 0,
+                generation: 1,
+                access_token: auth.tokens.access_token.as_bytes().into(),
+                refresh_token: refresh,
+                metadata: None,
+                expires_at: expires,
+            },
+            &token_limits(),
+        )
+        .map_err(|_| "cannot encode bounded access-only Smith record")?;
+        match shape {
+            TokenShape::Legacy => encoded[4..6].copy_from_slice(&1_u16.to_be_bytes()),
+            TokenShape::AccessOnly => {}
         }
-        if file.metadata().map_err(|_| "cannot inspect private auth.json")?.permissions().mode() & 0o777 != 0o600 {
-            std::fs::remove_file(guard.write_path(&credential)?)
-                .map_err(|_| "cannot remove incorrectly private auth.json")?;
-            return Err("Codex auth.json requires mode 0600".into());
-        }
-        Ok(Borrowed { credential, expires, source, digest })
+        let credential = write_record(guard, home, "0.json", &encoded)?;
+        Ok(SmithCredential {
+            borrowed: Borrowed { credential, expires, source, digest, shape: Shape::Smith(shape) },
+            account_id,
+        })
     })();
     converted.map_err(|reason| Setup {
         step: SetupStep::Credentials,
@@ -164,12 +267,35 @@ impl Borrowed {
     /// Remove the private auth file after settlement and verify the user login.
     pub fn finish(&self, guard: &Guard) -> Result<Proof, String> {
         let checked: Result<(), String> = (|| {
-            let bytes = read_source(&self.credential)?;
-            let record: serde_json::Value =
-                serde_json::from_slice(&bytes).map_err(|_| "private Codex auth.json changed shape")?;
-            check_credential_record(&record)?;
-            if record.pointer("/tokens/refresh_token").and_then(serde_json::Value::as_str) != Some("") {
-                return Err("private Codex refresh field is no longer empty".into());
+            let mut bytes = read_source(&self.credential)?;
+            match self.shape {
+                Shape::Codex => {
+                    let record: serde_json::Value =
+                        serde_json::from_slice(&bytes).map_err(|_| "private Codex auth.json changed shape")?;
+                    check_credential_record(&record)?;
+                    if record.pointer("/tokens/refresh_token").and_then(serde_json::Value::as_str) != Some("") {
+                        return Err("private Codex refresh field is no longer empty".into());
+                    }
+                }
+                Shape::Smith(shape) => {
+                    let version = match shape {
+                        TokenShape::Legacy => 1_u16,
+                        TokenShape::AccessOnly => 2_u16,
+                    };
+                    if bytes.get(4..6) != Some(version.to_be_bytes().as_slice()) {
+                        return Err("private Smith token codec version changed".into());
+                    }
+                    bytes[4..6].copy_from_slice(&2_u16.to_be_bytes());
+                    let record = skein_oauth::decode_record(&bytes, &token_limits())
+                        .map_err(|_| "private Smith token record changed shape")?;
+                    let expected = match shape {
+                        TokenShape::Legacy => Some(crate::guard::UNUSABLE_REFRESH.as_bytes()),
+                        TokenShape::AccessOnly => None,
+                    };
+                    if record.key != 0 || record.refresh_token.as_deref() != expected {
+                        return Err("private Smith refresh state is no longer unusable".into());
+                    }
+                }
             }
             Ok(())
         })();
@@ -188,7 +314,8 @@ impl Borrowed {
             source_unchanged: true,
             expires_unix_seconds: self.expires.as_secs(),
             credential_removed: true,
-            private_refresh_empty: true,
+            private_refresh_empty: matches!(self.shape, Shape::Codex | Shape::Smith(TokenShape::AccessOnly)),
+            private_refresh_unusable: true,
         })
     }
 }

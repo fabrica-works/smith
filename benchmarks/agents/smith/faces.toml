@@ -1,0 +1,58 @@
+# Entries are appended when a binary's face, settings or credential codec changes.
+[[face]]
+commit = "30259d89b88834ed3edaaa08b3f320d2252bbb9a"
+face = "legacy"
+shape = "local-json"
+credential = "converted"
+record = "legacy"
+
+[[face]]
+commit = "839ac739941628ea551375da0dbf20159f27dd95"
+face = "legacy"
+shape = "local-declared"
+credential = "converted"
+record = "legacy"
+
+[[face]]
+commit = "f3792762fd71884c2cc4479accd9bab572ef252b"
+face = "legacy"
+shape = "local-declared"
+credential = "converted"
+record = "access-only"
+
+[[face]]
+commit = "a40cedc203e178c3c45204513416b4b60e4457c0"
+face = "legacy"
+shape = "local-priced"
+credential = "converted"
+record = "access-only"
+
+[[face]]
+commit = "754985779cc96c6358bb03526a50b04390f13c54"
+face = "legacy"
+shape = "local-delegating"
+credential = "converted"
+record = "access-only"
+
+[[face]]
+commit = "d19cb38878ec1eb4d9a63922386403fef46b01d4"
+face = "legacy"
+shape = "local-reserved"
+credential = "converted"
+record = "access-only"
+
+[[face]]
+commit = "576a251e83987dff07b33e80ab0952df8f391e84"
+face = "legacy"
+shape = "local-reserved"
+credential = "converted"
+record = "access-only"
+facts = "kinds"
+
+[[face]]
+commit = "4aef8240b027aa0cf7b93ec8f5b8b83ec42d8d3e"
+face = "legacy"
+shape = "local-reserved"
+credential = "converted"
+record = "access-only"
+facts = "choices"

@@ -13,6 +13,54 @@ use crate::{BudgetLimit, Classification, End, Exit, FailureReason, Forced, Measu
 const MAX_BYTES: usize = 400_000;
 const MAX_DEPTH: usize = 64;
 
+/// The run fact layout selected from the immutable arm's source ancestry.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FactShape {
+    /// Frozen openings identify main and children with a boolean flag.
+    #[default]
+    Flags,
+
+    /// Openings carry the role and the child's asked and granted share.
+    Kinds,
+
+    /// Kind openings and the logical choice of each unsent request intent.
+    Choices,
+}
+
+impl FactShape {
+    const fn kinds(self) -> bool {
+        match self {
+            Self::Flags => false,
+            Self::Kinds | Self::Choices => true,
+        }
+    }
+
+    const fn choices(self) -> bool {
+        match self {
+            Self::Flags | Self::Kinds => false,
+            Self::Choices => true,
+        }
+    }
+}
+
+/// The local JSON settings schema understood by the selected immutable arm.
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shape {
+    /// The baseline's string profile and priced `max_tokens` model.
+    LocalJson,
+    /// Named profile declarations and separate model window/output fields.
+    LocalDeclared,
+
+    /// Named declarations with micro-dollar prices and the enlarged product budget.
+    LocalPriced,
+    /// Named declarations with an explicit local sub-agent grant.
+    LocalDelegating,
+    /// Delegation with a named wind-down reserve inside the task's budget.
+    LocalReserved,
+}
+
 /// A legacy shape refused by the reader, naming its record and field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
@@ -323,17 +371,17 @@ pub enum Event {
     /// The agent admitted this run.
     RunAdmitted { run: u64 },
     /// The run opened its main or child conversation.
-    ConversationOpened { run: u64, conversation: u64, child: bool },
+    ConversationOpened { run: u64, conversation: u64, child: bool, parent: Option<u64>, kind: Option<Value> },
     /// The run received a call from this conversation.
     RunCalled { run: u64, conversation: u64, call: u64, ask: String },
     /// The run returned the call's terminal.
-    RunReturned { run: u64, call: u64, result: String },
+    RunReturned { run: u64, call: u64, result: String, value: Value },
     /// The run supplied its answer to its caller.
     RunAnswered { run: u64, answer: Value },
     /// The session admitted its opener.
     SessionOpened { opener: u64 },
     /// The session requested a completion with this retry number.
-    CompletionStarted { opener: u64, attempt: u64, messages: u64, max_tokens: u64 },
+    CompletionStarted { opener: u64, attempt: u64, messages: u64, max_tokens: u64, choice: Option<Value> },
     /// The provider supplied a completion terminal.
     CompletionAnswered { opener: u64, stop: Value, blocks: u64, calls: u64, invalid: u64 },
     /// The provider completion ended in a failure with transport evidence.
@@ -352,7 +400,31 @@ pub enum Event {
     Other { domain: String, value: Value },
 }
 
-fn map_fact(domain: &str, value: Value) -> Result<Event, ParseError> {
+fn opening_parent(value: &Value, shape: FactShape) -> Result<Option<u64>, ParseError> {
+    match shape {
+        FactShape::Kinds | FactShape::Choices if value.field("kind")?.name() == Some("Child") => {
+            Ok(Some(value.field("kind")?.token("parent")?))
+        }
+        FactShape::Kinds | FactShape::Choices => Ok(None),
+        FactShape::Flags => match value.field("parent") {
+            Ok(Value::Tuple { name, values }) if name == "Some" && values.len() == 1 => match &values[0] {
+                Value::Tuple { name, values } if name == "Token" && values.len() == 1 => {
+                    Ok(Some(values[0].number("parent")?))
+                }
+                Value::Name(_)
+                | Value::Number(_)
+                | Value::String(_)
+                | Value::Bytes(_)
+                | Value::Sequence(_)
+                | Value::Tuple { .. }
+                | Value::Struct { .. } => Err(bad("parent", "expected Some(Token(integer))")),
+            },
+            Ok(_) | Err(_) => Ok(None),
+        },
+    }
+}
+
+fn map_fact(domain: &str, value: Value, shape: FactShape) -> Result<Event, ParseError> {
     let number = |field: &str| value.field(field)?.number(field);
     let text =
         |field: &str| value.field(field)?.name().map(str::to_owned).ok_or_else(|| bad(field, "expected variant"));
@@ -362,7 +434,15 @@ fn map_fact(domain: &str, value: Value) -> Result<Event, ParseError> {
         ("Run", Some("Opened")) => Event::ConversationOpened {
             run: value.token("run")?,
             conversation: value.token("conversation")?,
-            child: value.field("child")?.name() == Some("true"),
+            child: match shape {
+                FactShape::Flags => value.field("child")?.name() == Some("true"),
+                FactShape::Kinds | FactShape::Choices => value.field("kind")?.name() == Some("Child"),
+            },
+            parent: opening_parent(&value, shape)?,
+            kind: match shape {
+                FactShape::Flags => None,
+                FactShape::Kinds | FactShape::Choices => Some(value.field("kind")?.clone()),
+            },
         },
         ("Run", Some("Called")) => Event::RunCalled {
             run: value.token("run")?,
@@ -370,9 +450,12 @@ fn map_fact(domain: &str, value: Value) -> Result<Event, ParseError> {
             call: value.token("call")?,
             ask: text("ask")?,
         },
-        ("Run", Some("Returned")) => {
-            Event::RunReturned { run: value.token("run")?, call: value.token("call")?, result: text("result")? }
-        }
+        ("Run", Some("Returned")) => Event::RunReturned {
+            run: value.token("run")?,
+            call: value.token("call")?,
+            result: text("result")?,
+            value: value.field("result")?.clone(),
+        },
         ("Run", Some("Answered")) => Event::RunAnswered { run: value.token("run")?, answer: copy("answer")? },
         ("Session", Some("Opened")) => Event::SessionOpened { opener: value.token("opener")? },
         ("Session", Some("CompletionStarted")) => Event::CompletionStarted {
@@ -380,6 +463,7 @@ fn map_fact(domain: &str, value: Value) -> Result<Event, ParseError> {
             attempt: number("attempt")?,
             messages: number("messages")?,
             max_tokens: number("max_tokens")?,
+            choice: if shape.choices() { Some(value.field("choice")?.clone()) } else { None },
         },
         ("Session", Some("CompletionAnswered")) => Event::CompletionAnswered {
             opener: value.token("opener")?,
@@ -445,7 +529,7 @@ pub enum Observation {
     Completion { at_ns: u64, owner: u64, text: String },
 }
 
-fn validate_fact(domain: &str, fact: &Value) -> Result<(), ParseError> {
+fn validate_fact(domain: &str, fact: &Value, shape: FactShape) -> Result<(), ParseError> {
     let name = fact.name().ok_or_else(|| bad("fact", "expected named fact"))?;
     let fields: &[&str] = match (domain, name) {
         ("Run", "Admitted") if fact.field("resumed").is_ok() => &["run", "resumed"],
@@ -456,6 +540,8 @@ fn validate_fact(domain: &str, fact: &Value) -> Result<(), ParseError> {
         ("Run", "MessageFence") => &["run", "turn", "read"],
         ("Run", "MessageUnread") => &["run", "name"],
         ("Run", "Prepared") => &["run", "guides", "checks"],
+        ("Run", "Opened") if shape.kinds() => &["run", "conversation", "kind"],
+        ("Run", "Budget") if shape.kinds() => &["run", "standing"],
         ("Run", "Opened") if fact.field("parent").is_ok() || fact.field("call").is_ok() => {
             &["run", "conversation", "child", "parent", "call"]
         }
@@ -468,6 +554,9 @@ fn validate_fact(domain: &str, fact: &Value) -> Result<(), ParseError> {
         ("Run", "Delivered") => &["run", "status"],
         ("Run", "Answered") => &["run", "answer"],
         ("Session", "Opened" | "CompletionCancelled" | "DelegateCancelled") => &["opener"],
+        ("Session", "CompletionStarted") if shape.choices() => {
+            &["opener", "attempt", "messages", "max_tokens", "choice"]
+        }
         ("Session", "CompletionStarted") => &["opener", "attempt", "messages", "max_tokens"],
         ("Session", "CompletionAnswered") => &["opener", "stop", "blocks", "calls", "invalid"],
         ("Session", "ReasoningDropped") => &["opener", "bytes"],
@@ -507,34 +596,13 @@ fn validate_fact(domain: &str, fact: &Value) -> Result<(), ParseError> {
             "reason" => unit(fact.field(field)?, field, &["TooLarge", "Full", "NameInUse", "Ending"])?,
             "child" | "error" | "resumed" => unit(fact.field(field)?, field, &["true", "false"])?,
             "ask" => unit(fact.field(field)?, field, &["Wait", "Host", "Deliver", "Finish", "SubAgent"])?,
-            "result" => unit(
-                fact.field(field)?,
-                field,
-                &[
-                    "Waiting",
-                    "HostAnswered",
-                    "HostTooLarge",
-                    "HostUnknown",
-                    "HostRejected",
-                    "Delivered",
-                    "Nothing",
-                    "DeliveryRefused",
-                    "Accepted",
-                    "Rejected",
-                    "ChecksFailed",
-                    "Stale",
-                    "DeliveryFailed",
-                    "Cancelled",
-                    "TimedOut",
-                    "Busy",
-                    "Answered",
-                    "Unanswered",
-                    "Refused",
-                ],
-            )?,
+            "choice" => unit(fact.field(field)?, field, &["Auto", "None", "Only"])?,
+            "kind" => validate_kind(fact.field(field)?)?,
+            "standing" => validate_standing(fact.field(field)?)?,
+            "result" => validate_return(fact.field(field)?, shape)?,
             "tool" => unit(fact.field(field)?, field, &["Read", "List", "Search", "Write", "Edit", "Shell"])?,
             "answer" => validate_answer(fact.field(field)?)?,
-            "fact" => validate_fact("Tools", fact.field(field)?)?,
+            "fact" => validate_fact("Tools", fact.field(field)?, shape)?,
             "usage" => validate_usage(fact.field(field)?)?,
             _ => {
                 if fact.field(field)?.name().is_none() {
@@ -544,6 +612,150 @@ fn validate_fact(domain: &str, fact: &Value) -> Result<(), ParseError> {
         }
     }
     Ok(())
+}
+
+fn validate_return(value: &Value, shape: FactShape) -> Result<(), ParseError> {
+    if shape.kinds() && matches!(value.name(), Some("Answered" | "Unanswered")) {
+        value.fields(&["used"])?;
+        let used = value.field("used")?;
+        used.fields(&["turns", "time", "spend"])?;
+        used.field("turns")?.number("turns")?;
+        duration(used.field("time")?, "time")?;
+        used.field("spend")?.number("spend")?;
+        return Ok(());
+    }
+    unit(
+        value,
+        "result",
+        &[
+            "Waiting",
+            "HostAnswered",
+            "HostTooLarge",
+            "HostUnknown",
+            "HostRejected",
+            "Delivered",
+            "Nothing",
+            "DeliveryRefused",
+            "Accepted",
+            "Rejected",
+            "ChecksFailed",
+            "Stale",
+            "DeliveryFailed",
+            "Cancelled",
+            "TimedOut",
+            "Busy",
+            "Answered",
+            "Unanswered",
+            "Refused",
+            "Crossed",
+            "Waited",
+            "Withheld",
+        ],
+    )
+}
+
+fn duration(value: &Value, path: &str) -> Result<(), ParseError> {
+    match value {
+        Value::Tuple { name, values } if name == "Duration" && values.len() == 1 => {
+            values[0].number(path)?;
+            Ok(())
+        }
+        Value::Name(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Bytes(_)
+        | Value::Sequence(_)
+        | Value::Tuple { .. }
+        | Value::Struct { .. } => Err(bad(path, "expected Duration(integer nanoseconds)")),
+    }
+}
+
+fn optional_share(value: &Value, path: &str, is_duration: bool) -> Result<(), ParseError> {
+    match value {
+        Value::Name(name) if name == "None" => Ok(()),
+        Value::Tuple { name, values } if name == "Some" && values.len() == 1 => {
+            if is_duration {
+                duration(&values[0], path)
+            } else {
+                u32::try_from(values[0].number(path)?).map_err(|_| bad(path, "expected u32"))?;
+                Ok(())
+            }
+        }
+        Value::Name(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Bytes(_)
+        | Value::Sequence(_)
+        | Value::Tuple { .. }
+        | Value::Struct { .. } => Err(bad(path, "expected optional share quantity")),
+    }
+}
+
+fn validate_kind(value: &Value) -> Result<(), ParseError> {
+    match value {
+        Value::Name(name) if name == "Main" => Ok(()),
+        Value::Struct { name, .. } if name == "Child" => {
+            value.fields(&["parent", "call", "asked", "granted"])?;
+            value.token("parent")?;
+            value.token("call")?;
+            let asked = value.field("asked")?;
+            if asked.name() != Some("Share") {
+                return Err(bad("asked", "expected Share"));
+            }
+            asked.fields(&["turns", "time"])?;
+            optional_share(asked.field("turns")?, "asked.turns", false)?;
+            optional_share(asked.field("time")?, "asked.time", true)?;
+            let granted = value.field("granted")?;
+            if granted.name() != Some("Granted") {
+                return Err(bad("granted", "expected Granted"));
+            }
+            granted.fields(&["turns", "time", "spend", "turns_set", "time_set"])?;
+            u32::try_from(granted.field("turns")?.number("granted.turns")?)
+                .map_err(|_| bad("granted.turns", "expected u32"))?;
+            duration(granted.field("time")?, "granted.time")?;
+            granted.field("spend")?.number("granted.spend")?;
+            unit(granted.field("turns_set")?, "granted.turns_set", &["Asked", "Pool", "Reserve"])?;
+            unit(granted.field("time_set")?, "granted.time_set", &["Asked", "Pool", "Reserve", "Deadline"])
+        }
+        Value::Name(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Bytes(_)
+        | Value::Sequence(_)
+        | Value::Tuple { .. }
+        | Value::Struct { .. } => Err(bad("kind", "expected Main or Child share")),
+    }
+}
+
+fn validate_standing(value: &Value) -> Result<(), ParseError> {
+    if value.name() != Some("Standing") {
+        return Err(bad("standing", "expected Standing"));
+    }
+    value.fields(&[
+        "stage",
+        "turns",
+        "turns_limit",
+        "spend",
+        "spend_limit",
+        "time",
+        "time_limit",
+        "reserve",
+        "reserve_spend",
+    ])?;
+    unit(value.field("stage")?, "stage", &["Ordinary", "WindDown"])?;
+    for field in ["turns", "turns_limit", "spend", "spend_limit", "reserve_spend"] {
+        value.field(field)?.number(field)?;
+    }
+    for field in ["time", "time_limit"] {
+        duration(value.field(field)?, field)?;
+    }
+    let reserve = value.field("reserve")?;
+    if reserve.name() != Some("Reserve") {
+        return Err(bad("reserve", "expected Reserve"));
+    }
+    reserve.fields(&["turns", "time"])?;
+    reserve.field("turns")?.number("reserve.turns")?;
+    duration(reserve.field("time")?, "reserve.time")
 }
 
 fn validate_read(value: &Value) -> Result<(), ParseError> {
@@ -629,6 +841,11 @@ fn hex(value: &str, path: &str) -> Result<Vec<u8>, ParseError> {
 
 /// Parse one complete JSON line, skipping unknown record types only.
 pub fn parse_line(line: &str) -> Result<Option<Observation>, ParseError> {
+    parse_line_for(line, FactShape::Flags)
+}
+
+/// Read this arm's declared fact layout; another layout is a shape fault.
+pub fn parse_line_for(line: &str, shape: FactShape) -> Result<Option<Observation>, ParseError> {
     if line.len() > MAX_BYTES {
         return Err(bad("line bytes", "record limit exceeded"));
     }
@@ -664,8 +881,8 @@ pub fn parse_line(line: &str) -> Result<Option<Observation>, ParseError> {
         if domain != "Run" && domain != "Session" {
             return Err(bad("fact", "expected Run or Session wrapper"));
         }
-        validate_fact(domain, &value)?;
-        return Ok(Some(Observation::Fact { at_ns, event: map_fact(domain, value)? }));
+        validate_fact(domain, &value, shape)?;
+        return Ok(Some(Observation::Fact { at_ns, event: map_fact(domain, value, shape)? }));
     }
     let owner = number("owner")?;
     if (kind == "call" || kind == "prompt") && string("encoding")? != "hex" {
@@ -703,6 +920,7 @@ pub struct Accepted {
 /// Outside lifecycle evidence retained by the legacy adapter for one process.
 #[derive(Clone, Debug, Default)]
 pub struct Observer {
+    shape: FactShape,
     mains: BTreeMap<u64, u64>,
     calls: BTreeMap<(u64, u64), (u64, bool)>,
     accepted: Option<Accepted>,
@@ -711,9 +929,15 @@ pub struct Observer {
 }
 
 impl Observer {
+    /// Select the immutable arm's declared fact layout before observing any records.
+    #[must_use]
+    pub fn new(shape: FactShape) -> Self {
+        Self { shape, ..Self::default() }
+    }
+
     /// Consume one line; a shape error poisons subsequent classification.
     pub fn observe_line(&mut self, line: &str) -> Result<Option<Observation>, ParseError> {
-        let result = parse_line(line).and_then(|observation| {
+        let result = parse_line_for(line, self.shape).and_then(|observation| {
             if let Some(Observation::Fact { at_ns, event }) = &observation {
                 self.fact(*at_ns, event)?;
             }
@@ -727,7 +951,7 @@ impl Observer {
 
     fn fact(&mut self, at_ns: u64, event: &Event) -> Result<(), ParseError> {
         match event {
-            Event::ConversationOpened { run, conversation, child: false } => {
+            Event::ConversationOpened { run, conversation, child: false, .. } => {
                 if self.mains.insert(*run, *conversation).is_some_and(|old| old != *conversation) {
                     return Err(bad("conversation", "conflicting main conversation"));
                 }
@@ -740,7 +964,7 @@ impl Observer {
                     return Err(bad("call", "conflicting run call"));
                 }
             }
-            Event::RunReturned { run, call, result } if result == "Accepted" || result == "Delivered" => {
+            Event::RunReturned { run, call, result, .. } if result == "Accepted" || result == "Delivered" => {
                 let (conversation, finish) =
                     self.calls.get(&(*run, *call)).ok_or_else(|| bad("call", "accepted call lacks its Called fact"))?;
                 if *finish && self.mains.get(run) == Some(conversation) {

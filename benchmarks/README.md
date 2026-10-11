@@ -43,9 +43,9 @@ refused. No seed may contain `benchmarks`, `grader`, `grading`,
 Runtime data will live under `$XDG_STATE_HOME/smith-bench/`, outside
 repositories: raw `runs/`, agent `homes/`, build `clone/` and `arms/`,
 and attempt `scratch/`. Summaries and baselines are committed here.
-Agents use the user's existing login: Codex runs in `~/.codex`, and
-smith borrows it read-only. No one signs in for a benchmark or copies a
-refresh token.
+Agents use the user's existing login read-only. Codex runs in an attempt-owned
+home, and smith receives a private access-only record until its borrow source
+exists. No one signs in for a benchmark or copies a refresh token.
 
 Suite task names are `<kind>/<id>[/<variant>]`; `[[select]]` can instead
 name a `kind` and `behaviours`, matching all those behaviours. An agent
@@ -131,7 +131,13 @@ Known shape changes are harness errors. Its calls-only fake-provider recordings
 are under `tests/recorded/smith-legacy/`; usage and loss stay unavailable there.
 Legacy exit zero alone proves no accepted answer. Forced teardown after an
 observed acceptance remains completed with a warning. The legacy parser joins
-the same offline and fuzzy suites as Codex's reader.
+the same offline and fuzzy suites as Codex's reader. The current ancestry-selected
+Choice layout retains logical request intent without treating it as a provider
+attempt start. `tests/recorded/smith-current/` additionally retains the actual
+Everything trace from phase1 control 2396, its binary/source/harness identities
+and original digest. Its three response usages are counted once; repeated
+content usage and aggregate Used/Ended facts do not double charge them. Trace
+loss and provider identities remain unavailable.
 
 `attempt` consumes one strict JSON `Prepared` request (`src/run.rs`) in a fresh
 harness process. A request freezes the task, binary and attempt identities,
@@ -206,3 +212,83 @@ child-03 control. Child-01 lost malformed rollout bytes; child-02 and subsequent
 attempts retain bounded raw files before decoding and archive them on failure.
 These controls establish adapter behavior, not calibrated reliability probes
 or the pending runtime smoke backfill for other increments.
+
+The native Smith driver verifies every executable in the frozen arm manifest
+and identifies the agent by its full source commit and binary digest. Smith
+has no `--version` command. The append-only `agents/smith/faces.toml` registry
+selects settings and token formats by source ancestry; earlier arm invocations
+remain intact. The driver renders `agents/smith/legacy.json`, task overrides
+and exact environment values into guarded private settings. The baseline's
+standard profile admits at most 4,096 output tokens. Unsupported named
+overrides refuse setup before reading the source login.
+
+Smith runs spawned at a terminal. The scripted person sends one whole prompt
+line, waits for named tool or answer cues before later lines, and sends EOF
+once main answers, including a failed or budget answer. The same Skein process-tree supervisor reads
+the growing trace file and drains its final records after genuine settlement.
+Two consecutive native IO close deadlines give the teardown allowance; the
+driver preserves the binary's shipped close and exit grace policy.
+
+The sole credential converter writes Smith's selected saved-token codec in a
+private directory. Old binaries receive the unusable refresh sentinel that
+their codec requires; access-only codecs omit refresh. The expiry check also
+covers native renewal's sixty-second lead, so neither shape can renew during
+the attempt. Source auth digests and private removal are recorded after
+settlement. Legacy per-response content usage is counted once by conversation
+and completion ordinal; aggregate `Used` facts never add another charge.
+Unobservable loss and parent links keep measurements lower bounds or
+unavailable. The pin's GPT-5 list rates are notional comparison prices, not
+provider billing or a price claim about the selected model.
+
+The first native controls are archived as
+`smith00-legacy-20261009-1932/baseline-01` and
+`smith00-legacy-20261009-1934/baseline-02`. The first exposed the pin's output
+ceiling error before any provider attempt. The corrected second admitted one
+attempt but received no response or usage before its deadline. Both preserved
+the source auth digest and removed private credentials and scratch. The
+required live `everything` recording with usage remains pending; these
+controls establish no authentication success or reliability probe result.
+
+The bounded diagnostic `smith00-legacy-diagnostic-20261009/diagnostic-01`
+used gpt-6-luna/low, a 300-second native budget and a separate 330-second hard
+deadline. Metadata-only `ss` samples show the native agent and its socket gone
+by 2.230 seconds, after 8,325 outbound bytes were acknowledged and 2,821 bytes
+were received. Encrypted counters do not establish a complete HTTP upload or
+its response. The local host waited for input until the harness deadline;
+source auth remained unchanged and private credentials and scratch were
+removed after settlement. The designer classified this as a baseline agent
+defect; its exact exit cause is unobservable on the frozen binary. The
+60-second initial budget remains part of baseline-02's outcome. No further
+baseline diagnosis runs: the requested wrapper was withdrawn because that
+host hardcodes its own executable and has no agent-program override.
+
+The first later candidate, `1a0dade1`, is the complete hosted-stderr/shared-drive
+adoption after the frozen baseline; its predecessor only changes the dependency
+pin. Run `smith00-legacy-later-20261009-2010/control-01` also timed out at its
+330-second deadline, with no response or usage. Its private selection annotation
+names both failed baseline attempts and retains the encrypted-TCP knowledge
+boundary. That historical selection did not complete the required usage control;
+the later phase1 control 2396 did and is retained as an offline recording.
+The first `c883e2e` candidate, `smith00-legacy-later-20261009-2027/control-02`,
+failed before any provider request because the harness incorrectly duplicated
+the endpoint model declaration. The native local host generates this from
+`settings.models` and rejects a competing declaration in `agent.endpoints`.
+The corrected test follows the shipped local-to-agent generation path and then
+the native child parser, including a changed output limit.
+`smith00-legacy-later-20261009-2036/control-03` retained a second harness
+settings failure: the agent refused the run before inference, and the local
+host remained until the 330-second hard deadline. The declared-settings face
+had applied the later product budget and micro-dollar prices to a binary whose
+standard ceiling was 64 turns and one original currency unit. The registry now
+selects the priced shape only from `a40cedc2`, where that policy changed.
+The corrected `smith00-legacy-later-20261009-2044/control-04` reached a
+completion attempt and ended after 675 ms with `Limit` and `Unknown` evidence.
+Its fourteen retained records include the request, with no response or usage
+content. That binary erases the shared limit's cap and bound, so the trace
+does not establish the precise limit or an HTTP status. The successful usage
+control waits for an eligible later native mechanism; no failure is converted
+to passing evidence, and no further frozen-baseline diagnosis is run.
+From `576a251e`, the registry selects the native Kind-based Debug facts,
+retaining asked/granted share metadata and visible parent links. Frozen arms
+keep their flag-based layout. Linked child response content contributes once
+in its own scope; aggregate or child-return totals never charge it again.

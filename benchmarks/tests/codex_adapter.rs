@@ -142,6 +142,7 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     let model = ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
     let arm = ArmRef::Installed { program: "/bin/false".into() };
     let mut context = Context {
+        environment: &[],
         guard: &guard,
         private: &private,
         pin: &pin,
@@ -158,7 +159,9 @@ fn the_pinned_adapter_refuses_version_drift_and_isolates_the_user_home() {
     assert_eq!(Agent::Codex.prepare(&context).expect_err("version drift").step, SetupStep::Configuration);
     context.installed_version = "codex-cli 0.160.0";
     let prepared = Agent::Codex.prepare(&context).expect("pinned version");
-    let Prepared::Codex(codex) = &prepared;
+    let Prepared::Codex(codex) = &prepared else {
+        panic!("Codex preparation");
+    };
     assert_eq!(codex.home, private.root.join("codex"));
     assert_eq!(std::fs::read_dir(&codex.home).expect("private home").count(), 1);
     let proof = codex.borrowed.as_ref().expect("converted credentials").finish(&guard).expect("settled cleanup");
@@ -316,7 +319,9 @@ fn malformed_named_rollouts_remain_available_for_archive_and_keep_the_cached_fau
         workspace: home.clone(),
         teardown: skein_lib::Duration::ZERO,
     });
-    let smith_bench::agent::Observing::Codex(mut observing) = prepared.observe();
+    let smith_bench::agent::Observing::Codex(mut observing) = prepared.observe() else {
+        panic!("Codex observer");
+    };
     observing.observer.observe_line(r#"{"type":"thread.started","thread_id":"root"}"#).expect("named root");
     let first = observing.collect().expect_err("known shape fault").what;
     assert!(first.contains("thread root"));
@@ -361,4 +366,80 @@ fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope()
         Measure::Observed { value: 186 }
     ));
     assert_eq!(collected.response_count(), Measure::Observed { value: 6 });
+}
+
+#[test]
+fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential() {
+    use smith_bench::credential::TokenShape;
+    use std::os::unix::fs::PermissionsExt;
+    let root = private("smith-records");
+    let source = root.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("fixture source");
+    let original = synthetic_auth(500);
+    std::fs::write(source.join("auth.json"), &original).expect("source auth");
+    let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    for (name, shape, version, refresh) in [
+        ("legacy", TokenShape::Legacy, 1_u16, Some(smith_bench::guard::UNUSABLE_REFRESH.as_bytes())),
+        ("current", TokenShape::AccessOnly, 2_u16, None),
+    ] {
+        let home = root.join(name);
+        let converted = smith_bench::credential::smith(
+            &guard,
+            &source,
+            &home,
+            skein_lib::Wall::from_nanos(100_000_000_000),
+            skein_lib::Duration::from_secs(20),
+            shape,
+        )
+        .expect("converted record");
+        assert_eq!(converted.account_id, "UNISSUED_ACCOUNT");
+        assert_eq!(std::fs::metadata(&home).expect("home mode").permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            std::fs::metadata(&converted.borrowed.credential).expect("record mode").permissions().mode() & 0o777,
+            0o600
+        );
+        let mut bytes = std::fs::read(&converted.borrowed.credential).expect("private record");
+        assert_eq!(&bytes[..4], b"SKOT");
+        assert_eq!(&bytes[4..6], &version.to_be_bytes());
+        assert!(
+            !bytes
+                .windows(b"UNISSUED_REFRESH_MUST_NOT_COPY".len())
+                .any(|bytes| bytes == b"UNISSUED_REFRESH_MUST_NOT_COPY")
+        );
+        bytes[4..6].copy_from_slice(&2_u16.to_be_bytes());
+        let limits = skein_oauth::Limits {
+            document_bytes: 16_384,
+            string_bytes: 8192,
+            token_bytes: 8192,
+            client_bytes: 1024,
+            detail_bytes: 1024,
+            record_bytes: 32_768,
+            depth: 16,
+            tokens: 1024,
+        };
+        let decoded = skein_oauth::decode_record(&bytes, &limits).expect("pinned fields");
+        assert_eq!(decoded.key, 0);
+        assert_eq!(decoded.refresh_token.as_deref(), refresh);
+        assert_eq!(decoded.expires_at.as_secs(), 500);
+        let proof = converted.borrowed.finish(&guard).expect("after genuine settlement");
+        assert!(proof.source_unchanged && proof.credential_removed && proof.private_refresh_unusable);
+        assert_eq!(proof.private_refresh_empty, version == 2);
+    }
+    assert_eq!(std::fs::read(source.join("auth.json")).expect("read-only source"), original);
+    std::fs::write(source.join("auth.json"), synthetic_auth(170)).expect("early renewal source");
+    let refused = root.join("early-renewal");
+    assert!(
+        smith_bench::credential::smith(
+            &guard,
+            &source,
+            &refused,
+            skein_lib::Wall::from_nanos(100_000_000_000),
+            skein_lib::Duration::from_secs(20),
+            TokenShape::Legacy
+        )
+        .is_err()
+    );
+    assert!(!refused.exists(), "early renewal refuses before creating a private token directory");
+    std::fs::remove_dir_all(root).expect("fixture cleanup");
 }
