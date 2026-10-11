@@ -826,6 +826,22 @@ impl Visible {
     }
 }
 
+std::thread_local! {
+    static CHANGED_LINES: std::cell::RefCell<Vec<(Record, Vec<u8>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn changed_line(record: &Record) -> Vec<u8> {
+    CHANGED_LINES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, line)) = cache.iter().find(|(previous, _)| previous == record) {
+            return line.clone();
+        }
+        let line = bytes(std::slice::from_ref(record));
+        cache.push((record.clone(), line.clone()));
+        line
+    })
+}
+
 static VISIBLE_MAIN: std::sync::LazyLock<Visible> = std::sync::LazyLock::new(|| Visible::new(build_visible_budget()));
 
 static VISIBLE_CHILD: std::sync::LazyLock<Visible> = std::sync::LazyLock::new(|| Visible::new(build_visible_child()));
@@ -882,16 +898,28 @@ fn observe_against(records: &[Record], original: Option<&Visible>) -> Observer {
         .unwrap_or(4)
         .max(4);
     let limits = Limits { items, ..LIMITS };
-    let mut observer = Observer::new(&limits).expect("receiving bounds");
+    let mut lines = Vec::with_capacity(records.len());
     for record in records {
         let unchanged = original.and_then(|original| {
             original.records.iter().zip(&original.lines).find_map(|(value, line)| (value == record).then_some(line))
         });
         if let Some(line) = unchanged {
-            observer.feed(line).expect("byte-identical outside record");
+            lines.push(line.clone());
         } else {
-            observer.feed(&bytes(std::slice::from_ref(record))).expect("changed outside record");
+            // Equality includes every field and timestamp. A changed value
+            // always gets a fresh codec line; repeated identical controls only
+            // reuse those outside bytes, never the Reader's parsed records.
+            lines.push(changed_line(record));
         }
+    }
+    // The fixture's complete codec lines provide their joint receiving bound.
+    // Keep all three semantic caps and feed every outside byte through Reader;
+    // independent maxima need not allocate a Cartesian envelope for each case.
+    let ceiling =
+        u32::try_from(lines.iter().map(Vec::len).max().expect("fixture records")).expect("bounded fixture writer");
+    let mut observer = Observer::with_ceiling(&limits, ceiling).expect("writer-derived receiving bounds");
+    for line in &lines {
+        observer.feed(line).expect("exact outside record");
     }
     observer.finish().expect("complete framing");
     observer
