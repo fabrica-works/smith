@@ -372,8 +372,15 @@ when it is about one; and the kind's fields.
   `cache_write_tokens`; `output_tokens`; and `reasoning_tokens`, the part
   of the output spent on reasoning. Each is an integer, or null when the
   provider did not report it (skein's `llm.md`). A prompt's size is its
-  input, cache reads and cache writes. A total sums what was reported, and
-  is null only when nothing was.
+  input, cache reads and cache writes. A total sums what was reported,
+  including a response whose accounting the session refused, and is null
+  only when nothing was.
+- **A total past `u64`.** Totals add with checked arithmetic. A total
+  that would pass `u64` is told as null in that field, never saturated
+  or wrapped. That takes reported counts summing past 18 quintillion,
+  which only a broken provider sends. The session has already ended with
+  its typed usage overflow, which `run.completed`'s failure and an
+  `operator` notice name. The format's integers are not widened for it.
 - **completion failure:** `class` (`overloaded`, `rate_limited`,
   `exhausted`, `unavailable`, `timed_out`, `context_too_long`,
   `invalid`, `unauthorized`, `limit`, `protocol`, `cancelled`);
