@@ -178,7 +178,7 @@ impl Sinks {
             pending: Map::with_capacity(limits.conversations),
             writers: List::with_capacity(limits.destinations),
             line,
-            reserve: line.checked_mul(AUTHORITATIVE).expect("startup checked authoritative credit"),
+            reserve: authoritative_credit(limits, capture).expect("startup checked authoritative credit"),
             io_output,
             counts: [0; TYPES],
             ended: false,
@@ -445,7 +445,7 @@ impl Sinks {
             | Event::Notice(_)
             | Event::Budget(_) => self.capture.encoded(),
         };
-        let bytes = match smith_events::write(record, &capture, &self.limits.records)
+        let bytes = match smith_events::write_with_ceiling(record, &capture, &self.limits.records, self.line)
             .expect("typed sources fit startup's receiving bounds")
         {
             Some(bytes) => bytes,
@@ -475,9 +475,14 @@ impl Sinks {
         for index in 0..self.writers.len() {
             let loss = self.writers.get(index).expect("bounded destinations").loss;
             let record = ended_record(now, started, ended, self.emitted(), loss);
-            let bytes = smith_events::write(&record, &smith_events::Capture::None, &self.limits.records)
-                .expect("the settled end fits its checked record bound")
-                .expect("the process terminal survives every capture");
+            let bytes = smith_events::write_with_ceiling(
+                &record,
+                &smith_events::Capture::None,
+                &self.limits.records,
+                self.line,
+            )
+            .expect("the settled end fits its checked record bound")
+            .expect("the process terminal survives every capture");
             assert!(
                 u32::try_from(bytes.len()).expect("encoded end fits u32") <= self.line,
                 "settled end fits the source bound"
@@ -891,7 +896,7 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         }
     }
     let line = limits.line_ceiling(capture)?;
-    if limits.output < line.checked_mul(AUTHORITATIVE.checked_add(2)?)? {
+    if limits.output < output_bound(limits, capture)? {
         return None;
     }
     let writer = Queue::<Line>::worst_case(LINE_SLOTS)?.checked_add(u64::from(limits.output))?;
@@ -902,6 +907,17 @@ pub fn sinks_worst_case(limits: &SinkLimits, capture: Capture) -> Option<u64> {
         .checked_add(List::<smith_events::Count>::worst_case(u32::try_from(TYPES).ok()?)?)?
         .checked_add(u64::try_from(TYPES).ok()?.checked_mul(u64::from(limits.records.string))?)?
         .checked_add(crate::responses::worst_case(limits.conversations, limits.records.string)?)
+}
+
+fn authoritative_credit(limits: &SinkLimits, capture: Capture) -> Option<u32> {
+    // These three records never contain a provider call id/name or a prompt.
+    // The accepted answer is the only captured payload they can retain.
+    let metadata = smith_events::Limits { string: limits.metadata_string, ..limits.records };
+    largest_line(&metadata, capture, limits.answer_bytes, limits.metadata_string)?.checked_mul(AUTHORITATIVE)
+}
+
+pub(crate) fn output_bound(limits: &SinkLimits, capture: Capture) -> Option<u32> {
+    authoritative_credit(limits, capture)?.checked_add(limits.line_ceiling(capture)?.checked_mul(2)?)
 }
 
 #[cfg(test)]
@@ -926,6 +942,26 @@ pub(crate) mod tests {
             metadata_string: records.string,
             conversations: 1,
         }
+    }
+
+    #[test]
+    fn authoritative_credit_uses_its_own_metadata_and_answer_bounds() {
+        let mut limits = limits(2);
+        limits.records.string = 524_288;
+        let line = limits.line_ceiling(Capture::Everything).unwrap();
+        let authoritative = largest_line(
+            &smith_events::Limits { string: limits.metadata_string, ..limits.records },
+            Capture::Everything,
+            limits.answer_bytes,
+            limits.metadata_string,
+        )
+        .unwrap();
+        limits.output = authoritative.checked_mul(3).unwrap().checked_add(line.checked_mul(2).unwrap()).unwrap();
+        assert!(limits.output < line.checked_mul(5).unwrap(), "ordinary identities do not enter authoritative records");
+        assert!(sinks_worst_case(&limits, Capture::Everything).is_some());
+        let mut sinks = Sinks::new(&limits, Capture::Everything, 1);
+        sinks.add(Destination::Trace, Token::new(1), Delivery::Complete).unwrap();
+        assert!(sinks.takes(), "two ordinary records and every authoritative record have separate reserved credit");
     }
 
     #[test]

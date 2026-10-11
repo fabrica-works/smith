@@ -48,15 +48,15 @@ impl EventLimits {
         let content = u32::try_from(limits.domain.run.outcome_bytes).ok()?;
         let items = charter.run_result_fields.max(limits.domain.run.host_tools).max(18);
         let records = smith_events::Limits { string, content, items };
-        let line = crate::sinks::largest_line(&records, capture, content, metadata_string)?;
-        let sinks = SinkLimits {
+        let mut sinks = SinkLimits {
             destinations,
-            output: line.checked_mul(5)?,
+            output: 0,
             records,
             answer_bytes: content,
             metadata_string,
             conversations: limits.domain.run.conversations,
         };
+        sinks.output = crate::sinks::output_bound(&sinks, capture)?;
         crate::sinks::sinks_worst_case(&sinks, capture)?;
         Some(EventLimits { sinks, capture, write_deadline })
     }
