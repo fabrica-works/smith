@@ -278,7 +278,7 @@ fn budget_prose(world: &World, settings: &Settings, child_bill: u64) {
             run::facts::FactKind::Opened { kind: run::facts::Kind::Child { granted, .. }, .. } => {
                 child_open = Some((fact.at, granted));
             }
-            run::facts::FactKind::Returned { result: run::facts::Return::Answered { used }, .. } => {
+            run::facts::FactKind::Returned { result: run::facts::Return::Answered { used, .. }, .. } => {
                 child_return = Some((fact.at, used));
             }
             run::facts::FactKind::MessageRead { .. }

@@ -292,17 +292,13 @@ fn native_kind_facts_are_selected_without_changing_frozen_flag_records() {
     let returned = FactKind::Returned {
         run,
         call: Token::new(9),
-        result: Return::Answered { used: Used { turns: 1, time: Duration::from_millis(250), spend: 5 } },
+        result: Return::Answered { used: Used { turns: 1, time: Duration::from_millis(250), spend: 5 }, cut: 0 },
     };
     let mut observer = Observer::new(FactShape::Kinds);
-    for native in [main, child, standing, returned] {
+    for native in [main, child, standing] {
         let line = fact(&format!("Run {{ fact: {native:?} }}"));
         let observation = observer.observe_line(&line).expect("actual native Debug layout");
         assert!(observation.is_some());
-        if matches!(native, FactKind::Returned { .. }) {
-            assert!(matches!(&observation, Some(Observation::Fact { event: Event::RunReturned {
-                value: Value::Struct { name, fields }, .. }, .. }) if name == "Answered" && fields.contains_key("used")));
-        }
         if matches!(native, FactKind::Opened { kind: Kind::Child { .. }, .. }) {
             assert!(matches!(observation, Some(Observation::Fact { event: Event::ConversationOpened {
                 child: true, parent: Some(0), kind: Some(Value::Struct { name, .. }), .. }, .. }) if name == "Child"));
@@ -315,6 +311,16 @@ fn native_kind_facts_are_selected_without_changing_frozen_flag_records() {
                 || !line.contains("turns_set")
         );
     }
+    // The events-era carrier adds cut. The frozen Debug face still reads its
+    // original literal layout, and refuses the new field rather than guessing.
+    let current = fact(&format!("Run {{ fact: {returned:?} }}"));
+    assert!(parse_line_for(&current, FactShape::Kinds).is_err());
+    let frozen = fact(
+        "Run { fact: Returned { run: Token(0), call: Token(9), result: Answered { used: Used { turns: 1, time: Duration(250000000), spend: 5 } } } }",
+    );
+    let observation = observer.observe_line(&frozen).expect("frozen native return layout");
+    assert!(matches!(&observation, Some(Observation::Fact { event: Event::RunReturned {
+        value: Value::Struct { name, fields }, .. }, .. }) if name == "Answered" && fields.contains_key("used")));
     let legacy = fact("Run { fact: Opened { run: Token(0), conversation: Token(0), child: false } }");
     assert!(parse_line_for(&legacy, FactShape::Kinds).is_err());
     assert!(parse_line(&legacy).is_ok());

@@ -56,3 +56,14 @@ shape = "local-reserved"
 credential = "converted"
 record = "access-only"
 facts = "choices"
+
+# The writer derives these bounds from the phase-one control's native declarations.
+# Larger emitted values refuse at the receiving boundary; no override range is implied.
+[[face]]
+commit = "4735d7228a8f37c11f70de5f9ef277c1ff7bf4c2"
+face = "events"
+shape = "local-trace"
+credential = "converted"
+record = "access-only"
+facts = "choices"
+receiving = { string = 256000, content = 4096, items = 32, encoded_line = 3148863 }
