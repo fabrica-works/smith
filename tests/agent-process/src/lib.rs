@@ -253,6 +253,15 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
+    start_workspace_message(charter, turns, workspace, None)
+}
+
+pub(crate) fn start_workspace_message(
+    charter: &[u8],
+    turns: u32,
+    workspace: bool,
+    message: Option<&smith_channel::Message>,
+) -> skein_channel::Frame {
     let limits = smith_channel::CEILINGS;
     let window = smith_channel::Window::new(&limits, smith_channel::WindowParts { turns, bytes: 1_000_000_000 })
         .expect("window");
@@ -275,10 +284,14 @@ pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> sk
             .expect("grant"),
         )
         .expect("one grant");
+    let mut messages = List::with_capacity(u32::from(message.is_some()));
+    if let Some(message) = message {
+        messages.push(message.clone()).expect("one selected host message");
+    }
     let record = smith_channel::Start::new(
         &limits,
         smith_channel::StartParts {
-            messages: skein_lib::List::with_capacity(0),
+            messages,
             identity: None,
             activation: 1,
             charter: Box::from(charter),

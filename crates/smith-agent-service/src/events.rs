@@ -78,6 +78,7 @@ pub(crate) struct Producer {
     names: channel::Endpoints,
     efforts: Map<u32, Box<[u8]>>,
     calls: crate::calls::Book,
+    messages: crate::messages::Book,
     capture: Capture,
     origin: Option<Time>,
     start: Option<Start>,
@@ -127,6 +128,7 @@ impl Producer {
             names,
             efforts,
             calls: crate::calls::Book::new(&limits.domain.session),
+            messages: crate::messages::Book::new(limits, events.capture),
             capture: events.capture,
             origin: None,
             start: None,
@@ -145,6 +147,10 @@ impl Producer {
         self.origin = Some(now);
         self.sinks.record(&Record { t_ms: 0, event: Event::SessionStarted(header) });
         self.notice(now, smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()), None, None, None);
+    }
+
+    pub(crate) fn message(&mut self, name: Token, label: &[u8], text: &[u8]) {
+        self.messages.received(name, label, text);
     }
 
     pub(crate) fn starting(&mut self, start: &channel::DecodedStart) {
@@ -313,25 +319,9 @@ impl Producer {
                 self.sinks.record(&crate::budget_record(fact, origin, self.activation()).expect("matched budget fact"));
                 return;
             }
-            run::facts::FactKind::MessageReceived { run: _, name, bytes } => {
-                Event::MessageReceived(smith_events::MessageReceived {
-                    run: self.activation(),
-                    name: name.raw(),
-                    bytes,
-                    refused: None,
-                    label: None,
-                    text: None,
-                })
-            }
+            run::facts::FactKind::MessageReceived { run: _, name, bytes } => self.message_received(name, bytes, None),
             run::facts::FactKind::MessageRefused { run: _, name, bytes, reason } => {
-                Event::MessageReceived(smith_events::MessageReceived {
-                    run: self.activation(),
-                    name: name.raw(),
-                    bytes,
-                    refused: Some(message_refusal(reason)),
-                    label: None,
-                    text: None,
-                })
+                self.message_received(name, bytes, Some(message_refusal(reason)))
             }
             run::facts::FactKind::MessageRead { run: _, name, turn } => Event::MessageRead(smith_events::MessageRead {
                 run: self.activation(),
@@ -393,7 +383,23 @@ impl Producer {
         self.sinks.request(now, self.origin(), owner, prompt)
     }
 
+    fn message_received(&mut self, name: Token, bytes: u64, refused: Option<smith_events::MessageRefusal>) -> Event {
+        let (label, text) = match self.messages.take(name) {
+            Some(message) => (Some(message.label), Some(message.text)),
+            None => (None, None),
+        };
+        Event::MessageReceived(smith_events::MessageReceived {
+            run: self.activation(),
+            name: name.raw(),
+            bytes,
+            refused,
+            label,
+            text,
+        })
+    }
+
     pub(crate) fn answer(&mut self, now: Time, started: Time, answer: &run::Answer, read: Option<Token>) {
+        self.messages.clear();
         assert!(self.answer_at.is_none(), "one actual answer per invocation");
         self.answer_at = Some(now);
         let mut record = crate::answer_record(
@@ -468,6 +474,7 @@ fn message_refusal(reason: run::MessageRefusal) -> smith_events::MessageRefusal 
 pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
     let events = limits.events?;
     crate::sinks::sinks_worst_case(&events.sinks, events.capture)?
+        .checked_add(crate::messages::worst_case(limits, events.capture)?)?
         .checked_add(crate::calls::worst_case(&limits.domain.session, events.sinks.records.string)?)?
         .checked_add(channel::Endpoints::worst_case(limits.channel.endpoints, limits.channel.charter.llm_endpoint)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.channel.endpoints)?)?
@@ -510,6 +517,7 @@ mod tests {
                 names: channel::Endpoints::new(List::with_capacity(0)),
                 efforts: Map::with_capacity(0),
                 calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session),
+                messages: crate::messages::Book::disabled(),
                 capture: Capture::Calls,
                 origin: Some(Time::ZERO),
                 start: None,

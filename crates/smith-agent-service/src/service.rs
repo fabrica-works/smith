@@ -740,6 +740,11 @@ impl Service {
                 .expect("grant count was checked at Start");
         }
         self.run_started = self.domain_env.now;
+        if let Some(events) = &mut self.events {
+            for message in &start.messages {
+                events.message(message.name, &message.label, &message.text);
+            }
+        }
         self.domain_events.push(domain::Event::Start {
             messages: start.messages,
             reply_to: ReplyTo::new(Token::new(1)),
@@ -1345,6 +1350,9 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
         }
         channel::OpenEvent::Message { name, label, text } => {
             if let Some(run) = service.admitted {
+                if let Some(events) = &mut service.events {
+                    events.message(name, &label, &text);
+                }
                 service.domain_events.push(domain::Event::Message { run, name, label, text });
             } else {
                 service.pending_messages.push(PendingMessage { name, label, text });
@@ -1477,6 +1485,9 @@ fn domain_down(service: &mut Service) {
                 Some(message) => message,
                 None => break,
             };
+            if let Some(events) = &mut service.events {
+                events.message(name, &label, &text);
+            }
             service.domain_events.push(domain::Event::Message { run, name, label, text });
         }
     }

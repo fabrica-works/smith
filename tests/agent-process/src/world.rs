@@ -39,10 +39,11 @@ impl Parent {
         tracing: Option<(TraceCase, u32)>,
         window: u32,
         environment: bool,
+        message: Option<&smith_channel::Message>,
     ) -> Self {
         let mut peer = crate::host();
         if !hang_up {
-            peer.play(crate::start_workspace(charter, window, environment));
+            peer.play(crate::start_workspace_message(charter, window, environment, message));
         }
         let mut parent = Self {
             peer,
@@ -760,6 +761,7 @@ pub struct World {
     tracing: Option<(TraceCase, u32)>,
     environment: bool,
     records: Vec<smith_events::Record>,
+    message: Option<smith_channel::Message>,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -777,7 +779,19 @@ impl World {
             tracing: None,
             environment: false,
             records: Vec::new(),
+            message: None,
         }
+    }
+
+    /// Send this concrete message in the actual channel Start.
+    pub fn initial_message(&mut self, name: u64, label: &[u8], text: &[u8]) {
+        self.message = Some(
+            smith_channel::Message::new(
+                &smith_channel::CEILINGS,
+                smith_channel::MessageParts { name, label: label.into(), text: text.into() },
+            )
+            .expect("selected host message fits the real channel schema"),
+        );
     }
 
     /// Grant a shell over startup roots and ask the peer to call it once.
@@ -954,6 +968,7 @@ impl World {
                 self.tracing,
                 self.window,
                 self.environment,
+                self.message.as_ref(),
             )))
         });
         world.spawn(|| {

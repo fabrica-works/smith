@@ -179,3 +179,38 @@ fn a_real_child_joins_its_actual_opening_response_usage_and_enclosing_tool_termi
     assert_eq!(completed.omitted_bytes, 0, "short actual answer fits its tool cap");
     world.assert_agent_clean();
 }
+
+#[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the native source control selects one message receipt from the complete stream"
+)]
+fn initial_task_receipt_carries_the_actual_channel_label_and_text() {
+    let mut world = World::new(31, &charter());
+    world.initial_message(901, b"task", b"Read the guide. Keep \"quotes\" and a newline.\nALPHA");
+    world.observe_facts(TraceCase::Accepted, 4);
+    world.check_memory();
+    assert!(world.settle());
+    world.assert_event_conformance();
+    let receipts: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::MessageReceived(message) => Some(message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(receipts.len(), 1);
+    let message = receipts[0];
+    assert_eq!(message.name, 901);
+    assert_eq!(message.label.as_deref(), Some(b"task".as_slice()));
+    assert_eq!(message.text.as_deref(), Some(b"Read the guide. Keep \"quotes\" and a newline.\nALPHA".as_slice()));
+    assert_eq!(
+        message.bytes,
+        u64::try_from(b"task: Read the guide. Keep \"quotes\" and a newline.\nALPHA".len())
+            .expect("finite observed message bytes")
+    );
+    assert!(message.refused.is_none());
+    assert_eq!(terminal(&world).status, Status::Accepted);
+    world.assert_agent_clean();
+}

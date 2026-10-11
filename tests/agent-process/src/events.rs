@@ -111,7 +111,17 @@ pub fn check(records: &[Record]) {
                     .position(|started| *started == identity)
                     .expect("one actual call start before terminal");
                 calls.remove(index);
-                assert_eq!(call.result, None, "tool content belongs to02.6");
+                let line = smith_events::write(
+                    record,
+                    &smith_events::Capture::Everything,
+                    &crate::tracing::event_limits(&crate::limits()).sinks.records,
+                )
+                .expect("actual tool terminal fits its receiving bounds")
+                .expect("tool terminal is emitted");
+                assert!(
+                    !line.windows(b"\"result\":".len()).any(|part| part == b"\"result\":"),
+                    "tool.completed carries no pre-render result under the binding contract"
+                );
             }
             Event::CheckStarted(check) => {
                 assert!(!checks.contains(&check.run));
