@@ -185,6 +185,29 @@ impl World {
         self.run(&Job::Request(request, true))
     }
 
+    /// Abort a hanging check at the actual pre-spawn or post-spawn component boundary.
+    pub fn aborted_check(&mut self, owner: Token, after_spawn: bool) -> Token {
+        let before = self.spawns().len();
+        let terminal = self.run(&Job::AbortedCheck { owner, after_spawn });
+        let spawned = self.spawns().len().checked_sub(before).expect("spawn history grows");
+        assert!(spawned <= 1, "one admitted check process");
+        if after_spawn {
+            assert_eq!(spawned, 1, "post-spawn abort observed the native process");
+        }
+        match terminal {
+            ToDomain::Aborted { owner: ended } => {
+                assert_eq!(ended, owner);
+                ended
+            }
+            other @ (ToDomain::Done { .. }
+            | ToDomain::Read { .. }
+            | ToDomain::Probed { .. }
+            | ToDomain::Checked { .. }) => {
+                panic!("checks owe their abort terminal: {other:?}")
+            }
+        }
+    }
+
     /// Preserve the bounded child-event flood fixture at the component seam.
     pub fn flood(&mut self, owner: Token, bytes: &[u8], head: u32, tail: u32) -> ToDomain {
         assert!(bytes.len() <= 4096, "bounded flood fixture");
@@ -240,6 +263,7 @@ impl Drop for World {
 
 enum Job {
     Request(FromDomain, bool),
+    AbortedCheck { owner: Token, after_spawn: bool },
     Flood { owner: Token, bytes: Box<[u8]>, head: u32, tail: u32 },
     Listing { owner: Token, selected: Box<[u8]>, depth: tools::Depth, maximum: u32, bytes: u64 },
 }
@@ -255,7 +279,7 @@ impl Job {
                 | FromDomain::Check { owner, .. }
                 | FromDomain::Abort { owner } => *owner,
             },
-            Self::Flood { owner, .. } | Self::Listing { owner, .. } => *owner,
+            Self::AbortedCheck { owner, .. } | Self::Flood { owner, .. } | Self::Listing { owner, .. } => *owner,
         }
     }
     fn copy(&self) -> Self {
@@ -279,6 +303,9 @@ impl Job {
                 },
                 *cancel,
             ),
+            Self::AbortedCheck { owner, after_spawn } => {
+                Self::AbortedCheck { owner: *owner, after_spawn: *after_spawn }
+            }
             Self::Listing { owner, selected, depth, maximum, bytes } => Self::Listing {
                 owner: *owner,
                 selected: selected.clone(),
@@ -420,6 +447,7 @@ struct Application {
     offset: Time,
     job: Option<Job>,
     cancel_after_spawn: Option<Token>,
+    abort_after_spawn: Option<Token>,
     machine_env: Env<Limits>,
     process_env: Env<io::Limits>,
     below: Queue<Below>,
@@ -472,6 +500,7 @@ impl Application {
             offset,
             job: Some(job),
             cancel_after_spawn: None,
+            abort_after_spawn: None,
             machine_env: Env { now: offset, wall: Wall::EPOCH, limits },
             process_env: Env { now: offset, wall: Wall::EPOCH, limits: io_limits() },
             below: Queue::with_capacity(64),
@@ -688,6 +717,15 @@ impl Application {
                 &mut self.to_domain,
                 &mut self.below,
             );
+            if spawned.is_some() && spawned == self.abort_after_spawn {
+                let owner = self.abort_after_spawn.take().expect("issued abort owner");
+                self.component.from_domain(
+                    &self.machine_env,
+                    FromDomain::Abort { owner },
+                    &mut self.to_domain,
+                    &mut self.below,
+                );
+            }
             if spawned.is_some() && spawned == self.cancel_after_spawn {
                 let owner = self.cancel_after_spawn.take().expect("issued stop owner");
                 self.component.from_domain(
@@ -751,6 +789,34 @@ impl Host for Application {
                         });
                     }
                     self.component.from_domain(&self.machine_env, request, &mut self.to_domain, &mut self.below);
+                }
+                Job::AbortedCheck { owner, after_spawn } => {
+                    if after_spawn {
+                        self.abort_after_spawn = Some(owner);
+                    }
+                    self.component.from_domain(
+                        &self.machine_env,
+                        FromDomain::Check {
+                            owner,
+                            program: run::Place { root: self.root, path: Box::from(b"check-hang".as_slice()) },
+                            deadline: self.machine_env.now.saturating_add(Duration::from_secs(1)),
+                            tail: 8,
+                        },
+                        &mut self.to_domain,
+                        &mut self.below,
+                    );
+                    if !after_spawn {
+                        assert!(
+                            self.process_io.is_empty(),
+                            "abort is issued before native spawn; a queued spawn may still race it"
+                        );
+                        self.component.from_domain(
+                            &self.machine_env,
+                            FromDomain::Abort { owner },
+                            &mut self.to_domain,
+                            &mut self.below,
+                        );
+                    }
                 }
                 Job::Listing { owner, selected, depth, maximum, bytes } => {
                     let terminal = self.listing(owner, &selected, depth, maximum, bytes);

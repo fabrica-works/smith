@@ -9,5 +9,8 @@ publish.workspace = true
 [dependencies]
 skein-lib.workspace = true
 
+[dev-dependencies]
+smith-machine-world.workspace = true
+
 [lints]
 workspace = true

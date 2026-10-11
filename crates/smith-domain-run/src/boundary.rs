@@ -586,7 +586,7 @@ pub struct Ran {
     pub cut: u64,
 }
 
-/// How a check's process ended.
+/// How workspace checks ended, reported by IO or the run after their tree stopped.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Exit {
     /// It exited with `code`; zero passes.
@@ -600,6 +600,8 @@ pub enum Exit {
     TimedOut,
     /// It could not be started.
     Unstarted,
+    /// The run withdrew the checks, and their tree has stopped.
+    Cancelled,
 }
 
 /// Where a file is, for the run's own io: a repository's root, as io names

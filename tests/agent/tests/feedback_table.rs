@@ -178,6 +178,7 @@ fn every_delivery_reason_and_check_exit_is_visible() {
         (run::Exit::Signalled { signal: 15 }, "signalled"),
         (run::Exit::TimedOut, "timed-out"),
         (run::Exit::Unstarted, "unstarted"),
+        (run::Exit::Cancelled, "cancelled"),
     ] {
         rendered(
             run::Returned::ChecksFailed { repository: bytes(b"r"), ran: run::Ran { exit, output: bytes(b""), cut: 0 } },

@@ -385,6 +385,7 @@ fn render_exit(text: &mut Text, exit: run::Exit) {
         run::Exit::Signalled { .. } => text.put(b"signalled"),
         run::Exit::TimedOut => text.put(b"timed-out"),
         run::Exit::Unstarted => text.put(b"unstarted"),
+        run::Exit::Cancelled => text.put(b"cancelled"),
     }
 }
 

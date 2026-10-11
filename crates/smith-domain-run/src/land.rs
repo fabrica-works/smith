@@ -5,6 +5,7 @@
 //! waits throughout checks and submission; children have already returned.
 //! Before submission withdrawal aborts checks. Afterwards no cancellation is
 //! emitted: the bounded host terminal settles even during shutdown.
+//! A stopped check returns its retained withdrawal cause to the run for its terminal fact.
 
 use crate::boundary::{Exit, Place, Ran, Request, Returned};
 use crate::call::{self, Call, Withdrawal};
@@ -69,7 +70,9 @@ pub(crate) fn checked(
         Stage::Checking { check } => {
             let passed = match ran.exit {
                 Exit::Code { code: 0 } => true,
-                Exit::Code { .. } | Exit::Signalled { .. } | Exit::TimedOut | Exit::Unstarted => false,
+                Exit::Code { .. } | Exit::Signalled { .. } | Exit::TimedOut | Exit::Unstarted | Exit::Cancelled => {
+                    false
+                }
             };
             let required = match &run.charter.outcome.change {
                 Some(spec) => spec.checks_must_pass,
@@ -92,10 +95,16 @@ pub(crate) fn checked(
     }
 }
 
-pub(crate) fn aborted(landing: &mut Landing, owner: Token, out: &mut Queue<Request>) -> Settled {
+pub(crate) fn aborted(landing: &mut Landing, owner: Token, out: &mut Queue<Request>) -> Exit {
     let stage = mem::replace(&mut landing.stage, Stage::Closed);
     match stage {
-        Stage::Aborting { why } => back(owner, call::stopped(why), Settled::Cancelled, out),
+        Stage::Aborting { why } => {
+            back(owner, call::stopped(why), Settled::Cancelled, out);
+            match why {
+                Withdrawal::Withdrawn => Exit::Cancelled,
+                Withdrawal::Expired => Exit::TimedOut,
+            }
+        }
         Stage::Checking { .. } | Stage::Delivering | Stage::Closed => unreachable!("terminal follows an abort"),
     }
 }

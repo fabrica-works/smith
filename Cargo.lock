@@ -955,6 +955,7 @@ name = "smith-domain-run"
 version = "0.0.0"
 dependencies = [
  "skein-lib",
+ "smith-machine-world",
 ]
 
 [[package]]

@@ -4560,3 +4560,89 @@ fn no_final_turns_keeps_the_spend_trigger_when_the_next_maximum_cannot_fit() {
         crate::CompletionPermit::Denied(Exhausted::Spend)
     );
 }
+
+#[test]
+fn withdrawn_checks_tell_one_cancelled_terminal_before_or_after_spawn() {
+    for after_spawn in [false, true] {
+        let mut harness = Harness::new(LIMITS);
+        let (_, conversation) = harness.coding(1, 100);
+        drop(facts(&mut harness));
+        let owner = harness.land(conversation, 7);
+        assert_eq!(
+            harness.step(Event::Withdraw { conversation, call: Token::new(7) }).as_ref(),
+            [Request::Abort { owner }]
+        );
+        let mut machine = smith_machine_world::World::new(827, &[]);
+        let ended = machine.aborted_check(owner, after_spawn);
+        assert_eq!(harness.step(Event::Aborted { owner: ended }).as_ref(), [returned(7, Returned::Cancelled)]);
+        assert_eq!(harness.checks_ended, 1);
+        assert_check_fact_pair(&mut harness, b"Cancelled");
+        assert!(harness.step(Event::Withdraw { conversation, call: Token::new(7) }).is_empty());
+        assert!(facts(&mut harness).is_empty(), "settled withdrawal cannot make another terminal");
+        machine.settle();
+    }
+}
+
+#[test]
+fn expired_checks_tell_one_timed_out_terminal_before_or_after_spawn() {
+    for after_spawn in [false, true] {
+        let mut harness = Harness::new(LIMITS);
+        let (_, conversation) = harness.coding(1, 100);
+        drop(facts(&mut harness));
+        let deadline = Time::ZERO.saturating_add(Duration::from_secs(60));
+        let emitted = harness.step(finish_by(conversation, 7, Declared::Change(change()), deadline));
+        let [Request::Check { owner, .. }, Request::Checking { .. }] = emitted.as_ref() else {
+            panic!("checks start");
+        };
+        let owner = *owner;
+        harness.after(Duration::from_secs(60));
+        assert_eq!(harness.fire().as_ref(), [Request::Abort { owner }]);
+        assert!(!harness.domain.is_due(harness.env.now), "call deadline fires once");
+        let mut machine = smith_machine_world::World::new(828, &[]);
+        let ended = machine.aborted_check(owner, after_spawn);
+        assert_eq!(harness.step(Event::Aborted { owner: ended }).as_ref(), [returned(7, Returned::TimedOut)]);
+        assert_eq!(harness.checks_ended, 1);
+        assert_check_fact_pair(&mut harness, b"TimedOut");
+        machine.settle();
+    }
+}
+
+#[expect(
+    clippy::disallowed_macros,
+    reason = "programming-model.md10.2: test Debug comparison gives current-parent runtime RED without requiring the new enum variant"
+)]
+fn assert_check_fact_pair(harness: &mut Harness, expected: &[u8]) {
+    let mut records = List::<Box<[u8]>>::with_capacity(2);
+    let mut started_run = None;
+    for fact in facts(harness).as_ref() {
+        match fact {
+            Fact::CheckStarted { run, .. } => {
+                started_run = Some(*run);
+                records.push(Box::from(b"started".as_slice())).expect("one start and one terminal");
+            }
+            Fact::CheckFinished { run, exit } => {
+                assert_eq!(Some(*run), started_run, "terminal belongs to the actual started run");
+                records
+                    .push(alloc::format!("{exit:?}").into_bytes().into_boxed_slice())
+                    .expect("one start and one terminal");
+            }
+            Fact::MessageRead { .. }
+            | Fact::MessageFence { .. }
+            | Fact::MessageUnread { .. }
+            | Fact::MessageReceived { .. }
+            | Fact::MessageRefused { .. }
+            | Fact::Admitted { .. }
+            | Fact::Prepared { .. }
+            | Fact::Opened { .. }
+            | Fact::Budget { .. }
+            | Fact::Ended { .. }
+            | Fact::Called { .. }
+            | Fact::Returned { .. }
+            | Fact::Delivered { .. }
+            | Fact::Answered { .. } => {}
+        }
+    }
+    assert_eq!(records.len(), 2, "each real check start owes its terminal");
+    assert_eq!(records.get(0).expect("start").as_ref(), b"started");
+    assert_eq!(records.get(1).expect("terminal").as_ref(), expected);
+}

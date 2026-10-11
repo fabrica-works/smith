@@ -1209,11 +1209,12 @@ pub(crate) fn aborted(domain: &mut Domain, owner: Token, out: &mut Queue<Request
     let run = domain.runs.get(call.run).expect("a run outlives its checks");
     domain.facts.about(call.run.token());
     out.push(Request::ChecksEnded { host_run: run.host_name });
-    let settled = match &mut call.work {
+    let exit = match &mut call.work {
         Work::Landing(landing) => land::aborted(landing, call.owner, out),
         Work::Child(_) | Work::Host(_) => unreachable!("io and the host answer only a landing's requests"),
     };
-    settle(domain, id, settled, out);
+    domain.facts.push(FactKind::CheckFinished { run: call.run.token(), exit });
+    settle(domain, id, Settled::Cancelled, out);
 }
 
 pub(crate) fn delivered(domain: &mut Domain, owner: Token, delivery: Delivery, out: &mut Queue<Request>) {
