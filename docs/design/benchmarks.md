@@ -120,6 +120,12 @@ workspace, ending in one result (section 8). The kinds are a closed set:
 Only the offline tier is a test (section 14). The others are runs of
 `smith-bench`, by choice. Each tier is a suite file (section 5.3).
 
+The costs are estimates for planning, not gates. The offline tier's
+tests are held to the workspace's suite budgets (smith's
+`docs/development/workflow.md`, section 2), as every focused test is.
+A test sits with what it tests: a parser's beside the parsers, an
+adapter's among that adapter's tests.
+
 ### 4.2 A fix and its probe
 
 - **Proof comes before the merge.** A change merges, and counts as done,
