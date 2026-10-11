@@ -21,11 +21,19 @@ pub(super) struct Tracing {
     next: u64,
     started: bool,
     pub(super) channel_loss: u64,
+    capture: agent::sinks::Capture,
 }
 
 impl Tracing {
-    pub(super) fn new(mut configuration: agent::Config, inherited: &skein_world::Inherited) -> Self {
-        configuration.limits.events = Some(event_limits(&configuration.limits));
+    pub(super) fn new(
+        mut configuration: agent::Config,
+        inherited: &skein_world::Inherited,
+        capture: agent::sinks::Capture,
+    ) -> Self {
+        configuration.limits.events = Some(
+            agent::EventLimits::derive(&configuration.limits, capture, 1, 0, skein_lib::Duration::from_secs(1))
+                .expect("world event bounds"),
+        );
         let queue = configuration.limits.queue;
         let memory = agent::worst_case(&configuration.limits, &configuration.llm_endpoints)
             .expect("bounded actual service")
@@ -66,6 +74,7 @@ impl Tracing {
             next: u64::MAX - 1,
             started: false,
             channel_loss: 0,
+            capture,
         }
     }
 
@@ -114,7 +123,7 @@ impl Host for Tracing {
                     containment: smith_events::Containment::Groups,
                     pid: 101,
                     profile: b"standard".as_slice().into(),
-                    capture: smith_events::Capture::Everything,
+                    capture: self.capture.encoded(),
                     delivery: smith_events::Delivery::Complete,
                     versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
                     limits: List::with_capacity(0),

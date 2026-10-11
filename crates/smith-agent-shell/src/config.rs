@@ -1085,6 +1085,118 @@ mod tests {
         })
     }
 
+    fn assert_native_prompt_line(line: &[u8], native: &shared::Prompt, text: &[u8], credential: &shared::Credential) {
+        // Native conformance already feeds real append bytes through Reader.
+        // At the largest writer bound use a separate JSON implementation;
+        // this does not charge or re-test the consumer's tokenizer machinery.
+        let decoded: serde_json::Value = serde_json::from_slice(line).expect("independent whole-line JSON");
+        let prompt = &decoded["prompt"];
+        assert_eq!(prompt["system"], "native system", "the actual native system is emitted");
+        let messages = prompt["messages"].as_array().expect("ordered message array");
+        assert_eq!(messages.len(), native.messages.len(), "every native source message survives");
+        let expected = std::str::from_utf8(text).expect("native admitted UTF8");
+        for message in messages {
+            assert_eq!(message["role"], "user", "native role survives");
+            let blocks = message["blocks"].as_array().expect("ordered block array");
+            assert_eq!(blocks.len(), 1, "one actual native block per message");
+            assert_eq!(blocks[0]["type"], "text", "actual native text kind");
+            assert_eq!(blocks[0]["text"], expected, "every escaped native payload survives");
+        }
+        assert!(
+            !std::str::from_utf8(line)
+                .expect("JSON UTF8")
+                .contains(std::str::from_utf8(&credential.access_token).expect("fixture access UTF8")),
+            "grant access bytes never enter content"
+        );
+        assert!(
+            !std::str::from_utf8(line)
+                .expect("JSON UTF8")
+                .contains(std::str::from_utf8(&credential.account_id).expect("fixture account UTF8")),
+            "grant account bytes never enter content"
+        );
+    }
+
+    #[test]
+    fn native_validated_dense_prompts_fit_the_actual_joint_receiving_ceiling() {
+        let configured = parse_value(&product_document()).expect("actual product startup");
+        let client = configured.service.limits.llm.adapter.client;
+        let events = configured.service.limits.events.expect("actual product destination");
+        let ceiling = events.sinks.line_ceiling(Capture::Everything).expect("joint ceiling");
+        let credential = shared::Credential {
+            access_token: b"secret-prompt-bound-token".as_slice().into(),
+            account_id: b"secret-prompt-bound-account".as_slice().into(),
+        };
+        for dense in [true, false] {
+            let count = if dense { client.history_items } else { 8 };
+            let text = if dense { b"x".as_slice().into() } else { vec![0; 256_000].into_boxed_slice() };
+            let native = shared::Prompt {
+                model: b"gpt-6-luna".as_slice().into(),
+                instructions: b"native system".as_slice().into(),
+                tools: Box::new([]),
+                choice: shared::ToolChoice::None,
+                messages: (0..count)
+                    .map(|_| shared::Message {
+                        role: shared::Role::User,
+                        content: Box::new([shared::Block::Text { text: text.clone(), replay: None }]),
+                    })
+                    .collect(),
+                reasoning_effort: None,
+                affinity: None,
+                max_output_tokens: None,
+            };
+            let measured = shared::client::measure(&native, &credential, &shared::Endpoint::codex(), &client)
+                .expect("the actual native writer admits the complete source payload");
+            assert!(measured.body <= client.request, "native body stays within its owning cap");
+            let mut messages = List::with_capacity(count);
+            for _ in 0..count {
+                let mut blocks = List::with_capacity(1);
+                blocks.push(smith_events::Block::Text { text: text.clone() }).expect("one actual block");
+                messages
+                    .push(smith_events::Message { role: smith_events::Role::User, blocks })
+                    .expect("actual admitted history");
+            }
+            let record = smith_events::Record {
+                t_ms: u64::MAX,
+                event: smith_events::Event::ResponseStarted(smith_events::ResponseStarted {
+                    run: u64::MAX,
+                    conversation: u64::MAX,
+                    response: u64::MAX,
+                    turn: u64::MAX,
+                    attempt: u64::MAX,
+                    window: u64::MAX,
+                    model: smith_events::Model {
+                        endpoint: b"codex".as_slice().into(),
+                        model: native.model.clone(),
+                        window_tokens: 272_000,
+                        output_tokens: 32_000,
+                        effort: Some(b"low".as_slice().into()),
+                    },
+                    messages: u64::from(count),
+                    output_tokens: 32_000,
+                    tool_choice: smith_events::ToolChoice::None,
+                    prompt: Some(smith_events::Prompt {
+                        system: Some(native.instructions.clone()),
+                        tools: Some(List::with_capacity(0)),
+                        messages,
+                    }),
+                }),
+            };
+            let line = smith_events::write_with_ceiling(
+                &record,
+                &smith_events::Capture::Everything,
+                &events.sinks.records,
+                ceiling,
+            )
+            .expect("source-admitted prompt fits both semantic and joint caps")
+            .expect("actual response start is emitted");
+            assert!(
+                line.len() > if dense { 1_000_000 } else { 12_000_000 },
+                "exercise dense framing and escaped payload maxima"
+            );
+            assert_native_prompt_line(&line, &native, &text, &credential);
+        }
+    }
+
     #[test]
     #[expect(clippy::too_many_lines, reason = "one startup-bound fixture records every concrete owning layer")]
     fn product_values_pass_every_startup_check_and_fit_complete_memory() {

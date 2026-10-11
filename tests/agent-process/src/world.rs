@@ -32,6 +32,7 @@ struct Parent {
 }
 
 impl Parent {
+    #[expect(clippy::too_many_arguments, reason = "ordinary scenario harness supplies independent startup inputs")]
     fn new(
         root: Fd,
         charter: &[u8],
@@ -40,6 +41,7 @@ impl Parent {
         window: u32,
         environment: bool,
         message: Option<&smith_channel::Message>,
+        capture: smith_agent_service::sinks::Capture,
     ) -> Self {
         let mut peer = crate::host();
         if !hang_up {
@@ -77,6 +79,13 @@ impl Parent {
                             Box::new([
                                 Box::new([b'0' + case.number()]) as Box<[u8]>,
                                 frames.to_string().into_bytes().into_boxed_slice(),
+                                match capture {
+                                    smith_agent_service::sinks::Capture::None => Box::from(b"none".as_slice()),
+                                    smith_agent_service::sinks::Capture::Calls => Box::from(b"calls".as_slice()),
+                                    smith_agent_service::sinks::Capture::Everything => {
+                                        Box::from(b"everything".as_slice())
+                                    }
+                                },
                             ])
                         },
                     )
@@ -364,7 +373,13 @@ fn make_tracing(spawn: &Spawn, inherited: &Inherited) -> Proc {
     let mut configuration = crate::configuration();
     configuration.limits.channel.channel.output_frames =
         std::str::from_utf8(&spawn.args[1]).expect("frame argument").parse().expect("frame allowance");
-    Proc::Tracing(Box::new(crate::tracing::Tracing::new(configuration, inherited)))
+    let capture = match spawn.args[2].as_ref() {
+        b"none" => smith_agent_service::sinks::Capture::None,
+        b"calls" => smith_agent_service::sinks::Capture::Calls,
+        b"everything" => smith_agent_service::sinks::Capture::Everything,
+        _ => panic!("selected native capture policy"),
+    };
+    Proc::Tracing(Box::new(crate::tracing::Tracing::new(configuration, inherited, capture)))
 }
 
 fn unused_roots(spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
@@ -372,7 +387,7 @@ fn unused_roots(spawn: &Spawn) -> Vec<skein_world::StartupRoot> {
         .into_iter()
         .map(|name| skein_world::StartupRoot { name: name.as_slice().into(), path: name.as_slice().into() })
         .collect();
-    if spawn.args.len() == 2 {
+    if spawn.args.len() == 3 {
         roots.push(skein_world::StartupRoot {
             name: b"event-trace".as_slice().into(),
             path: b"event-trace".as_slice().into(),
@@ -434,8 +449,10 @@ fn read_records(machine: &mut Machine) -> Vec<smith_events::Record> {
         let bytes = machine.files.read(file, 0, size).expect("read actual trace file");
         machine.files.close(file);
         machine.files.close(root);
-        let mut reader = smith_events::Reader::new(&crate::tracing::event_limits(&crate::limits()).sinks.records)
-            .expect("actual receiving bound");
+        let events = crate::tracing::event_limits(&crate::limits());
+        let ceiling = events.sinks.line_ceiling(events.capture).expect("actual producer line ceiling");
+        let mut reader = smith_events::Reader::with_ceiling(&events.sinks.records, ceiling)
+            .expect("actual receiving bound and aggregate line ceiling");
         let mut offset = 0;
         while offset < bytes.len() {
             let line = reader.feed(&bytes[offset..]).expect("valid event stream");
@@ -762,6 +779,7 @@ pub struct World {
     environment: bool,
     records: Vec<smith_events::Record>,
     message: Option<smith_channel::Message>,
+    capture: smith_agent_service::sinks::Capture,
 }
 impl World {
     /// Prepare one Start; the harness owns startup and settlement.
@@ -780,6 +798,7 @@ impl World {
             environment: false,
             records: Vec::new(),
             message: None,
+            capture: smith_agent_service::sinks::Capture::Everything,
         }
     }
 
@@ -792,6 +811,11 @@ impl World {
             )
             .expect("selected host message fits the real channel schema"),
         );
+    }
+
+    /// Select the actual event destination's capture policy before spawning.
+    pub fn capture(&mut self, capture: smith_agent_service::sinks::Capture) {
+        self.capture = capture;
     }
 
     /// Grant a shell over startup roots and ask the peer to call it once.
@@ -969,6 +993,7 @@ impl World {
                 self.window,
                 self.environment,
                 self.message.as_ref(),
+                self.capture,
             )))
         });
         world.spawn(|| {

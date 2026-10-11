@@ -77,8 +77,12 @@ pub struct SinkLimits {
     pub metadata_string: u32,
     /// Entries in authoritative metadata lists, independently of content blocks.
     pub metadata_items: u32,
+    /// Largest accepted answer or native failure detail, excluding prompt payload.
+    pub scalar_content: u32,
     /// Joint line bound for actual observed content, including its envelope and newline.
     pub observation_line: u32,
+    /// Captured payload and block framing beyond two scalar records from one fact.
+    pub fact_extra: u32,
     pub conversations: u32,
 }
 
@@ -87,7 +91,8 @@ impl SinkLimits {
     /// Receivers carry this value alongside the independent semantic record caps.
     #[must_use]
     pub fn line_ceiling(&self, capture: Capture) -> Option<u32> {
-        let metadata = smith_events::Limits { items: self.metadata_items, ..self.records };
+        let metadata =
+            smith_events::Limits { content: self.scalar_content, items: self.metadata_items, ..self.records };
         let scalar = largest_line(&metadata, capture, self.answer_bytes, self.metadata_string)?;
         match capture {
             Capture::None => Some(scalar),
@@ -162,6 +167,7 @@ pub struct Sinks {
     writers: List<Writer>,
     line: u32,
     reserve: u32,
+    ordinary: u32,
     /// IO's actual output cap: a full-credit grant proves the previous chunk drained.
     io_output: u32,
     counts: [u64; TYPES],
@@ -188,6 +194,7 @@ impl Sinks {
             writers: List::with_capacity(limits.destinations),
             line,
             reserve: authoritative_credit(limits, capture).expect("startup checked authoritative credit"),
+            ordinary: ordinary_credit(limits, capture).expect("startup checked one observation or two fact records"),
             io_output,
             counts: [0; TYPES],
             ended: false,
@@ -282,12 +289,8 @@ impl Sinks {
         for writer in &self.writers {
             match writer.delivery {
                 Delivery::Complete if !writer.abandoned && !writer.ended => {
-                    if !room(
-                        writer,
-                        self.limits.output,
-                        self.reserve,
-                        self.line.checked_mul(2).expect("startup checked two fact records"),
-                    ) || writer.lines.room() < AUTHORITATIVE.checked_add(2).expect("bounded fact reserve")
+                    if !room(writer, self.limits.output, self.reserve, self.ordinary)
+                        || writer.lines.room() < AUTHORITATIVE.checked_add(2).expect("bounded fact reserve")
                     {
                         return false;
                     }
@@ -669,7 +672,9 @@ fn offer(writer: &mut Writer, bytes: Box<[u8]>, authoritative: bool, output: u32
         return;
     }
     assert!(!writer.ended, "no record follows session.ended");
-    if !authoritative && !room(writer, output, reserve, line) {
+    let length = u32::try_from(bytes.len()).expect("a record fits its checked bound");
+    assert!(length <= line, "the offered record fits the checked line ceiling");
+    if !authoritative && !room(writer, output, reserve, length) {
         match writer.delivery {
             Delivery::Complete => unreachable!("the owner checks takes before draining a fact"),
             Delivery::BestEffort => {
@@ -678,7 +683,6 @@ fn offer(writer: &mut Writer, bytes: Box<[u8]>, authoritative: bool, output: u32
             }
         }
     }
-    let length = u32::try_from(bytes.len()).expect("a record fits its checked bound");
     writer.held = writer.held.checked_add(length).expect("startup checked retained byte credit");
     assert!(writer.held <= output, "authoritative room was reserved before the run");
     writer.lines.push(Line { bytes, sent: 0 });
@@ -940,7 +944,21 @@ fn authoritative_credit(limits: &SinkLimits, capture: Capture) -> Option<u32> {
 }
 
 pub(crate) fn output_bound(limits: &SinkLimits, capture: Capture) -> Option<u32> {
-    authoritative_credit(limits, capture)?.checked_add(limits.line_ceiling(capture)?.checked_mul(2)?)
+    authoritative_credit(limits, capture)?.checked_add(ordinary_credit(limits, capture)?)
+}
+
+fn ordinary_credit(limits: &SinkLimits, capture: Capture) -> Option<u32> {
+    // A prompt or live delta makes one record. A fact can make two records,
+    // with one response completion's content, never two held prompts.
+    let metadata =
+        smith_events::Limits { content: limits.scalar_content, items: limits.metadata_items, ..limits.records };
+    let scalar = largest_line(&metadata, capture, limits.answer_bytes, limits.metadata_string)?;
+    let extra = match capture {
+        Capture::None => 0,
+        Capture::Calls | Capture::Everything => limits.fact_extra,
+    };
+    let pair = scalar.checked_mul(2)?.checked_add(extra)?;
+    Some(pair.max(limits.line_ceiling(capture)?))
 }
 
 #[cfg(test)]
@@ -964,7 +982,9 @@ pub(crate) mod tests {
             answer_bytes: records.content,
             metadata_string: records.string,
             metadata_items: records.items,
+            scalar_content: records.content,
             observation_line: 0,
+            fact_extra: 0,
             conversations: 1,
         }
     }
