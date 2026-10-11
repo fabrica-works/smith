@@ -64,6 +64,13 @@ fn overrides(
 ) -> Result<(), String> {
     for (name, value) in fields {
         let value = serde_json::to_value(value).map_err(|error| error.to_string())?;
+        if name == "model" {
+            if value.as_str().is_none_or(|name| name.trim().is_empty()) {
+                return Err("Smith task override model requires a nonempty string".into());
+            }
+            settings["models"][0]["name"] = value;
+            continue;
+        }
         if value.as_u64().is_none() {
             return Err(format!("Smith task override {name} requires an unsigned integer"));
         }
@@ -238,6 +245,21 @@ mod tests {
     fn native_shapes_keep_task_deadlines_environment_prices_and_named_overrides() {
         one_turn_refusal_reaches_the_product_with_the_default_reserve();
         native_shape_cases();
+    }
+
+    #[test]
+    fn unknown_model_overrides_are_strings_and_reach_the_provider_declaration() {
+        let mut settings = json!({"models":[{"name":"configured-model"}]});
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert("model".into(), toml::Value::String("smith-bench-nonexistent-model".into()));
+        overrides(Shape::LocalReserved, &mut settings, &fields).expect("provider owns unknown model rejection");
+        assert_eq!(settings["models"][0]["name"], "smith-bench-nonexistent-model");
+        for value in [toml::Value::Integer(1), toml::Value::String(" ".into())] {
+            fields.insert("model".into(), value);
+            assert!(
+                overrides(Shape::LocalReserved, &mut settings, &fields).expect_err("model type/name").contains("model")
+            );
+        }
     }
 
     fn native_shape_cases() {
