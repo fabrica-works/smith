@@ -15,7 +15,7 @@ use crate::{
     Authority, Call, Domain, Done, Effect, Entry, Event, Exit, Expect, Fault, Grants, Hit, Kind, Limits, Name, Op,
     Outcome, Part, Path, Place, Refusal, Repo, Request, Root, Var, Version, effect, max_out, step, worst_case,
 };
-use crate::{Fact, Tool, Verdict};
+use crate::{FactKind as Fact, Tool, Verdict};
 
 const LIMITS: Limits = Limits {
     kits: 2,
@@ -44,14 +44,29 @@ const ALL: Grants = Grants { inspect: true, modify: true, shell: true };
 
 /// The domain, its environment, and room for one step's output.
 struct Harness {
+    observed: Queue<crate::facts::Fact>,
     domain: Domain,
     env: Env<Limits>,
     out: Queue<Request>,
 }
 
 impl Harness {
+    fn keep_facts(&mut self) {
+        while let Some(fact) = self.domain.pop_fact() {
+            self.observed.push(fact);
+        }
+    }
+
+    fn pop_fact(&mut self) -> Option<crate::facts::Fact> {
+        match self.observed.pop() {
+            Some(fact) => Some(fact),
+            None => self.domain.pop_fact(),
+        }
+    }
+
     fn new(limits: Limits) -> Harness {
         Harness {
+            observed: Queue::with_capacity(4096),
             domain: Domain::new(&limits),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             out: Queue::with_capacity(max_out(&limits)),
@@ -59,6 +74,7 @@ impl Harness {
     }
 
     fn step(&mut self, event: Event) -> Option<Request> {
+        self.keep_facts();
         step(&mut self.domain, &self.env, event, &mut self.out);
         let request = self.out.pop();
         assert!(self.out.is_empty(), "one request at most");
@@ -67,6 +83,7 @@ impl Harness {
 
     /// Every request one event emits.
     fn emit(&mut self, event: Event) -> Box<[Request]> {
+        self.keep_facts();
         step(&mut self.domain, &self.env, event, &mut self.out);
         let max_out = max_out(&self.env.limits);
         let mut requests = List::with_capacity(max_out);
@@ -83,7 +100,7 @@ impl Harness {
     fn send(&mut self, kit: Token, name: u64, call: Call) -> Option<Request> {
         let reply_to = ReplyTo::new(Token::new(name));
         let deadline = self.env.now.saturating_add(Duration::from_secs(60));
-        self.step(Event::Call { kit, reply_to, call, deadline })
+        self.step(Event::Call { kit, observation: None, reply_to, call, deadline })
     }
 
     /// Sends `call` to `kit`, which asks io for an operation, and returns it.
@@ -139,7 +156,7 @@ impl Harness {
     fn call(&mut self, kit: Token, call: Call) -> Outcome {
         let reply_to = ReplyTo::new(Token::new(99));
         let deadline = Time::ZERO.saturating_add(Duration::from_secs(60));
-        match self.step(Event::Call { kit, reply_to, call, deadline }) {
+        match self.step(Event::Call { kit, observation: None, reply_to, call, deadline }) {
             Some(Request::Answer { to, outcome }) => {
                 assert_eq!(to.into_token(), Token::new(99));
                 outcome
@@ -607,12 +624,13 @@ fn a_call_past_its_deadline_times_out_at_the_entrance() {
     let kit = h.open(1, authority(ALL));
     h.env.now = Time::ZERO.saturating_add(Duration::from_secs(5));
     let reply_to = ReplyTo::new(Token::new(1));
-    let call = Event::Call { kit, reply_to, call: read(b"a"), deadline: h.env.now };
+    let call = Event::Call { kit, observation: None, reply_to, call: read(b"a"), deadline: h.env.now };
     let answer = h.step(call);
     assert_eq!(answer, Some(Request::Answer { to: ReplyTo::new(Token::new(1)), outcome: Outcome::TimedOut }));
     // A call due sooner than the tools' own limit keeps its own deadline.
     let soon = h.env.now.saturating_add(Duration::from_secs(1));
-    let call = Event::Call { kit, reply_to: ReplyTo::new(Token::new(2)), call: read(b"a"), deadline: soon };
+    let call =
+        Event::Call { kit, observation: None, reply_to: ReplyTo::new(Token::new(2)), call: read(b"a"), deadline: soon };
     match h.step(call) {
         Some(Request::Io { deadline, .. }) => assert_eq!(deadline, soon),
         other => panic!("expected an operation, not {other:?}"),
@@ -955,7 +973,7 @@ fn spawned(h: &mut Harness, kit: Token, timeout: Option<Duration>) -> (Token, Op
     let reply_to = ReplyTo::new(Token::new(1));
     let call = Call::Shell { command: bytes(b"cargo test"), timeout };
     let deadline = h.env.now.saturating_add(Duration::from_secs(3600));
-    match h.step(Event::Call { kit, reply_to, call, deadline }) {
+    match h.step(Event::Call { kit, observation: None, reply_to, call, deadline }) {
         Some(Request::Io { owner, op, deadline }) => (owner, op, deadline),
         other => panic!("expected a spawn, not {other:?}"),
     }
@@ -1003,7 +1021,7 @@ fn a_command_runs_as_long_as_it_asks_within_the_tools_limit() {
     // The call's own deadline holds over both.
     let reply_to = ReplyTo::new(Token::new(1));
     let call = Call::Shell { command: bytes(b"sleep 9"), timeout: Some(Duration::from_secs(5)) };
-    match h.step(Event::Call { kit, reply_to, call, deadline: at(2) }) {
+    match h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(2) }) {
         Some(Request::Io { deadline, .. }) => assert_eq!(deadline, at(2)),
         other => panic!("expected a spawn, not {other:?}"),
     }
@@ -1063,7 +1081,8 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
     let kit = h.open(1, authority(ALL));
     let reply_to = ReplyTo::new(Token::new(1));
     let call = Call::Search { path: path(b"src"), pattern: bytes(b"fn"), glob: Some(bytes(b"*.rs")) };
-    let (owner, op, deadline) = match h.step(Event::Call { kit, reply_to, call, deadline: at(3600) }) {
+    let (owner, op, deadline) = match h.step(Event::Call { kit, observation: None, reply_to, call, deadline: at(3600) })
+    {
         Some(Request::Io { owner, op, deadline }) => (owner, op, deadline),
         other => panic!("expected a search, not {other:?}"),
     };
@@ -1122,8 +1141,8 @@ fn a_search_asks_io_for_bounded_hits_and_answers_with_them() {
 fn told(h: &mut Harness) -> List<Fact> {
     let mut facts = List::with_capacity(LIMITS.facts);
     for _ in 0..LIMITS.facts {
-        if let Some(fact) = h.domain.pop_fact() {
-            facts.push(fact).expect("room for every fact");
+        if let Some(fact) = h.pop_fact() {
+            facts.push(fact.kind).expect("room for every fact");
         }
     }
     facts
@@ -1157,14 +1176,40 @@ fn a_kit_tells_what_happens_as_facts() {
 }
 
 #[test]
-fn facts_that_do_not_fit_are_counted_and_change_nothing() {
-    let mut h = Harness::new(Limits { facts: 1, ..LIMITS });
+fn a_minimum_fact_reserve_keeps_every_native_entrance_observation() {
+    assert!(worst_case(&Limits { facts: 1, ..LIMITS }).is_none());
+    let mut h = Harness::new(Limits { facts: crate::max_facts(&LIMITS), ..LIMITS });
     let kit = h.open(5, authority(ALL));
-    assert_eq!(h.call(kit, read(b"/etc/passwd")), Outcome::Outside, "a lost fact changes no answer");
+    assert!(h.domain.facts_room() < crate::max_facts(&LIMITS));
+    assert_eq!(h.call(kit, read(b"/etc/passwd")), Outcome::Outside);
     assert_eq!(h.step(Event::Close { kit }), Some(Request::Closed { session: Token::new(5) }));
-    assert_eq!(h.domain.pop_fact(), Some(Fact::Opened { session: Token::new(5) }));
-    assert_eq!(h.domain.pop_fact(), None);
-    assert_eq!(h.domain.facts_lost(), 2);
+    assert_eq!(h.observed.len() + h.env.limits.facts - h.domain.facts_room(), 3);
+    assert_eq!(told(&mut h).len(), 3);
+}
+
+#[test]
+fn the_last_cancelled_operation_fills_the_complete_two_fact_reserve() {
+    let mut h = Harness::new(Limits { facts: crate::max_facts(&LIMITS), ..LIMITS });
+    let kit = h.open(5, authority(ALL));
+    let (owner, _) = h.start(kit, 1, read(b"src/lib.rs"));
+    drop(h.emit(Event::Close { kit }));
+    h.keep_facts();
+    let before = h.observed.len();
+    drop(h.emit(Event::Done { owner, done: Done::Cancelled }));
+    assert_eq!(h.domain.facts_room(), 0, "the terminal uses its complete reserved output");
+    h.keep_facts();
+    assert_eq!(h.observed.len() - before, 2);
+    let mut tail = List::with_capacity(2);
+    for fact in h.observed.iter().skip(usize::try_from(before).expect("bounded observed history")) {
+        tail.push(fact.kind).expect("two terminal observations");
+    }
+    assert_eq!(
+        tail.as_slice(),
+        &[
+            Fact::Answered { session: Token::new(5), tool: Tool::Read, verdict: Verdict::Cancelled, bytes: 0 },
+            Fact::Closed { session: Token::new(5) },
+        ]
+    );
 }
 
 #[test]
@@ -1193,4 +1238,67 @@ fn raw_paths_are_bounded_before_normalisation_erases_components() {
     assert_eq!(path::normalise(&[], &parents, 64), None);
     let exact = Path { absolute: true, parts: Box::new([const { Part::Current }; 32]) };
     assert_eq!(path::normalise(&[], &exact, 63), Some(Box::from(&b""[..])));
+}
+
+#[test]
+fn fact_emission_times_and_call_context_survive_a_delayed_drain() {
+    let mut h = Harness::new(LIMITS);
+    h.env.now = Time::from_nanos(7);
+    let kit = h.open(5, authority(ALL));
+    h.env.now = Time::from_nanos(11);
+    let info = crate::CallInfo { owner: Token::new(71), effect: Effect::Read, deadline: at(20), input_bytes: 19 };
+    let request = h.step(Event::Call {
+        kit,
+        reply_to: ReplyTo::new(info.owner),
+        observation: Some(info),
+        call: read(b"a"),
+        deadline: info.deadline,
+    });
+    let Some(Request::Io { owner, .. }) = request else { panic!("read starts") };
+    h.env.now = Time::from_nanos(13);
+    drop(h.emit(Event::Close { kit }));
+    h.env.now = Time::from_nanos(17);
+    drop(h.emit(Event::Done { owner, done: Done::Cancelled }));
+    h.env.now = Time::from_nanos(99);
+    let facts = observed_facts(&mut h);
+    assert_eq!(fact_times(&facts).as_ref(), [7, 11, 13, 17, 17].map(Time::from_nanos));
+    assert_eq!(facts[1].call, Some(info));
+    assert_eq!(facts[3].call, Some(info));
+    assert_eq!(
+        facts[3].kind,
+        Fact::Answered { session: Token::new(5), tool: Tool::Read, verdict: Verdict::Cancelled, bytes: 0 }
+    );
+    let mut invalid = authority(ALL);
+    invalid.env = Box::new([var(b"A=B", b"")]);
+    drop(h.step(Event::Open { session: Token::new(6), authority: invalid }));
+    assert_eq!(h.pop_fact().expect("refused fact").at, h.env.now);
+}
+
+fn observed_facts(harness: &mut Harness) -> Box<[crate::Fact]> {
+    let mut facts = List::with_capacity(LIMITS.facts);
+    for _ in 0..LIMITS.facts {
+        if let Some(fact) = harness.pop_fact() {
+            facts.push(fact).expect("room for all observations");
+        }
+    }
+    facts.into_boxed()
+}
+
+fn fact_times(facts: &[crate::Fact]) -> Box<[Time]> {
+    let mut times = List::with_capacity(LIMITS.facts);
+    for fact in facts {
+        times.push(fact.at).expect("room for all observations");
+    }
+    times.into_boxed()
+}
+
+#[test]
+fn file_calls_on_the_directory_itself_answer_without_io() {
+    for spelling in [&b"."[..], &b""[..], &b"/work/temper"[..], &b"vendor/lib"[..], &b"/work/docs"[..]] {
+        let mut h = Harness::new(LIMITS);
+        let kit = h.open(1, authority(ALL));
+        for call in [read(spelling), write(spelling, 3), edit(spelling)] {
+            assert_eq!(h.call(kit, call), Outcome::NotFile);
+        }
+    }
 }

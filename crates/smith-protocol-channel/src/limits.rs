@@ -10,9 +10,9 @@ use crate::{Component, OpenEvent};
 pub struct Limits {
     pub bodies: smith_channel::Limits,
     /// This agent's bounded charter decoder allowances.
-    pub charter: smith_charter::v1::Limits,
+    pub charter: smith_charter::v2::Limits,
     /// This agent's bounded saved-turn decoder allowances.
-    pub transcript: smith_transcript::v2::Limits,
+    pub transcript: smith_transcript::v3::Limits,
     pub channel: skein_channel::Limits,
     /// Maximum configured endpoint names kept by this component.
     pub endpoints: u32,
@@ -38,15 +38,17 @@ pub enum Error {
     /// Configured endpoint names exceed their count or byte allowance.
     Endpoints,
     /// The accepted result is outside the configured charter codec limits.
-    Result(smith_charter::v1::Problem),
+    Result(smith_charter::v2::Problem),
     /// A bounded result list had no room for a field or item.
     ResultCapacity,
     /// A saved answer decodes but fails the domain's sealed result bounds.
     InvalidSavedAnswer,
+    /// A result or delivery record does not form the concrete typed value.
+    InvalidResult,
     /// A concrete turn cannot be written to the durable transcript format.
     Transcript(smith_domain_session::record::Refusal),
     /// A concrete turn exceeds the transcript codec bounds.
-    TranscriptBody(smith_transcript::v2::Problem),
+    TranscriptBody(smith_transcript::v3::Problem),
     /// The service sent admission or an answer out of order.
     Order,
     /// A live host operation name is repeated, unknown, or beyond capacity.
@@ -58,19 +60,19 @@ pub enum Error {
     /// The measured result did not fit its output writer.
     ResultWrite(skein_lib::Overflow),
     /// A domain answer exceeds the configured channel body limits.
-    Answer(smith_channel::v1::Problem),
+    Answer(smith_channel::v2::Problem),
     /// A measured application frame could not be built.
     Frame(skein_channel::FrameError),
 }
 
-impl From<smith_channel::v1::Problem> for Error {
-    fn from(problem: smith_channel::v1::Problem) -> Error {
+impl From<smith_channel::v2::Problem> for Error {
+    fn from(problem: smith_channel::v2::Problem) -> Error {
         Error::Answer(problem)
     }
 }
 
-impl From<smith_transcript::v2::Problem> for Error {
-    fn from(problem: smith_transcript::v2::Problem) -> Error {
+impl From<smith_transcript::v3::Problem> for Error {
+    fn from(problem: smith_transcript::v3::Problem) -> Error {
         Error::TranscriptBody(problem)
     }
 }
@@ -81,8 +83,8 @@ impl From<skein_channel::FrameError> for Error {
     }
 }
 
-impl From<smith_charter::v1::Problem> for Error {
-    fn from(problem: smith_charter::v1::Problem) -> Error {
+impl From<smith_charter::v2::Problem> for Error {
+    fn from(problem: smith_charter::v2::Problem) -> Error {
         Error::Result(problem)
     }
 }
@@ -101,9 +103,12 @@ pub struct MaxOut {
 }
 
 /// Opening emits at most one owner event and six lower operations per step.
+pub(crate) const MAX_OUT: MaxOut = MaxOut { to_domain: 1, below: 6 };
+
+/// Opening emits at most one owner event and six lower operations per step.
 #[must_use]
 pub const fn max_out(_limits: &Limits) -> MaxOut {
-    MaxOut { to_domain: 1, below: 6 }
+    MAX_OUT
 }
 
 /// Price the machine, the opening event queue and caller output queues.

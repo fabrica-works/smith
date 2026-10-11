@@ -36,16 +36,29 @@ pub(crate) const fn session_env(env: &Env<Limits>) -> Env<session::Limits> {
 /// Hands one of the protocol's events to the child domain it is for.
 pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
     let event = match event {
-        Event::Start { reply_to, host_run, activation, window, charter, workspace, grants, transcript, answered } => {
-            if !endpoints_known(domain, &charter) {
+        Event::Start {
+            reply_to,
+            host_run,
+            activation,
+            window,
+            messages,
+            charter,
+            workspace,
+            grants,
+            transcript,
+            answered,
+        } => {
+            if let Err(invalid) = models_declared(domain, &charter) {
                 domain.notices.push(Request::Answer {
+                    read: None,
                     to: reply_to,
-                    answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Endpoint)),
+                    answer: run::Answer::Refused(run::Refusal::Invalid(invalid)),
                 });
                 return;
             }
             if !takes_grants(domain, &grants, env.limits.accounts) {
                 domain.notices.push(Request::Answer {
+                    read: None,
                     to: reply_to,
                     answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Grants)),
                 });
@@ -55,12 +68,12 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                 granted(domain, env, grant);
             }
             return start(
-                domain, env, reply_to, host_run, activation, window, charter, workspace, transcript, answered,
+                domain, env, reply_to, host_run, activation, window, messages, charter, workspace, transcript, answered,
             );
         }
         Event::Acknowledge { run, turn } => return acknowledge(domain, env, run, turn),
         Event::Grant { grant } => return granted(domain, env, grant),
-        Event::Message { run, name, text } => run::Event::Message { run, name, text },
+        Event::Message { run, name, label, text } => run::Event::Message { run, name, label, text },
         Event::Cancel { run } => run::Event::Cancel { run },
         Event::HostReturned { relay, reply } => run::Event::HostReturned { relay, reply },
         Event::Delivered { owner, delivery } => run::Event::Delivered { owner, delivery },
@@ -174,16 +187,12 @@ fn priced_overflow(failure: Option<run::Failure>) -> Option<session::End> {
     }
 }
 
-fn endpoints_known(domain: &Domain, charter: &run::Charter) -> bool {
-    if !domain.config.contains(charter.llm.endpoint) {
-        return false;
-    }
+fn models_declared(domain: &Domain, charter: &run::Charter) -> Result<(), run::Invalid> {
+    domain.config.check_model(&charter.llm)?;
     for model in &charter.models {
-        if !domain.config.contains(model.endpoint) {
-            return false;
-        }
+        domain.config.check_model(model)?;
     }
-    true
+    Ok(())
 }
 
 /// Delivers a hand-off from the run that waited on the ready list.
@@ -199,6 +208,9 @@ pub(crate) fn deliver(domain: &mut Domain, env: &Env<Limits>, handoff: Handoff) 
             match flight.answer {
                 Due::Answered { feedback, spent } => {
                     session::Event::Answered { owner, text: feedback.text, error: feedback.error, spent }
+                }
+                Due::Yielding { feedback, spent } => {
+                    session::Event::AnsweredAndYield { owner, text: feedback.text, error: feedback.error, spent }
                 }
                 Due::Cancelled { spent } => session::Event::AnswerCancelled { owner, spent },
                 Due::Waiting => unreachable!("a call is on the ready list once the run has returned it"),
@@ -219,6 +231,7 @@ fn start(
     host_run: Token,
     activation: u64,
     window: crate::Window,
+    messages: Box<[run::Message]>,
     charter: run::Charter,
     workspace: Option<run::Workspace>,
     transcript: Option<session::record::Transcript>,
@@ -227,13 +240,18 @@ fn start(
     let largest_turn = limits::max_turn_bytes(&env.limits).expect("representable turn cap");
     if window.turns == 0 || window.bytes < largest_turn {
         domain.notices.push(Request::Answer {
+            read: None,
             to: reply_to,
             answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Window)),
         });
         return;
     }
     if domain.starts.is_full() {
-        domain.notices.push(Request::Answer { to: reply_to, answer: run::Answer::Refused(run::Refusal::Busy) });
+        domain.notices.push(Request::Answer {
+            read: None,
+            to: reply_to,
+            answer: run::Answer::Refused(run::Refusal::Busy),
+        });
         return;
     }
     let compatible = match crate::feedback_worst_case(&env.limits.run) {
@@ -245,6 +263,7 @@ fn start(
         || env.limits.run.directory_name_bytes > env.limits.session.tools.path_bytes
     {
         domain.notices.push(Request::Answer {
+            read: None,
             to: reply_to,
             answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Conversation)),
         });
@@ -258,6 +277,7 @@ fn start(
     } else {
         (None, Box::default(), None)
     };
+    let resumed = transcript.is_some();
     let context = StartContext { reply_to: Some(reply_to), transcript, answered, refused };
     let id = domain.starts.insert(context).expect("reserved original parent right before work");
     run_step(
@@ -267,10 +287,12 @@ fn start(
             reply_to: ReplyTo::new(id.token()),
             host_run,
             activation,
+            messages,
             window: run::Window { turns: window.turns, bytes: window.bytes, largest_turn },
             charter,
             workspace,
             transcript: Some(id.token()),
+            resumed,
         },
     );
 }
@@ -337,12 +359,14 @@ pub(crate) fn hand_off(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<R
 fn run_step(domain: &mut Domain, env: &Env<Limits>, event: run::Event) {
     assert!(domain.run_out.room() >= run::MAX_OUT, "an entry point steps the run no more than its bound");
     run::step(&mut domain.run, &run_env(env), event, &mut domain.run_out);
+    crate::domain::gather(domain, &env.limits);
 }
 
 fn session_step(domain: &mut Domain, env: &Env<Limits>, event: session::Event) {
     let room = session::max_out(&env.limits.session);
     assert!(domain.session_out.room() >= room, "an entry point steps the sessions no more than its bound");
     session::step(&mut domain.session, &session_env(env), event, &mut domain.session_out);
+    crate::domain::gather(domain, &env.limits);
 }
 
 /// One of the sessions' requests: out to the protocol layer, or to the run.
@@ -414,12 +438,16 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         session::Request::Used { opener, usage } => {
             run::Event::Used { conversation: opener, spend: translate::spend(1, usage) }
         }
-        session::Request::Ended { opener, end, turns, usage } => {
+        session::Request::Ended { opener, end, turns, usage: _, reported } => {
             let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
             domain.pending.remove(&run);
             let id = peer(domain, opener);
             free(domain, id);
-            run::Event::Ended { conversation: opener, end: translate::end(end), spend: translate::spend(turns, usage) }
+            run::Event::Ended {
+                conversation: opener,
+                end: translate::end(end),
+                spend: translate::spend(turns, reported),
+            }
         }
         session::Request::Delegate { owner, opener, call, deadline, origin } => {
             delegated(domain, owner, opener, call, deadline, origin)
@@ -430,7 +458,7 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
             match &flight.answer {
                 Due::Waiting => {}
                 // The answer won the race: the run has returned it.
-                Due::Answered { .. } | Due::Cancelled { .. } => return,
+                Due::Answered { .. } | Due::Yielding { .. } | Due::Cancelled { .. } => return,
             }
             let conversation = domain.peers.get(flight.peer).expect("a peer outlives its calls").conversation;
             run::Event::Withdraw { conversation, call: owner }
@@ -472,15 +500,18 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             return out.push(Request::HostCall { host_run, relay, name, tool, effect, input, deadline });
         }
         run::Request::WithdrawHost { relay } => return out.push(Request::WithdrawHost { relay }),
+        run::Request::MessageRefused { host_run, name, reason } => {
+            return out.push(Request::MessageRefused { host_run, name, reason });
+        }
         run::Request::Admitted { host_run, run } => return out.push(Request::Admitted { host_run, run }),
-        run::Request::Answer { to, answer } => {
+        run::Request::Answer { to, answer, read } => {
             let id = Id::<StartContext>::from_token(to.into_token());
             let context = domain.starts.get_mut(id).expect("root issued the start reply binding");
             let to = context.reply_to.take().expect("one actual terminal consumes the parent right");
             context.transcript = None;
             context.answered = Box::default();
             domain.starts.retire(id);
-            return out.push(Request::Answer { to, answer });
+            return out.push(Request::Answer { to, answer, read });
         }
         run::Request::Waiting { host_run, read } => return out.push(Request::Waiting { host_run, read }),
         run::Request::Turn { host_run, record, number, position, read, spent } => {
@@ -518,9 +549,33 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             if flight.withdrawn && result == run::Returned::Cancelled {
                 flight.answer = Due::Cancelled { spent };
             } else {
+                let yields = match &result {
+                    run::Returned::Crossed { .. } => true,
+                    run::Returned::Waiting
+                    | run::Returned::HostAnswered(_)
+                    | run::Returned::HostUnknown
+                    | run::Returned::HostTooLarge { .. }
+                    | run::Returned::HostReportedTooLarge
+                    | run::Returned::HostRejected(_)
+                    | run::Returned::Delivered(_)
+                    | run::Returned::Nothing
+                    | run::Returned::DeliveryRefused(_)
+                    | run::Returned::Accepted
+                    | run::Returned::Rejected { .. }
+                    | run::Returned::ChecksFailed { .. }
+                    | run::Returned::Stale
+                    | run::Returned::DeliveryFailed { .. }
+                    | run::Returned::Cancelled
+                    | run::Returned::TimedOut
+                    | run::Returned::Busy
+                    | run::Returned::Answered { .. }
+                    | run::Returned::Unanswered { .. }
+                    | run::Returned::Refused { .. } => false,
+                };
                 let feedback = crate::feedback(result, env.limits.session.delegated_result_bytes)
                     .expect("compatible canonical receiving cap was checked before any effect");
-                flight.answer = Due::Answered { feedback, spent };
+                flight.answer =
+                    if yields { Due::Yielding { feedback, spent } } else { Due::Answered { feedback, spent } };
             }
             return domain.ready.defer(Handoff::Answer { owner: call });
         }
@@ -595,8 +650,8 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     };
     let prompt = peer.prompt(prompt);
     let reservation = match input_bytes {
-        Some(bytes) => session::preview_reservation(
-            &domain.session,
+        Some(bytes) => session::reserve_completion(
+            &mut domain.session,
             owner,
             bytes,
             env.limits.session.protocol_allowance,

@@ -64,12 +64,16 @@ impl Before {
             expected.extend([PathBuf::from("agent.json"), PathBuf::from("agent-trace.jsonl")]);
         }
         let endpoints = if binary {
-            smith::config::read(&root.join("agent.json")).expect("actual child config").service.channel_endpoints
+            smith_agent_shell::config::read(&root.join("agent.json"))
+                .expect("actual child config")
+                .service
+                .channel_endpoints
         } else {
             smith_local_process_world::process::lower_configuration().channel_endpoints
         };
-        let store = smith::local_store::Store::new(scenario.launch.state_directory.clone(), endpoints, 1 << 20)
-            .expect("outside durable store");
+        let store =
+            smith_local_shell::local_store::Store::new(scenario.launch.state_directory.clone(), endpoints, 1 << 20)
+                .expect("outside durable store");
         let Event::Loaded { state, transcript, deliveries } = store.load().expect("settled durable history") else {
             unreachable!("store load terminal")
         };

@@ -65,8 +65,7 @@ pub struct Limits {
     pub search_bytes: u32,
     /// How long a search may take, within its call's deadline.
     pub search_timeout: Duration,
-    /// Facts kept until the parent drains them. Beyond them, facts are
-    /// dropped and counted.
+    /// Reserved observations buffered until the parent drains them; at least [`crate::max_facts`].
     pub facts: u32,
 }
 
@@ -79,6 +78,9 @@ pub struct Limits {
 /// outcomes answered.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
+    if limits.facts < crate::max_facts(limits) {
+        return None;
+    }
     let smallest_entry = u64::try_from(size_of::<Entry>()).ok()?.checked_add(1)?;
     if limits.list_bytes < smallest_entry {
         return None;
@@ -145,4 +147,55 @@ fn authority(limits: &Limits) -> Option<u64> {
     let vars = limits.env_bytes / 2;
     let env = List::<Var>::worst_case(vars)?.checked_add(u64::from(limits.env_bytes))?;
     cwd.checked_add(mounts)?.checked_add(roots)?.checked_add(env)
+}
+
+/// Numeric declarations needed by this layer's transitional derivation.
+/// The service supplies only owned numbers and this domain's own child limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Derivation {
+    pub conversations: u32,
+    pub calls_per_response: u32,
+    pub tool_payload: u32,
+    pub read_window: u32,
+    pub shell_head: u32,
+    pub shell_tail: u32,
+    pub search_hits: u32,
+    pub search_bytes: u32,
+    pub list_entries: u32,
+    pub environment_bytes: u32,
+    pub tool_deadline: Duration,
+    pub shell_timeout: Duration,
+}
+
+/// Derive this layer from declarations, refusing checked arithmetic overflow.
+/// Contract: protocol/limits.md, sections 2 and 3.
+#[must_use]
+pub fn derive(inputs: &Derivation) -> Option<Limits> {
+    if inputs.conversations == 0 || inputs.calls_per_response == 0 {
+        return None;
+    }
+    Some(Limits {
+        kits: inputs.conversations,
+        calls: inputs.calls_per_response.min(4),
+        repos: 2,
+        path_bytes: 256,
+        known_files: 16,
+        file_bytes: inputs.tool_payload,
+        read_bytes: inputs.read_window,
+        list_entries: inputs.list_entries,
+        // A listing uses one default read window of ownership, with room for
+        // at least one entry cell and a nonempty name.
+        list_bytes: u64::from(inputs.read_window).max(u64::try_from(size_of::<Entry>()).ok()?.checked_add(1)?),
+        match_lines: 8,
+        file_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
+        env_bytes: inputs.environment_bytes,
+        shell_timeout: inputs.shell_timeout,
+        shell_timeout_max: inputs.tool_deadline,
+        shell_head: inputs.shell_head,
+        shell_tail: inputs.shell_tail,
+        search_hits: inputs.search_hits,
+        search_bytes: inputs.search_bytes,
+        search_timeout: Duration::from_secs(30).min(inputs.tool_deadline),
+        facts: 1024,
+    })
 }

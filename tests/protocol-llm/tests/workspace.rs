@@ -7,7 +7,7 @@ use skein_fake_llm_domain::api::{Finish, Line, Message, Part, Query, Role, Scrip
 use skein_lib::{Duration, Token};
 use skein_world::domain::Span;
 use smith_domain::{Transcript, run};
-use smith_protocol_llm::{self as adapter, Limits};
+use smith_protocol_llm_world::adapter::{self as adapter, Limits};
 use smith_protocol_llm_world::{
     Boundary, Job, Settings, World,
     wire::{self, Observed},
@@ -86,9 +86,10 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
                 query.system.len() + earlier.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>(),
             )
         };
-        let input = u64::try_from(fresh / 4).expect("bounded fixture");
+        let fresh_tokens = u64::try_from(fresh / 4).expect("bounded fixture");
+        let input = if cache_write { 0 } else { fresh_tokens };
         let read = u64::try_from(cached / 4).expect("bounded fixture");
-        let write = if cache_write { input } else { 0 };
+        let write = if cache_write { Some(fresh_tokens) } else { None };
         assert_eq!(
             [
                 turn.usage.input_tokens,
@@ -96,17 +97,17 @@ fn accounting(world: &World, prefixes: &[Vec<Message>], outputs: &[u64], prior: 
                 turn.usage.cache_read_tokens,
                 turn.usage.cache_write_tokens
             ],
-            [input, outputs[index], read, write],
+            [Some(input), Some(outputs[index]), Some(read), write],
             "all four independently calculated SDK usage fields"
         );
         spent.turns += 1;
         spent.input += input;
         spent.output += outputs[index];
         spent.cache_read += read;
-        spent.cache_write += write;
+        spent.cache_write += write.unwrap_or(0);
         assert_eq!(world.turn_metadata()[index], (spent.turns, None, spent));
         assert_eq!(turn.sequence, prior + spent.turns);
-        assert_eq!(turn.version, 2);
+        assert_eq!(turn.version, smith_domain::session::record::VERSION);
         assert_eq!(turn.spent, 0);
         assert!(
             turn.messages.iter().flat_map(|message| &message.content).all(|block| {
@@ -148,7 +149,13 @@ fn no_workspace(world: &World, settings: &Settings) {
 #[test]
 fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
     for index in 0..2 {
-        let mut bounds = Limits { client: skein_llm_world::limits(), tool_bytes: 32768, result_bytes: 32768 };
+        let mut bounds = Limits {
+            client: skein_llm_world::limits(),
+            tool_bytes: 32768,
+            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            shell_default: skein_lib::Duration::from_secs(120),
+            shell_maximum: skein_lib::Duration::from_secs(1200),
+        };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
         let mut settings = Settings {
@@ -176,7 +183,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             message(Role::Assistant, vec![tool(b"wait", b"{}")]),
             message(Role::User, vec![result(b"waiting")]),
         ]);
-        accounting(&first, &[first_prefix, second_prefix, third_prefix.clone()], &[17, 11, 3], 0, index == 1);
+        accounting(&first, &[first_prefix, second_prefix, third_prefix.clone()], &[17, 11, 3], 0, true);
         no_workspace(&first, &settings);
         assert_eq!(first.host_submissions().len(), 1);
         assert_eq!(first.host_submissions()[0].name, run::CallName { activation: 1, completion: 1, position: 0 });
@@ -211,7 +218,7 @@ fn no_workspace_host_answer_wait_park_and_native_transcript_resume() {
             message(Role::Assistant, vec![text(RESUMED), tool(b"wait", b"{}")]),
             message(Role::User, vec![result(b"waiting")]),
         ]);
-        accounting(&resumed, &[third_prefix, continued], &[7, 5], 3, index == 1);
+        accounting(&resumed, &[third_prefix, continued], &[7, 5], 3, true);
         no_workspace(&resumed, &settings);
         assert!(resumed.host_submissions().is_empty() && resumed.host_terminals().is_empty());
         assert_eq!(resumed.host_decisions(), 0, "restored history performs no second host effect");

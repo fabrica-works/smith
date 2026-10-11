@@ -1,4 +1,4 @@
-//! A scripted parent/provider world for concrete version-two sessions. The
+//! A scripted parent/provider world for concrete version-three sessions. The
 //! referee observes only requests: provider bytes, turns and spend, never
 //! session state. The harness separately checks boundary and settle contracts.
 
@@ -14,15 +14,20 @@ pub const PRICES: record::Prices = record::Prices { input: 7, cached: 3, output:
 /// Fixed provider usage supplied by concrete transcript scenarios.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
-pub const USAGE: llm::Usage =
-    llm::Usage { input_tokens: 11, output_tokens: 4, cache_read_tokens: 5, cache_write_tokens: 3 };
+pub const USAGE: llm::Usage = llm::Usage {
+    input_tokens: Some(11),
+    output_tokens: Some(4),
+    cache_read_tokens: Some(5),
+    cache_write_tokens: Some(3),
+    reasoning_tokens: None,
+};
 
 /// Fixed opaque provider bytes whose exact replay preservation is asserted.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 pub const OPAQUE: &[u8] = b"\0provider reasoning\xffsignature";
 
-/// Builds the concrete version-two opening with the supplied transcript and integer spend cap.
+/// Builds the concrete version-three opening with the supplied transcript and integer spend cap.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]
@@ -40,7 +45,7 @@ pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::O
             },
             delegated: Box::new([llm::Descriptor { ticket: Token::new(19), effect: Effect::Write }]),
             prompt: b"wake".as_slice().into(),
-            max_tokens: 128,
+            output: 128,
             budget: crate::BUDGET,
         },
         dialect: 23,
@@ -176,7 +181,9 @@ impl World {
             | session::Event::Failed { owner, .. } => {
                 assert_eq!(self.completing.take(), Some(*owner), "one terminal per completion");
             }
-            session::Event::Answered { owner, .. } | session::Event::AnswerCancelled { owner, .. } => {
+            session::Event::Answered { owner, .. }
+            | session::Event::AnsweredAndYield { owner, .. }
+            | session::Event::AnswerCancelled { owner, .. } => {
                 let position =
                     self.delegated.iter().position(|pending| pending == owner).expect("one terminal per delegate");
                 self.delegated.remove(position);
@@ -194,6 +201,18 @@ impl World {
         self.domain.reclaim();
         session::step(&mut self.domain, &self.env, event, &mut self.out);
         assert!(self.out.len() <= session::max_out(&self.env.limits));
+        self.collect_outputs();
+    }
+
+    /// Resume one settled immediate tool batch before the next provider request.
+    pub fn resume(&mut self) {
+        self.domain.reclaim();
+        session::resume(&mut self.domain, &self.env, &mut self.out);
+        assert!(self.out.len() <= session::max_out(&self.env.limits));
+        self.collect_outputs();
+    }
+
+    fn collect_outputs(&mut self) {
         while let Some(request) = self.out.pop() {
             self.trace.push(format!("{request:?}"));
             self.observe(request);
@@ -230,7 +249,7 @@ impl World {
                 self.spend.push(spent);
                 self.own_spend.push(own_spent);
             }
-            session::Request::Ended { opener, end, turns, usage } => {
+            session::Request::Ended { opener, end, turns, usage, .. } => {
                 assert_eq!(opener, Token::new(31));
                 assert!(self.end.replace(end).is_none());
                 assert!(self.terminal_usage.replace((turns, usage)).is_none());
@@ -264,7 +283,7 @@ impl World {
     pub fn complete(&mut self, content: Box<[llm::Block]>, stop: llm::Stop, usage: llm::Usage) {
         self.step(session::Event::Completed {
             owner: self.completing.expect("a completion is in flight"),
-            completion: llm::Completion { content, stop, usage },
+            completion: llm::Completion { reasoning_dropped: Box::default(), content, stop, usage },
         });
     }
 
@@ -296,7 +315,11 @@ pub fn called() -> Box<[llm::Block]> {
             id: b"provider-call".as_slice().into(),
             name: b"sub_agent".as_slice().into(),
             input: br#"{"task":"review"}"#.as_slice().into(),
-            call: llm::Decoded::Delegated { ticket: Token::new(991), effect: Effect::Write },
+            call: llm::Decoded::Delegated {
+                source: smith_domain_session::ToolSource::Run,
+                ticket: Token::new(991),
+                effect: Effect::Write,
+            },
             replay: None,
         },
     ])
@@ -332,7 +355,7 @@ pub fn scenario(seed: u64, facts: u32) -> World {
     world.complete(
         Box::new([llm::Block::Text { text: b"done".as_slice().into(), replay: None }]),
         llm::Stop::EndTurn,
-        llm::Usage { output_tokens: 1, ..llm::Usage::ZERO },
+        llm::Usage { output_tokens: Some(1), ..llm::Usage::ZERO },
     );
     assert_eq!(world.own_spend, [16, 16, 18]);
     assert_eq!(world.turns[1].spent, 27); // ceil(11/10)=2, per completion.
@@ -340,7 +363,7 @@ pub fn scenario(seed: u64, facts: u32) -> World {
     world
 }
 
-/// Copies the settled concrete turns into a replayable version-two transcript.
+/// Copies the settled concrete turns into a replayable version-three transcript.
 ///
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[must_use]

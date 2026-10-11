@@ -24,8 +24,18 @@ fn observed() -> Vec<(Time, Seen)> {
         },
         ..calm
     });
-    world.message_at(Time::from_nanos(500_000_000), Token::new(0), b"person: first".as_slice().into());
-    world.message_at(Time::from_nanos(501_000_000), Token::new(99), b"person: second".as_slice().into());
+    world.message_at(
+        Time::from_nanos(500_000_000),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"first".as_slice().into(),
+    );
+    world.message_at(
+        Time::from_nanos(501_000_000),
+        Token::new(99),
+        b"person".as_slice().into(),
+        b"second".as_slice().into(),
+    );
     world.run(2000);
     let actual = world.messages_seen().to_vec();
     assert_eq!(judge(&actual), Verdict::Passed, "positive comes from actual forwarded root output");
@@ -82,7 +92,7 @@ fn chat_positive_and_omitted_reordered_or_corrupted_turns() {
 #[test]
 fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_rejected() {
     let good = observed();
-    for corruption in 0..5 {
+    for corruption in 0..6 {
         let mut bad = good.clone();
         match corruption {
             0 => {
@@ -95,7 +105,7 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
             1 => {
                 let prompt = bad.iter_mut().find_map(|(_, seen)| match seen {
                     Seen::Prompt { query } if query.messages.last().is_some_and(|message| matches!(message.parts.as_ref(), [Part::Text { text }] if text.as_ref() == b"person: first")) => Some(query),
-                    Seen::Admitted | Seen::Input { .. } | Seen::Prompt { .. } | Seen::Completed { .. }
+                    Seen::Started { .. } | Seen::Admitted | Seen::Input { .. } | Seen::Prompt { .. } | Seen::Completed { .. }
                     | Seen::CompletionEnded | Seen::Turn { .. } | Seen::Waiting { .. } | Seen::Answer { .. } => None,
                 }).expect("actual first wake request");
                 prompt.messages.last_mut().expect("wake").parts[0] =
@@ -103,7 +113,8 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
             }
             2 => match &mut bad.last_mut().expect("actual final word").1 {
                 Seen::Answer { turns, .. } => *turns -= 1,
-                Seen::Admitted
+                Seen::Started { .. }
+                | Seen::Admitted
                 | Seen::Input { .. }
                 | Seen::Prompt { .. }
                 | Seen::Completed { .. }
@@ -140,7 +151,18 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
                     | smith_domain::session::llm::Block::ToolCall { .. } => panic!("selected result"),
                 }
             }
-            _ => unreachable!("five changes"),
+            5 => match &mut bad.last_mut().expect("actual final word").1 {
+                Seen::Answer { read, .. } => *read = Some(Token::new(0)),
+                Seen::Started { .. }
+                | Seen::Admitted
+                | Seen::Input { .. }
+                | Seen::Prompt { .. }
+                | Seen::Completed { .. }
+                | Seen::CompletionEnded
+                | Seen::Turn { .. }
+                | Seen::Waiting { .. } => panic!("actual final answer"),
+            },
+            _ => unreachable!("six changes"),
         }
         assert!(matches!(judge(&bad), Verdict::Failed(_)), "chronology corruption {corruption} rejected");
     }
@@ -149,7 +171,8 @@ fn premature_waiting_wrong_wake_text_and_wrong_final_count_or_park_time_are_reje
 fn turn_fields(seen: &mut Seen) -> (&mut u32, &mut Option<Token>, &mut smith_domain::session::record::Turn) {
     match seen {
         Seen::Turn { number, read, turn, .. } => (number, read, turn),
-        Seen::Admitted
+        Seen::Started { .. }
+        | Seen::Admitted
         | Seen::Input { .. }
         | Seen::Prompt { .. }
         | Seen::Completed { .. }
@@ -159,4 +182,35 @@ fn turn_fields(seen: &mut Seen) -> (&mut u32, &mut Option<Token>, &mut smith_dom
             panic!("selected observed turn")
         }
     }
+}
+
+#[test]
+fn awaiting_before_the_first_turn_is_valid_and_a_provider_request_before_work_is_rejected() {
+    let settings = Settings {
+        job: Job::Waiting,
+        waiting: Duration::from_secs(1),
+        network: Span::millis(0, 0),
+        ..Settings::calm(921)
+    };
+    let mut world = World::with_empty_brief(settings);
+    world.message_at(
+        Time::from_nanos(500_000_000),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"first".as_slice().into(),
+    );
+    world.run(2000);
+    let good = world.messages_seen().to_vec();
+    assert_eq!(judge(&good), Verdict::Passed);
+    let waiting = good
+        .iter()
+        .position(|(_, seen)| matches!(seen, Seen::Waiting { read: None }))
+        .expect("awaiting notice without fence");
+    let input = good.iter().position(|(_, seen)| matches!(seen, Seen::Input { .. })).expect("actual first work");
+    let prompt =
+        good.iter().position(|(_, seen)| matches!(seen, Seen::Prompt { .. })).expect("actual first provider request");
+    assert!(waiting < input && input < prompt);
+    let mut bad = good.clone();
+    bad.insert(waiting + 1, (good[waiting].0, good[prompt].1.clone()));
+    assert!(matches!(judge(&bad), Verdict::Failed(_)));
 }

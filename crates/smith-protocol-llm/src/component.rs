@@ -12,13 +12,13 @@ use core::fmt;
 
 use skein_io::{Event as IoEvent, Request as IoRequest};
 use skein_lib::{Duration, Env, List, Map, Queue, Set, Time, Token, bytes};
-use skein_llm::{self as shared, Credential, Error};
+use skein_llm::{self as shared, Credential};
 use skein_llm_connection as connection;
 use smith_domain::{Event as DomainEvent, GrantName, llm, run};
 
 use crate::IdentityProfile;
 use crate::boundary::{FromDomain, ToDomain};
-use crate::{Context, EndpointOptions, Endpoints, GrantError, Grants, Receiving};
+use crate::{Context, EndpointOptions, Endpoints, Error, GrantError, Grants, Receiving};
 
 /// Startup bounds and phase deadlines for the LLM component.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -48,7 +48,7 @@ pub struct ComponentLimits {
 /// A startup configuration problem.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ComponentError {
-    /// The adapter and connection child disagree on the client bounds.
+    /// A configured endpoint and the adapter disagree on client bounds.
     ClientLimits,
     /// A finite bound or worst case is invalid.
     Limits,
@@ -97,16 +97,18 @@ pub struct MaxOut {
 /// A fire pass may issue one pending Next and advance one child phase.
 pub const MAX_OUT: MaxOut = MaxOut { above: 128, below: 128 };
 
-/// Checked retained pool, grant, context, and event-queue ownership.
+/// Checked retained pool, grant, context, and event-queue ownership, using
+/// configured endpoints to count their request heads and credential bounds.
 #[must_use]
-pub fn component_worst_case(limits: &ComponentLimits) -> Option<u64> {
+pub fn component_worst_case(limits: &ComponentLimits, endpoints: &Endpoints) -> Option<u64> {
     if limits.accounts == 0 || limits.connection.connections == 0 {
         return None;
     }
     let per_call = crate::worst_case(&limits.adapter, &limits.receiving)?;
-    let base = connection::worst_case(&limits.connection)?
+    let base = connection::worst_case(&limits.connection, endpoints.destinations())?
         .checked_add(Grants::worst_case(limits.accounts, limits.grant_value_bytes)?)?
         .checked_add(Map::<u32, EndpointOptions>::worst_case(limits.connection.endpoints)?)?
+        .checked_add(endpoints.option_bytes()?)?
         .checked_add(Map::<Token, Active>::worst_case(limits.connection.connections)?)?
         .checked_add(Set::<Token>::worst_case(limits.connection.connections)?)?
         .checked_add(Queue::<connection::Event>::worst_case(MAX_OUT.above)?)?;
@@ -118,10 +120,12 @@ pub fn component_worst_case(limits: &ComponentLimits) -> Option<u64> {
 impl Component {
     /// Validate the configured endpoint and pool bounds before the loop.
     pub fn new(limits: &ComponentLimits, endpoints: Endpoints) -> Result<Component, ComponentError> {
-        if limits.adapter.client != limits.connection.llm {
-            return Err(ComponentError::ClientLimits);
+        for endpoint in endpoints.destinations() {
+            if endpoint.limits != limits.adapter.client {
+                return Err(ComponentError::ClientLimits);
+            }
         }
-        component_worst_case(limits).ok_or(ComponentError::Limits)?;
+        component_worst_case(limits, &endpoints).ok_or(ComponentError::Limits)?;
         let grants = match Grants::new(limits.accounts, limits.grant_value_bytes) {
             Ok(grants) => grants,
             Err(error) => return Err(ComponentError::Grants(error)),
@@ -246,6 +250,7 @@ impl Component {
                 return;
             }
         };
+        let drop_reasoning = options.drop_reasoning(&prompt.model);
         let credential = match self.grants.read(grant, env.now) {
             Ok(credential) => credential,
             Err(GrantError::Missing | GrantError::Lapsed) => {
@@ -278,13 +283,13 @@ impl Component {
             IdentityProfile::ClaudeCode => match shared::anthropic::identity::instructions(&translated.instructions) {
                 Ok(instructions) => translated.instructions = instructions,
                 Err(error) => {
-                    Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
+                    Self::refusal(owner, Error::from_shared(error), bounds.max_failure_bytes, to_domain);
                     return;
                 }
             },
         }
         if let Err(error) = translated.output_ceiling(options.provider, translated.max_output_tokens.unwrap_or(0)) {
-            Self::refusal(owner, error, bounds.max_failure_bytes, to_domain);
+            Self::refusal(owner, Error::from_shared(error), bounds.max_failure_bytes, to_domain);
             return;
         }
         let index = options.index;
@@ -305,7 +310,14 @@ impl Component {
         let child_env = self.child_env(env);
         self.connection.down(
             &child_env,
-            connection::Request::Start { call: owner, endpoint: index, prompt: translated, credential, deadlines },
+            connection::Request::Start {
+                call: owner,
+                endpoint: index,
+                prompt: translated,
+                credential,
+                deadlines,
+                drop_reasoning,
+            },
             &mut self.events,
             io,
         );
@@ -320,6 +332,7 @@ impl Component {
                 None => break,
             };
             match event {
+                connection::Event::Closed => {}
                 connection::Event::Refused { call, why } => {
                     self.next.remove(&call);
                     let active = self.active.remove(&call);
@@ -329,8 +342,8 @@ impl Component {
                     };
                     let error = match why {
                         connection::Refusal::Endpoint => Error::Invalid,
-                        connection::Refusal::Pool => Error::Limit,
-                        connection::Refusal::Client(error) => error,
+                        connection::Refusal::Calls { bound: _ } | connection::Refusal::Closed => Error::Limit,
+                        connection::Refusal::Client(error) => Error::from_shared(error),
                     };
                     Self::refusal(call, error, maximum, to_domain);
                 }

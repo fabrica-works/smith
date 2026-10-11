@@ -26,6 +26,7 @@ const CEILING: session::Budget = session::Budget {
 pub const LIMITS: Limits = Limits {
     accounts: 4,
     endpoints: 3,
+    configured_model_bytes: 4096,
     decoded_call_bytes: 4096,
     skew: Duration::ZERO,
     run: run::Limits {
@@ -43,11 +44,12 @@ pub const LIMITS: Limits = Limits {
         answered_calls: 16,
         answered_bytes: 4096,
         host_timeout: Duration::from_secs(60),
+        host_timeout_max: Duration::from_secs(60),
         host_backoff: Duration::from_millis(50),
         verdicts: 2,
         calls: 16,
         budget: BUDGET,
-        max_tokens: 4096,
+
         models: 2,
         run_conversations: 6,
         answer_bytes: 1024,
@@ -61,6 +63,8 @@ pub const LIMITS: Limits = Limits {
         facts: 1024,
         messages: 8,
         message_bytes: 4096,
+        offer_messages: 8,
+        offer_bytes: 32_782,
         waiting: skein_lib::Duration::from_secs(300),
     },
     session: session::Limits {
@@ -74,7 +78,6 @@ pub const LIMITS: Limits = Limits {
         failure_bytes: 512,
         delegated_result_bytes: 4_194_304,
         budget: CEILING,
-        max_tokens: 4096,
         retries: 3,
         backoff_base: Duration::from_millis(200),
         backoff_max: Duration::from_secs(5),
@@ -114,6 +117,7 @@ pub const LIMITS: Limits = Limits {
 pub const TIGHT: Limits = Limits {
     accounts: LIMITS.accounts,
     endpoints: LIMITS.endpoints,
+    configured_model_bytes: LIMITS.configured_model_bytes,
     decoded_call_bytes: LIMITS.decoded_call_bytes,
     skew: LIMITS.skew,
     run: run::Limits {

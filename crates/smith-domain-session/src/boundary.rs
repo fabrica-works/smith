@@ -60,6 +60,15 @@ pub enum Event {
         /// historical spend is excluded. Only the inclusive parent prefix changes.
         spent: u64,
     },
+    /// Parent terminal for Delegate that yields after the settled tool turn, so its opener can append work.
+    AnsweredAndYield {
+        owner: Token,
+        /// Complete result bytes within the previously reserved delegated result cap.
+        text: Box<[u8]>,
+        error: bool,
+        /// Inclusive child activation bill, charged once by the live identity.
+        spent: u64,
+    },
     /// Parent terminal acknowledging Withdraw. Its current delegated identity
     /// settles exactly once and releases its reserved result space. A withdrawn
     /// child still reports its activation bill; stale repeats remain inert.
@@ -162,7 +171,7 @@ pub enum Request {
     /// included.
     Used { opener: Token, usage: Usage },
     /// The session for `opener` has ended, after `turns` completions that used
-    /// `usage`, their exact sum: exactly one
+    /// `usage`, preserving unavailable cumulative counts: exactly one
     /// per `Open`, once nothing the session asked for is in flight.
     Ended {
         opener: Token,
@@ -172,6 +181,9 @@ pub enum Request {
         turns: u32,
         /// Exact cumulative raw usage of charged completions.
         usage: Usage,
+        /// Numeric sums of supplied counts for the parent's budget bookkeeping;
+        /// every field is present. This is never a raw provider observation.
+        reported: Usage,
     },
     /// Ask an LLM for the next assistant message, giving up after `timeout`.
     Complete {
@@ -248,7 +260,7 @@ pub struct Spec {
     pub prompt: Box<[u8]>,
     /// The most tokens each answer may take, and fewer once the output budget
     /// has less left.
-    pub max_tokens: u32,
+    pub output: u32,
     /// Allowance supplied at admission, checked before starting more work.
     pub budget: Budget,
 }
@@ -263,7 +275,7 @@ pub struct Spec {
 /// comes back, so it may take input and cache tokens past their budget: its
 /// turn still runs the tools it asked for, and the session ends where it
 /// would have started the next. The output budget it cannot pass, as the
-/// answer's `max_tokens` is cut to what is left. A zero cache budget
+/// answer's output cap is cut to what is left. A zero cache budget
 /// therefore ends a session only once a completion touches the cache. Time
 /// does not wait for the turn: when it runs out, the session closes at once.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

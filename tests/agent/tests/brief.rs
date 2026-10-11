@@ -61,7 +61,8 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        max_tokens: 4096,
+        window: 8192,
+        output: 4096,
     };
     run::Charter {
         instructions: instructions.as_bytes().into(),
@@ -322,4 +323,146 @@ fn ordered_sections_and_instructions_reach_main_but_child_receives_only_its_own_
         }]));
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.judged().0 > 0 && world.judged().1 > 0);
+}
+
+#[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the golden collects literal request text rather than every provider part"
+)]
+fn the_first_provider_request_contains_the_carried_messages_with_the_briefs_instruction() {
+    use skein_lib::ReplyTo;
+    let settings = Settings { job: Job::Reporting, network: Span::millis(1, 1), ..Settings::calm(1191) };
+    for has_brief in [true, false] {
+        let mut charter = charter(&settings, "@carried-opening");
+        if !has_brief {
+            charter.brief.sections = Box::new([]);
+        }
+        let (disk, mounted) = workspace();
+        let start = smith_domain::Event::Start {
+            messages: Box::new([
+                run::Message {
+                    name: Token::new(99),
+                    label: b"person".as_slice().into(),
+                    text: b"first".as_slice().into(),
+                },
+                run::Message {
+                    name: Token::new(0),
+                    label: b"person".as_slice().into(),
+                    text: b"second".as_slice().into(),
+                },
+            ]),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            activation: 1,
+            window: smith_domain::Window { turns: 100, bytes: u64::MAX },
+            charter,
+            workspace: Some(mounted),
+            transcript: None,
+            answered: Box::default(),
+            grants: Box::new([smith_domain::Grant {
+                name: smith_domain::GrantName { account: 0, generation: 1 },
+                valid: skein_lib::Duration::from_secs(7200),
+            }]),
+        };
+        let scripts = Box::new([Script {
+            cue: b"@carried-opening".as_slice().into(),
+            turns: Box::new([calls(vec![call(b"finish", FINISH_INPUT)], 1)]),
+        }]);
+        let mut world = World::with_workspace_scripts_start(settings, disk, scripts, start);
+        world.run(10_000);
+        assert_eq!(
+            world.prompts().len(),
+            1,
+            "an immediate finish takes one actual request; answer={:?}",
+            world.answer()
+        );
+        let expected: &[u8] = if has_brief {
+            b"Begin the work your brief describes.\n\nperson: first\n\nperson: second"
+        } else {
+            b"person: first\n\nperson: second"
+        };
+        let messages: Vec<_> = world.prompts()[0]
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                Part::Text { text } => Some(text.as_ref()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(messages, [expected]);
+        let mut referee =
+            skein_world::domain::Referee::new(smith_agent_world::messages_referee::Meeting::new(0, settings.waiting));
+        for (at, seen) in world.messages_seen() {
+            referee.observe(*at, seen.clone(), &mut Vec::new());
+        }
+        assert_eq!(
+            referee.verdict(),
+            skein_world::domain::Verdict::Passed,
+            "actual carried opening and finish satisfy the message oracle"
+        );
+        assert_eq!(world.turns().len(), 1);
+        assert!(world.messages_seen().iter().any(|(_, seen)| matches!(seen, smith_agent_world::messages_referee::Seen::Turn { read: Some(name), .. } if *name == Token::new(0))));
+    }
+}
+
+#[test]
+fn the_request_after_a_crossed_finish_contains_the_call_answer_and_queued_messages_together() {
+    use skein_lib::{Duration, Time};
+    use skein_world::domain::{Referee, Verdict};
+    use smith_agent_world::messages_referee::{Meeting, Seen};
+    for wait in [true, false] {
+        let settings = Settings {
+            job: Job::Reporting,
+            network: Span::millis(0, 0),
+            provider: skein_fake_llm_domain::Config {
+                latency_min: Duration::from_millis(100),
+                latency_max: Duration::from_millis(100),
+                ..Settings::calm(1192).provider
+            },
+            ..Settings::calm(1192)
+        };
+        let mut charter = charter(&settings, "@finish-crossing");
+        charter.grants.wait = wait;
+        let scripts = Box::new([Script {
+            cue: b"@finish-crossing".as_slice().into(),
+            turns: Box::new([
+                calls(vec![call(b"finish", FINISH_INPUT)], 1),
+                calls(vec![call(b"finish", FINISH_INPUT)], 1),
+            ]),
+        }]);
+        let mut world = World::with_workspace_scripts_charter(settings, None, None, Checkout::new(), scripts, charter);
+        world.message_at(
+            Time::ZERO.saturating_add(Duration::from_millis(50)),
+            Token::new(0),
+            b"person".as_slice().into(),
+            b"late work".as_slice().into(),
+        );
+        world.run(10_000);
+        assert_eq!(world.prompts().len(), if wait { 2 } else { 1 });
+        assert!(matches!(world.answer(), run::Answer::Accepted { .. }));
+        if wait {
+            let query = &world.prompts()[1];
+            assert!(query.messages.iter().flat_map(|message| &message.parts).any(|part| matches!(part,
+                Part::ToolOutput { output, is_error: false, .. } if output.as_ref() == b"Finish was not accepted because messages arrived. Read them before finishing.")));
+            assert!(matches!(query.messages.last().expect("queued work").parts.as_ref(),
+                [Part::Text { text }] if text.as_ref() == b"person: late work"));
+            let mut referee = Referee::new(Meeting::new(0, settings.waiting));
+            for (at, seen) in world.messages_seen() {
+                referee.observe(*at, seen.clone(), &mut Vec::new());
+            }
+            assert_eq!(referee.verdict(), Verdict::Passed);
+            assert!(world.messages_seen().iter().any(
+                |(_, seen)| matches!(seen, Seen::Turn { number: 2, read: Some(name), .. } if *name == Token::new(0))
+            ));
+            assert!(
+                world.messages_seen().iter().any(|(_, seen)| matches!(seen, Seen::Turn { number: 1, read: None, .. }))
+            );
+        } else {
+            assert!(world.facts().iter().any(|fact| matches!(fact, smith_domain::Fact::Run {
+                fact: run::facts::Fact { kind: run::facts::FactKind::MessageUnread { name, .. }, .. }
+            } if *name == Token::new(0))));
+        }
+    }
 }

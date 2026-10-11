@@ -204,11 +204,12 @@ const fn calm_run_limits() -> run::Limits {
         answered_calls: 16,
         answered_bytes: 4096,
         host_timeout: Duration::from_secs(60),
+        host_timeout_max: Duration::from_secs(60),
         host_backoff: Duration::from_millis(50),
         verdicts: 4,
         calls: 16,
         budget: run::Budget { turns: 1000, spend: 1 << 32, time: Duration::from_secs(24 * 3600) },
-        max_tokens: 8192,
+
         models: 4,
         run_conversations: 4,
         answer_bytes: 512,
@@ -222,6 +223,8 @@ const fn calm_run_limits() -> run::Limits {
         facts: 64,
         messages: 8,
         message_bytes: 4096,
+        offer_messages: 8,
+        offer_bytes: 32_782,
         waiting: skein_lib::Duration::from_secs(300),
     }
 }
@@ -574,8 +577,19 @@ pub struct World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     facts: BTreeMap<&'static str, u32>,
+    empty_brief_wait: Option<bool>,
+    waiting_time: Option<Duration>,
+    awaiting_message: Option<run::Message>,
+    carried_messages: Box<[run::Message]>,
+    opening_prompts: Vec<Box<[u8]>>,
+    message_chance: u32,
+    message_name: u64,
+    message_cells: BTreeMap<&'static str, u32>,
+    message_seen: Vec<(Time, Token, crate::messages_referee::Seen)>,
+    message_answers: Vec<(Token, Option<Token>)>,
     deadline_cells: BTreeMap<&'static str, u32>,
     iteration: u64,
+    fact_holds: u64,
     /// The run the last request answered, for the iteration's attribution;
     /// the call the step being attributed took, if it asked for a sub-agent,
     /// with what its run had left then; and the sub-agent each such call
@@ -635,14 +649,71 @@ impl World {
             landing: BTreeSet::new(),
             cancel_cells: BTreeMap::new(),
             facts: BTreeMap::new(),
+            empty_brief_wait: None,
+            waiting_time: None,
+            awaiting_message: None,
+            carried_messages: Box::default(),
+            opening_prompts: Vec::new(),
+            message_chance: 0,
+            message_name: 0,
+            message_cells: BTreeMap::new(),
+            message_seen: Vec::new(),
+            message_answers: Vec::new(),
             deadline_cells: BTreeMap::new(),
             iteration: 0,
+            fact_holds: 0,
             just_answered: None,
             asked: None,
             child_of_call: BTreeMap::new(),
             stats: Stats::default(),
             trace: Trace::default(),
         }
+    }
+
+    /// Give each host Start an empty brief and this explicit waiting authority.
+    pub fn empty_brief(&mut self, wait: bool) {
+        self.empty_brief_wait = Some(wait);
+    }
+
+    /// Use this host-selected idle deadline in every actual Start.
+    pub fn waiting_time(&mut self, waiting: Duration) {
+        self.waiting_time = Some(waiting);
+    }
+
+    /// Relay one scripted first message only after the actual awaiting notice.
+    pub fn message_when_awaiting(&mut self, message: run::Message) {
+        self.awaiting_message = Some(message);
+        self.partner.tell_turns();
+    }
+
+    /// Carry this ordered batch in each host Start and observe actual told turns.
+    pub fn carry_messages(&mut self, messages: Box<[run::Message]>) {
+        self.carried_messages = messages;
+        self.partner.tell_turns();
+    }
+
+    /// Actual user opening bytes at the conversation boundary.
+    #[must_use]
+    pub fn opening_prompts(&self) -> &[Box<[u8]>] {
+        &self.opening_prompts
+    }
+
+    /// Inject named person messages before or after actual callbacks, in per mille.
+    pub fn inject_messages(&mut self, chance: u32) {
+        self.message_chance = chance;
+        self.partner.tell_turns();
+    }
+
+    /// Actual received/read/unread facts and final fences, for replay and mutation.
+    #[must_use]
+    pub fn message_seen(&self) -> &[(Time, Token, crate::messages_referee::Seen)] {
+        &self.message_seen
+    }
+
+    /// Externally observed callback cells where a person message arrived.
+    #[must_use]
+    pub fn message_cells(&self) -> &BTreeMap<&'static str, u32> {
+        &self.message_cells
     }
 
     /// Current injected monotonic time in this world.
@@ -653,12 +724,18 @@ impl World {
         self.now
     }
 
-    /// Observed boundary counters, including dropped facts.
+    /// Observed boundary counters.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     #[must_use]
     pub fn stats(&self) -> Stats {
         Stats { host: self.host.tally(), partner: self.partner.tally(), ..self.stats }
+    }
+
+    /// Parent passes that left pending work untouched until native facts drained.
+    #[must_use]
+    pub fn fact_holds(&self) -> u64 {
+        self.fact_holds
     }
 
     /// What crossed between the domains and the world, in order, with times.
@@ -725,7 +802,9 @@ impl World {
         // for what one more may produce.
         self.iteration += 1;
         let mut made = Vec::new();
-        while let Some(event) = self.run_stage.next_event() {
+        while self.run.facts_room() >= run::max_facts(&self.run_stage.env.limits)
+            && let Some(event) = self.run_stage.next_event()
+        {
             self.log(&format!("run <- {event:?}"));
             let run = self.run_of(&event);
             let cancel = self.note(&event, run);
@@ -741,7 +820,10 @@ impl World {
             run::step(&mut self.run, &self.run_stage.env, event, &mut self.run_stage.out);
             made.push(Made { run, requests: self.run_stage.out.len() - before, cancel, asked });
         }
-        while self.run_stage.has_room() && self.run.is_due(self.now) {
+        while self.run.facts_room() >= run::max_facts(&self.run_stage.env.limits)
+            && self.run_stage.has_room()
+            && self.run.is_due(self.now)
+        {
             self.log("run alarm");
             let run = self.deadline_due();
             let before = self.run_stage.out.len();
@@ -749,6 +831,11 @@ impl World {
             made.push(Made { run, requests: self.run_stage.out.len() - before, cancel: None, asked: None });
         }
 
+        if self.run.facts_room() < run::max_facts(&self.run_stage.env.limits)
+            && (self.run_stage.has_events() || self.run.is_due(self.now))
+        {
+            self.fact_holds += 1;
+        }
         // What the steps asked for, submitted at the end of the iteration, each
         // attributed to the run its step was about.
         let mut answered = BTreeMap::new();
@@ -797,6 +884,10 @@ impl World {
             self.fact(&fact);
         }
 
+        for (run, read) in std::mem::take(&mut self.message_answers) {
+            self.message_seen.push((self.now, run, crate::messages_referee::Seen::Answer { read }));
+        }
+
         // The reclaim point.
         self.run.reclaim();
         assert!(self.run.runs() <= self.settings.run.runs, "runs stay within their slots");
@@ -817,19 +908,9 @@ impl World {
             run::Request::Turn { host_run, number, position: _, read, spent, record: _ } => {
                 current = Some(self.observed_turn(host_run, number, read, spent));
             }
+            run::Request::MessageRefused { .. } => {}
             run::Request::Waiting { host_run, read } => {
-                let run = self.run_of_owner[&host_run];
-                let view = self.views.get_mut(&run).expect("admitted run");
-                assert_eq!(read, view.read, "Waiting carries the actual last Turn fence");
-                assert!(view.started && view.answered.is_none(), "only an admitted main waits before its answer");
-                assert!(
-                    self.calls
-                        .values()
-                        .all(|call| { self.run_of_conversation[&call.conversation] != run || call.returned }),
-                    "Waiting follows actual settlement of every call"
-                );
-                view.waiting = true;
-                current = Some(run);
+                current = Some(self.observed_waiting(host_run, read));
             }
             request @ run::Request::HostCall { .. } => {
                 self.host_call(request);
@@ -842,9 +923,11 @@ impl World {
                 current = Some(run);
                 self.send(Lane::Host, Delivery::Admitted { host_run, run });
             }
-            run::Request::Answer { to, answer } => {
+            run::Request::Answer { to, answer, read } => {
                 let owner = self.answer(to, answer);
                 if let Some(&run) = self.run_of_owner.get(&owner) {
+                    assert_eq!(read, self.views[&run].read, "Answer keeps the last actual told fence");
+                    self.message_answers.push((run, read));
                     // What its landings that did not push had passed.
                     self.passed.retain(|call, _| self.run_of_call.get(call) != Some(&run));
                     self.views.get_mut(&run).expect("a view per admitted run").answered = Some(self.iteration);
@@ -971,6 +1054,34 @@ impl World {
         self.run_of_owner.insert(host_run, run);
     }
 
+    /// Observe waiting after preparation or the settlement of an actual turn.
+    fn observed_waiting(&mut self, host_run: Token, read: Option<Token>) -> Token {
+        let run = self.run_of_owner[&host_run];
+        let view = self.views.get_mut(&run).expect("admitted run");
+        assert_eq!(read, view.read, "Waiting carries the actual last Turn fence");
+        assert!(
+            (view.started || (view.main.is_none() && view.turns == 0 && view.read.is_none()))
+                && view.answered.is_none(),
+            "Waiting follows preparation or an actual started main"
+        );
+        assert!(
+            self.calls.values().all(|call| { self.run_of_conversation[&call.conversation] != run || call.returned }),
+            "Waiting follows actual settlement of every call"
+        );
+        view.waiting = true;
+        if view.main.is_none()
+            && let Some(message) = self.awaiting_message.take()
+        {
+            self.run_stage.push(run::Event::Message {
+                run,
+                name: message.name,
+                label: message.label,
+                text: message.text,
+            });
+        }
+        run
+    }
+
     /// Count only actual main output; this component neighbour owns opaque records.
     /// Contract: domain/run.md, sections 6 and 13.
     fn observed_turn(&mut self, host_run: Token, number: u32, read: Option<Token>, spent: run::Spend) -> Token {
@@ -1039,6 +1150,7 @@ impl World {
             run::Request::HostCall { .. }
             | run::Request::WithdrawHost { .. }
             | run::Request::Turn { .. }
+            | run::Request::MessageRefused { .. }
             | run::Request::Waiting { .. }
             | run::Request::Admitted { .. }
             | run::Request::Answer { .. }
@@ -1098,7 +1210,7 @@ impl World {
             run::Event::Cancel { run } => {
                 let cell = self.cell(*run);
                 let view = self.views.get_mut(run).expect("looked up above");
-                if matches!(cell, "preparing" | "opening" | "working" | "landing" | "over") {
+                if matches!(cell, "awaiting" | "preparing" | "opening" | "working" | "landing" | "over") {
                     view.decided = true;
                 }
                 return Some((*run, cell));
@@ -1129,6 +1241,7 @@ impl World {
             Some(at) if at < self.iteration => "gone",
             Some(_) => "answered",
             None if view.main.is_none() && view.decided => "stopping",
+            None if view.main.is_none() && view.waiting => "awaiting",
             None if view.main.is_none() => "preparing",
             None if view.decided => "winding",
             None if !view.started => "opening",
@@ -1169,6 +1282,7 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn open(&mut self, conversation: Token, opening: run::Opening, current: Option<Token>) {
+        self.opening_prompts.push(opening.prompt.clone());
         let fresh = self.opens.insert(conversation, Open::default()).is_none();
         assert!(fresh, "conversations have distinct names");
         let run = current.expect("a run opens a conversation in a step about it");
@@ -1423,6 +1537,12 @@ impl World {
                     self.completion_usage(conversation, own_spent, subtree_spent, usage);
                 }
                 Delivery::Event(event) => {
+                    if let run::Event::Turn { conversation, .. } = &event {
+                        let owner = self.run_of_conversation[conversation];
+                        if self.views[&owner].main != Some(*conversation) {
+                            continue;
+                        }
+                    }
                     self.check_conversation(&event);
                     self.hand(event);
                 }
@@ -1472,9 +1592,16 @@ impl World {
         &mut self,
         reply_to: ReplyTo,
         host_run: Token,
-        charter: run::Charter,
+        mut charter: run::Charter,
         workspace: Option<run::Workspace>,
     ) {
+        if let Some(wait) = self.empty_brief_wait {
+            charter.brief.sections = Box::default();
+            charter.grants.wait = wait;
+        }
+        if let Some(waiting) = self.waiting_time {
+            charter.waiting = waiting;
+        }
         self.checkout(workspace.as_ref().map_or(&[][..], |workspace| &workspace.directories));
         let wants = charter.outcome.change.is_some() || charter.grants.deliver.is_some();
         let mut checks = BTreeSet::new();
@@ -1486,6 +1613,7 @@ impl World {
         }
         self.starts.get_mut(&host_run).expect("a start is tracked").checks = checks;
         self.run_stage.push(run::Event::Start {
+            messages: self.carried_messages.clone(),
             reply_to,
             host_run,
             activation: 1,
@@ -1493,6 +1621,7 @@ impl World {
             charter,
             workspace,
             transcript: None,
+            resumed: false,
         });
     }
 
@@ -1512,8 +1641,14 @@ impl World {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     fn fact(&mut self, fact: &run::facts::Fact) {
-        use run::facts::Fact;
-        let (Fact::Admitted { run }
+        use run::facts::FactKind as Fact;
+        let fact = &fact.kind;
+        let (Fact::Admitted { run, .. }
+        | Fact::MessageRead { run, .. }
+        | Fact::MessageFence { run, .. }
+        | Fact::MessageUnread { run, .. }
+        | Fact::MessageReceived { run, .. }
+        | Fact::MessageRefused { run, .. }
         | Fact::Prepared { run, .. }
         | Fact::Opened { run, .. }
         | Fact::Ended { run, .. }
@@ -1527,15 +1662,35 @@ impl World {
         if let Fact::Opened { conversation, .. } | Fact::Ended { conversation, .. } = fact {
             assert!(self.opens.contains_key(conversation), "a fact is of a conversation that was opened");
         }
+        let message = match fact {
+            Fact::MessageReceived { name, .. } => Some(crate::messages_referee::Seen::Received { name: *name }),
+            Fact::MessageRead { name, .. } => Some(crate::messages_referee::Seen::Read { name: *name }),
+            Fact::MessageUnread { name, .. } => Some(crate::messages_referee::Seen::Unread { name: *name }),
+            Fact::MessageFence { read, .. } => Some(crate::messages_referee::Seen::Fence { read: *read }),
+            Fact::MessageRefused { .. }
+            | Fact::Admitted { .. }
+            | Fact::Prepared { .. }
+            | Fact::Opened { .. }
+            | Fact::Ended { .. }
+            | Fact::Called { .. }
+            | Fact::Returned { .. }
+            | Fact::CheckStarted { .. }
+            | Fact::CheckFinished { .. }
+            | Fact::Delivered { .. }
+            | Fact::Answered { .. } => None,
+        };
+        if let Some(message) = message {
+            self.message_seen.push((self.now, *run, message));
+        }
         *self.facts.entry(kind(fact)).or_insert(0) += 1;
     }
 
-    /// The facts the run told, by kind, and how many it dropped.
+    /// Every actual fact the run told, counted by kind.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
     #[must_use]
-    pub fn facts(&self) -> (&BTreeMap<&'static str, u32>, u64) {
-        (&self.facts, self.run.facts_lost())
+    pub fn facts(&self) -> &BTreeMap<&'static str, u32> {
+        &self.facts
     }
 
     /// Hands the run `event`, and with the configured chance, the host's
@@ -1556,6 +1711,13 @@ impl World {
             None => false,
         };
         let before = inject && self.rng.chance(500);
+        let message_run = run
+            .filter(|run| self.views[run].answered.is_none())
+            .filter(|_| self.message_chance > 0 && self.rng.chance(self.message_chance));
+        let message_before = message_run.is_some() && self.rng.chance(500);
+        if let Some(run) = message_run.filter(|_| message_before) {
+            self.person_message(run);
+        }
         if let Some(run) = run.filter(|_| before) {
             self.run_stage.push(run::Event::Cancel { run });
         }
@@ -1563,9 +1725,25 @@ impl World {
             self.run_stage.push(price);
         }
         self.run_stage.push(event);
+        if let Some(run) = message_run.filter(|_| !message_before) {
+            self.person_message(run);
+        }
         if let Some(run) = run.filter(|_| inject && !before) {
             self.run_stage.push(run::Event::Cancel { run });
         }
+    }
+
+    fn person_message(&mut self, run: Token) {
+        *self.message_cells.entry(self.cell(run)).or_insert(0) += 1;
+        // Deliberately opaque, decreasing names include zero; arrival order is external.
+        let name = Token::new(u64::MAX.wrapping_sub(self.message_name));
+        self.message_name += 1;
+        self.run_stage.push(run::Event::Message {
+            run,
+            name,
+            label: b"person".as_slice().into(),
+            text: b"follow up".as_slice().into(),
+        });
     }
 
     /// What the partner asked for: events on their way to the run, and wakes.
@@ -1738,9 +1916,14 @@ impl World {
 /// A fact's kind, to count it by.
 ///
 /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 2.2.
-fn kind(fact: &run::facts::Fact) -> &'static str {
-    use run::facts::Fact;
+fn kind(fact: &run::facts::FactKind) -> &'static str {
+    use run::facts::FactKind as Fact;
     match fact {
+        Fact::MessageRead { .. } => "message_read",
+        Fact::MessageFence { .. } => "message_fence",
+        Fact::MessageUnread { .. } => "message_unread",
+        Fact::MessageReceived { .. } => "message_received",
+        Fact::MessageRefused { .. } => "message_refused",
         Fact::Admitted { .. } => "admitted",
         Fact::Prepared { .. } => "prepared",
         Fact::Opened { .. } => "opened",

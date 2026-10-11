@@ -25,12 +25,11 @@ pub struct Limits {
     pub queue: u32,
 }
 
-/// Startup choices and the configured wire charter for spawned agents.
+/// Startup policy, configured endpoint names and spawned-agent launch choices.
 #[derive(Debug)]
 pub struct Config {
     pub local: local::Config,
     pub limits: Limits,
-    pub charter: Box<[u8]>,
     pub endpoints: channel::Endpoints,
     pub paths: Box<[Box<[u8]>]>,
     pub launch: Launch,
@@ -61,8 +60,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(ProcessAdapter::worst_case(&limits.process)?)?
         .checked_add(Queue::<local::Event>::worst_case(limits.queue)?)?
         .checked_add(Queue::<local::Request>::worst_case(limits.queue)?.checked_mul(2)?)?
-        .checked_add(Queue::<host::Event>::worst_case(limits.queue)?)?
-        .checked_add(Queue::<host::Request>::worst_case(limits.queue)?.checked_mul(2)?)?
+        .checked_add(Queue::<host::Input>::worst_case(limits.queue)?)?
+        .checked_add(Queue::<host::Output>::worst_case(limits.queue)?)?
+        .checked_add(Queue::<host::process::Request>::worst_case(limits.queue)?)?
         .checked_add(Queue::<protocol::TerminalEvent>::worst_case(limits.queue)?)?
         .checked_add(Queue::<Box<[u8]>>::worst_case(limits.queue)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.local.agent.accounts)?)?
@@ -78,8 +78,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
 
 /// Bound for local policy, its terminal/delivery IO and the colocated agent effects.
 #[must_use]
-pub fn in_process_worst_case(limits: &Limits, effects: &agent_service::Limits) -> Option<u64> {
-    worst_case(limits)?.checked_add(agent_service::effects_worst_case(effects)?)
+pub fn in_process_worst_case(limits: &Limits, effects: &agent_service::Config) -> Option<u64> {
+    worst_case(limits)?.checked_add(agent_service::effects_worst_case(&effects.limits, &effects.llm_endpoints)?)
 }
 
 #[derive(Debug)]
@@ -109,18 +109,15 @@ pub struct Service {
     output: Queue<Box<[u8]>>,
     local_events: Queue<local::Event>,
     local_requests: Queue<local::Request>,
-    host_events: Queue<host::Event>,
-    host_requests: Queue<host::Request>,
+    host_events: Queue<host::Input>,
+    host_requests: Queue<host::Output>,
     shell: Queue<local::Request>,
-    lower: Queue<host::Request>,
+    lower: Queue<host::process::Request>,
     values: Map<u32, Box<[u8]>>,
     paths: Box<[Box<[u8]>]>,
     start_values: Option<StartValues>,
     pending_start: Option<local::ExternalStart>,
-    charter: Box<[u8]>,
-    endpoints: channel::Endpoints,
     host_agent: Option<Token>,
-    sequence: u32,
     failed: bool,
 }
 
@@ -152,7 +149,7 @@ impl Service {
                 return Err(Error::Process);
             }
         }
-        in_process_worst_case(&config.limits, &lower.limits).ok_or(Error::Memory)?;
+        in_process_worst_case(&config.limits, &lower).ok_or(Error::Memory)?;
         let Ok(mut effects) = agent_service::Effects::new(lower, seed) else { return Err(Error::Process) };
         effects.contract(local::charter(&config.local).outcome);
         config.local.workspace = match config.local.workspace.take() {
@@ -195,7 +192,8 @@ impl Service {
             Err(error) => return Err(Error::Local(error)),
         };
         let host = if effects.is_some() { None } else { Some(host::Domain::new(&config.limits.host)) };
-        let process = ProcessAdapter::new(config.limits.process, config.launch).ok_or(Error::Process)?;
+        let process =
+            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).ok_or(Error::Process)?;
         let terminal = protocol::Terminal::new(protocol::TerminalLimits {
             line_bytes: config.limits.local.line_bytes,
             show_bytes: config.limits.local.show_bytes,
@@ -229,10 +227,7 @@ impl Service {
             paths: config.paths,
             start_values: None,
             pending_start: None,
-            charter: config.charter,
-            endpoints: config.endpoints,
             host_agent: None,
-            sequence: 0,
             failed: false,
         })
     }
@@ -278,7 +273,7 @@ impl Service {
     }
 
     /// Queue one host-channel or process terminal from the lower adapter.
-    pub fn host_event(&mut self, event: host::Event) {
+    pub fn host_event(&mut self, event: host::Input) {
         self.host_events.push(event);
     }
 
@@ -288,7 +283,7 @@ impl Service {
     }
 
     /// Requests for the lower process adapter; it returns host events.
-    pub fn lower_requests(&mut self) -> &mut Queue<host::Request> {
+    pub fn lower_requests(&mut self) -> &mut Queue<host::process::Request> {
         &mut self.lower
     }
 
@@ -526,13 +521,6 @@ impl Service {
     fn route_external(&mut self, now: Time, request: local::ExternalRequest) {
         match request {
             local::ExternalRequest::Start(start) => {
-                self.sequence = match &start.transcript {
-                    Some(transcript) => match transcript.turns.last() {
-                        Some(turn) => turn.sequence,
-                        None => 0,
-                    },
-                    None => 0,
-                };
                 let mut directories = List::with_capacity(64);
                 if let Some(workspace) = &start.workspace {
                     for (position, directory) in workspace.directories.iter().enumerate() {
@@ -546,46 +534,48 @@ impl Service {
                 self.process.capture_plain(directories, now.saturating_add(start.charter.budget.time));
                 self.pending_start = Some(start);
             }
-            local::ExternalRequest::Message { run, name, text } => {
-                self.host_events.push(host::Event::Message {
+            local::ExternalRequest::Message { run, name, label, text } => {
+                self.host_events.push(host::Input::Parent(host::parent::Event::Message {
                     agent: run,
                     name,
-                    label: Box::from(&b"person"[..]),
+                    label,
                     text,
-                });
+                }));
             }
             local::ExternalRequest::Acknowledge { run, turn } => {
-                self.host_events.push(host::Event::Acknowledge { agent: run, turn });
+                self.host_events.push(host::Input::Parent(host::parent::Event::Acknowledge { agent: run, turn }));
             }
             local::ExternalRequest::Grant { run, grant } => {
-                self.host_events.push(host::Event::Grant {
+                self.host_events.push(host::Input::Parent(host::parent::Event::Grant {
                     agent: run,
                     grant: host::Grant {
                         account: grant.name.account,
                         generation: grant.name.generation,
                         valid: grant.valid,
                     },
-                });
+                }));
             }
             local::ExternalRequest::Delivery { owner, delivery } => {
                 let agent = self.host_agent.expect("delivery belongs to started host agent");
                 match protocol::delivery_to_host(delivery) {
-                    Ok(delivery) => self.host_events.push(host::Event::Answer {
+                    Ok(delivery) => self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
                         agent,
                         call: owner,
                         reply: host::Reply::Delivery(delivery),
-                    }),
+                    })),
                     Err(_) => {
                         self.failed = true;
-                        self.host_events.push(host::Event::Answer {
+                        self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
                             agent,
                             call: owner,
                             reply: host::Reply::Unavailable,
-                        });
+                        }));
                     }
                 }
             }
-            local::ExternalRequest::Cancel { run } => self.host_events.push(host::Event::Stop { agent: run }),
+            local::ExternalRequest::Cancel { run } => {
+                self.host_events.push(host::Input::Parent(host::parent::Event::Stop { agent: run }));
+            }
         }
     }
 
@@ -609,18 +599,16 @@ impl Service {
                     let value = self.values.get(&grant.name.account).expect("grant value supplied before Start");
                     credentials.push(value.clone()).expect("bounded grant count");
                 }
-                let prepared = protocol::prepare_start(
-                    start,
-                    self.charter.clone(),
-                    &self.endpoints,
-                    self.paths.clone(),
-                    credentials.into_boxed(),
-                );
+                let prepared =
+                    protocol::prepare_start(start, &self.limits.host, self.paths.clone(), credentials.into_boxed());
                 match prepared {
                     Ok(prepared) => {
                         self.start_values =
                             Some(StartValues { paths: prepared.paths, credentials: prepared.credentials });
-                        self.host_events.push(host::Event::Spawn { client: Token::new(1), start: prepared.start });
+                        self.host_events.push(host::Input::Parent(host::parent::Event::Spawn {
+                            client: Token::new(1),
+                            start: prepared.start,
+                        }));
                     }
                     Err(_) => {
                         self.failed = true;
@@ -644,99 +632,85 @@ impl Service {
         }
     }
 
-    fn route_host(&mut self, request: host::Request) {
+    fn route_host(&mut self, request: host::Output) {
         match request {
-            host::Request::Started { agent, .. } => self.host_agent = Some(agent),
-            host::Request::Admitted { .. } => {
+            host::Output::Parent(host::parent::Request::Started { agent, .. }) => self.host_agent = Some(agent),
+            host::Output::Parent(host::parent::Request::Admitted { .. }) => {
                 let run = self.host_agent.expect("Started precedes Admitted");
                 self.local_events.push(local::Event::External(local::ExternalEvent::Admitted { run }));
             }
-            host::Request::Turn { turn, .. } => {
-                let decoded = match self.sequence.checked_add(1) {
-                    Some(sequence) => {
-                        channel::decode_turn(&turn.body, sequence, &smith_transcript::CEILINGS, &self.endpoints).ok()
+            host::Output::Parent(host::parent::Request::Turn { turn, .. }) => {
+                let value = turn.body.into_value();
+                self.local_events.push(local::Event::External(local::ExternalEvent::Turn {
+                    number: turn.number,
+                    read: turn.read,
+                    turn: value,
+                }));
+            }
+            host::Output::Parent(host::parent::Request::Answered { answer, .. }) => {
+                match protocol::answer_to_local(answer) {
+                    Ok(answer) => {
+                        self.local_events.push(local::Event::External(local::ExternalEvent::Answer { answer }));
                     }
-                    None => None,
-                };
-                match decoded {
-                    Some(decoded) => {
-                        self.sequence = decoded.sequence;
-                        self.local_events.push(local::Event::External(local::ExternalEvent::Turn {
-                            number: turn.number,
-                            read: turn.read,
-                            turn: decoded,
-                        }));
-                    }
-                    None => {
+                    Err(_) => {
                         self.failed = true;
                         self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
                     }
                 }
             }
-            host::Request::Answered { answer, .. } => match protocol::answer_to_local(answer) {
-                Ok(answer) => self.local_events.push(local::Event::External(local::ExternalEvent::Answer { answer })),
-                Err(_) => {
-                    self.failed = true;
-                    self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
-                }
-            },
-            host::Request::Called { call, name, deadline, ask, .. } => self.called(call, name, deadline, ask),
-            host::Request::Waiting { .. } => {
+            host::Output::Parent(host::parent::Request::Called { call, name, deadline, ask, .. }) => {
+                self.called(call, name, deadline, ask);
+            }
+            host::Output::Parent(host::parent::Request::Waiting { .. }) => {
                 self.local_events.push(local::Event::External(local::ExternalEvent::Waiting));
             }
-            host::Request::Rejected { account, .. } => {
+            host::Output::Parent(host::parent::Request::Rejected { account, .. }) => {
                 self.local_events.push(local::Event::External(local::ExternalEvent::Rejected { account }));
             }
-            host::Request::Exhausted { .. } => {
+            host::Output::Parent(host::parent::Request::Exhausted { .. }) => {
                 self.local_events.push(local::Event::External(local::ExternalEvent::Exhausted));
             }
-            host::Request::Faulted { .. } | host::Request::Bounced { .. } => {
+            host::Output::Parent(
+                host::parent::Request::Faulted { .. } | host::parent::Request::MessageRefused { .. },
+            ) => {
                 self.failed = true;
                 self.local_events.push(local::Event::External(local::ExternalEvent::Failed));
             }
-            host::Request::Gone { .. } => {
+            host::Output::Parent(host::parent::Request::Gone { .. }) => {
                 self.local_events.push(local::Event::External(local::ExternalEvent::Gone));
                 self.host_agent = None;
             }
-            host::Request::Withdrawn { .. } | host::Request::Told { .. } => {}
-            host::Request::Spawn { .. }
-            | host::Request::Send { .. }
-            | host::Request::Read { .. }
-            | host::Request::Signal { .. }
-            | host::Request::Wait { .. }
-            | host::Request::Reap { .. } => self.lower.push(request),
+            host::Output::Parent(
+                host::parent::Request::Withdrawn { .. }
+                | host::parent::Request::Told { .. }
+                | host::parent::Request::Long { .. }
+                | host::parent::Request::LongDone { .. },
+            ) => {}
+            host::Output::Process(request) => self.lower.push(request),
         }
     }
 
     fn called(&mut self, call: Token, name: host::CallName, deadline: Time, ask: host::Ask) {
         let agent = self.host_agent.expect("call belongs to started host agent");
         match ask {
-            host::Ask::Deliver { fields } => match protocol::decode_change(&fields) {
-                Ok(change) => self.local_events.push(local::Event::External(local::ExternalEvent::Deliver {
+            host::Ask::Deliver { fields } => {
+                self.local_events.push(local::Event::External(local::ExternalEvent::Deliver {
                     name: agent::run::CallName {
                         activation: name.activation,
                         completion: name.completion,
                         position: name.position,
                     },
                     owner: call,
-                    change,
+                    change: fields.into_value(),
                     deadline,
-                })),
-                Err(_) => {
-                    self.failed = true;
-                    self.host_events.push(host::Event::Answer {
-                        agent,
-                        call,
-                        reply: host::Reply::Delivery(host::Delivery::Failed(host::DeliveryFailure {
-                            directory: 0,
-                            reason: host::DeliveryReason::Broken,
-                            diagnostic: host::Diagnostic::empty(),
-                        })),
-                    });
-                }
-            },
+                }));
+            }
             host::Ask::Host { .. } => {
-                self.host_events.push(host::Event::Answer { agent, call, reply: host::Reply::Unavailable });
+                self.host_events.push(host::Input::Parent(host::parent::Event::Answer {
+                    agent,
+                    call,
+                    reply: host::Reply::Unavailable,
+                }));
             }
         }
     }

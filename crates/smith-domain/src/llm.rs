@@ -97,7 +97,7 @@ pub enum Block {
     ToolCall {
         id: Box<[u8]>,
         name: Box<[u8]>,
-        /// Exact provider-written argument bytes, retained for concrete replay and
+        /// Provider arguments, or canonical `{}` for an oversized or cut call;
         /// counted with their enclosing message against session ownership limits.
         input: Box<[u8]>,
         replay: Option<Replay>,
@@ -160,6 +160,8 @@ pub enum Returned {
 /// The next assistant message.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Completion {
+    /// Bytes of each opted-in oversized reasoning item, never retained in history.
+    pub reasoning_dropped: Box<[u64]>,
     /// Ordered provider-neutral blocks; boxed storage and owned payloads count
     /// against the receiving session's aggregate ownership limits.
     pub content: Box<[Said]>,
@@ -191,7 +193,7 @@ pub enum Said {
     ToolCall {
         id: Box<[u8]>,
         name: Box<[u8]>,
-        /// Exact provider-written argument bytes, retained for concrete replay and
+        /// Provider arguments, or canonical `{}` for an oversized or cut call;
         /// counted with their enclosing message against session ownership limits.
         input: Box<[u8]>,
         /// Full decoded classification: owned checkout call, run-served ask,
@@ -238,7 +240,11 @@ impl Decoded {
                 crate::peer::ask_cost(ask)?.checked_sub(u64::try_from(size_of::<run::Ask>()).ok()?)?
             }
             Decoded::Invalid { problem } => match problem {
-                Problem::UnknownTool | Problem::NotAnObject | Problem::TooLarge => 0,
+                Problem::UnknownTool
+                | Problem::NotAnObject
+                | Problem::TooLarge
+                | Problem::Oversize { .. }
+                | Problem::CutOff { .. } => 0,
                 Problem::Missing { field } | Problem::WrongType { field } | Problem::BadValue { field } => {
                     u64::try_from(field.len()).ok()?
                 }

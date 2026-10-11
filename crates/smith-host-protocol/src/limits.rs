@@ -9,6 +9,10 @@ use crate::{Component, OpenEvent};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     pub bodies: smith_channel::Limits,
+    pub charter: smith_charter::v2::Limits,
+    pub transcript: smith_transcript::v3::Limits,
+    /// Maximum configured endpoint names retained by this component.
+    pub endpoints: u32,
     pub channel: skein_channel::Limits,
     /// Maximum live calls awaiting one host terminal.
     pub calls: u32,
@@ -28,17 +32,19 @@ pub enum Error {
     /// The service sent a record before or after its permitted channel phase.
     Order,
     /// A host record does not fit the configured channel body limits.
-    Body(smith_channel::v1::Problem),
+    Body(smith_channel::v2::Problem),
     /// The measured frame could not be written.
     Frame(skein_channel::FrameError),
     /// A measured body could not be written into its allocation.
     Write(skein_lib::Overflow),
     /// An answer's decoded fields do not form a typed host-domain result.
     InvalidAnswer,
+    /// A charter or transcript could not be represented by its codec.
+    Value,
 }
 
-impl From<smith_channel::v1::Problem> for Error {
-    fn from(problem: smith_channel::v1::Problem) -> Error {
+impl From<smith_channel::v2::Problem> for Error {
+    fn from(problem: smith_channel::v2::Problem) -> Error {
         Error::Body(problem)
     }
 }
@@ -78,6 +84,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     }
     let bytes = skein_channel::worst_case(&schema, &limits.channel)?
         .checked_add(duplicate)?
+        .checked_add(smith_protocol_channel::Endpoints::worst_case(limits.endpoints, limits.charter.llm_endpoint)?)?
         .checked_add(Queue::<skein_channel::Event>::worst_case(8)?)?
         .checked_add(Queue::<OpenEvent>::worst_case(1)?)?
         .checked_add(Queue::<Lower>::worst_case(6)?)?;

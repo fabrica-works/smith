@@ -27,6 +27,7 @@ fn fill(limits: Limits) {
     // keeping only the token it names, and the step's peak checked less them.
     let mut step = |event: Event| -> Vec<Token> {
         meter.start();
+        while domain.pop_fact().is_some() {}
         smith_domain_tools::step(&mut domain, &env, event, &mut out);
         domain.reclaim();
         let measured = meter.end();
@@ -52,7 +53,9 @@ fn fill(limits: Limits) {
         for _ in 0..limits.known_files * 2 {
             file += 1;
             let reply_to = ReplyTo::new(Token::new(file));
-            let [owner] = step(Event::Call { kit, reply_to, call: read(&limits, file), deadline })[..] else {
+            let [owner] =
+                step(Event::Call { kit, observation: None, reply_to, call: read(&limits, file), deadline })[..]
+            else {
                 panic!("{limits:?}: the read runs");
             };
             let done = Done::Loaded { content: b"x\n"[..].into(), version: Version::new([file, 0, 0, 0]) };
@@ -66,7 +69,11 @@ fn fill(limits: Limits) {
                 read(&limits, file)
             };
             let reply_to = ReplyTo::new(Token::new(file + 1000));
-            assert_eq!(step(Event::Call { kit, reply_to, call, deadline }).len(), 1, "{limits:?}: the call runs");
+            assert_eq!(
+                step(Event::Call { kit, observation: None, reply_to, call, deadline }).len(),
+                1,
+                "{limits:?}: the call runs"
+            );
         }
     }
     let held = meter.held();

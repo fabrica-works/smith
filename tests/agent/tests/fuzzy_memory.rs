@@ -43,6 +43,7 @@ fn index(rng: &mut Rng, len: usize) -> usize {
 const LIMITS: Limits = Limits {
     accounts: 4,
     endpoints: 3,
+    configured_model_bytes: 4096,
     decoded_call_bytes: 4096,
     skew: Duration::ZERO,
     run: run::Limits {
@@ -68,7 +69,8 @@ const LIMITS: Limits = Limits {
         failure_bytes: 512,
         delegated_result_bytes: 131_072,
         parallel_tools: 2,
-        facts: 32,
+        // A whole completion may report one content-free drop per block.
+        facts: 34,
         tools: smith_domain::tools::Limits {
             kits: 4,
             calls: 2,
@@ -164,7 +166,8 @@ fn charter(context_bytes: u64) -> Charter {
             account: 0,
             endpoint: Endpoint(0),
             model: (*b"m").into(),
-            max_tokens: 256,
+            window: 8192,
+            output: 256,
             dialect: 1,
         },
         models: Box::new([]),
@@ -271,7 +274,8 @@ impl Driver {
                         self.seen[15] += 1;
                     }
                 }
-                Request::Turn { .. }
+                Request::MessageRefused { .. }
+                | Request::Turn { .. }
                 | Request::Waiting { .. }
                 | Request::Checking { .. }
                 | Request::ChecksEnded { .. }
@@ -385,6 +389,7 @@ impl Driver {
             // Most charters as large as a run may hold, some a byte larger.
             let brief = limits.run.run_bytes - 900 + self.rng.below(901);
             return Some(Event::Start {
+                messages: Box::default(),
                 answered: Box::default(),
                 workspace: Some(workspace()),
                 grants: Box::new([smith_domain::Grant {
@@ -498,13 +503,24 @@ impl Driver {
     /// ownership; history capacity cannot enlarge the advertised receiving cap.
     fn completion(&mut self, limits: &Limits, finish: bool, agents: bool, receiving: Receiving) -> Completion {
         let completion_cell_bytes = completion_cell();
-        let usage = Usage { input_tokens: 100, output_tokens: 20, cache_read_tokens: 50, cache_write_tokens: 50 };
+        let usage = Usage {
+            input_tokens: Some(100),
+            output_tokens: Some(20),
+            cache_read_tokens: Some(50),
+            cache_write_tokens: Some(50),
+            reasoning_tokens: None,
+        };
         if self.rng.chance(150) {
             let available =
                 receiving.bytes.checked_sub(completion_cell_bytes).expect("admitted receiving cap holds one block");
             let size = if self.rng.chance(500) { available } else { self.rng.below(available + 1) };
             let text = Said::Text { text: bytes(size), replay: None };
-            return Completion { content: Box::new([text]), stop: Stop::EndTurn, usage };
+            return Completion {
+                reasoning_dropped: Box::default(),
+                content: Box::new([text]),
+                stop: Stop::EndTurn,
+                usage,
+            };
         }
         let classification = u64::try_from(core::mem::size_of::<Decoded>()).expect("fixed cell");
         let minimum = completion_cell_bytes + classification + 6;
@@ -535,7 +551,7 @@ impl Driver {
                 }
             })
             .collect();
-        Completion { content, stop: Stop::ToolUse, usage }
+        Completion { reasoning_dropped: Box::default(), content, stop: Stop::ToolUse, usage }
     }
 
     fn call(&mut self, limits: &Limits, size: u64, finish: bool, agents: bool) -> Decoded {
@@ -704,7 +720,19 @@ fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
         seen: [0; 18],
     };
     let meter = Meter::new();
-    let mut domain = Domain::new(&limits, smith_domain::Config { endpoints: Box::new([Endpoint(0)]) }, seed);
+    let mut domain = Domain::new(
+        &limits,
+        smith_domain::Config {
+            endpoints: Box::new([Endpoint(0)]),
+            models: Box::new([smith_domain::ConfiguredModel {
+                endpoint: smith_domain::run::charter::Endpoint(0),
+                model: Box::from(&b"m"[..]),
+                window: 8192,
+                output: 4096,
+            }]),
+        },
+        seed,
+    );
     let mut measure = |domain: &mut Domain, env: &Env<Limits>, driver: &mut Driver, call: Point| {
         meter.start();
         match call {
@@ -750,6 +778,7 @@ enum Point {
 #[test]
 fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() {
     let wider = Limits {
+        configured_model_bytes: LIMITS.configured_model_bytes,
         accounts: LIMITS.accounts,
         endpoints: LIMITS.endpoints,
         decoded_call_bytes: LIMITS.decoded_call_bytes,
@@ -764,6 +793,7 @@ fn a_domain_driven_at_random_stays_within_its_worst_case_at_every_entry_point() 
             failure_bytes: 512,
             delegated_result_bytes: 131_072,
             parallel_tools: 3,
+            facts: 37,
             tools: smith_domain::tools::Limits { kits: 8, calls: 3, ..LIMITS.session.tools },
             ..LIMITS.session
         },

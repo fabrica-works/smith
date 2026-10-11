@@ -4,6 +4,12 @@ How work reaches main. Work happens on local branches; main moves only by
 merging a branch that passed every check below, or that changes only
 documentation.
 
+For the executable's local mode, see [local-host settings and commands](local-host.md).
+The root package builds `src/main.rs`; its end-to-end and live targets live
+under `tests/end-to-end/`. Bare cargo commands include every workspace member.
+Run the local command with `cargo run -- local SETTINGS STATE [WS]`, or install
+the binary with `cargo install --path .`.
+
 ## 1. Before merging to main
 
 On the branch's tip, rebased on main, so that what is checked is what main
@@ -31,7 +37,8 @@ documentation in this sense: they are code, and clippy checks them.
 ## 2. The two test suites
 
 The suites are those of skein's `docs/foundation/testing-strategy.md`
-(section 8); `docs/design/testing.md` (6.1) says what they hold in smith.
+(section 8). smith's domains and their world stories are specified in
+`docs/design/domain/`.
 
 - **The default suite** is every crate's unit tests and each world's
   focused tests (`tests/<world>/tests/*.rs`): focused tests of
@@ -74,7 +81,7 @@ test replays until it is fixed.
 The `live` profile runs the shipped binary against real providers, their
 OAuth issuers and, optionally, a git remote: one test at a time, without
 retries, with a ten-minute timeout. The default and fuzzy profiles exclude
-it, and the merge gate never runs it (`docs/design/testing.md`, 2.3).
+it, and the merge gate never runs it (skein's `testing-strategy.md`, section 8).
 
 It is configured by the environment. A missing variable, marker or
 signed-in record fails the test, naming it:
@@ -125,3 +132,15 @@ Each selected provider runs `a_run_refreshes_its_grant_at_the_issuer`,
 `cargo nextest run -p smith --test live --profile live -E 'test(=<name>)'`.
 The stories check outcomes (committed files, token generations, traces),
 never the model's wording.
+
+## 5. Benchmarks
+
+Benchmarks run real agents against real providers, and are designed in
+`docs/design/benchmarks.md`. They are never part of the merge gate: no check
+in section 1 runs an agent, and no benchmark result blocks or permits a merge.
+
+- **A change to the runtime, limits, providers or host** records a smoke run in
+  its commit body, with the binary it ran.
+- **Every fix names the probe that guards it,** and its commit body records that
+  probe failing on the fix's parent and passing on the fix. A fix without a
+  probe adds one in the same change (`docs/design/benchmarks.md`, section 4.2).

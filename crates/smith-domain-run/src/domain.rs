@@ -19,6 +19,13 @@ use crate::run::{self, Alarm, Conversation, Run};
 /// closed. The parent reserves this much room in `out` before calling it.
 pub const MAX_OUT: u32 = 3;
 
+/// A terminal may observe every offered and queued message, its end and
+/// answer; other entrances observe no more. The parent reserves this room.
+#[must_use]
+pub const fn max_facts(limits: &Limits) -> u32 {
+    limits.messages.saturating_mul(2).saturating_add(8)
+}
+
 /// The run child domain's state.
 #[derive(Debug)]
 pub struct Domain {
@@ -80,17 +87,15 @@ impl Domain {
         self.calls.len()
     }
 
-    /// The oldest fact not yet drained. The parent drains them at its own
-    /// pace; what does not fit meanwhile is dropped and counted.
+    /// The oldest reserved observation; the parent drains it before more work.
     pub fn pop_fact(&mut self) -> Option<Fact> {
         self.facts.pop()
     }
 
-    /// How many facts were dropped for want of room, since the domain was
-    /// made.
+    /// Free fact slots the parent reserves before each entrance.
     #[must_use]
-    pub fn facts_lost(&self) -> u64 {
-        self.facts.lost()
+    pub fn facts_room(&self) -> u32 {
+        self.facts.room()
     }
 
     /// The reclaim point: frees what closed in this iteration.
@@ -103,25 +108,36 @@ impl Domain {
 
 /// Handles one event, emitting at most [`MAX_OUT`] requests.
 pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
-    domain.facts.begin();
+    assert!(domain.facts_room() >= max_facts(&env.limits), "parent reserved fact step output");
+    domain.facts.begin(env.now);
     let mark = out.len();
     take(domain, env, event, out);
-    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
+    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, &domain.calls, out, mark);
 }
 
 fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
     match event {
         Event::HostReturned { relay, reply } => run::host_returned(domain, env, relay, reply, out),
-        Event::Start { reply_to, host_run, activation, window, charter, workspace, transcript } => {
+        Event::Start { reply_to, host_run, activation, window, messages, charter, workspace, transcript, resumed } => {
             run::start(
                 domain,
                 env,
-                run::Start { reply_to, host_run, activation, window, charter, workspace, transcript },
+                run::Start {
+                    reply_to,
+                    host_run,
+                    activation,
+                    window,
+                    messages,
+                    charter,
+                    workspace,
+                    transcript,
+                    resumed,
+                },
                 out,
             );
         }
         Event::Acknowledge { run, turn } => run::acknowledge(domain, run, turn),
-        Event::Message { run, name, text } => run::message(domain, env, run, name, text, out),
+        Event::Message { run, name, label, text } => run::message(domain, env, run, name, label, text, out),
         Event::Turn { conversation, record, sequence } => run::turn(domain, conversation, record, sequence, out),
         Event::Cancel { run } => run::cancel(domain, run, out),
         Event::Started { conversation, peer } => run::started(domain, conversation, peer, out),
@@ -148,10 +164,11 @@ fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Re
 /// progress that arrived in the same iteration wins over a deadline that passed
 /// while the loop waited.
 pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+    assert!(domain.facts_room() >= max_facts(&env.limits), "parent reserved fact step output");
     let Some(alarm) = domain.alarms.expire(env.now) else {
         return;
     };
-    domain.facts.begin();
+    domain.facts.begin(env.now);
     let mark = out.len();
     match alarm {
         Alarm::Deadline { run } => run::deadline(domain, run, out),
@@ -159,7 +176,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
         Alarm::Call { call } => run::expired(domain, call, out),
         Alarm::Host { call } => run::host_alarm(domain, env, call, out),
     }
-    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, out, mark);
+    facts::tell(&mut domain.facts, &domain.runs, &domain.conversations, &domain.calls, out, mark);
 }
 
 /// Root asks before publishing a completion. A denial has no effects and names

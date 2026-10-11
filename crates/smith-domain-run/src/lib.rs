@@ -45,6 +45,7 @@ mod delivery;
 mod domain;
 pub mod facts;
 mod host;
+mod inbox;
 mod land;
 mod limits;
 pub mod outcome;
@@ -56,15 +57,16 @@ mod tests;
 mod workspace;
 
 pub use boundary::{
-    Answer, Ask, AskRefusal, CompletionEvidence, CompletionFailure, End, Event, Exit, Failure, Fault, Invalid, Opening,
-    Place, Policy, Ran, Read, Refusal, Request, Returned, Stop, TranscriptRefusal, Window,
+    Answer, Ask, AskRefusal, CompletionEvidence, CompletionFailure, End, Event, Exit, Failure, Fault, Invalid, Message,
+    MessageRefusal, Opening, Place, Policy, Ran, Read, Refusal, Request, Returned, Stop, TranscriptRefusal, Window,
 };
 pub use budget::{Budget, CompletionPermit, Exhausted, Overflow, Prices, ReceivingLimit, Share, Spend};
 pub use charter::{Brief, Charter, Conventions, Section};
 pub use domain::{
-    Domain, MAX_OUT, completion_overflow, completion_permit, fire, owner, reserve, settle_reservation, step,
+    Domain, MAX_OUT, completion_overflow, completion_permit, fire, max_facts, owner, reserve, settle_reservation, step,
 };
-pub use limits::{Limits, worst_case};
+pub use inbox::rendered_bytes;
+pub use limits::{Derivation, Limits, derive, worst_case};
 pub use workspace::{Directory, Workspace};
 
 pub use delivery::{

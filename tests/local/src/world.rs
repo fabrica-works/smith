@@ -578,14 +578,22 @@ impl World {
         let config = local::Config {
             chat: b"main".as_slice().into(),
             instructions: instructions.into(),
-            brief: run::charter::Brief { sections: Box::new([]) },
+            // This persistence fixture asks for a greeting before waiting.
+            // Its charter therefore supplies actual initial work.
+            brief: run::charter::Brief {
+                sections: Box::new([run::charter::Section {
+                    title: Box::default(),
+                    text: b"Greet the person, then wait for their questions.".as_slice().into(),
+                }]),
+            },
             models: Box::new([run::charter::Llm {
                 prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
                 dialect: 1,
                 account: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: b"scripted".as_slice().into(),
-                max_tokens: 256,
+                window: 8192,
+                output: 256,
             }]),
             budget: agent_world::BUDGET,
             conventions: None,
@@ -765,6 +773,12 @@ impl World {
     #[must_use]
     pub fn facts_lost(&self) -> u64 {
         self.domain.facts_lost()
+    }
+
+    /// Native agent observations taken by the local owner before its stream sink exists.
+    #[must_use]
+    pub fn agent_facts_not_written(&self) -> u64 {
+        self.domain.agent_facts_not_written()
     }
 
     /// Boundary chronology for deterministic replay.
@@ -1444,7 +1458,8 @@ impl World {
             agent::Request::Abort { owner } => {
                 self.events.push_back(Event::Agent(AgentIo::Aborted { owner }));
             }
-            agent::Request::Waiting { .. }
+            agent::Request::MessageRefused { .. }
+            | agent::Request::Waiting { .. }
             | agent::Request::Turn { .. }
             | agent::Request::Admitted { .. }
             | agent::Request::Answer { .. }

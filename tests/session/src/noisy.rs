@@ -84,6 +84,9 @@ pub fn noisy(seed: u64) -> Settings {
         serving: Span::millis(10, 3_000),
         ..calm
     };
+    settings.agent.tools.facts =
+        settings.agent.tools.facts.saturating_add((parallel_tools + 2) * tools::max_facts(&settings.agent.tools));
+    settings.agent.facts = settings.agent.facts.saturating_add(smith_domain_session::max_facts(&settings.agent));
     // Keep the original 2000..8000 draw and every RNG operation above. The
     // original draw pressures retained payload; canonical terminals additionally
     // require pre-effect provider/result credit (domain/session.md, sections 3, 5
@@ -128,6 +131,6 @@ pub fn submit_noisily(world: &mut World, settings: &Settings, seed: u64) {
         }
         // Answers short enough that some are cut, a tool call included.
         let max_tokens = u32::try_from(rng.between(4, 64)).expect("a small number");
-        world.submit(at, Spec { budget, max_tokens, ..spec(b"make the tests pass") });
+        world.submit(at, Spec { budget, output: max_tokens, ..spec(b"make the tests pass") });
     }
 }

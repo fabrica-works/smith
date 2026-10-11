@@ -19,6 +19,8 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
     ConfiguredEndpoint {
         name: llm::Endpoint(name),
         destination: skein_llm_connection::Endpoint {
+            limits: skein_llm_world::limits(),
+            credential: skein_llm::client::CredentialLimits { access_token: 64, account_id: 64 },
             address: SocketAddr::from(([127, 0, 0, 1], 443)),
             transport: skein_llm_connection::Transport::Tls {
                 server_name: skein_tls::Name::new("example.test").expect("server name"),
@@ -30,6 +32,7 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
         reasoning_effort: Some(b"medium".as_slice().into()),
         cache_key: Some(b"run-cache".as_slice().into()),
         identity: smith_protocol_llm::IdentityProfile::Plain,
+        models: Box::new([]),
     }
 }
 
@@ -50,6 +53,7 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
         model: b"model".as_slice().into(),
         instructions: Box::new([]),
         tools: Box::new([]),
+        choice: shared::ToolChoice::Auto,
         messages: Box::new([]),
         reasoning_effort: None,
         cache_key: None,
@@ -122,6 +126,7 @@ fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() 
         model: b"model".as_slice().into(),
         instructions: b"domain system".as_slice().into(),
         tools: Box::new([]),
+        choice: shared::ToolChoice::Auto,
         messages: Box::new([]),
         reasoning_effort: None,
         cache_key: None,
@@ -133,4 +138,20 @@ fn configured_claude_identity_precedes_domain_instructions_only_for_anthropic() 
     let mut codex = destination(9, 0, shared::Provider::OpenAiCodex);
     codex.identity = smith_protocol_llm::IdentityProfile::ClaudeCode;
     assert!(matches!(Endpoints::new(Box::new([codex]), 1, 1), Err(EndpointError::Identity)));
+}
+
+#[test]
+fn reasoning_drop_is_selected_per_declared_model() {
+    use smith_protocol_llm::{ConfiguredModel, OversizedReasoning};
+    let mut endpoint = destination(1, 0, shared::Provider::OpenAiCodex);
+    endpoint.models = Box::new([
+        ConfiguredModel { name: b"strict".as_slice().into(), oversized_reasoning: OversizedReasoning::Fail },
+        ConfiguredModel { name: b"optional".as_slice().into(), oversized_reasoning: OversizedReasoning::Drop },
+    ]);
+    let endpoints = Endpoints::new(Box::new([endpoint]), 1, 1).expect("named models");
+    let options = endpoints.resolve(llm::Endpoint(1)).expect("endpoint");
+    assert!(!options.drop_reasoning(b"strict"));
+    assert!(options.drop_reasoning(b"optional"));
+    assert!(!options.drop_reasoning(b"undeclared"));
+    assert!(!options.drop_reasoning(b"strict"));
 }

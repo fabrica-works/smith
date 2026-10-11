@@ -16,6 +16,13 @@ use smith_protocol_channel as channel;
 use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
+#[derive(Debug)]
+struct PendingMessage {
+    name: Token,
+    label: Box<[u8]>,
+    text: Box<[u8]>,
+}
+
 const TRACE_PROMPT_BYTES: u32 = 65_536;
 const COMPONENT_OWNER_BIT: u64 = 1 << 63;
 
@@ -117,7 +124,7 @@ pub struct Service {
     trace_facts: Queue<domain::Fact>,
     trace_prompt: Option<(Token, Box<[u8]>)>,
     capture_prompts: bool,
-    pending_messages: Queue<(Token, Box<[u8]>)>,
+    pending_messages: Queue<PendingMessage>,
     channel_below: Queue<ChannelLower>,
     llm_events: Queue<llm::ToDomain>,
     llm_below: Queue<io::Request>,
@@ -140,6 +147,7 @@ pub struct Service {
     output: Option<Token>,
     signals: Option<Token>,
     admitted: Option<Token>,
+    run_started: Time,
     cancel_pending: bool,
     answer_sent: bool,
     channel_ended: bool,
@@ -172,7 +180,8 @@ impl Effects {
     /// Build the shared lower stages, retaining neither a root domain nor a channel.
     pub fn new(config: Config, seed: u64) -> Result<Self, ConfigError> {
         let accounts = config.limits.llm.accounts;
-        if effects_worst_case(&config.limits).ok_or(ConfigError::Memory)? > config.limits.memory {
+        if effects_worst_case(&config.limits, &config.llm_endpoints).ok_or(ConfigError::Memory)? > config.limits.memory
+        {
             return Err(ConfigError::MemoryCeiling);
         }
         let mut service = Service::new(config, seed)?;
@@ -241,7 +250,8 @@ impl Effects {
             | domain::Request::Probe { .. }
             | domain::Request::Check { .. }
             | domain::Request::Abort { .. }) => self.service.domain_requests.push(request),
-            domain::Request::Waiting { .. }
+            domain::Request::MessageRefused { .. }
+            | domain::Request::Waiting { .. }
             | domain::Request::Turn { .. }
             | domain::Request::HostCall { .. }
             | domain::Request::WithdrawHost { .. }
@@ -322,24 +332,27 @@ impl Effects {
     }
 }
 
-/// Construction peak and retained bound for the host-owned effects adapter.
+/// Construction peak and retained bound for the host-owned effects adapter
+/// with its configured endpoint request heads.
 #[must_use]
-pub fn effects_worst_case(limits: &Limits) -> Option<u64> {
-    worst_case(limits)?
+pub fn effects_worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
+    worst_case(limits, endpoints)?
         .checked_add(Map::<u32, domain::GrantName>::worst_case(limits.llm.accounts)?)?
         .checked_add(u64::try_from(size_of::<Effects>()).ok()?)
 }
 
 /// Checked maximum of every owned layer and inter-layer queue. The file
-/// driver's transient buffers are counted by its own bound.
+/// driver's transient buffers are counted by its own bound; configured
+/// endpoints supply the request-head and credential bounds.
 #[must_use]
-pub fn worst_case(limits: &Limits) -> Option<u64> {
+pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
     let queue = limits.queue;
     let stages = Queue::<channel::OpenEvent>::worst_case(queue)?
         .checked_add(Queue::<domain::Fact>::worst_case(queue)?)?
+        .checked_add(u64::from(queue).checked_mul(limits.domain.session.completion_bytes)?)?
         .checked_add(List::<u8>::worst_case(TRACE_PROMPT_BYTES)?.checked_mul(2)?)?
         .checked_add(Queue::<ChannelLower>::worst_case(queue)?)?
-        .checked_add(Queue::<(Token, Box<[u8]>)>::worst_case(queue)?)?
+        .checked_add(Queue::<PendingMessage>::worst_case(queue)?)?
         .checked_add(Queue::<llm::ToDomain>::worst_case(queue)?)?
         .checked_add(Queue::<io::Request>::worst_case(queue)?.checked_mul(2)?)?
         .checked_add(Queue::<machine::ToDomain>::worst_case(queue)?)?
@@ -357,7 +370,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(List::<Token>::worst_case(limits.machine.roots)?)?;
     domain::worst_case(&limits.domain)?
         .checked_add(channel::worst_case(&limits.channel)?)?
-        .checked_add(llm::component_worst_case(&limits.llm)?)?
+        .checked_add(llm::component_worst_case(&limits.llm, endpoints)?)?
         .checked_add(machine::worst_case(&limits.machine)?)?
         .checked_add(io::worst_case(&limits.io)?)?
         .checked_add(file_layer::FileIo::worst_case(
@@ -392,7 +405,7 @@ impl Service {
         if limits.queue < room || limits.routes < lower_routes {
             return Err(ConfigError::Queue);
         }
-        let memory = worst_case(&limits).ok_or(ConfigError::Memory)?;
+        let memory = worst_case(&limits, &config.llm_endpoints).ok_or(ConfigError::Memory)?;
         if memory > limits.memory {
             return Err(ConfigError::MemoryCeiling);
         }
@@ -453,6 +466,7 @@ impl Service {
             output: None,
             signals: None,
             admitted: None,
+            run_started: Time::ZERO,
             cancel_pending: false,
             answer_sent: false,
             channel_ended: false,
@@ -594,11 +608,12 @@ impl Service {
         self.pending_start = None;
         let token = self.next_send();
         let answer = run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Workspace));
+        let read = None;
         if self
             .channel
             .as_mut()
             .expect("framed agent owns its channel")
-            .send_answer(answer, token, &mut self.channel_events, &mut self.channel_below)
+            .send_answer(answer, read, token, &mut self.channel_events, &mut self.channel_below)
             .is_err()
         {
             self.mark_failed(Failure::Send);
@@ -646,7 +661,9 @@ impl Service {
                 .push(domain::Grant { name: grant.name, valid: grant.valid })
                 .expect("grant count was checked at Start");
         }
+        self.run_started = self.domain_env.now;
         self.domain_events.push(domain::Event::Start {
+            messages: start.messages,
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
             activation: start.activation,
@@ -1193,11 +1210,11 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
                 service.start_ready();
             }
         }
-        channel::OpenEvent::Message { name, text } => {
+        channel::OpenEvent::Message { name, label, text } => {
             if let Some(run) = service.admitted {
-                service.domain_events.push(domain::Event::Message { run, name, text });
+                service.domain_events.push(domain::Event::Message { run, name, label, text });
             } else {
-                service.pending_messages.push((name, text));
+                service.pending_messages.push(PendingMessage { name, label, text });
             }
         }
         channel::OpenEvent::HostReturned { relay, reply } => {
@@ -1252,9 +1269,11 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
 
 fn domain_up(service: &mut Service) {
     let maximum = domain::max_out(&service.limits.domain);
+    let facts = domain::max_facts(&service.limits.domain);
     for _ in 0..service.limits.domain.run.conversations {
         if !service.domain.as_ref().expect("framed agent owns its domain").is_ready()
             || service.domain_requests.room() < maximum
+            || service.domain.as_ref().expect("framed agent owns its domain").facts_room() < facts
         {
             break;
         }
@@ -1265,7 +1284,9 @@ fn domain_up(service: &mut Service) {
         );
     }
     for _ in 0..service.domain_events.capacity() {
-        if service.domain_requests.room() < maximum {
+        if service.domain_requests.room() < maximum
+            || service.domain.as_ref().expect("framed agent owns its domain").facts_room() < facts
+        {
             break;
         }
         let event = match service.domain_events.pop() {
@@ -1281,6 +1302,7 @@ fn domain_up(service: &mut Service) {
     }
     if service.domain.as_ref().expect("framed agent owns its domain").is_due(service.domain_env.now)
         && service.domain_requests.room() >= maximum
+        && service.domain.as_ref().expect("framed agent owns its domain").facts_room() >= facts
     {
         domain::fire(
             service.domain.as_mut().expect("framed agent owns its domain"),
@@ -1298,11 +1320,11 @@ fn domain_down(service: &mut Service) {
             if service.domain_events.room() == 0 {
                 break;
             }
-            let (name, text) = match service.pending_messages.pop() {
+            let PendingMessage { name, label, text } = match service.pending_messages.pop() {
                 Some(message) => message,
                 None => break,
             };
-            service.domain_events.push(domain::Event::Message { run, name, text });
+            service.domain_events.push(domain::Event::Message { run, name, label, text });
         }
     }
     for _ in 0..service.domain_requests.capacity() {
@@ -1328,37 +1350,32 @@ fn domain_down(service: &mut Service) {
         }
         Some(_) | None => {}
     }
-    if service.admitted.is_some() && !service.answer_sent && !service.channel_ended {
-        for _ in 0..service.limits.queue {
-            if service.channel_events.room() < channel_max.to_domain || service.channel_below.room() < channel_max.below
-            {
-                break;
-            }
-            let fact = match service.domain.as_mut().expect("framed agent owns its domain").pop_fact() {
+    drain_facts(service);
+}
+
+/// A single take offers each observation to the independent sinks. The trace
+/// continues through answer and settlement; channel projection owns its phase.
+fn drain_facts(service: &mut Service) {
+    for _ in 0..service.limits.queue {
+        let fact = match &mut service.domain {
+            Some(domain) => match domain.pop_fact() {
                 Some(fact) => fact,
                 None => break,
-            };
-            if service.trace_facts.room() > 0 {
-                service.trace_facts.push(fact);
-            } else {
-                service.lost_trace_facts = service.lost_trace_facts.saturating_add(1);
-            }
-            let token = service.next_send();
-            if service
-                .channel
-                .as_mut()
-                .expect("framed agent owns its channel")
-                .send_fact(
-                    fact,
-                    service.domain_env.now.saturating_since(Time::ZERO),
-                    token,
-                    &mut service.channel_events,
-                    &mut service.channel_below,
-                )
+            },
+            None => break,
+        };
+        let token = service.next_send();
+        if let Some(channel) = &mut service.channel
+            && channel
+                .send_fact(&fact, service.run_started, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
-            {
-                service.mark_failed(Failure::Send);
-            }
+        {
+            service.mark_failed(Failure::Send);
+        }
+        if service.trace_facts.room() > 0 {
+            service.trace_facts.push(fact);
+        } else {
+            service.lost_trace_facts = service.lost_trace_facts.saturating_add(1);
         }
     }
 }
@@ -1425,6 +1442,18 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.mark_failed(Failure::Send);
             }
         }
+        domain::Request::MessageRefused { host_run: _, name, reason } => {
+            let token = service.next_send();
+            if service
+                .channel
+                .as_mut()
+                .expect("framed agent owns its channel")
+                .send_message_refused(name, reason, token, &mut service.channel_events, &mut service.channel_below)
+                .is_err()
+            {
+                service.mark_failed(Failure::Send);
+            }
+        }
         domain::Request::Admitted { host_run: _, run } => {
             service.admitted = Some(run);
             let token = service.next_send();
@@ -1438,14 +1467,14 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.mark_failed(Failure::Send);
             }
         }
-        domain::Request::Answer { to, answer } => {
+        domain::Request::Answer { to, answer, read } => {
             assert!(to.into_token() == Token::new(1), "one Start reply right per process");
             let token = service.next_send();
             if service
                 .channel
                 .as_mut()
                 .expect("framed agent owns its channel")
-                .send_answer(answer, token, &mut service.channel_events, &mut service.channel_below)
+                .send_answer(answer, read, token, &mut service.channel_events, &mut service.channel_below)
                 .is_err()
             {
                 service.mark_failed(Failure::Send);
@@ -1823,7 +1852,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
     due || service.io.is_ready()
         || service.llm.has_work()
         || match &service.domain {
-            Some(domain) => domain.is_ready(),
+            Some(domain) => domain.is_ready() || domain.has_facts(),
             None => false,
         }
         || !service.completions.is_empty()
@@ -1862,6 +1891,10 @@ pub fn done(service: &Service) -> Option<bool> {
         && service.machine_below.is_empty()
         && service.domain_events.is_empty()
         && service.domain_requests.is_empty()
+        && match &service.domain {
+            Some(domain) => !domain.has_facts(),
+            None => true,
+        }
         && service.io_events.is_empty()
         && service.io_requests.is_empty()
         && service.file_events.is_empty()
@@ -1900,7 +1933,7 @@ mod tests {
         let decoded_call_bytes = 4096;
         let channel_bodies = smith_channel::CEILINGS;
         let schema = smith_channel::schema(&channel_bodies).expect("bounded channel schema");
-        let version = schema.version(1).expect("v1");
+        let version = schema.version(2).expect("v2");
         let mut largest = 0;
         for kind in &version.kinds {
             largest = largest.max(kind.largest);
@@ -1930,7 +1963,7 @@ mod tests {
                     skip: 4096,
                     output_bytes: largest.checked_add(8).expect("largest frame"),
                     output_frames: 4,
-                    kinds: 17,
+                    kinds: 18,
                 },
                 endpoints: 1,
                 calls: 8,
@@ -1940,15 +1973,21 @@ mod tests {
                 grants: 8,
             },
             llm: llm::ComponentLimits {
-                adapter: llm::Limits { client, tool_bytes: 32_768, result_bytes: 32_768 },
+                adapter: llm::Limits {
+                    client,
+                    tool_bytes: 32_768,
+                    rendered_result: client.dialect.string_bytes,
+                    shell_default: skein_lib::Duration::from_secs(120),
+                    shell_maximum: skein_lib::Duration::from_secs(1200),
+                },
                 connection: skein_llm_connection::Limits {
                     endpoints: 1,
                     connections: 2,
+                    calls: 2,
                     per_endpoint: 2,
                     idle_keep: Duration::from_secs(1),
                     io: llm_io,
                     tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },
-                    llm: client,
                 },
                 receiving: llm::Receiving {
                     max_completion_bytes: llm::completion_worst_case(&client, decoded_call_bytes)
@@ -1998,7 +2037,7 @@ mod tests {
         let llm_endpoints = llm::Endpoints::new(Box::new([]), 1, 1).expect("empty endpoint table");
         Config {
             limits,
-            domain: domain::Config { endpoints: Box::new([]) },
+            domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
             channel_endpoints,
             llm_endpoints,
             environment: Box::new([]),
@@ -2041,17 +2080,17 @@ mod tests {
     #[test]
     fn startup_counts_file_driver_and_rejects_missing_route_room() {
         let mut limits = limits();
+        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1, 1).expect("empty endpoint table");
         assert!(
-            worst_case(&limits).expect("checked memory")
+            worst_case(&limits, &llm_endpoints).expect("checked memory")
                 > file_layer::FileIo::worst_case(4, 64, 2, 512).expect("file bound")
         );
-        limits.memory = worst_case(&limits).expect("bound") - 1;
+        limits.memory = worst_case(&limits, &llm_endpoints).expect("bound") - 1;
         let channel_endpoints = channel::Endpoints::new(List::with_capacity(1));
-        let llm_endpoints = llm::Endpoints::new(Box::new([]), 1, 1).expect("empty endpoint table");
         let result = Service::new(
             Config {
                 limits,
-                domain: domain::Config { endpoints: Box::new([]) },
+                domain: domain::Config { endpoints: Box::new([]), models: Box::new([]) },
                 channel_endpoints,
                 llm_endpoints,
                 environment: Box::new([]),
@@ -2096,13 +2135,17 @@ mod tests {
             }
             other => panic!("unexpected terminal: {other:?}"),
         }
-        channel_event(&mut service, channel::OpenEvent::Message { name: owner, text: Box::from(&b"hello"[..]) });
+        channel_event(
+            &mut service,
+            channel::OpenEvent::Message { name: owner, label: Box::from(&b"host"[..]), text: Box::from(&b"hello"[..]) },
+        );
         assert_eq!(service.pending_messages.len(), 1);
         assert!(service.domain_events.is_empty());
         service.admitted = Some(Token::new(9));
         domain_down(&mut service);
         match service.domain_events.pop().expect("message") {
-            domain::Event::Message { run, name, text } => {
+            domain::Event::Message { run, name, label, text } => {
+                assert_eq!(label.as_ref(), b"host");
                 assert_eq!(run, Token::new(9));
                 assert_eq!(name, owner);
                 assert_eq!(&*text, b"hello");

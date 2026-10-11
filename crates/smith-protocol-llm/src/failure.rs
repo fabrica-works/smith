@@ -3,11 +3,11 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Token, Writer, bytes};
-use skein_llm::{self as shared, Error, client};
+use skein_lib::{Decimal, Token, Writer, bytes};
+use skein_llm::{self as shared, client};
 use smith_domain::{Event, llm};
 
-use crate::Context;
+use crate::{Context, Error};
 
 /// Moves one actual shared Failed terminal into the root boundary unchanged in meaning.
 /// Detail is exact under the secured receiving cap; the policy consumes/drops it
@@ -36,14 +36,14 @@ pub fn failed(
         shared::Failure::Invalid => llm::Failure::Invalid,
         shared::Failure::Unauthorized => llm::Failure::Unauthorized,
         shared::Failure::Exhausted { retry_after } => llm::Failure::Exhausted { retry_after },
-        shared::Failure::Limit => llm::Failure::Limit,
+        shared::Failure::Limit { which: _, bound: _ } => llm::Failure::Limit,
         shared::Failure::Protocol => llm::Failure::Protocol,
         shared::Failure::Cancelled => llm::Failure::Cancelled,
     };
     let evidence = match evidence {
         client::Evidence::Unsent => llm::Evidence::Unsent,
         client::Evidence::Unknown => llm::Evidence::Unknown,
-        client::Evidence::Response => llm::Evidence::Response,
+        client::Evidence::Response { status: _ } => llm::Evidence::Response,
     };
     Ok(Event::Failed { owner, failure, evidence, detail })
 }
@@ -72,6 +72,16 @@ pub fn refusal(owner: Token, error: Error, max_failure_bytes: u32) -> Event {
 }
 
 pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, Error> {
+    match problem {
+        llm::Problem::Oversize { bytes, bound } => return call_size_problem(bytes, Some(bound), maximum),
+        llm::Problem::CutOff { bytes } => return call_size_problem(bytes, None, maximum),
+        llm::Problem::UnknownTool
+        | llm::Problem::NotAnObject
+        | llm::Problem::Missing { .. }
+        | llm::Problem::WrongType { .. }
+        | llm::Problem::BadValue { .. }
+        | llm::Problem::TooLarge => {}
+    }
     let (prefix, field): (&[u8], Option<Box<[u8]>>) = match problem {
         llm::Problem::UnknownTool => (b"unknown tool", None),
         llm::Problem::NotAnObject => (b"input is not a complete JSON object", None),
@@ -79,6 +89,7 @@ pub(crate) fn problem(problem: llm::Problem, maximum: u32) -> Result<Box<[u8]>, 
         llm::Problem::WrongType { field } => (b"wrong field type ", Some(field)),
         llm::Problem::BadValue { field } => (b"invalid field value ", Some(field)),
         llm::Problem::TooLarge => (b"input exceeds receiving limits", None),
+        llm::Problem::Oversize { .. } | llm::Problem::CutOff { .. } => unreachable!("size notes rendered above"),
     };
     let mut length = prefix.len();
     if let Some(field) = &field {
@@ -115,4 +126,35 @@ fn printable(byte: u8) -> bool {
 
 fn hex(value: u8) -> u8 {
     *b"0123456789abcdef".get(usize::from(value)).expect("four-bit escaped field byte")
+}
+
+fn call_size_problem(bytes: u64, bound: Option<u32>, maximum: u32) -> Result<Box<[u8]>, Error> {
+    let size = Decimal::of(bytes);
+    #[expect(clippy::manual_map, reason = "production subset uses exhaustive matches without mapping callbacks")]
+    let bound = match bound {
+        Some(bound) => Some(Decimal::of(u64::from(bound))),
+        None => None,
+    };
+    let (prefix, suffix): (&[u8], &[u8]) = match bound {
+        Some(_) => (b"input too large: ", b" bytes; make a smaller write or an edit"),
+        None => (b"input cut off after ", b" bytes; make a smaller call and try again"),
+    };
+    let mut length = prefix.len().checked_add(size.as_bytes().len()).ok_or(Error::Limit)?;
+    if let Some(bound) = &bound {
+        length = length.checked_add(b" bytes, bound ".len()).ok_or(Error::Limit)?;
+        length = length.checked_add(bound.as_bytes().len()).ok_or(Error::Limit)?;
+    }
+    length = length.checked_add(suffix.len()).ok_or(Error::Limit)?;
+    if length > usize::try_from(maximum).expect("u32 fits usize") {
+        return Err(Error::Limit);
+    }
+    let mut output = Writer::new(length);
+    output.put(prefix).expect("measured note");
+    output.put(size.as_bytes()).expect("measured size");
+    if let Some(bound) = bound {
+        output.put(b" bytes, bound ").expect("measured unit");
+        output.put(bound.as_bytes()).expect("measured bound");
+    }
+    output.put(suffix).expect("measured remedy");
+    Ok(output.finish())
 }

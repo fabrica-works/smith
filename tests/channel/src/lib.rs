@@ -5,8 +5,8 @@
 use std::collections::VecDeque;
 
 use skein_channel::{Closed, Control, Lower, LowerEvent, StreamMode, control_frame};
-use skein_lib::Queue;
 use skein_lib::stream::{self, OutputOutcome};
+use skein_lib::{Queue, Token};
 use smith_host_protocol as host;
 use smith_protocol_channel as agent;
 
@@ -44,13 +44,15 @@ pub enum Observation {
     /// A saved host decision reached the domain vocabulary with its stable name.
     AgentSavedHost { activation: u64, tool: Box<[u8]>, text: Box<[u8]>, error: bool },
     /// Host's sender label and message text reached the agent's domain face.
-    AgentMessage { name: skein_lib::Token, text: Box<[u8]> },
+    AgentMessage { name: skein_lib::Token, label: Box<[u8]>, text: Box<[u8]> },
     /// The host saw the run wait after reading a named message.
     HostWaiting { read: Option<skein_lib::Token> },
     /// The host received a long operation's bounded span.
     HostLong { span: skein_lib::Duration },
     /// The host received the end of the long operation.
     HostLongDone,
+    /// A named message ended refused at the agent ingress.
+    HostMessageRefused { name: Token, reason: smith_host_domain::MessageRefusal },
     /// The host received a numbered durable transcript body.
     HostTurn { number: u32, spent: u64, read: Option<skein_lib::Token>, body: Box<[u8]> },
     /// A best-effort content-free fact reached the host.
@@ -101,6 +103,11 @@ enum Half {
     Agent(Box<agent::Component>),
 }
 
+struct RawStart {
+    charter: Box<[u8]>,
+    transcript: Option<Box<[Box<[u8]>]>>,
+}
+
 struct Peer {
     half: Half,
     below: Queue<Lower>,
@@ -115,12 +122,15 @@ struct Peer {
     received_bytes: usize,
     host_answer: Option<smith_host_domain::channel::Answer>,
     agent_start: Option<Box<agent::DecodedStart>>,
+    raw_start: Option<RawStart>,
 }
 
 impl Peer {
-    fn host(limits: host::Limits, mode: StreamMode) -> Peer {
+    fn host(limits: &host::Limits, mode: StreamMode) -> Peer {
         let mut peer = Peer {
-            half: Half::Host(Box::new(host::Component::new(&limits, mode).expect("checked host channel"))),
+            half: Half::Host(Box::new(
+                host::Component::new(limits, mode, test_endpoints()).expect("checked host channel"),
+            )),
             below: Queue::with_capacity(64),
             host_events: Queue::with_capacity(16),
             agent_events: Queue::with_capacity(16),
@@ -133,6 +143,7 @@ impl Peer {
             received_bytes: 0,
             host_answer: None,
             agent_start: None,
+            raw_start: None,
         };
         if let Half::Host(host) = &mut peer.half {
             host.open(&mut peer.host_events, &mut peer.below);
@@ -157,6 +168,7 @@ impl Peer {
             received_bytes: 0,
             host_answer: None,
             agent_start: None,
+            raw_start: None,
         }
     }
 
@@ -195,6 +207,31 @@ impl Peer {
                     self.receive(LowerEvent::Write(stream::OutputUp::Settled { right, outcome }));
                 }
                 Lower::Write(stream::OutputDown::Send { bytes, .. }) => {
+                    let bytes = match self.raw_start.take() {
+                        Some(RawStart { charter, transcript }) => {
+                            let start = smith_channel::Start::decode(
+                                &smith_channel::CEILINGS,
+                                &mut skein_lib::Reader::new(&bytes[8..]),
+                            )
+                            .expect("host Start frame");
+                            let mut parts = start.into_parts();
+                            parts.charter = charter;
+                            let mut turns = skein_lib::List::with_capacity(smith_channel::CEILINGS.start_transcript);
+                            for turn in transcript.unwrap_or_default() {
+                                turns.push(turn).expect("fixture transcript");
+                            }
+                            parts.transcript = turns;
+                            let start = smith_channel::Start::new(&smith_channel::CEILINGS, parts)
+                                .expect("wire fixture bounds");
+                            let mut writer =
+                                skein_lib::Writer::new(usize::try_from(start.measure()).expect("measured body"));
+                            start.encode(&mut writer).expect("wire fixture");
+                            let mut frame = skein_channel::frame_writer(0x0100, start.measure()).expect("Start frame");
+                            frame.put(&writer.finish()).expect("frame body");
+                            frame.finish().expect("frame").bytes().into()
+                        }
+                        None => bytes,
+                    };
                     if !other.incoming_ended {
                         let keep = other.cut_after.map_or(bytes.len(), |remaining| remaining.min(bytes.len()));
                         other.incoming.extend(bytes[..keep].iter().copied());
@@ -238,6 +275,9 @@ impl Peer {
                 host::OpenEvent::Hangup { why } => output.push(Observation::HostEnded(why)),
                 host::OpenEvent::Sent { token } => output.push(Observation::HostSent(token)),
                 host::OpenEvent::Unsent { token, why } => output.push(Observation::HostUnsent(token, why)),
+                host::OpenEvent::MessageRefused { name, reason } => {
+                    output.push(Observation::HostMessageRefused { name, reason });
+                }
                 host::OpenEvent::Admitted => output.push(Observation::HostAdmitted),
                 host::OpenEvent::Waiting { read } => output.push(Observation::HostWaiting { read }),
                 host::OpenEvent::Long { span } => output.push(Observation::HostLong { span }),
@@ -246,7 +286,8 @@ impl Peer {
                     number: turn.number,
                     spent: turn.spent,
                     read: turn.read,
-                    body: turn.body,
+                    body: agent::encode_turn(turn.body.value(), &smith_transcript::CEILINGS, &test_endpoints())
+                        .expect("store codec"),
                 }),
                 host::OpenEvent::Fact { body } => {
                     let fact =
@@ -328,7 +369,9 @@ impl Peer {
                     assert!(self.agent_start.replace(start).is_none(), "one decoded Start per channel");
                 }
                 agent::OpenEvent::Ended { why } => output.push(Observation::AgentEnded(why)),
-                agent::OpenEvent::Message { name, text } => output.push(Observation::AgentMessage { name, text }),
+                agent::OpenEvent::Message { name, label, text } => {
+                    output.push(Observation::AgentMessage { name, label, text });
+                }
                 agent::OpenEvent::HostReturned { relay, reply } => {
                     output.push(Observation::AgentHostReturned { relay, reply });
                 }
@@ -357,7 +400,7 @@ fn test_endpoints() -> agent::Endpoints {
 
 fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
     let schema = smith_channel::schema(&bodies).expect("bounded bodies");
-    let version = schema.version(1).expect("v1");
+    let version = schema.version(2).expect("v2");
     let largest = version.kinds.iter().map(|kind| kind.largest).max().expect("kinds");
     skein_channel::Limits {
         chunk: 4096,
@@ -365,7 +408,7 @@ fn channel_limits(bodies: smith_channel::Limits) -> skein_channel::Limits {
         skip: 4096,
         output_bytes: largest.checked_add(8).expect("frame fits"),
         output_frames: 4,
-        kinds: 17,
+        kinds: 18,
     }
 }
 
@@ -382,7 +425,17 @@ impl World {
     #[must_use]
     pub fn new(host_bodies: smith_channel::Limits, agent_bodies: smith_channel::Limits, mode: StreamMode) -> World {
         let channel = channel_limits(smith_channel::CEILINGS);
-        let host = Peer::host(host::Limits { bodies: host_bodies, channel, calls: 8 }, mode);
+        let host = Peer::host(
+            &host::Limits {
+                bodies: host_bodies,
+                charter: smith_charter::CEILINGS,
+                transcript: smith_transcript::CEILINGS,
+                endpoints: 1,
+                channel,
+                calls: 8,
+            },
+            mode,
+        );
         let agent = Peer::agent(
             &agent::Limits {
                 bodies: agent_bodies,
@@ -440,12 +493,23 @@ impl World {
 
     /// Send a Start carrying saved turn bytes, if present.
     pub fn send_start_with_turns(&mut self, charter: Box<[u8]>, transcript: Option<Box<[Box<[u8]>]>>) {
+        let typed_charter = typed_charter(&charter);
+        let typed_transcript = agent::decode_transcript(
+            transcript.as_deref().unwrap_or(&[]),
+            &smith_transcript::CEILINGS,
+            &test_endpoints(),
+        )
+        .ok()
+        .flatten()
+        .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
+        self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
+            messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             activation: 1,
             workspace: None,
-            charter,
-            transcript,
+            charter: typed_charter,
+            transcript: typed_transcript,
             answered: Box::default(),
             directories: Box::default(),
             grants: Box::default(),
@@ -491,12 +555,23 @@ impl World {
         transcript: Option<Box<[Box<[u8]>]>>,
     ) {
         self.observed.push(Observation::HostStarted);
+        let typed_charter = typed_charter(&charter);
+        let typed_transcript = agent::decode_transcript(
+            transcript.as_deref().unwrap_or(&[]),
+            &smith_transcript::CEILINGS,
+            &test_endpoints(),
+        )
+        .ok()
+        .flatten()
+        .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"));
+        self.host.raw_start = Some(RawStart { charter, transcript });
         let start = smith_host_domain::channel::Start {
+            messages: Box::default(),
             logical_run: skein_lib::Token::new(1),
             activation: 7,
             workspace: Some(skein_lib::Token::new(2)),
-            charter,
-            transcript,
+            charter: typed_charter,
+            transcript: typed_transcript,
             answered: Box::from([smith_host_domain::channel::AnsweredCall {
                 name: smith_host_domain::channel::CallName { activation: 6, completion: 1, position: 0 },
                 tool: Box::from(*b"check"),
@@ -547,6 +622,7 @@ impl World {
             agent
                 .send_answer(
                     smith_domain::run::Answer::Parked { spent: smith_domain::run::Spend::ZERO, turns: 0 },
+                    None,
                     skein_lib::Token::new(4),
                     &mut self.agent.agent_events,
                     &mut self.agent.below,
@@ -562,9 +638,20 @@ impl World {
 
     /// Send one actual typed domain answer through the agent half.
     pub fn agent_answers(&mut self, answer: smith_domain::run::Answer) {
+        self.agent_answers_with_fence(answer, None);
+    }
+
+    /// Send the final fence with its one actual domain terminal.
+    pub fn agent_answers_with_fence(&mut self, answer: smith_domain::run::Answer, read: Option<Token>) {
         if let Half::Agent(agent) = &mut self.agent.half {
             agent
-                .send_answer(answer, skein_lib::Token::new(33), &mut self.agent.agent_events, &mut self.agent.below)
+                .send_answer(
+                    answer,
+                    read,
+                    skein_lib::Token::new(33),
+                    &mut self.agent.agent_events,
+                    &mut self.agent.below,
+                )
                 .expect("bounded parked answer");
         }
     }
@@ -575,6 +662,15 @@ impl World {
             agent
                 .send_admitted(skein_lib::Token::new(3), &mut self.agent.agent_events, &mut self.agent.below)
                 .expect("bounded admitted");
+        }
+    }
+
+    /// Tell one actual run refusal through the agent half.
+    pub fn agent_refuses_message(&mut self, name: Token, reason: smith_domain::run::MessageRefusal) {
+        if let Half::Agent(agent) = &mut self.agent.half {
+            agent
+                .send_message_refused(name, reason, Token::new(34), &mut self.agent.agent_events, &mut self.agent.below)
+                .expect("bounded message refusal");
         }
     }
 
@@ -621,12 +717,12 @@ impl World {
     }
 
     /// Offer one content-free domain fact through the agent's bounded output.
-    pub fn agent_sends_fact(&mut self, fact: smith_domain::Fact, elapsed: skein_lib::Duration) -> bool {
+    pub fn agent_sends_fact(&mut self, fact: &smith_domain::Fact, started: skein_lib::Time) -> bool {
         if let Half::Agent(agent) = &mut self.agent.half {
             return agent
                 .send_fact(
                     fact,
-                    elapsed,
+                    started,
                     skein_lib::Token::new(30),
                     &mut self.agent.agent_events,
                     &mut self.agent.below,
@@ -636,7 +732,7 @@ impl World {
         false
     }
 
-    /// Facts dropped by the agent half because output room was reserved.
+    /// Projectable facts omitted by phase or reserved output room.
     #[must_use]
     pub fn lost_facts(&self) -> u64 {
         if let Half::Agent(agent) = &self.agent.half {
@@ -830,10 +926,10 @@ impl World {
         }
     }
 
-    /// Inject an Open from a later version to exercise version refusal.
+    /// Inject a version-one Open to exercise version refusal.
     pub fn agent_hears_foreign_version(&mut self) {
         let frame = control_frame(
-            &Control::Open { magic: *b"smth", lowest: 2, highest: 2, features: 0, credential: Box::default() },
+            &Control::Open { magic: *b"smth", lowest: 1, highest: 1, features: 0, credential: Box::default() },
             &self.channel,
         )
         .expect("bounded foreign opening");
@@ -855,4 +951,26 @@ impl World {
     pub fn take_agent_start(&mut self) -> Option<Box<agent::DecodedStart>> {
         self.agent.agent_start.take()
     }
+}
+
+/// Decode fixture policy for the typed host boundary; malformed wire fixtures use a neutral fallback.
+#[must_use]
+pub fn typed_charter(bytes: &[u8]) -> smith_host_domain::Charter {
+    let value = agent::decode_charter(bytes, &smith_charter::CEILINGS, &test_endpoints()).unwrap_or_else(|_| {
+        agent::decode_charter(
+            include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin"),
+            &smith_charter::CEILINGS,
+            &test_endpoints(),
+        )
+        .expect("fallback fixture policy")
+    });
+    smith_host_domain::Charter::new(value, u64::MAX).expect("fixture ownership")
+}
+
+/// Decode a valid history fixture before a typed host Start.
+#[must_use]
+pub fn typed_transcript(bytes: &[Box<[u8]>]) -> Option<smith_host_domain::Transcript> {
+    agent::decode_transcript(bytes, &smith_transcript::CEILINGS, &test_endpoints())
+        .expect("typed fixture history")
+        .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"))
 }

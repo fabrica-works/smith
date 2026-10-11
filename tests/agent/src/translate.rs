@@ -56,6 +56,7 @@ pub fn query(prompt: agent::Prompt) -> provider::Query {
         model: prompt.model,
         system: prompt.system,
         tools: tools.into(),
+        choice: provider::ToolChoice::Auto,
         messages,
         max_tokens: prompt.max_tokens,
     }
@@ -115,10 +116,11 @@ pub fn completion(answer: provider::Answer, grants: tools::Grants, served: &[age
         provider::Finish::ContentFilter => agent::Stop::Refusal,
     };
     let usage = agent::Usage {
-        input_tokens: answer.usage.prompt_tokens,
-        output_tokens: answer.usage.completion_tokens,
-        cache_read_tokens: answer.usage.cached_tokens,
-        cache_write_tokens: answer.usage.cache_creation_tokens,
+        input_tokens: answer.usage.input,
+        output_tokens: answer.usage.output,
+        cache_read_tokens: answer.usage.cache_read,
+        cache_write_tokens: answer.usage.cache_write,
+        reasoning_tokens: answer.usage.reasoning,
     };
     let content = answer
         .parts
@@ -133,7 +135,7 @@ pub fn completion(answer: provider::Answer, grants: tools::Grants, served: &[age
             provider::Part::ToolOutput { .. } => panic!("a fake completion contains no tool result"),
         })
         .collect();
-    agent::Completion { content, stop, usage }
+    agent::Completion { reasoning_dropped: Box::default(), content, stop, usage }
 }
 
 #[must_use]

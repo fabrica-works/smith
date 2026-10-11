@@ -86,10 +86,15 @@ pub fn process_worst_case(limits: &Limits, detail_bytes: u32) -> Option<u64> {
 
 impl Process {
     /// Construct one process half, including its framed pipe channel.
-    pub fn new(agent: Token, limits: &Limits, detail_bytes: u32) -> Result<Process, Error> {
+    pub fn new(
+        agent: Token,
+        limits: &Limits,
+        detail_bytes: u32,
+        endpoints: smith_protocol_channel::Endpoints,
+    ) -> Result<Process, Error> {
         assert!(agent.raw() < (1_u64 << 63_u32), "domain owner fits the process-owner namespace");
         Ok(Process {
-            channel: Component::new(limits, StreamMode::Two)?,
+            channel: Component::new(limits, StreamMode::Two, endpoints)?,
             agent,
             io_owner: Token::new(agent.raw() | (1_u64 << 63_u32)),
             phase: Phase::Idle,
@@ -241,7 +246,7 @@ impl Process {
     /// Send a domain stop to io's child and acknowledge its accepted request.
     pub fn signal(&self, signal: kernel::Signal, below: &mut Queue<IoRequest>) {
         let child = self.child.expect("a signal names a spawned child");
-        below.push(IoRequest::Signal { child, signal });
+        below.push(IoRequest::Signal { child, to: kernel::Target::Child, signal });
     }
 
     /// Request an immediate operator stop once the child handle exists.
@@ -249,7 +254,7 @@ impl Process {
     pub fn kill_if_spawned(&self, below: &mut Queue<IoRequest>) -> bool {
         match self.child {
             Some(child) => {
-                below.push(IoRequest::Signal { child, signal: kernel::Signal::Kill });
+                below.push(IoRequest::Signal { child, to: kernel::Target::Child, signal: kernel::Signal::Kill });
                 true
             }
             None => false,
@@ -441,6 +446,7 @@ impl Process {
                 | OpenEvent::Hangup { .. }
                 | OpenEvent::Sent { .. }
                 | OpenEvent::Unsent { .. }
+                | OpenEvent::MessageRefused { .. }
                 | OpenEvent::Admitted
                 | OpenEvent::Waiting { .. }
                 | OpenEvent::Long { .. }

@@ -1,21 +1,23 @@
 //! Host channel fences exact, monotonic spend on turns and final answers.
-use smith_host_domain::{Answer, Event, Fault, RunFailure, RunResult, Turn, Up};
+use smith_host_domain::parent;
+use smith_host_domain::{Answer, Fault, Input, RunFailure, RunResult, Turn, Up};
 use smith_host_world::{Lower, World, limits};
 
 fn commit(world: &mut World, number: u32) {
-    world.event(Event::Acknowledge { agent: world.agent(), turn: number });
+    world.event(Input::Parent(parent::Event::Acknowledge { agent: world.agent(), turn: number }));
     while world.lower.contains(Lower::Send) {
         world.sent();
     }
 }
 
 fn recorded(number: u32, spent: u64) -> Up {
-    Up::Turn { turn: Turn { number, spent, read: None, body: Box::from(&b"actual turn"[..]) } }
+    Up::Turn { turn: Turn { number, spent, read: None, body: smith_host_world::turn_value(1) } }
 }
 
 fn ended(turns: u32, spent: u64) -> Up {
     Up::Answer {
         answer: Answer {
+            read: None,
             turns,
             spent,
             result: RunResult::Failed {

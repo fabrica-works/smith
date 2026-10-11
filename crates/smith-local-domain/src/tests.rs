@@ -37,7 +37,8 @@ fn config() -> Config {
             account: 7,
             endpoint: Endpoint(4),
             model: Box::from(&b"small"[..]),
-            max_tokens: 128,
+            window: 8192,
+            output: 128,
         }]),
         budget: run::Budget { turns: 8, spend: 1, time: Duration::from_secs(60) },
         conventions: Some(run::Conventions { guide: Box::from(&b"GUIDE.md"[..]), checks: Box::from(&b"check"[..]) }),
@@ -150,9 +151,10 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
 
     crate::step(&mut domain, &env, Event::External(ExternalEvent::Admitted { run: Token::new(3) }), &mut out);
     let Some(Request::External(message)) = out.pop() else { panic!("first message") };
-    let ExternalRequest::Message { run, name, text } = *message else { panic!("message request") };
+    let ExternalRequest::Message { run, name, label, text } = *message else { panic!("message request") };
     assert_eq!(run, Token::new(3));
     assert_eq!(name, Token::new(1));
+    assert_eq!(label.as_ref(), b"person");
     assert_eq!(text.as_ref(), b"hello");
 
     let turn = smith_domain::Turn {
@@ -184,4 +186,21 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
     let Some(Request::Show { text }) = out.pop() else { panic!("last word shown after Gone") };
     assert_eq!(text.as_ref(), b"Chat parked");
     let Some(Request::Load) = out.pop() else { panic!("next run may load after Gone") };
+}
+
+#[test]
+fn invalid_or_unowned_model_declarations_refuse_local_startup() {
+    let limits = limits();
+    for output in [false, true] {
+        let mut invalid = config();
+        if output {
+            invalid.models[0].output = 0;
+        } else {
+            invalid.models[0].window = 0;
+        }
+        assert_eq!(invalid.validate(&limits), Err(Invalid::Models));
+    }
+    let config = config();
+    let limits = Limits { agent: smith_domain::Limits { configured_model_bytes: 0, ..limits.agent }, ..limits };
+    assert_eq!(config.validate(&limits), Err(Invalid::Limits));
 }

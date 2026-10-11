@@ -6,9 +6,9 @@
 //! call IDs and diagnostic bytes, allowing the provider to check transcript
 //! pairing and the tests to inspect feedback on subsequent requests.
 
+use crate::adapter;
 use skein_fake_llm_domain::api as provider;
 use smith_domain::{llm as agent, run, tools};
-use smith_protocol_llm as adapter;
 
 pub(crate) fn query(prompt: agent::Prompt) -> provider::Query {
     let mut tools = Vec::new();
@@ -45,6 +45,7 @@ pub(crate) fn query(prompt: agent::Prompt) -> provider::Query {
         model: prompt.model,
         system: prompt.system,
         tools: tools.into(),
+        choice: provider::ToolChoice::Auto,
         messages,
         max_tokens: prompt.max_tokens,
     }
@@ -99,10 +100,11 @@ pub(crate) fn completion(
         provider::Finish::ContentFilter => agent::Stop::Refusal,
     };
     let usage = agent::Usage {
-        input_tokens: answer.usage.prompt_tokens,
-        output_tokens: answer.usage.completion_tokens,
-        cache_read_tokens: answer.usage.cached_tokens,
-        cache_write_tokens: answer.usage.cache_creation_tokens,
+        input_tokens: answer.usage.input,
+        output_tokens: answer.usage.output,
+        cache_read_tokens: answer.usage.cache_read,
+        cache_write_tokens: answer.usage.cache_write,
+        reasoning_tokens: answer.usage.reasoning,
     };
     let content = answer
         .parts
@@ -117,7 +119,7 @@ pub(crate) fn completion(
             provider::Part::ToolOutput { .. } => panic!("a fake completion contains no tool result"),
         })
         .collect();
-    agent::Completion { content, stop, usage }
+    agent::Completion { reasoning_dropped: Box::default(), content, stop, usage }
 }
 
 pub(crate) fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, served: &[agent::Served]) -> agent::Decoded {
@@ -175,7 +177,13 @@ pub(crate) fn decode(name: &[u8], arguments: &[u8], grants: tools::Grants, serve
             ask: run::Ask::SubAgent { brief, families, llm: field(arguments, b"llm"), share: None },
         };
     }
-    let limits = adapter::Limits { client: skein_llm_world::limits(), tool_bytes: 32768, result_bytes: 32768 };
+    let limits = adapter::Limits {
+        client: skein_llm_world::limits(),
+        tool_bytes: 32768,
+        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        shell_default: skein_lib::Duration::from_secs(120),
+        shell_maximum: skein_lib::Duration::from_secs(1200),
+    };
     adapter::decode(name, arguments, grants, served, &limits)
 }
 
@@ -292,6 +300,9 @@ fn object(document: &[u8]) -> Option<()> {
             }
             Some(json::Event::Done) => return (!first).then_some(()),
             Some(json::Event::Failed(_)) => return None,
+            Some(json::Event::Long(_) | json::Event::Skipped(_)) => {
+                unreachable!("fixture decoder requests only Next tokens")
+            }
             Some(json::Event::Closed) => panic!("parser is not closed by this translator"),
             None => {}
         }

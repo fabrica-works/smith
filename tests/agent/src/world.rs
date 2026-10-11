@@ -142,7 +142,7 @@ pub struct Settings {
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
     pub races: u32,
-    /// Whether the shell drains facts; disabling this exercises lossy telemetry.
+    /// Whether the scripted parent retains drained facts; false drains without a sink.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
     pub drain_facts: bool,
@@ -236,7 +236,7 @@ enum Family {
     reason = "scheduled copied terminal records retain their fixed diagnostic tails without another allocation"
 )]
 enum Delivery {
-    Message { name: Token, text: Box<[u8]> },
+    Message { name: Token, label: Box<[u8]>, text: Box<[u8]> },
     Acknowledge { turn: u32 },
     Terminal { family: Family, owner: Token, event: Event },
     Io { owner: Token, op: tools::Op, deadline: Time },
@@ -405,6 +405,7 @@ pub struct World {
     auto_ack: bool,
     waiting: Vec<(Time, Option<Token>)>,
     facts: Vec<Fact>,
+    agent_facts_not_written: u64,
     trace: Trace,
     referee: Referee<Meeting>,
     stimuli: Vec<()>,
@@ -425,6 +426,7 @@ fn choose_start(
             host_run,
             activation,
             window,
+            messages,
             charter,
             workspace,
             grants,
@@ -438,6 +440,7 @@ fn choose_start(
                     host_run,
                     activation,
                     window,
+                    messages,
                     charter,
                     workspace,
                     grants,
@@ -450,6 +453,7 @@ fn choose_start(
         Some(_) => panic!("the caller supplies a complete Start event"),
         None => (
             Event::Start {
+                messages: Box::default(),
                 reply_to: ReplyTo::new(Token::new(1)),
                 host_run: Token::new(1),
                 activation: if settings.resume { 2 } else { 1 },
@@ -516,10 +520,36 @@ impl World {
         )
     }
 
+    /// Start before any work arrives, with the host's waiting authority.
+    #[must_use]
+    pub fn with_empty_brief(settings: Settings) -> World {
+        let mut charter = charter(&settings);
+        charter.brief.sections = Box::default();
+        charter.instructions = script::cue(settings.job).unwrap_or(b"Look into the code.").into();
+        charter.grants.wait = true;
+        let start = Event::Start {
+            messages: Box::default(),
+            reply_to: ReplyTo::new(Token::new(1)),
+            host_run: Token::new(1),
+            activation: 1,
+            window: agent::Window { turns: 100, bytes: u64::MAX },
+            charter,
+            workspace: None,
+            transcript: None,
+            answered: Box::default(),
+            grants: Box::new([Grant {
+                name: GrantName { account: 0, generation: 1 },
+                valid: Duration::from_secs(7200),
+            }]),
+        };
+        Self::with_start(settings, start)
+    }
+
     /// Start a scripted run with the host's specified acknowledgement credit.
     #[must_use]
     pub fn with_window(settings: Settings, window: agent::Window) -> World {
         let start = Event::Start {
+            messages: Box::default(),
             reply_to: ReplyTo::new(Token::new(1)),
             host_run: Token::new(1),
             activation: 1,
@@ -575,7 +605,7 @@ impl World {
         let supplied_start = selected_start.is_some();
         let (start, reply_to) =
             choose_start(settings, transcript, answered, workspace, selected_charter, selected_start);
-        let Event::Start { host_run, charter, workspace, .. } = &start else {
+        let Event::Start { host_run, charter, workspace, messages, .. } = &start else {
             unreachable!("the selected event is Start")
         };
         let root = workspace
@@ -595,6 +625,7 @@ impl World {
         for model in &charter.models {
             model_prices.insert(model.model.clone(), model.prices);
         }
+        let messages_seen = opening_observations(charter, messages);
         let host_run = *host_run;
         stage.push(start);
         let mut schedule = Schedule::new();
@@ -618,11 +649,7 @@ impl World {
             settings: *settings,
             now: Time::ZERO,
             rng: Rng::new(settings.seed ^ 0x0b),
-            agent: agent::Domain::new(
-                &settings.limits,
-                agent::Config { endpoints: Box::new([run::charter::Endpoint(0)]) },
-                settings.seed ^ 0x17,
-            ),
+            agent: agent::Domain::new(&settings.limits, configuration(), settings.seed ^ 0x17),
             stage,
             backend,
             parent_deliveries: false,
@@ -654,11 +681,12 @@ impl World {
             completions: Vec::new(),
             model_prices,
             turns: Vec::new(),
-            messages_seen: Vec::new(),
+            messages_seen,
             turn_metadata: Vec::new(),
             auto_ack: false,
             waiting: Vec::new(),
             facts: Vec::new(),
+            agent_facts_not_written: 0,
             trace: Trace::default(),
             referee,
             stimuli,
@@ -900,8 +928,8 @@ impl World {
 
     /// Script an actual parent input; delivery requires prior Admitted, as the host does.
     /// Contract: domain/run.md, section 6; testing-strategy.md, section 7.
-    pub fn message_at(&mut self, at: Time, name: Token, text: Box<[u8]>) {
-        self.schedule.send(at, Delivery::Message { name, text });
+    pub fn message_at(&mut self, at: Time, name: Token, label: Box<[u8]>, text: Box<[u8]>) {
+        self.schedule.send(at, Delivery::Message { name, label, text });
     }
 
     /// Script durable host acknowledgement of this turn and its prefix.
@@ -943,16 +971,24 @@ impl World {
             while let Some(delivery) = self.schedule.next(self.now) {
                 self.deliver(delivery);
             }
-            while self.stage.has_room() && self.agent.is_ready() {
+            while self.agent.facts_room() >= agent::max_facts(&self.stage.env.limits)
+                && self.stage.has_room()
+                && self.agent.is_ready()
+            {
                 agent::resume(&mut self.agent, &self.stage.env, &mut self.stage.out);
                 self.gather();
             }
-            while let Some(event) = self.stage.next_event() {
+            while self.agent.facts_room() >= agent::max_facts(&self.stage.env.limits)
+                && let Some(event) = self.stage.next_event()
+            {
                 self.trace.log(self.now, format!("agent <- {event:?}"));
                 agent::step(&mut self.agent, &self.stage.env, event, &mut self.stage.out);
                 self.gather();
             }
-            while self.stage.has_room() && self.agent.is_due(self.now) {
+            while self.agent.facts_room() >= agent::max_facts(&self.stage.env.limits)
+                && self.stage.has_room()
+                && self.agent.is_due(self.now)
+            {
                 agent::fire(&mut self.agent, &self.stage.env, &mut self.stage.out);
                 self.gather();
             }
@@ -1054,12 +1090,14 @@ impl World {
     }
 
     fn gather(&mut self) {
-        if self.settings.drain_facts {
-            while let Some(fact) = self.agent.pop_fact() {
+        while let Some(fact) = self.agent.pop_fact() {
+            if self.settings.drain_facts {
                 self.facts.push(fact);
+            } else {
+                self.agent_facts_not_written += 1;
             }
-            while self.agent.pop_content().is_some() {}
         }
+        while self.agent.pop_content().is_some() {}
     }
 
     #[expect(
@@ -1092,7 +1130,7 @@ impl World {
                 assert!(self.admitted.replace(run).is_none(), "a start is admitted at most once");
                 self.messages_seen.push((self.now, crate::messages_referee::Seen::Admitted));
             }
-            Request::Answer { to, answer } => {
+            Request::Answer { to, answer, read } => {
                 if matches!(&answer, run::Answer::Failed { .. }) {
                     self.host_history.shutdown(self.now);
                 }
@@ -1113,7 +1151,8 @@ impl World {
                     | run::Answer::Failed { spent, .. } => *spent,
                 };
                 assert!(self.answer.replace(answer).is_none(), "one answer per host start");
-                self.messages_seen.push((self.now, crate::messages_referee::Seen::Answer { turns, parked, spent }));
+                self.messages_seen
+                    .push((self.now, crate::messages_referee::Seen::Answer { turns, parked, spent, read }));
                 self.answered = Some(self.now);
             }
             Request::Checking { host_run, .. } => {
@@ -1418,7 +1457,7 @@ impl World {
                 self.host_history.withdraw(relay).expect("withdraw retains actual terminal");
                 assert!(self.host_pending.contains_key(&(relay.owner.raw(), relay.attempt)));
             }
-            Request::Rejected { .. } | Request::Exhausted { .. } => {}
+            Request::MessageRefused { .. } | Request::Rejected { .. } | Request::Exhausted { .. } => {}
         }
     }
 
@@ -1458,10 +1497,14 @@ impl World {
 
     fn deliver(&mut self, delivery: Delivery) {
         match delivery {
-            Delivery::Message { name, text } => {
-                self.messages_seen.push((self.now, crate::messages_referee::Seen::Input { name, text: text.clone() }));
+            Delivery::Message { name, label, text } => {
+                let mut rendered = label.to_vec();
+                rendered.extend_from_slice(b": ");
+                rendered.extend_from_slice(&text);
+                self.messages_seen
+                    .push((self.now, crate::messages_referee::Seen::Input { name, text: rendered.into_boxed_slice() }));
                 let run = self.admitted.expect("parent sends only after actual admission");
-                self.stage.push(Event::Message { run, name, text });
+                self.stage.push(Event::Message { label, run, name, text });
             }
             Delivery::Acknowledge { turn } => {
                 let run = self.admitted.expect("parent acknowledges only an admitted run");
@@ -1583,10 +1626,10 @@ impl World {
                     spent: run::Spend {
                         units,
                         turns: 1,
-                        input: completion.usage.input_tokens,
-                        output: completion.usage.output_tokens,
-                        cache_read: completion.usage.cache_read_tokens,
-                        cache_write: completion.usage.cache_write_tokens,
+                        input: completion.usage.input_tokens.expect("scripted peer supplies count"),
+                        output: completion.usage.output_tokens.expect("scripted peer supplies count"),
+                        cache_read: completion.usage.cache_read_tokens.expect("scripted peer supplies count"),
+                        cache_write: completion.usage.cache_write_tokens.expect("scripted peer supplies count"),
                     },
                 });
             }
@@ -1679,7 +1722,7 @@ impl World {
             (0, 0, 0),
             "root routing holds nothing"
         );
-        if self.settings.drain_facts && self.agent.facts_lost() == 0 {
+        if self.settings.drain_facts {
             self.check_facts();
         }
     }
@@ -1690,21 +1733,21 @@ impl World {
         let (mut opened, mut ended, mut answered) = (0_u32, 0_u32, 0_u32);
         for fact in &self.facts {
             match fact {
-                Fact::Session { fact: sf::Used { usage, .. } } => {
+                Fact::Session { fact: sf { kind: smith_domain::session::FactKind::Used { usage, .. }, .. } } => {
                     used = used
                         .accumulate(run::Spend {
                             units: 0,
                             turns: 1,
-                            input: usage.input_tokens,
-                            output: usage.output_tokens,
-                            cache_read: usage.cache_read_tokens,
-                            cache_write: usage.cache_write_tokens,
+                            input: usage.input_tokens.expect("scripted peer supplies count"),
+                            output: usage.output_tokens.expect("scripted peer supplies count"),
+                            cache_read: usage.cache_read_tokens.expect("scripted peer supplies count"),
+                            cache_write: usage.cache_write_tokens.expect("scripted peer supplies count"),
                         })
                         .expect("bounded observed usage");
                 }
-                Fact::Run { fact: rf::Fact::Opened { .. } } => opened += 1,
-                Fact::Run { fact: rf::Fact::Ended { .. } } => ended += 1,
-                Fact::Run { fact: rf::Fact::Answered { .. } } => answered += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Opened { .. }, .. } } => opened += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Ended { .. }, .. } } => ended += 1,
+                Fact::Run { fact: rf::Fact { kind: rf::FactKind::Answered { .. }, .. } } => answered += 1,
                 Fact::Run { .. } | Fact::Session { .. } => {}
             }
         }
@@ -1800,20 +1843,26 @@ impl World {
         &self.landed
     }
 
-    /// Content-free facts drained by the shell, never used to choose stimuli.
+    /// Native observations drained and counted when this parent has no retained sink.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
+    #[must_use]
+    pub fn agent_facts_not_written(&self) -> u64 {
+        self.agent_facts_not_written
+    }
+
+    /// Actual native observations retained by this scripted parent.
     #[must_use]
     pub fn facts(&self) -> &[Fact] {
         &self.facts
     }
 
-    /// How many facts or content observations the copied agent dropped.
+    /// Optional content observations omitted by the capture buffer.
     ///
     /// Scripted-world contract: domain/run.md, sections 13 and 14; testing-strategy.md, section 7.
     #[must_use]
     pub fn lost(&self) -> u64 {
-        self.agent.facts_lost()
+        self.agent.content_lost()
     }
 
     /// Provider queries observed at its boundary, including returned tool IDs.
@@ -1884,8 +1933,10 @@ impl World {
     }
 }
 
-fn charter(settings: &Settings) -> run::Charter {
-    use run::charter::{Endpoint, Grants, Llm, Tools};
+/// The scripted host's complete charter, supplied to root admission by its world.
+#[must_use]
+pub fn charter(settings: &Settings) -> run::Charter {
+    use run::charter::{Grants, Llm, Tools};
 
     use run::outcome::{ChangeSpec, FieldRule, ItemRule, ItemSpec, OutcomeSpec, TextSpec, VerdictRule};
     let change = matches!(settings.job, Job::Coding | Job::Delegating | Job::Wandering | Job::MidChange);
@@ -1906,14 +1957,7 @@ fn charter(settings: &Settings) -> run::Charter {
             }]),
         },
     };
-    let llm = Llm {
-        prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
-        account: 0,
-        endpoint: Endpoint(0),
-        model: b"fake-1".as_slice().into(),
-        max_tokens: 4096,
-        dialect: 1,
-    };
+    let llm = main_model();
     run::Charter {
         instructions: Box::new([]),
         brief: run::Brief {
@@ -2023,13 +2067,73 @@ impl World {
 // Independent outside scalar oracle from caller data and actual provider counts.
 fn observed_price(prices: run::Prices, usage: llm::Usage) -> Option<u64> {
     let denominator = u128::from(prices.unit);
-    let fresh = u128::from(usage.input_tokens).checked_add(u128::from(usage.cache_write_tokens))?;
+    let fresh = u128::from(usage.input_tokens.expect("scripted peer supplies count"))
+        .checked_add(u128::from(usage.cache_write_tokens.expect("scripted peer supplies count")))?;
     let numerator = fresh
         .checked_mul(u128::from(prices.input))?
-        .checked_add(u128::from(usage.cache_read_tokens).checked_mul(u128::from(prices.cached))?)?
-        .checked_add(u128::from(usage.output_tokens).checked_mul(u128::from(prices.output))?)?;
+        .checked_add(
+            u128::from(usage.cache_read_tokens.expect("scripted peer supplies count"))
+                .checked_mul(u128::from(prices.cached))?,
+        )?
+        .checked_add(
+            u128::from(usage.output_tokens.expect("scripted peer supplies count"))
+                .checked_mul(u128::from(prices.output))?,
+        )?;
     let rounded = (numerator / denominator).checked_add(u128::from(numerator % denominator != 0))?;
     u64::try_from(rounded).ok()
+}
+
+/// Observe the actual Start batch before its admission and first provider query.
+fn opening_observations(
+    charter: &run::Charter,
+    messages: &[run::Message],
+) -> Vec<(Time, crate::messages_referee::Seen)> {
+    let mut messages_seen = vec![(
+        Time::ZERO,
+        crate::messages_referee::Seen::Started {
+            brief: charter.brief.sections.iter().any(|section| !section.title.is_empty() || !section.text.is_empty()),
+            wait: charter.grants.wait,
+            time: charter.budget.time,
+        },
+    )];
+    for message in messages {
+        let mut rendered = message.label.to_vec();
+        rendered.extend_from_slice(b": ");
+        rendered.extend_from_slice(&message.text);
+        messages_seen.push((
+            Time::ZERO,
+            crate::messages_referee::Seen::Input { name: message.name, text: rendered.into_boxed_slice() },
+        ));
+    }
+    messages_seen
+}
+
+fn configuration() -> agent::Config {
+    agent::Config {
+        endpoints: Box::new([run::charter::Endpoint(0)]),
+        models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
+            .iter()
+            .map(|name| smith_domain::ConfiguredModel {
+                endpoint: run::charter::Endpoint(0),
+                model: (*name).into(),
+                window: 8192,
+                output: 4096,
+            })
+            .collect(),
+    }
+}
+
+fn main_model() -> run::charter::Llm {
+    use run::charter::{Endpoint, Llm};
+    Llm {
+        prices: run::Prices { input: 0, cached: 0, output: 0, unit: 1 },
+        account: 0,
+        endpoint: Endpoint(0),
+        model: b"fake-1".as_slice().into(),
+        window: 8192,
+        output: 4096,
+        dialect: 1,
+    }
 }
 
 #[cfg(test)]
@@ -2041,6 +2145,7 @@ mod bridge_tests {
     fn a_caller_start_and_host_reply_cross_the_parent_bridge() {
         let settings = Settings { job: Job::HostTools, ..Settings::calm(811) };
         let start = Event::Start {
+            messages: Box::default(),
             answered: Box::default(),
             reply_to: ReplyTo::new(Token::new(71)),
             host_run: Token::new(73),
@@ -2085,6 +2190,7 @@ mod bridge_tests {
         let mut charter = charter(&settings);
         charter.grants.host_tools[0].name = b"message".as_slice().into();
         let start = Event::Start {
+            messages: Box::default(),
             answered: Box::default(),
             reply_to: ReplyTo::new(Token::new(71)),
             host_run: Token::new(73),

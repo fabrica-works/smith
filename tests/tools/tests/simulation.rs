@@ -935,7 +935,7 @@ fn a_search_is_bounded_and_says_when_it_cannot_run() {
 }
 
 #[test]
-fn a_world_with_no_room_for_facts_runs_as_one_with_room() {
+fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing() {
     let run_with = |facts| {
         let calm = Settings::calm(80);
         let settings = Settings { tools: Limits { facts, ..calm.tools }, ..calm };
@@ -952,14 +952,14 @@ fn a_world_with_no_room_for_facts_runs_as_one_with_room() {
                 .into_iter()
                 .map(|(path, content)| (path.to_vec(), content.to_vec()))
                 .collect::<Vec<_>>(),
-            world.stats().facts_lost,
+            world.stats().facts,
         )
     };
-    let (answers, files, lost) = run_with(64);
-    assert_eq!(lost, 0);
-    let (lossy_answers, lossy_files, lossy_lost) = run_with(1);
-    assert!(lossy_lost > 0, "facts were dropped");
-    assert_eq!((lossy_answers, lossy_files), (answers, files), "nothing decided depends on a fact");
+    let (answers, files, facts) = run_with(64);
+    let (held_answers, held_files, held_facts) = run_with(2);
+    assert!(facts > 0);
+    assert_eq!(held_facts, facts, "every actual observation is retained");
+    assert_eq!((held_answers, held_files), (answers, files), "reservation holds work without changing its answer");
 }
 
 #[test]
@@ -1016,4 +1016,25 @@ fn a_write_that_failed_may_have_happened_and_the_next_one_finds_out() {
     world.run(ITERATIONS);
     let expected = [Outcome::NotRead, read_of(b"first\n", 0, 1, 1), written(false)];
     assert_eq!(world.answers(session), expected.iter().collect::<Vec<_>>());
+}
+
+#[test]
+fn the_directory_itself_works_for_every_operation() {
+    let script = vec![Step::Calls(vec![
+        read(b"."),
+        write(b".", b"no"),
+        edit(b".", b"old", b"new", false),
+        list(b"."),
+        search(b".", b"vendored", None),
+        shell(b"env", None),
+    ])];
+    let (answers, world) = run(Settings::calm(94), ALL, script);
+    assert_eq!(&answers[..3], &[Outcome::NotFile, Outcome::NotFile, Outcome::NotFile]);
+    assert!(matches!(&answers[3], Outcome::Listed { entries, .. } if !entries.is_empty()));
+    assert_eq!(
+        answers[4],
+        Outcome::Found { hits: [hit(b"vendor/lib/lib.rs", 1, b"// vendored")].into(), more: 0, timed_out: false }
+    );
+    assert!(matches!(&answers[5], Outcome::Exited { exit: tools::Exit::Code { code: 0 }, .. }));
+    assert_eq!(world.stats().ops, 3, "file-only calls never ask io");
 }

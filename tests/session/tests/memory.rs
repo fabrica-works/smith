@@ -58,7 +58,7 @@ const LIMITS: Limits = Limits {
         cache_write: 1 << 20,
         time: Duration::from_secs(3600),
     },
-    max_tokens: 1024,
+
     retries: 1,
     backoff_base: Duration::from_secs(60),
     backoff_max: Duration::from_secs(60),
@@ -181,7 +181,7 @@ fn observe_fill(
                     asked = Some(Asked::Other);
                 }
             }
-            Request::Ended { opener, end, turns, usage } => {
+            Request::Ended { opener, end, turns, usage, .. } => {
                 assert!(full_service, "admissible original payload must enter backoff");
                 assert_eq!((end, turns, usage), (smith_domain_session::End::TranscriptFull, 2, Usage::ZERO));
                 let row = &mut observed[usize::try_from(opener.raw()).expect("bounded opener")];
@@ -224,6 +224,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
     let mut step = |event: Event| -> Option<Asked> {
         let may_rest = matches!(route, Route::Invalid) && matches!(event, Event::Completed { .. });
         meter.start();
+        while domain.pop_fact().is_some() {}
         smith_domain_session::step(&mut domain, &env, event, &mut out);
         let measured = meter.end();
         let mut asked = observe_fill(&mut out, &mut observed, full_service);
@@ -233,6 +234,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
         }
         if domain.is_ready() {
             meter.start();
+            while domain.pop_fact().is_some() {}
             smith_domain_session::resume(&mut domain, &env, &mut out);
             let measured = meter.end();
             asked = observe_fill(&mut out, &mut observed, full_service).or(asked);
@@ -252,7 +254,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
                 let call = Decoded::Owned { call: Call::Read { path, skip: 0, lines: None } };
                 let content =
                     Box::new([Block::ToolCall { id: bytes(1), name: bytes(1), input: bytes(1), call, replay: None }]);
-                let completion = Completion { content, stop: Stop::ToolUse, usage: Usage::ZERO };
+                let completion = received(content, Stop::ToolUse);
                 let Some(Asked::Io { owner: op }) = step(Event::Completed { owner, completion }) else {
                     panic!("the original maximum read has full reserved receiving space");
                 };
@@ -266,7 +268,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
                 let call = Decoded::Invalid { problem: Problem::Missing { field: bytes(field) } };
                 let content =
                     Box::new([Block::ToolCall { id: bytes(1), name: bytes(1), input: bytes(1), call, replay: None }]);
-                let completion = Completion { content, stop: Stop::ToolUse, usage: Usage::ZERO };
+                let completion = received(content, Stop::ToolUse);
                 let Some(Asked::Complete { .. }) = step(Event::Completed { owner, completion }) else {
                     panic!("the original maximum problem and exact repeated answer fit");
                 };
@@ -274,7 +276,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
             Route::Talk => {
                 let message = pressure - spec_cost - (block + 1) - block;
                 let content = Box::new([Block::Text { text: bytes(1), replay: None }]);
-                let completion = Completion { content, stop: Stop::EndTurn, usage: Usage::ZERO };
+                let completion = received(content, Stop::EndTurn);
                 let Some(Asked::Other) = step(Event::Completed { owner, completion }) else {
                     panic!("the original one-byte answer yields");
                 };
@@ -306,6 +308,10 @@ fn fill(original: Limits, route: Route, full_service: bool) {
         && priced >= turns
         && ended == full_service));
     assert_retained_payload(&meter, &limits, route, full_service, pressure);
+}
+
+fn received(content: Box<[Block]>, stop: Stop) -> Completion {
+    Completion { reasoning_dropped: Box::default(), content, stop, usage: Usage::ZERO }
 }
 
 fn assert_retained_payload(meter: &Meter, limits: &Limits, route: Route, full_service: bool, pressure: u64) {
@@ -342,7 +348,12 @@ fn fill_service_tail(
         matches!(
             step(Event::Completed {
                 owner,
-                completion: Completion { content, stop: Stop::EndTurn, usage: Usage::ZERO }
+                completion: Completion {
+                    reasoning_dropped: Box::default(),
+                    content,
+                    stop: Stop::EndTurn,
+                    usage: Usage::ZERO
+                }
             }),
             Some(Asked::Other)
         ),
@@ -390,7 +401,7 @@ fn fill_spec(limits: Limits) -> Spec {
             Descriptor { ticket: Token::new(2), effect: Effect::Read },
         ]),
         prompt: bytes(1),
-        max_tokens: 1,
+        output: 1,
         budget: limits.budget,
     }
 }
@@ -408,6 +419,10 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one metered fixture keeps delegated ownership and exact emitted copies together"
+)]
 fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     use smith_domain_session::record;
     let block = size(size_of::<Block>());
@@ -432,6 +447,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     let mut ended = None;
     let mut drive = |event| {
         meter.start();
+        while domain.pop_fact().is_some() {}
         smith_domain_session::step(&mut domain, &env, event, &mut out);
         let measured = meter.end();
         let mut completion = None;
@@ -464,7 +480,7 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         authority: authority(),
         delegated: Box::new([Descriptor { ticket: Token::new(2), effect: Effect::Write }]),
         prompt: bytes(1),
-        max_tokens: 1,
+        output: 1,
         budget: limits.budget,
     };
     let (owner, _) = drive(Event::Open {
@@ -481,13 +497,14 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     let (_, delegate) = drive(Event::Completed {
         owner: owner.expect("the counted scenario fits"),
         completion: Completion {
+            reasoning_dropped: Box::default(),
             content: Box::new([
                 Block::Opaque { bytes: bytes(1) },
                 Block::ToolCall {
                     id: bytes(1),
                     name: bytes(1),
                     input: bytes(1),
-                    call: Decoded::Delegated { ticket: Token::new(99), effect: Effect::Write },
+                    call: run_call(99, Effect::Write),
                     replay: None,
                 },
             ]),
@@ -538,7 +555,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         authority: authority(),
         delegated: Box::new([Descriptor { ticket: Token::new(2), effect: Effect::Write }]),
         prompt: bytes(1),
-        max_tokens: 1,
+        output: 1,
         budget: limits.budget,
     };
     let history = record::Transcript {
@@ -565,6 +582,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         }]),
     };
     meter.start();
+    while domain.pop_fact().is_some() {}
     smith_domain_session::step(
         &mut domain,
         &env,
@@ -647,10 +665,11 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         authority: authority(),
         delegated: Box::new([Descriptor { ticket: Token::new(2), effect: Effect::Write }]),
         prompt: bytes(1),
-        max_tokens: 1,
+        output: 1,
         budget: limits.budget,
     };
     meter.start();
+    while domain.pop_fact().is_some() {}
     smith_domain_session::step(
         &mut domain,
         &env,
@@ -675,6 +694,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
             end: smith_domain_session::End::TranscriptRefused { reason: record::Refusal::TooLarge },
             turns: 0,
             usage: Usage::ZERO,
+            reported: Usage::ZERO,
         })
     );
     assert!(out.is_empty());
@@ -701,7 +721,7 @@ fn restore_tail_tools() -> smith_domain_tools::Limits {
         shell_tail: 0,
         search_hits: 1,
         search_bytes: 16,
-        facts: 0,
+        facts: 6,
         ..LIMITS.tools
     }
 }
@@ -793,6 +813,7 @@ fn measured_step(
     event: Event,
 ) -> MemorySeen {
     meter.start();
+    while domain.pop_fact().is_some() {}
     smith_domain_session::step(domain, env, event, out);
     let measured = meter.end();
     let seen = memory_seen(out);
@@ -809,6 +830,7 @@ fn measured_resume(
 ) -> MemorySeen {
     assert!(domain.is_ready());
     meter.start();
+    while domain.pop_fact().is_some() {}
     smith_domain_session::resume(domain, env, out);
     let measured = meter.end();
     let seen = memory_seen(out);
@@ -833,7 +855,12 @@ fn read_completion(width: u32) -> Completion {
             },
         });
     }
-    Completion { content: blocks.into_boxed_slice(), stop: Stop::ToolUse, usage: Usage::ZERO }
+    Completion {
+        reasoning_dropped: Box::default(),
+        content: blocks.into_boxed_slice(),
+        stop: Stop::ToolUse,
+        usage: Usage::ZERO,
+    }
 }
 
 #[test]
@@ -964,6 +991,7 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
         Event::Completed {
             owner,
             completion: Completion {
+                reasoning_dropped: Box::default(),
                 content: Box::new([Block::Text { text: bytes(1), replay: None }]),
                 stop: Stop::EndTurn,
                 usage: Usage::ZERO,
@@ -1110,6 +1138,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
                     Event::Completed {
                         owner,
                         completion: Completion {
+                            reasoning_dropped: Box::default(),
                             content: Box::new([Block::ToolCall {
                                 id: bytes(1),
                                 name: bytes(1),
@@ -1139,6 +1168,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
                     Event::Completed {
                         owner,
                         completion: Completion {
+                            reasoning_dropped: Box::default(),
                             content: Box::new([Block::Text { text: bytes(1), replay: None }]),
                             stop: Stop::EndTurn,
                             usage: Usage::ZERO,
@@ -1159,4 +1189,8 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
         assert!(seen.complete.is_none(), "original one-cell remainder never starts another provider effect");
         assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
     }
+}
+
+fn run_call(ticket: u64, effect: Effect) -> Decoded {
+    Decoded::Delegated { source: smith_domain_session::ToolSource::Run, ticket: Token::new(ticket), effect }
 }

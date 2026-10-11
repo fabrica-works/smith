@@ -59,6 +59,15 @@ pub struct Window {
     pub largest_turn: u64,
 }
 
+/// Named, labelled message carried by a host Start; it ends with that start or its run.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Message {
+    /// Opaque parent name, unique among the start's messages.
+    pub name: Token,
+    pub label: Box<[u8]>,
+    pub text: Box<[u8]>,
+}
+
 /// parent -> run
 #[derive(PartialEq, Eq, Debug)]
 pub enum Event {
@@ -83,16 +92,20 @@ pub enum Event {
         activation: u64,
         /// Bounded acknowledgement credit for this activation.
         window: Window,
+        /// Triggering messages admitted together, before later relayed messages.
+        messages: Box<[Message]>,
         /// Host-supplied admission policy, validated before the run starts.
         charter: Charter,
         /// Optional immutable host mounts and initial conflicts, admitted before effects.
         workspace: Option<crate::Workspace>,
         /// Root-owned restore binding, consumed by main once; never decoded here.
         transcript: Option<Token>,
+        /// The root selected a concrete transcript for main, independently of its binding.
+        resumed: bool,
     },
 
     /// Parent-labelled live message; names, including zero, are opaque and
-    /// unique for the active run. Admission yields a bounce only on refusal.
+    /// unique for the active run. Admission yields a typed terminal on refusal.
     Message {
         /// Admitted live run handle.
         run: Token,
@@ -100,7 +113,10 @@ pub enum Event {
         /// Parent-issued active-run unique name.
         name: Token,
 
-        /// Attested UTF-8, including the sender label, bounded before retention.
+        /// Sender label rendered by the run before admission.
+        label: Box<[u8]>,
+
+        /// Attested UTF-8 text; the run checks its rendered bound at ingress.
         text: Box<[u8]>,
     },
 
@@ -214,10 +230,26 @@ pub enum Event {
     Delivered { owner: Token, delivery: Delivery },
 }
 
+/// Why the run refuses a host message at its entrance (domain/run.md, section 6).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum MessageRefusal {
+    /// The label, separator and text exceed the rendered-byte bound.
+    TooLarge,
+    /// The bounded unread inbox has no room.
+    Full,
+    /// An outstanding message or the latest read fence uses this name.
+    NameInUse,
+    /// The run has decided its answer and takes no more messages.
+    Ending,
+}
+
 /// run -> parent
 #[derive(PartialEq, Eq, Debug)]
 #[expect(clippy::large_enum_variant, reason = "bounded diagnostics stay inline and are included in worst_case")]
 pub enum Request {
+    /// A host message refused at ingress; this is its one terminal.
+    MessageRefused { host_run: Token, name: Token, reason: MessageRefusal },
+
     /// Main yielded after a settled wait with an empty inbox. No terminal is owed.
     Waiting {
         /// Stable parent logical run scope.
@@ -281,6 +313,8 @@ pub enum Request {
         to: ReplyTo,
         /// Single terminal value returned to the caller.
         answer: Answer,
+        /// Last message covered by an actual told main turn; none before any read.
+        read: Option<Token>,
     },
     /// Open a conversation, which every event about it names `conversation`.
     Open {
@@ -415,6 +449,9 @@ pub enum Ask {
 #[derive(PartialEq, Eq, Hash, Debug)]
 #[expect(clippy::large_enum_variant, reason = "bounded diagnostics stay inline and are included in worst_case")]
 pub enum Returned {
+    /// Main finish crossed queued messages; the run offers them before another completion.
+    Crossed { text: Box<[u8]> },
+
     /// Main's wait intent was accepted; ordinary result and continuation settle first.
     Waiting,
 
@@ -801,6 +838,8 @@ pub enum Refusal {
 /// What about a charter does not fit the limits.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Invalid {
+    /// A start's messages exceed their bounds or repeat a name.
+    Messages,
     /// The agent does not read this charter version; the protocol refuses it before domain admission.
     CharterVersion,
     /// The charter does not decode in a version the agent reads; protocol refuses before domain admission.
@@ -833,9 +872,8 @@ pub enum Invalid {
     /// The budget asks for more than the limits allow, or for no turns, input,
     /// output or time.
     Budget,
-    /// The LLM's `max_tokens`, or a sub-agent LLM's, is zero or beyond the
-    /// limits, or there are more sub-agent LLMs than a run may hold, or two of
-    /// one model.
+    /// A model is undeclared, its effective window/output are zero or above its
+    /// declaration, or the charter repeats a model or exceeds its model count.
     Llm,
     /// The main conversation was refused: its opening does not fit the
     /// conversations' limits.

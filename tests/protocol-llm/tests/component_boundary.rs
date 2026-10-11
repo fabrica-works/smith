@@ -7,7 +7,7 @@ use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use skein_llm::{self as shared, Credential};
 use skein_world::domain::heap::{Counting, Meter};
 use smith_domain::{GrantName, llm, run, tools};
-use smith_protocol_llm::{
+use smith_protocol_llm_world::adapter::{
     self as adapter, Component, ComponentLimits, ConfiguredEndpoint, Endpoints, FromDomain, Receiving, ToDomain,
 };
 
@@ -16,13 +16,20 @@ static HEAP: Counting = Counting;
 
 fn limits() -> ComponentLimits {
     let client = skein_llm_world::limits();
-    let adapter = adapter::Limits { client, tool_bytes: 32_768, result_bytes: 32_768 };
+    let adapter = adapter::Limits {
+        client,
+        tool_bytes: 32_768,
+        rendered_result: client.dialect.string_bytes,
+        shell_default: skein_lib::Duration::from_secs(120),
+        shell_maximum: skein_lib::Duration::from_secs(1200),
+    };
     let decoded_call_bytes = 4096;
     ComponentLimits {
         adapter,
         connection: skein_llm_connection::Limits {
             endpoints: 1,
             connections: 2,
+            calls: 2,
             per_endpoint: 2,
             idle_keep: Duration::from_secs(1),
             io: skein_io::Limits {
@@ -38,7 +45,6 @@ fn limits() -> ComponentLimits {
                 retry: Duration::from_millis(10),
             },
             tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },
-            llm: client,
         },
         receiving: Receiving {
             max_completion_bytes: adapter::completion_worst_case(&client, decoded_call_bytes).expect("receiving bound"),
@@ -63,6 +69,11 @@ fn endpoints() -> Endpoints {
         Box::new([ConfiguredEndpoint {
             name: llm::Endpoint(42),
             destination: skein_llm_connection::Endpoint {
+                limits: limits().adapter.client,
+                credential: skein_llm::client::CredentialLimits {
+                    access_token: limits().grant_value_bytes,
+                    account_id: limits().grant_value_bytes,
+                },
                 address: SocketAddr::from(([127, 0, 0, 1], 443)),
                 transport: skein_llm_connection::Transport::Tls {
                     server_name: skein_tls::Name::new("example.test").expect("server name"),
@@ -74,6 +85,7 @@ fn endpoints() -> Endpoints {
             reasoning_effort: None,
             cache_key: None,
             identity: smith_protocol_llm::IdentityProfile::Plain,
+            models: Box::new([]),
         }]),
         1,
         1,
@@ -198,7 +210,7 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
         (shared::Failure::Unavailable, llm::Failure::Unavailable),
         (shared::Failure::ContextTooLong, llm::Failure::ContextTooLong),
         (shared::Failure::Invalid, llm::Failure::Invalid),
-        (shared::Failure::Limit, llm::Failure::Limit),
+        (shared::Failure::Limit { which: shared::Cap::Answer, bound: 512 }, llm::Failure::Limit),
         (shared::Failure::Protocol, llm::Failure::Protocol),
         (shared::Failure::Cancelled, llm::Failure::Cancelled),
         (shared::Failure::TimedOut, llm::Failure::TimedOut),
@@ -206,7 +218,7 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
     let evidence = [
         (shared::client::Evidence::Unsent, llm::Evidence::Unsent),
         (shared::client::Evidence::Unknown, llm::Evidence::Unknown),
-        (shared::client::Evidence::Response, llm::Evidence::Response),
+        (shared::client::Evidence::Response { status: 429 }, llm::Evidence::Response),
     ];
     for (source, expected) in cases {
         for (sent, expected_sent) in evidence {
@@ -217,7 +229,6 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
                 endpoint: shared::Endpoint::codex(),
                 credential: credential(b"secret"),
                 application: Box::new([]),
-                results: Box::new([]),
                 receiving: limits.receiving,
             };
             let prepared = adapter::prepare(input, &limits.adapter).expect("bounded preparation");
@@ -240,6 +251,7 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
 fn a_full_connection_pool_and_two_grant_generations_fit_the_component_bound() {
     let limits = limits();
     let destinations = endpoints();
+    let component_bound = adapter::component_worst_case(&limits, &destinations).expect("component worst case");
     let first = complete(7, 1, limits.receiving);
     let second = complete(8, 2, limits.receiving);
     let first_credential = credential(b"first");
@@ -259,7 +271,7 @@ fn a_full_connection_pool_and_two_grant_generations_fit_the_component_bound() {
     component.from_domain(&env(2, &limits), second, &mut up, &mut io);
     let measured = meter.end();
     assert_eq!(io.len(), 2, "the pool holds two concurrent connections");
-    let bound = adapter::component_worst_case(&limits).expect("component worst case")
+    let bound = component_bound
         + Queue::<ToDomain>::worst_case(adapter::MAX_OUT.above).expect("domain queue")
         + Queue::<IoRequest>::worst_case(adapter::MAX_OUT.below).expect("io queue");
     assert!(measured.peak() <= bound, "component peak {} exceeds {bound}", measured.peak());

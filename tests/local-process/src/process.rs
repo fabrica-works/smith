@@ -10,13 +10,14 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use skein_fake_oauth as fake_oauth;
 use skein_io::kernel;
-use skein_lib::{Duration, Queue, Time, Token, Wall};
-use skein_world::{Host, Inherited, StartupRoot};
-use smith::local_host::{Local, Resources, token_limits};
-use smith::local_settings;
+use skein_lib::{Duration, Queue, Time, Wall};
+use skein_shell::Host;
+use skein_world::{Inherited, StartupRoot};
 use smith_agent_service as agent;
 use smith_local_domain as local;
 use smith_local_service as service;
+use smith_local_shell::local_host::{Local, Resources, token_limits};
+use smith_local_shell::local_settings;
 use std::path::PathBuf;
 
 /// Immutable configuration sent by the terminal and passed to a spawned agent.
@@ -98,7 +99,7 @@ pub fn configuration_with_tools(
     let lower = lower_configuration_with(tls);
     let mut source = serde_json::json!({
         "agent": {}, "chat": "main", "instructions": "@local-shell Assist",
-        "models": [{"endpoint": "", "name": "fake", "max_tokens": 1024,
+        "models": [{"endpoint": "", "name": "fake", "window":8192,"output":1024,"reasoning_item":2048,"head":60000,"idle":30000,
             "input_price": 0, "cached_price": 0, "output_price": 0, "price_unit": 1}],
         "budget": {"turns": 8, "spend": 1, "seconds": 60}, "waiting_seconds": 30,
         "contract": {"form": "report", "max": 128}
@@ -114,7 +115,6 @@ pub fn configuration_with_tools(
     let settings: local_settings::Settings = serde_json::from_value(source).expect("host settings");
     let endpoints = lower.channel_endpoints.clone();
     let policy = local_settings::policy(&settings, &endpoints, lower.limits.domain).expect("host charter policy");
-    let charter = local_settings::charter(&policy.config, &endpoints).expect("wire charter");
     let mut host = smith_host_world::limits();
     host.accounts = 1;
     host.charter_bytes = 65_536;
@@ -133,6 +133,9 @@ pub fn configuration_with_tools(
         io: lower.limits.io,
         channel: smith_host_protocol::Limits {
             bodies: lower.limits.channel.bodies,
+            charter: lower.limits.channel.charter,
+            transcript: lower.limits.channel.transcript,
+            endpoints: lower.limits.channel.endpoints,
             channel: lower.limits.channel.channel,
             calls: host.calls,
         },
@@ -143,7 +146,6 @@ pub fn configuration_with_tools(
         service::Config {
             local: policy.config,
             limits: service::Limits { local: policy.limits, host, process, queue },
-            charter,
             endpoints,
             paths: policy.paths,
             launch: service::Launch {
@@ -167,6 +169,11 @@ pub fn lower_configuration_with(tls: bool) -> agent::Config {
             Box::new([smith_protocol_llm::ConfiguredEndpoint {
                 name: smith_domain::llm::Endpoint(0),
                 destination: skein_llm_connection::Endpoint {
+                    limits: lower.limits.llm.adapter.client,
+                    credential: skein_llm::client::CredentialLimits {
+                        access_token: lower.limits.llm.grant_value_bytes,
+                        account_id: lower.limits.llm.grant_value_bytes,
+                    },
                     address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 34_443)),
                     transport: skein_llm_connection::Transport::Tls {
                         server_name: skein_tls_world::pki::name(),
@@ -178,6 +185,7 @@ pub fn lower_configuration_with(tls: bool) -> agent::Config {
                 reasoning_effort: None,
                 cache_key: None,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
+                models: Box::new([]),
             }]),
             1,
             1,
@@ -280,31 +288,18 @@ pub fn issuer_with(transport: skein_fake_peers::Transport) -> Issuer {
     issuer
 }
 
-/// Local shell, retained emitted facts and unused-stderr settlement.
+/// Local shell and retained outside facts, ending after the shared stderr bridge.
 pub struct LocalProcess {
-    local: Local,
+    local: skein_world::PipeHost<Local>,
     facts: Vec<local::Fact>,
     keep_facts: bool,
-    completions: Queue<kernel::Complete>,
-    submissions: Queue<kernel::Submit>,
-    stderr_closed: bool,
 }
 impl LocalProcess {
     /// Wrap a configured shared shell inside its own metered factory call.
     #[must_use]
-    pub fn new(local: Local, stderr: kernel::Fd, keep_facts: bool) -> Self {
-        let mut submissions = Queue::with_capacity(2048);
-        submissions.push(kernel::Submit { op: Token::new(u64::MAX), kind: kernel::Op::Close { fd: stderr } });
-        Self {
-            local,
-            facts: Vec::with_capacity(256),
-            keep_facts,
-            completions: Queue::with_capacity(2048),
-            submissions,
-            stderr_closed: false,
-        }
+    pub fn new(local: skein_world::PipeHost<Local>, keep_facts: bool) -> Self {
+        Self { local, facts: Vec::with_capacity(256), keep_facts }
     }
-
     /// Facts emitted at the public boundary, independent of internal state.
     #[must_use]
     pub fn facts(&self) -> &[local::Fact] {
@@ -313,54 +308,45 @@ impl LocalProcess {
     /// The shared shell's public terminal outcome.
     #[must_use]
     pub fn result(&self) -> Option<Result<local::ExitStatus, &str>> {
-        self.local.result()
+        self.local.inner().result()
     }
 }
 impl Host for LocalProcess {
     fn iterate(&mut self, now: Time, wall: Wall) {
-        while let Some(complete) = self.completions.pop() {
-            if complete.op == Token::new(u64::MAX) {
-                assert!(complete.result.is_ok(), "unused stderr closes");
-                self.stderr_closed = true;
-            } else {
-                self.local.completions().push(complete);
-            }
-        }
         self.local.iterate(now, wall);
-        while let Some(fact) = self.local.pop_fact() {
+        while let Some(fact) = self.local.inner_mut().pop_fact() {
             if self.keep_facts {
                 assert!(self.facts.len() < 256);
                 self.facts.push(fact);
             }
         }
-        while let Some(submit) = self.local.submissions().pop() {
-            self.submissions.push(submit);
-        }
+    }
+    fn drain(&mut self) {
+        self.local.drain();
     }
     fn completions(&mut self) -> &mut Queue<kernel::Complete> {
-        &mut self.completions
+        self.local.completions()
     }
     fn submissions(&mut self) -> &mut Queue<kernel::Submit> {
-        &mut self.submissions
+        self.local.submissions()
     }
     fn work_pending(&self, now: Time) -> bool {
-        self.local.work_pending(now) || !self.completions.is_empty() || !self.submissions.is_empty()
+        self.local.work_pending(now)
     }
     fn next_deadline(&self) -> Option<Time> {
         self.local.next_deadline()
     }
     fn is_empty(&self) -> bool {
-        self.local.is_empty() && self.stderr_closed && self.completions.is_empty() && self.submissions.is_empty()
+        self.local.is_empty()
     }
     fn exit(&self) -> Option<kernel::Exit> {
-        self.is_empty()
-            .then(|| kernel::Exit::Code(u8::from(!matches!(self.local.result(), Some(Ok(local::ExitStatus::Success))))))
+        self.local.exit()
     }
     fn worst_case(&self) -> u64 {
         self.local.worst_case() + 1_048_576 + (size_of::<local::Fact>() * 256 + size_of::<Self>()) as u64
     }
     fn operations(&self) -> u32 {
-        self.local.operations() + 1
+        self.local.operations()
     }
 }
 
@@ -528,7 +514,7 @@ pub enum Proc {
     /// The actual shared local shell, ending after its public result settles.
     Local(Box<LocalProcess>),
     /// The spawned agent service, ending after its channel and descriptors settle.
-    Agent(Box<smith_agent_process_world::process::Agent>),
+    Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, smith_agent_process_world::AgentErrors),
     /// The independent fake provider, stopped after the terminal exits.
     Peer(Box<Peer>),
     /// The independent fake issuer and observed POST timing.
@@ -543,7 +529,7 @@ impl Proc {
         match self {
             Self::Terminal(p) => p.as_ref(),
             Self::Local(p) => p.as_ref(),
-            Self::Agent(p) => p.as_ref(),
+            Self::Agent(p, _) => p.as_ref(),
             Self::Peer(p) => p.as_ref(),
             Self::Issuer(p) => p.as_ref(),
             Self::Browser(p) => p.as_ref(),
@@ -554,7 +540,7 @@ impl Proc {
         match self {
             Self::Terminal(p) => p.as_mut(),
             Self::Local(p) => p.as_mut(),
-            Self::Agent(p) => p.as_mut(),
+            Self::Agent(p, _) => p.as_mut(),
             Self::Peer(p) => p.as_mut(),
             Self::Issuer(p) => p.as_mut(),
             Self::Browser(p) => p.as_mut(),
@@ -563,6 +549,10 @@ impl Proc {
     }
 }
 impl Host for Proc {
+    fn drain(&mut self) {
+        self.host_mut().drain();
+    }
+
     fn iterate(&mut self, now: Time, wall: Wall) {
         self.host_mut().iterate(now, wall);
     }
@@ -585,7 +575,7 @@ impl Host for Proc {
         self.host().exit()
     }
     fn worst_case(&self) -> u64 {
-        self.host().worst_case() + size_of::<Self>() as u64
+        self.host().worst_case() + size_of::<Self>() as u64 + 4096
     }
     fn operations(&self) -> u32 {
         self.host().operations()
@@ -623,6 +613,8 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let (mut config, lower) =
         configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
     config.launch.arguments = launch.arguments();
+    let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
+    let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
     let local = Local::new(
         config,
         launch.in_process.then_some(lower),
@@ -643,13 +635,10 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
             seed: launch.seed,
             oauth_entropy: [31; 32],
         },
+        Box::new(writer),
     )
     .expect("actual shared local shell");
-    Proc::Local(Box::new(LocalProcess::new(
-        local,
-        inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1,
-        launch.keep_facts,
-    )))
+    Proc::Local(Box::new(LocalProcess::new(capture.host(local), launch.keep_facts)))
 }
 /// The agent's declared workspace directories, each owned by this child.
 #[must_use]
@@ -666,9 +655,15 @@ pub fn agent_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
 #[must_use]
 pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
-    Proc::Agent(Box::new(smith_agent_process_world::process::configured(
-        lower_configuration_with(launch.tls),
-        launch.seed,
-        inherited,
-    )))
+    let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
+    let (errors, capture) = smith_agent_process_world::AgentErrors::pipe(fd);
+    Proc::Agent(
+        Box::new(capture.host(smith_agent_process_world::configured(
+            lower_configuration_with(launch.tls),
+            launch.seed,
+            inherited,
+            errors.clone(),
+        ))),
+        errors,
+    )
 }

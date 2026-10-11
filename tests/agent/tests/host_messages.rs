@@ -1,6 +1,5 @@
 //! Live composition: each loop round drives the root/run/session/shared
-//! fake, then translates its actual outputs into the host kit. Opaque turn
-//! bytes use a test-only full Debug record, not a claimed production codec.
+//! fake, then moves its actual typed outputs into the host kit.
 //! Parent commitment and lower IO rights remain independent of agent settlement.
 //! Contract: domain/host.md, sections 6 and 9; domain/run.md, sections 6 and 13;
 //! testing-strategy.md, sections 2.3, 6 and 7.
@@ -9,7 +8,8 @@ use skein_lib::{Duration, Time, Token};
 use skein_world::domain::Span;
 use smith_agent_world::{BUDGET, CompletionTerminal, Job, Settings, World as Agent, messages_referee::Seen};
 use smith_domain::run;
-use smith_host_domain::{self as host, Down, Event, RunResult, Up};
+use smith_host_domain::{self as host, Down, Input, RunResult, Up};
+use smith_host_domain::{parent, process};
 use smith_host_world::{Lower, World as Host};
 
 fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bool) {
@@ -23,17 +23,17 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bo
                     number: *number,
                     read: *read,
                     spent: spent.units,
-                    body: format!("{turn:?}").into_bytes().into(),
+                    body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),
                 },
             });
             if *number == 2 {
                 assert!(host.seen.turns.contains_key(&1));
-                host.event(Event::Acknowledge { agent: host.agent(), turn: 2 });
+                host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 2 }));
                 assert!(host.seen.turns.contains_key(&1), "ACK2 never commits the earlier parent-owned payload");
                 host.sent();
             }
             if *number == 4 {
-                host.event(Event::Acknowledge { agent: host.agent(), turn: 4 });
+                host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: 4 }));
                 assert!(host.lower.contains(Lower::Send), "actual final ACK send right stays outstanding");
             }
         }
@@ -41,27 +41,28 @@ fn bridge(host: &mut Host, agent: &mut Agent, seen: &(Time, Seen), woke: &mut bo
             host.up(Up::Waiting { read: *read });
             if !*woke {
                 *woke = true;
-                host.event(Event::Message {
+                host.event(Input::Parent(parent::Event::Message {
                     agent: host.agent(),
                     name: Token::new(0),
                     label: b"person".as_slice().into(),
                     text: b"live host".as_slice().into(),
-                });
+                }));
                 let Down::Message { name, label, text } = host.seen.down.last().expect("actual downlink write") else {
                     panic!("parent input must become the actual Message Send")
                 };
-                let mut joined = label.to_vec();
-                joined.extend_from_slice(b": ");
-                joined.extend_from_slice(text);
-                agent.message_at(*at, *name, joined.into_boxed_slice());
+                agent.message_at(*at, *name, label.clone(), text.clone());
                 host.sent();
             }
         }
-        Seen::Answer { turns, parked, spent } => {
+        Seen::Answer { turns, parked, spent, read } => {
             assert!(*parked, "this actual agent finishes by idle parking");
-            host.up(Up::Answer { answer: final_accounting(*turns, *spent, RunResult::Parked) });
+            host.up(Up::Answer { answer: final_accounting(*turns, *spent, RunResult::Parked, *read) });
         }
-        Seen::Input { .. } | Seen::Prompt { .. } | Seen::Completed { .. } | Seen::CompletionEnded => {}
+        Seen::Started { .. }
+        | Seen::Input { .. }
+        | Seen::Prompt { .. }
+        | Seen::Completed { .. }
+        | Seen::CompletionEnded => {}
     }
     assert!(host.seen.fault.is_none(), "actual composed metadata satisfies the host boundary");
 }
@@ -117,19 +118,18 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
     let run::Answer::Parked { spent, turns } = agent.answer() else { panic!("the actual final root word is Parked") };
     assert_accounting(host.seen.answer.as_ref().expect("actual forwarded answer"), *turns, *spent);
     assert_eq!(host.seen.turns.keys().copied().collect::<Vec<_>>(), [1, 3]);
-    let actual_first = format!("{:?}", agent.turns()[0]).into_bytes();
-    assert_eq!(host.seen.turns[&1].as_ref(), actual_first.as_slice(), "parent retains the complete actual record");
+    assert_eq!(host.seen.turns[&1].value(), &agent.turns()[0], "parent retains the complete actual record");
 
     let owner = host.owner();
-    host.event(Event::Exited { owner });
+    host.event(Input::Process(process::Event::Exited { owner }));
     assert!(host.seen.gone.is_none());
-    host.event(Event::Reaped { owner, detail: b"actual tree empty".as_slice().into() });
+    host.event(Input::Process(process::Event::Reaped { owner, detail: b"actual tree empty".as_slice().into() }));
     assert!(host.seen.gone.is_none());
-    host.event(Event::Hangup { owner });
+    host.event(Input::Process(process::Event::Hangup { owner }));
     assert!(host.seen.exited && host.seen.empty && host.seen.eof);
     assert!(host.seen.gone.is_none(), "tree/EOF cannot consume parent commitment or pending ACK Send rights");
     for turn in [1, 3] {
-        host.event(Event::Acknowledge { agent: host.agent(), turn });
+        host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn }));
     }
     assert!(host.seen.turns.is_empty());
     assert!(host.seen.gone.is_none(), "parent committed all payloads, but actual ACK writes remain owed");
@@ -152,8 +152,8 @@ fn assert_accounting(answer: &host::Answer, turns: u32, spent: run::Spend) {
 
 /// Translate the actual root final `Spend` without session usage or `Turn` metadata.
 /// Contract: domain/host.md, sections 6 and 9; domain/run.md, section 9.
-fn final_accounting(turns: u32, spent: run::Spend, result: RunResult) -> host::Answer {
-    host::Answer { turns, spent: spent.units, result }
+fn final_accounting(turns: u32, spent: run::Spend, result: RunResult, read: Option<Token>) -> host::Answer {
+    host::Answer { turns, spent: spent.units, result, read }
 }
 
 #[test]
@@ -170,7 +170,11 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
     assert!(spent.turns > turns, "actual child completions exceed transmitted main Turns");
     assert_raw_terminals(&agent, spent);
     let main = agent.turns().last().expect("actual settled main Turn");
-    assert!(spent.input > main.usage.input_tokens && spent.output > main.usage.output_tokens);
+    let main_prompt = main.usage.input_tokens.expect("peer supplies count")
+        + main.usage.cache_read_tokens.expect("peer supplies count")
+        + main.usage.cache_write_tokens.expect("peer supplies count");
+    let global_prompt = spent.input + spent.cache_read + spent.cache_write;
+    assert!(global_prompt > main_prompt && spent.output > main.usage.output_tokens.expect("peer supplies count"));
 
     let mut host = Host::new(
         942,
@@ -198,19 +202,23 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
                         number: *number,
                         read: *read,
                         spent: spent.units,
-                        body: format!("{turn:?}").into_bytes().into(),
+                        body: host::TurnValue::new(turn.clone(), u64::MAX).expect("actual bounded turn"),
                     },
                 });
-                host.event(Event::Acknowledge { agent: host.agent(), turn: *number });
+                host.event(Input::Parent(parent::Event::Acknowledge { agent: host.agent(), turn: *number }));
                 host.sent();
             }
-            Seen::Answer { turns: observed, spent: actual, parked } => {
+            Seen::Answer { turns: observed, spent: actual, parked, .. } => {
                 assert_eq!((*observed, *actual, *parked), (turns, spent, false));
                 let result = RunResult::Failed { failure: host::RunFailure::Budget(host::Exhausted::Turns) };
-                host.up(Up::Answer { answer: final_accounting(turns, spent, result) });
+                host.up(Up::Answer { answer: final_accounting(turns, spent, result, host.seen.read) });
             }
             Seen::Waiting { read } => host.up(Up::Waiting { read: *read }),
-            Seen::Input { .. } | Seen::Prompt { .. } | Seen::Completed { .. } | Seen::CompletionEnded => {}
+            Seen::Started { .. }
+            | Seen::Input { .. }
+            | Seen::Prompt { .. }
+            | Seen::Completed { .. }
+            | Seen::CompletionEnded => {}
         }
     }
     assert_accounting(host.seen.answer.as_ref().expect("actual global final reaches host parent"), turns, spent);
@@ -233,10 +241,10 @@ fn assert_raw_terminals(agent: &Agent, spent: run::Spend) {
         match completion.terminal.expect("every actual provider right settled").1 {
             CompletionTerminal::Completed(usage) => {
                 completions += 1;
-                input += usage.input_tokens;
-                output += usage.output_tokens;
-                cache_read += usage.cache_read_tokens;
-                cache_write += usage.cache_write_tokens;
+                input += usage.input_tokens.expect("peer supplies count");
+                output += usage.output_tokens.expect("peer supplies count");
+                cache_read += usage.cache_read_tokens.expect("peer supplies count");
+                cache_write += usage.cache_write_tokens.expect("peer supplies count");
             }
             CompletionTerminal::Failed | CompletionTerminal::Cancelled => {}
         }

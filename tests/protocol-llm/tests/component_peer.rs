@@ -12,7 +12,7 @@ use skein_lib::{Duration, Env, Intake, Queue, Time, Token};
 use skein_llm::{Credential, Provider};
 use skein_tls_world::{drive::Wire, pki, server::Server};
 use smith_domain::{GrantName, llm, run, tools};
-use smith_protocol_llm::{
+use smith_protocol_llm_world::adapter::{
     self as adapter, Component, ComponentLimits, ConfiguredEndpoint, Endpoints, FromDomain, MAX_OUT, Receiving,
     ToDomain,
 };
@@ -21,10 +21,17 @@ fn limits() -> ComponentLimits {
     let client = skein_llm_world::limits();
     let decoded_call_bytes = 4096;
     ComponentLimits {
-        adapter: adapter::Limits { client, tool_bytes: 32768, result_bytes: 32768 },
+        adapter: adapter::Limits {
+            client,
+            tool_bytes: 32768,
+            rendered_result: client.dialect.string_bytes,
+            shell_default: skein_lib::Duration::from_secs(120),
+            shell_maximum: skein_lib::Duration::from_secs(1200),
+        },
         connection: skein_llm_connection::Limits {
             endpoints: 1,
             connections: 1,
+            calls: 1,
             per_endpoint: 1,
             idle_keep: Duration::from_secs(10),
             io: skein_io::Limits {
@@ -40,7 +47,6 @@ fn limits() -> ComponentLimits {
                 retry: Duration::from_millis(10),
             },
             tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },
-            llm: client,
         },
         receiving: Receiving {
             max_completion_bytes: adapter::completion_worst_case(&client, decoded_call_bytes).expect("receiving bound"),
@@ -81,7 +87,13 @@ fn run(dialect: Provider, calls: bool) {
         Provider::Anthropic => documents::Provider::Anthropic,
     };
     let mut service = provider::Service::new(
-        provider::Config { provider: provider_kind, path: call.endpoint.target.clone(), headers: Box::new([]) },
+        provider::Config {
+            echo: skein_llm::openai::Echo::NONE,
+            usage_fields: documents::UsageFields::ALL,
+            provider: provider_kind,
+            path: call.endpoint.target.clone(),
+            headers: Box::new([]),
+        },
         &peer_limits,
     )
     .expect("fake service");
@@ -108,6 +120,11 @@ fn run(dialect: Provider, calls: bool) {
         Box::new([ConfiguredEndpoint {
             name: llm::Endpoint(1),
             destination: skein_llm_connection::Endpoint {
+                limits: limits().adapter.client,
+                credential: skein_llm::client::CredentialLimits {
+                    access_token: limits().grant_value_bytes,
+                    account_id: limits().grant_value_bytes,
+                },
                 address: Addr::from((Ipv4Addr::LOCALHOST, 443)),
                 transport: skein_llm_connection::Transport::Tls {
                     server_name: skein_tls::Name::new("skein.test").expect("test name"),
@@ -119,6 +136,7 @@ fn run(dialect: Provider, calls: bool) {
             reasoning_effort: None,
             cache_key: None,
             identity: smith_protocol_llm::IdentityProfile::Plain,
+            models: Box::new([]),
         }]),
         1,
         1,
@@ -246,7 +264,7 @@ fn run(dialect: Provider, calls: bool) {
         if let Some(event) = peer_up.pop() {
             match event {
                 provider::Event::Domain(input) => fake::step(&mut domain, &fake_env, input, &mut replies),
-                provider::Event::Close | provider::Event::Closed => {}
+                provider::Event::Head { .. } | provider::Event::Close | provider::Event::Closed => {}
             }
         }
         if let Some(reply) = replies.pop() {

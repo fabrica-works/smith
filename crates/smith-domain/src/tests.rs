@@ -54,6 +54,7 @@ const CEILING: session::Budget = session::Budget {
 const LIMITS: Limits = Limits {
     accounts: 4,
     endpoints: 3,
+    configured_model_bytes: 4096,
     decoded_call_bytes: 4096,
     skew: Duration::ZERO,
     run: run::Limits {
@@ -71,11 +72,12 @@ const LIMITS: Limits = Limits {
         answered_calls: 16,
         answered_bytes: 4096,
         host_timeout: Duration::from_secs(60),
+        host_timeout_max: Duration::from_secs(60),
         host_backoff: Duration::from_millis(50),
         verdicts: 2,
         calls: 4,
         budget: run::Budget { turns: CEILING.turns, spend: 1, time: CEILING.time },
-        max_tokens: 1024,
+
         models: 1,
         run_conversations: 3,
         answer_bytes: 64,
@@ -89,6 +91,8 @@ const LIMITS: Limits = Limits {
         facts: 64,
         messages: 8,
         message_bytes: 4096,
+        offer_messages: 8,
+        offer_bytes: 32_782,
         waiting: Duration::from_secs(300),
     },
     session: session::Limits {
@@ -102,7 +106,6 @@ const LIMITS: Limits = Limits {
         failure_bytes: 512,
         delegated_result_bytes: 262_144,
         budget: CEILING,
-        max_tokens: 1024,
         retries: 1,
         backoff_base: Duration::from_millis(100),
         backoff_max: Duration::from_secs(1),
@@ -135,7 +138,13 @@ const LIMITS: Limits = Limits {
     },
 };
 
-const USAGE: Usage = Usage { input_tokens: 100, output_tokens: 10, cache_read_tokens: 0, cache_write_tokens: 0 };
+const USAGE: Usage = Usage {
+    input_tokens: Some(100),
+    output_tokens: Some(10),
+    cache_read_tokens: Some(0),
+    cache_write_tokens: Some(0),
+    reasoning_tokens: None,
+};
 
 #[test]
 fn decoded_batch_reserves_refusal_cells_before_any_payload() {
@@ -149,6 +158,7 @@ fn decoded_batch_reserves_refusal_cells_before_any_payload() {
     };
     let mut peer = crate::peer::Peer::new(Token::new(17), 1, 0, offered, &LIMITS.session);
     let completion = Completion {
+        reasoning_dropped: Box::default(),
         content: Box::new([
             Said::ToolCall {
                 id: skein_lib::bytes::copy_of(b"oversized"),
@@ -206,6 +216,7 @@ fn decoded_receiving_cells_are_required_before_provider_work() {
 
 /// The domain, its environment, and room for one entry point's output.
 struct Harness {
+    observed: Queue<Fact>,
     domain: Domain,
     env: Env<Limits>,
     out: Queue<Request>,
@@ -213,13 +224,59 @@ struct Harness {
 }
 
 impl Harness {
+    fn keep_facts(&mut self) {
+        while let Some(fact) = self.domain.pop_fact() {
+            self.observed.push(fact);
+        }
+    }
+
+    fn pop_fact(&mut self) -> Option<Fact> {
+        match self.observed.pop() {
+            Some(fact) => Some(fact),
+            None => self.domain.pop_fact(),
+        }
+    }
+
     fn new() -> Harness {
         Harness::with(&LIMITS)
     }
 
     fn with(limits: &Limits) -> Harness {
         Harness {
-            domain: Domain::new(limits, crate::Config { endpoints: Box::new([Endpoint(1), Endpoint(2)]) }, 1),
+            observed: Queue::with_capacity(4096),
+            domain: Domain::new(
+                limits,
+                crate::Config {
+                    endpoints: Box::new([Endpoint(1), Endpoint(2)]),
+                    models: Box::new([
+                        crate::ConfiguredModel {
+                            endpoint: Endpoint(1),
+                            model: Box::from(&b"model-a"[..]),
+                            window: 8192,
+                            output: 1024,
+                        },
+                        crate::ConfiguredModel {
+                            endpoint: Endpoint(1),
+                            model: Box::from(&b"model-b"[..]),
+                            window: 8192,
+                            output: 1024,
+                        },
+                        crate::ConfiguredModel {
+                            endpoint: Endpoint(2),
+                            model: Box::from(&b"model-a"[..]),
+                            window: 8192,
+                            output: 1024,
+                        },
+                        crate::ConfiguredModel {
+                            endpoint: Endpoint(2),
+                            model: Box::from(&b"model-b"[..]),
+                            window: 8192,
+                            output: 1024,
+                        },
+                    ]),
+                },
+                1,
+            ),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits },
             out: Queue::with_capacity(max_out(limits)),
             turns: List::with_capacity(CEILING.turns),
@@ -228,12 +285,14 @@ impl Harness {
 
     /// Steps `event`, returning what it emitted, oldest first.
     fn step(&mut self, event: Event) -> Box<[Request]> {
+        self.keep_facts();
         step(&mut self.domain, &self.env, event, &mut self.out);
         self.drain()
     }
 
     fn fire(&mut self) -> Box<[Request]> {
         assert!(self.domain.is_due(self.env.now), "an alarm is due");
+        self.keep_facts();
         fire(&mut self.domain, &self.env, &mut self.out);
         self.drain()
     }
@@ -247,6 +306,7 @@ impl Harness {
             if !self.domain.is_ready() {
                 break;
             }
+            self.keep_facts();
             resume(&mut self.domain, &self.env, &mut self.out);
             for request in self.drain() {
                 all.push(request).expect("a test's iteration emits little");
@@ -269,7 +329,7 @@ impl Harness {
                     );
                     self.turns.push(turn).expect("bounded activation fixture turns");
                 }
-                Request::Answer { to, answer } => {
+                Request::Answer { to, answer, read } => {
                     match &answer {
                         run::Answer::Parked { turns, .. }
                         | run::Answer::Accepted { turns, .. }
@@ -278,7 +338,7 @@ impl Harness {
                         }
                         run::Answer::Refused(_) => assert!(self.turns.is_empty()),
                     }
-                    requests.push(Request::Answer { to, answer }).expect("room for max_out");
+                    requests.push(Request::Answer { to, answer, read }).expect("room for max_out");
                 }
                 request @ (Request::HostCall { .. }
                 | Request::WithdrawHost { .. }
@@ -296,6 +356,7 @@ impl Harness {
                 | Request::Probe { .. }
                 | Request::Check { .. }
                 | Request::Abort { .. }
+                | Request::MessageRefused { .. }
                 | Request::Waiting { .. }) => {
                     requests.push(request).expect("room for max_out");
                 }
@@ -314,6 +375,7 @@ impl Harness {
 
     fn admit_named(&mut self, call: u64, charter: Charter) -> (Token, Token, Prompt, crate::llm::CompletionName) {
         let emitted = self.step(Event::Start {
+            messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             workspace: Some(workspace()),
@@ -344,13 +406,14 @@ impl Harness {
 
     /// The session `owner`'s LLM answers with `content`, stopping for tools.
     fn answer(&mut self, owner: Token, content: Box<[Said]>) -> Box<[Request]> {
-        let completion = Completion { content, stop: Stop::ToolUse, usage: USAGE };
+        let completion = Completion { reasoning_dropped: Box::default(), content, stop: Stop::ToolUse, usage: USAGE };
         self.step(Event::Completed { owner, completion })
     }
 
     /// The session `owner`'s LLM ends its turn saying `text`.
     fn says(&mut self, owner: Token, text: &[u8]) -> Box<[Request]> {
         let completion = Completion {
+            reasoning_dropped: Box::default(),
             content: Box::new([Said::Text { text: bytes(text), replay: None }]),
             stop: Stop::EndTurn,
             usage: USAGE,
@@ -393,7 +456,8 @@ fn charter() -> Charter {
             account: 0,
             endpoint: Endpoint(1),
             model: bytes(b"model-a"),
-            max_tokens: 512,
+            window: 8192,
+            output: 512,
             dialect: 1,
         },
         models: Box::new([]),
@@ -410,6 +474,7 @@ fn charter() -> Charter {
 fn root_refuses_invalid_grants_before_admission() {
     let mut h = Harness::new();
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -434,6 +499,7 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
         requested.llm.endpoint = main;
         requested.models = Box::new([Llm { endpoint: child, model: bytes(b"model-b"), ..requested.llm.clone() }]);
         let emitted = h.step(Event::Start {
+            messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             workspace: None,
@@ -447,6 +513,7 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
         assert_eq!(
             &*emitted,
             &[Request::Answer {
+                read: None,
                 to: ReplyTo::new(Token::new(7)),
                 answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Endpoint)),
             }]
@@ -457,6 +524,7 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
     let mut requested = charter();
     requested.models = Box::new([Llm { endpoint: Endpoint(2), model: bytes(b"model-b"), ..requested.llm.clone() }]);
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: None,
@@ -477,6 +545,7 @@ fn root_refuses_incompatible_conversation_limits_before_admission() {
     let limits = Limits { run: run::Limits { directories: 3, ..LIMITS.run }, ..LIMITS };
     let mut h = Harness::with(&limits);
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -515,6 +584,7 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
         turns: turns.into_boxed(),
     };
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -648,14 +718,14 @@ fn opaque_reasoning_returns_in_its_position_without_becoming_text() {
 #[test]
 fn content_overflow_drops_and_counts_without_changing_decisions() {
     let mut keeping = Harness::new();
-    let limits = Limits { session: session::Limits { facts: 0, ..LIMITS.session }, ..LIMITS };
-    let mut dropping = Harness::with(&limits);
+    let mut dropping = Harness::new();
+    dropping.domain.content = Queue::with_capacity(0);
     let (_, kept, _) = keeping.admit(7, charter());
     let (_, dropped, _) = dropping.admit(7, charter());
     assert_eq!(keeping.says(kept, b"working"), dropping.says(dropped, b"working"));
     assert!(keeping.domain.pop_content().is_some());
     assert!(dropping.domain.pop_content().is_none());
-    assert!(dropping.domain.facts_lost() > keeping.domain.facts_lost(), "content loss is counted");
+    assert!(dropping.domain.content_lost() > keeping.domain.content_lost(), "content loss is counted");
 }
 
 #[test]
@@ -706,6 +776,7 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
     let mut ungranted = charter();
     ungranted.llm.account = 9;
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -833,6 +904,7 @@ fn an_unsafe_workspace_mount_refuses_start_before_discovery() {
         }]),
     };
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         grants: Box::new([crate::Grant {
@@ -847,7 +919,7 @@ fn an_unsafe_workspace_mount_refuses_start_before_discovery() {
         transcript: None,
     });
     let requests = Box::<[Request; 1]>::try_from(emitted).expect("one refusal terminal, no admission or discovery");
-    let [Request::Answer { to, answer }] = *requests else {
+    let [Request::Answer { to, answer, read: _ }] = *requests else {
         panic!("unsafe mount refuses before admission or discovery");
     };
     assert_eq!(to.into_token(), Token::new(7));
@@ -875,6 +947,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
     let mut h = Harness::with(&limits);
     let brief = filler(10_240);
     let emitted = h.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -896,7 +969,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
         panic!("writable directory probes checks before opening: {emitted:?}");
     };
     let emitted = h.step(Event::Probed { owner: *run, executable: false });
-    let [Request::Answer { to: _, answer }] = &*emitted else {
+    let [Request::Answer { to: _, answer, read: _ }] = &*emitted else {
         panic!("expected the run's answer, got {emitted:?}");
     };
     assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Conversation)));
@@ -943,11 +1016,11 @@ fn an_accepted_finish_closes_main_and_the_run_answers_the_worker() {
     // The answer and the close come in the next iteration: the close first,
     // which withdraws the call, whose answer has won.
     let emitted = h.next();
-    let [Request::Answer { to, answer: run::Answer::Accepted { outcome: _, spent, .. } }] = &*emitted else {
+    let [Request::Answer { to, answer: run::Answer::Accepted { outcome: _, spent, .. }, read: _ }] = &*emitted else {
         panic!("expected the run accepted, got {emitted:?}");
     };
     assert_eq!(to, &ReplyTo::new(Token::new(7)));
-    assert_eq!((spent.turns, spent.input), (1, USAGE.input_tokens));
+    assert_eq!((spent.turns, spent.input), (1, USAGE.input_tokens.expect("fixture reports input")));
     h.domain.reclaim();
     assert_eq!((h.domain.peers(), h.domain.tickets(), h.domain.flights()), (0, 0, 0), "main's tickets went with it");
 }
@@ -985,7 +1058,8 @@ fn a_change_lands_through_the_worker_and_the_run_answers_with_it() {
         "the answer and the close wait"
     );
     let emitted = h.next();
-    let [Request::Answer { to: _, answer: run::Answer::Accepted { outcome, spent: _, .. } }] = &*emitted else {
+    let [Request::Answer { to: _, answer: run::Answer::Accepted { outcome, spent: _, .. }, read: _ }] = &*emitted
+    else {
         panic!("expected the run accepted, got {emitted:?}");
     };
     assert_eq!(outcome, &Declared::Change(change));
@@ -1065,7 +1139,8 @@ fn assert_no_provider_completion(emitted: &[Request]) {
             Request::Complete { .. } => {
                 panic!("no room for another provider receiving reserve after the exact result edge")
             }
-            Request::Waiting { .. }
+            Request::MessageRefused { .. }
+            | Request::Waiting { .. }
             | Request::Turn { .. }
             | Request::HostCall { .. }
             | Request::WithdrawHost { .. }
@@ -1171,8 +1246,12 @@ fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes()
 fn the_asks_of_an_answer_that_yields_are_forgotten() {
     let mut h = Harness::new();
     let (_, main, _) = h.admit(7, charter());
-    let completion =
-        Completion { content: Box::new([served(b"f1", verdict(b"approve"))]), stop: Stop::MaxTokens, usage: USAGE };
+    let completion = Completion {
+        reasoning_dropped: Box::default(),
+        content: Box::new([served(b"f1", verdict(b"approve"))]),
+        stop: Stop::MaxTokens,
+        usage: USAGE,
+    };
     // The run nudges at once: the session is continued within the step.
     let (owner, prompt) = completing(h.step(Event::Completed { owner: main, completion }));
     assert_eq!(owner, main);
@@ -1215,7 +1294,7 @@ fn the_runs_deadline_fires_before_the_sessions_expiry_at_the_same_instant() {
     assert!(!h.domain.is_due(h.env.now));
     assert!(h.next().is_empty(), "the close finds main closing already");
     let emitted = h.step(Event::Cancelled { owner: main });
-    let [Request::Answer { to: _, answer: run::Answer::Failed { failure, spent: _, .. } }] = &*emitted else {
+    let [Request::Answer { to: _, answer: run::Answer::Failed { failure, spent: _, .. }, read: _ }] = &*emitted else {
         panic!("expected the run failed, got {emitted:?}");
     };
     assert_eq!(failure, &run::Failure::Budget(run::Exhausted::Time));
@@ -1228,14 +1307,14 @@ fn the_facts_of_both_child_domains_are_gathered() {
     let mut run = 0_u32;
     let mut sessions = 0_u32;
     for _ in 0..64_u32 {
-        match h.domain.pop_fact() {
+        match h.pop_fact() {
             Some(Fact::Run { .. }) => run += 1,
             Some(Fact::Session { .. }) => sessions += 1,
             None => break,
         }
     }
     assert!(run > 0 && sessions > 0, "{run} of the run's, {sessions} of the sessions'");
-    assert_eq!(h.domain.facts_lost(), 0);
+    assert_eq!(h.domain.content_lost(), 0);
 }
 
 fn delivered() -> run::Delivery {
@@ -1367,6 +1446,7 @@ fn convention_main(harness: &mut Harness, selected: Option<run::Conventions>) ->
         ..charter()
     };
     let emitted = harness.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         reply_to: ReplyTo::new(Token::new(77)),
@@ -1560,6 +1640,7 @@ fn invalid_conventions_are_refused_at_original_root_start_before_any_effect() {
                 run::Conventions { guide: bytes(b"docs/GUIDE"), checks: bytes(path) }
             };
             let emitted = harness.step(Event::Start {
+                messages: Box::default(),
                 window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
                 answered: Box::default(),
                 workspace: Some(workspace()),
@@ -1634,6 +1715,7 @@ fn maximum_custom_guide_headings_obey_the_session_receiving_limit_after_discover
             None
         };
         let emitted = harness.step(Event::Start {
+            messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
             answered: Box::default(),
             reply_to: ReplyTo::new(Token::new(7)),
@@ -1727,6 +1809,7 @@ fn scalar_charter() -> Charter {
 fn scalar_prepared(charter: Charter) -> (Harness, Box<[Request]>) {
     let mut harness = Harness::with(&scalar_limits());
     let emitted = harness.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: Some(workspace()),
@@ -1774,7 +1857,7 @@ fn a_priced_finish_settles_within_its_prior_reservation() {
     let selected = scalar_charter();
     let selected = Charter {
         budget: run::Budget { spend: 100_000, ..selected.budget },
-        llm: Llm { max_tokens: 10, ..selected.llm },
+        llm: Llm { window: 8192, output: 10, ..selected.llm },
         ..selected
     };
     let (_, main, _) = harness.admit(1, selected);
@@ -1794,14 +1877,15 @@ fn a_provider_charge_above_its_reserved_maximum_fails_without_recording_it() {
     let selected = scalar_charter();
     let selected = Charter {
         budget: run::Budget { spend: 100_000, ..selected.budget },
-        llm: Llm { max_tokens: 10, ..selected.llm },
+        llm: Llm { window: 8192, output: 10, ..selected.llm },
         ..selected
     };
     let (_, main, _) = harness.admit(1, selected);
     let completion = Completion {
+        reasoning_dropped: Box::new([]),
         content: Box::new([Said::Text { text: bytes(b"overbound"), replay: None }]),
         stop: Stop::EndTurn,
-        usage: Usage { output_tokens: 100_000, ..Usage::ZERO },
+        usage: Usage { output_tokens: Some(100_000), ..Usage::ZERO },
     };
     let emitted = harness.step(Event::Completed { owner: main, completion });
     let emitted = if emitted.is_empty() { harness.next() } else { emitted };
@@ -1830,3 +1914,219 @@ fn overflowing_reservation_runs_no_calls_and_tells_no_turn() {
 }
 
 mod completion_retry;
+
+#[test]
+fn each_main_or_child_model_quantity_is_checked_before_admission() {
+    for child in [false, true] {
+        for bad in 0_u32..5 {
+            let mut requested = charter();
+            let mut model = requested.llm.clone();
+            match bad {
+                0 => model.model = bytes(b"not-configured"),
+                1 => model.window = 8193,
+                2 => model.output = 1025,
+                3 => model.window = 0,
+                4 => model.output = 0,
+                _ => unreachable!("five entrance refusals"),
+            }
+            if child {
+                requested.models = Box::new([model]);
+            } else {
+                requested.llm = model;
+            }
+            let mut harness = Harness::new();
+            let emitted = harness.step(Event::Start {
+                messages: Box::default(),
+                reply_to: ReplyTo::new(Token::new(7)),
+                host_run: Token::new(7),
+                activation: 1,
+                window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
+                charter: requested,
+                workspace: None,
+                grants: Box::new([]),
+                transcript: None,
+                answered: Box::new([]),
+            });
+            let [Request::Answer { answer, .. }] = emitted.as_ref() else {
+                panic!("one admission refusal: {emitted:?}")
+            };
+            assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Llm)));
+            assert!(harness.turns.is_empty());
+        }
+    }
+}
+
+fn awaiting_start(transcript: Option<session::record::Transcript>, answered: Box<[crate::AnsweredCall]>) -> Event {
+    Event::Start {
+        messages: Box::default(),
+        window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
+        reply_to: ReplyTo::new(Token::new(91)),
+        host_run: Token::new(91),
+        activation: 2,
+        charter: Charter { brief: smith_domain_run::Brief { sections: Box::new([]) }, resume: true, ..charter() },
+        workspace: None,
+        transcript,
+        answered,
+        grants: Box::new([crate::Grant {
+            name: crate::GrantName { account: 0, generation: 0 },
+            valid: Duration::from_secs(100_000),
+        }]),
+    }
+}
+
+#[test]
+fn root_awaiting_opens_no_session_or_provider_call_until_the_first_message() {
+    let mut harness = Harness::new();
+    let emitted = harness.step(awaiting_start(None, Box::default()));
+    let [Request::Admitted { run, .. }, Request::Waiting { host_run, read }] = emitted.as_ref() else {
+        panic!("awaiting root emits no completion: {emitted:?}");
+    };
+    let run = *run;
+    assert_eq!((*host_run, *read), (Token::new(91), None));
+    assert_eq!((harness.domain.starts.len(), harness.domain.peers.len(), harness.domain.sessions.len()), (1, 0, 0));
+    assert!(harness.next().is_empty());
+    let emitted = harness.step(Event::Message {
+        run,
+        name: Token::new(1),
+        label: bytes(b"person"),
+        text: bytes(b"real coding task"),
+    });
+    let [Request::Complete { prompt, .. }] = emitted.as_ref() else {
+        panic!("one direct provider completion: {emitted:?}")
+    };
+    assert_eq!(prompt.messages.len(), 1);
+    assert_eq!(
+        prompt.messages[0].content.as_ref(),
+        [Block::Text { text: bytes(b"person: real coding task"), replay: None }]
+    );
+    assert_eq!(harness.turns.len(), 0);
+}
+
+#[test]
+fn root_cancel_while_awaiting_releases_unused_restore_context_without_a_session_terminal() {
+    let mut harness = Harness::new();
+    let emitted = harness.step(awaiting_start(None, Box::default()));
+    let [Request::Admitted { run, .. }, Request::Waiting { .. }] = emitted.as_ref() else {
+        panic!("awaiting: {emitted:?}")
+    };
+    let emitted = harness.step(Event::Cancel { run: *run });
+    let [Request::Answer { answer, .. }] = emitted.as_ref() else { panic!("direct cancelled answer: {emitted:?}") };
+    assert_eq!(answer, &run::Answer::Failed { failure: run::Failure::Cancelled, spent: run::Spend::ZERO, turns: 0 });
+    assert!(harness.next().is_empty());
+    assert_eq!((harness.domain.starts.len(), harness.domain.peers.len(), harness.domain.sessions.len()), (0, 0, 0));
+    assert_eq!((harness.domain.run.runs(), harness.domain.run.conversations()), (0, 0));
+}
+
+#[test]
+fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() {
+    let mut harness = Harness::new();
+    let transcript = session::record::Transcript {
+        version: session::record::VERSION,
+        endpoint: session::llm::Endpoint(1),
+        dialect: 1,
+        turns: Box::new([session::record::Turn {
+            version: session::record::VERSION,
+            endpoint: session::llm::Endpoint(1),
+            dialect: 1,
+            sequence: 1,
+            usage: Usage::ZERO,
+            spent: 0,
+            messages: Box::new([
+                session::llm::Message {
+                    role: Role::User,
+                    content: Box::new([session::llm::Block::Text { text: bytes(b"old task"), replay: None }]),
+                },
+                session::llm::Message {
+                    role: Role::Assistant,
+                    content: Box::new([session::llm::Block::Text { text: bytes(b"old response"), replay: None }]),
+                },
+            ]),
+        }]),
+    };
+    let answered = Box::new([crate::AnsweredCall {
+        name: run::CallName { activation: 1, completion: 1, position: 0 },
+        tool: bytes(b"check"),
+        answer: crate::Answered::TooLarge,
+    }]);
+    let emitted = harness.step(awaiting_start(Some(transcript), answered));
+    let [Request::Admitted { run, .. }, Request::Waiting { .. }] = emitted.as_ref() else {
+        panic!("awaiting: {emitted:?}")
+    };
+    let run = *run;
+    let emitted = harness.step(Event::Message {
+        run,
+        name: Token::new(2),
+        label: bytes(b"person"),
+        text: bytes(b"new coding task"),
+    });
+    let [Request::Complete { prompt, .. }] = emitted.as_ref() else { panic!("restored completion: {emitted:?}") };
+    assert_eq!(prompt.messages.len(), 3);
+    assert_eq!(prompt.messages[0].content.as_ref(), [Block::Text { text: bytes(b"old task"), replay: None }]);
+    assert_eq!(prompt.messages[1].content.as_ref(), [Block::Text { text: bytes(b"old response"), replay: None }]);
+    let [Block::Text { text, .. }] = prompt.messages[2].content.as_ref() else { panic!("waking text") };
+    assert!(text.starts_with(b"Earlier host answers absent from the saved transcript:"));
+    assert!(text.ends_with(b"person: new coding task"));
+    assert_eq!(harness.domain.starts.len(), 1);
+    assert_eq!(harness.turns.len(), 0, "restored history is not retold as an activation turn");
+}
+
+#[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    clippy::single_match,
+    reason = "the charge story selects its Used observation"
+)]
+fn missing_provider_usage_settles_the_root_reservation_and_keeps_the_raw_fact() {
+    for raw in [
+        Usage { output_tokens: Some(2), ..Usage::NONE },
+        Usage { input_tokens: Some(0), reasoning_tokens: Some(0), ..Usage::NONE },
+    ] {
+        let mut harness = Harness::with(&scalar_limits());
+        let selected = scalar_charter();
+        let selected = Charter {
+            budget: run::Budget { spend: 100_000, ..selected.budget },
+            llm: Llm { output: 10, prices: run::Prices { input: 0, cached: 0, output: 3, unit: 1 }, ..selected.llm },
+            ..selected
+        };
+        let (_, main, _) = harness.admit(1, selected);
+        assert!(
+            harness
+                .step(Event::Completed {
+                    owner: main,
+                    completion: Completion {
+                        reasoning_dropped: Box::default(),
+                        content: Box::new([served(b"finish", verdict(b"approve"))]),
+                        stop: Stop::ToolUse,
+                        usage: raw,
+                    },
+                })
+                .is_empty()
+        );
+        let emitted = harness.next();
+        let [Request::Answer { answer: run::Answer::Accepted { spent, turns, .. }, .. }] = emitted.as_ref() else {
+            panic!("missing usage still settles the reserved finish: {emitted:?}");
+        };
+        assert_eq!(
+            (spent.units, spent.turns, spent.input, spent.output, *turns),
+            (30, 1, 0, raw.output_tokens.unwrap_or(0), 1)
+        );
+        let turn = harness.turns.iter().next().expect("one saved turn");
+        assert_eq!((turn.usage, turn.spent), (raw, 30));
+        let mut observed = false;
+        for _ in 0..harness.env.limits.session.facts {
+            match harness.pop_fact() {
+                Some(Fact::Session { fact }) => match fact.kind {
+                    session::FactKind::Used { usage, .. } => {
+                        assert_eq!(usage, raw);
+                        let info = fact.response.expect("Used carries its accepted charge");
+                        assert_eq!((info.number, info.spent), (1, Some(30)));
+                        observed = true;
+                    }
+                    _ => {}
+                },
+                Some(Fact::Run { .. }) | None => {}
+            }
+        }
+        assert!(observed);
+    }
+}

@@ -33,26 +33,21 @@ fn retry(harness: &mut Harness, owner: Token) -> CompletionName {
 }
 
 #[test]
-fn no_text_retry_starts_keep_the_owner_sequence_and_number_when_facts_are_full() {
-    let limits = Limits {
-        run: run::Limits { facts: 0, ..LIMITS.run },
-        session: session::Limits { facts: 1, ..LIMITS.session },
-        ..LIMITS
-    };
-    let mut harness = Harness::with(&limits);
+fn no_text_retry_starts_keep_the_owner_sequence_and_number_with_queued_native_facts() {
+    let mut harness = Harness::new();
     let (_, owner, _, first) = harness.admit_named(7, charter());
     assert_eq!(first, CompletionName { sequence: 1, retry: 0 });
     assert!(harness.domain.pop_content().is_none(), "a start need not produce text");
     let later = retry(&mut harness, owner);
     assert_eq!(later, CompletionName { sequence: 1, retry: 1 });
     assert!(harness.domain.pop_content().is_none(), "retry start is explicit without text");
-    assert!(harness.domain.facts_lost() > 0, "the undrained bounded fact sink lost observations");
+    assert!(harness.domain.has_facts(), "native facts remain queued independently of the retry name");
     drop(harness.says(owner, b"retry answer"));
     assert_eq!(
         harness.domain.pop_content(),
         Some(crate::Content::Text { owner, completion: later, text: bytes(b"retry answer") })
     );
-    assert!(harness.domain.facts_lost() > 0);
+    assert!(harness.domain.has_facts());
 }
 
 #[test]
@@ -113,12 +108,10 @@ fn empty_text_and_a_completion_without_text_retain_their_retry_identity() {
         let mut harness = Harness::new();
         let (_, owner, _, _) = harness.admit_named(7, charter());
         let name = retry(&mut harness, owner);
-        drop(
-            harness.step(Event::Completed {
-                owner,
-                completion: Completion { content, stop: Stop::EndTurn, usage: USAGE },
-            }),
-        );
+        drop(harness.step(Event::Completed {
+            owner,
+            completion: Completion { content, stop: Stop::EndTurn, usage: USAGE, reasoning_dropped: Box::default() },
+        }));
         if has_text {
             assert_eq!(
                 harness.domain.pop_content(),
@@ -181,13 +174,9 @@ fn retry_exhaustion_ends_the_run_without_another_start_or_content() {
 }
 
 #[test]
-fn dropping_all_observations_does_not_drop_or_default_the_completion_start_name() {
-    let limits = Limits {
-        run: run::Limits { facts: 0, ..LIMITS.run },
-        session: session::Limits { facts: 0, ..LIMITS.session },
-        ..LIMITS
-    };
-    let mut harness = Harness::with(&limits);
+fn dropping_all_content_does_not_drop_or_default_the_completion_start_name() {
+    let mut harness = Harness::new();
+    harness.domain.content = Queue::with_capacity(0);
     let (_, owner, _, first) = harness.admit_named(7, charter());
     assert_eq!(first, CompletionName { sequence: 1, retry: 0 });
     let retry_name = retry(&mut harness, owner);
@@ -195,9 +184,9 @@ fn dropping_all_observations_does_not_drop_or_default_the_completion_start_name(
     let (next_owner, _, next) = named(harness.says(owner, b"dropped content"));
     assert_eq!(next_owner, owner);
     assert_eq!(next, CompletionName { sequence: 2, retry: 0 });
-    assert!(harness.domain.pop_fact().is_none());
+    assert!(harness.domain.has_facts(), "native facts survive omitted content observations");
     assert!(harness.domain.pop_content().is_none());
-    assert!(harness.domain.facts_lost() > 0);
+    assert!(harness.domain.content_lost() > 0);
 }
 
 #[test]
@@ -233,6 +222,7 @@ fn a_restored_prefix_names_the_next_source_sequence_without_changing_the_retry()
     };
     let mut restored = Harness::new();
     let emitted = restored.step(Event::Start {
+        messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
         answered: Box::default(),
         workspace: None,

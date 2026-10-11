@@ -9,6 +9,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
+name = "block-buffer"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
 name = "cc"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -41,10 +50,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "cpufeatures"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "crypto-common"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
+dependencies = [
+ "generic-array",
+ "typenum",
+]
+
+[[package]]
+name = "digest"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
+dependencies = [
+ "block-buffer",
+ "crypto-common",
+]
+
+[[package]]
+name = "equivalent"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "generic-array"
+version = "0.14.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
+dependencies = [
+ "typenum",
+ "version_check",
+]
 
 [[package]]
 name = "getrandom"
@@ -55,6 +109,22 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "indexmap"
+version = "2.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+dependencies = [
+ "equivalent",
+ "hashbrown",
 ]
 
 [[package]]
@@ -252,6 +322,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
+]
+
+[[package]]
+name = "serde_spanned"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -260,7 +361,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "skein-channel"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -268,7 +369,7 @@ dependencies = [
 [[package]]
 name = "skein-codec"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -276,12 +377,12 @@ dependencies = [
 [[package]]
 name = "skein-codegen"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 
 [[package]]
 name = "skein-fake-channel"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-channel",
  "skein-lib",
@@ -290,12 +391,12 @@ dependencies = [
 [[package]]
 name = "skein-fake-checkout"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 
 [[package]]
 name = "skein-fake-llm-domain"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -303,7 +404,7 @@ dependencies = [
 [[package]]
 name = "skein-fake-llm-protocol"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-fake-llm-domain",
  "skein-http",
@@ -315,7 +416,7 @@ dependencies = [
 [[package]]
 name = "skein-fake-machine"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-io",
  "skein-lib",
@@ -325,7 +426,7 @@ dependencies = [
 [[package]]
 name = "skein-fake-oauth"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-json",
  "skein-lib",
@@ -335,7 +436,7 @@ dependencies = [
 [[package]]
 name = "skein-fake-peers"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "rustls",
  "skein-fake-llm-domain",
@@ -352,12 +453,12 @@ dependencies = [
 [[package]]
 name = "skein-heap"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 
 [[package]]
 name = "skein-http"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -365,7 +466,7 @@ dependencies = [
 [[package]]
 name = "skein-io"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -373,7 +474,7 @@ dependencies = [
 [[package]]
 name = "skein-json"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-lib",
 ]
@@ -381,12 +482,12 @@ dependencies = [
 [[package]]
 name = "skein-lib"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 
 [[package]]
 name = "skein-llm"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-http",
  "skein-json",
@@ -396,7 +497,7 @@ dependencies = [
 [[package]]
 name = "skein-llm-connection"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-io",
  "skein-lib",
@@ -407,7 +508,7 @@ dependencies = [
 [[package]]
 name = "skein-llm-world"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-fake-llm-domain",
  "skein-fake-llm-protocol",
@@ -420,7 +521,7 @@ dependencies = [
 [[package]]
 name = "skein-oauth"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-json",
  "skein-lib",
@@ -429,7 +530,7 @@ dependencies = [
 [[package]]
 name = "skein-shell"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "io-uring",
  "libc",
@@ -440,7 +541,7 @@ dependencies = [
 [[package]]
 name = "skein-sim"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-io",
  "skein-lib",
@@ -449,7 +550,7 @@ dependencies = [
 [[package]]
 name = "skein-tls"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "rustls",
  "skein-lib",
@@ -458,7 +559,7 @@ dependencies = [
 [[package]]
 name = "skein-tls-world"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "rustls",
  "skein-io",
@@ -470,7 +571,7 @@ dependencies = [
 [[package]]
 name = "skein-world"
 version = "0.0.0"
-source = "git+https://git.ekanayaka.io/ai/skein.git#0375e4f6b57dd73dd0179dc97a6cb19e9cbc7051"
+source = "git+https://git.ekanayaka.io/ai/skein.git#fa7c312a098302a766dcdc5625ed2552e52f7a61"
 dependencies = [
  "skein-heap",
  "skein-io",
@@ -506,6 +607,8 @@ dependencies = [
  "skein-world",
  "smith-agent-process-world",
  "smith-agent-service",
+ "smith-agent-shell",
+ "smith-bench",
  "smith-channel",
  "smith-charter",
  "smith-domain",
@@ -516,6 +619,7 @@ dependencies = [
  "smith-local-process-world",
  "smith-local-protocol",
  "smith-local-service",
+ "smith-local-shell",
  "smith-protocol-channel",
  "smith-protocol-llm",
  "smith-protocol-machine",
@@ -539,11 +643,13 @@ dependencies = [
  "skein-llm",
  "skein-llm-connection",
  "skein-llm-world",
+ "skein-shell",
  "skein-sim",
  "skein-tls",
  "skein-tls-world",
  "skein-world",
  "smith-agent-service",
+ "smith-agent-shell",
  "smith-agent-world",
  "smith-channel",
  "smith-charter",
@@ -560,7 +666,9 @@ dependencies = [
 name = "smith-agent-service"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "skein-channel",
+ "skein-http",
  "skein-io",
  "skein-lib",
  "skein-llm",
@@ -568,6 +676,33 @@ dependencies = [
  "skein-llm-world",
  "skein-tls",
  "smith-agent-world",
+ "smith-channel",
+ "smith-charter",
+ "smith-domain",
+ "smith-protocol-channel",
+ "smith-protocol-llm",
+ "smith-protocol-machine",
+ "smith-transcript",
+]
+
+[[package]]
+name = "smith-agent-shell"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "skein-channel",
+ "skein-http",
+ "skein-io",
+ "skein-lib",
+ "skein-llm",
+ "skein-llm-connection",
+ "skein-shell",
+ "skein-tls",
+ "skein-world",
+ "smith-agent-service",
  "smith-channel",
  "smith-charter",
  "smith-domain",
@@ -591,6 +726,18 @@ dependencies = [
  "smith-host-world",
  "smith-session-world",
  "smith-tools-world",
+]
+
+[[package]]
+name = "smith-bench"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2",
+ "skein-lib",
+ "toml",
 ]
 
 [[package]]
@@ -641,6 +788,7 @@ dependencies = [
  "skein-lib",
  "smith-channel",
  "smith-charter",
+ "smith-events",
  "smith-transcript",
 ]
 
@@ -677,10 +825,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "smith-events"
+version = "0.0.0"
+dependencies = [
+ "skein-json",
+ "skein-lib",
+]
+
+[[package]]
 name = "smith-host-domain"
 version = "0.0.0"
 dependencies = [
  "skein-lib",
+ "smith-domain",
 ]
 
 [[package]]
@@ -691,16 +848,25 @@ dependencies = [
  "skein-io",
  "skein-lib",
  "smith-channel",
+ "smith-charter",
+ "smith-domain",
  "smith-host-domain",
+ "smith-host-world",
+ "smith-protocol-channel",
+ "smith-transcript",
 ]
 
 [[package]]
 name = "smith-host-world"
 version = "0.0.0"
 dependencies = [
+ "skein-fake-llm-domain",
  "skein-lib",
  "skein-world",
+ "smith-agent-world",
+ "smith-domain",
  "smith-host-domain",
+ "smith-inline-agent",
 ]
 
 [[package]]
@@ -711,15 +877,30 @@ dependencies = [
  "skein-fake-peers",
  "skein-io",
  "skein-lib",
+ "skein-shell",
  "skein-sim",
  "skein-tls-world",
  "skein-world",
  "smith-agent-process-world",
  "smith-agent-service",
+ "smith-agent-shell",
  "smith-channel",
+ "smith-charter",
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",
+ "smith-local-service",
+ "smith-protocol-channel",
+]
+
+[[package]]
+name = "smith-inline-agent"
+version = "0.0.0"
+dependencies = [
+ "skein-lib",
+ "smith-agent-world",
+ "smith-domain",
+ "smith-host-domain",
 ]
 
 [[package]]
@@ -749,19 +930,21 @@ dependencies = [
  "skein-llm-connection",
  "skein-llm-world",
  "skein-oauth",
+ "skein-shell",
  "skein-sim",
  "skein-tls",
  "skein-tls-world",
  "skein-world",
- "smith",
  "smith-agent-process-world",
  "smith-agent-service",
+ "smith-agent-shell",
  "smith-domain",
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",
  "smith-local-domain",
  "smith-local-service",
+ "smith-local-shell",
  "smith-local-world",
  "smith-protocol-channel",
  "smith-protocol-llm",
@@ -807,6 +990,51 @@ dependencies = [
  "smith-local-domain",
  "smith-local-protocol",
  "smith-protocol-channel",
+ "smith-transcript",
+]
+
+[[package]]
+name = "smith-local-shell"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "skein-channel",
+ "skein-fake-channel",
+ "skein-fake-llm-domain",
+ "skein-fake-machine",
+ "skein-fake-oauth",
+ "skein-fake-peers",
+ "skein-http",
+ "skein-io",
+ "skein-lib",
+ "skein-llm",
+ "skein-llm-connection",
+ "skein-oauth",
+ "skein-shell",
+ "skein-sim",
+ "skein-tls",
+ "skein-tls-world",
+ "skein-world",
+ "smith-agent-process-world",
+ "smith-agent-service",
+ "smith-agent-shell",
+ "smith-channel",
+ "smith-charter",
+ "smith-domain",
+ "smith-host-domain",
+ "smith-host-protocol",
+ "smith-host-world",
+ "smith-local-domain",
+ "smith-local-process-world",
+ "smith-local-protocol",
+ "smith-local-service",
+ "smith-protocol-channel",
+ "smith-protocol-llm",
+ "smith-protocol-machine",
+ "smith-real-world",
  "smith-transcript",
 ]
 
@@ -911,9 +1139,10 @@ dependencies = [
  "skein-shell",
  "skein-tls-world",
  "skein-world",
- "smith",
+ "smith-agent-shell",
  "smith-local-domain",
  "smith-local-process-world",
+ "smith-local-shell",
 ]
 
 [[package]]
@@ -974,6 +1203,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml"
+version = "0.9.12+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+dependencies = [
+ "indexmap",
+ "serde_core",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_parser",
+ "toml_writer",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.7.5+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "toml_parser"
+version = "1.1.5+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
+dependencies = [
+ "winnow 1.0.4",
+]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.3+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
+
+[[package]]
+name = "typenum"
+version = "1.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -984,6 +1258,12 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "version_check"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "wasi"
@@ -1078,6 +1358,18 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "winnow"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+
+[[package]]
+name = "winnow"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 
 [[package]]
 name = "zeroize"

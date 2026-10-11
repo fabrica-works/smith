@@ -6,7 +6,7 @@
 //! returns either owned domain policy or a typed invalid-start reason.
 
 use alloc::boxed::Box;
-use skein_lib::{List, Reader, Writer};
+use skein_lib::{List, Reader, Token, Writer};
 use smith_channel as channel;
 use smith_charter as wire;
 use smith_domain::run;
@@ -33,6 +33,7 @@ pub struct Grant {
 /// Start context after channel and charter decoding, before io root attachment.
 #[derive(Debug)]
 pub struct DecodedStart {
+    pub messages: Box<[run::Message]>,
     pub activation: u64,
     pub charter: run::Charter,
     pub mounts: Option<Box<[Mount]>>,
@@ -78,7 +79,15 @@ pub fn start_context(
             return Err(Error::ResultCapacity);
         }
     }
+    let mut messages = List::with_capacity(parts.messages.len());
+    for message in parts.messages.into_boxed() {
+        let parts = message.into_parts();
+        if messages.push(run::Message { name: Token::new(parts.name), label: parts.label, text: parts.text }).is_err() {
+            return Err(Error::ResultCapacity);
+        }
+    }
     Ok(DecodedStart {
+        messages: messages.into_boxed(),
         activation: parts.activation,
         charter,
         mounts,
@@ -208,17 +217,23 @@ impl Endpoints {
 
     /// Whether the configured names fit the channel's endpoint allowance.
     #[must_use]
-    pub(crate) fn fits(&self, count: u32) -> bool {
+    pub fn fits(&self, count: u32, name_bytes: u32) -> bool {
         if self.len() > count {
             return false;
         }
         for endpoint in &self.entries {
             match u32::try_from(endpoint.name.len()) {
-                Ok(length) if length <= wire::CEILINGS.llm_endpoint => {}
+                Ok(length) if length <= name_bytes => {}
                 Ok(_) | Err(_) => return false,
             }
         }
         true
+    }
+
+    /// Checked retained table storage for bounded names, in bytes.
+    #[must_use]
+    pub fn worst_case(count: u32, name_bytes: u32) -> Option<u64> {
+        List::<Endpoint>::worst_case(count)?.checked_add(u64::from(count).checked_mul(u64::from(name_bytes))?)
     }
 
     /// Find a charter name without exposing endpoint addresses.
@@ -249,13 +264,13 @@ impl Endpoints {
 #[expect(clippy::manual_let_else, reason = "explicit exhaustive result handling")]
 pub fn decode_charter(
     bytes: &[u8],
-    limits: &wire::v1::Limits,
+    limits: &wire::v2::Limits,
     endpoints: &Endpoints,
 ) -> Result<run::Charter, run::Invalid> {
     if bytes.len() < 2 {
         return Err(run::Invalid::MalformedCharter);
     }
-    if bytes.get(..2) != Some(&[0, 1][..]) {
+    if bytes.get(..2) != Some(&[0, 2][..]) {
         return Err(run::Invalid::CharterVersion);
     }
     let charter = match wire::Charter::decode(limits, &mut Reader::new(bytes)) {
@@ -352,7 +367,8 @@ fn llm(value: &wire::Llm, endpoints: &Endpoints) -> Result<run::charter::Llm, ru
         account: endpoint.account,
         endpoint: run::charter::Endpoint(endpoint.number),
         model: Box::from(value.model()),
-        max_tokens: value.max_tokens(),
+        window: value.window(),
+        output: value.output(),
     })
 }
 
@@ -411,7 +427,7 @@ fn field_rules(value: &List<wire::FieldRule>) -> Result<Box<[run::outcome::Field
 }
 
 /// Write an accepted domain result in the version-one charter family.
-pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v1::Limits) -> Result<Box<[u8]>, Error> {
+pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v2::Limits) -> Result<Box<[u8]>, Error> {
     let mut fields = List::with_capacity(limits.run_result_fields);
     let mut items = List::with_capacity(limits.run_result_items);
     let (form, label, text, values) = match result {
@@ -446,7 +462,7 @@ pub fn encode_result(result: &run::outcome::Declared, limits: &wire::v1::Limits)
 fn copy_fields(
     values: &[run::outcome::Field],
     target: &mut List<wire::Field>,
-    limits: &wire::v1::Limits,
+    limits: &wire::v2::Limits,
 ) -> Result<(), Error> {
     for field in values {
         let value = wire::Field::new(limits, wire::FieldParts { name: field.name.clone(), text: field.value.clone() })?;
@@ -458,10 +474,12 @@ fn copy_fields(
 }
 
 /// Translate the domain's single Start terminal into the channel's last word.
+#[expect(clippy::manual_map, reason = "the protocol subset keeps option projection exhaustive")]
 pub fn answer_record(
     answer: run::Answer,
+    read: Option<Token>,
     bodies: &channel::Limits,
-    charter: &wire::v1::Limits,
+    charter: &wire::v2::Limits,
 ) -> Result<channel::Answer, Error> {
     let (turns, spent, result) = match answer {
         run::Answer::Refused(refusal) => {
@@ -490,7 +508,11 @@ pub fn answer_record(
             (turns, spent.units, channel::RunResult::Failed(failed))
         }
     };
-    Ok(channel::Answer::new(bodies, channel::AnswerParts { turns, spent, result })?)
+    let last_read = match read {
+        Some(name) => Some(name.raw()),
+        None => None,
+    };
+    Ok(channel::Answer::new(bodies, channel::AnswerParts { turns, spent, last_read, result })?)
 }
 
 pub(crate) fn invalid_start(invalid: run::Invalid) -> channel::InvalidStart {
@@ -498,6 +520,7 @@ pub(crate) fn invalid_start(invalid: run::Invalid) -> channel::InvalidStart {
         run::Invalid::CharterVersion => channel::InvalidStart::CharterVersion,
         run::Invalid::MalformedCharter => channel::InvalidStart::MalformedCharter,
         run::Invalid::Endpoint => channel::InvalidStart::Endpoint,
+        run::Invalid::Messages => channel::InvalidStart::Messages,
         run::Invalid::Activation => channel::InvalidStart::Activation,
         run::Invalid::Window => channel::InvalidStart::Window,
         run::Invalid::Conventions => channel::InvalidStart::Conventions,

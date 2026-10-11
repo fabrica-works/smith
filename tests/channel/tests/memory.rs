@@ -14,21 +14,28 @@ static HEAP: Counting = Counting;
 
 fn channel_limits() -> skein_channel::Limits {
     let schema = smith_channel::schema(&CEILINGS).expect("ceiling body schema");
-    let largest = schema.version(1).expect("version one").kinds.iter().map(|kind| kind.largest).max().expect("kinds");
+    let largest = schema.version(2).expect("version two").kinds.iter().map(|kind| kind.largest).max().expect("kinds");
     skein_channel::Limits {
         chunk: 4096,
         credential: 0,
         skip: 4096,
         output_bytes: largest.checked_add(8).expect("one largest frame"),
         output_frames: 4,
-        kinds: 17,
+        kinds: 18,
     }
 }
 
 #[test]
 fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
     let channel = channel_limits();
-    let host_limits = host::Limits { bodies: CEILINGS, channel, calls: 8 };
+    let host_limits = host::Limits {
+        bodies: CEILINGS,
+        charter: smith_charter::CEILINGS,
+        transcript: smith_transcript::CEILINGS,
+        endpoints: 1,
+        channel,
+        calls: 8,
+    };
     let agent_limits = agent::Limits {
         bodies: CEILINGS,
         charter: smith_charter::CEILINGS,
@@ -50,7 +57,7 @@ fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
         .expect("combined bound");
     let meter = Meter::new();
     meter.start();
-    let mut host = host::Component::new(&host_limits, StreamMode::Two).expect("ceiling host");
+    let mut host = host::Component::new(&host_limits, StreamMode::Two, endpoints.clone()).expect("ceiling host");
     let agent = agent::Component::new(&agent_limits, StreamMode::Two, endpoints).expect("ceiling agent");
     let mut host_events = Queue::with_capacity(host::max_out(&host_limits).to_domain);
     let mut below = Queue::with_capacity(host::max_out(&host_limits).below);

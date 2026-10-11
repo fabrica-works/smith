@@ -10,7 +10,7 @@ use skein_fake_llm_domain::api::{Finish, Line, Message, Part, Query, Role, Scrip
 use skein_lib::{Duration, Token};
 use skein_world::domain::Span;
 use smith_domain::{Transcript, run, session::llm, tools};
-use smith_protocol_llm::{self as adapter, Limits};
+use smith_protocol_llm_world::adapter::{self as adapter, Limits};
 use smith_protocol_llm_world::{
     Boundary, CompletionObservation, CompletionTerminal, Job, Settings, World,
     wire::{self, Configuration, Observed},
@@ -55,9 +55,10 @@ const RESUMED_RATES: [Rate; 2] =
 fn charge(usage: skein_llm::Usage, rate: Rate) -> u64 {
     // One combined numerator is rounded once. This oracle uses no domain
     // price method, accumulated spend, child bill or saved Turn value.
-    let numerator = (u128::from(usage.input_tokens) + u128::from(usage.cache_write_tokens)) * u128::from(rate.input)
-        + u128::from(usage.cache_read_tokens) * u128::from(rate.cached)
-        + u128::from(usage.output_tokens) * u128::from(rate.output);
+    let numerator = (u128::from(usage.input.unwrap_or(0)) + u128::from(usage.cache_write.unwrap_or(0)))
+        * u128::from(rate.input)
+        + u128::from(usage.cache_read.unwrap_or(0)) * u128::from(rate.cached)
+        + u128::from(usage.output.unwrap_or(0)) * u128::from(rate.output);
     let denominator = u128::from(rate.unit);
     u64::try_from(numerator.div_ceil(denominator)).expect("finite story prices fit u64")
 }
@@ -77,10 +78,10 @@ fn total(observations: &[CompletionObservation], rates: &[Rate]) -> run::Spend {
         let actual = usage(observation);
         let rate = rates.iter().find(|rate| rate.model == observation.model.as_ref()).expect("outside model table");
         expected.turns += 1;
-        expected.input += actual.input_tokens;
-        expected.output += actual.output_tokens;
-        expected.cache_read += actual.cache_read_tokens;
-        expected.cache_write += actual.cache_write_tokens;
+        expected.input += actual.input.unwrap_or(0);
+        expected.output += actual.output.unwrap_or(0);
+        expected.cache_read += actual.cache_read.unwrap_or(0);
+        expected.cache_write += actual.cache_write.unwrap_or(0);
         expected.units += charge(actual, *rate);
     }
     expected
@@ -100,7 +101,7 @@ fn conservation(world: &World, rates: &[Rate]) -> run::Spend {
     assert_eq!(spent(world.answer()), expected, "one own-completion charge per outside callback");
     assert_eq!(world.prompts().len(), world.completions().len());
     assert_eq!(world.turn_metadata().last().expect("actual main Turn").2, expected);
-    assert!(expected.input > 0 && expected.output > 0);
+    assert!(expected.input + expected.cache_read + expected.cache_write > 0 && expected.output > 0);
     assert!(world.checked().is_empty() && world.pushes().is_empty() && world.host_submissions().is_empty());
     assert!(world.judged().0 > 0 && world.judged().1 == 1);
     expected
@@ -130,7 +131,8 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: rate.model.into(),
-        max_tokens: 4096,
+        window: 8192,
+        output: 4096,
         dialect: 1,
     };
     run::Charter {
@@ -219,7 +221,13 @@ fn typed_world(settings: &Settings, cue: &[u8], rates: &[Rate], scripts: Box<[Sc
 }
 
 fn bounds(settings: &mut Settings) -> Limits {
-    let mut bounds = Limits { client: skein_llm_world::limits(), tool_bytes: 32768, result_bytes: 32768 };
+    let mut bounds = Limits {
+        client: skein_llm_world::limits(),
+        tool_bytes: 32768,
+        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        shell_default: skein_lib::Duration::from_secs(120),
+        shell_maximum: skein_lib::Duration::from_secs(1200),
+    };
     bounds.client.http.request = 16384;
     bounds.client.dialect.request_bytes = 16384;
     settings.limits.session.completion_bytes =
@@ -297,10 +305,11 @@ fn own_units(calls: &[&CompletionObservation], rate: Rate) -> u64 {
 
 fn turn_usage(actual: skein_llm::Usage) -> llm::Usage {
     llm::Usage {
-        input_tokens: actual.input_tokens,
-        output_tokens: actual.output_tokens,
-        cache_read_tokens: actual.cache_read_tokens,
-        cache_write_tokens: actual.cache_write_tokens,
+        input_tokens: actual.input,
+        output_tokens: actual.output,
+        cache_read_tokens: actual.cache_read,
+        cache_write_tokens: actual.cache_write,
+        reasoning_tokens: actual.reasoning,
     }
 }
 
@@ -522,7 +531,12 @@ fn positive_history_controls(query: &Query, expected: &[Message]) {
 }
 
 fn saved(world: &World) -> Transcript {
-    Transcript { version: 2, endpoint: llm::Endpoint(0), dialect: 1, turns: world.turns().to_vec().into() }
+    Transcript {
+        version: smith_domain::session::record::VERSION,
+        endpoint: llm::Endpoint(0),
+        dialect: 1,
+        turns: world.turns().to_vec().into(),
+    }
 }
 
 fn parked_accounting(world: &World, rates: &[Rate], prior_sequence: u32) -> run::Spend {
@@ -605,11 +619,7 @@ fn parking_story(index: usize) {
     assert_eq!(saved(&first), immutable, "old Turn.spent and concrete history remain unchanged");
     assert!(immutable.turns.iter().all(|turn| turn.spent > 0));
     assert!(first_total.cache_read > 0 && new_total.cache_read > 0);
-    if index == 0 {
-        assert_eq!((first_total.cache_write, new_total.cache_write), (0, 0));
-    } else {
-        assert!(first_total.cache_write > 0 && new_total.cache_write > 0);
-    }
+    assert!(first_total.cache_write > 0 && new_total.cache_write > 0);
 }
 
 #[test]

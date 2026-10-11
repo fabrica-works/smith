@@ -67,11 +67,12 @@ const LIMITS: Limits = Limits {
     answered_calls: 16,
     answered_bytes: 4096,
     host_timeout: Duration::from_secs(60),
+    host_timeout_max: Duration::from_secs(60),
     host_backoff: Duration::from_millis(50),
     verdicts: 1,
     calls: 2,
     budget: BUDGET,
-    max_tokens: 1024,
+
     models: 1,
     run_conversations: 2,
     answer_bytes: 128,
@@ -82,9 +83,11 @@ const LIMITS: Limits = Limits {
     delivery_timeout: Duration::from_secs(60),
     check_timeout: Duration::from_secs(60),
     check_tail: 1024,
-    facts: 16,
+    facts: 24,
     messages: 8,
     message_bytes: 4096,
+    offer_messages: 8,
+    offer_bytes: 32_782,
     waiting: skein_lib::Duration::from_secs(300),
 };
 
@@ -175,7 +178,8 @@ fn charter(held: u64) -> Charter {
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
-            max_tokens: 1,
+            window: 8192,
+            output: 1,
             dialect: 1,
         },
         models: Box::new([Llm {
@@ -183,7 +187,8 @@ fn charter(held: u64) -> Charter {
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
-            max_tokens: 1,
+            window: 8192,
+            output: 1,
             dialect: 1,
         }]),
         conventions: Some(smith_domain_run::Conventions {
@@ -231,10 +236,11 @@ fn observed_request(request: Request, selected: Option<&smith_domain_run::Conven
             }
             Asked::Check { owner }
         }
-        Request::Answer { answer, to: _ } => Asked::Answer { answer },
+        Request::Answer { answer, to: _, read: _ } => Asked::Answer { answer },
         Request::HostCall { .. }
         | Request::WithdrawHost { .. }
         | Request::Turn { .. }
+        | Request::MessageRefused { .. }
         | Request::Waiting { .. }
         | Request::Admitted { .. }
         | Request::Say { .. }
@@ -289,6 +295,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
     // checked less them.
     let mut step = |event: Event| -> Vec<Asked> {
         meter.start();
+        while domain.pop_fact().is_some() {}
         smith_domain_run::step(&mut domain, &env, event, &mut out);
         let measured = meter.end();
         let mut asked = Vec::new();
@@ -303,6 +310,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
     for run in 0..limits.runs {
         let host_run = Token::new(u64::from(run));
         let start = Event::Start {
+            messages: Box::default(),
             workspace: Some(workspace()),
             reply_to: ReplyTo::new(host_run),
             host_run,
@@ -310,6 +318,7 @@ fn fill_selected(limits: Limits, selected: Option<&smith_domain_run::Conventions
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter: selected_charter(limits.run_bytes, selected),
             transcript: None,
+            resumed: false,
         };
         let [Asked::Other, Asked::Read { owner }] = step(start)[..] else {
             panic!("a charter of exactly the byte limit is admitted");
@@ -376,6 +385,7 @@ fn refuse_oversized_charter(limits: Limits, env: &Env<Limits>, out: &mut Queue<R
     let mut domain = Domain::new(&Limits { runs: 1, conversations: 2, ..limits });
     let host_run = Token::new(0);
     let start = Event::Start {
+        messages: Box::default(),
         workspace: Some(workspace()),
         reply_to: ReplyTo::new(host_run),
         host_run,
@@ -383,9 +393,11 @@ fn refuse_oversized_charter(limits: Limits, env: &Env<Limits>, out: &mut Queue<R
         window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
         charter: charter(limits.run_bytes + 1),
         transcript: None,
+        resumed: false,
     };
+    while domain.pop_fact().is_some() {}
     smith_domain_run::step(&mut domain, env, start, out);
-    let Some(Request::Answer { to: _, answer }) = out.pop() else { panic!("expected an answer") };
+    let Some(Request::Answer { to: _, answer, read: _ }) = out.pop() else { panic!("expected an answer") };
     assert_eq!(answer, Answer::Refused(Refusal::Invalid(Invalid::TooLarge)));
 }
 
@@ -464,6 +476,7 @@ fn delivery_memory_step(
     event: Event,
 ) -> (Option<Token>, bool) {
     meter.start();
+    while domain.pop_fact().is_some() {}
     smith_domain_run::step(domain, env, event, out);
     let measured = meter.end();
     let mut token = None;
@@ -484,6 +497,7 @@ fn delivery_memory_step(
                 answered = true;
             }
             Request::Turn { .. }
+            | Request::MessageRefused { .. }
             | Request::Waiting { .. }
             | Request::Admitted { .. }
             | Request::Checking { .. }
@@ -524,6 +538,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
         &mut out,
         &meter,
         Event::Start {
+            messages: Box::default(),
             workspace: Some(full_delivery_workspace()),
             reply_to: ReplyTo::new(host_run),
             host_run,
@@ -531,6 +546,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,
             transcript: None,
+            resumed: false,
         },
     );
     let run = owner.expect("preparation read");
@@ -634,7 +650,8 @@ fn full_delivery_charter(limits: Limits) -> Charter {
             account: 0,
             endpoint: Endpoint(0),
             model: bytes(1),
-            max_tokens: 1,
+            window: 8192,
+            output: 1,
             dialect: 1,
         },
         models: Box::new([]),
@@ -654,6 +671,7 @@ fn host_memory_take(
     meter: &Meter,
     event: Option<Event>,
 ) -> (Option<Token>, Option<smith_domain_run::RelayName>) {
+    while domain.pop_fact().is_some() {}
     meter.start();
     match event {
         Some(event) => smith_domain_run::step(domain, env, event, out),
@@ -672,12 +690,13 @@ fn host_memory_take(
             Request::Return { result: smith_domain_run::Returned::HostAnswered(answer), .. } => {
                 assert_eq!(answer.text().len(), usize::try_from(env.limits.host_reply_bytes).expect("cap fits"));
             }
-            Request::Read { owner, .. } => token = Some(owner),
+            Request::Read { owner, .. } | Request::Probe { owner, .. } => token = Some(owner),
             Request::Open { conversation, opening } => {
                 assert_eq!(opening.host_tools.len(), 1);
                 token = Some(conversation);
             }
             Request::Turn { .. }
+            | Request::MessageRefused { .. }
             | Request::Waiting { .. }
             | Request::Admitted { .. }
             | Request::WithdrawHost { .. }
@@ -685,7 +704,6 @@ fn host_memory_take(
             | Request::Answer { .. } => {}
             unexpected @ (Request::Return { .. }
             | Request::Say { .. }
-            | Request::Probe { .. }
             | Request::Abort { .. }
             | Request::Check { .. }
             | Request::Checking { .. }
@@ -721,12 +739,14 @@ fn complete_declaration_and_maximum_opaque_input_answer_retries_reach_the_measur
     tool.schema = bytes(size(tool.schema.len()) + retired_context + retired_bytes);
     charter.instructions = Box::new([]);
     charter.brief = smith_domain_run::Brief { sections: Box::new([]) };
+    charter.grants.wait = false;
     let (run, _) = host_memory_take(
         &mut domain,
         &env,
         &mut out,
         &meter,
         Some(Event::Start {
+            messages: Box::default(),
             workspace: mounted,
             reply_to: ReplyTo::new(Token::new(88)),
             host_run: Token::new(91),
@@ -734,6 +754,7 @@ fn complete_declaration_and_maximum_opaque_input_answer_retries_reach_the_measur
             window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
             charter,
             transcript: None,
+            resumed: false,
         }),
     );
     let run = run.expect("admitted run reads");
@@ -802,4 +823,49 @@ fn maximum_selected_read_probe_and_check_paths_attain_the_full_run_ownership_bou
         checks: vec![b'c'; capacity].into_boxed_slice(),
     };
     fill_selected(Limits { run_bytes: 16_384, ..LIMITS }, Some(&selected));
+}
+
+#[test]
+fn an_awaiting_run_retains_its_full_charter_without_allocating_a_session() {
+    let limits = LIMITS;
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(MAX_OUT);
+    let meter = Meter::new();
+    let mut domain = Domain::new(&limits);
+    let mut charter = charter(limits.run_bytes);
+    let context = context_bytes(&charter);
+    charter.instructions = bytes(context);
+    charter.brief.sections = Box::default();
+    let (run, _) = host_memory_take(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        Some(Event::Start {
+            resumed: false,
+            messages: Box::default(),
+            workspace: Some(workspace()),
+            reply_to: ReplyTo::new(Token::new(88)),
+            host_run: Token::new(91),
+            activation: 1,
+            window: smith_domain_run::Window { turns: u32::MAX, bytes: u64::MAX, largest_turn: 1 },
+            charter,
+            transcript: None,
+        }),
+    );
+    let run = run.expect("preparation read");
+    let (owner, _) =
+        host_memory_take(&mut domain, &env, &mut out, &meter, Some(Event::Read { owner: run, read: Read::Missing }));
+    let (opened, _) = host_memory_take(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        Some(Event::Probed { owner: owner.expect("preparation check probe"), executable: false }),
+    );
+    assert_eq!(opened, None, "preparation awaits without a session opening");
+    assert!(meter.held() >= limits.run_bytes, "the full charter remains owned while awaiting");
+    host_memory_take(&mut domain, &env, &mut out, &meter, Some(Event::Cancel { run }));
+    domain.reclaim();
+    assert_eq!((domain.runs(), domain.conversations(), domain.calls()), (0, 0, 0));
 }

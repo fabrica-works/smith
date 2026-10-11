@@ -51,7 +51,7 @@ use alloc::boxed::Box;
 pub struct Window {
     /// Maximum turns awaiting acknowledgement.
     pub turns: u32,
-    /// Maximum encoded bytes of those turns.
+    /// Maximum owned concrete message and payload bytes of those turns.
     pub bytes: u64,
 }
 
@@ -119,6 +119,8 @@ pub enum Event {
         activation: u64,
         /// Credit for turns awaiting durable host acknowledgement.
         window: Window,
+        /// Triggering messages admitted before any later live input.
+        messages: Box<[run::Message]>,
         /// Host-supplied admission policy, validated before the run starts.
         charter: run::Charter,
         /// Optional immutable host mounts and initial conflicts, moved to run admission.
@@ -144,7 +146,10 @@ pub enum Event {
         /// Active-run unique opaque name, including zero.
         name: Token,
 
-        /// Attested UTF-8 including sender label, at most `Limits.run.message_bytes`.
+        /// Sender label rendered by the run before admission.
+        label: Box<[u8]>,
+
+        /// Attested UTF-8 text; label, separator and text share the rendered-byte cap.
         text: Box<[u8]>,
     },
 
@@ -216,6 +221,9 @@ pub enum Event {
 /// the root. Calls require the typed terminal documented on their variant.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Request {
+    /// A host message refused at ingress; this is its one terminal.
+    MessageRefused { host_run: Token, name: Token, reason: run::MessageRefusal },
+
     /// Settled main wait and yield with empty inbox; wall time keeps running.
     /// This observation to the parent owes no terminal; Start's reply right
     /// remains pending until the run's final Answer.
@@ -286,6 +294,8 @@ pub enum Request {
         to: ReplyTo,
         /// Single terminal value returned to the caller.
         answer: run::Answer,
+        /// Last message covered by an actual told main turn; none before any read.
+        read: Option<Token>,
     },
     /// To the host: checks of the run it names `host_run` are running until
     /// `deadline` at the latest, so its watchdog waits that long.

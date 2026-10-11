@@ -3,9 +3,10 @@
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use skein_world::domain::heap::{Counting, Meter};
 use smith_host_domain::{
-    self as host, Answer, AnsweredCall, Ask, CallName, Delivered, Delivery, Directory, Down, Effect, Event, Grant,
-    Limits, Receipt, Reply, Request, RunResult, Start, Turn, Up,
+    self as host, Answer, AnsweredCall, Ask, CallName, Delivered, Delivery, Directory, Down, Effect, Grant, Input,
+    Limits, Output, Receipt, Reply, RunResult, Start, Turn, Up,
 };
+use smith_host_domain::{parent, process};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -15,11 +16,12 @@ fn bytes(length: u64) -> Box<[u8]> {
 }
 fn maximum_start(limits: Limits) -> Start {
     Start {
+        messages: Box::default(),
         logical_run: Token::new(7),
         activation: 1,
         workspace: (limits.directories > 0).then_some(Token::new(8)),
-        charter: bytes(limits.charter_bytes),
-        transcript: Some(Box::new([bytes(limits.transcript_bytes)])),
+        charter: smith_host_world::charter_value(limits.charter_bytes),
+        transcript: Some(smith_host_world::transcript_value(limits.transcript_bytes)),
         answered: if limits.answered_bytes > 0 {
             Box::new([AnsweredCall {
                 name: CallName { activation: 1, completion: 1, position: 0 },
@@ -65,7 +67,7 @@ fn maximum_receipts() -> Delivered {
 struct Measured {
     domain: host::Domain,
     env: Env<Limits>,
-    out: Queue<Request>,
+    out: Queue<Output>,
     meter: Meter,
     bound: u64,
     held_start: Option<Start>,
@@ -89,7 +91,7 @@ impl Measured {
             retain_message: false,
         }
     }
-    fn step(&mut self, event: Event, retain_start: bool) -> Option<Token> {
+    fn step(&mut self, event: Input, retain_start: bool) -> Option<Token> {
         self.meter.start();
         host::step(&mut self.domain, &self.env, event, &mut self.out);
         self.drain(retain_start)
@@ -107,8 +109,8 @@ impl Measured {
         let mut owner = None;
         while let Some(request) = self.out.pop() {
             match request {
-                Request::Spawn { owner: token, .. } => owner = Some(token),
-                Request::Send { message, .. } => match message {
+                Output::Process(process::Request::Spawn { owner: token, .. }) => owner = Some(token),
+                Output::Process(process::Request::Send { message, .. }) => match message {
                     Down::Start { start, .. } if retain_start => {
                         assert!(self.held_start.replace(start).is_none());
                     }
@@ -123,23 +125,29 @@ impl Measured {
                     | Down::Grant { .. }
                     | Down::Cancel => {}
                 },
-                Request::Started { .. }
-                | Request::Admitted { .. }
-                | Request::Called { .. }
-                | Request::Withdrawn { .. }
-                | Request::Turn { .. }
-                | Request::Waiting { .. }
-                | Request::Rejected { .. }
-                | Request::Exhausted { .. }
-                | Request::Told { .. }
-                | Request::Answered { .. }
-                | Request::Faulted { .. }
-                | Request::Bounced { .. }
-                | Request::Gone { .. }
-                | Request::Read { .. }
-                | Request::Signal { .. }
-                | Request::Wait { .. }
-                | Request::Reap { .. } => {}
+                Output::Parent(
+                    parent::Request::Started { .. }
+                    | parent::Request::Admitted { .. }
+                    | parent::Request::Called { .. }
+                    | parent::Request::Withdrawn { .. }
+                    | parent::Request::Turn { .. }
+                    | parent::Request::Waiting { .. }
+                    | parent::Request::Long { .. }
+                    | parent::Request::LongDone { .. }
+                    | parent::Request::Rejected { .. }
+                    | parent::Request::Exhausted { .. }
+                    | parent::Request::Told { .. }
+                    | parent::Request::Answered { .. }
+                    | parent::Request::Faulted { .. }
+                    | parent::Request::MessageRefused { .. }
+                    | parent::Request::Gone { .. },
+                )
+                | Output::Process(
+                    process::Request::Read { .. }
+                    | process::Request::Signal { .. }
+                    | process::Request::Wait { .. }
+                    | process::Request::Reap { .. },
+                ) => {}
             }
         }
         self.meter.check(measurement, self.bound, &self.env.limits);
@@ -148,24 +156,28 @@ impl Measured {
     }
     fn spawn(&mut self, client: u64) -> Token {
         let start = maximum_start(self.env.limits);
-        self.step(Event::Spawn { client: Token::new(client), start }, false).expect("valid Spawn")
+        self.step(Input::Parent(parent::Event::Spawn { client: Token::new(client), start }), false)
+            .expect("valid Spawn")
     }
     fn up(&mut self, owner: Token, message: Up) {
-        self.step(Event::Received { owner, message }, false);
+        self.step(Input::Process(process::Event::Received { owner, message }), false);
     }
     fn start(&mut self, owner: Token) {
-        self.step(Event::Spawned { owner, process: owner }, false);
+        self.step(Input::Process(process::Event::Spawned { owner, process: owner }), false);
         self.up(owner, Up::Admitted);
     }
     fn cleanup(&mut self, owner: Token, signals: u32, pending_send: bool) {
         if pending_send {
-            self.step(Event::Sent { owner }, false);
+            self.step(Input::Process(process::Event::Sent { owner }), false);
         }
-        self.step(Event::Exited { owner }, false);
-        self.step(Event::Reaped { owner, detail: bytes(u64::from(self.env.limits.detail_bytes)) }, false);
-        self.step(Event::Hangup { owner }, false);
+        self.step(Input::Process(process::Event::Exited { owner }), false);
+        self.step(
+            Input::Process(process::Event::Reaped { owner, detail: bytes(u64::from(self.env.limits.detail_bytes)) }),
+            false,
+        );
+        self.step(Input::Process(process::Event::Hangup { owner }), false);
         for _ in 0..signals {
-            self.step(Event::Signalled { owner }, false);
+            self.step(Input::Process(process::Event::Signalled { owner }), false);
         }
     }
 }
@@ -199,22 +211,22 @@ fn maximum_v2_starts_and_full_queued_replies_fit_every_slot() {
                     },
                 );
                 measured.step(
-                    Event::Answer {
+                    Input::Parent(parent::Event::Answer {
                         agent: owner,
                         call: Token::new(20 + u64::from(position)),
                         reply: Reply::Host { error: false, body: bytes(limits.answer_bytes) },
-                    },
+                    }),
                     false,
                 );
             }
             for name in 0..limits.messages {
                 measured.step(
-                    Event::Message {
+                    Input::Parent(parent::Event::Message {
                         agent: owner,
                         name: Token::new(100 + u64::from(name)),
                         label: Box::new([]),
-                        text: bytes(limits.message_bytes),
-                    },
+                        text: bytes(limits.message_bytes - 2),
+                    }),
                     false,
                 );
             }
@@ -222,18 +234,28 @@ fn maximum_v2_starts_and_full_queued_replies_fit_every_slot() {
                 measured.up(
                     owner,
                     Up::Turn {
-                        turn: Turn { number, spent: u64::from(number), read: None, body: bytes(limits.turn_bytes) },
+                        turn: Turn {
+                            number,
+                            spent: u64::from(number),
+                            read: None,
+                            body: smith_host_world::turn_value(limits.turn_bytes),
+                        },
                     },
                 );
-                measured.step(Event::Acknowledge { agent: owner, turn: number }, false);
+                measured.step(Input::Parent(parent::Event::Acknowledge { agent: owner, turn: number }), false);
             }
             for _ in 0..(1 + limits.calls + limits.messages + limits.turns) {
-                measured.step(Event::Sent { owner }, false);
+                measured.step(Input::Process(process::Event::Sent { owner }), false);
             }
             measured.up(
                 owner,
                 Up::Answer {
-                    answer: Answer { turns: limits.turns, spent: u64::from(limits.turns), result: RunResult::Parked },
+                    answer: Answer {
+                        read: None,
+                        turns: limits.turns,
+                        spent: u64::from(limits.turns),
+                        result: RunResult::Parked,
+                    },
                 },
             );
             measured.cleanup(owner, 0, false);
@@ -257,28 +279,33 @@ fn maximum_start_io_ownership_coexists_with_full_pre_read_message_queue() {
     let mut measured = Measured::new(limits, caller);
     let owner = measured.spawn(1);
     measured.step(
-        Event::Message { agent: owner, name: Token::new(100), label: Box::new([]), text: bytes(limits.message_bytes) },
+        Input::Parent(parent::Event::Message {
+            agent: owner,
+            name: Token::new(100),
+            label: Box::new([]),
+            text: bytes(limits.message_bytes - 2),
+        }),
         false,
     );
-    measured.step(Event::Spawned { owner, process: owner }, true);
+    measured.step(Input::Process(process::Event::Spawned { owner, process: owner }), true);
     for name in 0..limits.messages {
         measured.step(
-            Event::Message {
+            Input::Parent(parent::Event::Message {
                 agent: owner,
                 name: Token::new(100 + u64::from(name)),
                 label: Box::new([]),
-                text: bytes(limits.message_bytes),
-            },
+                text: bytes(limits.message_bytes - 2),
+            }),
             false,
         );
     }
     assert!(measured.held_start.is_some(), "actual IO still owns the maximum first Send");
-    assert!(measured.meter.held() >= caller + u64::from(limits.messages) * limits.message_bytes);
+    assert!(measured.meter.held() >= caller + u64::from(limits.messages) * (limits.message_bytes - 2));
     // The domain max and caller ownership sum are checked at every step;
     // dropping the caller's Start is a send terminal ownership boundary.
     measured.held_start = None;
     measured.up(owner, Up::Admitted);
-    measured.up(owner, Up::Answer { answer: Answer { turns: 0, spent: 0, result: RunResult::Parked } });
+    measured.up(owner, Up::Answer { answer: Answer { read: None, turns: 0, spent: 0, result: RunResult::Parked } });
     measured.cleanup(owner, 0, true);
 }
 
@@ -288,7 +315,7 @@ fn delivery_replies_and_shutdown_rights_stay_priced() {
     let mut measured = Measured::new(limits, 0);
     let owner = measured.spawn(1);
     measured.start(owner);
-    measured.step(Event::Sent { owner }, false);
+    measured.step(Input::Process(process::Event::Sent { owner }), false);
     for completion in 1..=2 {
         measured.up(
             owner,
@@ -296,18 +323,18 @@ fn delivery_replies_and_shutdown_rights_stay_priced() {
                 call: Token::new(20),
                 name: CallName { activation: 1, completion, position: 0 },
                 deadline: Time::ZERO.saturating_add(Duration::from_secs(5)),
-                ask: Ask::Deliver { fields: bytes(limits.call_bytes) },
+                ask: Ask::Deliver { fields: smith_host_world::fields_value(limits.call_bytes) },
             },
         );
         measured.step(
-            Event::Answer {
+            Input::Parent(parent::Event::Answer {
                 agent: owner,
                 call: Token::new(20),
                 reply: Reply::Delivery(Delivery::Delivered(maximum_receipts())),
-            },
+            }),
             false,
         );
-        measured.step(Event::Sent { owner }, false);
+        measured.step(Input::Process(process::Event::Sent { owner }), false);
     }
     // Keep a parent delivery right through both tree signals and EOF;
     // disconnect's bounded withdrawal snapshot is measured too.
@@ -317,7 +344,7 @@ fn delivery_replies_and_shutdown_rights_stay_priced() {
             call: Token::new(21),
             name: CallName { activation: 1, completion: 3, position: 0 },
             deadline: Time::ZERO.saturating_add(Duration::from_secs(5)),
-            ask: Ask::Deliver { fields: bytes(limits.call_bytes) },
+            ask: Ask::Deliver { fields: smith_host_world::fields_value(limits.call_bytes) },
         },
     );
     measured.fire(5);
@@ -326,11 +353,11 @@ fn delivery_replies_and_shutdown_rights_stay_priced() {
     measured.cleanup(owner, 2, false);
     assert_eq!(measured.domain.agents(), 1);
     measured.step(
-        Event::Answer {
+        Input::Parent(parent::Event::Answer {
             agent: owner,
             call: Token::new(21),
             reply: Reply::Delivery(Delivery::Delivered(maximum_receipts())),
-        },
+        }),
         false,
     );
     assert_eq!(measured.domain.agents(), 0);
@@ -352,3 +379,30 @@ fn checked_capacity_arithmetic_refuses_unrepresentable_or_incompatible_caps() {
     limits.turns = 0;
     assert_eq!(host::worst_case(&limits), None);
 }
+
+#[test]
+fn maximum_carried_start_messages_are_owned_and_priced_during_spawn() {
+    let limits = smith_host_world::limits();
+    let mut measured = Measured::new(limits, 0);
+    let mut start = maximum_start(limits);
+    start.messages = (0..limits.messages)
+        .map(|name| host::Message {
+            name: Token::new(u64::from(name)),
+            label: Box::default(),
+            text: bytes(limits.message_bytes - 2),
+        })
+        .collect();
+    let owner = measured
+        .step(Input::Parent(parent::Event::Spawn { client: Token::new(1), start }), false)
+        .expect("maximum carried Start admitted");
+    assert!(
+        measured.meter.held() >= u64::from(limits.messages) * (limits.message_bytes - 2),
+        "actual message payloads remain retained until spawn settles"
+    );
+    measured.step(Input::Process(process::Event::Unspawned { owner, detail: Box::default() }), false);
+    measured.domain.reclaim();
+    assert_eq!(measured.domain.agents(), 0);
+}
+
+#[path = "memory/inline.rs"]
+mod inline;

@@ -119,19 +119,18 @@ impl Credential {
             Some(record) if record.remaining(begin.wall) > self.limits.refresh_before => {
                 self.ready(record, begin.wall, out);
             }
-            Some(record) => {
-                self.refreshing = true;
-                let mut oauth_out = Queue::with_capacity(oauth::MAX_OUT);
-                self.client.step(
-                    oauth::Event::Refresh {
-                        registration: begin.registration,
-                        prior: record.refresh_state(),
-                        now: begin.now,
-                    },
-                    &mut oauth_out,
-                );
-                self.drain(&mut oauth_out, out);
-            }
+            Some(record) => match record.refresh_state() {
+                Some(prior) => {
+                    self.refreshing = true;
+                    let mut oauth_out = Queue::with_capacity(oauth::MAX_OUT);
+                    self.client.step(
+                        oauth::Event::Refresh { registration: begin.registration, prior, now: begin.now },
+                        &mut oauth_out,
+                    );
+                    self.drain(&mut oauth_out, out);
+                }
+                None => self.fail(CredentialFailure::Refresh, out),
+            },
             None => {
                 self.refreshing = false;
                 let mut oauth_out = Queue::with_capacity(oauth::MAX_OUT);
@@ -405,7 +404,7 @@ mod tests {
             key: 7,
             generation: 1,
             access_token: bytes(b"old"),
-            refresh_token: bytes(b"wrong-refresh"),
+            refresh_token: Some(bytes(b"wrong-refresh")),
             metadata: None,
             expires_at: wall(),
         };
@@ -435,7 +434,7 @@ mod tests {
             key: 7,
             generation: 1,
             access_token: bytes(b"old-access"),
-            refresh_token: bytes(b"refresh-old"),
+            refresh_token: Some(bytes(b"refresh-old")),
             metadata: None,
             expires_at: wall(),
         };
@@ -453,7 +452,7 @@ mod tests {
         };
         let stored = oauth::decode_record(&token, &limits().oauth.document).expect("saved token");
         assert_eq!(stored.generation, 2);
-        assert_eq!(stored.refresh_token.as_ref(), b"refresh-new");
+        assert_eq!(stored.refresh_token.as_deref(), Some(b"refresh-new".as_slice()));
         let CredentialRequest::Ready { event: local::Event::Credential { grant }, value } =
             step(&mut credential, CredentialEvent::Stored { wall: wall() })
         else {
@@ -461,5 +460,42 @@ mod tests {
         };
         assert_eq!(grant.name.generation, 2);
         assert_eq!(value.as_ref(), b"access-new");
+    }
+    #[test]
+    fn an_access_only_token_is_lent_until_expiry_then_fails_without_sign_in() {
+        for fresh in [true, false] {
+            let mut credential = Credential::new(7, limits()).expect("component");
+            let mut saved = oauth::SavedToken {
+                key: 7,
+                generation: 3,
+                access_token: bytes(b"access-only"),
+                refresh_token: None,
+                metadata: None,
+                expires_at: wall(),
+            };
+            if fresh {
+                saved.expires_at = Wall::from_nanos(wall().as_nanos() + Duration::from_secs(3600).as_nanos());
+            }
+            let mut out = Queue::with_capacity(1);
+            credential.begin(begin(Some(saved)), &mut out);
+            match out.pop().expect("one terminal") {
+                CredentialRequest::Ready { event: local::Event::Credential { grant }, value } if fresh => {
+                    assert_eq!(grant.name.generation, 3);
+                    assert_eq!(value.as_ref(), b"access-only");
+                }
+                CredentialRequest::Failed { event: local::Event::NoCredential { reason, .. } } if !fresh => {
+                    assert_eq!(reason, CredentialFailure::Refresh);
+                }
+                CredentialRequest::Visit { .. }
+                | CredentialRequest::Http(_)
+                | CredentialRequest::Save { .. }
+                | CredentialRequest::Ready { .. }
+                | CredentialRequest::Failed { .. } => {
+                    panic!("access-only token produces a terminal without sign-in or HTTP")
+                }
+            }
+            assert!(out.is_empty());
+            assert!(credential.next_deadline().is_none());
+        }
     }
 }

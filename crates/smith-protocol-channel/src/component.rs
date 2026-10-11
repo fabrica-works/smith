@@ -64,7 +64,7 @@ pub enum OpenEvent {
     /// A structurally valid Start with its charter translated before domain admission.
     Start { start: Box<DecodedStart> },
     /// A host-labelled message for the admitted run.
-    Message { name: Token, text: Box<[u8]> },
+    Message { name: Token, label: Box<[u8]>, text: Box<[u8]> },
     /// A declared host tool's one settled terminal.
     HostReturned { relay: run::RelayName, reply: run::HostReply },
     /// A delivery's one settled terminal.
@@ -92,8 +92,8 @@ pub struct Component {
     phase: Phase,
     ended: bool,
     bodies: smith_channel::Limits,
-    charter: smith_charter::v1::Limits,
-    transcript: smith_transcript::v2::Limits,
+    charter: smith_charter::v2::Limits,
+    transcript: smith_transcript::v3::Limits,
     endpoints: Endpoints,
     calls: Map<CallKey, CallRoute>,
     window: Option<smith_domain::Window>,
@@ -110,7 +110,7 @@ pub struct Component {
 impl Component {
     /// Build one channel with configured endpoint names and either stream shape.
     pub fn new(limits: &Limits, mode: StreamMode, endpoints: Endpoints) -> Result<Component, Error> {
-        if !endpoints.fits(limits.endpoints) {
+        if !endpoints.fits(limits.endpoints, limits.charter.llm_endpoint) {
             return Err(Error::Endpoints);
         }
         let schema = match smith_channel::schema(&limits.bodies) {
@@ -182,10 +182,43 @@ impl Component {
         Ok(())
     }
 
+    /// Tell the host the one terminal of a refused message.
+    pub fn send_message_refused(
+        &mut self,
+        name: Token,
+        reason: run::MessageRefusal,
+        token: Token,
+        to_service: &mut Queue<OpenEvent>,
+        below: &mut Queue<Lower>,
+    ) -> Result<(), Error> {
+        if self.phase != Phase::Admitted {
+            return Err(Error::Order);
+        }
+        let reason = match reason {
+            run::MessageRefusal::TooLarge => smith_channel::MessageRefusal::TooLarge,
+            run::MessageRefusal::Full => smith_channel::MessageRefusal::Full,
+            run::MessageRefusal::NameInUse => smith_channel::MessageRefusal::NameInUse,
+            run::MessageRefusal::Ending => smith_channel::MessageRefusal::Ending,
+        };
+        let record = smith_channel::MessageRefused::new(
+            &self.bodies,
+            smith_channel::MessageRefusedParts { name: name.raw(), reason },
+        )?;
+        let mut body = Writer::new(usize::try_from(record.measure()).expect("fixed refusal length"));
+        record.encode(&mut body)?;
+        let mut frame = frame_writer(0x0111, record.measure())?;
+        frame.put(&body.finish())?;
+        self.machine.down(Request::Send { token, frame: frame.finish()? }, &mut self.events, below);
+        self.drain(to_service, below);
+        self.fire(to_service, below);
+        Ok(())
+    }
+
     /// Send the domain's final answer and finish the write stream after it.
     pub fn send_answer(
         &mut self,
         answer: run::Answer,
+        read: Option<Token>,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
@@ -199,7 +232,7 @@ impl Component {
         if !permitted {
             return Err(Error::Order);
         }
-        let record = answer_record(answer, &self.bodies, &self.charter)?;
+        let record = answer_record(answer, read, &self.bodies, &self.charter)?;
         let Ok(length) = usize::try_from(record.measure()) else {
             return Err(Error::ResultCapacity);
         };
@@ -312,9 +345,7 @@ impl Component {
         }
         let body = encode_turn(turn, &self.transcript, &self.endpoints)?;
         let window = self.window.ok_or(Error::Order)?;
-        let Ok(body_bytes) = u64::try_from(body.len()) else {
-            return Err(Error::Window);
-        };
+        let body_bytes = turn.owned_bytes().ok_or(Error::Window)?;
         let next = self.last_sent_turn.checked_add(1).ok_or(Error::Window)?;
         let held_bytes = self.held_turn_bytes.checked_add(body_bytes).ok_or(Error::Window)?;
         if number != next || self.turns.len() >= window.turns || held_bytes > window.bytes {
@@ -350,12 +381,13 @@ impl Component {
     /// Offer a content-free domain observation without spending reserved output room.
     pub fn send_fact(
         &mut self,
-        fact: smith_domain::Fact,
-        elapsed: Duration,
+        fact: &smith_domain::Fact,
+        started: Time,
         token: Token,
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
     ) -> Result<bool, Error> {
+        let elapsed = fact.emitted().saturating_since(started);
         match facts::project(fact) {
             Some((kind, count)) => self.offer_fact(kind, elapsed, count, token, to_service, below),
             None => Ok(false),
@@ -374,7 +406,7 @@ impl Component {
         self.offer_fact(smith_channel::FactKind::TextArrived, elapsed, count, token, to_service, below)
     }
 
-    /// Number of projected facts the output reserve has dropped.
+    /// Projectable observations omitted outside admission or for lack of output room.
     #[must_use]
     pub fn lost_facts(&self) -> u64 {
         self.lost_facts
@@ -450,8 +482,13 @@ impl Component {
         to_service: &mut Queue<OpenEvent>,
         below: &mut Queue<Lower>,
     ) -> Result<bool, Error> {
-        if self.phase != Phase::Admitted {
-            return Err(Error::Order);
+        if self.phase != Phase::Admitted
+            || self.ended
+            || to_service.room() < crate::limits::MAX_OUT.to_domain
+            || below.room() < crate::limits::MAX_OUT.below
+        {
+            self.lost_facts = self.lost_facts.saturating_add(1);
+            return Ok(false);
         }
         let record = smith_channel::Fact::new(&self.bodies, smith_channel::FactParts { kind, elapsed, count })?;
         let Ok(length) = usize::try_from(record.measure()) else {
@@ -579,7 +616,7 @@ impl Component {
             match event {
                 Some(Event::Opening { credential, lowest: _, highest }) => {
                     if credential.is_empty() {
-                        self.machine.down(Request::Accept { version: highest.min(1) }, &mut self.events, below);
+                        self.machine.down(Request::Accept { version: highest.min(2) }, &mut self.events, below);
                     } else {
                         self.machine.down(
                             Request::Refuse { reason: UNAUTHORIZED, text: Box::from(*b"credential on pipe") },
@@ -608,13 +645,14 @@ impl Component {
                     if self.phase == Phase::Started || self.phase == Phase::Admitted =>
                 {
                     match smith_channel::Message::decode(&self.bodies, &mut Reader::new(&body)) {
-                        Ok(message) => match labelled_message(&message) {
-                            Some(text) => {
-                                to_service.push(OpenEvent::Message { name: Token::new(message.name()), text });
-                                self.machine.down(Request::Read, &mut self.events, below);
-                            }
-                            None => self.refuse_rules(below),
-                        },
+                        Ok(message) => {
+                            to_service.push(OpenEvent::Message {
+                                name: Token::new(message.name()),
+                                label: Box::from(message.label()),
+                                text: Box::from(message.text()),
+                            });
+                            self.machine.down(Request::Read, &mut self.events, below);
+                        }
                         Err(_) => self.refuse_rules(below),
                     }
                 }
@@ -862,6 +900,7 @@ impl Component {
         let answered = match admitted {
             Ok(()) => self.send_answer(
                 run::Answer::Failed { failure: run::Failure::Transcript(reason), spent: run::Spend::ZERO, turns: 0 },
+                None,
                 Token::new(0),
                 to_service,
                 below,
@@ -874,15 +913,6 @@ impl Component {
     }
 }
 
-fn labelled_message(message: &smith_channel::Message) -> Option<Box<[u8]>> {
-    let capacity = message.label().len().checked_add(2)?.checked_add(message.text().len())?;
-    let mut writer = Writer::new(capacity);
-    writer.put(message.label()).ok()?;
-    writer.put(b": ").ok()?;
-    writer.put(message.text()).ok()?;
-    Some(writer.finish())
-}
-
 fn invalid_answer(limits: &smith_channel::Limits, invalid: smith_channel::InvalidStart) -> Option<Frame> {
     let reason =
         smith_channel::InvalidStartValue::new(limits, smith_channel::InvalidStartValueParts { value: invalid }).ok()?;
@@ -893,7 +923,12 @@ fn invalid_answer(limits: &smith_channel::Limits, invalid: smith_channel::Invali
     .ok()?;
     let record = smith_channel::Answer::new(
         limits,
-        smith_channel::AnswerParts { turns: 0, spent: 0, result: smith_channel::RunResult::Refused(refused) },
+        smith_channel::AnswerParts {
+            turns: 0,
+            spent: 0,
+            last_read: None,
+            result: smith_channel::RunResult::Refused(refused),
+        },
     )
     .ok()?;
     let body_len = usize::try_from(record.measure()).ok()?;

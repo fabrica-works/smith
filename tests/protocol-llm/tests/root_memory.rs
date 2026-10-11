@@ -16,7 +16,7 @@ use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
 use skein_llm_world::fake::{ObservationLimits, extra_worst_case};
 use skein_world::domain::heap::{Counting, Meter};
 use smith_domain::{self as root, Domain, Event, Grant, GrantName, Limits, Request, llm, run, session};
-use smith_protocol_llm::{self as adapter, Receiving, ResolvedCall, ToolKind, ToolSchema};
+use smith_protocol_llm_world::adapter::{self as adapter, Receiving, ResolvedCall, ToolKind, ToolSchema};
 use smith_protocol_llm_world::{
     LIMITS,
     wire::{self, Configuration, Observed, Wire},
@@ -72,6 +72,8 @@ fn configuration_bytes(configuration: &Configuration) -> u64 {
 
 fn observation_limits(limits: &adapter::Limits) -> ObservationLimits {
     ObservationLimits {
+        heads: 1,
+        head_bytes: 4096,
         events: skein_llm::client::MAX_OUT.above,
         event_bytes: 32768,
         queries: 1,
@@ -91,6 +93,7 @@ fn bounds(messages: u32) -> Limits {
     Limits {
         accounts: 1,
         endpoints: 1,
+        configured_model_bytes: 4096,
         decoded_call_bytes: 16_384,
         run: run::Limits {
             runs: 1,
@@ -112,7 +115,7 @@ fn bounds(messages: u32) -> Limits {
             guide_bytes: 64,
             outcome_bytes: 256,
             check_tail: 64,
-            facts: 0,
+            facts: 256,
             messages: 1,
             message_bytes: u32::try_from(LARGE).expect("bounded caller message"),
             ..LIMITS.run
@@ -129,7 +132,7 @@ fn bounds(messages: u32) -> Limits {
             failure_bytes: 256,
             delegated_result_bytes: 262_144,
             parallel_tools: 1,
-            facts: 0,
+            facts: 256,
             tools: root::tools::Limits {
                 kits: 1,
                 calls: 1,
@@ -146,7 +149,7 @@ fn bounds(messages: u32) -> Limits {
                 shell_tail: 0,
                 search_hits: 1,
                 search_bytes: 64,
-                facts: 0,
+                facts: 6,
                 ..LIMITS.session.tools
             },
             ..LIMITS.session
@@ -196,7 +199,8 @@ fn charter(restoring: bool) -> run::Charter {
             account: 0,
             endpoint: run::charter::Endpoint(0),
             model: b"fixture-model".as_slice().into(),
-            max_tokens: 128,
+            window: 8192,
+            output: 128,
             dialect: 2,
         },
         models: Box::new([]),
@@ -262,7 +266,13 @@ fn wire_limits() -> adapter::Limits {
     client.dialect.string_bytes = 16_384;
     client.dialect.tokens = 4096;
     client.dialect.answer_bytes = 256;
-    adapter::Limits { client, tool_bytes: 16_384, result_bytes: 16_384 }
+    adapter::Limits {
+        client,
+        tool_bytes: 16_384,
+        rendered_result: client.dialect.string_bytes,
+        shell_default: skein_lib::Duration::from_secs(120),
+        shell_maximum: skein_lib::Duration::from_secs(1200),
+    }
 }
 
 struct Complete {
@@ -739,7 +749,19 @@ impl Counted {
         let meter = Meter::new();
         meter.start();
         let out = Queue::with_capacity(root::max_out(limits));
-        let domain = Domain::new(limits, root::Config { endpoints: Box::new([run::charter::Endpoint(0)]) }, 41);
+        let domain = Domain::new(
+            limits,
+            root::Config {
+                endpoints: Box::new([run::charter::Endpoint(0)]),
+                models: Box::new([smith_domain::ConfiguredModel {
+                    endpoint: smith_domain::run::charter::Endpoint(0),
+                    model: Box::from(&b"fixture-model"[..]),
+                    window: 8192,
+                    output: 4096,
+                }]),
+            },
+            41,
+        );
         let measured = meter.end();
         let queue_bytes = Queue::<Request>::worst_case(root::max_out(limits)).expect("output container fits");
         meter.check(measured, root::worst_case(limits).expect("compatible root limits") + queue_bytes, limits);
@@ -894,7 +916,7 @@ impl Counted {
                     assert_eq!(host_run, WORKER);
                     self.waiting = true;
                 }
-                Request::Answer { to, answer } => {
+                Request::Answer { to, answer, read: _ } => {
                     assert_eq!(to.into_token(), PARENT);
                     assert!(self.answer.replace(answer).is_none(), "one original Start terminal");
                 }
@@ -905,6 +927,7 @@ impl Counted {
                 | Request::Deliver { .. }
                 | Request::Rejected { .. }
                 | Request::Exhausted { .. }
+                | Request::MessageRefused { .. }
                 | Request::Cancel { .. }
                 | Request::Io { .. }
                 | Request::CancelIo { .. }
@@ -946,6 +969,7 @@ impl Counted {
 
     fn start(&mut self, history: Option<root::Transcript>, restoring: bool) {
         self.step(Event::Start {
+            messages: Box::default(),
             answered: Box::default(),
             workspace: Some(workspace()),
             reply_to: ReplyTo::new(PARENT),
@@ -1083,7 +1107,19 @@ impl Counted {
         self.calls = 0;
         self.records.clear();
         self.meter.start();
-        self.domain = Some(Domain::new(limits, root::Config { endpoints: Box::new([run::charter::Endpoint(0)]) }, 42));
+        self.domain = Some(Domain::new(
+            limits,
+            root::Config {
+                endpoints: Box::new([run::charter::Endpoint(0)]),
+                models: Box::new([smith_domain::ConfiguredModel {
+                    endpoint: smith_domain::run::charter::Endpoint(0),
+                    model: Box::from(&b"fixture-model"[..]),
+                    window: 8192,
+                    output: 4096,
+                }]),
+            },
+            42,
+        ));
         let measured = self.meter.end();
         self.drain(measured);
     }
@@ -1113,7 +1149,8 @@ fn assert_generated(history: &root::Transcript, messages: u32) {
                 match block {
                     session::llm::Block::Text { text, .. } => {
                         if text.len() == LARGE {
-                            assert!(text.iter().all(|byte| *byte == b'x'));
+                            assert_eq!(&text[..6], b"host: ");
+                            assert!(text[6..].iter().all(|byte| *byte == b'x'));
                             large += 1;
                         }
                     }
@@ -1178,8 +1215,8 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
     for at in 1..cycles {
         counted.waiting = false;
         let run = counted.admitted.expect("actual admitted handle");
-        let text = if at == 1 { vec![b'x'; LARGE].into_boxed_slice() } else { b"x".as_slice().into() };
-        counted.step(Event::Message { run, name: Token::new(u64::from(at)), text });
+        let text = if at == 1 { vec![b'x'; LARGE - 6].into_boxed_slice() } else { b"x".as_slice().into() };
+        counted.step(Event::Message { label: Box::from(&b"host"[..]), run, name: Token::new(u64::from(at)), text });
         counted.cycle(configuration, cycles);
         assert!(counted.waiting);
     }
@@ -1517,6 +1554,7 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     };
     counted.caller_charter = Some(caller);
     counted.step(Event::Start {
+        messages: Box::default(),
         answered: Box::default(),
         reply_to: ReplyTo::new(PARENT),
         host_run: WORKER,

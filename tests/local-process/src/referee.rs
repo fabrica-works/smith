@@ -124,7 +124,13 @@ impl Expectations for Meeting {
                     if matches!(self.ending, Ending::Unavailable) { queries == 0 } else { queries > 0 },
                     "provider work matches account availability",
                 );
-                judge.check(errors.is_empty(), "no startup error output");
+                let start = b"smith: local host started; worst case ";
+                let expected_diagnostic = errors.is_empty()
+                    || errors
+                        .strip_prefix(start)
+                        .and_then(|tail| tail.strip_suffix(b" bytes\n"))
+                        .is_some_and(|count| !count.is_empty() && count.iter().all(u8::is_ascii_digit));
+                judge.check(expected_diagnostic, "only the local operator start line, no startup refusal");
                 judge.check(shown.windows(expected.len()).any(|part| part == expected), "expected terminal text");
                 judge.check(
                     !shown.windows(7).any(|part| part == b"refresh") && !shown.windows(5).any(|part| part == b"token"),
@@ -366,7 +372,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
                         browser.shutdown();
                     }
                 }
-                Proc::Local(_) | Proc::Agent(_) | Proc::Git(_) => {}
+                Proc::Local(_) | Proc::Agent(_, _) | Proc::Git(_) => {}
             }
         }
     }
@@ -385,8 +391,11 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         assert!(crate::llm::queries(peer).count() <= 64, "bounded provider work");
         let authenticated = procs.iter().any(|p| matches!(p, Proc::Issuer(_)));
         if authenticated && !self.saved_before_query && crate::llm::queries(peer).next().is_some() {
-            let tokens = smith::local_tokens::Tokens::new(&self.token_directory, smith::local_host::token_limits())
-                .expect("private store");
+            let tokens = smith_local_shell::local_tokens::Tokens::new(
+                &self.token_directory,
+                smith_local_shell::local_host::token_limits(),
+            )
+            .expect("private store");
             assert_eq!(
                 tokens.load(0).expect("record").expect("saved before grant use").access_token.as_ref(),
                 b"access-new"

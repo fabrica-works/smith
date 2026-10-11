@@ -56,6 +56,14 @@ pub const fn max_out(limits: &Limits) -> u32 {
     limits::run_out(limits).saturating_add(limits::session_out(limits)).saturating_add(1)
 }
 
+/// The child observations along every bounded causal handoff of one entrance.
+#[must_use]
+pub const fn max_facts(limits: &Limits) -> u32 {
+    limits::run_steps(limits)
+        .saturating_mul(run::max_facts(&limits.run))
+        .saturating_add(limits::session_steps(limits).saturating_mul(session::max_facts(&limits.session)))
+}
+
 /// The agent domain's state: its child domains', what it keeps of each
 /// conversation between them, and room for what they emit within a step.
 #[derive(Debug)]
@@ -89,7 +97,6 @@ pub struct Domain {
     facts: Queue<Fact>,
     pub(crate) content: Queue<crate::Content>,
     pub(crate) content_lost: u64,
-    lost: u64,
 }
 
 /// Original parent right and optional history survive run admission/preparation.
@@ -140,6 +147,8 @@ pub(crate) enum Due {
     Waiting,
     /// The run's answer, kept under a ticket, waiting on the ready list.
     Answered { feedback: crate::Feedback, spent: u64 },
+    /// The settled result yields so the run can append queued work before the next request.
+    Yielding { feedback: crate::Feedback, spent: u64 },
     /// The run returned it cancelled, after the session withdrew it.
     Cancelled { spent: u64 },
 }
@@ -209,7 +218,7 @@ impl Domain {
     /// it.
     #[must_use]
     pub fn new(limits: &Limits, config: Config, seed: u64) -> Domain {
-        assert!(config.valid(limits), "configured endpoints fit the limits and are unique");
+        assert!(config.valid(limits), "configured endpoints and models fit their limits and are unique");
         let mut rng = Rng::new(seed);
         let peers = limits.run.conversations;
         let flights = limits::flights(limits).expect("worst_case accepted the limits");
@@ -236,7 +245,6 @@ impl Domain {
             facts: Queue::with_capacity(facts),
             content: Queue::with_capacity(limits.session.facts),
             content_lost: 0,
-            lost: 0,
         }
     }
 
@@ -306,19 +314,27 @@ impl Domain {
         self.facts.pop()
     }
 
+    /// Whether an emitted observation still waits for the parent's drain.
+    #[must_use]
+    pub fn has_facts(&self) -> bool {
+        !self.facts.is_empty()
+    }
+
     /// Channel facts with content; capture policy remains the engine's.
     pub fn pop_content(&mut self) -> Option<crate::Content> {
         self.content.pop()
     }
 
-    /// How many facts were dropped for want of room, the child domains'
-    /// included.
+    /// Free observation slots reserved by the owner before each entrance.
     #[must_use]
-    pub fn facts_lost(&self) -> u64 {
-        self.lost
-            .saturating_add(self.content_lost)
-            .saturating_add(self.run.facts_lost())
-            .saturating_add(self.session.facts_lost())
+    pub fn facts_room(&self) -> u32 {
+        self.facts.room()
+    }
+
+    /// Optional content observations omitted by the current capture buffer.
+    #[must_use]
+    pub fn content_lost(&self) -> u64 {
+        self.content_lost
     }
 
     /// The reclaim point: frees what closed in this iteration.
@@ -334,6 +350,7 @@ impl Domain {
 
 /// Handles one event, emitting at most [`max_out`] requests.
 pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
+    assert!(domain.facts_room() >= max_facts(&env.limits), "owner reserved composed fact output");
     route::event(domain, env, event);
     settle(domain, env, out);
 }
@@ -344,6 +361,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
 /// that arrived in the same iteration wins over a deadline that passed while
 /// the loop waited.
 pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+    assert!(domain.facts_room() >= max_facts(&env.limits), "owner reserved composed fact output");
     let run_due = domain.run.is_due(env.now);
     let session_due = domain.session.is_due(env.now);
     if run_due && (!session_due || domain.run.next_deadline() <= domain.session.next_deadline()) {
@@ -351,6 +369,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     } else if session_due {
         session::fire(&mut domain.session, &route::session_env(env), &mut domain.session_out);
     }
+    gather(domain, &env.limits);
     settle(domain, env, out);
 }
 
@@ -359,8 +378,10 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
 /// the step that started it, or a hand-off from the run deferred in an earlier
 /// iteration.
 pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+    assert!(domain.facts_room() >= max_facts(&env.limits), "owner reserved composed fact output");
     if domain.session.is_ready() {
         session::resume(&mut domain.session, &route::session_env(env), &mut domain.session_out);
+        gather(domain, &env.limits);
     } else if let Some(handoff) = domain.ready.pop() {
         route::deliver(domain, env, handoff);
     }
@@ -373,9 +394,8 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     gather(domain, &env.limits);
 }
 
-/// Drains the child domains' facts into the domain's own queue, counting what
-/// does not fit.
-fn gather(domain: &mut Domain, limits: &Limits) {
+/// Moves each child entrance's observations into the owner's composed reserve.
+pub(crate) fn gather(domain: &mut Domain, limits: &Limits) {
     for _ in 0..limits.run.facts {
         let Some(fact) = domain.run.pop_fact() else {
             break;
@@ -391,7 +411,5 @@ fn gather(domain: &mut Domain, limits: &Limits) {
 }
 
 fn keep(domain: &mut Domain, fact: Fact) {
-    if domain.facts.try_push(fact).is_err() {
-        domain.lost = domain.lost.saturating_add(1);
-    }
+    domain.facts.push(fact);
 }

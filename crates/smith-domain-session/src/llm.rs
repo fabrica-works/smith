@@ -67,7 +67,7 @@ pub enum Block {
     ToolCall {
         id: Box<[u8]>,
         name: Box<[u8]>,
-        /// Exact provider-written argument bytes, retained for concrete replay and
+        /// Provider arguments, or canonical `{}` for an oversized or cut call;
         /// counted with their enclosing message against session ownership limits.
         input: Box<[u8]>,
         /// Full decoded classification: owned tool call, opener-served ticket,
@@ -95,6 +95,8 @@ pub enum Decoded {
     /// call is the opener's, kept under `ticket` (a ticket names a value the
     /// session cannot, and the layer that holds it resolves it).
     Delegated {
+        /// Declaration owner supplied by the protocol decoder.
+        source: crate::ToolSource,
         /// Opener-issued opaque name for a tool or delegated call.
         ticket: Token,
         /// Whether this delegated call may write, used to serialize writers.
@@ -180,6 +182,10 @@ pub enum Problem {
     },
     /// The call holds more than the agent takes at once.
     TooLarge,
+    /// The received call exceeded its argument bound; no input was retained.
+    Oversize { bytes: u64, bound: u32 },
+    /// The provider stopped while writing the call's input; no call runs.
+    CutOff { bytes: u64 },
 }
 
 /// One ordered conversation message, with sender and owned bounded content.
@@ -251,6 +257,8 @@ pub struct CompletionName {
 /// The next assistant message.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Completion {
+    /// Bytes of each opted-in oversized reasoning item, never retained in history.
+    pub reasoning_dropped: Box<[u64]>,
     /// Ordered provider-neutral blocks; boxed storage and owned payloads count
     /// against the receiving session's aggregate ownership limits.
     pub content: Box<[Block]>,
@@ -271,23 +279,35 @@ pub enum Stop {
     Refusal,
 }
 
-/// The tokens calls consumed, as the provider counts them: what it read
-/// afresh, what it wrote, and what it read from and wrote to its prompt cache.
+/// Raw provider counts (domain/session.md, section 6); absence stays distinct
+/// from reported zero in facts and concrete history. Reasoning is within output.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Usage {
-    /// Fresh input tokens reported by the provider.
-    pub input_tokens: u64,
-    /// Output tokens reported by the provider.
-    pub output_tokens: u64,
-    /// Input tokens served from the provider's prompt cache.
-    pub cache_read_tokens: u64,
-    /// Input tokens written to the provider's prompt cache.
-    pub cache_write_tokens: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cache_read_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
 }
 
 impl Usage {
-    /// No accepted completions or token usage yet.
-    pub const ZERO: Usage = Usage { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 };
+    /// Exact empty prefix before any completion has been accepted.
+    pub const ZERO: Usage = Usage {
+        input_tokens: Some(0),
+        output_tokens: Some(0),
+        cache_read_tokens: Some(0),
+        cache_write_tokens: Some(0),
+        reasoning_tokens: Some(0),
+    };
+
+    /// No counts were reported by the provider.
+    pub const NONE: Usage = Usage {
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        reasoning_tokens: None,
+    };
 }
 
 /// What the transport terminal proves about a provider operation.

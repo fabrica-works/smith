@@ -9,7 +9,7 @@ use skein_fake_llm_domain::api::{Finish, Line, Message, Part, Query, Role, Scrip
 use skein_lib::{Duration, Token};
 use skein_world::domain::Span;
 use smith_domain::{Transcript, run, session::llm, tools};
-use smith_protocol_llm::{self as adapter, Limits};
+use smith_protocol_llm_world::adapter::{self as adapter, Limits};
 use smith_protocol_llm_world::{
     Boundary, Job, Settings, World,
     wire::{self, Observed},
@@ -72,7 +72,8 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        max_tokens: 4096,
+        window: 8192,
+        output: 4096,
     };
     run::Charter {
         instructions: instructions.as_bytes().into(),
@@ -396,9 +397,10 @@ fn native_accounting(
                 system.len() + earlier.iter().flat_map(|message| &message.parts).map(part_bytes).sum::<usize>(),
             )
         };
-        let input = u64::try_from(fresh / 4).expect("bounded outside fixture");
+        let fresh_tokens = u64::try_from(fresh / 4).expect("bounded outside fixture");
+        let input = if cache_write { 0 } else { fresh_tokens };
         let read = u64::try_from(cached / 4).expect("bounded outside fixture");
-        let write = if cache_write { input } else { 0 };
+        let write = if cache_write { Some(fresh_tokens) } else { None };
         assert_eq!(
             [
                 turn.usage.input_tokens,
@@ -406,17 +408,17 @@ fn native_accounting(
                 turn.usage.cache_read_tokens,
                 turn.usage.cache_write_tokens
             ],
-            [input, outputs[index], read, write],
+            [Some(input), Some(outputs[index]), Some(read), write],
             "all four usage fields independently priced from literal system and native query"
         );
         spent.turns += 1;
         spent.input += input;
         spent.output += outputs[index];
         spent.cache_read += read;
-        spent.cache_write += write;
+        spent.cache_write += write.unwrap_or(0);
         assert_eq!(world.turn_metadata()[index], (spent.turns, None, spent));
         assert_eq!(turn.sequence, prior + spent.turns);
-        assert_eq!(turn.version, 2);
+        assert_eq!(turn.version, smith_domain::session::record::VERSION);
         assert_eq!(turn.endpoint, llm::Endpoint(0));
         assert_eq!(turn.dialect, 1);
         assert_eq!(turn.spent, 0);
@@ -507,7 +509,13 @@ fn recorded_wait(turn: &smith_domain::Turn, resumed: bool) {
 #[test]
 fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire_forms() {
     for index in 0..2 {
-        let mut bounds = Limits { client: skein_llm_world::limits(), tool_bytes: 32768, result_bytes: 32768 };
+        let mut bounds = Limits {
+            client: skein_llm_world::limits(),
+            tool_bytes: 32768,
+            rendered_result: skein_llm_world::limits().dialect.string_bytes,
+            shell_default: skein_lib::Duration::from_secs(120),
+            shell_maximum: skein_lib::Duration::from_secs(1200),
+        };
         bounds.client.http.request = 16384;
         bounds.client.dialect.request_bytes = 16384;
         let mut settings = Settings {
@@ -536,7 +544,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
         let opening = vec![message(Role::User, vec![text(BEGIN)])];
         let mut waited = opening.clone();
         waited.extend([message(Role::Assistant, vec![wait_call()]), message(Role::User, vec![wait_result()])]);
-        native_accounting(&first, &first_system, &[opening, waited.clone()], &[17, 3], 0, index == 1);
+        native_accounting(&first, &first_system, &[opening, waited.clone()], &[17, 3], 0, true);
         native_settled(&first, &settings, &roots);
         recorded_wait(&first.turns()[0], false);
         assert!(matches!(first.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, .. }]
@@ -569,7 +577,7 @@ fn structured_brief_native_wait_park_and_genuine_transcript_restore_in_both_wire
             message(Role::Assistant, vec![text(RESUMED), wait_call()]),
             message(Role::User, vec![wait_result()]),
         ]);
-        native_accounting(&restored, &restored_system, &[waited, continued], &[11, 5], 2, index == 1);
+        native_accounting(&restored, &restored_system, &[waited, continued], &[11, 5], 2, true);
         native_settled(&restored, &settings, &roots);
         recorded_wait(&restored.turns()[0], true);
         assert!(matches!(restored.turns()[1].messages[0].content.as_ref(), [llm::Block::Text { text, .. }]

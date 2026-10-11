@@ -13,8 +13,8 @@ use skein_fake_machine::{How, Machine as Filesystem, Opened};
 use skein_io::kernel;
 use skein_lib::{Duration, Queue, Wall};
 use skein_world::{HostedProgram, Memory, Outcome};
-use smith::{local_host::token_limits, local_tokens};
 use smith_local_domain as local;
+use smith_local_shell::{local_host::token_limits, local_tokens};
 use smith_local_world::git::History;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -391,7 +391,7 @@ impl World {
                 key: 0,
                 generation: 1,
                 access_token: b"token".as_slice().into(),
-                refresh_token: b"refresh".as_slice().into(),
+                refresh_token: Some(b"refresh".as_slice().into()),
                 metadata: None,
                 expires_at: Wall::from_nanos(
                     skein_tls_world::pki::VALID.as_nanos() + Duration::from_secs(7200).as_nanos(),
@@ -456,11 +456,11 @@ impl World {
                 } else {
                     b"old".as_slice().into()
                 },
-                refresh_token: if mode == Authentication::Refused {
+                refresh_token: Some(if mode == Authentication::Refused {
                     b"wrong".as_slice().into()
                 } else {
                     b"refresh-old".as_slice().into()
-                },
+                }),
                 metadata: None,
                 expires_at: Wall::from_nanos(
                     skein_tls_world::pki::VALID.as_nanos()
@@ -517,7 +517,7 @@ impl World {
                 program: b"smith-agent".as_slice().into(),
                 make: process::make_agent,
                 instances: 8,
-                operations: process::lower_configuration().limits.routes + 2,
+                operations: process::lower_configuration().limits.routes + 3,
             },
             process::agent_roots,
         );
@@ -640,7 +640,7 @@ impl World {
     }
     #[must_use]
     pub fn turns(&mut self) -> usize {
-        let store = smith::local_store::Store::new(
+        let store = smith_local_shell::local_store::Store::new(
             self.scenario.launch.state_directory.clone(),
             process::lower_configuration().channel_endpoints,
             1 << 20,

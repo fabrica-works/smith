@@ -54,7 +54,7 @@ pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
         });
     }
     let messages = messages.into_iter().map(translate_message).collect();
-    provider::Query { model, system, tools: offered.into(), messages, max_tokens }
+    provider::Query { model, system, tools: offered.into(), choice: provider::ToolChoice::Auto, messages, max_tokens }
 }
 
 /// The agent's terminal event for the provider's answer to the call of `owner`,
@@ -136,15 +136,16 @@ fn completion(
         provider::Finish::Length => agent::Stop::MaxTokens,
         provider::Finish::ContentFilter => agent::Stop::Refusal,
     };
-    let provider::Usage { prompt_tokens, cached_tokens, cache_creation_tokens, completion_tokens } = answer.usage;
+    let provider::Usage { input, cache_read, cache_write, output, reasoning } = answer.usage;
     let usage = agent::Usage {
-        input_tokens: prompt_tokens,
-        output_tokens: completion_tokens,
-        cache_read_tokens: cached_tokens,
-        cache_write_tokens: cache_creation_tokens,
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: cache_read,
+        cache_write_tokens: cache_write,
+        reasoning_tokens: reasoning,
     };
     let content = answer.parts.into_iter().map(|part| block(part, tickets, opener, served)).collect();
-    agent::Completion { content, stop, usage }
+    agent::Completion { reasoning_dropped: Box::default(), content, stop, usage }
 }
 
 fn block(part: provider::Part, tickets: &mut Tickets, opener: u64, served: &[agent::Descriptor]) -> agent::Block {
@@ -155,7 +156,7 @@ fn block(part: provider::Part, tickets: &mut Tickets, opener: u64, served: &[age
             let call = match delegated(&name, served, tickets) {
                 Some((tool, effect)) => {
                     let ticket = tickets.issue(opener, Ticketed::Call { tool, arguments: arguments.clone() });
-                    agent::Decoded::Delegated { ticket, effect }
+                    agent::Decoded::Delegated { source: smith_domain_session::ToolSource::Run, ticket, effect }
                 }
                 None => decode(&name, &arguments),
             };

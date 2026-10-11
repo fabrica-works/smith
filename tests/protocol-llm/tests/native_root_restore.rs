@@ -9,7 +9,7 @@ use skein_fake_llm_domain::api::{Finish, Line, Message, Part, Query, Role, Scrip
 use skein_lib::Duration;
 use skein_world::domain::Span;
 use smith_domain::{Answered, AnsweredCall, Transcript, run, session::llm};
-use smith_protocol_llm::{self as adapter, Limits};
+use smith_protocol_llm_world::adapter::{self as adapter, Limits};
 use smith_protocol_llm_world::{
     Job, Settings, World,
     wire::{self, Configuration, Observed},
@@ -44,7 +44,7 @@ fn fixtures() -> [Fixture; 2] {
             call_replay: Some(CALL_REPLAY),
             text_replay: Some(TEXT_REPLAY),
             seal: b"encrypted-root",
-            cache_write: false,
+            cache_write: true,
         },
         Fixture {
             opaque: ANTHROPIC_OPAQUE,
@@ -93,7 +93,13 @@ fn scripts(fixture: &Fixture, tail: bool) -> Box<[Script]> {
 }
 
 fn bounds() -> Limits {
-    let mut bounds = Limits { client: skein_llm_world::limits(), tool_bytes: 32768, result_bytes: 32768 };
+    let mut bounds = Limits {
+        client: skein_llm_world::limits(),
+        tool_bytes: 32768,
+        rendered_result: skein_llm_world::limits().dialect.string_bytes,
+        shell_default: skein_lib::Duration::from_secs(120),
+        shell_maximum: skein_lib::Duration::from_secs(1200),
+    };
     bounds.client.http.request = 16384;
     bounds.client.dialect.request_bytes = 16384;
     bounds
@@ -259,7 +265,11 @@ fn recorded_corruptions(turn: &smith_domain::Turn, fixture: &Fixture) {
     assert!(!recorded_wait(&missing, fixture, true));
     let mut unresolved = turn.clone();
     let llm::Block::ToolCall { call, .. } = &mut unresolved.messages[1].content[1] else { panic!("actual historical") };
-    *call = llm::Decoded::Delegated { ticket: skein_lib::Token::new(99), effect: smith_domain::tools::Effect::Write };
+    *call = llm::Decoded::Delegated {
+        source: smith_domain::session::ToolSource::Run,
+        ticket: skein_lib::Token::new(99),
+        effect: smith_domain::tools::Effect::Write,
+    };
     assert!(!recorded_wait(&unresolved, fixture, true));
     if fixture.call_replay.is_some() {
         let mut missing = turn.clone();
@@ -310,7 +320,7 @@ fn expected_usage(system_bytes: usize, expected: &[Message], output: u64, fixtur
     };
     let input = u64::try_from(fresh / 4).expect("bounded caller fixture");
     [
-        input,
+        if fixture.cache_write { 0 } else { input },
         output,
         u64::try_from(cached / 4).expect("bounded caller fixture"),
         if fixture.cache_write { input } else { 0 },
@@ -327,10 +337,10 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         assert!(exact_prefix(query, expected_prompt), "actual query {index}: {query:?}");
         let wanted = expected_usage(query.system.len(), expected_prompt, outputs[index], fixture);
         let actual = [
-            turn.usage.input_tokens,
-            turn.usage.output_tokens,
-            turn.usage.cache_read_tokens,
-            turn.usage.cache_write_tokens,
+            turn.usage.input_tokens.expect("SDK fixture reports usage"),
+            turn.usage.output_tokens.expect("SDK fixture reports usage"),
+            turn.usage.cache_read_tokens.expect("SDK fixture reports usage"),
+            turn.usage.cache_write_tokens.expect("SDK fixture reports usage"),
         ];
         assert_eq!(actual, wanted, "all four actual SDK usage fields at completion {index}");
         for field in 0..4 {
@@ -344,7 +354,7 @@ fn accounting(world: &World, fixture: &Fixture, expected_prompts: &[Vec<Message>
         total.cache_read += wanted[2];
         total.cache_write += wanted[3];
         assert_eq!(world.turn_metadata()[index], (total.turns, None, total));
-        assert_eq!(turn.version, 2);
+        assert_eq!(turn.version, smith_domain::session::record::VERSION);
         assert_eq!(turn.endpoint, llm::Endpoint(0));
         assert_eq!(turn.dialect, 1);
         assert_eq!(turn.sequence, sequence + total.turns);

@@ -1,14 +1,15 @@
 //! What the agent tells whoever watches it (domain/run.md, section 11): the
 //! child domains' facts, content-free, gathered after every entry point into one
-//! bounded queue the loop drains at its own pace. What does not fit is dropped
-//! and counted, and nothing the domain decides depends on it.
+//! reserved queue the loop drains at its own pace. Native facts are lossless;
+//! optional content capture is bounded, drops and counts overflow, and never
+//! changes what the domain decides.
 //!
 //! The run names a conversation by its token for it, and the sessions name
 //! theirs by their opener's, which is the same token: the facts of a
 //! conversation and of its session go together.
 
 use alloc::boxed::Box;
-use skein_lib::Token;
+use skein_lib::{Time, Token};
 use smith_domain_run::facts as run;
 use smith_domain_session as session;
 
@@ -81,16 +82,27 @@ fn fixed(count: usize, size: usize) -> u64 {
 }
 
 /// Something that happened in a child domain.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Fact {
     /// In the run child domain.
     Run {
-        /// Content-free child observation, dropped and counted if the queue is full.
+        /// Content-free child observation retained in the composed fact reserve.
         fact: run::Fact,
     },
     /// In the session child domain, or its tools.
     Session {
-        /// Content-free child observation, dropped and counted if the queue is full.
+        /// Content-free child observation retained in the composed fact reserve.
         fact: session::Fact,
     },
+}
+
+impl Fact {
+    /// The injected time of the child step, independent of drain time.
+    #[must_use]
+    pub const fn emitted(&self) -> Time {
+        match self {
+            Fact::Run { fact } => fact.at,
+            Fact::Session { fact } => fact.at,
+        }
+    }
 }

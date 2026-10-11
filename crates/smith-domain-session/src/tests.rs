@@ -12,8 +12,8 @@ use crate::llm::{
     Block, Completion, Decoded, Descriptor, Endpoint, Failure, Message, Problem, Prompt, Returned, Role, Stop, Usage,
 };
 use crate::{
-    Budget, Dimension, Domain, End, Event, Fact, Limits, MAX_PARALLEL, Request, Spec, Yield, fire, max_out, resume,
-    step, worst_case,
+    Budget, Dimension, Domain, End, Event, FactKind as Fact, Limits, MAX_PARALLEL, Request, Spec, Yield, fire, max_out,
+    resume, step, worst_case,
 };
 
 /// The budget every spec asks for, unless a test says otherwise: the most the
@@ -62,7 +62,6 @@ const LIMITS: Limits = Limits {
     failure_bytes: 512,
     delegated_result_bytes: 16_384,
     budget: BUDGET,
-    max_tokens: 1024,
     retries: 2,
     backoff_base: Duration::from_millis(100),
     backoff_max: Duration::from_secs(1),
@@ -78,6 +77,7 @@ const OUT_OF_TIME: End = End::Budget { spent: Dimension::Time };
 /// The domain, its environment, room for one step's output, and the `Used`
 /// it has reported.
 struct Harness {
+    observed: Queue<crate::facts::Fact>,
     domain: Domain,
     env: Env<Limits>,
     out: Queue<Request>,
@@ -88,8 +88,22 @@ struct Harness {
 }
 
 impl Harness {
+    fn keep_facts(&mut self) {
+        while let Some(fact) = self.domain.pop_fact() {
+            self.observed.push(fact);
+        }
+    }
+
+    fn pop_fact(&mut self) -> Option<crate::facts::Fact> {
+        match self.observed.pop() {
+            Some(fact) => Some(fact),
+            None => self.domain.pop_fact(),
+        }
+    }
+
     fn new(limits: Limits) -> Harness {
         Harness {
+            observed: Queue::with_capacity(4096),
             domain: Domain::new(&limits, 1),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             out: Queue::with_capacity(max_out(&limits)),
@@ -106,6 +120,7 @@ impl Harness {
     /// Steps the domain with `event`, which emits at most one request besides
     /// `Used`.
     fn step(&mut self, event: Event) -> Option<Request> {
+        self.keep_facts();
         step(&mut self.domain, &self.env, event, &mut self.out);
         self.one()
     }
@@ -114,6 +129,7 @@ impl Harness {
     /// `Used`.
     fn fire(&mut self) -> Option<Request> {
         assert!(self.domain.is_due(self.env.now), "an alarm is due");
+        self.keep_facts();
         fire(&mut self.domain, &self.env, &mut self.out);
         self.one()
     }
@@ -122,6 +138,7 @@ impl Harness {
     /// besides `Used`.
     fn resume(&mut self) -> Option<Request> {
         assert!(self.domain.is_ready(), "a session is ready");
+        self.keep_facts();
         resume(&mut self.domain, &self.env, &mut self.out);
         self.one()
     }
@@ -194,6 +211,7 @@ impl Harness {
     /// Steps the domain with `event`, which starts or cancels a batch of tool
     /// runs, and returns the tokens of the runs it names, in order.
     fn batch(&mut self, event: Event) -> List<Token> {
+        self.keep_facts();
         step(&mut self.domain, &self.env, event, &mut self.out);
         let mut runs = List::with_capacity(max_out(&self.env.limits));
         while let Some(request) = self.next() {
@@ -254,9 +272,9 @@ impl Harness {
     /// Drains the facts told so far, checking that they are `expected`.
     fn told(&mut self, expected: &[Fact]) {
         for fact in expected {
-            assert_eq!(self.domain.pop_fact().as_ref(), Some(fact));
+            assert_eq!(pop_kind(self).as_ref(), Some(fact));
         }
-        assert_eq!(self.domain.pop_fact(), None, "nothing more was told");
+        assert_eq!(self.pop_fact(), None, "nothing more was told");
     }
 
     fn after(&mut self, span: Duration) {
@@ -276,7 +294,7 @@ fn spec() -> Spec {
         authority: authority(1),
         delegated: Box::new([FINISH]),
         prompt: bytes(b"fix the bug"),
-        max_tokens: 1024,
+        output: 1024,
         budget: BUDGET,
     }
 }
@@ -381,7 +399,7 @@ const FINISH: Descriptor = Descriptor { ticket: Token::new(7), effect: Effect::W
 
 /// The LLM's call `id` to a tool the opener serves, kept under `ticket`.
 fn delegated(id: &[u8], ticket: u64, effect: Effect) -> Block {
-    let call = Decoded::Delegated { ticket: Token::new(ticket), effect };
+    let call = Decoded::Delegated { source: crate::ToolSource::Run, ticket: Token::new(ticket), effect };
     Block::ToolCall { id: bytes(id), name: bytes(b"finish"), input: bytes(b"{}"), call, replay: None }
 }
 
@@ -441,10 +459,15 @@ fn initial_bytes() -> u64 {
 
 fn usage_sum(previous: Usage, usage: Usage) -> Option<Usage> {
     Some(Usage {
-        input_tokens: previous.input_tokens.checked_add(usage.input_tokens)?,
-        output_tokens: previous.output_tokens.checked_add(usage.output_tokens)?,
-        cache_read_tokens: previous.cache_read_tokens.checked_add(usage.cache_read_tokens)?,
-        cache_write_tokens: previous.cache_write_tokens.checked_add(usage.cache_write_tokens)?,
+        input_tokens: Some(previous.input_tokens.unwrap_or(0).checked_add(usage.input_tokens.unwrap_or(0))?),
+        output_tokens: Some(previous.output_tokens.unwrap_or(0).checked_add(usage.output_tokens.unwrap_or(0))?),
+        cache_read_tokens: Some(
+            previous.cache_read_tokens.unwrap_or(0).checked_add(usage.cache_read_tokens.unwrap_or(0))?,
+        ),
+        cache_write_tokens: Some(
+            previous.cache_write_tokens.unwrap_or(0).checked_add(usage.cache_write_tokens.unwrap_or(0))?,
+        ),
+        reasoning_tokens: Some(0),
     })
 }
 
@@ -464,7 +487,7 @@ fn ran(owner: Token, content: &[u8]) -> Event {
 }
 
 /// A fact the tools told, as the session for `opener` passes it on.
-fn by_tools(opener: Token, fact: tools::Fact) -> Fact {
+fn by_tools(opener: Token, fact: tools::FactKind) -> Fact {
     Fact::Tools { opener, fact }
 }
 
@@ -473,10 +496,16 @@ fn result(id: &[u8], outcome: Outcome) -> Block {
 }
 
 /// What every completion uses, unless a test says otherwise.
-const USAGE: Usage = Usage { input_tokens: 10, output_tokens: 5, cache_read_tokens: 3, cache_write_tokens: 2 };
+const USAGE: Usage = Usage {
+    input_tokens: Some(10),
+    output_tokens: Some(5),
+    cache_read_tokens: Some(3),
+    cache_write_tokens: Some(2),
+    reasoning_tokens: Some(0),
+};
 
 fn completion(content: Box<[Block]>, stop: Stop) -> Completion {
-    Completion { content, stop, usage: USAGE }
+    Completion { reasoning_dropped: Box::default(), content, stop, usage: USAGE }
 }
 
 fn done() -> Completion {
@@ -518,7 +547,7 @@ fn ended(end: End, turns: u32) -> Request {
     for _ in 0..turns {
         usage = usage_sum(usage, USAGE).expect("bounded fixture usage");
     }
-    Request::Ended { opener: Token::new(1), end, turns, usage }
+    Request::Ended { opener: Token::new(1), end, turns, usage, reported: usage }
 }
 
 #[test]
@@ -605,11 +634,11 @@ fn an_invalid_call_is_answered_with_its_problem_and_nothing_runs_for_it() {
 
     let opener = Token::new(1);
     let started = Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 };
-    let kit = Fact::Tools { opener, fact: tools::Fact::Opened { session: owner } };
-    let opening = [h.domain.pop_fact(), h.domain.pop_fact(), h.domain.pop_fact()];
+    let kit = Fact::Tools { opener, fact: tools::FactKind::Opened { session: owner } };
+    let opening = [pop_kind(&mut h), pop_kind(&mut h), pop_kind(&mut h)];
     assert_eq!(opening, [Some(Fact::Opened { opener }), Some(started), Some(kit)]);
     let answered = Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 3, calls: 3, invalid: 2 };
-    assert_eq!(h.domain.pop_fact(), Some(answered));
+    assert_eq!(pop_kind(&mut h), Some(answered));
 }
 
 #[test]
@@ -781,6 +810,23 @@ fn a_batch_as_wide_as_the_most_a_step_emits_fits() {
 }
 
 #[test]
+fn the_minimum_fact_reserve_keeps_a_maximum_batch_answered_at_the_tools_entrance() {
+    let base = Limits { parallel_tools: MAX_PARALLEL, ..LIMITS };
+    let required = crate::max_facts(&base);
+    let tools = tools::Limits { facts: (MAX_PARALLEL + 2) * tools::max_facts(&TOOLS), ..TOOLS };
+    let mut h = Harness::new(Limits { facts: required, tools, ..base });
+    let (owner, _) = h.open(1);
+    let mut content = List::with_capacity(MAX_PARALLEL);
+    for _ in 0..MAX_PARALLEL {
+        content.push(tool_call(b"c", Call::Read { path: outside(), skip: 0, lines: None })).expect("batch bound");
+    }
+    h.keep_facts();
+    assert_eq!(h.step(Event::Completed { owner, completion: completion(content.into_boxed(), Stop::ToolUse) }), None);
+    assert_eq!(required - h.domain.facts_room(), MAX_PARALLEL + 2, "one terminal per call plus response and use");
+    assert_eq!(h.domain.calls.tools.facts_room(), tools.facts, "every child observation passed to its parent");
+}
+
+#[test]
 fn closing_a_session_with_a_batch_in_flight_closes_its_kit_and_waits_for_every_run() {
     let mut h = Harness::new(LIMITS);
     let (owner, _) = h.open(1);
@@ -864,12 +910,15 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
-        by_tools(opener, tools::Fact::Opened { session: owner }),
+        by_tools(opener, tools::FactKind::Opened { session: owner }),
         Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 3, calls: 2, invalid: 0 },
         Fact::Used { opener, usage: USAGE },
-        by_tools(opener, tools::Fact::Started { session: owner, tool: read }),
-        by_tools(opener, tools::Fact::Started { session: owner, tool: read }),
-        by_tools(opener, tools::Fact::Answered { session: owner, tool: read, verdict: tools::Verdict::Read, bytes: 1 }),
+        by_tools(opener, tools::FactKind::Started { session: owner, tool: read }),
+        by_tools(opener, tools::FactKind::Started { session: owner, tool: read }),
+        by_tools(
+            opener,
+            tools::FactKind::Answered { session: owner, tool: read, verdict: tools::Verdict::Read, bytes: 1 },
+        ),
     ]);
 }
 
@@ -1013,14 +1062,14 @@ fn delegated_calls_are_told_as_they_start_and_end() {
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
-        Fact::Tools { opener, fact: tools::Fact::Opened { session: owner } },
+        Fact::Tools { opener, fact: tools::FactKind::Opened { session: owner } },
         Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 2, calls: 2, invalid: 0 },
         Fact::Used { opener, usage: USAGE },
         Fact::DelegateStarted { opener, block: 0 },
         Fact::DelegateStarted { opener, block: 1 },
         Fact::DelegateAnswered { opener, bytes: 3, error: true },
         // The kit closes as the session does, with nothing of its own to settle.
-        Fact::Tools { opener, fact: tools::Fact::Closed { session: owner } },
+        Fact::Tools { opener, fact: tools::FactKind::Closed { session: owner } },
         Fact::DelegateCancelled { opener },
         Fact::Ended { opener, end: End::Closed, turns: 1, usage: USAGE },
     ]);
@@ -1041,14 +1090,23 @@ fn opens_beyond_the_session_slots_are_refused_as_busy() {
     let mut h = Harness::new(Limits { sessions: 1, ..LIMITS });
     drop(h.open(1));
     let refused = h.step(Event::Open { opener: Token::new(2), opening: opening(spec()) });
-    assert_eq!(refused, Some(Request::Ended { opener: Token::new(2), end: End::Busy, turns: 0, usage: Usage::ZERO }));
+    assert_eq!(
+        refused,
+        Some(Request::Ended {
+            opener: Token::new(2),
+            end: End::Busy,
+            turns: 0,
+            usage: Usage::ZERO,
+            reported: Usage::ZERO
+        })
+    );
 }
 
 #[test]
 fn specs_beyond_the_limits_are_refused_as_invalid() {
-    for limits in [Limits { session_bytes: 16, ..LIMITS }, Limits { max_tokens: 1, ..LIMITS }] {
+    for (limits, spec) in [(Limits { session_bytes: 16, ..LIMITS }, spec()), (LIMITS, Spec { output: 0, ..spec() })] {
         let mut h = Harness::new(limits);
-        let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec()) });
+        let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec) });
         assert_eq!(refused, Some(ended(End::Invalid, 0)));
         assert_eq!(h.domain.sessions(), 0);
     }
@@ -1378,7 +1436,8 @@ fn the_turn_that_takes_tokens_past_their_budget_runs_its_tools_and_ends_the_sess
 
     // Without the cache, a zero cache budget stops nothing.
     let mut h = Harness::new(LIMITS);
-    let uncached = Completion { usage: Usage { cache_read_tokens: 0, cache_write_tokens: 0, ..USAGE }, ..done() };
+    let uncached =
+        Completion { usage: Usage { cache_read_tokens: Some(0), cache_write_tokens: Some(0), ..USAGE }, ..done() };
     let session = h.yielded_with(budget(Budget { cache_read: 0, cache_write: 0, ..BUDGET }), uncached);
     drop(calling(h.step(Event::Continue { session, content: bytes(b"go on") })));
 }
@@ -1402,18 +1461,18 @@ fn each_answer_may_take_no_more_than_the_output_budget_left() {
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     let (_, prompt) = calling(h.step(ran(run, b"main.rs")));
     assert_eq!(prompt.max_tokens, 7);
-    let usage = Usage { output_tokens: 7, ..USAGE };
+    let usage = Usage { output_tokens: Some(7), ..USAGE };
     let cut = Completion { usage, ..completion(Box::new([text(b"I was")]), Stop::MaxTokens) };
     let request = h.step(Event::Completed { owner, completion: cut });
     assert_eq!(yielded(request), (1, Yield::Truncated, bytes(b"I was")));
     let end = h.step(Event::Continue { session: owner, content: bytes(b"go on") });
     let spent = End::Budget { spent: Dimension::Output };
     let usage = usage_sum(USAGE, usage).expect("bounded fixture usage");
-    assert_eq!(end, Some(Request::Ended { opener: Token::new(1), end: spent, turns: 2, usage }));
+    assert_eq!(end, Some(Request::Ended { opener: Token::new(1), end: spent, turns: 2, usage, reported: usage }));
 
-    // A spec's own max_tokens stays the cap while more is left.
+    // A spec's own output stays the cap while more is left.
     let mut h = Harness::new(LIMITS);
-    let (_, prompt) = h.open_with(1, Spec { max_tokens: 100, ..budget(Budget { output: 1000, ..BUDGET }) });
+    let (_, prompt) = h.open_with(1, Spec { output: 100, ..budget(Budget { output: 1000, ..BUDGET }) });
     assert_eq!(prompt.max_tokens, 100);
 }
 
@@ -1486,7 +1545,7 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
         id: bytes(b"oversized"),
         name: bytes(b"finish"),
         input: huge,
-        call: Decoded::Delegated { ticket: FINISH.ticket, effect: Effect::Write },
+        call: Decoded::Delegated { source: crate::ToolSource::Run, ticket: FINISH.ticket, effect: Effect::Write },
         replay: None,
     };
     let completion = completion(Box::new([call]), Stop::ToolUse);
@@ -1537,20 +1596,20 @@ fn a_session_tells_what_happens_as_facts() {
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
-        by_tools(opener, tools::Fact::Opened { session: owner }),
+        by_tools(opener, tools::FactKind::Opened { session: owner }),
     ]);
 
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     h.told(&[
         Fact::CompletionAnswered { opener, stop: Stop::ToolUse, blocks: 1, calls: 1, invalid: 0 },
         Fact::Used { opener, usage: USAGE },
-        by_tools(opener, tools::Fact::Started { session: owner, tool: tools::Tool::Read }),
+        by_tools(opener, tools::FactKind::Started { session: owner, tool: tools::Tool::Read }),
     ]);
     drop(calling(h.step(ran(run, b"main.rs"))));
     let verdict = tools::Verdict::Read;
     h.told(&[
         Fact::CompletionStarted { opener, attempt: 0, messages: 3, max_tokens: 1024 },
-        by_tools(opener, tools::Fact::Answered { session: owner, tool: tools::Tool::Read, verdict, bytes: 7 }),
+        by_tools(opener, tools::FactKind::Answered { session: owner, tool: tools::Tool::Read, verdict, bytes: 7 }),
     ]);
     drop(yielded(h.step(Event::Completed { owner, completion: done() })));
     h.told(&[
@@ -1562,7 +1621,7 @@ fn a_session_tells_what_happens_as_facts() {
     let Some(Request::Ended { opener: _, end, turns, usage, .. }) = end else {
         panic!("expected the end, not {end:?}");
     };
-    h.told(&[Fact::Ended { opener, end, turns, usage }, by_tools(opener, tools::Fact::Closed { session: owner })]);
+    h.told(&[Fact::Ended { opener, end, turns, usage }, by_tools(opener, tools::FactKind::Closed { session: owner })]);
 }
 
 #[test]
@@ -1585,7 +1644,7 @@ fn retries_cancels_and_refusals_are_told_too() {
     h.told(&[
         Fact::Opened { opener },
         started,
-        Fact::Tools { opener, fact: tools::Fact::Opened { session: owner } },
+        Fact::Tools { opener, fact: tools::FactKind::Opened { session: owner } },
         Fact::CompletionFailed { opener, failure: Failure::Overloaded, evidence: crate::llm::Evidence::Unknown },
         Fact::CompletionRetried { opener, attempt: 1, delay },
     ]);
@@ -1598,7 +1657,7 @@ fn retries_cancels_and_refusals_are_told_too() {
     h.told(&[Fact::Ended { opener: refused, end: End::Busy, turns: 0, usage: Usage::ZERO }]);
 
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
-    h.told(&[Fact::Tools { opener, fact: tools::Fact::Closed { session: owner } }]);
+    h.told(&[Fact::Tools { opener, fact: tools::FactKind::Closed { session: owner } }]);
     drop(h.step(Event::Cancelled { owner }));
     let end = Fact::Ended { opener, end: End::Closed, turns: 0, usage: Usage::ZERO };
     h.told(&[Fact::CompletionCancelled { opener }, end]);
@@ -1617,29 +1676,19 @@ fn drive(h: &mut Harness) -> (Token, Prompt, Option<Request>, Option<Request>) {
 }
 
 #[test]
-fn facts_beyond_their_room_are_dropped_and_counted_and_change_nothing() {
-    let mut full = Harness::new(Limits { facts: 2, ..LIMITS });
-    let mut none = Harness::new(Limits { facts: 0, ..LIMITS });
+fn the_minimum_fact_reserve_keeps_the_same_complete_native_call_history() {
+    let required = crate::max_facts(&LIMITS);
+    assert!(worst_case(&Limits { facts: required - 1, ..LIMITS }).is_none());
+    let mut bounded = Harness::new(Limits { facts: required, ..LIMITS });
     let mut roomy = Harness::new(LIMITS);
-    let requests = drive(&mut roomy);
-    assert_eq!(drive(&mut full), requests);
-    assert_eq!(drive(&mut none), requests);
-    // Three facts on opening, the tools' among them, three on the completion,
-    // two on the tool's result.
-    assert_eq!((full.domain.facts_lost(), none.domain.facts_lost(), roomy.domain.facts_lost()), (6, 8, 0));
-    let opener = Token::new(1);
-    full.told(&[
-        Fact::Opened { opener },
-        Fact::CompletionStarted { opener, attempt: 0, messages: 1, max_tokens: 1024 },
-    ]);
-    none.told(&[]);
-
-    // Drained, there is room again; what was dropped stays counted.
-    let (owner, ..) = requests;
-    drop(yielded(full.step(Event::Completed { owner, completion: done() })));
-    let answered = Fact::CompletionAnswered { opener, stop: Stop::EndTurn, blocks: 1, calls: 0, invalid: 0 };
-    full.told(&[answered, Fact::Used { opener, usage: USAGE }]);
-    assert_eq!(full.domain.facts_lost(), 7);
+    assert_eq!(drive(&mut bounded), drive(&mut roomy));
+    bounded.keep_facts();
+    roomy.keep_facts();
+    assert_eq!(bounded.observed.len(), 8);
+    while let Some(fact) = bounded.observed.pop() {
+        assert_eq!(Some(fact), roomy.observed.pop());
+    }
+    assert!(roomy.observed.is_empty());
 }
 
 #[test]
@@ -1647,8 +1696,12 @@ fn the_worst_case_is_bounded_or_refused() {
     let bytes = worst_case(&LIMITS).expect("the test limits fit");
     assert!(bytes > 2 * LIMITS.session_bytes, "every session may hold its bytes");
     let told = worst_case(&Limits { facts: LIMITS.facts + 1, ..LIMITS }).expect("the test limits fit");
-    let fact = u64::try_from(size_of::<Fact>()).expect("a size fits");
-    assert_eq!(told - bytes, fact, "the facts' queue is counted, and nothing else of theirs");
+    let fact = u64::try_from(size_of::<crate::Fact>()).expect("a size fits");
+    assert_eq!(
+        told - bytes,
+        fact + LIMITS.completion_bytes,
+        "the stamped fact and bounded provider identity are counted"
+    );
     assert_eq!(worst_case(&Limits { sessions: u32::MAX, session_bytes: u64::MAX, ..LIMITS }), None);
 }
 
@@ -1776,19 +1829,37 @@ fn raw_overflow_ends_before_the_completion_is_charged_or_told() {
     let budget = Budget { input: u64::MAX, output: u64::MAX, cache_read: u64::MAX, cache_write: u64::MAX, ..BUDGET };
     let mut harness = Harness::new(Limits { budget, ..LIMITS });
     let (owner, _) = harness.open_with(1, Spec { budget, ..spec() });
-    let first = Usage { input_tokens: u64::MAX - 1, output_tokens: 1, cache_read_tokens: 3, cache_write_tokens: 4 };
+    let first = Usage {
+        input_tokens: Some(u64::MAX - 1),
+        output_tokens: Some(1),
+        cache_read_tokens: Some(3),
+        cache_write_tokens: Some(4),
+        reasoning_tokens: Some(0),
+    };
     drop(yielded(harness.step(Event::Completed { owner, completion: Completion { usage: first, ..done() } })));
     drop(calling(harness.step(Event::Continue { session: owner, content: bytes(b"go on") })));
-    let second = Usage { input_tokens: 2, output_tokens: 2, cache_read_tokens: 5, cache_write_tokens: 6 };
+    let second = Usage {
+        input_tokens: Some(2),
+        output_tokens: Some(2),
+        cache_read_tokens: Some(5),
+        cache_write_tokens: Some(6),
+        reasoning_tokens: Some(0),
+    };
     let terminal = harness.step(Event::Completed { owner, completion: Completion { usage: second, ..done() } });
     assert_eq!(harness.usage, first);
     assert_eq!(harness.turn_records.len(), 1);
     assert_eq!(
         terminal,
-        Some(Request::Ended { opener: Token::new(1), end: End::UsageOverflow, turns: 1, usage: first })
+        Some(Request::Ended {
+            opener: Token::new(1),
+            end: End::UsageOverflow,
+            turns: 1,
+            usage: first,
+            reported: first
+        })
     );
-    while let Some(fact) = harness.domain.pop_fact() {
-        if let Fact::Used { usage, .. } = fact {
+    while let Some(fact) = harness.pop_fact() {
+        if let Fact::Used { usage, .. } = fact.kind {
             assert_ne!(usage, second);
         }
     }
@@ -1858,4 +1929,194 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
         Some(ended(End::TranscriptFull, 1))
     );
     assert_eq!((refused.domain.runs(), refused.domain.jobs()), (0, 0), "no partial batch is published");
+}
+
+#[test]
+fn delayed_facts_keep_their_times_completion_numbers_and_exact_call_measurements() {
+    let mut h = Harness::new(LIMITS);
+    h.env.now = Time::from_nanos(7);
+    let (owner, _) = h.open(1);
+    h.env.now = Time::from_nanos(11);
+    let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
+    h.env.now = Time::from_nanos(13);
+    drop(calling(h.step(ran(run, b"main.rs"))));
+    h.env.now = Time::from_nanos(17);
+    drop(yielded(h.step(Event::Completed { owner, completion: done() })));
+    h.env.now = Time::from_nanos(19);
+    drop(h.step(Event::Close { session: owner }));
+    h.env.now = Time::from_nanos(99);
+    let facts = observed_facts(&mut h);
+    assert_eq!(fact_times(&facts).as_ref(), [7, 7, 7, 11, 11, 11, 13, 13, 17, 17, 17, 19, 19].map(Time::from_nanos));
+    for index in [1, 3, 4] {
+        assert_eq!(facts[index].response.expect("first response").number, 1);
+    }
+    for index in [6, 8, 9] {
+        assert_eq!(facts[index].response.expect("second response").number, 2);
+    }
+    assert_eq!(facts[4].response.expect("charged usage").spent, Some(0));
+    let call = facts[5].call.as_ref().expect("workspace start metadata");
+    assert_eq!(&*call.id, b"c1");
+    assert_eq!(&*call.name, b"tool");
+    assert_eq!(call.source, crate::ToolSource::Workspace);
+    assert_eq!(call.effect, Effect::Read);
+    assert_eq!(call.input_bytes, 2);
+    assert_eq!(call.deadline, Time::from_nanos(11).saturating_add(LIMITS.tool_timeout));
+    assert_eq!(facts[7].call.as_ref(), Some(call), "terminal retains metadata after transcript advances");
+}
+
+#[test]
+fn delegated_facts_keep_identity_source_and_time_at_both_terminals() {
+    let mut h = Harness::new(LIMITS);
+    h.env.now = Time::from_nanos(7);
+    let (owner, _) = h.open(1);
+    h.env.now = Time::from_nanos(11);
+    let mut host = delegated(b"host-a", 9, Effect::Read);
+    if let Block::ToolCall { call: Decoded::Delegated { source, .. }, .. } = &mut host {
+        *source = crate::ToolSource::Host;
+    }
+    let content = Box::new([host, delegated(b"run-b", 10, Effect::Read)]);
+    let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
+    h.env.now = Time::from_nanos(13);
+    assert_eq!(h.step(answered(runs.as_slice()[0], 20, 3, true)), None);
+    h.env.now = Time::from_nanos(17);
+    drop(h.batch(Event::Close { session: owner }));
+    h.env.now = Time::from_nanos(19);
+    drop(h.step(answer_cancelled(runs.as_slice()[1])));
+    h.env.now = Time::from_nanos(99);
+    let facts = observed_facts(&mut h);
+    assert_eq!(fact_times(&facts).as_ref(), [7, 7, 7, 11, 11, 11, 11, 13, 17, 19, 19].map(Time::from_nanos));
+    let host = facts[5].call.as_ref().expect("host start");
+    let run = facts[6].call.as_ref().expect("run start");
+    assert_eq!(&*host.id, b"host-a");
+    assert_eq!(host.source, crate::ToolSource::Host);
+    assert_eq!(host.owner, runs.as_slice()[0]);
+    assert_eq!(&*run.id, b"run-b");
+    assert_eq!(run.source, crate::ToolSource::Run);
+    assert_eq!(run.owner, runs.as_slice()[1]);
+    assert_eq!(host.effect, Effect::Read);
+    assert_eq!(host.input_bytes, 2);
+    assert_eq!(host.deadline, Time::from_nanos(7).saturating_add(BUDGET.time));
+    assert_eq!(facts[7].call.as_ref(), Some(host));
+    assert_eq!(facts[9].call.as_ref(), Some(run));
+}
+
+#[test]
+fn failed_retried_and_cancelled_facts_keep_one_response_number_and_step_times() {
+    let mut h = Harness::new(LIMITS);
+    h.env.now = Time::from_nanos(7);
+    let (owner, _) = h.open(1);
+    h.env.now = Time::from_nanos(11);
+    drop(h.step(Event::Failed {
+        owner,
+        failure: Failure::Overloaded,
+        evidence: crate::llm::Evidence::Unknown,
+        detail: bytes(b""),
+    }));
+    h.env.now = h.domain.next_deadline().expect("retry deadline");
+    let retried_at = h.env.now;
+    drop(calling(h.fire()));
+    h.after(Duration::from_nanos(2));
+    let closed_at = h.env.now;
+    drop(h.step(Event::Close { session: owner }));
+    h.after(Duration::from_nanos(2));
+    let cancelled_at = h.env.now;
+    drop(h.step(Event::Cancelled { owner }));
+    h.after(Duration::from_secs(10));
+    let facts = observed_facts(&mut h);
+    assert_eq!(
+        fact_times(&facts).as_ref(),
+        [
+            Time::from_nanos(7),
+            Time::from_nanos(7),
+            Time::from_nanos(7),
+            Time::from_nanos(11),
+            Time::from_nanos(11),
+            retried_at,
+            closed_at,
+            cancelled_at,
+            cancelled_at
+        ]
+    );
+    for index in [1, 3, 4, 5, 7] {
+        assert_eq!(facts[index].response.expect("same completion").number, 1);
+    }
+}
+
+#[test]
+fn usage_fact_carries_the_exact_accepted_host_unit_charge() {
+    let mut h = Harness::new(LIMITS);
+    let mut opened = opening(spec());
+    opened.prices = crate::record::Prices { input: 7, cached: 3, output: 11, unit: 5 };
+    let expected = opened.prices.price(USAGE).expect("price fits");
+    step(&mut h.domain, &h.env, Event::Open { opener: Token::new(1), opening: opened }, &mut h.out);
+    let Some(Request::Opened { session: owner, .. }) = h.next() else { panic!("session opens") };
+    drop(calling(h.one()));
+    step(&mut h.domain, &h.env, Event::Completed { owner, completion: done() }, &mut h.out);
+    for _ in 0..max_out(&h.env.limits) {
+        drop(h.out.pop());
+    }
+    let facts = observed_facts(&mut h);
+    let used = &facts[4];
+    assert_eq!(used.kind, Fact::Used { opener: Token::new(1), usage: USAGE });
+    assert_eq!(used.response, Some(crate::ResponseInfo { number: 1, spent: Some(expected) }));
+}
+
+fn observed_facts(harness: &mut Harness) -> Box<[crate::Fact]> {
+    let mut facts = List::with_capacity(LIMITS.facts);
+    for _ in 0..LIMITS.facts {
+        if let Some(fact) = harness.pop_fact() {
+            facts.push(fact).expect("room for all observations");
+        }
+    }
+    facts.into_boxed()
+}
+
+fn fact_times(facts: &[crate::Fact]) -> Box<[Time]> {
+    let mut times = List::with_capacity(LIMITS.facts);
+    for fact in facts {
+        times.push(fact.at).expect("room for all observations");
+    }
+    times.into_boxed()
+}
+
+fn pop_kind(harness: &mut Harness) -> Option<Fact> {
+    let fact = harness.pop_fact()?;
+    Some(fact.kind)
+}
+
+#[test]
+fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
+    let mut h = Harness::new(LIMITS);
+    let (owner, _) = h.open(1);
+    h.env.now = Time::from_nanos(11);
+    let call = Call::Read { path: outside(), skip: 0, lines: None };
+    let content = Box::new([tool_call(b"refused", call)]);
+    assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
+    h.env.now = Time::from_nanos(99);
+    let facts = observed_facts(&mut h);
+    assert_eq!(facts.len(), 6);
+    assert_eq!(facts[5].at, Time::from_nanos(11));
+    let call = facts[5].call.as_ref().expect("refusal metadata");
+    assert_eq!(&*call.id, b"refused");
+    assert_eq!(call.source, crate::ToolSource::Workspace);
+    assert_eq!(call.input_bytes, 2);
+    assert_eq!(
+        facts[5].kind,
+        Fact::Tools {
+            opener: Token::new(1),
+            fact: tools::FactKind::Answered {
+                session: owner,
+                tool: tools::Tool::Read,
+                verdict: tools::Verdict::Outside,
+                bytes: 0
+            }
+        }
+    );
+}
+
+#[test]
+fn the_openers_output_cap_replaces_the_old_fixed_token_ceiling() {
+    let mut harness = Harness::new(LIMITS);
+    let (_, prompt) = harness.open_with(1, Spec { output: 4097, ..spec() });
+    assert_eq!(prompt.max_tokens, 4097);
 }

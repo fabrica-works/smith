@@ -20,6 +20,8 @@ pub struct Limits {
     pub accounts: u32,
     /// Maximum endpoint names in the agent configuration.
     pub endpoints: u32,
+    /// Owned configured model cells and names, derived from startup declarations.
+    pub configured_model_bytes: u64,
 
     /// Aggregate decoded application-call bytes admitted from one completion.
     /// The adapter includes these owning call fields in its translated completion
@@ -40,7 +42,7 @@ pub struct Limits {
 /// if it does not fit a `u64` or the limits cannot be honoured: the
 /// child domains' own, or limits under which a session would refuse what the
 /// run asks of it within its own limits whatever the charter (fewer sessions
-/// than the run's conversations, a smaller budget or `max_tokens`, fewer
+/// than the run's conversations, a smaller budget, fewer
 /// repositories). How many bytes an opening holds is the charter's, and for a
 /// sub-agent its brief's, which only its asker's session bounds: a session
 /// refuses one larger than its byte limit at its entrance, which refuses a run
@@ -58,14 +60,20 @@ pub struct Limits {
 #[must_use]
 #[expect(clippy::too_many_lines, reason = "the worst-case sum keeps each owning container and payload visible")]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    let Limits { run: run_limits, session: session_limits, accounts: _, endpoints: _, skew: _, decoded_call_bytes: _ } =
-        limits;
+    let Limits {
+        run: run_limits,
+        session: session_limits,
+        accounts: _,
+        endpoints: _,
+        configured_model_bytes: _,
+        skew: _,
+        decoded_call_bytes: _,
+    } = limits;
     let budget = run_limits.budget;
     let ceiling = session_limits.budget;
     let fits = budget.turns <= ceiling.turns && budget.spend <= session_limits.spend && budget.time <= ceiling.time;
     if !fits
         || run_limits.conversations > session_limits.sessions
-        || run_limits.max_tokens > session_limits.max_tokens
         || run_limits.directories > session_limits.tools.repos
         || run_limits.directory_name_bytes > session_limits.tools.path_bytes
         || u64::from(run_limits.answered_bytes) > session_limits.session_bytes
@@ -161,13 +169,15 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_mul(u64::try_from(size_of::<crate::AnsweredCall>()).ok()?)?
         .checked_add(u64::from(run_limits.answered_bytes).checked_mul(2)?)?;
     let rendering = payload.checked_add(session_limits.delegated_result_bytes)?.checked_add(answers)?;
-    let facts = Queue::<Fact>::worst_case(facts(limits)?)?;
+    let facts = Queue::<Fact>::worst_case(facts(limits)?)?
+        .checked_add(u64::from(facts(limits)?).checked_mul(limits.session.completion_bytes)?)?;
     let content = Queue::<crate::Content>::worst_case(limits.session.facts)?
         .checked_add(u64::from(limits.session.facts).checked_add(1)?.checked_mul(limits.session.session_bytes)?)?;
     children
         .checked_add(
             u64::from(limits.endpoints).checked_mul(u64::try_from(size_of::<run::charter::Endpoint>()).ok()?)?,
         )?
+        .checked_add(limits.configured_model_bytes)?
         .checked_add(held)?
         .checked_add(found)?
         .checked_add(flights)?
@@ -201,9 +211,12 @@ pub(crate) fn handoffs(limits: &Limits) -> Option<u32> {
     limits.run.conversations.checked_add(flights(limits)?)
 }
 
-/// Facts kept until the loop drains them: as many as both child domains keep.
+/// One composed step reserve plus the children's configured buffering slack.
 pub(crate) fn facts(limits: &Limits) -> Option<u32> {
-    limits.run.facts.checked_add(limits.session.facts)
+    let reserve = run_steps(limits)
+        .checked_mul(run::max_facts(&limits.run))?
+        .checked_add(session_steps(limits).checked_mul(session::max_facts(&limits.session))?)?;
+    reserve.checked_add(limits.run.facts)?.checked_add(limits.session.facts)
 }
 
 /// Room for what the run emits in an entry point: its most, for each step it

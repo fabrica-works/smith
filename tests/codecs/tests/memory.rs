@@ -4,8 +4,8 @@
 use skein_heap::{Counting, Meter};
 use skein_lib::{List, Reader, Writer};
 
-use smith_charter::v1 as charter;
-use smith_transcript::v2 as transcript;
+use smith_charter::v2 as charter;
+use smith_transcript::v3 as transcript;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -79,7 +79,7 @@ fn charter_at_its_largest_instruction_payload_stays_within_the_configured_heap_b
     let limits = charter_limits();
     let smallest = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/smith-charter/golden/v1/record_charter_smallest.bin"),
+            .join("../../crates/smith-charter/golden/v2/record_charter_smallest.bin"),
     )
     .expect("smallest charter");
     let size = limits.charter_instructions;
@@ -120,9 +120,17 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
             .expect("one message");
     let mut messages = List::with_capacity(1);
     messages.push(message).expect("one message slot");
-    let usage =
-        transcript::Usage::new(&limits, transcript::UsageParts { input: 0, output: 0, cache_read: 0, cache_write: 0 })
-            .expect("usage");
+    let usage = transcript::Usage::new(
+        &limits,
+        transcript::UsageParts {
+            input: Some(0),
+            output: Some(0),
+            cache_read: Some(0),
+            cache_write: Some(0),
+            reasoning: Some(0),
+        },
+    )
+    .expect("usage");
     let value = transcript::Turn::new(
         &limits,
         transcript::TurnParts {
@@ -150,4 +158,33 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
     assert_eq!(decoded.messages().len(), 1);
     drop(decoded);
     assert_eq!(meter.held(), 0, "turn allocations released");
+}
+
+#[path = "support/events_max.rs"]
+mod events;
+
+#[test]
+fn every_event_at_its_largest_payload_stays_within_its_encoded_and_heap_bounds() {
+    let limits = smith_events::Limits { string: 32, content: 128, items: 3 };
+    let heap = smith_events::worst_case(&limits).expect("codec heap bound");
+    for record in events::largest_samples(&limits) {
+        for capture in [smith_events::Capture::None, smith_events::Capture::Calls, smith_events::Capture::Everything] {
+            let bound = smith_events::largest_size(&record.event, &capture, &limits).expect("record bound");
+            let meter = Meter::new();
+            meter.start();
+            let line = smith_events::write(&record, &capture, &limits).expect("largest record");
+            if let Some(line) = line {
+                assert!(line.len() <= usize::try_from(bound).expect("bound"), "largest line within its bound");
+                let decoded = smith_events::read(&line, &limits).expect("largest line reads").expect("known event");
+                let measured = meter.end();
+                assert!(measured.peak() <= heap, "codec peak {} beyond bound {heap}", measured.peak());
+                drop(decoded);
+                drop(line);
+                assert_eq!(meter.held(), 0, "codec released allocations");
+            } else {
+                let measured = meter.end();
+                assert_eq!(measured.held(), 0, "omitted live text holds nothing");
+            }
+        }
+    }
 }

@@ -2,9 +2,12 @@
 //! skein's Stage, Schedule, Ledger and Trace (testing-strategy.md, sections 2.2,
 //! 6 and 7; domain/host.md, section 10). Observations, never domain cells, prove
 //! exact terminals, parent-owned turns and no Gone before tree/EOF/rights.
+pub mod inline;
+
 use skein_lib::{Duration, Time, Token};
 use skein_world::domain::{Ledger, Schedule, Stage, Trace};
-use smith_host_domain::{self as host, Answer, Down, End, Event, Fault, Grant, Limits, Request, Start, Up};
+use smith_host_domain::{self as host, Answer, Down, End, Fault, Grant, Input, Limits, Output, Start, Up};
+use smith_host_domain::{parent, process};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Distinct lower rights retained even after the process exits.
@@ -56,7 +59,9 @@ pub struct Seen {
     /// Calls whose operation terminal still belongs to the parent.
     pub calls: BTreeSet<Token>,
     /// Turn payload bytes owned by the parent until its exact ACK.
-    pub turns: BTreeMap<u32, Box<[u8]>>,
+    pub turns: BTreeMap<u32, host::TurnValue>,
+    /// Last read fence observed in an actual parent Turn or Waiting notice.
+    pub read: Option<Token>,
     /// Actual parent Turn metadata: sequence, scalar prefix and independent
     /// currency/raw overflow attestations. ACK never erases these observations.
     /// Contract: domain/host.md, section 6; testing-strategy.md, sections 6 and 7.
@@ -66,7 +71,7 @@ pub struct Seen {
     /// Downlink words handed to the agent by the scripted transport.
     pub down: Vec<Down>,
     /// Message names bounced by the kit.
-    pub bounces: Vec<host::Bounce>,
+    pub bounces: Vec<host::MessageRefusal>,
     /// Notices the parent actually heard.
     pub rejected: Vec<(u32, u64)>,
     /// Generic facts forwarded without interpretation.
@@ -85,9 +90,9 @@ pub struct World {
     /// Real domain under test.
     pub domain: host::Domain,
     /// Bounded stage, injected clock and handed outputs.
-    pub stage: Stage<Limits, Event, Request>,
+    pub stage: Stage<Limits, Input, Output>,
     /// Shared deterministic scheduler for raced terminals.
-    pub schedule: Schedule<Event>,
+    pub schedule: Schedule<Input>,
     /// Independent exactly-once lower terminal accounting.
     pub lower: Ledger<Lower, Token>,
     /// Observable parent, agent and tree state.
@@ -107,7 +112,7 @@ pub fn limits() -> Limits {
         name_bytes: 64,
         accounts: 2,
         charter_bytes: 256,
-        transcript_bytes: 256,
+        transcript_bytes: 1024,
         answered_bytes: 256,
         message_bytes: 64,
         messages: 3,
@@ -115,8 +120,8 @@ pub fn limits() -> Limits {
         call_bytes: 128,
         answer_bytes: host::Delivered::worst_case(),
         turns: 2,
-        turn_bytes: 64,
-        unacknowledged_bytes: 128,
+        turn_bytes: 512,
+        unacknowledged_bytes: 1024,
         fact_bytes: 64,
         outcome_bytes: 128,
         detail_bytes: 32,
@@ -134,11 +139,12 @@ pub fn limits() -> Limits {
 #[must_use]
 pub fn start() -> Start {
     Start {
+        messages: Box::default(),
         logical_run: Token::new(7),
         activation: 1,
         workspace: None,
-        charter: Box::from(&b"charter"[..]),
-        transcript: Some(Box::new([Box::from(&b"transcript"[..])])),
+        charter: charter_value(7),
+        transcript: Some(transcript_value(512)),
         answered: Box::new([smith_host_domain::AnsweredCall {
             name: smith_host_domain::CallName { activation: 1, completion: 1, position: 0 },
             tool: Box::from(&b"tool"[..]),
@@ -170,7 +176,7 @@ impl World {
     }
 
     /// Deliver one typed input, with actual lower accounting and room-first flow.
-    pub fn event(&mut self, event: Event) {
+    pub fn event(&mut self, event: Input) {
         self.observe_terminal(&event);
         self.trace.log(self.stage.env.now, format!("up {event:?}"));
         self.stage.push(event);
@@ -199,23 +205,23 @@ impl World {
 
     /// Parent spawns the source run; tree owner exists before parent handle.
     pub fn spawn(&mut self, start: Start) {
-        self.event(Event::Spawn { client: Token::new(1), start });
+        self.event(Input::Parent(parent::Event::Spawn { client: Token::new(1), start }));
     }
 
     /// Actual process Started, distinct from agent admission.
     pub fn spawned(&mut self) {
         let owner = self.owner();
-        self.event(Event::Spawned { owner, process: Token::new(9) });
+        self.event(Input::Process(process::Event::Spawned { owner, process: Token::new(9) }));
     }
 
     /// Actual completion of the currently issued channel send.
     pub fn sent(&mut self) {
-        self.event(Event::Sent { owner: self.owner() });
+        self.event(Input::Process(process::Event::Sent { owner: self.owner() }));
     }
 
     /// Actual channel message on one previously demanded read.
     pub fn up(&mut self, message: Up) {
-        self.event(Event::Received { owner: self.owner(), message });
+        self.event(Input::Process(process::Event::Received { owner: self.owner(), message }));
     }
 
     /// Start, finish its Send terminal and admit through the actual read path.
@@ -246,17 +252,20 @@ impl World {
         }
         let owner = self.owner();
         if self.lower.contains(Lower::Wait) {
-            self.event(Event::Exited { owner });
+            self.event(Input::Process(process::Event::Exited { owner }));
         }
         if self.lower.contains(Lower::Reap) {
-            self.event(Event::Reaped { owner, detail: Box::from(&b"bounded operator tail"[..]) });
+            self.event(Input::Process(process::Event::Reaped {
+                owner,
+                detail: Box::from(&b"bounded operator tail"[..]),
+            }));
         }
         if self.lower.contains(Lower::Read) {
-            self.event(Event::Hangup { owner });
+            self.event(Input::Process(process::Event::Hangup { owner }));
         }
         for signal in [Lower::Terminate, Lower::Kill] {
             if self.lower.contains(signal) {
-                self.event(Event::Signalled { owner });
+                self.event(Input::Process(process::Event::Signalled { owner }));
             }
         }
     }
@@ -272,56 +281,67 @@ impl World {
         assert!(self.schedule.is_empty());
     }
 
-    fn observe_terminal(&mut self, event: &Event) {
+    fn observe_terminal(&mut self, event: &Input) {
         let key = match event {
-            Event::Spawned { .. } | Event::Unspawned { .. } => Some(Lower::Spawn),
-            Event::Sent { .. } | Event::Unsent { .. } => Some(Lower::Send),
-            Event::Received { .. } | Event::Malformed { .. } | Event::Hangup { .. } => Some(Lower::Read),
-            Event::Exited { .. } => {
+            Input::Process(process::Event::Spawned { .. } | process::Event::Unspawned { .. }) => Some(Lower::Spawn),
+            Input::Process(process::Event::Sent { .. } | process::Event::Unsent { .. }) => Some(Lower::Send),
+            Input::Process(
+                process::Event::Received { .. } | process::Event::Malformed { .. } | process::Event::Hangup { .. },
+            ) => Some(Lower::Read),
+            Input::Process(process::Event::Exited { .. }) => {
                 self.seen.exited = true;
                 Some(Lower::Wait)
             }
-            Event::Reaped { .. } => {
+            Input::Process(process::Event::Reaped { .. }) => {
                 assert!(self.seen.exited);
                 self.seen.empty = true;
                 Some(Lower::Reap)
             }
-            Event::Signalled { .. } => {
+            Input::Process(process::Event::Signalled { .. }) => {
                 if self.lower.contains(Lower::Terminate) {
                     Some(Lower::Terminate)
                 } else {
                     Some(Lower::Kill)
                 }
             }
-            Event::Answer { call, .. } => {
+            Input::Parent(parent::Event::Answer { call, .. }) => {
                 assert!(self.seen.calls.remove(call), "actual parent operation right");
                 None
             }
-            Event::Acknowledge { turn, .. } => {
+            Input::Parent(parent::Event::Acknowledge { turn, .. }) => {
                 self.seen.turns.remove(turn);
                 None
             }
-            Event::Spawn { .. } | Event::Message { .. } | Event::Grant { .. } | Event::Stop { .. } => None,
+            Input::Parent(
+                parent::Event::Spawn { .. }
+                | parent::Event::Message { .. }
+                | parent::Event::Grant { .. }
+                | parent::Event::Stop { .. },
+            ) => None,
         };
         if let Some(key) = key {
             self.lower.end(key);
         }
         match event {
-            Event::Hangup { .. } | Event::Malformed { .. } => self.seen.eof = true,
-            Event::Spawn { .. }
-            | Event::Spawned { .. }
-            | Event::Unspawned { .. }
-            | Event::Message { .. }
-            | Event::Answer { .. }
-            | Event::Acknowledge { .. }
-            | Event::Grant { .. }
-            | Event::Stop { .. }
-            | Event::Sent { .. }
-            | Event::Unsent { .. }
-            | Event::Received { .. }
-            | Event::Signalled { .. }
-            | Event::Exited { .. }
-            | Event::Reaped { .. } => {}
+            Input::Process(process::Event::Hangup { .. } | process::Event::Malformed { .. }) => self.seen.eof = true,
+            Input::Parent(
+                parent::Event::Spawn { .. }
+                | parent::Event::Message { .. }
+                | parent::Event::Answer { .. }
+                | parent::Event::Acknowledge { .. }
+                | parent::Event::Grant { .. }
+                | parent::Event::Stop { .. },
+            )
+            | Input::Process(
+                process::Event::Spawned { .. }
+                | process::Event::Unspawned { .. }
+                | process::Event::Sent { .. }
+                | process::Event::Unsent { .. }
+                | process::Event::Received { .. }
+                | process::Event::Signalled { .. }
+                | process::Event::Exited { .. }
+                | process::Event::Reaped { .. },
+            ) => {}
         }
     }
 
@@ -329,57 +349,23 @@ impl World {
         while let Some(request) = self.stage.out.pop() {
             self.trace.log(self.stage.env.now, format!("down {request:?}"));
             match request {
-                Request::Spawn { owner, .. } => {
+                Output::Process(process::Request::Spawn { owner, .. }) => {
                     self.seen.owner = Some(owner);
                     self.lower.open(Lower::Spawn, owner);
                 }
-                Request::Started { agent, .. } => {
-                    assert!(self.seen.agent.replace(agent).is_none());
-                }
-                Request::Admitted { .. } => {
-                    assert!(!self.seen.admitted);
-                    self.seen.admitted = true;
-                }
-                Request::Called { call, .. } => {
-                    assert!(self.seen.calls.insert(call));
-                }
-                Request::Withdrawn { call, .. } => {
-                    assert!(self.seen.calls.contains(&call));
-                    assert!(self.seen.withdrawals.insert(call));
-                }
-                Request::Turn { turn, .. } => {
-                    self.seen.turn_metadata.push((turn.number, turn.spent));
-                    assert!(self.seen.turns.insert(turn.number, turn.body).is_none());
-                }
-                Request::Answered { answer, .. } => {
-                    assert!(self.seen.fault.is_none());
-                    assert!(self.seen.answer.replace(answer).is_none());
-                }
-                Request::Faulted { fault, .. } => {
-                    assert!(self.seen.answer.is_none());
-                    assert!(self.seen.fault.replace(fault).is_none());
-                }
-                Request::Gone { end, detail, .. } => {
-                    if end == End::Stopped {
-                        assert!(
-                            self.seen.exited && self.seen.empty && self.seen.eof,
-                            "Gone needs all three lower proofs"
-                        );
-                        self.lower.assert_settled();
-                        assert!(self.seen.calls.is_empty());
-                        assert!(self.seen.turns.is_empty());
-                    }
-                    assert!(self.seen.gone.replace(end).is_none());
-                    assert!(self.seen.gone_detail.replace(detail).is_none());
-                }
-                Request::Send { owner, message, .. } => {
+                Output::Parent(request) => self.seen.observe_parent(
+                    request,
+                    self.seen.exited && self.seen.empty && self.seen.eof,
+                    self.lower.is_empty(),
+                ),
+                Output::Process(process::Request::Send { owner, message, .. }) => {
                     self.lower.open(Lower::Send, owner);
                     self.seen.down.push(message);
                 }
-                Request::Read { owner, .. } => self.lower.open(Lower::Read, owner),
-                Request::Wait { owner, .. } => self.lower.open(Lower::Wait, owner),
-                Request::Reap { owner, .. } => self.lower.open(Lower::Reap, owner),
-                Request::Signal { owner, signal, .. } => {
+                Output::Process(process::Request::Read { owner, .. }) => self.lower.open(Lower::Read, owner),
+                Output::Process(process::Request::Wait { owner, .. }) => self.lower.open(Lower::Wait, owner),
+                Output::Process(process::Request::Reap { owner, .. }) => self.lower.open(Lower::Reap, owner),
+                Output::Process(process::Request::Signal { owner, signal, .. }) => {
                     self.seen.signals.push(signal);
                     let key = match signal {
                         host::Signal::Terminate => Lower::Terminate,
@@ -387,11 +373,171 @@ impl World {
                     };
                     self.lower.open(key, owner);
                 }
-                Request::Bounced { bounce, .. } => self.seen.bounces.push(bounce),
-                Request::Rejected { account, generation, .. } => self.seen.rejected.push((account, generation)),
-                Request::Told { .. } => self.seen.told += 1,
-                Request::Waiting { .. } | Request::Exhausted { .. } => {}
             }
+        }
+    }
+}
+
+/// Typed policy with exactly the requested instruction ownership.
+#[must_use]
+pub fn charter_value(bytes: u64) -> host::Charter {
+    use smith_domain::run;
+    let value = run::Charter {
+        resume: false,
+        waiting: Duration::ZERO,
+        instructions: vec![b'x'; usize::try_from(bytes).expect("fixture size")].into_boxed_slice(),
+        brief: run::charter::Brief { sections: Box::new([]) },
+        conventions: None,
+        grants: run::charter::Grants {
+            wait: false,
+            deliver: None,
+            tools: run::charter::Tools { inspect: false, modify: false, shell: false },
+            agents: false,
+            host_tools: Box::new([]),
+        },
+        outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
+        budget: run::Budget { turns: 0, spend: 0, time: Duration::ZERO },
+        llm: run::charter::Llm {
+            prices: run::Prices { input: 0, cached: 0, output: 0, unit: 0 },
+            dialect: 0,
+            account: 0,
+            endpoint: run::charter::Endpoint(0),
+            model: Box::new([]),
+            window: 0,
+            output: 0,
+        },
+        models: Box::new([]),
+    };
+    host::Charter::new(value, bytes).expect("bounded charter fixture")
+}
+
+/// Concrete turn padded to the requested ownership when one message fits.
+#[must_use]
+pub fn turn_value(bytes: u64) -> host::TurnValue {
+    use smith_domain::session::{llm, record};
+    let overhead = u64::try_from(core::mem::size_of::<llm::Message>() + core::mem::size_of::<llm::Block>())
+        .expect("fixture footprint");
+    let messages = if bytes >= overhead {
+        Box::from([llm::Message {
+            role: llm::Role::Assistant,
+            content: Box::from([llm::Block::Text {
+                text: vec![b't'; usize::try_from(bytes - overhead).expect("fixture size")].into_boxed_slice(),
+                replay: None,
+            }]),
+        }])
+    } else {
+        Box::<[llm::Message]>::default()
+    };
+    host::TurnValue::new(
+        record::Turn {
+            version: record::VERSION,
+            endpoint: llm::Endpoint(0),
+            dialect: 0,
+            sequence: 1,
+            usage: llm::Usage::ZERO,
+            spent: 0,
+            messages,
+        },
+        bytes,
+    )
+    .expect("bounded turn fixture")
+}
+
+/// One saved concrete turn with exactly the requested retained ownership.
+#[must_use]
+pub fn transcript_value(bytes: u64) -> host::Transcript {
+    use smith_domain::session::{llm, record};
+    let turn_bytes = u64::try_from(core::mem::size_of::<record::Turn>()).expect("turn footprint");
+    let turns = if bytes >= turn_bytes {
+        Box::from([turn_value(bytes - turn_bytes).into_value()])
+    } else {
+        Box::<[record::Turn]>::default()
+    };
+    host::Transcript::new(
+        record::Transcript { version: record::VERSION, endpoint: llm::Endpoint(0), dialect: 0, turns },
+        bytes,
+    )
+    .expect("bounded history fixture")
+}
+
+/// Generic delivery fields padded to the requested checked ownership.
+#[must_use]
+pub fn fields_value(bytes: u64) -> host::Fields {
+    use smith_domain::run::outcome::{Change, Field};
+    let overhead = u64::try_from(core::mem::size_of::<Field>()).expect("field footprint");
+    let fields = if bytes >= overhead {
+        Box::from([Field {
+            name: Box::new([]),
+            value: vec![b'f'; usize::try_from(bytes - overhead).expect("fixture size")].into_boxed_slice(),
+        }])
+    } else {
+        Box::<[Field]>::default()
+    };
+    host::Fields::new(Change { fields }, bytes).expect("bounded fields fixture")
+}
+
+/// An accepted report owning exactly the requested text bytes.
+#[must_use]
+pub fn declared_value(bytes: u64) -> host::Declared {
+    use smith_domain::run::outcome::{Declared, Report};
+    host::Declared::new(
+        Declared::Report(Report {
+            text: vec![b'r'; usize::try_from(bytes).expect("fixture size")].into_boxed_slice(),
+            fields: Box::new([]),
+        }),
+        bytes,
+    )
+    .expect("bounded outcome fixture")
+}
+
+impl Seen {
+    /// Common parent referee; the kind supplies actual lower containment proof.
+    pub fn observe_parent(&mut self, request: parent::Request, contained: bool, lower_settled: bool) {
+        match request {
+            parent::Request::Started { agent, .. } => {
+                assert!(self.agent.replace(agent).is_none());
+            }
+            parent::Request::Admitted { .. } => {
+                assert!(!self.admitted);
+                self.admitted = true;
+            }
+            parent::Request::Called { call, .. } => {
+                assert!(self.calls.insert(call));
+            }
+            parent::Request::Withdrawn { call, .. } => {
+                assert!(self.calls.contains(&call));
+                assert!(self.withdrawals.insert(call));
+            }
+            parent::Request::Turn { turn, .. } => {
+                self.read = turn.read;
+                self.turn_metadata.push((turn.number, turn.spent));
+                assert!(self.turns.insert(turn.number, turn.body).is_none());
+            }
+            parent::Request::Answered { answer, .. } => {
+                assert!(self.fault.is_none());
+                assert!(self.answer.replace(answer).is_none(), "one actual run answer");
+            }
+            parent::Request::Faulted { fault, .. } => {
+                assert!(self.answer.is_none());
+                assert!(self.fault.replace(fault).is_none());
+            }
+            parent::Request::Gone { end, detail, .. } => {
+                if end == End::Stopped {
+                    assert!(contained, "Gone needs the kind's actual containment proof");
+                    assert!(lower_settled, "Gone retains every lower terminal");
+                    assert!(self.calls.is_empty(), "Gone retains every parent call");
+                    assert!(self.turns.is_empty(), "Gone retains every told turn");
+                }
+                assert!(self.gone.replace(end).is_none());
+                assert!(self.gone_detail.replace(detail).is_none());
+            }
+            parent::Request::MessageRefused { reason, .. } => self.bounces.push(reason),
+            parent::Request::Rejected { account, generation, .. } => {
+                self.rejected.push((account, generation));
+            }
+            parent::Request::Told { .. } => self.told += 1,
+            parent::Request::Waiting { read, .. } => self.read = read,
+            parent::Request::Long { .. } | parent::Request::LongDone { .. } | parent::Request::Exhausted { .. } => {}
         }
     }
 }

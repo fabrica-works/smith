@@ -3,11 +3,10 @@
 //! classifications, never what an LLM, the charter or the host said), in a
 //! bounded queue the parent drains at its own pace.
 //!
-//! Facts are outside the boundary's flow control: they are not requests, take
-//! no room in `out`, and when the queue is full they are dropped and counted.
-//! Nothing the run decides depends on whether a fact was kept, and nothing
-//! outside may either: the host's watchdog hears of a check's deadline from
-//! `Request::Checking`, which is not lossy.
+//! Facts are a separate step output. The parent reserves [`crate::max_facts`]
+//! slots before each entrance, holding work while its drain is behind; every
+//! observation is preserved. Facts change no decision: the host's watchdog
+//! hears of a check's deadline from `Request::Checking`.
 //!
 //! A start refused at the entrance tells nothing: no run was. Each step of an
 //! admitted run says which run it is about; the facts its requests tell are
@@ -20,12 +19,31 @@ use skein_lib::{Queue, Slab, Time, Token};
 use crate::boundary::{Answer, End, Exit, Failure, Refusal, Request, Returned};
 use crate::run::{self, Conversation, Run};
 
+/// An observation stamped with the injected time of its emitting step.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Fact {
+    /// Emission time, preserved when parents drain this observation later.
+    pub at: Time,
+    /// The content-free observation.
+    pub kind: FactKind,
+}
+
 /// Something that happened in the run `run` (the run's token for it, as
 /// `Admitted` gives it).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Fact {
+pub enum FactKind {
+    /// Each host message covered by an actual told main turn.
+    MessageRead { run: Token, name: Token, turn: u32 },
+    /// The final ordered read fence of one actual told main turn.
+    MessageFence { run: Token, turn: u32, read: Option<Token> },
+    /// An accepted host message ended unread at the run answer.
+    MessageUnread { run: Token, name: Token },
+    /// A host message entered the bounded inbox, counted as rendered bytes.
+    MessageReceived { run: Token, name: Token, bytes: u64 },
+    /// A host message ended refused before retention, counted as rendered bytes.
+    MessageRefused { run: Token, name: Token, bytes: u64, reason: crate::MessageRefusal },
     /// The run was admitted.
-    Admitted { run: Token },
+    Admitted { run: Token, resumed: bool },
     /// It looked in its checkout, and found `guides` guides and `checks`
     /// repositories with checks.
     Prepared {
@@ -41,6 +59,8 @@ pub enum Fact {
         conversation: Token,
         /// Whether this is a child conversation.
         child: bool,
+        parent: Option<Token>,
+        call: Option<Token>,
     },
     /// The conversation ended, or was refused at its entrance.
     Ended {
@@ -102,6 +122,9 @@ pub enum Asked {
 /// How a call returned.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Return {
+    /// Main finish returned to queued work without accepting its declared outcome.
+    Crossed,
+
     /// Main wait intent accepted.
     Waiting,
     /// Actual bounded host text reached the caller.
@@ -155,33 +178,32 @@ pub enum Answered {
     Failed(Failure),
 }
 
-/// The facts not yet drained, how many did not fit, and the run the step
+/// The facts not yet drained and the run the step
 /// being taken is about.
 #[derive(Debug)]
 pub(crate) struct Facts {
     queue: Queue<Fact>,
-    lost: u64,
+    now: Time,
     about: Option<Token>,
 }
 
 impl Facts {
     pub(crate) fn with_capacity(capacity: u32) -> Facts {
-        Facts { queue: Queue::with_capacity(capacity), lost: 0, about: None }
+        Facts { queue: Queue::with_capacity(capacity), now: Time::ZERO, about: None }
     }
 
-    /// Keeps `fact` if there is room for it, and counts it otherwise.
-    pub(crate) fn push(&mut self, fact: Fact) {
-        if self.queue.try_push(fact).is_err() {
-            self.lost = self.lost.saturating_add(1);
-        }
+    /// Keeps one fact in the room the parent reserved for this entry point.
+    pub(crate) fn push(&mut self, kind: FactKind) {
+        let fact = Fact { at: self.now, kind };
+        self.queue.push(fact);
     }
 
     pub(crate) fn pop(&mut self) -> Option<Fact> {
         self.queue.pop()
     }
 
-    pub(crate) fn lost(&self) -> u64 {
-        self.lost
+    pub(crate) fn room(&self) -> u32 {
+        self.queue.room()
     }
 
     /// The step being taken is about the run `run`.
@@ -190,7 +212,8 @@ impl Facts {
     }
 
     /// A step begins, about no run yet.
-    pub(crate) fn begin(&mut self) {
+    pub(crate) fn begin(&mut self, now: Time) {
+        self.now = now;
         self.about = None;
     }
 }
@@ -202,6 +225,7 @@ pub(crate) fn tell(
     facts: &mut Facts,
     runs: &Slab<Run>,
     conversations: &Slab<Conversation>,
+    calls: &crate::call::Calls,
     out: &Queue<Request>,
     mark: u32,
 ) {
@@ -211,21 +235,20 @@ pub(crate) fn tell(
     let made = usize::try_from(mark).expect("a u32 fits in a usize");
     for request in out.iter().skip(made) {
         let fact = match request {
-            Request::Admitted { host_run: _, run } => Fact::Admitted { run: *run },
+            Request::Admitted { host_run: _, run } => {
+                FactKind::Admitted { run: *run, resumed: run::resumed(runs, *run) }
+            }
             Request::Open { conversation, opening: _ } => {
-                let (child, prepared) = run::opened(runs, conversations, *conversation);
-                // Main opens once its run has prepared.
-                if let Some((guides, checks)) = prepared {
-                    facts.push(Fact::Prepared { run, guides, checks });
-                }
-                Fact::Opened { run, conversation: *conversation, child }
+                let run::OpeningFact { child, parent, call } = run::opened(conversations, calls, *conversation);
+                FactKind::Opened { run, conversation: *conversation, child, parent, call }
             }
-            Request::Return { call, result, .. } => Fact::Returned { run, call: *call, result: result_of(result) },
+            Request::Return { call, result, .. } => FactKind::Returned { run, call: *call, result: result_of(result) },
             Request::Check { owner: _, program: _, deadline, tail: _ } => {
-                Fact::CheckStarted { run, deadline: *deadline }
+                FactKind::CheckStarted { run, deadline: *deadline }
             }
-            Request::Answer { to: _, answer } => Fact::Answered { run, answer: answered(answer) },
-            Request::Waiting { .. }
+            Request::Answer { to: _, answer, read: _ } => FactKind::Answered { run, answer: answered(answer) },
+            Request::MessageRefused { .. }
+            | Request::Waiting { .. }
             | Request::Turn { .. }
             | Request::HostCall { .. }
             | Request::WithdrawHost { .. }
@@ -245,6 +268,7 @@ pub(crate) fn tell(
 fn result_of(result: &Returned) -> Return {
     match result {
         Returned::Waiting => Return::Waiting,
+        Returned::Crossed { .. } => Return::Crossed,
         Returned::HostAnswered(_) => Return::HostAnswered,
         Returned::HostTooLarge { .. } | Returned::HostReportedTooLarge => Return::HostTooLarge,
         Returned::HostUnknown => Return::HostUnknown,

@@ -7,13 +7,13 @@ starts at [domain/README.md](docs/design/domain/README.md).
 
 ## Layout
 
-- `crates/`: the domain and protocol crates, and the `smith` binary.
+- `src/`: the `smith` binary.
+- `crates/`: the domain, protocol, service and shell libraries.
 - `tests/`: worlds and their focused and `fuzzy_*.rs` test binaries; the
-  binary's end-to-end and live tests are in `crates/smith/tests`.
+  binary's end-to-end and live tests are in `tests/end-to-end/`.
 - `docs/design/domain/`: the run, session, tools and host contracts.
 - `docs/design/protocol/`: the protocol layer: channel, charter,
   transcripts, LLM calls, the agent process and hosts.
-- `docs/design/testing.md`: how smith is tested.
 - `docs/development/workflow.md`: the checks before merging, the suites'
   budgets and the live suite.
 - `docs/development/local-host.md`: running `smith local`.

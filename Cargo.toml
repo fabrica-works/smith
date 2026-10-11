@@ -1,8 +1,9 @@
 # Profiles and lints follow programming-model.md, section 10.
 
 [workspace]
+default-members = ["benchmarks", ".", "crates/smith-events", "crates/smith-agent-service", "crates/smith-agent-shell", "crates/smith-channel", "crates/smith-charter", "crates/smith-domain", "crates/smith-domain-run", "crates/smith-domain-session", "crates/smith-domain-tools", "crates/smith-host-domain", "crates/smith-host-protocol", "crates/smith-inline-agent", "crates/smith-local-domain", "crates/smith-local-protocol", "crates/smith-local-service", "crates/smith-local-shell", "crates/smith-protocol-channel", "crates/smith-protocol-llm", "crates/smith-protocol-machine", "crates/smith-transcript", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
 resolver = "3"
-members = ["crates/*", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
+members = ["benchmarks", "crates/*", "tests/tools", "tests/session", "tests/run", "tests/agent", "tests/protocol-llm", "tests/host", "tests/local", "tests/codecs", "tests/machine", "tests/channel", "tests/agent-process", "tests/hosts", "tests/local-process", "tests/real"]
 
 [workspace.package]
 version = "0.0.0"
@@ -36,6 +37,7 @@ skein-oauth = { git = "https://git.ekanayaka.io/ai/skein.git" }
 skein-fake-peers = { git = "https://git.ekanayaka.io/ai/skein.git" }
 skein-fake-oauth = { git = "https://git.ekanayaka.io/ai/skein.git" }
 smith-host-domain = { path = "crates/smith-host-domain" }
+smith-inline-agent = { path = "crates/smith-inline-agent" }
 smith-local-domain = { path = "crates/smith-local-domain" }
 smith-host-world = { path = "tests/host" }
 smith-local-world = { path = "tests/local" }
@@ -46,6 +48,7 @@ smith-domain-session = { path = "crates/smith-domain-session" }
 smith-domain-tools = { path = "crates/smith-domain-tools" }
 smith-protocol-llm = { path = "crates/smith-protocol-llm" }
 smith-protocol-machine = { path = "crates/smith-protocol-machine" }
+smith-events = { path = "crates/smith-events" }
 smith-charter = { path = "crates/smith-charter" }
 smith-transcript = { path = "crates/smith-transcript" }
 smith-channel = { path = "crates/smith-channel" }
@@ -57,7 +60,8 @@ smith-local-service = { path = "crates/smith-local-service" }
 smith-agent-process-world = { path = "tests/agent-process" }
 smith-real-world = { path = "tests/real" }
 smith-local-process-world = { path = "tests/local-process" }
-smith = { path = "crates/smith" }
+smith-local-shell = { path = "crates/smith-local-shell" }
+smith-agent-shell = { path = "crates/smith-agent-shell" }
 smith-run-world = { path = "tests/run" }
 smith-session-world = { path = "tests/session" }
 smith-tools-world = { path = "tests/tools" }
@@ -144,4 +148,113 @@ alloc_instead_of_core = "deny"
 partial_pub_fields = "deny"           # a struct is plain data or opaque, not both
 mod_module_files = "deny"
 tests_outside_test_module = "deny"
+iter_over_hash_type = "deny"
+
+[package]
+name = "smith"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+default-run = "smith"
+autobins = false
+autotests = false
+autobenches = false
+autoexamples = false
+
+[[bin]]
+name = "smith"
+path = "src/main.rs"
+
+[[bin]]
+name = "smith-agent"
+path = "src/bin/smith-agent.rs"
+
+[[test]]
+name = "end_to_end"
+path = "tests/end-to-end/end_to_end.rs"
+
+[[test]]
+name = "live"
+path = "tests/end-to-end/live.rs"
+
+[[test]]
+name = "live_configuration"
+path = "tests/end-to-end/live_configuration.rs"
+
+[dependencies]
+skein-io.workspace = true
+smith-agent-shell.workspace = true
+smith-local-shell.workspace = true
+
+[dev-dependencies]
+smith-bench = { path = "benchmarks" }
+smith-agent-shell.workspace = true
+skein-world.workspace = true
+skein-lib.workspace = true
+skein-oauth.workspace = true
+libc = "0.2"
+skein-io.workspace = true
+skein-shell.workspace = true
+skein-channel.workspace = true
+skein-http.workspace = true
+skein-llm.workspace = true
+skein-llm-connection.workspace = true
+skein-tls.workspace = true
+smith-domain.workspace = true
+smith-agent-service.workspace = true
+smith-local-domain.workspace = true
+smith-local-protocol.workspace = true
+smith-local-service.workspace = true
+smith-host-domain.workspace = true
+smith-host-protocol.workspace = true
+smith-protocol-channel.workspace = true
+smith-protocol-llm.workspace = true
+smith-protocol-machine.workspace = true
+smith-channel.workspace = true
+smith-charter.workspace = true
+smith-transcript.workspace = true
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rustls-native-certs = "0.8"
+
+smith-real-world.workspace = true
+skein-fake-llm-domain.workspace = true
+skein-fake-peers.workspace = true
+skein-fake-channel.workspace = true
+smith-local-process-world.workspace = true
+skein-fake-oauth.workspace = true
+skein-sim.workspace = true
+skein-fake-machine.workspace = true
+skein-tls-world.workspace = true
+smith-agent-process-world.workspace = true
+smith-host-world.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+elided_lifetimes_in_paths = "deny"
+unused_must_use = "deny"
+let_underscore_drop = "deny"
+unused_qualifications = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+wildcard_enum_match_arm = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+unwrap_used = "deny"
+let_underscore_must_use = "deny"
+mem_forget = "deny"
+todo = "deny"
+unimplemented = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+dbg_macro = "deny"
+missing_assert_message = "deny"
 iter_over_hash_type = "deny"

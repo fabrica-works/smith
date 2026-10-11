@@ -424,6 +424,7 @@ impl Host {
                     })
                     .collect();
                 out.push(Event::Start {
+                    messages: Box::default(),
                     reply_to: ReplyTo::new(job),
                     host_run: job,
                     activation: 1,
@@ -431,6 +432,7 @@ impl Host {
                     charter,
                     workspace,
                     transcript: None,
+                    resumed: false,
                 });
                 self.set(job, State::Starting);
             }
@@ -576,7 +578,8 @@ impl Host {
             account: 0,
             endpoint: Endpoint(0),
             model: Box::from(model),
-            max_tokens: script.max_tokens,
+            window: 8192,
+            output: script.max_tokens,
             dialect: 1,
         };
         let workspace = Some(Workspace { directories: repositories.into_boxed_slice() });

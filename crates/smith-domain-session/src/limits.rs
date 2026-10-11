@@ -60,8 +60,6 @@ pub struct Limits {
     /// together, up to this many, and a call that writes runs alone. Between
     /// one and [`MAX_PARALLEL`].
     pub parallel_tools: u32,
-    /// The largest `max_tokens` a spec may ask for.
-    pub max_tokens: u32,
     /// Retries of a call that failed transiently, after which the session
     /// fails.
     pub retries: u32,
@@ -77,8 +75,7 @@ pub struct Limits {
     /// is answered as such, to the LLM. A delegated call has no timeout here:
     /// the opener races it against the session's time.
     pub tool_timeout: Duration,
-    /// Facts kept until the parent drains them, the tools' passed on among
-    /// them. Beyond them, facts are dropped and counted.
+    /// Reserved observations, including tools, buffered until the parent drains them.
     pub facts: u32,
     /// The tools child domain's, which the session owns: a kit for each
     /// session, with room for its widest batch.
@@ -107,9 +104,13 @@ pub fn completion_reserve(limits: &Limits) -> Option<u64> {
 /// the tools emit in a step. It counts the containers, their bookkeeping
 /// included, and the payloads, not allocator overhead. The prompts of calls in
 /// flight are copies held by the protocol layer, and the texts of yields copies
-/// held by the opener, which count them. Facts own nothing beyond their queue.
+/// held by the opener, which count them. Call observations copy only provider IDs and names, bounded by the completion byte cap.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
+    let tools_facts = limits.parallel_tools.checked_add(2)?.checked_mul(tools::max_facts(&limits.tools))?;
+    if limits.tools.facts < tools_facts || limits.facts < crate::max_facts(limits) {
+        return None;
+    }
     let parallel = limits.parallel_tools;
     if !(1..=MAX_PARALLEL).contains(&parallel) || parallel > limits.tools.calls || limits.messages < 2 {
         return None;
@@ -118,10 +119,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         return None;
     }
     let sessions = Slab::<Session>::worst_case(limits.sessions)?;
-    let runs = Slab::<Run>::worst_case(runs(limits)?)?;
+    let runs = Slab::<Run>::worst_case(runs(limits)?)?
+        .checked_add(u64::from(runs(limits)?).checked_mul(limits.completion_bytes)?)?;
     let alarms = Deadlines::<Alarm>::worst_case(alarms(limits)?)?;
     let ready = Ready::worst_case(limits.sessions)?;
-    let facts = Queue::<Fact>::worst_case(limits.facts)?;
+    let facts = Queue::<Fact>::worst_case(limits.facts)?
+        .checked_add(u64::from(limits.facts).checked_mul(limits.completion_bytes)?)?;
     let tools = tools::worst_case(&limits.tools)?;
     let tools_out = Queue::<tools::Request>::worst_case(tools::max_out(&limits.tools))?;
     // Each session owns its transcript's list and up to its byte limit.
@@ -144,7 +147,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let opening = u64::try_from(size_of::<Opening>()).ok()?;
     let staging = List::<Turn>::worst_case(limits.messages)?
         .checked_add(List::<Message>::worst_case(limits.messages)?)?
-        .checked_add(opening)?;
+        .checked_add(opening)?
+        .checked_add(limits.completion_bytes)?;
     sessions
         .checked_add(runs)?
         .checked_add(alarms)?
@@ -168,4 +172,53 @@ pub(crate) fn runs(limits: &Limits) -> Option<u32> {
 /// The alarm table's capacity: every session may have two alarms armed.
 pub(crate) fn alarms(limits: &Limits) -> Option<u32> {
     limits.sessions.checked_mul(2)
+}
+
+/// Numeric declarations needed by this layer's transitional derivation.
+/// The service supplies only owned numbers and this domain's own child limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Derivation {
+    pub conversations: u32,
+    pub calls_per_response: u32,
+    pub max_turns: u32,
+    pub max_spend: u64,
+    pub max_time: Duration,
+    pub tool_deadline: Duration,
+    pub tools: tools::Limits,
+}
+
+/// Derive this layer from declarations, refusing checked arithmetic overflow.
+/// Contract: protocol/limits.md, sections 2 and 3.
+#[must_use]
+pub fn derive(inputs: &Derivation) -> Option<Limits> {
+    if inputs.conversations == 0 || inputs.calls_per_response == 0 {
+        return None;
+    }
+    Some(Limits {
+        sessions: inputs.conversations,
+        spend: inputs.max_spend,
+        protocol_allowance: 0,
+        messages: 64,
+        session_bytes: 33_554_432,
+        completion_bytes: 4096,
+        completion_blocks: 16,
+        failure_bytes: 512,
+        delegated_result_bytes: 4_194_304,
+        budget: Budget {
+            turns: inputs.max_turns,
+            input: 1 << 24,
+            output: 1 << 24,
+            cache_read: 1 << 26,
+            cache_write: 1 << 24,
+            time: inputs.max_time,
+        },
+        retries: 3,
+        backoff_base: Duration::from_millis(200),
+        backoff_max: Duration::from_secs(5),
+        call_timeout: Duration::from_secs(60),
+        tool_timeout: inputs.tool_deadline,
+        facts: 1024,
+        parallel_tools: inputs.calls_per_response.min(4),
+        tools: inputs.tools,
+    })
 }

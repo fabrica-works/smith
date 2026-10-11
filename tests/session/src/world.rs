@@ -200,7 +200,7 @@ impl Settings {
                 failure_bytes: 512,
                 delegated_result_bytes: 16_384,
                 budget: BUDGET,
-                max_tokens: 4096,
+
                 retries: 3,
                 backoff_base: Duration::from_millis(200),
                 backoff_max: Duration::from_secs(5),
@@ -225,6 +225,7 @@ impl Settings {
                 unauthorized: 0,
                 refused: 0,
                 no_calls: 0,
+                outside_choice: 0,
                 answer_tokens: 1,
                 calls_per_answer: 1,
                 malformed: 0,
@@ -264,7 +265,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
         authority,
         delegated: Box::new([]),
         prompt: prompt.into(),
-        max_tokens: 1024,
+        output: 1024,
         budget: BUDGET,
     }
 }
@@ -413,6 +414,8 @@ pub struct Stats {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct Told {
+    /// Number of opted-in reasoning drops observed, without retained content.
+    pub reasoning_dropped: u32,
     /// Count of opened facts drained from the component.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -826,6 +829,7 @@ pub struct World {
 
     stats: Stats,
     told: Told,
+    fact_holds: u64,
     trace: Trace,
 }
 
@@ -835,11 +839,17 @@ impl World {
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     #[must_use]
     pub fn new(settings: Settings) -> World {
+        Self::with_scripts(settings, Box::new([]))
+    }
+
+    /// Construct the same world with explicit application tool turns for focused stories.
+    #[must_use]
+    pub fn with_scripts(settings: Settings, scripts: Box<[provider::api::Script]>) -> World {
         assert!(agent::worst_case(&settings.agent).is_some(), "the shell refuses limits it cannot provision");
         let mut rng = Rng::new(settings.seed);
         let agent = agent::Domain::new(&settings.agent, rng.next_u64());
         let provider =
-            provider::Domain::configured(&settings.provider, rng.next_u64(), Box::new([]), crate::provider::menu())
+            provider::Domain::configured(&settings.provider, rng.next_u64(), scripts, crate::provider::menu())
                 .expect("application menu obeys provider admission");
         let max_out = agent::max_out(&settings.agent);
         let mut checkout = Checkout::new();
@@ -874,6 +884,7 @@ impl World {
             openers: BTreeMap::new(),
             stats: Stats::default(),
             told: Told::default(),
+            fact_holds: 0,
             trace: Trace::default(),
         }
     }
@@ -886,7 +897,7 @@ impl World {
         self.now
     }
 
-    /// Observed boundary counters, including dropped facts.
+    /// Observed boundary counters.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     #[must_use]
@@ -894,13 +905,18 @@ impl World {
         self.stats
     }
 
-    /// The facts the sessions told, and how many they dropped for want of
-    /// room.
+    /// Parent passes that left pending work untouched until native facts drained.
+    #[must_use]
+    pub fn fact_holds(&self) -> u64 {
+        self.fact_holds
+    }
+
+    /// Every native fact the sessions told, counted by kind.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     #[must_use]
-    pub fn told(&self) -> (Told, u64) {
-        (self.told, self.agent.facts_lost())
+    pub fn told(&self) -> Told {
+        self.told
     }
 
     /// What crossed between the domains and the world, in order, with times.
@@ -974,13 +990,18 @@ impl World {
 
         // Each stage resumes what is ready, then takes its events, then fires
         // its alarms, while it has room for what one more may produce.
-        while self.agent_stage.has_room() && self.agent.is_ready() {
+        while self.agent.facts_room() >= agent::max_facts(&self.agent_stage.env.limits)
+            && self.agent_stage.has_room()
+            && self.agent.is_ready()
+        {
             self.log("agent ready");
             let from = self.agent_stage.out.len();
             agent::resume(&mut self.agent, &self.agent_stage.env, &mut self.agent_stage.out);
             self.check_sent(from);
         }
-        while let Some(event) = self.agent_stage.next_event() {
+        while self.agent.facts_room() >= agent::max_facts(&self.agent_stage.env.limits)
+            && let Some(event) = self.agent_stage.next_event()
+        {
             self.log(&format!("agent <- {}", describe_agent_event(&event)));
             if let agent::Event::Close { session } = &event
                 && let Some(opener) = self.openers.get(session)
@@ -1001,15 +1022,23 @@ impl World {
                 self.runs.remove(&run);
             }
         }
-        while self.agent_stage.has_room() && self.agent.is_due(self.now) {
+        while self.agent.facts_room() >= agent::max_facts(&self.agent_stage.env.limits)
+            && self.agent_stage.has_room()
+            && self.agent.is_due(self.now)
+        {
             self.log("agent alarm");
             let from = self.agent_stage.out.len();
             agent::fire(&mut self.agent, &self.agent_stage.env, &mut self.agent_stage.out);
             self.check_sent(from);
         }
+        if self.agent.facts_room() < agent::max_facts(&self.agent_stage.env.limits)
+            && (self.agent_stage.has_events() || self.agent.is_due(self.now))
+        {
+            self.fact_holds += 1;
+        }
         // The facts, drained as the shell would write them out.
         while let Some(fact) = self.agent.pop_fact() {
-            self.tell(fact);
+            self.tell(&fact);
         }
         while let Some(event) = self.provider_stage.next_event() {
             provider::step(&mut self.provider, &self.provider_stage.env, event, &mut self.provider_stage.out);
@@ -1086,7 +1115,7 @@ impl World {
             agent::Request::Used { opener, usage } => {
                 self.used(opener.raw(), usage);
             }
-            agent::Request::Ended { opener, end, turns, usage } => {
+            agent::Request::Ended { opener, end, turns, usage, .. } => {
                 self.ended(opener.raw(), Ended { end, turns, usage });
             }
             agent::Request::Complete { owner, prompt, timeout, .. } => {
@@ -1317,14 +1346,20 @@ impl World {
         let session = &self.sessions[opener];
         let (budget, usage) = (&session.budget, &session.usage);
         assert!(session.turns < budget.turns, "session {opener} starts no turn past its budget");
-        assert!(usage.input_tokens < budget.input, "session {opener} has input tokens left");
-        assert!(usage.output_tokens < budget.output, "session {opener} has output tokens left");
-        assert!(usage.cache_read_tokens <= budget.cache_read, "session {opener} is within its cache reads");
-        assert!(usage.cache_write_tokens <= budget.cache_write, "session {opener} is within its cache writes");
+        assert!(usage.input_tokens.unwrap_or(0) < budget.input, "session {opener} has input tokens left");
+        assert!(usage.output_tokens.unwrap_or(0) < budget.output, "session {opener} has output tokens left");
+        assert!(
+            usage.cache_read_tokens.unwrap_or(0) <= budget.cache_read,
+            "session {opener} is within its cache reads"
+        );
+        assert!(
+            usage.cache_write_tokens.unwrap_or(0) <= budget.cache_write,
+            "session {opener} is within its cache writes"
+        );
         assert!(Some(self.now) < session.expires, "session {opener} has time left");
         let messages = u32::try_from(prompt.messages.len()).expect("a small transcript");
         assert!(messages < self.settings.agent.messages, "session {opener}'s transcript has room for the answer");
-        let left = budget.output - usage.output_tokens;
+        let left = budget.output - usage.output_tokens.unwrap_or(0);
         let most = u32::try_from(left).unwrap_or(u32::MAX).min(session.max_tokens);
         assert_eq!(prompt.max_tokens, most, "session {opener}'s answer takes no more than the output budget left");
     }
@@ -1370,10 +1405,10 @@ impl World {
                 unreachable!("bounded scheduled peers neither restore nor overflow; zero prices cannot spend the unit")
             }
             agent::Dimension::Turns => session.turns >= budget.turns,
-            agent::Dimension::Input => usage.input_tokens >= budget.input,
-            agent::Dimension::Output => usage.output_tokens >= budget.output,
-            agent::Dimension::CacheRead => usage.cache_read_tokens > budget.cache_read,
-            agent::Dimension::CacheWrite => usage.cache_write_tokens > budget.cache_write,
+            agent::Dimension::Input => usage.input_tokens.unwrap_or(0) >= budget.input,
+            agent::Dimension::Output => usage.output_tokens.unwrap_or(0) >= budget.output,
+            agent::Dimension::CacheRead => usage.cache_read_tokens.unwrap_or(0) > budget.cache_read,
+            agent::Dimension::CacheWrite => usage.cache_write_tokens.unwrap_or(0) > budget.cache_write,
             agent::Dimension::Time => Some(self.now) >= session.expires,
         }
     }
@@ -1580,14 +1615,11 @@ impl World {
         }
         let told = self.starting.get_mut(&session).and_then(VecDeque::pop_front);
         let writes = match told {
-            Some(tool) if self.agent.facts_lost() == 0 => match tool {
+            Some(tool) => match tool {
                 tools::Tool::Write | tools::Tool::Edit | tools::Tool::Shell => true,
                 tools::Tool::Read | tools::Tool::List | tools::Tool::Search => false,
             },
-            Some(_) | None => {
-                assert!(self.agent.facts_lost() > 0, "a call's first operation follows the fact of its start");
-                stores
-            }
+            None => panic!("a call's first operation follows its native start observation"),
         };
         assert!(writes || !stores, "only a call that writes stores or runs a command");
         self.writing.insert(owner, writes);
@@ -1740,7 +1772,7 @@ impl World {
         let session = Session {
             session: None,
             budget: spec.budget,
-            max_tokens: spec.max_tokens,
+            max_tokens: spec.output,
             yields: Vec::new(),
             turns: 0,
             usage: Usage::ZERO,
@@ -1806,52 +1838,54 @@ impl World {
         [self.wire.next_time(), self.agent.next_deadline(), self.provider.next_deadline()].into_iter().flatten().min()
     }
 
-    fn tell(&mut self, fact: agent::Fact) {
-        if let agent::Fact::Tools { opener, fact } = fact {
-            let (tools::Fact::Opened { session }
-            | tools::Fact::Refused { session, .. }
-            | tools::Fact::Started { session, .. }
-            | tools::Fact::Answered { session, .. }
-            | tools::Fact::Closing { session, .. }
-            | tools::Fact::Closed { session }) = fact;
+    fn tell(&mut self, fact: &agent::Fact) {
+        let fact = fact.kind;
+        if let agent::FactKind::Tools { opener, fact } = fact {
+            let (tools::FactKind::Opened { session }
+            | tools::FactKind::Refused { session, .. }
+            | tools::FactKind::Started { session, .. }
+            | tools::FactKind::Answered { session, .. }
+            | tools::FactKind::Closing { session, .. }
+            | tools::FactKind::Closed { session }) = fact;
             assert!(self.sessions.contains_key(&opener.raw()), "a kit's fact names an opener that opened");
             if let Some(&known) = self.openers.get(&session) {
                 assert_eq!(known, opener.raw(), "a kit's fact names the opener of its session");
             }
-            if let tools::Fact::Started { session, tool } = fact {
+            if let tools::FactKind::Started { session, tool } = fact {
                 self.starting.entry(session).or_default().push_back(tool);
             }
         }
         let told = &mut self.told;
-        if let agent::Fact::CompletionAnswered { calls, invalid, .. } = fact {
+        if let agent::FactKind::CompletionAnswered { calls, invalid, .. } = fact {
             told.calls += calls;
             told.invalid_calls += invalid;
         }
         let count = match fact {
-            agent::Fact::Opened { .. } => &mut told.opened,
-            agent::Fact::CompletionStarted { .. } => &mut told.completions_started,
-            agent::Fact::CompletionAnswered { .. } => &mut told.completions_answered,
-            agent::Fact::CompletionFailed { .. } => &mut told.completions_failed,
-            agent::Fact::CompletionCancelled { .. } => &mut told.completions_cancelled,
-            agent::Fact::CompletionRetried { .. } => &mut told.completions_retried,
-            agent::Fact::Tools { opener: _, fact } => match fact {
-                tools::Fact::Opened { .. } => &mut told.kits_opened,
-                tools::Fact::Closed { .. } => &mut told.kits_closed,
-                tools::Fact::Started { .. } => &mut told.tools_started,
-                tools::Fact::Answered { .. } => &mut told.tools_answered,
-                tools::Fact::Refused { .. } | tools::Fact::Closing { .. } => return,
+            agent::FactKind::Opened { .. } => &mut told.opened,
+            agent::FactKind::ReasoningDropped { .. } => &mut told.reasoning_dropped,
+            agent::FactKind::CompletionStarted { .. } => &mut told.completions_started,
+            agent::FactKind::CompletionAnswered { .. } => &mut told.completions_answered,
+            agent::FactKind::CompletionFailed { .. } => &mut told.completions_failed,
+            agent::FactKind::CompletionCancelled { .. } => &mut told.completions_cancelled,
+            agent::FactKind::CompletionRetried { .. } => &mut told.completions_retried,
+            agent::FactKind::Tools { opener: _, fact } => match fact {
+                tools::FactKind::Opened { .. } => &mut told.kits_opened,
+                tools::FactKind::Closed { .. } => &mut told.kits_closed,
+                tools::FactKind::Started { .. } => &mut told.tools_started,
+                tools::FactKind::Answered { .. } => &mut told.tools_answered,
+                tools::FactKind::Refused { .. } | tools::FactKind::Closing { .. } => return,
             },
-            agent::Fact::DelegateStarted { .. } => &mut told.delegates_started,
-            agent::Fact::DelegateAnswered { .. } => &mut told.delegates_answered,
-            agent::Fact::DelegateCancelled { .. } => &mut told.delegates_cancelled,
-            agent::Fact::Yielded { .. } => &mut told.yielded,
-            agent::Fact::Used { .. } => &mut told.used,
-            agent::Fact::Ended { .. } => &mut told.ended,
+            agent::FactKind::DelegateStarted { .. } => &mut told.delegates_started,
+            agent::FactKind::DelegateAnswered { .. } => &mut told.delegates_answered,
+            agent::FactKind::DelegateCancelled { .. } => &mut told.delegates_cancelled,
+            agent::FactKind::Yielded { .. } => &mut told.yielded,
+            agent::FactKind::Used { .. } => &mut told.used,
+            agent::FactKind::Ended { .. } => &mut told.ended,
         };
         *count += 1;
     }
 
-    /// What the facts must add up to when none were dropped: what the world
+    /// What every native fact must add up to: what the world
     /// saw cross the boundary.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -1907,9 +1941,7 @@ impl World {
                 assert!(session.priced >= session.turns, "every actual usage and final terminal is priced");
             }
         }
-        if self.agent.facts_lost() == 0 {
-            self.assert_told();
-        }
+        self.assert_told();
     }
 
     fn send(&mut self, delivery: Delivery) {
@@ -1939,7 +1971,9 @@ impl World {
 /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
 fn ended_run(event: &agent::Event) -> Option<Token> {
     match event {
-        agent::Event::Answered { owner, .. } | agent::Event::AnswerCancelled { owner, .. } => Some(*owner),
+        agent::Event::Answered { owner, .. }
+        | agent::Event::AnsweredAndYield { owner, .. }
+        | agent::Event::AnswerCancelled { owner, .. } => Some(*owner),
         agent::Event::Open { .. }
         | agent::Event::Continue { .. }
         | agent::Event::Close { .. }
@@ -1959,6 +1993,9 @@ fn describe_agent_event(event: &agent::Event) -> String {
         agent::Event::Open { opener, opening } => format!("open {} {opening:?}", opener.raw()),
         agent::Event::Answered { owner, text, error, spent, .. } => {
             format!("answered {} {text:?} {error} {spent}", owner.raw())
+        }
+        agent::Event::AnsweredAndYield { owner, text, error, spent } => {
+            format!("answered and yield {} {text:?} {error} {spent}", owner.raw())
         }
         agent::Event::Continue { session, content } => {
             format!("continue {} {:?}", session.raw(), String::from_utf8_lossy(content))
@@ -2065,15 +2102,33 @@ fn recorded_result<'a>(messages: &'a [agent::llm::Message], id: &[u8]) -> Option
 /// Checked raw-prefix addition: the scripted peer cannot overflow these bounded counters.
 fn add_usage(left: Usage, right: Usage) -> Usage {
     Usage {
-        input_tokens: left.input_tokens.checked_add(right.input_tokens).expect("bounded scheduled input"),
-        output_tokens: left.output_tokens.checked_add(right.output_tokens).expect("bounded scheduled output"),
-        cache_read_tokens: left
-            .cache_read_tokens
-            .checked_add(right.cache_read_tokens)
-            .expect("bounded scheduled cache reads"),
-        cache_write_tokens: left
-            .cache_write_tokens
-            .checked_add(right.cache_write_tokens)
-            .expect("bounded scheduled cache writes"),
+        input_tokens: Some(
+            left.input_tokens
+                .unwrap_or(0)
+                .checked_add(right.input_tokens.unwrap_or(0))
+                .expect("bounded scheduled input"),
+        ),
+        output_tokens: Some(
+            left.output_tokens
+                .unwrap_or(0)
+                .checked_add(right.output_tokens.unwrap_or(0))
+                .expect("bounded scheduled output"),
+        ),
+        cache_read_tokens: Some(
+            left.cache_read_tokens
+                .unwrap_or(0)
+                .checked_add(right.cache_read_tokens.unwrap_or(0))
+                .expect("bounded scheduled cache reads"),
+        ),
+        cache_write_tokens: Some(
+            left.cache_write_tokens
+                .unwrap_or(0)
+                .checked_add(right.cache_write_tokens.unwrap_or(0))
+                .expect("bounded scheduled cache writes"),
+        ),
+        reasoning_tokens: match (left.reasoning_tokens, right.reasoning_tokens) {
+            (Some(left), Some(right)) => Some(left.checked_add(right).expect("bounded scheduled reasoning")),
+            (None, _) | (_, None) => None,
+        },
     }
 }

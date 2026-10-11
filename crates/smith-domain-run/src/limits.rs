@@ -21,6 +21,12 @@ pub struct Limits {
     /// Maximum attested labelled text bytes retained per queued message.
     pub message_bytes: u32,
 
+    /// Maximum messages offered together at one main yield.
+    pub offer_messages: u32,
+
+    /// Rendered bytes in one offer, including the two-byte separators between messages.
+    pub offer_bytes: u32,
+
     /// Maximum positive charter idle interval; it never pauses the wall budget.
     pub waiting: Duration,
 
@@ -67,8 +73,11 @@ pub struct Limits {
     /// Maximum bytes of their rendered text in that prompt.
     pub answered_bytes: u32,
 
-    /// Receiving ceiling for each relay timeout; caller and run expiry may be earlier.
+    /// Default host-relay allowance; a charter may declare another within the maximum.
     pub host_timeout: Duration,
+
+    /// Maximum host-relay allowance, also bounded by caller and run expiry.
+    pub host_timeout_max: Duration,
 
     /// Positive deterministic backoff between settled retryable relays.
     pub host_backoff: Duration,
@@ -80,8 +89,6 @@ pub struct Limits {
     pub calls: u32,
     /// The largest budget a charter may ask for, part by part.
     pub budget: Budget,
-    /// The largest `max_tokens` a charter's LLM may ask for.
-    pub max_tokens: u32,
     /// The LLMs a charter may list for sub-agents.
     pub models: u32,
     /// Conversations a run may have at once, main included.
@@ -105,8 +112,7 @@ pub struct Limits {
     pub check_timeout: Duration,
     /// The most bytes of a failed check's output the LLM is shown: its tail.
     pub check_tail: u32,
-    /// Facts kept until the parent drains them. Beyond them, facts are
-    /// dropped and counted.
+    /// Reserved observations buffered until the parent drains them; at least [`crate::max_facts`].
     pub facts: u32,
 }
 
@@ -118,6 +124,13 @@ pub struct Limits {
 /// what it receives and only passes on (a check's output) is the sender's.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
+    let facts = limits.messages.checked_mul(2)?.checked_add(8)?;
+    if limits.facts < facts {
+        return None;
+    }
+    if limits.offer_messages == 0 || limits.offer_bytes < limits.message_bytes {
+        return None;
+    }
     if limits.conflict_path_bytes > u32::try_from(crate::Marker::CAPACITY).ok()? {
         return None;
     }
@@ -135,7 +148,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // A winding run holds the outcome it accepted.
     let run = limits
         .run_bytes
-        .checked_add(Queue::<crate::run::Message>::worst_case(limits.messages)?)?
+        .checked_add(Queue::<crate::inbox::Queued>::worst_case(limits.messages)?)?
+        .checked_add(Queue::<skein_lib::Token>::worst_case(limits.messages)?)?
+        .checked_add(u64::from(limits.offer_bytes))?
         .checked_add(u64::from(limits.messages).checked_mul(u64::from(limits.message_bytes))?)?
         .checked_add(guides)?
         .checked_add(checks)?
@@ -147,4 +162,70 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let calls = Calls::worst_case(limits.calls)?.checked_add(u64::from(limits.calls).checked_mul(call)?)?;
     let facts = Queue::<Fact>::worst_case(limits.facts)?;
     runs.checked_add(conversations)?.checked_add(alarms)?.checked_add(held)?.checked_add(calls)?.checked_add(facts)
+}
+
+/// Numeric declarations needed by this layer's transitional derivation.
+/// The service supplies only owned numbers and this domain's own child limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Derivation {
+    pub conversations: u32,
+    pub calls_per_response: u32,
+    pub inbox: u32,
+    pub max_waiting: Duration,
+    pub max_turns: u32,
+    pub max_spend: u64,
+    pub max_time: Duration,
+    pub sections: u32,
+    pub host_tools: u32,
+    pub verdicts: u32,
+    pub guide: u32,
+    pub shell_tail: u32,
+    pub tool_payload: u32,
+    pub tool_deadline: Duration,
+}
+
+/// Derive this layer from declarations, refusing checked arithmetic overflow.
+/// Contract: protocol/limits.md, sections 2 and 3.
+#[must_use]
+pub fn derive(inputs: &Derivation) -> Option<Limits> {
+    let message_bytes = 4096_u32;
+    let separators = inputs.inbox.checked_sub(1)?.checked_mul(2)?;
+    let offer_bytes = inputs.inbox.checked_mul(message_bytes)?.checked_add(separators)?;
+    Some(Limits {
+        runs: 1,
+        conversations: inputs.conversations,
+        run_bytes: 1 << 16,
+        brief_sections: inputs.sections,
+        directories: 2,
+        directory_name_bytes: 256,
+        conflicts: 64,
+        conflict_path_bytes: 4096,
+        host_tools: inputs.host_tools,
+        host_input_bytes: inputs.tool_payload,
+        host_reply_bytes: inputs.tool_payload,
+        answered_calls: 16,
+        answered_bytes: 4096,
+        host_timeout: Duration::from_secs(60),
+        host_timeout_max: inputs.tool_deadline,
+        host_backoff: Duration::from_millis(50),
+        verdicts: inputs.verdicts,
+        calls: inputs.calls_per_response,
+        budget: Budget { turns: inputs.max_turns, spend: inputs.max_spend, time: inputs.max_time },
+        models: 2,
+        run_conversations: inputs.conversations,
+        answer_bytes: 1024,
+        nudges: 1,
+        guide_bytes: inputs.guide,
+        io_timeout: Duration::from_secs(5),
+        outcome_bytes: 4096,
+        delivery_timeout: Duration::from_secs(60),
+        check_timeout: Duration::from_secs(60),
+        check_tail: inputs.shell_tail,
+        facts: 1024,
+        messages: inputs.inbox,
+        message_bytes,
+        offer_messages: inputs.inbox,
+        offer_bytes,
+        waiting: inputs.max_waiting,
+    })
 }

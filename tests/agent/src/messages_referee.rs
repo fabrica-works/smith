@@ -14,6 +14,9 @@ use smith_domain::{Turn, llm, session};
 /// Contract: domain/run.md, sections 6 and 13; testing-strategy.md, section 7.
 #[derive(Clone, Debug)]
 pub enum Seen {
+    /// Literal Start work observed before admission, for the first opening only.
+    Started { brief: bool, wait: bool, time: Duration },
+
     /// Actual root admission, separately from physical Started. Contract: domain/host.md, section 3.
     Admitted,
 
@@ -54,6 +57,8 @@ pub enum Seen {
     /// Observed final root count and parking classification, never an input answer.
     /// Contract: domain/run.md, sections 6 and 13.
     Answer {
+        /// Last actual told message fence, retained in the run terminal.
+        read: Option<Token>,
         /// Actual settled main record count. Contract: domain/run.md, section 13.
         turns: u32,
 
@@ -71,8 +76,12 @@ pub enum Seen {
 /// Contract: domain/run.md, sections 6 and 13; testing-strategy.md, section 7.
 #[derive(Debug)]
 pub struct Meeting {
+    opening_brief: Option<bool>,
+    work: Option<bool>,
+    time: Option<Duration>,
+    deadline: Option<Time>,
     queued: VecDeque<(Token, Box<[u8]>)>,
-    offered: Option<(Token, Box<[u8]>)>,
+    offered: Option<(Vec<Token>, Box<[u8]>)>,
     read: Option<Token>,
     expected: Option<Vec<Part>>,
     calling: bool,
@@ -92,6 +101,10 @@ impl Meeting {
     #[must_use]
     pub fn new(sequence: u32, idle: Duration) -> Self {
         Self {
+            opening_brief: None,
+            work: None,
+            time: None,
+            deadline: None,
             queued: VecDeque::new(),
             offered: None,
             read: None,
@@ -110,6 +123,7 @@ impl Meeting {
     fn prompt(&mut self, query: &Query, judge: &mut Judge<&'static str, ()>) {
         judge
             .check(!self.calling && self.expected.is_none(), "a new provider request follows its previous actual turn");
+        judge.check(self.work != Some(false), "no provider request precedes actual work");
         self.calling = true;
         let last = query.messages.last().and_then(|message| {
             if message.role != Role::User {
@@ -120,10 +134,29 @@ impl Meeting {
                 [] | [Part::Opaque { .. } | Part::ToolCall { .. } | Part::ToolOutput { .. }] | [_, _, ..] => None,
             }
         });
-        if let Some((name, text)) = self.queued.front() {
-            if last == Some(text.as_ref()) {
-                judge.check(self.offered.is_none(), "only one person input is offered before its actual turn");
-                self.offered = self.queued.pop_front();
+        let recorded = last;
+        let last = if self.opening_brief.take() == Some(true) {
+            last.map(|text| text.strip_prefix(b"Begin the work your brief describes.\n\n").unwrap_or(text))
+        } else {
+            last
+        };
+        if !self.queued.is_empty() {
+            let mut joined = Vec::new();
+            let mut count = 0;
+            for (at, (_, text)) in self.queued.iter().enumerate() {
+                if at > 0 {
+                    joined.extend_from_slice(b"\n\n");
+                }
+                joined.extend_from_slice(text);
+                if last == Some(joined.as_slice()) {
+                    count = at + 1;
+                    break;
+                }
+            }
+            if count > 0 {
+                judge.check(self.offered.is_none(), "only one person offer precedes its actual turn");
+                let names = self.queued.drain(..count).map(|(name, _)| name).collect::<Vec<_>>();
+                self.offered = Some((names, Box::from(recorded.expect("matching offer has one literal user message"))));
                 self.waiting = None;
                 judge.withdraw(&"idle park");
                 self.wait_result = false;
@@ -131,7 +164,6 @@ impl Meeting {
                 let later = self.queued.iter().skip(1).any(|(_, text)| last == Some(text.as_ref()));
                 judge.check(!later, "person prompts preserve actual FIFO arrival order");
                 judge.check(self.waiting.is_none(), "waiting wakes with the oldest exact person bytes");
-                let _ = name;
             }
         }
     }
@@ -143,7 +175,7 @@ impl Meeting {
         );
         self.count = number;
         self.sequence = turn.sequence;
-        let expected_read = self.offered.as_ref().map_or(self.read, |(name, _)| Some(*name));
+        let expected_read = self.offered.as_ref().map_or(self.read, |(names, _)| names.last().copied());
         judge.check(read == expected_read, "read advances only for the exact offered person input");
         let expected = self.expected.take();
         judge.check(expected.is_some() && !self.calling, "a concrete turn follows an actual provider terminal");
@@ -157,7 +189,7 @@ impl Meeting {
             assistant.len() == 1 && assistant.first() == expected.as_ref(),
             "concrete turn preserves the actual assistant bytes and provider call identities",
         );
-        if let Some((name, text)) = self.offered.take() {
+        if let Some((names, text)) = self.offered.take() {
             judge.check(
                 turn.messages.iter().any(|message| {
                     message.role == llm::Role::User
@@ -166,7 +198,7 @@ impl Meeting {
                 }),
                 "offered person text is recorded unchanged before its assistant",
             );
-            self.read = Some(name);
+            self.read = names.last().copied();
         }
         if let Some(parts) = expected {
             for part in parts {
@@ -213,8 +245,16 @@ impl Expectations for Meeting {
         }
         judge.check(!self.answered, "no chat output or input follows its final answer");
         match seen {
-            Seen::Admitted => {}
-            Seen::Input { name, text } => self.queued.push_back((name, text)),
+            Seen::Admitted => self.deadline = self.time.map(|time| judge.now().saturating_add(time)),
+            Seen::Started { brief, wait, time } => {
+                self.opening_brief = Some(brief);
+                self.work = Some(brief || !wait);
+                self.time = Some(time);
+            }
+            Seen::Input { name, text } => {
+                self.work = Some(true);
+                self.queued.push_back((name, text));
+            }
             Seen::Prompt { query } => self.prompt(&query, judge),
             Seen::Completed { parts } => {
                 judge.check(self.calling && self.expected.is_none(), "provider terminal belongs to its actual request");
@@ -232,24 +272,25 @@ impl Expectations for Meeting {
                         && self.expected.is_none()
                         && self.queued.is_empty()
                         && self.offered.is_none()
-                        && self.wait_result
+                        && (self.wait_result || (self.count == 0 && self.work == Some(false)))
                         && read == self.read,
-                    "Waiting follows settled wait, turns and an empty inbox",
+                    "Waiting follows preparation or settled wait with an empty inbox",
                 );
                 self.waiting = Some(judge.now());
                 judge.rearm("idle park", self.idle.saturating_add(Duration::from_secs(1)));
             }
-            Seen::Answer { turns, parked, .. } => {
+            Seen::Answer { turns, parked, read, .. } => {
                 judge.check(
-                    turns == self.count && !self.calling && self.expected.is_none(),
+                    turns == self.count && read == self.read && !self.calling && self.expected.is_none(),
                     "final answer follows every actual turn and provider terminal",
                 );
                 if parked {
                     judge.check(
                         self.queued.is_empty()
                             && self.offered.is_none()
-                            && self.waiting.is_some_and(|at| judge.now() >= at.saturating_add(self.idle)),
-                        "Parked follows the actual empty-inbox waiting deadline",
+                            && (self.waiting.is_some_and(|at| judge.now() >= at.saturating_add(self.idle))
+                                || self.deadline.is_some_and(|at| judge.now() >= at)),
+                        "Parked follows the actual empty-inbox idle or wall deadline",
                     );
                 }
                 let met = judge.meet(&"chat answer");

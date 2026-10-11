@@ -33,6 +33,36 @@ fn history(world: &World) -> smith_domain::Transcript {
     }
 }
 
+#[test]
+fn admission_records_actual_history_independently_of_the_restore_binding() {
+    fn resumed(world: &World) -> bool {
+        let mut values = Vec::new();
+        for fact in world.facts() {
+            if let smith_domain::Fact::Run {
+                fact: run::facts::Fact { kind: run::facts::FactKind::Admitted { resumed, .. }, .. },
+            } = fact
+            {
+                values.push(*resumed);
+            }
+        }
+        assert_eq!(values.len(), 1, "one native admission");
+        values[0]
+    }
+
+    let mut first = World::new(waiting(960));
+    first.run(2000);
+    assert!(!resumed(&first), "fresh main has an opaque restore binding but no history");
+    let saved = history(&first);
+    for (resume, transcript, expected) in
+        [(true, None, false), (true, Some(saved.clone()), true), (false, Some(saved), false)]
+    {
+        let mut next = World::with_history(Settings { resume, ..waiting(961) }, transcript);
+        next.run(2000);
+        assert_eq!(resumed(&next), expected, "only selected concrete history resumes main");
+        assert!(matches!(next.answer(), run::Answer::Parked { .. }));
+    }
+}
+
 fn text_seen(world: &World, expected: &[u8]) -> bool {
     world.prompts().iter().flat_map(|query| &query.messages).flat_map(|message| &message.parts).any(|part| match part {
         Part::Text { text } => text.as_ref() == expected,
@@ -43,8 +73,18 @@ fn text_seen(world: &World, expected: &[u8]) -> bool {
 #[test]
 fn wait_result_settles_before_waiting_then_opaque_fifo_names_cross_only_turns() {
     let mut world = World::new(waiting(900));
-    world.message_at(Time::from_nanos(500_000_000), Token::new(0), b"person: first".as_slice().into());
-    world.message_at(Time::from_nanos(501_000_000), Token::new(99), b"person: second".as_slice().into());
+    world.message_at(
+        Time::from_nanos(500_000_000),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"first".as_slice().into(),
+    );
+    world.message_at(
+        Time::from_nanos(501_000_000),
+        Token::new(99),
+        b"person".as_slice().into(),
+        b"second".as_slice().into(),
+    );
     world.run(2000);
     assert!(matches!(world.answer(), run::Answer::Parked { turns: 6, .. }));
     assert_eq!(
@@ -70,11 +110,16 @@ fn wait_result_settles_before_waiting_then_opaque_fifo_names_cross_only_turns() 
 fn bounded_message_keeps_the_zero_name_and_wall_time_runs_while_waiting() {
     let calm = waiting(901);
     let limits =
-        smith_domain::Limits { run: run::Limits { messages: 1, message_bytes: 4, ..calm.limits.run }, ..calm.limits };
+        smith_domain::Limits { run: run::Limits { messages: 1, message_bytes: 12, ..calm.limits.run }, ..calm.limits };
     let mut world = World::new(Settings { limits, ..calm });
-    world.message_at(Time::ZERO.saturating_add(Duration::from_millis(50)), Token::new(0), b"full".as_slice().into());
+    world.message_at(
+        Time::ZERO.saturating_add(Duration::from_millis(50)),
+        Token::new(0),
+        b"person".as_slice().into(),
+        b"full".as_slice().into(),
+    );
     world.run(2000);
-    assert!(text_seen(&world, b"full"));
+    assert!(text_seen(&world, b"person: full"));
     assert!(matches!(world.answer(), run::Answer::Parked { turns: 4, .. }));
     let mut wall = World::new(Settings {
         waiting: Duration::from_secs(20),
@@ -83,10 +128,7 @@ fn bounded_message_keeps_the_zero_name_and_wall_time_runs_while_waiting() {
     });
     wall.run(2000);
     assert_eq!(wall.waiting().len(), 1);
-    assert!(matches!(
-        wall.answer(),
-        run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Time), turns: 2, .. }
-    ));
+    assert!(matches!(wall.answer(), run::Answer::Parked { turns: 2, .. }));
 }
 
 #[test]
@@ -102,7 +144,7 @@ fn parked_transcript_resumes_without_recharging_history_or_reusing_activation_nu
     assert_eq!(next.prompts().len(), 2, "shared fake continues after restored assistant prefix");
     assert!(text_seen(&next, b"Ready for a person."));
     assert_eq!(
-        next.turns()[0].usage.input_tokens,
+        next.turns()[0].usage.input_tokens.expect("peer supplies input count"),
         next.turn_metadata()[0].2.input,
         "token budget charges only this activation's actual completion"
     );
@@ -290,6 +332,7 @@ fn every_transient_history_refusal_is_exact_and_starts_no_provider_or_tool_effec
                         match block {
                             session::llm::Block::ToolCall { call, .. } => {
                                 *call = session::llm::Decoded::Delegated {
+                                    source: smith_domain::session::ToolSource::Run,
                                     ticket: Token::new(80),
                                     effect: smith_domain::tools::Effect::Write,
                                 }

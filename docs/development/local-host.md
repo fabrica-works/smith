@@ -42,7 +42,7 @@ while inheriting the global agent, model, budget and account settings:
 ```json
 {
   "chat": "review",
-  "instructions": "Begin each activation by calling wait and ending your turn to receive the queued user message. Make the requested change and explain it.",
+  "instructions": "Make the requested change and explain it.",
   "directories": [
     { "name": "project", "path": ".", "writable": true, "git": true }
   ],
@@ -78,10 +78,9 @@ while inheriting the global agent, model, budget and account settings:
 | `accounts` | Account descriptors, described below; default `[]`. |
 | `push` | Optional ordered array matching `directories`, each entry `null` or `{ "remote", "branch" }`. Omitted means no push. |
 
-The opening asks the model to begin its brief. Terminal messages are queued
-until the model ends a turn without tool calls. For an interactive chat, the
-instructions should first ask it to call `wait` and end its turn, as above,
-so it receives the first terminal message before doing the requested work.
+An interactive run waits for its first terminal message before opening a
+provider conversation. Later messages arrive when the model ends a turn
+without tool calls; `wait` asks the host to wait for another message.
 
 Each model has this shape:
 
@@ -89,7 +88,11 @@ Each model has this shape:
 {
   "endpoint": "codex",
   "name": "registered-model",
-  "max_tokens": 8192,
+  "window": 131072,
+  "output": 8192,
+  "reasoning_item": 65536,
+  "head": 60000,
+  "idle": 120000,
   "input_price": 10,
   "cached_price": 2,
   "output_price": 30,
@@ -98,10 +101,20 @@ Each model has this shape:
 ```
 
 `endpoint` names an endpoint in `agent.endpoints`; `name` is the provider's
-model name. The three prices are integer currency units per `price_unit`
+model name. `window` and `output` are tokens, `reasoning_item` is bytes, and
+`head` and `idle` are positive milliseconds. The generated agent configuration
+puts these declarations in each endpoint's `models`. Each endpoint also needs
+positive `connect` and `handshake` milliseconds. Local settings leave endpoint
+`models` out of `agent`; the local host generates them from this list. The three prices are integer currency units per `price_unit`
 tokens, which must be positive. These example names and prices are placeholders
 for the operator's model registration and prices. The settings do not discover
 models or prices from the provider.
+
+The agent profile is `{"name":"standard","declared":{"memory":N},"policy":{}}`;
+each declared quantity or policy can be overridden by name. `memory` remains
+required while memory-pool derivation is being introduced. Policy durations,
+including `group_stop`, are milliseconds. Raw derived limits and the former
+`memory_bytes` and `grace_ms` keys are refused.
 
 The agent configuration's `environment` is an array of `{ "name", "value" }`
 for agent commands. It is separate from the host's `delivery_environment`.
@@ -197,7 +210,7 @@ paths are resolved, and a surviving marker refuses the delivery.
 
 ## Limits of the binary
 
-Children are plain processes, not contained trees. The standard agent
-profile's checked memory bound is conservative, roughly 354 GB, so the
-agent configuration's `memory_bytes` must exceed it; it is checked
-accounting, not an allocation.
+Children use Skein's supervised process trees. The agent profile derives
+its checked memory bound from the deployment and model declarations;
+`profile.declared.memory` must exceed that bound. It is checked accounting,
+not an allocation.

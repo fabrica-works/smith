@@ -6,7 +6,8 @@ use skein_lib::{Duration, Time};
 use smith_domain_session::llm::Failure;
 use smith_domain_session::{Budget, Dimension, End, Limits, Spec, Yield};
 use smith_domain_tools::{self as tools, Authority, Grants};
-use smith_session_world::{BUDGET, Count, Ended, Settings, Span, Told, World, noisy, spec, submit_noisily};
+use smith_session_world::recorded;
+use smith_session_world::{BUDGET, Count, Ended, Settings, Span, World, noisy, spec, submit_noisily};
 
 const ITERATIONS: u32 = 100_000;
 
@@ -30,6 +31,14 @@ fn yields(world: &World, opener: u64) -> Vec<(Yield, &[u8])> {
 /// The calm spec, with `budget`.
 fn budgeted(budget: Budget) -> Spec {
     Spec { budget, ..spec(b"fix the build") }
+}
+
+/// Only shell operations use this world's delayed tool span. Timeout stories
+/// grant that operation explicitly instead of depending on a random menu pick.
+fn shell_only() -> Spec {
+    let spec = spec(b"fix the build");
+    let grants = Grants { inspect: false, modify: false, shell: true };
+    Spec { authority: Authority { grants, ..spec.authority }, ..spec }
 }
 
 fn out_of(spent: Dimension) -> End {
@@ -76,7 +85,7 @@ fn malformed_calls_are_answered_with_their_problem_and_the_conversation_goes_on(
     // provider would refuse the next query.
     assert_eq!(yields(&world, opener), [(Yield::Done, &b"done"[..])]);
     assert_eq!((world.stats().ops, world.stats().results), (0, 0));
-    let (told, _) = world.told();
+    let told = world.told();
     assert!(told.invalid_calls >= 2 && told.invalid_calls == told.calls, "{told:?}");
 }
 
@@ -84,20 +93,33 @@ fn malformed_calls_are_answered_with_their_problem_and_the_conversation_goes_on(
 /// the limits allow, a write alone, and the results back in call order.
 #[test]
 fn reads_in_one_answer_run_side_by_side_and_writes_alone() {
+    use skein_fake_llm_domain::api::{Finish, Line, Script, Turn};
+
     let calm = Settings::calm(19);
     let settings = Settings {
         agent: Limits { parallel_tools: 3, ..calm.agent },
         provider: Config { calls_per_answer: 6, tool_rounds: 4, ..calm.provider },
         ..calm
     };
-    let mut world = World::new(settings);
+    let scripted_call = |name: &[u8], arguments: &[u8]| Line::Call { name: name.into(), arguments: arguments.into() };
+    let lines = [
+        scripted_call(b"read", br#"{"path":"src/lib.rs"}"#),
+        scripted_call(b"read", br#"{"path":"README.md"}"#),
+        scripted_call(b"list", br#"{"path":"docs"}"#),
+        scripted_call(b"write", br#"{"path":"src/lib.rs","content":"src/lib.rs: rewritten"}"#),
+        scripted_call(b"read", br#"{"path":"src/lib.rs"}"#),
+        scripted_call(b"write", br#"{"path":"README.md","content":"README.md: rewritten"}"#),
+    ];
+    let turn = Turn { lines: lines.into(), finish: Finish::ToolCalls, tokens: 48 };
+    let script = Script { cue: b"You are a coding agent.".as_slice().into(), turns: vec![turn; 4].into() };
+    let mut world = World::with_scripts(settings, Box::new([script]));
     let openers: Vec<u64> = (0..4).map(|_| world.submit(Time::ZERO, spec(b"fix the build"))).collect();
     world.run(ITERATIONS);
 
     for opener in openers {
         assert_eq!((end(&world, opener), turns(&world, opener)), (End::Closed, 5));
     }
-    let (told, _) = world.told();
+    let told = world.told();
     assert_eq!(world.stats().results, told.calls, "each call's result went back, what comes of that call");
     assert_eq!(world.stats().most_parallel, 3, "reads ran as many at once as the limits allow");
 }
@@ -205,7 +227,8 @@ fn a_session_out_of_time_cancels_its_call_in_flight() {
 fn a_session_out_of_time_cancels_its_tool_in_flight() {
     let calm = Settings::calm(9);
     let mut world = World::new(Settings { tool: Span::millis(60_000, 60_000), ..calm });
-    let opener = world.submit(Time::ZERO, budgeted(Budget { time: Duration::from_secs(10), ..BUDGET }));
+    let request = Spec { budget: Budget { time: Duration::from_secs(10), ..BUDGET }, ..shell_only() };
+    let opener = world.submit(Time::ZERO, request);
     world.run(ITERATIONS);
 
     assert_eq!((end(&world, opener), turns(&world, opener)), (out_of(Dimension::Time), 1));
@@ -249,7 +272,7 @@ fn an_opener_that_closes_a_tooling_session_has_its_tool_cancelled() {
         ..calm
     };
     let mut world = World::new(settings);
-    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    let opener = world.submit(Time::ZERO, shell_only());
     world.run(ITERATIONS);
 
     assert_eq!((end(&world, opener), turns(&world, opener)), (End::Closed, 1));
@@ -265,7 +288,7 @@ fn a_tool_call_that_runs_out_of_time_goes_back_to_the_llm_and_the_conversation_g
         ..calm
     };
     let mut world = World::new(settings);
-    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    let opener = world.submit(Time::ZERO, shell_only());
     world.run(ITERATIONS);
 
     assert_eq!(yields(&world, opener), [(Yield::Done, &b"done"[..])]);
@@ -300,7 +323,7 @@ fn a_tool_run_that_wins_its_race_with_a_cancel_still_ends_the_session() {
         ..calm
     };
     let mut world = World::new(settings);
-    let opener = world.submit(Time::ZERO, spec(b"fix the build"));
+    let opener = world.submit(Time::ZERO, shell_only());
     world.run(ITERATIONS);
 
     assert_eq!((end(&world, opener), turns(&world, opener)), (End::Closed, 1));
@@ -387,7 +410,7 @@ fn the_turn_budget_ends_a_session_that_keeps_calling_tools() {
 
     // The tools of the last turn run; their results do not go back.
     assert_eq!((end(&world, opener), turns(&world, opener)), (out_of(Dimension::Turns), 3));
-    let (told, _) = world.told();
+    let told = world.told();
     assert_eq!((world.stats().results, told.calls, told.tools_answered), (2, 3, 3));
 }
 
@@ -404,7 +427,7 @@ fn the_output_budget_cuts_the_last_answer_short_and_ends_the_session() {
 
     assert_eq!(end(&world, opener), out_of(Dimension::Output));
     assert_eq!(yields(&world, opener).last(), Some(&(Yield::Truncated, &b"do"[..])));
-    assert_eq!(world.session(opener).usage.output_tokens, 20, "no more than the budget");
+    assert_eq!(world.session(opener).usage.output_tokens, Some(20), "no more than the budget");
 }
 
 #[test]
@@ -412,7 +435,6 @@ fn the_token_budgets_end_a_session_after_the_turn_that_uses_them_up() {
     let calm = Settings::calm(16);
     let settings = Settings { nudges: Count { min: 100, max: 100 }, ..calm };
     let budgets = [
-        (Budget { input: 30, ..BUDGET }, Dimension::Input),
         (Budget { cache_read: 100, ..BUDGET }, Dimension::CacheRead),
         (Budget { cache_write: 30, ..BUDGET }, Dimension::CacheWrite),
     ];
@@ -423,6 +445,30 @@ fn the_token_budgets_end_a_session_after_the_turn_that_uses_them_up() {
         assert_eq!(end(&world, opener), out_of(spent), "{budget:?}");
         assert!(turns(&world, opener) > 1, "{budget:?} pays for some turns");
     }
+    // The shared fake caches its fresh input; this typed peer explicitly reports
+    // ordinary input so the separate Input ceiling is still observed outside.
+    let mut world = recorded::World::new(16, 256);
+    let mut opening = recorded::opening(None, 100);
+    opening.spec.budget.input = 30;
+    opening.prices = smith_domain_session::record::Prices { input: 0, cached: 0, output: 0, unit: 1 };
+    world.open(opening);
+    for _ in 0..3 {
+        world.complete(
+            Box::new([smith_domain_session::llm::Block::Text {
+                text: b"input-priced answer".as_slice().into(),
+                replay: None,
+            }]),
+            smith_domain_session::llm::Stop::EndTurn,
+            smith_domain_session::llm::Usage { input_tokens: Some(11), ..smith_domain_session::llm::Usage::ZERO },
+        );
+        world.step(smith_domain_session::Event::Continue {
+            session: world.session.expect("yielded"),
+            content: b"go on".as_slice().into(),
+        });
+    }
+    assert_eq!(world.end, Some(out_of(Dimension::Input)));
+    assert_eq!(world.used.len(), 3);
+    world.close();
 }
 
 #[test]
@@ -445,28 +491,30 @@ fn a_seed_replays_to_the_same_run() {
     assert!(trace.len() > 20, "the run did something");
 }
 
-/// Facts are told on the side: sessions that keep none of them make the same
-/// requests at the same times as sessions that keep them all, and the facts
-/// kept add up to what crossed the boundary (checked by `World::run`).
+/// The parent holds a step until its complete fact reserve is available.
 #[test]
-fn facts_change_nothing_the_sessions_do() {
+fn a_fact_queue_at_its_bound_holds_the_step_and_loses_nothing() {
+    let mut holds = 0;
     for seed in 0..100 {
-        let run = |facts| {
-            let noisy = noisy(seed);
-            let tools = tools::Limits { facts, ..noisy.agent.tools };
-            let settings = Settings { agent: Limits { facts, tools, ..noisy.agent }, ..noisy };
+        let run = |minimum| {
+            let mut settings = noisy(seed);
+            if minimum {
+                settings.agent.tools.facts =
+                    (settings.agent.parallel_tools + 2) * tools::max_facts(&settings.agent.tools);
+                settings.agent.facts = smith_domain_session::max_facts(&settings.agent);
+            }
             let mut world = World::new(settings);
             submit_noisily(&mut world, &settings, seed);
             world.run(ITERATIONS);
-            (world.trace().to_vec(), world.stats(), world.told())
+            (world.fact_holds(), world.stats(), world.told())
         };
-        let (trace, stats, (told, lost)) = run(4096);
-        assert_eq!(lost, 0, "seed {seed}: room for every fact");
-        assert!(told.ended > 0, "seed {seed}: facts were told");
-        let (silent, same, (none, dropped)) = run(0);
-        assert!(silent == trace && same == stats, "seed {seed}: the same requests, at the same times");
-        assert_eq!((none, dropped > 0), (Told::default(), true), "seed {seed}: every fact dropped");
+        let (_, stats, told) = run(false);
+        assert!(told.ended > 0 && stats.calls > 0, "seed {seed}: actual calls settled");
+        let (held, same, all) = run(true);
+        holds += held;
+        assert!(all.ended > 0 && same.calls > 0, "seed {seed}: every pressured call settled");
     }
+    assert!(holds > 0, "actual pending work was held for native facts");
 }
 
 #[test]
@@ -474,7 +522,7 @@ fn a_yielded_call_tail_becomes_not_run_only_after_the_continue() {
     use smith_domain_session::llm::{Block, Returned};
     let calm = Settings::calm(13);
     let mut world = World::new(Settings { nudges: Count { min: 1, max: 1 }, ..calm });
-    let opener = world.submit(Time::ZERO, Spec { max_tokens: 4, ..spec(b"fix the build") });
+    let opener = world.submit(Time::ZERO, Spec { output: 4, ..spec(b"fix the build") });
     world.run(ITERATIONS);
     let records = &world.session(opener).records;
     assert_eq!(records.len(), 2, "the nudge accepted two truncated provider completions");
