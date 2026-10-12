@@ -1242,3 +1242,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    product's stream uses; `smith-bench`'s event reader follows as far
    as it must to read them (README rule 4). Those files join 03.10's
    Files; its Size is README rule 9's.
+49. **06.7's fault names its model by one charter index, main first**
+   (block of 2026-10-12T17:11:50Z, smith 06.7, sent as a design gap).
+   run.md, section 10 asks for "the endpoint and model of the last
+   completion"; how the fault carries it is the plan's. 06.7's sketch
+   gives `Fault.model: u32` "by its index in the charter's models", but
+   `Charter` holds main's `llm` apart from `models`, the sub-agents'
+   choices (`smith-domain-run/src/charter.rs:66-70`), and valid charters
+   have `models` empty. Ruling: the implementer's numbering, 0 for
+   `llm` and k + 1 for `models[k]`, read and written through one lookup
+   on `Charter` (at most 20 lines, README rule 8) so that the offset
+   lives in one place; the parent resolves endpoint and name from it.
+   `smith-domain/src/peer.rs`'s `Peer` gains the conversation's model
+   index, set at `Open`, with its constructor's parameter and the
+   callers that pass it; that file joins 06.7's Files.
