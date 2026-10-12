@@ -65,17 +65,7 @@ pub struct Borrowed {
 #[derive(Clone, Copy, Debug)]
 enum Shape {
     Codex,
-    Smith(TokenShape),
-}
-
-/// The saved-token codec understood by the selected immutable Smith arm.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum TokenShape {
-    /// The baseline's version-one record requires an unusable refresh sentinel.
-    Legacy,
-    /// Access-only version-two records carry no refresh state.
-    AccessOnly,
+    Smith,
 }
 
 /// A converted record and the nonsecret account identifier for local settings.
@@ -223,7 +213,6 @@ pub fn smith(
     home: &Path,
     now: Wall,
     lifetime: Duration,
-    shape: TokenShape,
 ) -> Result<SmithCredential, Setup> {
     let converted: Result<SmithCredential, String> = (|| {
         // Local hosts renew sixty seconds before expiry. Include that lead so
@@ -231,29 +220,21 @@ pub fn smith(
         let lifetime = lifetime.checked_add(Duration::from_secs(60)).ok_or("credential renewal lifetime overflow")?;
         let Login { source, auth, digest, expires } = login(source_home, now, lifetime)?;
         let account_id = auth.tokens.account_id.filter(|id| !id.is_empty()).ok_or("Codex login has no account id")?;
-        let refresh = match shape {
-            TokenShape::Legacy => Some(crate::guard::UNUSABLE_REFRESH.as_bytes().into()),
-            TokenShape::AccessOnly => None,
-        };
-        let mut encoded = skein_oauth::encode_record(
+        let encoded = skein_oauth::encode_record(
             &skein_oauth::SavedToken {
                 key: 0,
                 generation: 1,
                 access_token: auth.tokens.access_token.as_bytes().into(),
-                refresh_token: refresh,
+                refresh_token: None,
                 metadata: None,
                 expires_at: expires,
             },
             &token_limits(),
         )
         .map_err(|_| "cannot encode bounded access-only Smith record")?;
-        match shape {
-            TokenShape::Legacy => encoded[4..6].copy_from_slice(&1_u16.to_be_bytes()),
-            TokenShape::AccessOnly => {}
-        }
         let credential = write_record(guard, home, "0.json", &encoded)?;
         Ok(SmithCredential {
-            borrowed: Borrowed { credential, expires, source, digest, shape: Shape::Smith(shape) },
+            borrowed: Borrowed { credential, expires, source, digest, shape: Shape::Smith },
             account_id,
         })
     })();
@@ -267,7 +248,7 @@ impl Borrowed {
     /// Remove the private auth file after settlement and verify the user login.
     pub fn finish(&self, guard: &Guard) -> Result<Proof, String> {
         let checked: Result<(), String> = (|| {
-            let mut bytes = read_source(&self.credential)?;
+            let bytes = read_source(&self.credential)?;
             match self.shape {
                 Shape::Codex => {
                     let record: serde_json::Value =
@@ -277,22 +258,13 @@ impl Borrowed {
                         return Err("private Codex refresh field is no longer empty".into());
                     }
                 }
-                Shape::Smith(shape) => {
-                    let version = match shape {
-                        TokenShape::Legacy => 1_u16,
-                        TokenShape::AccessOnly => 2_u16,
-                    };
-                    if bytes.get(4..6) != Some(version.to_be_bytes().as_slice()) {
+                Shape::Smith => {
+                    if bytes.get(4..6) != Some(2_u16.to_be_bytes().as_slice()) {
                         return Err("private Smith token codec version changed".into());
                     }
-                    bytes[4..6].copy_from_slice(&2_u16.to_be_bytes());
                     let record = skein_oauth::decode_record(&bytes, &token_limits())
                         .map_err(|_| "private Smith token record changed shape")?;
-                    let expected = match shape {
-                        TokenShape::Legacy => Some(crate::guard::UNUSABLE_REFRESH.as_bytes()),
-                        TokenShape::AccessOnly => None,
-                    };
-                    if record.key != 0 || record.refresh_token.as_deref() != expected {
+                    if record.key != 0 || record.refresh_token.is_some() {
                         return Err("private Smith refresh state is no longer unusable".into());
                     }
                 }
@@ -314,7 +286,7 @@ impl Borrowed {
             source_unchanged: true,
             expires_unix_seconds: self.expires.as_secs(),
             credential_removed: true,
-            private_refresh_empty: matches!(self.shape, Shape::Codex | Shape::Smith(TokenShape::AccessOnly)),
+            private_refresh_empty: true,
             private_refresh_unusable: true,
         })
     }

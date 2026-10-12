@@ -7,7 +7,7 @@ use smith_bench::agent::smith::Receiving;
 #[test]
 fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
     let mut source: serde_json::Value =
-        serde_json::from_str(include_str!("../agents/smith/legacy.json")).expect("frozen native template");
+        serde_json::from_str(include_str!("../agents/smith/smoke.json")).expect("frozen native template");
     source["agent"] = serde_json::json!({
         "profile":{"name":"standard","declared":{
             "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
@@ -31,7 +31,6 @@ fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
     let producer = configured.service.limits.events.expect("configured stream writer");
     let registry: toml::Value = toml::from_str(include_str!("../agents/smith/faces.toml")).expect("published registry");
     let entry = registry["face"].as_array().expect("face inventory").last().expect("writing face");
-    assert_eq!(entry["face"].as_str(), Some("events"));
     assert_eq!(entry["shape"].as_str(), Some("local-agent-trace"));
     let receiving: Receiving = entry["receiving"].clone().try_into().expect("required receiving values");
     assert_eq!(receiving.limits().expect("semantic caps"), producer.sinks.records);

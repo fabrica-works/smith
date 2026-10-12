@@ -393,7 +393,6 @@ fn captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope()
 }
 
 fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential() {
-    use smith_bench::credential::TokenShape;
     use std::os::unix::fs::PermissionsExt;
     let root = private("smith-records");
     let source = root.join("user/.codex");
@@ -402,18 +401,16 @@ fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential
     std::fs::write(source.join("auth.json"), &original).expect("source auth");
     let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
         .expect("guard");
-    for (name, shape, version, refresh) in [
-        ("legacy", TokenShape::Legacy, 1_u16, Some(smith_bench::guard::UNUSABLE_REFRESH.as_bytes())),
-        ("current", TokenShape::AccessOnly, 2_u16, None),
-    ] {
-        let home = root.join(name);
+    {
+        let version = 2_u16;
+        let refresh = None;
+        let home = root.join("current");
         let converted = smith_bench::credential::smith(
             &guard,
             &source,
             &home,
             skein_lib::Wall::from_nanos(100_000_000_000),
             skein_lib::Duration::from_secs(20),
-            shape,
         )
         .expect("converted record");
         assert_eq!(converted.account_id, "UNISSUED_ACCOUNT");
@@ -459,7 +456,6 @@ fn smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential
             &refused,
             skein_lib::Wall::from_nanos(100_000_000_000),
             skein_lib::Duration::from_secs(20),
-            TokenShape::Legacy
         )
         .is_err()
     );

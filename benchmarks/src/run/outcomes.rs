@@ -37,8 +37,10 @@ impl Neutral {
         self.waived.clone_from(&task.waives);
         self.deciding.clone_from(&task.deciding);
         if agent != crate::Agent::Smith {
-            self.deciding
-                .retain(|name| !task.event.iter().any(|check| check.name() == name && check.name() != "cache-reuse"));
+            self.deciding.retain(|name| {
+                !["stream-whole", "paired", "spend-sums", "nothing-lost"].contains(&name.as_str())
+                    && !task.event.iter().any(|check| check.name() == name && check.name() != "cache-reuse")
+            });
         }
     }
 
@@ -100,6 +102,10 @@ mod cache_pair_tests {
         neutral.task(&task, crate::Agent::Codex);
         assert!(!neutral.deciding.contains(&"tool-call".into()));
         assert!(neutral.deciding.contains(&"pattern:smoke-env.txt".into()));
+        assert_eq!(
+            neutral.deciding,
+            ["end", "exit-code", "answer", "pattern:smoke-env.txt", "tree-ended", "protected-unchanged"]
+        );
     }
 
     #[test]

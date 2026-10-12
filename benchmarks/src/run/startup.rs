@@ -1,14 +1,12 @@
 //! Explicit startup probes classify the genuine refusal and empty native capture.
 //! Other empty streams remain errors; no record is synthesized (benchmarks.md 11.1).
 
-use crate::agent::smith::{Observer, events};
+use crate::agent::smith::events;
 use crate::{End, EventCheck, Exit, Forced, OutcomeCheck, Task};
 
 pub(super) fn finish(process: &mut crate::process::ProcessResult) -> Result<(), String> {
-    if let Some(crate::agent::Observing::Smith(observing)) = process.observing.as_deref_mut()
-        && let Observer::Events(observer) = &mut observing.observer
-    {
-        observer.finish().map_err(|error| error.what)?;
+    if let Some(crate::agent::Observing::Smith(observing)) = process.observing.as_deref_mut() {
+        observing.observer.finish().map_err(|error| error.what)?;
     }
     Ok(())
 }
@@ -20,10 +18,7 @@ pub(super) fn classify(process: &crate::process::ProcessResult, task: &Task) -> 
     let crate::agent::Observing::Smith(observing) = process.observing.as_deref()? else {
         return None;
     };
-    let Observer::Events(observer) = &observing.observer else {
-        return None;
-    };
-    refused(task, observer, process.exit, process.forced, &process.stderr)
+    refused(task, &observing.observer, process.exit, process.forced, &process.stderr)
 }
 
 fn refused(task: &Task, observer: &events::Observer, exit: Exit, forced: Forced, stderr: &[u8]) -> Option<End> {

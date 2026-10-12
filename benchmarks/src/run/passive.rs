@@ -6,7 +6,10 @@
 use std::path::PathBuf;
 
 use crate::process::ProcessResult;
-use crate::{CheckVerdict, Forced, Measure, Passive};
+use crate::{CheckVerdict, Measure, Passive};
+
+#[cfg(test)]
+use crate::Forced;
 
 fn paths(check: Passive, effects: &Measure<Vec<PathBuf>>, missing: &str) -> CheckVerdict {
     let (passed, evidence) = match effects {
@@ -50,24 +53,6 @@ pub(super) fn protected(changed: &Measure<Vec<PathBuf>>) -> CheckVerdict {
     paths(Passive::ProtectedUnchanged, changed, "protected-file comparison is incomplete")
 }
 
-pub(super) fn teardown(measured: &Measure<u64>, bound_ms: u64, forced: Forced) -> CheckVerdict {
-    let passed = if forced == Forced::No {
-        match measured {
-            Measure::Observed { value } => Measure::Observed { value: *value <= bound_ms },
-            Measure::LowerBound { value, .. } if *value > bound_ms => Measure::Observed { value: false },
-            Measure::LowerBound { .. } => Measure::unavailable("teardown is only a lower bound"),
-            Measure::Unavailable { reason } => Measure::unavailable(reason.clone()),
-        }
-    } else {
-        Measure::Observed { value: false }
-    };
-    CheckVerdict {
-        check: Passive::Teardown.name().into(),
-        passed,
-        evidence: vec![format!("{measured:?}, bound_ms={bound_ms}, forced={forced:?}")],
-    }
-}
-
 pub(super) fn benchmark_unread() -> CheckVerdict {
     CheckVerdict {
         check: Passive::BenchmarkUnread.name().into(),
@@ -84,13 +69,6 @@ fn protected_and_teardown_measurements_preserve_counterexamples_and_missing_proo
     assert_eq!(protected(&changed).passed, Measure::Observed { value: false });
     let missing = Measure::LowerBound { value: Vec::new(), missing: vec!["cut".into()] };
     assert!(matches!(protected(&missing).passed, Measure::Unavailable { .. }));
-    assert_eq!(teardown(&Measure::Observed { value: 40 }, 40, Forced::No).passed, Measure::Observed { value: true });
-    assert_eq!(teardown(&Measure::Observed { value: 41 }, 40, Forced::No).passed, Measure::Observed { value: false });
-    assert_eq!(
-        teardown(&Measure::Observed { value: 1 }, 40, Forced::Killed).passed,
-        Measure::Observed { value: false }
-    );
-    assert!(matches!(teardown(&Measure::unavailable("no answer"), 40, Forced::No).passed, Measure::Unavailable { .. }));
 }
 
 #[cfg(test)]

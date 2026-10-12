@@ -548,6 +548,24 @@ pub fn baseline(summary: &RunSummary) -> Result<Baseline, String> {
     })
 }
 
+/// Select one agent configuration and model/effort from a whole suite summary.
+pub fn baseline_group(
+    summary: &RunSummary,
+    agent: Agent,
+    configuration: &str,
+    model: &str,
+    effort: &str,
+) -> Result<Baseline, String> {
+    let mut selected = summary.clone();
+    selected.groups.retain(|group| {
+        group.agent == agent
+            && group.configuration_sha256 == configuration
+            && group.model.requested_model == model
+            && group.model.requested_effort == effort
+    });
+    baseline(&selected)
+}
+
 /// Read raw result.json files recursively, without following links or other logs.
 pub fn read_results(path: &Path) -> Result<Vec<AttemptResult>, Refusal> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| Refusal::new(path, "results", error.to_string()))?;

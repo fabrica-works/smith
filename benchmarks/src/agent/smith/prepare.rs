@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use crate::agent::{Context, Invocation};
 use crate::isolate::{Setup, SetupStep};
 
-use super::{CredentialShape, Face, FaceSince, faces, settings};
+use super::{FaceSince, faces, settings};
 
 /// The private native invocation and its immutable outside face.
 #[derive(Debug)]
 pub struct Prepared {
-    pub face: Face,
+    pub face: super::events::Shape,
     pub settings: PathBuf,
     pub credential: Credential,
     pub trace: Option<PathBuf>,
@@ -107,15 +107,12 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
         .find(|path| path.join(".git").exists())
         .ok_or_else(|| configuration("Smith pin needs its source repository for arm ancestry"))?;
     let registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
-    let shape = match registry.face {
-        Face::Legacy(shape) => shape,
-        Face::Events(super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace) => {
-            super::legacy::Shape::LocalReserved
-        }
-        Face::Events(super::events::Shape::Exec | super::events::Shape::Chat) => {
+    match registry.shape {
+        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => {}
+        super::events::Shape::Exec | super::events::Shape::Chat => {
             return Err(configuration("this event front end awaits its shipped product invocation"));
         }
-    };
+    }
     let bytes = fs::read(directory.join(&pin.pin.configuration)).map_err(|error| configuration(error.to_string()))?;
     if bytes.len() > 65_536 {
         return Err(configuration("Smith settings template exceeds its bound"));
@@ -126,21 +123,19 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
     let tokens = root.join("tokens");
     let trace = root.join("trace.jsonl");
     let settings_path = root.join("settings.json");
-    let dry = settings::settings(context, shape, &base, "prepared-account", &trace, &tokens)?;
-    let teardown = settings::teardown(shape, &dry)?;
+    let dry = settings::settings(context, &base, "prepared-account", &trace, &tokens)?;
+    let teardown = settings::teardown(&dry)?;
     let lifetime =
         context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
-    let CredentialShape::Converted(token_shape) = registry.credential;
-    let converted =
-        crate::credential::smith(context.guard, context.home, &tokens, context.wall, lifetime, token_shape)?;
-    let rendered = settings::settings(context, shape, &base, &converted.account_id, &trace, &tokens)?;
+    let converted = crate::credential::smith(context.guard, context.home, &tokens, context.wall, lifetime)?;
+    let rendered = settings::settings(context, &base, &converted.account_id, &trace, &tokens)?;
     let encoded = serde_json::to_vec_pretty(&rendered).map_err(|error| configuration(error.to_string()))?;
     write(context, &settings_path, &encoded)?;
     write(context, &trace, &[])?;
     let state = root.join("state");
     crate::run::private_parent(context.guard, &state).map_err(configuration)?;
     Ok(Prepared {
-        face: registry.face,
+        face: registry.shape,
         settings: settings_path,
         credential: Credential::Record(Some(converted.borrowed)),
         trace: Some(trace),

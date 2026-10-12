@@ -1,71 +1,9 @@
-# Entries are appended when a binary's face, settings or credential codec changes.
-[[face]]
-commit = "30259d89b88834ed3edaaa08b3f320d2252bbb9a"
-face = "legacy"
-shape = "local-json"
-credential = "converted"
-record = "legacy"
-
-[[face]]
-commit = "839ac739941628ea551375da0dbf20159f27dd95"
-face = "legacy"
-shape = "local-declared"
-credential = "converted"
-record = "legacy"
-
-[[face]]
-commit = "f3792762fd71884c2cc4479accd9bab572ef252b"
-face = "legacy"
-shape = "local-declared"
-credential = "converted"
-record = "access-only"
-
-[[face]]
-commit = "a40cedc203e178c3c45204513416b4b60e4457c0"
-face = "legacy"
-shape = "local-priced"
-credential = "converted"
-record = "access-only"
-
-[[face]]
-commit = "754985779cc96c6358bb03526a50b04390f13c54"
-face = "legacy"
-shape = "local-delegating"
-credential = "converted"
-record = "access-only"
-
-[[face]]
-commit = "d19cb38878ec1eb4d9a63922386403fef46b01d4"
-face = "legacy"
-shape = "local-reserved"
-credential = "converted"
-record = "access-only"
-
-[[face]]
-commit = "576a251e83987dff07b33e80ab0952df8f391e84"
-face = "legacy"
-shape = "local-reserved"
-credential = "converted"
-record = "access-only"
-facts = "kinds"
-
-[[face]]
-commit = "4aef8240b027aa0cf7b93ec8f5b8b83ec42d8d3e"
-face = "legacy"
-shape = "local-reserved"
-credential = "converted"
-record = "access-only"
-facts = "choices"
-
+# Entries are appended when a binary's event layout or receiving bounds change.
 # The writer derives these bounds from the phase-one control's native declarations.
 # Larger emitted values refuse at the receiving boundary; no override range is implied.
 [[face]]
 commit = "4735d7228a8f37c11f70de5f9ef277c1ff7bf4c2"
-face = "events"
 shape = "local-trace"
-credential = "converted"
-record = "access-only"
-facts = "choices"
 receiving = { string = 256000, content = 4096, items = 32, encoded_line = 3148863 }
 
 # This writer validates the native request before capturing its new part.
@@ -73,42 +11,26 @@ receiving = { string = 256000, content = 4096, items = 32, encoded_line = 314886
 # the semantic caps remain independent and this entry declares no override range.
 [[face]]
 commit = "0486bcf3eacb4d63e931cf53333583ae43e4c740"
-face = "events"
 shape = "local-trace"
-credential = "converted"
-record = "access-only"
-facts = "choices"
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
 
 # Before the split writer, this base's descendants keep their unsplit trace.
 # When the writer creates .agent, the reader selects that process's run records.
 [[face]]
 commit = "b86b022a83c16194cf716015fe0dff4db9569163"
-face = "events"
 shape = "local-agent-trace"
-credential = "converted"
-record = "access-only"
-facts = "choices"
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
 
 # The writer added the required teardown-aborted field at this commit.
 [[face]]
 commit = "8d2ec9b878ae85240575788809c44fe0028e6a4a"
-face = "events"
 shape = "local-agent-trace"
-credential = "converted"
-record = "access-only"
-facts = "choices"
 session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
 
 # Reasoning ownership raises the producer's item and line bounds.
 [[face]]
 commit = "4d06c1106b45b12280bad141cacb2806c514fe26"
-face = "events"
 shape = "local-agent-trace"
-credential = "converted"
-record = "access-only"
-facts = "choices"
 session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }

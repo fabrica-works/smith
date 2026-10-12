@@ -6,10 +6,6 @@
 
 use std::path::{Component, Path, PathBuf};
 
-/// A deliberately unusable refresh field for binaries predating access-only records.
-/// The legacy converter may emit this sentinel, never an issued refresh token.
-pub const UNUSABLE_REFRESH: &str = "smith-bench-unused-refresh";
-
 /// User tool locations supplied by the environment or a deterministic test.
 #[derive(Clone, Debug)]
 pub struct Guard {
@@ -91,7 +87,7 @@ fn resolve(path: &Path) -> Result<PathBuf, String> {
 }
 
 /// Refuse a proposed converted credential record if it contains a refresh token.
-/// Empty/null fields and the explicit unusable legacy sentinel carry no token.
+/// Empty and null refresh fields carry no token.
 /// Issuer refresh tests keep their separately signed-in token store; this check
 /// applies to conversion and copying, never to their issuer's own response.
 pub fn check_credential_record(record: &serde_json::Value) -> Result<(), String> {
@@ -103,7 +99,7 @@ pub fn check_credential_record(record: &serde_json::Value) -> Result<(), String>
                 if normalized == "refreshtoken" || normalized == "refresh" {
                     match value {
                         serde_json::Value::Null => {}
-                        serde_json::Value::String(value) if value.is_empty() || value == UNUSABLE_REFRESH => {}
+                        serde_json::Value::String(value) if value.is_empty() => {}
                         serde_json::Value::String(_)
                         | serde_json::Value::Bool(_)
                         | serde_json::Value::Number(_)
@@ -192,7 +188,7 @@ mod tests {
                 assert!(!error.contains("synthetic-private-value"));
             }
         }
-        for value in [serde_json::Value::Null, serde_json::json!(""), serde_json::json!(UNUSABLE_REFRESH)] {
+        for value in [serde_json::Value::Null, serde_json::json!("")] {
             check_credential_record(&serde_json::json!({"access_token":"synthetic-access", "refresh_token":value}))
                 .expect("no issued refresh token");
         }

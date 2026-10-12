@@ -392,6 +392,8 @@ fn the_probes_suite_names_each_probe_and_variant_once() {
                 .chain(task.variant.iter().map(|variant| format!("probes/{}/{}", task.id, variant.name)))
         })
         .collect();
+    // budget/spend waits for its next task version (decisions 13.95).
+    expected.retain(|probe| probe != "probes/budget/spend");
     expected.sort_unstable();
     assert_eq!(named, expected.iter().map(String::as_str).collect::<Vec<_>>());
     let mut selected = suite.tasks.clone();

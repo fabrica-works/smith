@@ -102,7 +102,7 @@ fn a_prompt_with_two_paragraphs_is_refused() {
     refuses("multiple-paragraphs", "prompt", "one nonempty paragraph");
 }
 
-fn a_prompt_at_the_legacy_line_bound_is_refused() {
+fn a_prompt_at_the_terminal_line_bound_is_refused() {
     refuses("oversize-prompt", "prompt", "4,088 bytes");
 }
 
@@ -246,7 +246,7 @@ fn a_repository_seed_comes_from_its_bundle() {
 fn invalid_recorded_manifests() {
     a_prompt_without_its_final_newline_is_refused();
     a_prompt_with_two_paragraphs_is_refused();
-    a_prompt_at_the_legacy_line_bound_is_refused();
+    a_prompt_at_the_terminal_line_bound_is_refused();
     changed_seed_bytes_are_refused();
     a_missing_design_section_is_refused();
     a_benchmark_tree_in_a_seed_is_refused();
@@ -256,4 +256,78 @@ fn invalid_recorded_manifests() {
     an_unknown_nested_key_is_refused();
     a_check_cannot_escape_the_workspace();
     duplicate_variant_names_are_refused();
+}
+
+#[test]
+fn committed_summaries_and_baselines_parse_at_result_version_two() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    assert_eq!(smith_bench::RESULT_VERSION, 2);
+    // The catalogue test checks the full inventory; sample each versioned reader here.
+    for entry in std::fs::read_dir(root.join("summaries")).expect("summaries") {
+        let path = entry.expect("summary entry").path();
+        if path.extension().is_some_and(|extension| extension == "json") {
+            assert_eq!(smith_bench::read_summary(&path).expect("committed summary").result_version, 2);
+            break;
+        }
+    }
+    for entry in std::fs::read_dir(root.join("baselines")).expect("baselines") {
+        let path = entry.expect("baseline entry").path();
+        if path.extension().is_some_and(|extension| extension == "json") {
+            assert_eq!(smith_bench::read_baseline(&path).expect("committed baseline").result_version, 2);
+            break;
+        }
+    }
+}
+
+fn multi_configuration_summary() -> smith_bench::RunSummary {
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
+    let results = smith_bench::read_results(&file).expect("recorded attempts");
+    let mut summary = smith_bench::summarise(
+        &results,
+        "recorded",
+        "small",
+        smith_bench::Design::Single,
+        123,
+        None,
+        &smith_bench::PriceTable::default(),
+    )
+    .expect("whole summary");
+    let first = summary.groups[0].clone();
+    for change in 0..4 {
+        let mut other = first.clone();
+        match change {
+            0 => other.agent = smith_bench::Agent::Smith,
+            1 => other.configuration_sha256 = "other-configuration".into(),
+            2 => other.model.requested_model = "other-model".into(),
+            _ => other.model.requested_effort = "other-effort".into(),
+        }
+        summary.groups.push(other);
+    }
+    summary
+}
+
+#[test]
+fn a_baseline_selector_keeps_one_configuration_model_and_effort() {
+    let summary = multi_configuration_summary();
+    let first = summary.groups[0].clone();
+    let selected = smith_bench::baseline_group(
+        &summary,
+        first.agent,
+        &first.configuration_sha256,
+        &first.model.requested_model,
+        &first.model.requested_effort,
+    )
+    .expect("one selected configuration");
+    assert_eq!(selected.groups.as_slice(), std::slice::from_ref(&first));
+    assert_eq!(summary.groups.len(), 5, "the whole suite summary stays intact");
+    assert!(
+        smith_bench::baseline_group(
+            &summary,
+            first.agent,
+            "missing",
+            &first.model.requested_model,
+            &first.model.requested_effort,
+        )
+        .is_err()
+    );
 }

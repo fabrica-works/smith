@@ -1,6 +1,6 @@
 //! Cache probes keep a fixed read schedule and sequential child returns.
-//! Actual captured calls and parent-return identities are required; legacy
-//! traces supply neither (benchmarks.md, section 11.1).
+//! Checks require captured calls and parent-return identities
+//! (benchmarks.md, section 11.1).
 
 use std::collections::{BTreeMap, BTreeSet};
 

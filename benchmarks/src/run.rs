@@ -644,16 +644,6 @@ fn observe(
                 }
                 if let Some(health) = observing.health(process.exit, process.forced) {
                     result.health = health;
-                } else {
-                    result.health.loss_per_sink.insert("trace".into(), observing.observer.loss());
-                }
-                match observing.prepared.face {
-                    crate::agent::smith::Face::Legacy(_) => result.health.passive_checks.push(passive::teardown(
-                        &result.timing.teardown_ms,
-                        observing.prepared.teardown.as_nanos() / 1_000_000,
-                        process.forced,
-                    )),
-                    crate::agent::smith::Face::Events(_) => {}
                 }
                 result.outcome.checks.extend(observing.checks_in_workspace(&task.event, &task.prompt, workspace));
             }
@@ -676,7 +666,7 @@ fn observe(
     }
     result.outcome.writes_outside_workspace = match &process.observing {
         Some(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
-            Measure::unavailable("legacy trace does not expose every shell filesystem effect")
+            Measure::unavailable("event stream does not expose every shell filesystem effect")
         }
         Some(_) | None => scope(process, workspace),
     };
@@ -781,7 +771,7 @@ fn source_arm(work: Work<'_>, identity: &Identity) -> Result<(crate::arm::ArmRef
         crate::Agent::Smith => {
             let build = crate::arm::read_build(&work.prepared.program)?;
             if build.arm.commit != identity.agent_version
-                || !matches!(identity.smith_face, Some(crate::SmithFace::Legacy | crate::SmithFace::Events))
+                || !matches!(identity.smith_face, Some(crate::SmithFace::Events))
             {
                 return Err("Smith built arm differs from the planned full source version".into());
             }
@@ -850,11 +840,8 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 step = error.step;
                 error.reason
             })?;
-        if let crate::agent::Prepared::Smith(native) = &prepared {
-            let selected = match native.face {
-                crate::agent::smith::Face::Legacy(_) => crate::SmithFace::Legacy,
-                crate::agent::smith::Face::Events(_) => crate::SmithFace::Events,
-            };
+        if let crate::agent::Prepared::Smith(_) = &prepared {
+            let selected = crate::SmithFace::Events;
             if result.identity.smith_face != Some(selected) {
                 return Err("Smith identity names a different face than its source registry".into());
             }

@@ -30,7 +30,12 @@ fn main() -> ExitCode {
         {
             summarize_command(Path::new(results), suite, tier, design, seed, reference.first().map(Path::new))
         }
-        [command, summary, name] if command == "baseline" => baseline_command(Path::new(summary), name),
+        [command, summary, name] if command == "baseline" => baseline_command(Path::new(summary), name, None),
+        [command, summary, name, flag, agent, configuration, model, effort]
+            if command == "baseline" && flag == "--group" =>
+        {
+            baseline_command(Path::new(summary), name, Some((agent, configuration, model, effort)))
+        }
         [command, flag, suite, tasks_flag, directory, sections @ ..]
             if command == "guards" && flag == "--suite" && tasks_flag == "--tasks" && !sections.is_empty() =>
         {
@@ -41,7 +46,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -104,10 +109,17 @@ fn summarize_command(
     })())
 }
 
-fn baseline_command(summary: &Path, name: &str) -> ExitCode {
+fn baseline_command(summary: &Path, name: &str, group: Option<(&str, &str, &str, &str)>) -> ExitCode {
     report_output((|| {
         let summary = smith_bench::read_summary(summary).map_err(|error| error.to_string())?;
-        let reference = smith_bench::baseline(&summary)?;
+        let reference = match group {
+            None => smith_bench::baseline(&summary)?,
+            Some((agent, configuration, model, effort)) => {
+                let agent = serde_json::from_value(serde_json::Value::String(agent.into()))
+                    .map_err(|error| error.to_string())?;
+                smith_bench::baseline_group(&summary, agent, configuration, model, effort)?
+            }
+        };
         let output = committed_output("baselines", name)?;
         smith_bench::write_summary(&output, &reference)?;
         Ok(output)

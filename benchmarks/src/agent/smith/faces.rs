@@ -8,22 +8,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::arm::BuiltArm;
-use crate::credential::TokenShape;
 use crate::isolate::{Setup, SetupStep};
 
-use super::legacy::{FactShape, Shape};
-
-/// A binary's outside observation vocabulary, selected by its source ancestry.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
-#[serde(tag = "face", content = "shape", rename_all = "kebab-case")]
-pub enum Face {
-    /// Structured Debug records from the local host's spawned agent.
-    Legacy(Shape),
-    /// Versioned records from the binary's selected event front end.
-    Events(super::events::Shape),
-}
-
-/// Immutable receiving bounds pinned with the face that writes the stream.
+/// Receiving bounds pinned with the face that writes the stream.
 /// The arm supplies semantic caps and the writer-derived aggregate line ceiling.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -46,59 +33,22 @@ impl Receiving {
     }
 }
 
-/// How this arm receives its credential without touching the source login.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(tag = "credential", content = "record", rename_all = "kebab-case")]
-pub enum CredentialShape {
-    /// A private converted record in this arm's frozen saved-token codec.
-    Converted(TokenShape),
-}
-
-/// An immutable registry entry from which this native face applies.
+/// A registry entry from which this native face applies.
 #[derive(Clone, Debug, Serialize)]
 pub struct FaceSince {
     pub commit: String,
-    pub face: Face,
-    pub credential: CredentialShape,
-
-    pub facts: FactShape,
-    pub receiving: Option<Receiving>,
+    pub shape: super::events::Shape,
+    pub receiving: Receiving,
     /// This writer's session terminal carries the teardown-aborted field.
     pub session_ended_aborted: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum FaceKind {
-    Legacy,
-    Events,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum EntryShape {
-    Legacy(Shape),
-    Events(super::events::Shape),
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum CredentialKind {
-    Converted,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Entry {
     commit: String,
-    face: FaceKind,
-    shape: EntryShape,
-    credential: CredentialKind,
-    record: TokenShape,
-    #[serde(default)]
-    facts: FactShape,
-    #[serde(default)]
-    receiving: Option<Receiving>,
+    shape: super::events::Shape,
+    receiving: Receiving,
     #[serde(default)]
     session_ended_aborted: Option<bool>,
 }
@@ -132,31 +82,10 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
         let mut session_ended_aborted = false;
         for entry in registry.face {
             session_ended_aborted = entry.session_ended_aborted.unwrap_or(session_ended_aborted);
-            let face = match entry.face {
-                FaceKind::Legacy => match entry.shape {
-                    EntryShape::Legacy(shape) => {
-                        if entry.receiving.is_some() {
-                            return Err("legacy face cannot declare event receiving bounds".into());
-                        }
-                        Face::Legacy(shape)
-                    }
-                    EntryShape::Events(_) => return Err("legacy face requires a legacy invocation shape".into()),
-                },
-                FaceKind::Events => match entry.shape {
-                    EntryShape::Events(shape) => {
-                        entry.receiving.ok_or("events face requires pinned receiving bounds")?.limits()?;
-                        Face::Events(shape)
-                    }
-                    EntryShape::Legacy(_) => return Err("events face requires an events invocation shape".into()),
-                },
-            };
+            entry.receiving.limits()?;
             faces.push(FaceSince {
                 commit: entry.commit,
-                face,
-                credential: match entry.credential {
-                    CredentialKind::Converted => CredentialShape::Converted(entry.record),
-                },
-                facts: entry.facts,
+                shape: entry.shape,
                 receiving: entry.receiving,
                 session_ended_aborted,
             });

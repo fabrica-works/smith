@@ -3,4 +3,4 @@ agent = "smith"
 provider = "codex"
 # A built arm's exact source commit is its version in each attempt result.
 version = "built-arm"
-configuration = "legacy.json"
+configuration = "smoke.json"

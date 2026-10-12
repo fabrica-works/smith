@@ -1,7 +1,5 @@
 //! smith's faces keep outside observations, never the running agent's state.
-//! The legacy reader consumes pre-events records (benchmarks.md, section 6.2).
-
-pub mod legacy;
+//! Event records are read through smith-events (benchmarks.md, section 6).
 
 pub mod events;
 
@@ -15,8 +13,8 @@ mod prepare;
 
 mod observe;
 
-pub use faces::{CredentialShape, Face, FaceSince, Receiving, face, read as read_faces};
+pub use faces::{FaceSince, Receiving, face, read as read_faces};
 
 pub use prepare::{Credential, Prepared, prepare, teardown_from_check};
 
-pub use observe::{Observer, Observing};
+pub use observe::Observing;

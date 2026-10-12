@@ -86,9 +86,9 @@ fn schema(grants: tools::Grants) -> Option<serde_json::Value> {
 }
 #[test] fn control_public_shell_constructor_and_omission() {
     let mut h = Harness::new(); let kit = h.open(1, "/work/src", ALL);
-    let legacy = tools::Call::Shell { command: b"printf repository_oracle".as_slice().into(), timeout: None };
-    assert_eq!(tools::tool(&legacy), tools::Tool::Shell); assert_eq!(tools::effect(&legacy), tools::Effect::Write);
-    let (owner, _) = h.spawn(kit, legacy, 10, b"src", 60); h.finish(owner);
+    let control = tools::Call::Shell { command: b"printf repository_oracle".as_slice().into(), timeout: None };
+    assert_eq!(tools::tool(&control), tools::Tool::Shell); assert_eq!(tools::effect(&control), tools::Effect::Write);
+    let (owner, _) = h.spawn(kit, control, 10, b"src", 60); h.finish(owner);
     let (owner, _) = h.spawn(kit, shell(None, None), 10, b"src", 60); h.finish(owner);
 }
 #[test] fn control_existing_schema_and_grant() {

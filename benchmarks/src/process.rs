@@ -584,10 +584,7 @@ fn trace_file(capture: &Capture, agent: bool) -> Result<Option<std::fs::File>, S
             crate::agent::Observing::Smith(observing) => {
                 let path = observing.prepared.trace.as_ref().ok_or("Smith native face requires a trace path")?;
                 if agent {
-                    if !matches!(
-                        observing.prepared.face,
-                        crate::agent::smith::Face::Events(crate::agent::smith::events::Shape::LocalAgentTrace)
-                    ) {
+                    if !matches!(observing.prepared.face, crate::agent::smith::events::Shape::LocalAgentTrace) {
                         return Ok(None);
                     }
                     let mut split = path.as_os_str().to_os_string();

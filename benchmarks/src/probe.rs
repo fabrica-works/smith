@@ -337,10 +337,8 @@ fn prepare(
         ArmRef::Built(build) => {
             let faces =
                 crate::agent::smith::read_faces(&root.join("agents/smith/faces.toml")).map_err(|error| error.reason)?;
-            Some(match crate::agent::smith::face(&build.arm, &faces, repository).map_err(|error| error.reason)?.face {
-                crate::agent::smith::Face::Legacy(_) => crate::SmithFace::Legacy,
-                crate::agent::smith::Face::Events(_) => crate::SmithFace::Events,
-            })
+            crate::agent::smith::face(&build.arm, &faces, repository).map_err(|error| error.reason)?;
+            Some(crate::SmithFace::Events)
         }
     };
     let mut requests = Vec::new();
@@ -583,9 +581,11 @@ fn comparison(
     }
 }
 
-fn judgment(batch: &crate::batch::Batch) -> Judgment {
-    if batch.results.iter().any(|result| matches!(result.outcome.end, End::Refused { .. } | End::HarnessError { .. }))
-        || batch.probes.values().any(|verdict| matches!(verdict, crate::ProbeVerdict::Quarantined))
+pub(crate) fn judgment(batch: &crate::batch::Batch) -> Judgment {
+    if batch.results.iter().any(|result| {
+        matches!(result.outcome.end, End::HarnessError { .. })
+            || (matches!(result.outcome.end, End::Refused { .. }) && !crate::batch::expected_startup_refusal(result))
+    }) || batch.probes.values().any(|verdict| matches!(verdict, crate::ProbeVerdict::Quarantined))
     {
         Judgment::Incomplete
     } else {

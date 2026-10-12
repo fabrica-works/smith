@@ -65,8 +65,6 @@ impl<T> Measure<T> {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum SmithFace {
-    /// A pre-events binary's structured Debug trace.
-    Legacy,
     /// A binary's versioned event stream.
     Events,
 }

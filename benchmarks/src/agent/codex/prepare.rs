@@ -30,7 +30,7 @@ pub struct Prepared {
 /// The observer and exact configuration selected for this attempt.
 #[derive(Debug)]
 pub struct Observing {
-    pub prepared: Prepared,
+    pub prepared: Box<Prepared>,
     pub observer: Observer,
     pub collected: Option<super::Rollouts>,
     pub collection_error: Option<String>,

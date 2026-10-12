@@ -86,15 +86,32 @@ fn order(suite: &Suite, requests: Vec<Prepared>, seed: u64, logical: bool) -> Re
     Ok(ordered)
 }
 
-fn observed_no_request(result: &AttemptResult) -> bool {
-    ["no-request", "stream-whole"].into_iter().all(|name| {
-        result.outcome.deciding.iter().any(|deciding| deciding == name)
+fn observed_checks(result: &AttemptResult, names: &[&str]) -> bool {
+    names.iter().all(|name| {
+        result.outcome.deciding.iter().any(|deciding| deciding == *name)
             && result
                 .outcome
                 .checks
                 .iter()
-                .any(|check| check.check == name && check.passed == Measure::Observed { value: true })
+                .any(|check| check.check == *name && check.passed == Measure::Observed { value: true })
     })
+}
+
+/// A selected startup refusal passes every check of its empty-run story.
+pub(crate) fn expected_startup_refusal(result: &AttemptResult) -> bool {
+    matches!(result.outcome.end, End::Refused { .. })
+        && observed_checks(result, &["no-run", "end", "exit-code", "last-line", "tree-ended"])
+}
+
+fn observed_no_request(result: &AttemptResult) -> bool {
+    observed_checks(result, &["no-request", "stream-whole"]) || expected_startup_refusal(result)
+}
+
+fn rejected_before_output(result: &AttemptResult) -> bool {
+    matches!(result.counts.provider_attempts, Measure::Observed { value } if value > 0)
+        && result.health.passive_checks.iter().any(|check| {
+            check.check == "provider-rejected-before-output" && check.passed == Measure::Observed { value: true }
+        })
 }
 
 fn known_tokens(result: &AttemptResult) -> Option<u64> {
@@ -477,13 +494,13 @@ fn run_suite(
             }
         }
         let tokens = known_tokens(&result);
-        let no_request = observed_no_request(&result);
+        let zero_charge = observed_no_request(&result) || rejected_before_output(&result);
         println!("{}", crate::probe::line(&result));
         results.push(result);
         if let Some(count) = tokens {
             used = used.checked_add(count).ok_or("suite token count overflow")?;
             incomplete |= used > suite.max_tokens;
-        } else if !no_request {
+        } else if !zero_charge {
             incomplete = true;
             break;
         }
@@ -527,6 +544,70 @@ mod tests {
         value.outcome.checks[1].passed = Measure::Observed { value: true };
         value.outcome.deciding.pop();
         assert!(!observed_no_request(&value), "an advisory no-request observation cannot lift a token gap");
+    }
+
+    fn startup_refusal_result() -> AttemptResult {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut result = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("fixture");
+        result.tokens.clear();
+        result.identity.agent = crate::Agent::Smith;
+        result.outcome.end = End::Refused { setup: "expected invalid setting".into() };
+        result.outcome.exit = Measure::Observed { value: crate::Exit::Code(2) };
+        result.outcome.forced = crate::Forced::No;
+        result.outcome.deciding = ["no-run", "end", "exit-code", "last-line", "tree-ended"].map(str::to_owned).to_vec();
+        result.outcome.checks = result
+            .outcome
+            .deciding
+            .iter()
+            .map(|name| crate::CheckVerdict {
+                check: name.clone(),
+                passed: Measure::Observed { value: true },
+                evidence: vec![],
+            })
+            .collect();
+        result
+    }
+
+    #[test]
+    fn expected_startup_refusal_keeps_a_suite_running_without_token_totals() {
+        let result = startup_refusal_result();
+        let mut batch = Batch { results: vec![result], incomplete: false, probes: BTreeMap::new() };
+        assert!(observed_no_request(&batch.results[0]));
+        assert_eq!(known_tokens(&batch.results[0]), None);
+        assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Pass);
+        for index in 0..batch.results[0].outcome.checks.len() {
+            batch.results[0].outcome.checks[index].passed =
+                Measure::LowerBound { value: true, missing: vec!["missing".into()] };
+            assert!(!observed_no_request(&batch.results[0]));
+            assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Incomplete);
+            batch.results[0].outcome.checks[index].passed = Measure::Observed { value: true };
+        }
+        batch.results[0].outcome.deciding.pop();
+        assert!(!observed_no_request(&batch.results[0]));
+        assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Incomplete);
+    }
+
+    #[test]
+    fn a_proved_provider_rejection_charges_no_tokens_without_changing_usage_or_requests() {
+        let mut result = startup_refusal_result();
+        result.outcome.end = End::Failed { reason: crate::FailureReason::Model, detail: "HTTP 400".into() };
+        result.counts.provider_attempts = Measure::Observed { value: 1 };
+        let health = &mut result.health;
+        health.passive_checks.push(crate::CheckVerdict {
+            check: "provider-rejected-before-output".into(),
+            passed: Measure::Observed { value: true },
+            evidence: vec![],
+        });
+        assert!(rejected_before_output(&result));
+        assert!(!observed_no_request(&result));
+        assert_eq!(known_tokens(&result), None);
+        assert_eq!(result.counts.provider_attempts, Measure::Observed { value: 1 });
+        result.counts.provider_attempts = Measure::LowerBound { value: 1, missing: vec!["loss".into()] };
+        assert!(!rejected_before_output(&result));
+        result.counts.provider_attempts = Measure::Observed { value: 1 };
+        result.health.passive_checks.last_mut().expect("proof").passed =
+            Measure::Unavailable { reason: "unobserved".into() };
+        assert!(!rejected_before_output(&result));
     }
 
     #[test]

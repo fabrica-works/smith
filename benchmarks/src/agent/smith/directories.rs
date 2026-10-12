@@ -11,8 +11,6 @@ use serde_json::{Value, json};
 
 use crate::agent::Context;
 
-use super::legacy::Shape;
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Directory {
@@ -22,7 +20,7 @@ struct Directory {
     git: bool,
 }
 
-pub(super) fn render(context: &Context<'_>, shape: Shape) -> Result<Value, String> {
+pub(super) fn render(context: &Context<'_>) -> Result<Value, String> {
     let requested = context
         .variant
         .and_then(|variant| variant.smith.get("directories"))
@@ -31,9 +29,6 @@ pub(super) fn render(context: &Context<'_>, shape: Shape) -> Result<Value, Strin
         let working = crate::isolate::working_directory(context.guard, context.private, context.task)?;
         return Ok(json!([{"name":"repo","path":working,"writable":true,"git":true}]));
     };
-    if shape == Shape::LocalJson {
-        return Err("the baseline cannot take task override directories".into());
-    }
     let directories: Vec<Directory> =
         requested.clone().try_into().map_err(|error| format!("Smith directories: {error}"))?;
     if directories.is_empty() {

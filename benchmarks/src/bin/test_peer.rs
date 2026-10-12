@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &PathBuf::from(arguments.next().ok_or("terminal needs a recording")?),
             &PathBuf::from(arguments.next().ok_or("terminal needs a trace")?),
         ),
-        // The copied replay arm receives the legacy smith adapter's invocation.
+        // The copied replay arm receives the local smith invocation.
         Some("local") => replay(
             &std::env::current_exe()?.with_file_name("recording.jsonl"),
             &PathBuf::from(arguments.next().ok_or("local replay needs settings")?),

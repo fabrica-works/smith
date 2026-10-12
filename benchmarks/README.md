@@ -53,7 +53,7 @@ cargo run -p smith-bench -- validate [TASK]...
 cargo run -p smith-bench -- attempt PREPARED_REQUEST
 cargo run -p smith-bench -- guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...
 cargo run -p smith-bench -- summarise RESULTS_DIRECTORY SUITE TIER single SEED
-cargo run -p smith-bench -- baseline benchmarks/summaries/RUN.json NAME
+cargo run -p smith-bench -- baseline benchmarks/summaries/RUN.json NAME [--group AGENT CONFIGURATION_SHA256 MODEL EFFORT]
 cargo nextest run -p smith-bench
 ```
 
@@ -89,7 +89,10 @@ and price total fresh, cache-read and output tokens from `agents/prices.toml`,
 in micro-dollars per million tokens. Tool calls stay within each arm; only task
 and process wall time, token fields and priced spend compare across agents.
 `baseline` freezes one binary, configuration and tier under
-`benchmarks/baselines/<name>.json`. Both refuse overwrites. Commit these
+`benchmarks/baselines/<name>.json`. For a suite with several configurations, `--group` selects one agent,
+configuration digest and requested model/effort from the whole summary.
+A selection with no observations or mixed binaries refuses. Both refuse
+overwrites. Commit these
 summaries and baselines; raw attempt data stays outside repositories.
 Smoke and fix evidence belongs in commit bodies.
 
@@ -118,8 +121,7 @@ No user's settings, instructions, skills, plugins or memories enter an
 attempt. Never put credentials in task seeds or exported artifacts.
 
 Smith's append-only face registry selects the settings and event layout
-for a frozen binary. The legacy face remains until the first baseline on
-events; unavailable legacy metrics stay unavailable. Codex's JSON-lines
+for a frozen binary. Codex's JSON-lines
 observer is pinned to CLI 0.160.0; named-thread rollout collection retains
 root and child scopes. Known malformed records fail loudly; unknown
 record kinds are skipped. Typed recording controls exercise the same
