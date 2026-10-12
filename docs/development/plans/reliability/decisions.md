@@ -1610,3 +1610,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    replays it), then smith-04.s3 (repin, transcript 3's `Opaque.bytes`
    at the derived share, the turn's reasoning per limits.md 3.3), whose
    live proof is 13.6's `slow-completion`. 13.6 lands after 04.s3.
+79. **07.s4's replay through `translate.rs`; the share fails as
+   `Cap::Reasoning`** (block of 2026-10-12T20:18:23Z, skein 07.s4).
+   Codex's neutral replay rejects arrays (`charge_replay`,
+   `write_reasoning`, `input` in `crates/skein-llm/src/translate.rs`), so
+   a coalesced run cannot replay without it: `translate.rs` and its tests
+   join 07.s4's Files, the `Replay` and `Json` types kept (one item its
+   object, a run an array). A run past the completion's share fails as
+   `Limit` with `Cap::Reasoning` and the share's bound (output items x
+   reasoning): llm.md section 2 bounds each item and the run by the same
+   reasoning limit, at the item's and the completion's scale, and the
+   bound says which; no new public `Cap` variant.
