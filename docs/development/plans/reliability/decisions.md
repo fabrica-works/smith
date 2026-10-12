@@ -1780,3 +1780,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (`later.md`'s row); the probes suite runs once more from the start as
    a new run; the smoke suite's completed run stands. The suite file
    joins 00.21's Files.
+96. **10.7 may take 750 lines for its decoder's memory accounting** (block
+   of 2026-10-12T22:11:26Z, smith 10.7). 10.7's candidate stands at 699
+   production lines; its review found `accounts_worst_case` does not
+   count the login decoder's JSON collector and transient buffers, which
+   need a shared decoder-limits helper and an exported
+   `login_worst_case`, about 20 to 30 lines more. An accounting a memory
+   bound needs is not optional, and splitting it from the decoder would
+   land a decoder its bound does not count. Ruling: 10.7 lands at up to
+   750 production lines, its commit body giving the count by file; past
+   750, it stops and asks.
