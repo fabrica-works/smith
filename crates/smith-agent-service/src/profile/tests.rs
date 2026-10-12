@@ -40,11 +40,6 @@ fn declarations() -> Configuration {
 }
 
 #[test]
-#[expect(
-    clippy::disallowed_methods,
-    clippy::disallowed_types,
-    reason = "independent JSON encoding is a test harness, programming-model.md section 10.2"
-)]
 fn a_payload_sized_write_fits_the_stated_whole_call_input() {
     let mut selected = profile();
     selected.declared.tool_payload = 40_960;
@@ -54,10 +49,13 @@ fn a_payload_sized_write_fits_the_stated_whole_call_input() {
     configuration.endpoints[0].models[0].window = 272_000;
     let limits = super::derive(&selected, &configuration).expect("product call limits");
     let stated = limits.llm.adapter.stated;
-    let path = alloc::format!("{}/{}", "\u{1}".repeat(127), "\u{1}".repeat(128));
+    let mut path_bytes = [1_u8; 256];
+    path_bytes[127] = b'/';
+    let path = core::str::from_utf8(&path_bytes).expect("admitted UTF-8 path");
     assert_eq!(path.len(), 256, "the derived path ceiling");
-    for character in ['a', '\n', '\0'] {
-        let content: String = core::iter::repeat_n(character, 40_960).collect();
+    for byte in [b'a', b'\n', 0] {
+        let content = [byte; 40_960];
+        let content = core::str::from_utf8(&content).expect("admitted UTF-8 content");
         let input =
             serde_json::to_vec(&serde_json::json!({"path": path, "content": content})).expect("valid write JSON");
         assert!(
