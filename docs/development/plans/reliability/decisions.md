@@ -1686,3 +1686,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    showed it. 04.s3 lands with this batch as its live proof, the reasoning
    part passing; 13.6 lands not calibrated with these counts, attempt 06
    named as handed to 06.s2, and reruns nothing.
+86. **04.s3's face entry is pinned to a commit already on `main`** (block
+   of 2026-10-12T21:12:39Z, smith 04.s3). 04.s3 raises the derived
+   receiving bounds (items 52,754 to 52,778; the encoded line 19,814,400
+   to 19,817,472), and `benchmarks/tests/smith_producer.rs`'s
+   `the_published_face_preserves_the_native_control_producers_joint_bounds`
+   compares the newest face entry with them. 04.s3's own commit is not
+   known before `land` rebases it. Ruling: as 13.22 did, a new
+   `benchmarks/agents/smith/faces.toml` entry with the new bounds, pinned
+   to 04.s3's parent on `origin/main`, which stays an ancestor through
+   any rebase; the bounds only grow, so an arm between that parent and
+   04.s3 reads within them. The old entries and the test stay; the file
+   joins 04.s3's Files.
