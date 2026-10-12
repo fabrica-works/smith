@@ -265,7 +265,8 @@ guards stand on their deterministic tests (decisions.md, 12.4).
   the coordinator escalates it as `credentials`, and the user runs
   `codex` once.
 - **Codex runs from a private copy of its pinned version** (decisions.md,
-  13.41): `~/.local/state/smith-bench/tools/codex-0.160.0/bin/codex`, a
+  13.41 and 13.44): the release's whole package, unpacked in
+  `~/.local/state/smith-bench/tools/codex-0.160.0/`, whose `bin/codex` is a
   regular file, first on `PATH` for each `smith-bench` command that runs
   Codex. The user's own install, which updates itself, is never used for
   an arm, and never changed.

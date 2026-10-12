@@ -1164,3 +1164,19 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    face and every assertion unchanged. The second block of 13.40's kind,
    a fixture's input that the Scope changed under it: README rule 8
    gains that case.
+44. **The private Codex is the release's whole package; 13.1's Codex call
+   runs again** (block of 2026-10-12T16:36:43Z, smith 13.1). Reverses
+   13.41's archive: `codex-x86_64-unknown-linux-musl.tar.gz` holds the CLI
+   alone, and both of 13.1's Codex attempts began "Code Mode is
+   unavailable because failed to spawn code-mode host
+   .../bin/codex-code-mode-host: host executable was not found", then
+   could not write. My defect, not Codex's. The supervisor unpacked the
+   release's `codex-package-x86_64-unknown-linux-musl.tar.gz` (its
+   `codex-package.json` says 0.160.0; `bin/codex` byte-identical to the
+   CLI already there, so the arm's digest is unchanged; `bin/codex-code-mode-host`,
+   `codex-path/rg` and `codex-resources/`, the layout of the user's own
+   0.162.1) in place of the bare CLI, at 2026-10-12T16:38:58Z. The two
+   attempts are recorded in 13.1's commit body as a setup defect, not as
+   Codex's outcome, and the missing attempts run in one more call, an
+   exception to session 13's rule 1 ("once") because the defect was the
+   supervisor's.
