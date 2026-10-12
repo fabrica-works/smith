@@ -1,6 +1,7 @@
 # Limits
 
-Provisional, 2026-10-09. How an agent's limits are made:
+Provisional, 2026-10-09, revised 2026-10-12. How an agent's limits are
+made:
 
 - the quantities a deployment declares;
 - how every limit below them is derived, layer by layer;
@@ -196,7 +197,13 @@ way. Every derivation follows these rules:
    are derived from the agent's own derived limits and from the
    direction a frame travels. A stream's output holds the largest frame
    this side writes. A schema's ceilings bound what may be declared,
-   never what is reserved.
+   never what is reserved. The product's values set them: where a
+   profile's value would pass a ceiling, the ceiling rises in place while
+   formats are pre-release (README.md, section 8), as far as the codec's
+   worst case at the ceilings allows (skein's `codec.md`, section 4).
+   Many large items are bounded jointly, as one field of bytes at their
+   total, as the start's transcript is (3.6), where a list's count times
+   its largest item would pass that worst case.
 
 Each derivation states which rule it follows where it combines bounds.
 The service's tests hold, for the product's values, that every check
@@ -308,8 +315,10 @@ them (transcript.md, section 7):
 - **a turn's bytes:** from a completion's answer, its calls' inputs, its
   results at their render bounds and its reasoning items;
 - **a transcript's,** the resume limit: at least one window's turns, as
-  a session holds them, since a transcript carries only the current
-  window (transcript.md, section 7).
+  a session holds them, and their bytes, since a transcript carries only
+  the current window (transcript.md, section 7). Its turns are counted
+  from the window's messages, each turn holding at least one, never from
+  a turn budget: a window may outlast an activation.
 
 ### 3.4 Rendering
 
@@ -351,7 +360,10 @@ terms (channel.md, sections 2 and 7):
 
 - **a turn's frame:** at least the largest turn (3.3);
 - **a start's frame:** the charter at its run bound, one window's
-  transcript, the answers it lacks and the start's messages;
+  transcript, the answers it lacks and the start's messages. The
+  transcript is one piece of bytes, bounded at the resume limit's bytes
+  with a length for each turn; the agent counts its turns against the
+  resume limit's turns as it splits it (channel.md, section 3);
 - **a message's frame:** a message at its bound (3.9);
 - **its queue:** the window's turns, the calls in flight (at most
   `conversations`), the notices, the long operations, the answer and a

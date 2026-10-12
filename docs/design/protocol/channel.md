@@ -1,6 +1,6 @@
 # The channel
 
-Provisional, 2026-10-07, revised 2026-10-09. The channel between a run and
+Provisional, 2026-10-07, revised 2026-10-12. The channel between a run and
 its host is smith's application protocol on skein's framed channel
 (skein's `channel.md`). This document covers:
 
@@ -114,7 +114,15 @@ of domain/host.md, section 2.
   - for a merge in progress, the files left in conflict;
 - **the transcript,** if the run resumes: its turns' bytes, in order, as
   they were told, from the last turn whose record had `opens_window`
-  (section 4; transcript.md, section 3). Earlier windows are never sent;
+  (section 4; transcript.md, section 3). Earlier windows are never sent.
+  It is one piece: each turn's bytes after their length, a `u32`, as the
+  codec writes a field of bytes (skein's `codec.md`, section 3). The
+  piece is bounded at the resume limit's bytes, and the agent counts its
+  turns against the resume limit's turns as it splits it, so a window of
+  many small turns travels as one of a few large ones does
+  (protocol/limits.md, 3.6). A piece whose lengths do not end exactly at
+  its end, or with a turn past the turn's bound, is a malformed or
+  oversized transcript (domain/session.md, section 3);
 - **the calls the transcript does not hold as answered,** that the host
   answered: a call whose turn was never told, or one the run withdrew and
   the host decided later. Each is a name, the tool, and the answer the
