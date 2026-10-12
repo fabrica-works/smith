@@ -1343,3 +1343,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the plan, 04.s1, in session 04's file; 00.16's `small-window`
    calibration waits for it and is its live proof, within 00.16's
    original bound ($10, 45 minutes); `history` runs meanwhile.
+56. **`SessionEnded.aborted` is `Option<bool>` in the codec, `Some` on the
+   wire** (block of 2026-10-12T17:52:19Z, smith 00.16). 13.54 has earlier
+   faces read `aborted` as absent; the codec's field is `bool`, so absence
+   needs `Option<bool>`, and writing `false` for an old arm would claim
+   what it never said. Ruling: the implementer's shape. `smith-events`'
+   `SessionEnded.aborted` becomes `Option<bool>`; the current reader
+   requires the field and yields `Some`; a historical layout, selected by
+   the harness's face entry pinned to 8d2ec9b8, yields `None`; the
+   writer refuses `None`, so the wire stays events.md 3.2's `aborted`
+   bool. The producers' and tests' constructors wrap `Some` (README
+   rule 8). Not a harness rewrite of the bytes.
