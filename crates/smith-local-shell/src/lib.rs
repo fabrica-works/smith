@@ -12,6 +12,7 @@ pub mod local_host;
 pub mod local_settings;
 pub mod local_shell;
 pub mod local_tokens;
+pub mod presets;
 pub mod settings;
 
 #[cfg(test)]

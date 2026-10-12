@@ -1,4 +1,4 @@
-//! JSON configuration read once before the agent opens its channel.
+//! Generated configuration values or JSON read once before the agent opens its channel.
 //! It retains endpoint names and destinations, limits, command environment,
 //! and future trace settings; no credential is read here.
 //! Durations in JSON are milliseconds. Contract: protocol/agent.md, sections 4 and 6.
@@ -19,10 +19,14 @@ use smith_protocol_channel as channel;
 use smith_protocol_llm as llm;
 use smith_protocol_machine as machine;
 
-use crate::trace::{Capture, Delivery, TraceConfig};
+use crate::trace::{Capture, TraceConfig};
 use smith_agent_service::profile::{ACCOUNTS, ENDPOINTS, Layer, LimitName, Per, Refusal};
 
 const CONFIG_BYTES: u64 = 1 << 20;
+
+mod refusal;
+mod trace;
+pub use refusal::ConfigurationRefusal;
 
 /// Parsed startup configuration and the service it can build.
 pub struct Configuration {
@@ -90,6 +94,8 @@ struct PolicyOverrides {
     connection_keep: Option<u64>,
     tool_deadline: Option<u64>,
     shell_timeout: Option<u64>,
+    check_timeout: Option<u64>,
+    wrap_up: Option<u64>,
     group_stop: Option<u64>,
     close: Option<u64>,
     write_deadline: Option<u64>,
@@ -206,14 +212,14 @@ pub fn parse(bytes: &[u8]) -> Result<Configuration, String> {
 
 // The exact encoded count supplies machine.env_bytes before the shared encoder
 // validates names. Contract: protocol/limits.md, sections 3.5 and 4.
-fn environment_size_refusal() -> String {
-    profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Machine, "env_bytes") })
+fn environment_size_refusal() -> ConfigurationRefusal {
+    ConfigurationRefusal::Profile(Refusal::Derived { limit: LimitName::deployment(Layer::Machine, "env_bytes") })
 }
 
-fn environment_refusal(error: machine::Unencodable) -> String {
+fn environment_refusal(error: machine::Unencodable) -> ConfigurationRefusal {
     match error {
         machine::Unencodable::Variable { index } | machine::Unencodable::Repeated { index } => {
-            profile_refusal(Refusal::Environment { index })
+            ConfigurationRefusal::Profile(Refusal::Environment { index })
         }
         // This configuration's exact count derives the receiving bound; a
         // smaller bound would mean the derived field cannot hold that count.
@@ -228,7 +234,7 @@ fn event_limits(
     capture: Capture,
     header: &[smith_events::EffectiveLimit],
     write_deadline: Duration,
-) -> Result<service::EventLimits, String> {
+) -> Result<service::EventLimits, ConfigurationRefusal> {
     let mut options = 0_u32;
     for endpoint in &declarations.endpoints {
         let resolved = endpoints.resolve(domain::llm::Endpoint(endpoint.number)).ok_or("unknown event endpoint")?;
@@ -247,7 +253,7 @@ fn effective_header(
     limits: &service::Limits,
     names: &channel::Endpoints,
     endpoints: &llm::Endpoints,
-) -> Result<List<smith_events::EffectiveLimit>, String> {
+) -> Result<List<smith_events::EffectiveLimit>, ConfigurationRefusal> {
     let inventory =
         service::profile::effective(profile, declarations, limits, endpoints).ok_or("effective limits overflow")?;
     let header = service::profile::header(&inventory, names, declarations).ok_or("effective names overflow")?;
@@ -255,34 +261,35 @@ fn effective_header(
 }
 
 fn build(document: Document) -> Result<Configuration, String> {
+    build_parts(document).map_err(ConfigurationRefusal::detail)
+}
+
+/// Build the agent from generated settings values, without a JSON file or byte round trip.
+pub fn from_value(value: serde_json::Value) -> Result<Configuration, ConfigurationRefusal> {
+    let document = serde_json::from_value(value)
+        .map_err(|why| ConfigurationRefusal::Input(format!("configuration JSON: {why}")))?;
+    build_parts(document)
+}
+
+/// Resolve profile overrides before destinations or credentials are consulted.
+pub fn profile_from_value(value: serde_json::Value) -> Result<service::profile::Profile, ConfigurationRefusal> {
+    let document =
+        serde_json::from_value(value).map_err(|why| ConfigurationRefusal::Input(format!("profile JSON: {why}")))?;
+    build_profile(&document)
+}
+
+fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal> {
     let profile = build_profile(&document.profile)?;
     let memory = profile.declared.memory;
     if document.endpoints.is_empty() {
-        return Err(profile_refusal(Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") }));
+        return Err(ConfigurationRefusal::Profile(Refusal::Field {
+            limit: LimitName::deployment(Layer::Declared, "endpoints"),
+        }));
     }
     if document.endpoints.len() > usize::try_from(ENDPOINTS).expect("endpoint count fits usize") {
         return Err("too many endpoints".into());
     }
-    let trace = match document.trace {
-        Some(trace) => {
-            if trace.path.is_empty() {
-                return Err("trace path is empty".into());
-            }
-            let capture = match trace.capture.as_str() {
-                "none" => Capture::None,
-                "calls" => Capture::Calls,
-                "everything" => Capture::Everything,
-                _ => return Err("trace capture must be none, calls or everything".into()),
-            };
-            let delivery = match trace.delivery.as_str() {
-                "complete" => Delivery::Complete,
-                "best_effort" => Delivery::BestEffort,
-                _ => return Err("trace delivery must be complete or best_effort".into()),
-            };
-            Some(TraceConfig { path: trace.path.into(), capture, delivery })
-        }
-        None => None,
-    };
+    let trace = trace::build(document.trace)?;
     let mut environment = Vec::with_capacity(document.environment.len());
     let mut environment_bytes = 0_u64;
     for variable in document.environment {
@@ -308,7 +315,7 @@ fn build(document: Document) -> Result<Configuration, String> {
         environment_bytes: u32::try_from(environment_bytes).map_err(|_| environment_size_refusal())?,
         endpoints: declarations.into_boxed_slice(),
     };
-    let mut limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
+    let mut limits = service::profile::derive(&profile, &declarations).map_err(ConfigurationRefusal::Profile)?;
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
     let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
@@ -340,7 +347,7 @@ fn build(document: Document) -> Result<Configuration, String> {
                     endpoint,
                     &limits.domain.session.tools,
                 )
-                .map_err(profile_refusal)?,
+                .map_err(ConfigurationRefusal::Profile)?,
                 head: model.head,
                 idle: model.idle,
             });
@@ -358,11 +365,11 @@ fn build(document: Document) -> Result<Configuration, String> {
     Ok(Configuration { service: config, memory, trace, profile, declarations })
 }
 
-fn check_memory(config: &service::Config, memory: u64) -> Result<(), String> {
+fn check_memory(config: &service::Config, memory: u64) -> Result<(), ConfigurationRefusal> {
     let complete = service::worst_case(&config.limits, &config.llm_endpoints).ok_or_else(|| {
-        profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
+        ConfigurationRefusal::Profile(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
     })?;
-    service::profile::validate::memory(complete, memory).map_err(profile_refusal)
+    service::profile::validate::memory(complete, memory).map_err(ConfigurationRefusal::Profile)
 }
 
 struct PreparedEndpoints {
@@ -375,7 +382,7 @@ fn build_endpoints(
     endpoints: Vec<Endpoint>,
     limits: &llm::ComponentLimits,
     profile: &service::profile::Profile,
-) -> Result<PreparedEndpoints, String> {
+) -> Result<PreparedEndpoints, ConfigurationRefusal> {
     let mut domain_endpoints = Vec::with_capacity(endpoints.len());
     let mut channel_endpoints = List::with_capacity(ENDPOINTS);
     let mut llm_endpoints = Vec::with_capacity(endpoints.len());
@@ -384,7 +391,7 @@ fn build_endpoints(
     for endpoint in endpoints {
         let declared = build_models(&endpoint)?;
         let mut client = service::profile::endpoint_client(profile, &declared, limits.adapter.client.history_items)
-            .map_err(profile_refusal)?;
+            .map_err(ConfigurationRefusal::Profile)?;
         if endpoint.name.is_empty()
             || endpoint.name.len()
                 > usize::try_from(smith_charter::CEILINGS.llm_endpoint).expect("endpoint name bound fits usize")
@@ -440,10 +447,11 @@ fn build_endpoints(
             })
             .map_err(|_| "too many channel endpoints")?;
         let credential = credential_limits(limits);
-        let head = shared::client::request_head(&llm_endpoint, &credential, &client)
-            .map_err(|error| profile_refusal(Refusal::Connection(connection::EndpointError::Client(error))))?;
+        let head = shared::client::request_head(&llm_endpoint, &credential, &client).map_err(|error| {
+            ConfigurationRefusal::Profile(Refusal::Connection(connection::EndpointError::Client(error)))
+        })?;
         service::profile::validate::request_head(endpoint.number, head, tls::client::MAX_PLAINTEXT)
-            .map_err(profile_refusal)?;
+            .map_err(ConfigurationRefusal::Profile)?;
         client.http.request = head;
         let mut destination =
             connection::Endpoint { address, transport, llm: llm_endpoint, limits: client, credential };
@@ -466,7 +474,7 @@ fn build_endpoints(
     })
 }
 
-fn endpoint_transport(endpoint: &Endpoint, address: SocketAddr) -> Result<connection::Transport, String> {
+fn endpoint_transport(endpoint: &Endpoint, address: SocketAddr) -> Result<connection::Transport, ConfigurationRefusal> {
     match endpoint.transport.as_str() {
         "tls" => Ok(connection::Transport::Tls {
             server_name: tls::Name::new(endpoint.server_name.as_deref().ok_or("TLS endpoint requires server_name")?)
@@ -486,7 +494,7 @@ fn endpoint_transport(endpoint: &Endpoint, address: SocketAddr) -> Result<connec
     }
 }
 
-fn endpoint_models(models: &[ModelDocument]) -> Result<Box<[llm::ConfiguredModel]>, String> {
+fn endpoint_models(models: &[ModelDocument]) -> Result<Box<[llm::ConfiguredModel]>, ConfigurationRefusal> {
     let mut configured = Vec::with_capacity(models.len());
     for model in models {
         configured.push(llm::ConfiguredModel {
@@ -497,7 +505,7 @@ fn endpoint_models(models: &[ModelDocument]) -> Result<Box<[llm::ConfiguredModel
     Ok(configured.into_boxed_slice())
 }
 
-fn build_profile(document: &ProfileDocument) -> Result<service::profile::Profile, String> {
+fn build_profile(document: &ProfileDocument) -> Result<service::profile::Profile, ConfigurationRefusal> {
     if document.name != "standard" {
         return Err("unknown profile name".into());
     }
@@ -508,7 +516,10 @@ fn build_profile(document: &ProfileDocument) -> Result<service::profile::Profile
     Ok(profile)
 }
 
-fn apply_declared(profile: &mut service::profile::Profile, overrides: &DeclaredOverrides) -> Result<(), String> {
+fn apply_declared(
+    profile: &mut service::profile::Profile,
+    overrides: &DeclaredOverrides,
+) -> Result<(), ConfigurationRefusal> {
     if let Some(value) = overrides.conversations {
         if value == 0 {
             return Err("profile.declared.conversations must be positive".into());
@@ -596,7 +607,10 @@ fn apply_declared(profile: &mut service::profile::Profile, overrides: &DeclaredO
     Ok(())
 }
 
-fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverrides) -> Result<(), String> {
+fn apply_counts(
+    profile: &mut service::profile::Profile,
+    overrides: &PolicyOverrides,
+) -> Result<(), ConfigurationRefusal> {
     if let Some(value) = overrides.max_turns {
         if value == 0 {
             return Err("profile.policy.max_turns must be positive".into());
@@ -667,7 +681,16 @@ fn apply_counts(profile: &mut service::profile::Profile, overrides: &PolicyOverr
     Ok(())
 }
 
-fn apply_durations(profile: &mut service::profile::Profile, overrides: &PolicyOverrides) -> Result<(), String> {
+fn apply_durations(
+    profile: &mut service::profile::Profile,
+    overrides: &PolicyOverrides,
+) -> Result<(), ConfigurationRefusal> {
+    if let Some(value) = overrides.check_timeout {
+        profile.policy.check_timeout = duration(value, LimitName::deployment(Layer::Policy, "check_timeout"))?;
+    }
+    if let Some(value) = overrides.wrap_up {
+        profile.policy.wrap_up = duration(value, LimitName::deployment(Layer::Policy, "wrap_up"))?;
+    }
     if let Some(value) = overrides.connection_keep {
         profile.policy.connection_keep = duration(value, LimitName::deployment(Layer::Policy, "connection_keep"))?;
     }
@@ -695,16 +718,16 @@ fn apply_durations(profile: &mut service::profile::Profile, overrides: &PolicyOv
     Ok(())
 }
 
-fn duration(millis: u64, name: LimitName) -> Result<Duration, String> {
-    let nanos = millis.checked_mul(1_000_000).ok_or_else(|| profile_refusal(Refusal::Derived { limit: name }))?;
+fn duration(millis: u64, name: LimitName) -> Result<Duration, ConfigurationRefusal> {
+    let nanos = millis.checked_mul(1_000_000).ok_or(ConfigurationRefusal::Profile(Refusal::Derived { limit: name }))?;
     Ok(Duration::from_nanos(nanos))
 }
 
-fn endpoint_duration(millis: u64, endpoint: u32, field: &'static str) -> Result<Duration, String> {
+fn endpoint_duration(millis: u64, endpoint: u32, field: &'static str) -> Result<Duration, ConfigurationRefusal> {
     duration(millis, LimitName { layer: Layer::Policy, field, per: Per::Endpoint(endpoint) })
 }
 
-fn endpoint_identity(value: Option<&str>) -> Result<llm::IdentityProfile, String> {
+fn endpoint_identity(value: Option<&str>) -> Result<llm::IdentityProfile, ConfigurationRefusal> {
     match value {
         None | Some("plain") => Ok(llm::IdentityProfile::Plain),
         Some("claude-code") => Ok(llm::IdentityProfile::ClaudeCode),
@@ -712,7 +735,7 @@ fn endpoint_identity(value: Option<&str>) -> Result<llm::IdentityProfile, String
     }
 }
 
-fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, String> {
+fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, ConfigurationRefusal> {
     match value {
         None | Some("fail") => Ok(llm::OversizedReasoning::Fail),
         Some("drop") => Ok(llm::OversizedReasoning::Drop),
@@ -720,7 +743,7 @@ fn reasoning_policy(value: Option<&str>) -> Result<llm::OversizedReasoning, Stri
     }
 }
 
-fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, String> {
+fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, ConfigurationRefusal> {
     let number = endpoint.number;
     let models = &endpoint.models;
     let provider = match endpoint.provider.as_str() {
@@ -731,12 +754,12 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Strin
     let identity = endpoint_identity(endpoint.identity.as_deref())?;
     let option_bytes =
         llm::endpoint_own(endpoint.reasoning_effort.as_deref().map(str::as_bytes), identity).map_err(|_| {
-            profile_refusal(Refusal::Derived {
+            ConfigurationRefusal::Profile(Refusal::Derived {
                 limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
             })
         })?;
     if models.is_empty() {
-        return Err(profile_refusal(Refusal::Field {
+        return Err(ConfigurationRefusal::Profile(Refusal::Field {
             limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(number) },
         }));
     }
@@ -744,7 +767,9 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Strin
     let mut prepared = Vec::with_capacity(models.len());
     for (index, model) in models.iter().enumerate() {
         let index = u32::try_from(index).map_err(|_| {
-            profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "configured_models") })
+            ConfigurationRefusal::Profile(Refusal::Derived {
+                limit: LimitName::deployment(Layer::Service, "configured_models"),
+            })
         })?;
         let per = Per::Model { endpoint: number, model: index };
         if model.name.is_empty()
@@ -787,9 +812,9 @@ fn tls_transport() -> String {
     "tls".into()
 }
 
-fn resolve(address: &str) -> Result<SocketAddr, String> {
+fn resolve(address: &str) -> Result<SocketAddr, ConfigurationRefusal> {
     let mut resolved = address.to_socket_addrs().map_err(|error| format!("endpoint address {address:?}: {error}"))?;
-    resolved.next().ok_or_else(|| format!("endpoint address {address:?} has no result"))
+    resolved.next().ok_or_else(|| ConfigurationRefusal::Input(format!("endpoint address {address:?} has no result")))
 }
 
 // Startup trust material and decoded configuration are bounded together.
@@ -839,6 +864,7 @@ pub(crate) fn profile_refusal(error: Refusal) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod native;
     use super::*;
 
     fn document() -> Document {
@@ -1007,7 +1033,7 @@ mod tests {
         assert_eq!(build(policy).err().as_deref(), Some("derived: policy.max_time does not fit its type"));
         let endpoint = LimitName { layer: Layer::Declared, field: "idle", per: Per::Model { endpoint: 7, model: 3 } };
         assert_eq!(
-            duration(u64::MAX, endpoint).err().as_deref(),
+            duration(u64::MAX, endpoint).err().map(ConfigurationRefusal::detail).as_deref(),
             Some("derived: declared.idle[endpoint=7,model=3] does not fit its type")
         );
     }

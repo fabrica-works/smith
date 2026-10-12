@@ -49,6 +49,9 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
 pub(super) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
     let mut settings = Settings { workspace, values: BTreeMap::new() };
     document(&mut settings, BUILT_IN, &Origin::BuiltIn)?;
+    for preset in [crate::presets::Preset::Codex, crate::presets::Preset::Anthropic] {
+        document(&mut settings, crate::presets::built_in(preset), &Origin::BuiltIn)?;
+    }
     for source in sources {
         let origin = Origin::File { layer: source.layer, path: source.path.clone(), line: 1 };
         document(&mut settings, &source.text, &origin)?;
@@ -88,6 +91,7 @@ pub(super) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> 
             .map_err(|problem| Refusal { origin: origin.clone(), key: "trace.path".into(), problem })?;
         settings.values.insert("trace.path".into(), Sourced { value, origin });
     }
+    crate::presets::apply_prices(&mut settings);
     Ok(settings)
 }
 

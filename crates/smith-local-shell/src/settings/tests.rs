@@ -1,5 +1,6 @@
 use super::{Layer, Origin, Source, layers::merge};
 use crate::command::Shared;
+use std::fmt::Write;
 use std::path::PathBuf;
 
 fn source(layer: Layer, text: &str) -> Source {
@@ -86,4 +87,58 @@ fn an_unknown_array_field_names_its_element_and_exact_line() {
         .expect_err("directory key");
     assert_eq!(refusal.key, "workspace.directories[0].patth");
     assert!(refusal.line().contains("fixture.toml:3"));
+}
+
+#[test]
+fn the_built_in_layer_matches_its_golden() {
+    let settings = settings(&[]).expect("built-in layer");
+    let mut bytes = String::new();
+    for (key, sourced) in settings.values {
+        assert_eq!(sourced.origin, Origin::BuiltIn);
+        writeln!(bytes, "{key}={}", serde_json::to_string(&sourced.value).expect("value JSON")).expect("golden line");
+    }
+    assert_eq!(bytes, include_str!("built-in.golden"));
+}
+
+#[test]
+fn haiku_takes_its_long_prompt_rates_only_past_a_100000_token_window() {
+    let defaults = settings(&[]).expect("preset");
+    let declared = settings(&[source(Layer::User, "[models.'anthropic/claude-haiku-5-5']\nwindow=100000\n")])
+        .expect("declared window");
+    let key = "models.anthropic/claude-haiku-5-5.input_price";
+    assert_eq!(defaults.values["models.anthropic/claude-haiku-5-5.window"].value.as_integer(), Some(200_000));
+    assert_eq!(defaults.values[key].value.as_float(), Some(0.5));
+    assert_eq!(declared.values[key].value.as_float(), Some(0.1));
+    let past = settings(&[source(Layer::User, "[models.'anthropic/claude-haiku-5-5']\nwindow=100001\n")])
+        .expect("window past the tier");
+    assert_eq!(past.values[key].value.as_float(), Some(0.5));
+}
+
+#[test]
+fn rates_a_person_sets_stay_as_set_when_the_window_changes() {
+    let decoded = settings(&[source(Layer::User,
+        "[models.'anthropic/claude-haiku-5-5']\nwindow=100001\ninput_price=0.2\ncached_price=0.03\ncache_write_price=0.4\noutput_price=0.6\n"
+    )]).expect("person's prices");
+    for (field, expected) in
+        [("input_price", 0.2), ("cached_price", 0.03), ("cache_write_price", 0.4), ("output_price", 0.6)]
+    {
+        let value = &decoded.values[&format!("models.anthropic/claude-haiku-5-5.{field}")];
+        assert_eq!(value.value.as_float(), Some(expected));
+        assert!(matches!(value.origin, Origin::File { layer: Layer::User, .. }));
+    }
+}
+
+#[test]
+fn a_preset_rate_uses_the_declared_price_unit() {
+    let decoded =
+        settings(&[source(Layer::User, "[models.'codex/gpt-6-astra']\nprice_unit=1000\n")]).expect("price unit");
+    assert_eq!(decoded.values["models.codex/gpt-6-astra.input_price"].value.as_float(), Some(0.01));
+}
+
+#[test]
+fn codex_takes_long_prompt_rates_only_past_272000_tokens() {
+    let decoded =
+        settings(&[source(Layer::User, "[models.'codex/gpt-6-astra']\nwindow=272001\n")]).expect("long prompt window");
+    assert_eq!(decoded.values["models.codex/gpt-6-astra.input_price"].value.as_float(), Some(20.0));
+    assert_eq!(decoded.values["models.codex/gpt-6-astra.output_price"].value.as_float(), Some(75.0));
 }
