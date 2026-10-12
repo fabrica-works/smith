@@ -246,3 +246,152 @@ fn choosing_another_preset_replaces_only_the_endpoints_default_values() {
     assert_eq!(selected.settings.values["endpoints.codex.address"].value.as_str(), Some("proxy.test:443"));
     assert_eq!(selected.settings.values["models.codex/claude-haiku-5-5.window"].value.as_integer(), Some(200_000));
 }
+
+fn composed(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
+    let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+    let text = format!(
+        "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n[endpoints.anthropic]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
+    );
+    let decoded = settings(&[source(Layer::User, &text)])?;
+    super::resolve::resolve(&decoded, &crate::command::Command::Check { shared: Shared::default(), json: false })
+}
+
+#[test]
+fn composition_derives_only_the_main_model_with_sub_agents_off() {
+    let resolved = composed("[models.'anthropic/claude-opus-5-5']\nhead=0\nreasoning_item=0\n")
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.models.len(), 1);
+    assert_eq!(resolved.local.models[0].model.as_ref(), b"gpt-6-luna");
+    assert_eq!(resolved.accounts.len(), 1);
+    assert_eq!(resolved.agent.declarations.endpoints.len(), 1);
+    assert_eq!(resolved.agent.declarations.endpoints[0].models.len(), 1);
+    assert_eq!(resolved.outside_models["anthropic/claude-opus-5-5"], "sub_agents is off");
+}
+
+#[test]
+fn composition_adds_every_model_of_accounts_with_a_source() {
+    let resolved = composed("sub_agents=true\n[accounts.anthropic]\nsource='env'\n")
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.models.len(), 5);
+    assert_eq!(resolved.local.models[0].model.as_ref(), b"gpt-6-luna");
+    assert_eq!(
+        resolved.accounts.iter().map(|account| account.name.as_str()).collect::<Vec<_>>(),
+        ["codex", "anthropic"]
+    );
+    assert!(resolved.outside_models.is_empty());
+    assert_eq!(resolved.agent.declarations.endpoints.len(), 2);
+    assert_eq!(resolved.local.accounts.as_ref(), [0, 1]);
+}
+
+#[test]
+fn composition_reports_an_account_without_a_source_outside_the_run() {
+    let resolved = composed("sub_agents=true\n").unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.models.len(), 2);
+    assert_eq!(resolved.outside_models.len(), 3);
+    assert_eq!(resolved.outside_models["anthropic/claude-opus-5-5"], "account has no source");
+}
+
+#[test]
+fn an_outside_model_is_still_checked_for_a_positive_rate() {
+    let refusal = composed("[models.'anthropic/claude-opus-5-5']\ninput_price=0\n").err().expect("zero rate");
+    assert_eq!(refusal.key, "models.anthropic/claude-opus-5-5.input_price");
+    assert!(refusal.line().contains("model rate must be positive"));
+}
+
+#[test]
+fn an_outside_models_output_window_refusal_keeps_both_values_and_origins() {
+    let refusal = composed("[models.'anthropic/claude-opus-5-5']\noutput=200000\n").err().expect("output in window");
+    assert!(refusal.line().contains("output-in-window"));
+    assert!(
+        refusal.line().contains("models.anthropic/claude-opus-5-5.output = 200000 tokens (from user fixture.toml:3)")
+    );
+    assert!(refusal.line().contains("models.anthropic/claude-opus-5-5.window = 200000 tokens (from built-in)"));
+}
+
+#[test]
+fn a_read_window_past_tool_payload_names_both_declared_sides() {
+    let refusal = composed("[deployment]\nread_window=40961\n").err().expect("read in payload");
+    assert!(
+        refusal.line().contains("read-in-payload: deployment.read_window = 40961 bytes (from user fixture.toml:3)")
+    );
+    assert!(refusal.line().contains("deployment.tool_payload = 40960 bytes (from built-in)"));
+}
+
+#[test]
+fn a_tool_payload_past_file_bytes_names_both_declared_sides() {
+    let refusal = composed("[deployment]\nfile_bytes=40959\n").err().expect("payload in file");
+    assert!(refusal.line().contains("payload-in-file: deployment.tool_payload = 40960 bytes (from built-in)"));
+    assert!(refusal.line().contains("deployment.file_bytes = 40959 bytes (from user fixture.toml:3)"));
+}
+
+#[test]
+fn a_budget_ceiling_override_retains_its_source() {
+    let refusal = composed("[budget]\nturns=5\n[deployment]\nmax_turns=4\n").err().expect("turn ceiling");
+    assert_eq!(
+        refusal.line(),
+        "smith: budget-ceiling: budget.turns = 5 items (from user fixture.toml:3) exceeds deployment.max_turns = 4 items (from user fixture.toml:5)"
+    );
+}
+
+#[test]
+fn completion_affordability_names_spend_and_mains_cost() {
+    let refusal = composed("[budget]\nspend=0.001\n").err().expect("completion cost");
+    assert!(refusal.line().contains("completion-affordability: budget.spend = $0.001000 (from user fixture.toml:3)"));
+    assert!(refusal.line().contains("main completion = $0.050000"));
+}
+
+#[test]
+fn reserve_check_time_refusal_keeps_the_two_durations() {
+    let refusal = composed(
+        "[workspace.contract]\nform='change'\nfields=[{name='title',max=128}]\n[budget.reserve]\nseconds=299\n",
+    )
+    .err()
+    .expect("reserve check time");
+    assert!(refusal.line().contains("reserve-over-checks"));
+    assert!(refusal.line().contains("budget.reserve.seconds = 299000000000 ns (from user fixture.toml:6)"));
+    assert!(refusal.line().contains("deployment.check_timeout = 300000000000 ns (from built-in)"));
+}
+
+#[test]
+fn waiting_past_the_profile_ceiling_is_refused_at_waiting_seconds() {
+    let refusal = composed("waiting_seconds=86401\n").err().expect("waiting ceiling");
+    assert_eq!(refusal.key, "waiting_seconds");
+    assert!(refusal.line().ends_with("standard profile's ceiling of 86400 seconds"));
+}
+
+#[test]
+fn a_change_and_mid_run_delivery_keep_their_fields_and_title() {
+    let resolved = composed("[workspace.contract]\nform='change'\nfields=[{name='title',max=128}]\n[workspace.delivery]\nfields=[{name='title',max=64}]\ntitle='title'\n").unwrap_or_else(|why| panic!("{}", why.line()));
+    assert!(matches!(resolved.local.contract, smith_local_domain::Contract::Change(_)));
+    assert_eq!(resolved.local.deliver.expect("mid-run delivery").fields.first().expect("title field").max, 64);
+    assert_eq!(resolved.local.title_field.as_ref(), b"title");
+}
+
+#[test]
+fn an_outside_declared_model_needs_only_its_value_checks() {
+    let resolved = composed(
+        "[models.'outside/model']\nwindow=1024\noutput=16\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n",
+    )
+    .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.models.len(), 1);
+    assert_eq!(resolved.outside_models["outside/model"], "sub_agents is off");
+}
+
+#[test]
+fn cancellation_grace_refusal_names_the_profile_durations() {
+    let refusal = composed("[deployment]\ncancel_grace=9\n").err().expect("cancel over close");
+    assert!(refusal.line().contains("cancel-over-close"));
+    assert!(refusal.line().contains("deployment.cancel_grace = 9000000000 ns (from user fixture.toml:3)"));
+    assert!(refusal.line().contains("io.twice_close = 10000000000 ns (from built-in)"));
+}
+
+#[test]
+fn trust_paths_are_resolved_from_the_settings_workspace() {
+    let decoded = merge(&Shared::default(), PathBuf::from(env!("CARGO_MANIFEST_DIR")), &[
+        source(Layer::User,"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['../../tests/protocol-llm/fixtures/root.der']\n")
+    ]).expect("relative root");
+    let resolved =
+        super::resolve::resolve(&decoded, &crate::command::Command::Check { shared: Shared::default(), json: false })
+            .unwrap_or_else(|why| panic!("{}", why.line()));
+    assert_eq!(resolved.local.models.len(), 1);
+}

@@ -151,6 +151,7 @@ pub fn limits() -> agent::Limits {
     let configuration = declarations(0);
     let mut limits = agent::profile::derive(&profile, &configuration).expect("tiny profile derives");
     // Worlds may lower or specialize a derived limit (protocol/limits.md2.2).
+    limits.domain.run.models = 2;
     limits.domain.configured_model_bytes = 4096;
     limits.llm.connection.endpoints = 1;
     limits.llm.connection.connections = 2;

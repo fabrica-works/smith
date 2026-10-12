@@ -85,12 +85,53 @@ pub enum Problem {
     RepositoryBudget,
     /// The commands' PATH contains no executable for this tool.
     MissingTool,
+    /// A budget refusal with the requested value and the other side's source.
+    Budget(Box<BudgetComparison>),
+    /// A native comparison's typed sides, with their setting paths and sources.
+    Relationship(Box<Relationship>),
+}
+
+/// The local budget's typed failure and both sides' values and sources.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BudgetComparison {
+    pub reason: smith_domain::run::BudgetRefusal,
+    pub requested: smith_agent_service::profile::Value,
+    pub other: smith_agent_service::profile::Value,
+    pub other_key: String,
+    pub other_origin: Origin,
+    pub profile: String,
+}
+
+/// A profile comparison retains its native check and each side's origin.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Relationship {
+    pub check: smith_agent_service::profile::Check,
+    pub left: smith_agent_service::profile::Value,
+    pub right: smith_agent_service::profile::Value,
+    pub right_key: String,
+    pub right_origin: Origin,
 }
 
 impl Refusal {
     /// One operator line without the refused value or credentials.
     #[must_use]
     pub fn line(&self) -> String {
+        if let Problem::Budget(comparison) = &self.problem {
+            return resolve::relationships::budget_line(self, comparison).replace(['\n', '\r'], "\\n");
+        }
+        if let Problem::Relationship(comparison) = &self.problem {
+            let Relationship { check, left, right, right_key, right_origin } = comparison.as_ref();
+            return format!(
+                "smith: {}: {} = {} (from {}); {right_key} = {} (from {})",
+                check.name(),
+                self.key,
+                resolve::relationships::value(*left),
+                self.origin.description(),
+                resolve::relationships::value(*right),
+                right_origin.description()
+            )
+            .replace(['\n', '\r'], "\\n");
+        }
         let place = match &self.origin {
             Origin::BuiltIn => "built-in settings".into(),
             Origin::File { path, line, .. } => format!("{}:{line}", path.display()),
@@ -104,7 +145,27 @@ impl Refusal {
             Problem::RepositoryAuthority => "repository layer cannot set authority",
             Problem::RepositoryBudget => "repository budget exceeds the user's value",
             Problem::MissingTool => "executable is not found in the commands' PATH",
+            Problem::Relationship(_) => unreachable!("relationship rendered above"),
+            Problem::Budget(_) => unreachable!("budget rendered above"),
         };
         format!("smith: {place}: {}: {problem}", self.key).replace(['\n', '\r'], "\\n")
+    }
+}
+
+impl Origin {
+    /// The surviving source of one value, without using Rust's debug formatting.
+    pub(crate) fn description(&self) -> String {
+        match self {
+            Self::BuiltIn => "built-in".into(),
+            Self::File { layer, path, line } => {
+                let layer = match layer {
+                    Layer::User => "user",
+                    Layer::Repository => "repository",
+                };
+                format!("{layer} {}:{line}", path.display())
+            }
+            Self::Override { .. } => "-c".into(),
+            Self::Flag { flag } => flag.clone(),
+        }
     }
 }

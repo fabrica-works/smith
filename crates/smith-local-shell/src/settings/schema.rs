@@ -78,7 +78,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["deployment", "memory" | "llm_pool"] => Some(Kind::Integer(i64::MAX.unsigned_abs())),
         ["workspace", "directories"] => Some(Kind::Directories),
         ["workspace", "contract", "form"] => Some(Kind::Text(32)),
-        ["workspace", "contract", "fields"] => Some(Kind::Fields),
+        ["workspace", "contract" | "delivery", "fields"] => Some(Kind::Fields),
         ["environment", "set", _] => Some(Kind::Text(1 << 20)),
         _ => None,
     }

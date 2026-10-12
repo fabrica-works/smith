@@ -19,6 +19,7 @@ pub struct Report {
     pub build: serde_json::Value,
     pub tools: BTreeMap<&'static str, PathBuf>,
     pub environment: Vec<String>,
+    pub outside_models: BTreeMap<String, String>,
 }
 
 /// Startup either supplies the document or names its configuration problem.
@@ -33,6 +34,12 @@ pub enum Verdict {
 /// Build the document without reading or reporting a credential.
 #[must_use]
 pub fn report(settings: &Settings) -> Verdict {
+    let command = Command::Check { shared: command::Shared::default(), json: false };
+    let resolved = match settings::resolve::resolve(settings, &command) {
+        Ok(resolved) => resolved,
+        Err(why) => return Verdict::Refused(why),
+    };
+    let settings = &resolved.settings;
     let inherited = settings.values.get("environment.inherit").and_then(|value| value.value.as_array());
     let inherits_path = inherited.is_some_and(|names| names.iter().any(|name| name.as_str() == Some("PATH")));
     let path = settings
@@ -92,6 +99,7 @@ pub fn report(settings: &Settings) -> Verdict {
         build: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version),"build":text(&identity.build)}),
         tools,
         environment,
+        outside_models: resolved.outside_models.into_iter().map(|(model, reason)| (model, reason.into())).collect(),
     })
 }
 
@@ -106,12 +114,7 @@ pub fn render_json(report: &Report) -> String {
 pub fn render_text(report: &Report) -> String {
     let mut lines = Vec::new();
     for (key, value) in &report.settings.values {
-        let source = match &value.origin {
-            Origin::BuiltIn => "built-in".into(),
-            Origin::File { layer, path, line } => format!("{layer:?} {}:{line}", path.display()),
-            Origin::Override { index } => format!("-c override {index}"),
-            Origin::Flag { flag } => flag.clone(),
-        };
+        let source = value.origin.description();
         lines.push(format!("{key} = {} (from {source})", value.value));
     }
     lines.push(format!("build {}", report.build));
@@ -120,6 +123,9 @@ pub fn render_text(report: &Report) -> String {
         lines.push(format!("{name} = {}", path.display()));
     }
     lines.push(format!("environment: {}", report.environment.join(", ")));
+    for (model, reason) in &report.outside_models {
+        lines.push(format!("model {model} is outside the run: {reason}"));
+    }
     lines.join("\n")
 }
 

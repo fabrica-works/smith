@@ -534,7 +534,10 @@ fn derive_domain(
         Err(field) => return Err(derived(Layer::Session, field.name())),
     };
     let mut configured_model_bytes = 0_u64;
+    let mut model_count = 0_u32;
     for endpoint in &configuration.endpoints {
+        let count = u32::try_from(endpoint.models.len()).or(Err(derived(Layer::Run, "models")))?;
+        model_count = model_count.checked_add(count).ok_or(derived(Layer::Run, "models"))?;
         for model in &endpoint.models {
             let owned = domain::ConfiguredModel::worst_case(model.name.len())
                 .ok_or(derived(Layer::Service, "configured_model_bytes"))?;
@@ -542,6 +545,7 @@ fn derive_domain(
                 configured_model_bytes.checked_add(owned).ok_or(derived(Layer::Service, "configured_model_bytes"))?;
         }
     }
+    run.models = model_count.checked_sub(1).ok_or(derived(Layer::Run, "models"))?;
     Ok(domain::Limits {
         accounts: ACCOUNTS,
         endpoints: ENDPOINTS,

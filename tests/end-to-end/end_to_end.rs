@@ -360,7 +360,7 @@ fn a_refusal_in_the_user_layer_names_its_file_line_and_key() {
 #[test]
 fn smith_check_json_shows_each_value_with_its_layer() {
     let scratch = Scratch::new();
-    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\neffort='low'\n");
+    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\neffort='low'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n");
     let directory = scratch.path().join(".smith");
     std::fs::create_dir(&directory).expect("repository layer");
     std::fs::write(directory.join("config.toml"), b"[environment.set]\nREPO='repository-value'\n")
@@ -369,6 +369,7 @@ fn smith_check_json_shows_each_value_with_its_layer() {
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
     assert_eq!(report["version"], 1);
+    assert_eq!(report["outside_models"]["anthropic/claude-opus-5-5"], "sub_agents is off");
     assert_eq!(report["settings"]["values"]["model"]["origin"]["layer"], "user");
     assert_eq!(report["settings"]["values"]["effort"]["value"], "high");
     assert_eq!(report["settings"]["values"]["effort"]["origin"]["kind"], "override");
@@ -404,4 +405,17 @@ fn an_override_past_its_bound_is_refused_naming_the_override() {
     assert_eq!(ran.code, 2);
     let line = String::from_utf8(ran.stderr).expect("UTF-8");
     assert!(line.contains("-c override 1") && line.contains("budget.turns") && line.contains("bound"));
+}
+
+#[test]
+fn smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='cannot-resolve.invalid:443'\n");
+    let ran = support::smith(&scratch, &["check", "-c", "budget.turns=5000"], b"");
+    assert_eq!(ran.code, 2);
+    assert_eq!(
+        String::from_utf8(ran.stderr).expect("UTF-8"),
+        "smith: budget.turns = 5000 (from -c) exceeds the standard profile's ceiling of 4096 turns\n"
+    );
+    assert!(ran.stdout.is_empty());
 }
