@@ -10,9 +10,38 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
+fn version_six_names_medium_after_three_low_no_write_deviations() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let design = root.join("../docs/design");
+    let current = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &design).expect("v6 task");
+    let old = smith_bench::check_task(&root.join("tests/fixtures/large-write/v5/task.toml"), &design)
+        .expect("preserved v5 task");
+    assert_eq!(current.version, 6);
+    assert_eq!(old.version, 5);
+    assert_eq!(current.effort.as_deref(), Some("medium"));
+    assert_eq!(old.effort.as_deref(), Some("low"));
+    assert_eq!(current.tier, old.tier);
+    assert_eq!(current.prompt, old.prompt);
+    assert_eq!(current.budget, old.budget);
+    assert_eq!(current.smith, old.smith);
+    assert_eq!(current.seed_sha256, old.seed_sha256);
+    assert_eq!(current.event, old.event);
+    assert_eq!(current.outcome, old.outcome);
+    assert_eq!(current.deciding, old.deciding);
+    let current_piece = current.with_variant("oversized").expect("current variant");
+    let old_piece = old.with_variant("oversized").expect("old variant");
+    assert_eq!(current_piece.prompt, old_piece.prompt);
+    assert_eq!(current_piece.smith, old_piece.smith);
+    assert_eq!(current_piece.budget, old_piece.budget);
+    assert_eq!(current_piece.event, old_piece.event);
+    assert_eq!(current_piece.outcome, old_piece.outcome);
+    assert_eq!(current_piece.deciding, old_piece.deciding);
+}
+
+#[test]
 fn version_five_judges_saved_call_bytes_and_measures_seed_fidelity() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let file = root.join("tasks/probes/large-write/task.toml");
+    let file = root.join("tests/fixtures/large-write/v5/task.toml");
     let task = smith_bench::check_task(&file, &root.join("../docs/design")).expect("v5 frozen task");
     let oversized = task.with_variant("oversized").expect("oversized variant");
     assert_eq!(task.version, 5);
