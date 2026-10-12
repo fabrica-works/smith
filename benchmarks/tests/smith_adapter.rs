@@ -101,10 +101,9 @@ fn a_terminal_peer_can_close_its_stdio_before_the_leader_exits_without_hangup() 
     let trace = directory.join("trace.jsonl");
     std::fs::write(&trace, []).expect("empty append file");
     let recording = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/smith-legacy/completed.jsonl");
-    let script = "import os,signal,sys,time; signal.signal(signal.SIGHUP,signal.SIG_DFL); sys.stdin.readline(); open(sys.argv[2],'wb').write(open(sys.argv[1],'rb').read()); sys.stdin.readline(); os.close(0); os.close(1); os.write(2,b'tty stdio closed before leader exit\\n'); time.sleep(0.005)";
     let command = Command {
-        program: "/usr/bin/python3".into(),
-        arguments: vec!["-c".into(), script.into(), recording.into_os_string(), trace.clone().into_os_string()],
+        program: env!("CARGO_BIN_EXE_test-peer").into(),
+        arguments: vec!["terminal".into(), recording.into_os_string(), trace.clone().into_os_string()],
         environment: vec![("PATH".into(), "/usr/bin:/bin".into())],
         directory: directory.clone(),
     };

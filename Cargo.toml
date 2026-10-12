@@ -77,6 +77,10 @@ overflow-checks = true
 panic = "abort"
 overflow-checks = true
 
+# smith-bench's tests hash a debug fixture binary of several MiB on each arm read.
+[profile.dev.package.sha2]
+opt-level = 3
+
 # The lints for the step crates (every domain, protocol and io layer: lib is skein's).
 # Disallowed types, macros and methods are listed in clippy.toml. Ordinary Rust
 # (simulators, test harnesses) declares its own [lints] table.

@@ -103,7 +103,8 @@ they do not declare a regression.
 
 Runtime writes pass the shared guard and live under
 `$XDG_STATE_HOME/smith-bench/`: `requests/`, raw `runs/`, private `homes/`,
-build `clone/` and immutable `arms/`, and attempt `scratch/`. Each attempt
+build `clone/` and `arms/`, which `build` writes once and never rewrites,
+and attempt `scratch/`. Each attempt
 uses fresh private paths, a frozen seed and a supervised process tree.
 Setup stays outside the inference timer. Grading follows settlement in
 its separate home. Workspaces are removed after their evidence is saved.

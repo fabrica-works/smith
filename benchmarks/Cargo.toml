@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+default-run = "smith-bench"
+
+[[bin]]
+name = "test-peer"
+path = "src/bin/test_peer.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

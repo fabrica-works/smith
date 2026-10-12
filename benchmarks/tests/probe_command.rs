@@ -143,16 +143,13 @@ fn replay_arm(directory: &Path) -> PathBuf {
     std::fs::create_dir_all(directory.join(".codex")).expect("synthetic home");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("repository");
     let mut build = common::unexecuted_arm(directory, repository);
-    let settings = directory.join("records");
+    let settings = build.directory.join("recording.jsonl");
     std::fs::write(&settings, common::events::bytes(&common::events::balanced())).expect("wire recording");
-    let script = format!(
-        "#!/usr/bin/python3\nimport json,sys\ns=json.load(open(sys.argv[2]))\np=s['agent']['trace']['path']\nopen(p,'wb').write(open({:?},'rb').read())\n",
-        settings.to_str().expect("path")
-    );
+    let executable = std::fs::read(env!("CARGO_BIN_EXE_test-peer")).expect("Rust replay peer");
     let program = build.directory.join("smith");
-    std::fs::write(&program, script.as_bytes()).expect("replay executable");
+    std::fs::write(&program, &executable).expect("replay executable");
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).expect("execute");
-    let digest = format!("{:x}", Sha256::digest(script.as_bytes()));
+    let digest = format!("{:x}", Sha256::digest(&executable));
     build.arm.sha256.clone_from(&digest);
     build.arm.binaries[0].sha256.clone_from(&digest);
     std::fs::write(build.directory.join("arm.json"), serde_json::to_vec(&build.arm).expect("manifest"))
