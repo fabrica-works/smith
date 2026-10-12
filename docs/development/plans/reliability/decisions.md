@@ -1367,3 +1367,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    and used at `prepare::request` and in the guide's retention.
    `run.rs` (a hotspot, README rule 6) and `prepare.rs` join 04.s1's
    Files, with their unit stories; its Size is README rule 9's.
+58. **13.3's `spend` lands not calibrated: its authored budget cannot
+   hold the reserve at shell.md's values** (block of
+   2026-10-12T17:57:33Z, smith 13.3). `budget/spend`'s $1.00 against the
+   standard profile 04.14 shipped (window 272,000, output 32,000, the
+   pinned rates) gives a completion of at most $0.66 and a two-turn
+   reserve of $1.32, so smith refuses it at the entrance, as run.md, 9.1
+   says ("A budget that cannot hold its reserve is refused at the
+   entrance"). Not a smith defect, and 13.3's Don't forbids moving the
+   ceiling or the budget: `spend` lands not calibrated with that reason,
+   and its next task version is `later.md`'s existing row. For the
+   retrospective: the harness reports an entrance refusal as
+   `HarnessError(no event session was observed)` rather than a setup
+   refusal.
