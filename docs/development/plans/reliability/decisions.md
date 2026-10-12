@@ -1121,3 +1121,21 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    receiving caps, steps and assertions stay. Not option B, which would
    lose its memory coverage. A second block of this kind adds it to
    README rule 8.
+41. **Codex's arm runs a private copy of codex-cli 0.160.0** (block of
+   2026-10-12T16:27:43Z, smith 13.1). `agents/codex/standard.pin.toml`
+   pins 0.160.0, and smith 12's choices say "another installed version
+   refuses setup" (`benchmarks/src/agent/codex/prepare.rs:51`). The
+   user's Codex updated itself to 0.162.1 at 2026-10-12T09:48
+   (`~/.local/bin/codex`, a symlink into
+   `~/.codex/packages/standalone/releases/0.162.1-x86_64-unknown-linux-musl/`),
+   and the harness also refuses an arm whose executable is not a regular
+   file. Ruling: the implementer's proposal, in a place session 12 shares:
+   the official release asset for 0.160.0
+   (`https://github.com/openai/codex/releases/download/rust-v0.160.0/codex-x86_64-unknown-linux-musl.tar.gz`,
+   200 on 2026-10-12T16:29Z), unpacked to
+   `~/.local/state/smith-bench/tools/codex-0.160.0/bin/codex`, beside
+   smith-bench's other state, and first on `PATH` for each command that
+   runs Codex. Nothing writes to `~/.codex` or the user's `PATH` (README
+   rule 7). Not a re-pin to 0.162.1, which would need the observer
+   checked against that version's recorded shapes, and would break again
+   at the next update. The README's "Live services" says so.

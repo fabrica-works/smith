@@ -256,6 +256,11 @@ guards stand on their deterministic tests (decisions.md, 12.4).
   `CODEX_HOME`. No agent signs in. A lapsed login stops every live run:
   the coordinator escalates it as `credentials`, and the user runs
   `codex` once.
+- **Codex runs from a private copy of its pinned version** (decisions.md,
+  13.41): `~/.local/state/smith-bench/tools/codex-0.160.0/bin/codex`, a
+  regular file, first on `PATH` for each `smith-bench` command that runs
+  Codex. The user's own install, which updates itself, is never used for
+  an arm, and never changed.
 - **It is shared with the run itself** (development.md, section 13,
   "Credentials under load"): a capacity error on a live run is a setup
   refusal, not smith's (rule 1).
