@@ -40,6 +40,11 @@ fn declarations() -> Configuration {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "independent JSON encoding is a test harness, programming-model.md section 10.2"
+)]
 fn a_payload_sized_write_fits_the_stated_whole_call_input() {
     let mut selected = profile();
     selected.declared.tool_payload = 40_960;
