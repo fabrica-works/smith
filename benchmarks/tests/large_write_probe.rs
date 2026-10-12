@@ -18,7 +18,7 @@ fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
         smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &root.join("../docs/design"))
             .expect("unchanged normal v7");
     let task =
-        smith_bench::check_task(&root.join("tasks/probes/large-write/v9/task.toml"), &root.join("../docs/design"))
+        smith_bench::check_task(&root.join("tasks/probes/large-write/v9/oversized-v9.toml"), &root.join("../docs/design"))
             .expect("new adjacent v9");
     assert_eq!(task.version, 9);
     assert_eq!(task.effort.as_deref(), Some("low"));
