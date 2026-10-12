@@ -158,7 +158,10 @@ it fails on the parent, which writes no stream in one process. Not live
 per-landing smoke runs the inline kind once smith 10.15 lands.
 Don't: write records in the local domain; give the spawned kind a stream
 here (03.9); fill `session.started`'s `limits` (smith 04.22).
-Size: at most 400 lines of production code.
+Size: at most 600 lines of production code (decisions.md, 13.4; was 400).
+Also in Files (decisions.md, 13.4): `tests/local-process/src/process.rs`
+(the traced launch, its event limits and the trace's adoption), and the
+`Cargo.toml` of each package that takes `smith-events` for it.
 Removes: `drain_agent_facts`'s fact loop and `agent_facts_not_written`.
 
 ### 03.9 The product's stream with a spawned agent

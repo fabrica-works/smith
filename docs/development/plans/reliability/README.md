@@ -154,7 +154,12 @@ do not already say.
      already implies;
    - a lookup or accessor of at most 20 lines added to a type of another
      crate of the same repository, when the Shape's signatures need it,
-     the type's fields and other methods unchanged (decisions.md, 13.3).
+     the type's fields and other methods unchanged (decisions.md, 13.3);
+   - a dependency the increment's code needs, added to a `Cargo.toml`
+     (decisions.md, 13.4);
+   - at most 60 lines in the library of the world crate the Test shape
+     names, that the Test shape's new tests need, with no existing
+     story's expected value changed (decisions.md, 13.4).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For

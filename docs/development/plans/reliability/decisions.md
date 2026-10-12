@@ -729,4 +729,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    third block of the run's first ten minutes on an edit outside Files:
    README rule 8 gains this case, a lookup or accessor of at most 20 lines
    that the Shape's signatures need.
+4. **smith 03.7 at 600 lines, with its fixture and manifests** (block of
+   2026-10-12T13:36:44Z). 03.7 needs about 500 production lines against
+   its Size of 400: the parent face's answer projected whole (about
+   180), the `Effects` stream boundary (about 85), the trace's startup
+   and adoption, and the local service's drain. code-organization.md,
+   section 8, splits an increment only above about 600, and a split now
+   would cost more than it saves, so 03.7's Size becomes 600. Its world
+   needs about 43 lines in `tests/local-process/src/process.rs`, the
+   factory that owns the product's startup in that world, and
+   `smith-events` in three manifests. The fourth block of the run's first
+   twenty minutes on an edit outside Files: README rule 8 gains two cases,
+   a dependency a `Cargo.toml` needs, and at most 60 lines in the library
+   of the world crate the Test shape names.
 
