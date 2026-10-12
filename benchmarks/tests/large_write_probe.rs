@@ -1,5 +1,7 @@
 //! Historical write cases remain intact; current predicates judge delivered bytes.
 
+use std::fmt::Write as _;
+use std::fs;
 use std::path::PathBuf;
 
 use sha2::{Digest, Sha256};
@@ -10,10 +12,79 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
+fn version_seven_generates_visible_numbered_lines_at_low_with_unchanged_deciders() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let design = root.join("../docs/design");
+    let current = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &design).expect("v7 task");
+    let old =
+        smith_bench::check_task(&root.join("tests/fixtures/large-write/v6/task.toml"), &design).expect("preserved v6");
+    assert_eq!(current.version, 7);
+    assert_eq!(current.effort.as_deref(), Some("low"));
+    assert!(current.prompt.contains("Line 0643"));
+    assert!(current.prompt.contains("Do not read"));
+    assert_eq!(current.tier, old.tier);
+    assert_eq!(current.budget, old.budget);
+    assert_eq!(current.smith, old.smith);
+    assert_eq!(current.event, old.event);
+    assert_eq!(current.deciding, old.deciding);
+    for (now, before) in current.outcome.iter().zip(&old.outcome) {
+        match now {
+            OutcomeCheck::FileDigest { .. } => (),
+            OutcomeCheck::FileContent { .. }
+            | OutcomeCheck::FileSize { .. }
+            | OutcomeCheck::Absent { .. }
+            | OutcomeCheck::Pattern { .. }
+            | OutcomeCheck::Protected { .. }
+            | OutcomeCheck::End { .. }
+            | OutcomeCheck::ExitCode { .. }
+            | OutcomeCheck::LastLine { .. }
+            | OutcomeCheck::Answer { .. }
+            | OutcomeCheck::LoginUnchanged => assert_eq!(now, before),
+        }
+    }
+    let piece = current.with_variant("oversized").expect("v7 oversized");
+    let old_piece = old.with_variant("oversized").expect("v6 oversized");
+    assert!(piece.prompt.contains("Line 0893"));
+    assert!(piece.prompt.contains("Do not read"));
+    assert_eq!(piece.smith, old_piece.smith);
+    assert_eq!(piece.budget, old_piece.budget);
+    assert_eq!(piece.event, old_piece.event);
+    assert_eq!(piece.deciding, old_piece.deciding);
+    for (now, before) in piece.outcome.iter().zip(&old_piece.outcome) {
+        match now {
+            OutcomeCheck::FileDigest { .. } => (),
+            OutcomeCheck::FileContent { .. }
+            | OutcomeCheck::FileSize { .. }
+            | OutcomeCheck::Absent { .. }
+            | OutcomeCheck::Pattern { .. }
+            | OutcomeCheck::Protected { .. }
+            | OutcomeCheck::End { .. }
+            | OutcomeCheck::ExitCode { .. }
+            | OutcomeCheck::LastLine { .. }
+            | OutcomeCheck::Answer { .. }
+            | OutcomeCheck::LoginUnchanged => assert_eq!(now, before),
+        }
+    }
+    for (file, last, bytes) in [("source.txt", 643, 36_008), ("oversized-source.txt", 893, 50_008)] {
+        let mut expected = String::new();
+        for line in 1..=last {
+            writeln!(&mut expected, "Line {line:04}: The quick brown fox jumps over the lazy dog.")
+                .expect("string formatting");
+        }
+        assert_eq!(expected.len(), bytes);
+        assert_eq!(
+            fs::read(root.join("tasks/probes/large-write/seed").join(file)).expect("numbered measurement seed"),
+            expected.as_bytes()
+        );
+    }
+}
+
+#[test]
 fn version_six_names_medium_after_three_low_no_write_deviations() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let design = root.join("../docs/design");
-    let current = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &design).expect("v6 task");
+    let current = smith_bench::check_task(&root.join("tests/fixtures/large-write/v6/task.toml"), &design)
+        .expect("preserved v6 task");
     let old = smith_bench::check_task(&root.join("tests/fixtures/large-write/v5/task.toml"), &design)
         .expect("preserved v5 task");
     assert_eq!(current.version, 6);

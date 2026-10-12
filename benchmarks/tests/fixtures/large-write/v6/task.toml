@@ -1,0 +1,111 @@
+id = "large-write"
+version = 6
+kind = "probe"
+tier = "small"
+# Task-specific effort: v5 at low effort omitted every required write in three attempts.
+# Designer0135/benchmarks3.1 therefore selects medium; model, data, checks and all caps stay unchanged.
+effort = "medium"
+deadline_seconds = 330
+prompt = "Read source.txt in two reads with window 32768, then copy its prose into payload.txt using one write call containing at least 32768 bytes. Keep the final newline. Do not use shell, edit, or delegate. Finish with ALPHA after the write reports written.\n"
+seed_sha256 = "964ddc81aac3d44bd882b11bec5163038fdc09e251002d9567a5152ec6b15899"
+guards = ["domain/tools.md, section 3", "protocol/limits.md, section 6"]
+deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "written-file", "tool-call", "no-stop", "run-completed"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "f9bddea6b5e733ba5e4a54236348f53386a2b3cc3e5f4ae3996cc41e6fbe1e97"
+[[event]]
+check = "tool-call"
+tool = "write"
+count = { exactly = 1 }
+input_bytes_at_least = 32768
+verdict = "written"
+[[event]]
+check = "no-stop"
+stop = "max_tokens"
+
+[[outcome]]
+check = "file-size"
+path = "payload.txt"
+bytes_at_least = 32768
+[[event]]
+check = "written-file"
+path = "payload.txt"
+content_bytes_at_least = 32768
+
+[[variant]]
+name = "oversized"
+replace_checks = true
+prompt = "Read oversized-source.txt in two reads with window 32768. First attempt one write of all its prose to payload.txt, above the tool payload. After the oversized refusal, write the first piece and extend it with edit calls, each within the payload, until the final file is above 40960 bytes. Do not use shell or delegate. Finish with ALPHA after the pieces are accepted.\n"
+deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "file-pieces", "blocks", "no-stop", "run-completed"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[variant.outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "f2a5b7134cca9f3f825e44a885320a80e01449ed25ecc5bc10e5c6c7ae17ecfb"
+[[variant.event]]
+check = "blocks"
+oversized = { exactly = 1 }
+[[variant.outcome]]
+check = "file-size"
+path = "payload.txt"
+bytes_at_least = 40961
+[[variant.event]]
+check = "file-pieces"
+path = "payload.txt"
+bytes_above = 40960
+file_bytes = 1048576
+[[variant.event]]
+check = "no-stop"
+stop = "max_tokens"
+[[variant.event]]
+check = "run-completed"
+status = "accepted"
