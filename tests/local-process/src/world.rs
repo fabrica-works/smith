@@ -377,6 +377,26 @@ impl World {
             (false, true, false),
         )
     }
+    /// Three workspace reads followed by an accepted report in the same process.
+    #[must_use]
+    pub fn reading(seed: u64, files: &Files, placement: Placement) -> Self {
+        let mut world = Self::configured(
+            seed,
+            files,
+            placement,
+            vec![
+                Action::Send(b"read then report\n".as_slice().into()),
+                Action::Wait(b"After three tools".as_slice().into()),
+                Action::Eof,
+            ],
+            Ending::Report(b"After three tools".to_vec()),
+            (false, true, true),
+        );
+        world.scenario.launch.traced = true;
+        world.scenario.launch.read_report = true;
+        world
+    }
+
     /// Name the product's event destination while retaining the ordinary chat story.
     #[must_use]
     pub fn traced(seed: u64, files: &Files, placement: Placement, answer: &[u8]) -> Self {
@@ -581,6 +601,7 @@ impl World {
                     trust_der: None,
                     change,
                     tools: false,
+                    read_report: false,
                     in_process: placement == Placement::InProcess,
                     keep_facts,
                     traced: false,
@@ -886,7 +907,32 @@ impl Scenario {
     /// Provider scripts and credentials are scenario data, shared across tiers.
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
-        let mut provider_scripts = if self.launch.tools {
+        let mut provider_scripts = if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"After three tools")
+        {
+            let mut turns = Vec::new();
+            for _ in 0..3 {
+                turns.push(api::Turn {
+                    lines: Box::new([api::Line::Call {
+                        name: b"read".as_slice().into(),
+                        arguments: br#"{"path":"original.txt"}"#.as_slice().into(),
+                    }]),
+                    finish: api::Finish::ToolCalls,
+                    tokens: 1,
+                });
+            }
+            turns.push(api::Turn {
+                lines: Box::new([
+                    api::Line::Text { text: b"Finishing after the reads".as_slice().into() },
+                    api::Line::Call {
+                        name: b"finish".as_slice().into(),
+                        arguments: br#"{"form":"report","text":"After three tools","fields":{}}"#.as_slice().into(),
+                    },
+                ]),
+                finish: api::Finish::ToolCalls,
+                tokens: 1,
+            });
+            Box::new([api::Script { cue: b"@local-shell".as_slice().into(), turns: turns.into() }])
+        } else if self.launch.tools {
             tool_scripts()
         } else if self.launch.change {
             change_scripts()

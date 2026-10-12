@@ -30,6 +30,9 @@ pub struct Launch {
     /// Include the real-loop tool and mandatory-check story.
     #[serde(default)]
     pub tools: bool,
+    /// Keep the workspace but accept a report after reads.
+    #[serde(default)]
+    pub read_report: bool,
     pub in_process: bool,
     pub keep_facts: bool,
     #[serde(default)]
@@ -684,6 +687,10 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
     let (mut config, mut lower) =
         configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
+    if launch.read_report {
+        config.local.contract =
+            local::Contract::Report(smith_domain::run::outcome::TextSpec { max: 128, fields: Box::new([]) });
+    }
     config.launch.arguments = launch.arguments();
     if launch.traced {
         lower.limits.events = Some(

@@ -335,3 +335,20 @@ fn a_line_typed_while_the_run_starts_reaches_it_as_a_message() {
         );
     }
 }
+
+#[test]
+fn an_accepted_answer_after_several_tools_reaches_the_host_before_teardown() {
+    let files = Files::new();
+    let mut world = World::reading(137, &files, Placement::Spawned);
+    world.settle();
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+    assert_eq!(world.queries().len(), 4);
+    assert!(!world.shown().windows(20).any(|text| text == b"Agent process failed"));
+    let records = world.agent_records();
+    assert!(records.iter().any(
+        |record| matches!(&record.event, Event::RunCompleted(end) if end.status == smith_events::Status::Accepted)
+    ));
+    assert!(
+        matches!(&records.last().expect("agent terminal").event, Event::SessionEnded(end) if end.answered && end.exit == 0)
+    );
+}

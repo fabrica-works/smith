@@ -223,7 +223,9 @@ impl Expectations for Meeting {
                         files.get(b"result.txt".as_slice()).is_some_and(|bytes| bytes == b"new\n"),
                         "commit contains the agent's change",
                     );
-                } else if matches!(self.ending, Ending::HostFailureBeforeAnswer) {
+                } else if matches!(self.ending, Ending::HostFailureBeforeAnswer)
+                    || matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"After three tools")
+                {
                     judge.check(
                         head.as_deref() == Some(b"0000000000000000000000000000000000000001"),
                         "read leaves the repository head unchanged",
