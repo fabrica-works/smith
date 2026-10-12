@@ -129,6 +129,10 @@ do not already say.
      calibrated, its commit body naming both runs and "stopped by the
      provider", and goes on. This extends rule 1's provider clause from
      the smoke to every live batch, for this run.
+   - **skein-world's `EINVAL`** (decisions.md, 13.67): until smith-10.10
+     repins skein, a gate or a live command that fails only with
+     "opening supervised tree member N: Other(22)" runs once more, from
+     the start; failed so again, the session stops on a question.
 4. **The harness follows the binary.** An increment that changes how
    smith is invoked, configured or observed changes `smith-bench`'s smith
    adapter in the same increment, so probes keep running. smith's legacy

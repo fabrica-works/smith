@@ -1483,3 +1483,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (10.11 and 10.12 landed in the first run), takes the full run's
    resolution, the relationship report, trust arrays and custom presets,
    with the end-to-end budget test and its process Proof.
+67. **skein-07.s2: skein-world skips `EINVAL` as `ESRCH`; smith takes it
+   with 10.10's repin; one retry until then** (block of
+   2026-10-12T18:57:45Z, smith 04.s2). The panic of 13.60 came back in
+   04.s2's live Proof (`probes-tool-output-timeout-d02d18ee-20261012T185546Z`,
+   two passes printed, then exit 134), its second occurrence: 13.60 makes
+   it a skein step and a repin. skein-07.s2 lands the one-arm fix on
+   skein `main`. smith's pin (26502c96) is far behind skein `main`, which
+   other plans have moved, and smith-10.10 already repins skein "in its
+   own commit first" to take 02.6: the fix rides that repin, not a repin
+   of its own. Until 10.10 lands, a gate or a live command that fails
+   only with "opening supervised tree member N: Other(22)" is run once
+   more (README rule 3's clause gains it); a second failure in a row
+   stops on a question. 04.s2 reruns its timeout batch once, as a new
+   run, and goes on.

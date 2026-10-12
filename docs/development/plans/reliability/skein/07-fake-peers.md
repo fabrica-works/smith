@@ -13,3 +13,21 @@ Test shape: `testing/skein-fake-peers/tests/llm.rs`, beside `fake_peer_binds_loo
 Proof: unit, the two tests above, once: `heavy cargo nextest run -p skein-fake-peers`. smith 05.12's process sweep shows it in smith once it repins.
 Don't: change skein-io or its assertion; change any other answer of the peers; add a peer option.
 Size: at most 10 lines of production code.
+
+### 07.s2 skein-world's tree supervision skips a PID that names no process
+Added during the run (decisions.md, 13.67). Scope: `testing/skein-world/src/tree.rs`'s
+supervision opens a pidfd for each discovered member and skips `ESRCH`
+(3) only; `pidfd_open` returns `EINVAL` (22) for a PID that names a
+thread, or one gone and reused as a thread, and the world fails with
+"opening supervised tree member N: Other(22)". It did twice in this run
+(smith 04.s1's gate, smith 04.s2's live Proof). `EINVAL` is skipped as
+`ESRCH` is; nothing else changes.
+Needs: nothing.
+Files: `testing/skein-world/src/tree.rs` (:249); its tests.
+Shape: one match arm.
+Test shape: a unit test, if the module's tests can hand `open_pidfd` a
+thread's id (`gettid` of a spawned thread), `a_thread_id_found_in_the_tree_is_skipped`;
+otherwise none, the commit body saying why. Under 20 ms.
+Proof: that test once, or the gate.
+Don't: skip any other error.
+Size: at most 10 production lines.
