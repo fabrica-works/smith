@@ -749,8 +749,13 @@ What the person sees:
 - **Writable caches.** A build preset, or `[build].caches`, names the
   directories outside the workspace that builds write: for `rust`,
   `$CARGO_HOME/registry` and `$CARGO_HOME/git`. `smith check` confirms
-  each exists and can be written. Once contained trees exist, they are
-  the writable part of the view (protocol/agent.md, section 3).
+  each is a directory smith's effective user may write and search, as
+  the kernel answers it (skein's `shell.md`, 6.1, `directory_access`),
+  creating and changing nothing. A cache it cannot confirm (absent, not a
+  directory, or denied, with the kernel's error) is a warning naming the
+  cache and why: a build that never writes there is not stopped by it.
+  Once contained trees exist, they are the writable part of the view
+  (protocol/agent.md, section 3).
 - **Wrapper warnings.** A build preset names the wrappers its tools may
   be configured with, such as `rustc-wrapper` for `rust`. `smith check`
   warns when a configured wrapper's cache is not among the writable
