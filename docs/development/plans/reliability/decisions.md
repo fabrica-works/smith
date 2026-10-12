@@ -1256,3 +1256,20 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `smith-domain/src/peer.rs`'s `Peer` gains the conversation's model
    index, set at `Open`, with its constructor's parameter and the
    callers that pass it; that file joins 06.7's Files.
+50. **A live batch stopped by the provider runs once more** (block of
+   2026-10-12T17:15:40Z, smith 13.2). `cache-reuse`'s batch
+   (`probes-cache-reuse-8d2ec9b8-20261012T170907Z`) stopped after two
+   runs: attempt 02's response 13 met HTTP 503 ("upstream connect error
+   or disconnect/reset before headers"), smith retried it 139 ms later
+   and answered correctly, but the failed response has no usage, so the
+   attempt's tokens are unknown and `batch.rs:481-489` stops dispatch to
+   keep the suite's token ceiling. The provider's failure, not smith's:
+   session 13's rule 1 lists "a refused or failed call" as smith's, and
+   smith's call did not fail. README rule 3 now says what rule 1 says for
+   the smoke, for every live batch: once more, from the start, as a new
+   run, after 60 s; stopped again, not calibrated, and the step goes on.
+   This matters most here: `cache-reuse` measures the prompt cache, the
+   largest gap the spike measured against Codex (findings/benchmarks.md,
+   task 01: smith 0 cached tokens, Codex 97.5k). For the retrospective:
+   the harness could count a response refused before its headers as no
+   tokens, rather than stopping the batch.

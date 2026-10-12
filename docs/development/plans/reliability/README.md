@@ -119,6 +119,16 @@ do not already say.
    run -p smith-bench -- build <commit>`. Probes run on the small tier,
    `gpt-6-luna` at low effort (`benchmarks/agents/models.toml`), unless
    the probe names an effort.
+   - **A batch stopped by the provider** (decisions.md, 13.50): when a
+     calibration batch or a suite stops because an attempt met the
+     provider's capacity or a server error (a 5xx, or `unavailable`),
+     smith's own handling of it otherwise correct, it is not smith's
+     failure. The command runs once more, from the start, as a new run,
+     after 60 seconds; nothing of the stopped run is resumed or reused.
+     Stopped by the provider again, the step lands with that probe not
+     calibrated, its commit body naming both runs and "stopped by the
+     provider", and goes on. This extends rule 1's provider clause from
+     the smoke to every live batch, for this run.
 4. **The harness follows the binary.** An increment that changes how
    smith is invoked, configured or observed changes `smith-bench`'s smith
    adapter in the same increment, so probes keep running. smith's legacy
