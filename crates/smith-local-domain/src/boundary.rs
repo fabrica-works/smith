@@ -309,6 +309,8 @@ pub enum Request {
     Process(smith_host_domain::process::Request),
     /// The shown answer moves to the service for its run terminal; owes no terminal.
     Answered { answer: smith_host_domain::Answer },
+    /// The agent went without answering; the service writes its run terminal. Owes no terminal.
+    Unanswered { cause: crate::EndCause, turns: u32, spent: u64, read: Option<Token> },
     /// The caller may terminate this invocation.
     Exit { status: ExitStatus },
 }

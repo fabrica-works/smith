@@ -52,6 +52,7 @@ pub struct Domain {
     held: Queue<Held>,
     pub(crate) stop_failed: bool,
     pub(crate) end_cause: Option<crate::EndCause>,
+    told: crate::end::Told,
     pub(crate) cancel_requested: Option<Time>,
     agent_failed: bool,
     pub(crate) agent_life: AgentLife,
@@ -181,6 +182,7 @@ impl Domain {
             held: Queue::with_capacity(1),
             stop_failed: false,
             end_cause: None,
+            told: crate::end::Told::new(),
             cancel_requested: None,
             agent_failed: false,
             agent_life: AgentLife::Starting,
@@ -628,6 +630,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.agent_life = AgentLife::Starting;
     domain.agent_failed = false;
     domain.end_cause = None;
+    domain.told = crate::end::Told::new();
     domain.cancel_requested = None;
     let messages = domain.lines.carry();
     let mut initial = List::with_capacity(env.limits.smith.run.messages.saturating_add(1));
@@ -947,6 +950,9 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             send_line(domain, env, out);
         }
         parent::Request::Turn { turn, .. } => {
+            domain.told.turns = turn.number;
+            domain.told.spent = turn.spent;
+            domain.told.read = turn.read;
             accept_turn(domain, env, turn.number, turn.read, turn.opens_window, turn.body.into_value(), out);
         }
         parent::Request::Answered { answer, .. } => crate::person::answered(domain, answer, out),
@@ -1014,27 +1020,41 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 notice: Notice::NotDelivered { line: Some(name), why: Undelivered::Refused(reason) },
             });
         }
-        parent::Request::Gone { .. } => {
-            domain.agent_life = AgentLife::Gone;
-            match domain.chat.phase {
-                Phase::Answered { .. } => domain.chat.phase = Phase::Answered { gone: Gone::Heard },
-                Phase::Loading | Phase::Idle | Phase::Starting | Phase::Running | Phase::Ending | Phase::Done => {}
-            }
-            domain.run = None;
-            if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
-                record_cause(domain, crate::EndCause::Agent);
-                domain.agent_failed = true;
-                crate::person::show_dropped(&mut domain.lines, out);
-                out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)) });
-            }
-            if domain.turns.unsaved.is_empty() {
-                if domain.agent_failed || domain.stop_failed {
-                    domain.chat.phase = Phase::Done;
-                    out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
-                } else if domain.turns.answer.is_some() {
-                    crate::person::finish_answer(domain, out);
-                }
-            }
+        parent::Request::Gone { .. } => gone(domain, out),
+    }
+}
+
+fn gone(domain: &mut Domain, out: &mut Queue<Request>) {
+    domain.agent_life = AgentLife::Gone;
+    match domain.chat.phase {
+        Phase::Answered { .. } => domain.chat.phase = Phase::Answered { gone: Gone::Heard },
+        Phase::Loading | Phase::Idle | Phase::Starting | Phase::Running | Phase::Ending | Phase::Done => {}
+    }
+    domain.run = None;
+    if domain.turns.answer.is_none() {
+        out.push(Request::Unanswered {
+            cause: domain.end_cause.unwrap_or(crate::EndCause::Agent),
+            turns: domain.told.turns,
+            spent: domain.told.spent,
+            read: domain.told.read,
+        });
+    }
+    if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
+        record_cause(domain, crate::EndCause::Agent);
+        domain.agent_failed = true;
+        crate::person::show_dropped(&mut domain.lines, out);
+        let end = match domain.end_cause {
+            Some(crate::EndCause::Cancelled) => AgentEnd::Dropped,
+            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => AgentEnd::NoAnswer,
+        };
+        out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(end)) });
+    }
+    if domain.turns.unsaved.is_empty() {
+        if domain.agent_failed || domain.stop_failed {
+            domain.chat.phase = Phase::Done;
+            out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
+        } else if domain.turns.answer.is_some() {
+            crate::person::finish_answer(domain, out);
         }
     }
 }

@@ -32,6 +32,44 @@ pub fn answered(answer: &host::Answer, capture: Capture) -> Answered {
     }
 }
 
+/// Parts of `run.completed` for a run that went without answering (events.md, section 3.3).
+#[must_use]
+pub fn unanswered(
+    cause: smith_local_domain::EndCause,
+    turns: u32,
+    spent: u64,
+    read: Option<skein_lib::Token>,
+) -> Answered {
+    let failure = match cause {
+        smith_local_domain::EndCause::Cancelled => {
+            let mut failure = failure(AnswerClass::Cancelled, None);
+            failure.dropped = Some(true);
+            failure
+        }
+        smith_local_domain::EndCause::Host { turn, reason: _ } => {
+            let mut failure = failure(AnswerClass::Host, None);
+            failure.reason = Some(b"store".as_slice().into());
+            failure.turn = match turn {
+                Some(turn) => Some(u64::from(turn)),
+                None => None,
+            };
+            failure
+        }
+        smith_local_domain::EndCause::Agent => failure(AnswerClass::Agent, None),
+    };
+    Answered {
+        status: Status::Failed,
+        failure: Some(failure),
+        result: None,
+        turns: u64::from(turns),
+        spent,
+        read: match read {
+            Some(read) => Some(read.raw()),
+            None => None,
+        },
+    }
+}
+
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
         dropped: None,
@@ -212,6 +250,11 @@ impl Spawned {
 
     pub(crate) fn answered(&mut self, now: skein_lib::Time, answer: &host::Answer) {
         self.producer.answered(now, self.start, answered(answer, self.capture));
+        self.answered = true;
+    }
+
+    pub(crate) fn unanswered(&mut self, now: skein_lib::Time, answer: Answered) {
+        self.producer.answered(now, self.start, answer);
         self.answered = true;
     }
 

@@ -1,8 +1,94 @@
 use skein_io::kernel;
+use smith_events::{AnswerClass, Event};
+
+#[test]
+fn an_interrupt_mid_turn_and_a_second_drop_the_run() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::dropped(12, &files, placement);
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(130)));
+        let errors = String::from_utf8_lossy(world.errors());
+        assert!(errors.ends_with("smith: interrupted: the run was dropped before it answered\n"));
+    }
+}
+
+#[test]
+fn a_dropped_inline_run_completes_as_cancelled_and_dropped() {
+    let files = Files::new();
+    let mut world = World::dropped(12, &files, Placement::InProcess);
+    world.scenario.launch.traced = true;
+    world.settle();
+    let records = world.records();
+    let completed = records
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::RunCompleted(completed) => Some(completed),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].status, smith_events::Status::Failed);
+    let failure = completed[0].failure.as_ref().expect("dropped run");
+    assert_eq!(failure.class, AnswerClass::Cancelled);
+    assert_eq!(failure.dropped, Some(true));
+    assert!(!completed[0].wind_down);
+    assert!(completed[0].result.is_none());
+    assert_eq!(completed[0].turns, 0);
+    assert_eq!(completed[0].spent, 0);
+}
 use smith_local_process_world::{
     Files, Placement, World,
     referee::{CheckoutRead, Ending, review},
 };
+
+#[test]
+fn a_store_failure_completes_as_host_store_with_its_turn() {
+    let files = Files::new();
+    let mut first = World::new(6, &files, Placement::InProcess, b"First answer");
+    first.settle();
+    let mut world = World::failed_store_before_answer(7, &files, Placement::InProcess);
+    world.scenario.launch.traced = true;
+    world.settle();
+    let records = world.records();
+    let completed = records
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::RunCompleted(completed) => Some(completed),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(completed.len(), 1);
+    let failure = completed[0].failure.as_ref().expect("host failure");
+    assert_eq!(failure.class, AnswerClass::Host);
+    assert_eq!(failure.reason.as_deref(), Some(b"store".as_slice()));
+    assert_eq!(failure.turn, Some(2));
+    assert_eq!(completed[0].status, smith_events::Status::Failed);
+    assert!(completed[0].result.is_none());
+    assert_eq!(completed[0].turns, 1);
+    assert_eq!(completed[0].read, Some(2));
+    assert!(!completed[0].wind_down);
+}
+
+#[test]
+fn a_cancelled_answer_completes_with_dropped_false() {
+    let files = Files::new();
+    let mut world = World::interrupted(4, &files, Placement::InProcess);
+    world.scenario.launch.traced = true;
+    world.settle();
+    let records = world.records();
+    let completed = records
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::RunCompleted(completed) => Some(completed),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(completed.len(), 1);
+    let failure = completed[0].failure.as_ref().expect("cancelled answer");
+    assert_eq!(failure.class, AnswerClass::Cancelled);
+    assert_eq!(failure.dropped, Some(false));
+}
 
 #[test]
 fn a_chat_resumes_from_its_files_across_runs_of_the_binary() {

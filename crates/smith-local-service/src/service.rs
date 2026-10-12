@@ -641,6 +641,7 @@ impl Service {
                     stream.answered(now, &answer);
                 }
             }
+            local::Request::Unanswered { cause, turns, spent, read } => self.unanswered(now, cause, turns, spent, read),
             local::Request::Exit { status } => {
                 if let Some(stream) = &mut self.stream {
                     stream.exit = Some(crate::stream::exit(status));
@@ -667,6 +668,16 @@ impl Service {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
             }
             other @ local::Request::Credential { .. } => self.shell.push(other),
+        }
+    }
+
+    fn unanswered(&mut self, now: Time, cause: local::EndCause, turns: u32, spent: u64, read: Option<Token>) {
+        let answer = crate::stream::unanswered(cause, turns, spent, read);
+        if let Some(effects) = self.below.inline_mut() {
+            effects.answered(now, answer.clone());
+        }
+        if let Some(stream) = &mut self.stream {
+            stream.unanswered(now, answer);
         }
     }
 

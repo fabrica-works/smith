@@ -526,12 +526,20 @@ impl Producer {
     }
 
     pub fn answered(&mut self, now: Time, started: Time, answer: crate::Answered) {
+        let unanswered = match &answer.failure {
+            Some(failure) => {
+                failure.dropped == Some(true)
+                    || failure.class == smith_events::AnswerClass::Host
+                    || failure.class == smith_events::AnswerClass::Agent
+            }
+            None => false,
+        };
         self.messages.clear();
         assert!(self.answer_at.is_none(), "one actual answer per run");
         self.answer_at = Some(now);
         let mut record = smith_events::RunCompleted {
             run: self.activation(),
-            wind_down: self.wind_down,
+            wind_down: self.wind_down && !unanswered,
             status: answer.status,
             failure: answer.failure,
             result: answer.result,

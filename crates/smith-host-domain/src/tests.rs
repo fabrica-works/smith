@@ -51,6 +51,98 @@ fn limits() -> crate::Limits {
     }
 }
 
+fn admitted() -> (Domain, Env<crate::Limits>, Queue<Output>, Token) {
+    let limits = limits();
+    let mut domain = Domain::new(&limits);
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    crate::step(
+        &mut domain,
+        &env,
+        Input::Parent(parent::Event::Spawn { client: Token::new(1), start: start() }),
+        &mut out,
+    );
+    let Some(Output::Process(process::Request::Spawn { owner, .. })) = out.pop() else { panic!("spawn admitted") };
+    crate::step(&mut domain, &env, Input::Process(process::Event::Spawned { owner, process: Token::new(2) }), &mut out);
+    while out.pop().is_some() {}
+    crate::step(
+        &mut domain,
+        &env,
+        Input::Process(process::Event::Received { owner, message: crate::Up::Admitted }),
+        &mut out,
+    );
+    while out.pop().is_some() {}
+    (domain, env, out, owner)
+}
+
+fn cancelled_answer() -> crate::Answer {
+    crate::Answer {
+        read: None,
+        turns: 0,
+        spent: 0,
+        result: crate::RunResult::Failed { failure: crate::RunFailure::Cancelled },
+    }
+}
+
+fn answer_count(out: &Queue<Output>, expected: &crate::Answer) -> u32 {
+    let mut count = 0_u32;
+    for request in out {
+        match request {
+            Output::Parent(parent::Request::Answered { answer, .. }) => {
+                assert_eq!(answer, expected);
+                count = count.checked_add(1).expect("bounded answers");
+            }
+            Output::Parent(
+                parent::Request::Started { .. }
+                | parent::Request::Admitted { .. }
+                | parent::Request::Called { .. }
+                | parent::Request::Withdrawn { .. }
+                | parent::Request::Turn { .. }
+                | parent::Request::Waiting { .. }
+                | parent::Request::Long { .. }
+                | parent::Request::LongDone { .. }
+                | parent::Request::Unread { .. }
+                | parent::Request::Rejected { .. }
+                | parent::Request::Exhausted { .. }
+                | parent::Request::Told { .. }
+                | parent::Request::Faulted { .. }
+                | parent::Request::MessageRefused { .. }
+                | parent::Request::Gone { .. },
+            )
+            | Output::Process(_) => {}
+        }
+    }
+    count
+}
+
+#[test]
+fn a_parent_drop_before_the_answer_discards_a_later_cancelled_answer() {
+    let (mut domain, env, mut out, owner) = admitted();
+    crate::step(&mut domain, &env, Input::Parent(parent::Event::Drop { agent: owner }), &mut out);
+    while out.pop().is_some() {}
+    crate::step(
+        &mut domain,
+        &env,
+        Input::Process(process::Event::Received { owner, message: crate::Up::Answer { answer: cancelled_answer() } }),
+        &mut out,
+    );
+    assert_eq!(answer_count(&out, &cancelled_answer()), 0, "a dropped run never answers later");
+}
+
+#[test]
+fn a_parent_drop_after_the_answer_preserves_that_answer() {
+    let (mut domain, env, mut out, owner) = admitted();
+    let answer = cancelled_answer();
+    crate::step(
+        &mut domain,
+        &env,
+        Input::Process(process::Event::Received { owner, message: crate::Up::Answer { answer: cancelled_answer() } }),
+        &mut out,
+    );
+    crate::step(&mut domain, &env, Input::Parent(parent::Event::Drop { agent: owner }), &mut out);
+    assert_eq!(answer_count(&out, &answer), 1);
+}
+
 fn start() -> Start {
     Start {
         messages: Box::default(),

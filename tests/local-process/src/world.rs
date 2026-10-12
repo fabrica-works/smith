@@ -469,11 +469,28 @@ impl World {
         )
     }
 
+    /// Deliver both interrupts from the world's controls while the provider holds its response.
+    #[must_use]
+    pub fn dropped(seed: u64, files: &Files, placement: Placement) -> Self {
+        let mut world = Self::interrupted(seed, files, placement);
+        world.scenario.ending = Ending::Dropped;
+        world.scenario.commands = vec![Action::Send(b"hello\n".as_slice().into())];
+        world
+    }
+
     /// Fail the second durable turn rename after the provider receives its first request.
     #[must_use]
     pub fn failed_store(seed: u64, files: &Files, placement: Placement) -> Self {
         let mut world = Self::new(seed, files, placement, b"could not be kept: write failed");
         world.scenario.ending = Ending::HostFailure;
+        world
+    }
+
+    /// Fail the turn save while its read call keeps the run from answering.
+    #[must_use]
+    pub fn failed_store_before_answer(seed: u64, files: &Files, placement: Placement) -> Self {
+        let mut world = Self::changed(seed, files, placement);
+        world.scenario.ending = Ending::HostFailureBeforeAnswer;
         world
     }
     #[must_use]
@@ -663,10 +680,13 @@ impl World {
             self.scenario.interrupt_on_query,
             launch.keep_facts,
         );
-        if matches!(self.scenario.ending, Ending::HostFailure) {
+        if matches!(self.scenario.ending, Ending::HostFailure | Ending::HostFailureBeforeAnswer) {
             referee.fail_turn_at_query(launch.state_directory.clone(), 2);
         }
-        let mut world = skein_world::World::new(launch.seed, config, referee, self.memory).with_machine(machine);
+        let mut world = skein_world::World::new_controlled(launch.seed, config, self.memory, |controls| {
+            referee.controlled(controls)
+        })
+        .with_machine(machine);
         world.host_startup(
             HostedProgram {
                 program: b"smith-local".as_slice().into(),
@@ -744,6 +764,12 @@ impl World {
             .iter()
             .find_map(|p| if let Proc::Terminal(p) = p { Some(p.as_ref()) } else { None })
             .expect("terminal")
+    }
+
+    /// The settled terminal's operator output.
+    #[must_use]
+    pub fn errors(&self) -> &[u8] {
+        self.terminal().errors()
     }
     fn peer(&self) -> &crate::llm::Peer {
         self.procs().iter().find_map(|p| if let Proc::Peer(p) = p { Some(p.as_ref()) } else { None }).expect("peer")
@@ -847,16 +873,25 @@ impl Scenario {
     /// Provider scripts and credentials are scenario data, shared across tiers.
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
+        let mut provider_scripts = if self.launch.tools {
+            tool_scripts()
+        } else if self.launch.change {
+            change_scripts()
+        } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Read follow-up") {
+            waiting_scripts()
+        } else {
+            scripts()
+        };
+        if matches!(self.ending, Ending::HostFailureBeforeAnswer) {
+            for turn in &mut provider_scripts[0].turns {
+                turn.lines = Box::new([api::Line::Call {
+                    name: b"read".as_slice().into(),
+                    arguments: br#"{"path":"original.txt"}"#.as_slice().into(),
+                }]);
+            }
+        }
         smith_agent_process_world::fake::configured_transport(
-            if self.launch.tools {
-                tool_scripts()
-            } else if self.launch.change {
-                change_scripts()
-            } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Read follow-up") {
-                waiting_scripts()
-            } else {
-                scripts()
-            },
+            provider_scripts,
             skein_llm::Credential {
                 access_token: if self.launch.authenticated {
                     b"access-new".as_slice().into()

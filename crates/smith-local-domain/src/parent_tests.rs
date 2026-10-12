@@ -352,6 +352,9 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
         },
         &mut out,
     );
+    let Some(Request::Unanswered { cause: crate::EndCause::Agent, turns: 0, spent: 0, read: None }) = out.pop() else {
+        panic!("unanswered run reaches its event writer")
+    };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("missing answer notice") };
     assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)));
     let Some(Request::Exit { status: crate::ExitStatus::RunFailed }) = out.pop() else { panic!("failed invocation") };
@@ -543,6 +546,7 @@ fn shown_requests(out: &mut Queue<Request>) -> u32 {
                 Request::Input { .. }
                 | Request::Notice { .. }
                 | Request::Answered { .. }
+                | Request::Unanswered { .. }
                 | Request::Load
                 | Request::SaveState { .. }
                 | Request::SaveTurn { .. }

@@ -294,6 +294,7 @@ impl Local {
                 | domain::Request::SaveDelivery { .. }
                 | domain::Request::Notice { .. }
                 | domain::Request::Answered { .. }
+                | domain::Request::Unanswered { .. }
                 | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }

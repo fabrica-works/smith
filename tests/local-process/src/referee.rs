@@ -42,9 +42,15 @@ pub struct OAuthSeen {
 pub enum Ending {
     Report(Vec<u8>),
     Cancelled,
-    Change { before: Vec<u8> },
+    /// The second interrupt ends the invocation before any answer.
+    Dropped,
+    Change {
+        before: Vec<u8>,
+    },
     Unavailable,
     HostFailure,
+    /// The host drops a run whose workspace read completed before its turn save failed.
+    HostFailureBeforeAnswer,
 }
 
 /// Evidence handed to the shared judgment kit, never internal process cells.
@@ -116,29 +122,41 @@ impl Expectations for Meeting {
                 let expected = match &self.ending {
                     Ending::Report(text) => text.as_slice(),
                     Ending::Cancelled => b"Run cancelled",
+                    Ending::Dropped => b"Run dropped",
                     Ending::Change { .. } => b"Change delivered",
                     Ending::Unavailable => b"account is unavailable",
-                    Ending::HostFailure => b"could not be kept: write failed",
+                    Ending::HostFailure | Ending::HostFailureBeforeAnswer => b"could not be kept: write failed",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
                     judge.check(
                         self.activation.is_none() && !self.answered && !self.shown,
                         "a refused account starts no run",
                     );
-                } else if matches!(self.ending, Ending::HostFailure) {
+                } else if matches!(self.ending, Ending::HostFailure | Ending::HostFailureBeforeAnswer) {
                     judge.check(self.activation.is_some() && !self.shown, "failed store owns the terminal failure");
+                } else if matches!(self.ending, Ending::Dropped) {
+                    judge.check(
+                        self.activation.is_some() && !self.answered && !self.shown,
+                        "a dropped run never answers",
+                    );
                 } else if self.require_facts {
                     judge.check(self.shown && self.answered, "the invocation actually answered and showed it");
                 }
-                let code = if matches!(self.ending, Ending::HostFailure) { 1 } else { 0 };
+                let code = match self.ending {
+                    Ending::HostFailure | Ending::HostFailureBeforeAnswer => 1,
+                    Ending::Dropped => 130,
+                    _ => 0,
+                };
                 judge.check(exit == Some(kernel::Exit::Code(code)), "shell exit matches the host terminal");
                 judge.check(
                     if matches!(self.ending, Ending::Unavailable) { queries == 0 } else { queries > 0 },
                     "provider work matches account availability",
                 );
                 let start = b"smith: local host started; worst case ";
-                let diagnostic = if matches!(self.ending, Ending::HostFailure) {
+                let diagnostic = if matches!(self.ending, Ending::HostFailure | Ending::HostFailureBeforeAnswer) {
                     errors.strip_suffix(b"smith: run failed: chat main: turn 2 could not be kept: write failed\n")
+                } else if matches!(self.ending, Ending::Dropped) {
+                    errors.strip_suffix(b"smith: interrupted: the run was dropped before it answered\n")
                 } else {
                     Some(errors.as_slice())
                 };
@@ -195,6 +213,16 @@ impl Expectations for Meeting {
                     judge.check(
                         files.get(b"result.txt".as_slice()).is_some_and(|bytes| bytes == b"new\n"),
                         "commit contains the agent's change",
+                    );
+                } else if matches!(self.ending, Ending::HostFailureBeforeAnswer) {
+                    judge.check(
+                        head.as_deref() == Some(b"0000000000000000000000000000000000000001"),
+                        "read leaves the repository head unchanged",
+                    );
+                    judge.check(
+                        files.len() == 1
+                            && files.get(b"original.txt".as_slice()).is_some_and(|bytes| bytes == b"original\n"),
+                        "read leaves the repository files unchanged",
                     );
                 } else {
                     judge.check(head.is_none(), "report or cancellation has no repository effect");
@@ -295,6 +323,8 @@ pub struct Run {
     checkout: Box<dyn CheckoutRead>,
     token_directory: std::path::PathBuf,
     interrupt_on_query: bool,
+    drop_on_query: bool,
+    controls: Option<skein_world::Controls>,
     interrupted: bool,
     facts: usize,
     saved_before_query: bool,
@@ -318,6 +348,7 @@ impl Run {
         interrupt_on_query: bool,
         keep_facts: bool,
     ) -> Self {
+        let drop_on_query = matches!(ending, Ending::Dropped);
         Self {
             seed,
             meeting: Referee::new(Meeting {
@@ -331,6 +362,8 @@ impl Run {
             checkout,
             token_directory,
             interrupt_on_query,
+            drop_on_query,
+            controls: None,
             interrupted: false,
             facts: 0,
             saved_before_query: false,
@@ -346,6 +379,13 @@ impl Run {
     /// Make this turn's rename fail only after the provider observes the saved activation.
     pub fn fail_turn_at_query(&mut self, directory: std::path::PathBuf, number: u32) {
         self.failed_turn = Some(directory.join(format!("{number:010}.turn")));
+    }
+
+    /// Use the world's signal source for the two-interrupt story.
+    #[must_use]
+    pub fn controlled(mut self, controls: skein_world::Controls) -> Self {
+        self.controls = Some(controls);
+        self
     }
 }
 impl skein_world::Referee<crate::process::Proc> for Run {
@@ -379,13 +419,19 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         if exited {
             self.shutdown = true;
         }
-        for proc in procs {
+        for (host, proc) in procs.iter_mut().enumerate() {
             match proc {
                 Proc::Terminal(t) => {
-                    if self.interrupt_on_query && query && !self.interrupted {
+                    if self.interrupt_on_query && !self.drop_on_query && query && !self.interrupted {
                         t.interrupt();
                         self.interrupted = true;
                     }
+                }
+                Proc::Local(_) if self.drop_on_query && query && !self.interrupted => {
+                    let controls = self.controls.as_ref().expect("dropped story uses the world's signal source");
+                    controls.signal(host, kernel::ServiceSignal::Interrupt);
+                    controls.signal(host, kernel::ServiceSignal::Interrupt);
+                    self.interrupted = true;
                 }
                 Proc::Peer(peer) => {
                     if exited {

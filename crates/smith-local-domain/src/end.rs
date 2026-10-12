@@ -4,6 +4,20 @@
 
 use crate::{ExitStatus, StoreFailure};
 
+/// The last turn told in this activation, independently of its durable save.
+#[derive(Debug)]
+pub(crate) struct Told {
+    pub(crate) turns: u32,
+    pub(crate) spent: u64,
+    pub(crate) read: Option<skein_lib::Token>,
+}
+
+impl Told {
+    pub(crate) const fn new() -> Self {
+        Self { turns: 0, spent: 0, read: None }
+    }
+}
+
 /// The first cause recorded by local policy; settlement determines when the host exits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum EndCause {

@@ -95,6 +95,7 @@ pub(crate) struct Agent {
     admitted: bool,
     last_word: bool,
     told: bool,
+    dropped: bool,
     owed: Option<Fault>,
     host_stopped: bool,
     diagnostic: Option<Fault>,
@@ -474,6 +475,7 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
         admitted: false,
         last_word: false,
         told: false,
+        dropped: false,
         owed: None,
         host_stopped: false,
         diagnostic: None,
@@ -901,7 +903,8 @@ fn receive(agent: &mut Agent, owner: Token, message: Up, env: &Env<Limits>, out:
 fn discarded_work(agent: &Agent, message: &Up) -> bool {
     match agent.phase {
         Phase::Terminating | Phase::Killing => match message {
-            Up::Answer { .. } | Up::MessageRefused { .. } => false,
+            Up::Answer { .. } => agent.dropped,
+            Up::MessageRefused { .. } => false,
             Up::Admitted
             | Up::Call { .. }
             | Up::Withdraw { .. }
@@ -1173,6 +1176,7 @@ fn fail(agent: &mut Agent, owner: Token, fault: Fault, env: &Env<Limits>, out: &
 }
 
 fn drop_run(agent: &mut Agent, owner: Token, env: &Env<Limits>, out: &mut Queue<Output>) {
+    agent.dropped = !agent.told;
     agent.host_stopped = true;
     agent.owed = None;
     let mut released = skein_lib::List::with_capacity(env.limits.turns);
