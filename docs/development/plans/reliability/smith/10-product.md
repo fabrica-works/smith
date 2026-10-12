@@ -189,7 +189,9 @@ Scope (shell.md, 4.4 and 5.1 to 5.3): `parse` for `check` and the shared
 flags; the layers merged with each value's origin; a file at most 1 MiB;
 an unknown key, a wrong type or a value past its bound refused naming
 file, line and key path; the repository layer's forbidden keys refused
-naming the file; 5.2's and section 7's schema. `smith check [--json]`:
+naming the file, and nothing else of it refused or held for approval
+(shell.md, 5.1, settled 2026-10-12): its `[environment].set` values are
+accepted and listed by name with their layer; 5.2's and section 7's schema. `smith check [--json]`:
 the settings with their layers, credentials redacted, each format's
 version, the build's identity, `sh`, `rg` and `git` resolved, the
 commands' environment by name; exit 0 or 2. Presets and relationships
@@ -619,8 +621,9 @@ failed, `RunFailed` (shell.md, 4.3).
 - **Public clients** (shell.md, 11; 10.6): until a provider sanctions
   smith's use of its public client, propose that `sign_in` takes a
   registration from settings.
-- **Repository trust** (11; 10.3): propose refusing the authority keys
-  only, with no approval step.
+- ~~**Repository trust** (11; 10.3)~~: settled by the designer on
+  2026-10-12 (shell.md, 5.1, "The line" and "No approval"): the
+  authority keys are refused, and nothing else; no approval step.
 - **Tiered list prices** (11; 10.13): propose Haiku 5.5's higher rate
   whenever its window passes 100,000 tokens.
 
