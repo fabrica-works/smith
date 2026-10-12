@@ -742,4 +742,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    twenty minutes on an edit outside Files: README rule 8 gains two cases,
    a dependency a `Cargo.toml` needs, and at most 60 lines in the library
    of the world crate the Test shape names.
+5. **The process referee allows successive activations** (block of
+   2026-10-12T13:37:41Z, smith 05.12). 05.12's process sweep draws one
+   to three lines then end of input, and the process world's referee
+   (`tests/local-process/src/referee.rs:78`) checks "one activation per
+   invocation", which shell.md, 4.1 contradicts: "Lines it left unread,
+   after an accepted or parked answer, open one more activation, which
+   answers or parks in turn (domain/host.md, section 8, "Closing input
+   drains"); then the product exits." The referee is the plan's to fix:
+   its rule becomes "an activation starts only after the one before it
+   answered", and each `Started` resets the activation's turn, answer and
+   shown state and expects its own terminal; its other checks stay.
+   Confining the scripts to one line, the alternative, would leave the
+   design's drain untested at the process layer.
 

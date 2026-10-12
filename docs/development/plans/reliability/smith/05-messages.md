@@ -169,7 +169,14 @@ Files: `tests/local` (`src/person.rs`, new; `src/lib.rs`; `src/world.rs`:
   `tests/local/tests/{referee.rs,fuzzy_simulation.rs}`;
   `tests/local/tests/person.rs`, new;
   `tests/local-process/tests/fuzzy_world.rs:9`, which draws one to three
-  `Action::Send` lines and an `Action::Eof` into its script.
+  `Action::Send` lines and an `Action::Eof` into its script;
+  `tests/local-process/src/referee.rs` (`Meeting`, :63 to :100), whose
+  rule "one activation per invocation" becomes "an activation starts
+  only after the one before it answered", each `Started` resetting the
+  activation's turn, answer and shown state and expecting its own
+  terminal (shell.md, 4.1; decisions.md, 13.5), with one negative in
+  `tests/local-process/tests/referee.rs`:
+  `an_activation_started_before_the_last_answered_is_rejected`.
 Shape: `smith_local_world::person::{Person, Cue, Trigger, Kind, Act,
   Shown}` and `referee::Pending`, as sketched. The world calls
   `Person::saw` on each turn, answer and notice, and `Person::step` once
