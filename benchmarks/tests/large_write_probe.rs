@@ -23,7 +23,8 @@ fn version_two_copies_prose_in_one_and_two_read_windows() {
     assert_eq!(task.smith["read_window"].as_integer(), Some(32768));
     assert_eq!(task.smith["tool_payload"].as_integer(), Some(40960));
     for (name, expected, windows) in [("source.txt", 32768, 1), ("oversized-source.txt", 50000, 2)] {
-        let bytes = std::fs::read(file.parent().unwrap().join("seed").join(name)).expect("seed prose");
+        let bytes = std::fs::read(file.parent().expect("task file has a parent").join("seed").join(name))
+            .expect("seed prose");
         assert_eq!(bytes.len(), expected);
         assert!(bytes.is_ascii());
         assert!(bytes.ends_with(b"This is the end of the source report.\n"));
