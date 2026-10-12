@@ -269,7 +269,18 @@ Split from 10.13 (decisions.md, 13.66). Scope: 10.13's Scope from
 assembled, each relationship checked by name, `smith check` naming a
 relationship with both sides and their layers, trust arrays and custom
 presets' inheritance. Its candidate's resolver parts start from
-10.13's (`6e64b9d9`).
+10.13's (`6e64b9d9`). The run's models and accounts, as the designer
+ruled on 2026-10-12 (shell.md, 5.2, "The run's models and accounts"):
+the local `Config.models` holds main's model and, with `sub_agents` on,
+every catalog or declared model whose endpoint's account names a
+source; `Config.accounts` holds those models' accounts. Main's account
+without a source is refused naming `accounts.<name>.source` (exit 2); a
+needed account's unusable credential exits 3; an account not needed is
+reported with warnings only. The agent's configuration, the derivation
+and every relationship use the run's models; a model outside the run is
+checked as values only (priced above zero, output below window), and
+`smith check` names it and why it is out. Only the run's endpoints are
+resolved.
 Needs: 10.13.
 Files: 10.13's.
 Shape: `resolve(settings: &Settings, command: &Command) ->
@@ -278,7 +289,10 @@ Test shape: end to end
 `smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling`,
 expecting 5.3's line `smith: budget.turns = 5000 (from -c) exceeds the
 standard profile's ceiling of 4096 turns`; unit refusals for the
-relationships `resolve` checks. Ceilings: 20 ms, 2 s.
+relationships `resolve` checks; unit
+`a_codex_only_first_run_needs_no_anthropic_credential`,
+`sub_agents_on_adds_the_models_of_every_account_with_a_source`,
+`mains_account_without_a_source_is_refused_naming_the_key`. Ceilings: 20 ms, 2 s.
 Proof: process, that test; once, under 2 s.
 Don't: the profile's values stay the service crates' `standard()`.
 Size: README rule 9's. Removes: nothing.
@@ -291,7 +305,9 @@ account id, expiry from the token's claims; the local service owns
 read at startup and again through io's `Load` when a grant is due, `env`
 once; the driver's `Expiring` and expiry become shell.md 7's notice; no
 run starts on an expired login; `smith check` reports these accounts,
-exit 3 when only credentials fail. Until 10.6, `smith local`'s
+exit 3 when only the credentials of accounts the run needs fail, and a
+warning for an account it does not need (shell.md, 5.2, settled
+2026-10-12). Until 10.6, `smith local`'s
 `sign_in` accounts keep the shell's own OAuth.
 Needs: nothing.
 Files: `smith-local-protocol` (`borrowed.rs`, `lib.rs`, `Cargo.toml`);
