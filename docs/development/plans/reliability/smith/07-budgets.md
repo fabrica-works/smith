@@ -216,9 +216,11 @@ Proof: process layer, `tests/agent-process`:
 Don't: join by `t_ms` or by the nearest record; change what any other
   snapshot holds or when it is pushed; change the usage line's words
   (`crates/smith-domain/src/feedback.rs:280`); touch `benchmarks/src/`
-  (smith 00's told check), except `"call"` in the `("Run", "Budget")`
-  field list of `benchmarks/src/agent/smith/legacy.rs` (:544), which
-  README rule 4 asks for (decisions.md, 13.6).
+  (smith 00's told check), except what `benchmarks/src/agent/smith/legacy.rs`
+  needs to read `Budget`'s optional `call`: `"call"` in its
+  `("Run", "Budget")` field list (:544) and in `validate_fact`'s
+  optional-token arm (:581), which README rule 4 asks for (decisions.md,
+  13.6 and 13.11).
 Size: at most 120 lines of production code.
 Removes: the line's "left" computed beside the snapshot in `ended`
   (the `budget::ordinary` call at 1320-1327; `ordinary` stays for

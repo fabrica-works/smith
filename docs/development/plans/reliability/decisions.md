@@ -795,4 +795,23 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (13.4 was the first), each under code-organization.md 8's split
    threshold of about 600. README rule 9 makes every Size line a guide up
    to 600, and 600 the rule; 04.7's Size reads 600.
+10. **An io assertion is its caller's bug until a backtrace says otherwise**
+   (block of 2026-10-12T13:45:54Z, smith 05.12). 05.12's process sweep
+   panics at `skein-io/src/stream.rs:512`, "an announced socket is bound
+   or rejected, not closed". skein's io.md, 3.1: "One naming an entity of
+   the wrong kind, or an announced socket before its answer, is the layer
+   above's bug, asserted"; 3.3's table: "Opening, Announced | `Close`,
+   `Abort`, `Stream` | impossible". Ruling: one run with a backtrace names
+   the sender; a sender in smith is fixed in 05.12 (at most 40 production
+   lines, with a test failing on its parent); a sender in skein comes back
+   for a skein step and a repin. The sweep is not narrowed.
+11. **07.14's reader change is what the reader needs, not one line**
+   (block of 2026-10-12T13:49:37Z, smith 07.14). Reverses the unblock of
+   2026-10-12T13:41:46Z in part: its "Nothing else under `benchmarks/src/`
+   changes in 07.14" left `validate_fact`'s optional-token arm
+   (`legacy.rs:581`) reading `Budget`'s `call` as a bare token, so the
+   gate failed again. README rule 4 asks that the adapter keep reading
+   what the binary writes; 07.14 changes `legacy.rs` as far as that
+   needs, the field list and that arm, and nothing else under
+   `benchmarks/src/`.
 
