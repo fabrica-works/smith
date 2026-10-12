@@ -224,6 +224,7 @@ fn event_limits(
     limits: &service::Limits,
     endpoints: &[Endpoint],
     capture: Capture,
+    header: &[smith_events::EffectiveLimit],
     write_deadline: Duration,
 ) -> Result<service::EventLimits, String> {
     let mut options = 0_u32;
@@ -232,9 +233,32 @@ fn event_limits(
             options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?);
         }
     }
-    let events =
-        service::EventLimits::derive(limits, capture, 1, options, write_deadline).ok_or("event ownership overflow")?;
+    let events = service::EventLimits::derive(limits, capture, 1, options, header, write_deadline)
+        .ok_or("event ownership overflow")?;
     Ok(events)
+}
+
+fn effective_header(
+    profile: &service::profile::Profile,
+    declarations: &service::profile::Configuration,
+    limits: &service::Limits,
+    endpoints: &[Endpoint],
+) -> Result<List<smith_events::EffectiveLimit>, String> {
+    let mut names = List::with_capacity(ENDPOINTS);
+    for endpoint in endpoints {
+        names
+            .push(channel::Endpoint {
+                name: endpoint.name.as_bytes().into(),
+                number: endpoint.number,
+                dialect: endpoint.dialect,
+                account: endpoint.account,
+            })
+            .map_err(|_| "event names overflow")?;
+    }
+    let inventory = service::profile::effective(profile, declarations, limits).ok_or("effective limits overflow")?;
+    let header = service::profile::header(&inventory, &channel::Endpoints::new(names), declarations)
+        .ok_or("effective names overflow")?;
+    Ok(header)
 }
 
 fn build(document: Document) -> Result<Configuration, String> {
@@ -293,7 +317,14 @@ fn build(document: Document) -> Result<Configuration, String> {
     };
     let mut limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
     if let Some(trace) = &trace {
-        let events = event_limits(&limits, &document.endpoints, trace.capture, profile.policy.write_deadline)?;
+        let header = effective_header(&profile, &declarations, &limits, &document.endpoints)?;
+        let events = event_limits(
+            &limits,
+            &document.endpoints,
+            trace.capture,
+            header.as_slice(),
+            profile.policy.write_deadline,
+        )?;
         limits.events = Some(events);
     }
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
@@ -327,11 +358,15 @@ fn build(document: Document) -> Result<Configuration, String> {
         environment,
         stream_mode: StreamMode::Two,
     };
+    check_memory(&config, memory)?;
+    Ok(Configuration { service: config, memory, trace, profile, declarations })
+}
+
+fn check_memory(config: &service::Config, memory: u64) -> Result<(), String> {
     let complete = service::worst_case(&config.limits, &config.llm_endpoints).ok_or_else(|| {
         profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "worst_case") })
     })?;
-    service::profile::validate::memory(complete, memory).map_err(profile_refusal)?;
-    Ok(Configuration { service: config, memory, trace, profile, declarations })
+    service::profile::validate::memory(complete, memory).map_err(profile_refusal)
 }
 
 struct PreparedEndpoints {
@@ -1251,9 +1286,16 @@ mod tests {
             .map(|effort| u32::try_from(effort.len()).unwrap())
             .max()
             .unwrap_or(0);
-        let events =
-            service::EventLimits::derive(&derived, Capture::Everything, 1, effort, selected.policy.write_deadline)
-                .expect("product event ownership");
+        let header = effective_header(&selected, &declarations, &derived, &dto.endpoints).expect("product header");
+        let events = service::EventLimits::derive(
+            &derived,
+            Capture::Everything,
+            1,
+            effort,
+            header.as_slice(),
+            selected.policy.write_deadline,
+        )
+        .expect("product event ownership");
         println!(
             "PRODUCT_EVENTS string={} content={} items={} encoded_line={} metadata_string={}",
             events.sinks.records.string,
@@ -1350,9 +1392,7 @@ mod tests {
         use skein_lib::{Queue, Rng};
 
         let mut rng = Rng::new(4_170_005);
-        let mut admitted = 0;
-        let mut relationship_refusals = 0;
-        let mut memory_refusals = 0;
+        let (mut admitted, mut relationship_refusals, mut memory_refusals) = (0, 0, 0);
         for sample in 0..96 {
             let mut document = product_document();
             // All 96 draws exercise the real bounded DER loader. Loading the
@@ -1405,9 +1445,15 @@ mod tests {
                 .map(|effort| u32::try_from(effort.len()).unwrap())
                 .max()
                 .unwrap_or(0);
-            let events =
-                service::EventLimits::derive(&limits, Capture::Everything, 1, effort, profile.policy.write_deadline)
-                    .expect("drawn event ownership");
+            let events = service::EventLimits::derive(
+                &limits,
+                Capture::Everything,
+                1,
+                effort,
+                &[],
+                profile.policy.write_deadline,
+            )
+            .expect("drawn event ownership");
             limits.events = Some(events);
             let configured = build_endpoints(dto.endpoints, &limits.llm, &profile).expect("drawn endpoints");
             let destinations =

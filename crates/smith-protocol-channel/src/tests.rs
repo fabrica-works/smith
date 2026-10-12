@@ -494,3 +494,14 @@ fn command_clamps_round_trip_losslessly_and_invalid_relationships_are_refused() 
         }
     }
 }
+
+#[test]
+fn an_endpoint_number_resolves_its_name_or_is_absent() {
+    let mut entries = skein_lib::List::with_capacity(1);
+    entries
+        .push(crate::Endpoint { name: b"codex".as_slice().into(), number: 7, dialect: 91, account: 0 })
+        .expect("one name");
+    let names = crate::Endpoints::new(entries);
+    assert_eq!(names.name_for(7), Some(b"codex".as_slice()));
+    assert_eq!(names.name_for(8), None);
+}

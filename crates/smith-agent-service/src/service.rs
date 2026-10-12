@@ -2574,6 +2574,7 @@ mod tests {
                 crate::sinks::Capture::Calls,
                 1,
                 0,
+                &[],
                 Duration::from_secs(1),
             )
             .expect("bounded event configuration"),

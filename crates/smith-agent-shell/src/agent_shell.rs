@@ -156,6 +156,19 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .routes
         .checked_add(extra_operations)
         .ok_or_else(|| derivation_refusal("routes"))?;
+    let named =
+        service::profile::effective(&configuration.profile, &configuration.declarations, &configuration.service.limits)
+            .ok_or_else(|| derivation_refusal("effective"))?;
+    let header_limits =
+        service::profile::header(&named, &configuration.service.channel_endpoints, &configuration.declarations)
+            .ok_or_else(|| derivation_refusal("effective_names"))?;
+    let mut header_bytes = List::<smith_events::EffectiveLimit>::worst_case(header_limits.len())
+        .ok_or_else(|| derivation_refusal("startup_header"))?;
+    for entry in &header_limits {
+        header_bytes = header_bytes
+            .checked_add(u64::try_from(entry.name.len()).map_err(|_| derivation_refusal("startup_header"))?)
+            .ok_or_else(|| derivation_refusal("startup_header"))?;
+    }
     let worst = service::worst_case(&configuration.service.limits, &configuration.service.llm_endpoints)
         .and_then(|bytes| {
             bytes.checked_add(if configuration.trace.is_some() {
@@ -168,6 +181,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
                         .checked_add(b"standard".len())?,
                 )
                 .ok()?
+                .checked_add(header_bytes)?
             } else {
                 0
             })
@@ -195,8 +209,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         capture: trace.capture.encoded(),
         delivery: trace.delivery.encoded(),
         versions: smith_events::Versions { events: smith_events::VERSION, channel: 2, charter: 2, transcript: 3 },
-        // Effective projection is owned by 04.7; no draft inventory is announced.
-        limits: List::with_capacity(0),
+        limits: header_limits,
     });
     let mut service = service::Service::new(configuration.service, resources.seed)
         .map_err(|error| format!("agent configuration cannot start: {error:?}"))?;

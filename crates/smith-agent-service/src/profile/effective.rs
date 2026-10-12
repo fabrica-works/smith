@@ -6,6 +6,15 @@ use skein_lib::Duration;
 
 use super::Fraction;
 
+mod header;
+mod list;
+
+pub use header::header;
+pub use list::effective;
+
+#[cfg(test)]
+mod tests;
+
 /// One limit's layer, field and declaration scope, sent in startup refusals.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LimitName {
@@ -41,6 +50,8 @@ pub enum Layer {
     Events,
     /// An IO limit, sent by the service.
     Io,
+    /// The root domain's derived limit, sent by its service.
+    Domain,
     /// The service's own limit, sent by startup.
     Service,
 }
@@ -62,6 +73,7 @@ impl Layer {
             Self::Channel => "channel",
             Self::Events => "events",
             Self::Io => "io",
+            Self::Domain => "domain",
             Self::Service => "service",
         }
     }

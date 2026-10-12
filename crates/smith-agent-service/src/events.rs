@@ -27,15 +27,21 @@ pub struct EventLimits {
 impl EventLimits {
     /// Derive receiving and destination ownership from the admitted source bounds.
     /// `option_bytes` is the shell's measured largest configured effort string.
+    /// `header` supplies the startup inventory's count and longest configured name.
     #[must_use]
     pub fn derive(
         limits: &crate::Limits,
         capture: Capture,
         destinations: u32,
         option_bytes: u32,
+        header: &[smith_events::EffectiveLimit],
         write_deadline: Duration,
     ) -> Option<EventLimits> {
         let charter = limits.channel.charter;
+        let mut header_string = 0;
+        for entry in header {
+            header_string = header_string.max(u32::try_from(entry.name.len()).ok()?);
+        }
         let metadata_string = charter
             .llm_endpoint
             .max(charter.llm_model)
@@ -43,11 +49,13 @@ impl EventLimits {
             .max(charter.field_name)
             .max(charter.run_result_label_some)
             .max(option_bytes)
+            .max(header_string)
             .max(46);
         let client = limits.llm.adapter.client;
         let string = metadata_string.max(client.strings).max(limits.channel.bodies.message_label);
         let answer_bytes = u32::try_from(limits.domain.run.outcome_bytes).ok()?;
-        let metadata_items = charter.run_result_fields.max(limits.domain.run.host_tools).max(18);
+        let metadata_items =
+            charter.run_result_fields.max(limits.domain.run.host_tools).max(18).max(u32::try_from(header.len()).ok()?);
         let content = answer_bytes
             .max(client.answer)
             .max(client.request)

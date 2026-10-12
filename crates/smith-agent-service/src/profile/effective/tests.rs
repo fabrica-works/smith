@@ -1,0 +1,90 @@
+//! Configured names, exact units and event receiving bounds.
+
+use super::super::{
+    derive,
+    tests::{declarations, profile},
+};
+use super::{effective, header};
+use alloc::boxed::Box;
+use skein_lib::List;
+use smith_events::LimitValue;
+
+fn names() -> smith_protocol_channel::Endpoints {
+    let mut entries = List::with_capacity(2);
+    for (number, name) in [(7, b"codex".as_slice()), (8, b"other".as_slice())] {
+        entries
+            .push(smith_protocol_channel::Endpoint { number, name: name.into(), dialect: 91, account: 0 })
+            .expect("names");
+    }
+    smith_protocol_channel::Endpoints::new(entries)
+}
+
+#[test]
+fn a_models_head_is_named_by_its_endpoint_and_model_in_milliseconds() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named = effective(&profile(), &declarations(), &limits).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    assert_eq!(value(&header, b"declared.head[endpoint=codex,model=one]"), Some(LimitValue::Integer(5_000)));
+}
+
+#[test]
+fn effective_names_are_unique_across_two_endpoints_and_models() {
+    let mut configuration = declarations();
+    let mut second = configuration.endpoints[0].clone();
+    second.number = 8;
+    for endpoint in [&mut configuration.endpoints[0], &mut second] {
+        let mut model = endpoint.models[0].clone();
+        model.name = b"two".as_slice().into();
+        endpoint.models = Box::new([endpoint.models[0].clone(), model]);
+    }
+    configuration.endpoints = Box::new([configuration.endpoints[0].clone(), second]);
+    let limits = derive(&profile(), &configuration).expect("fixture derives");
+    let named = effective(&profile(), &configuration, &limits).expect("bounded list");
+    let header = header(&named, &names(), &configuration).expect("names fit");
+    for (index, entry) in header.iter().enumerate() {
+        for other in &header.as_slice()[index + 1..] {
+            assert_ne!(entry.name, other.name);
+        }
+    }
+    assert_eq!(value(&header, b"declared.output[endpoint=other,model=two]"), Some(LimitValue::Integer(512)));
+}
+
+#[test]
+fn the_compaction_threshold_is_written_as_its_fraction() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named = effective(&profile(), &declarations(), &limits).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    assert_eq!(
+        value(&header, b"policy.compaction_threshold"),
+        Some(LimitValue::Fraction { numerator: 4, denominator: 5 })
+    );
+}
+
+#[test]
+fn the_sinks_records_hold_the_headers_entries_and_longest_name() {
+    let limits = derive(&profile(), &declarations()).expect("fixture derives");
+    let named = effective(&profile(), &declarations(), &limits).expect("bounded list");
+    let header = header(&named, &names(), &declarations()).expect("names fit");
+    let events = crate::EventLimits::derive(
+        &limits,
+        crate::sinks::Capture::None,
+        1,
+        0,
+        header.as_slice(),
+        profile().policy.write_deadline,
+    )
+    .expect("event bounds");
+    assert!(events.sinks.records.items >= header.len());
+    for entry in &header {
+        assert!(entry.name.len() <= usize::try_from(events.sinks.records.string).expect("name bound"));
+    }
+}
+
+fn value(header: &List<smith_events::EffectiveLimit>, name: &[u8]) -> Option<LimitValue> {
+    for entry in header {
+        if entry.name.as_ref() == name {
+            return Some(entry.value);
+        }
+    }
+    None
+}

@@ -38,7 +38,7 @@ pub mod validate;
 pub mod room;
 
 pub use checks::{Check, Refusal};
-pub use effective::{Layer, Limit, LimitName, Per, Value};
+pub use effective::{Layer, Limit, LimitName, Per, Value, effective, header};
 pub use words::words;
 
 pub use smith_protocol_llm::OversizedReasoning;

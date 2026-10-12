@@ -8,7 +8,7 @@ use super::{
     validate, words,
 };
 
-fn profile() -> super::Profile {
+pub(super) fn profile() -> super::Profile {
     let mut profile = standard();
     profile.declared.memory = u64::MAX;
     profile.declared.tool_payload = 256;
@@ -17,7 +17,7 @@ fn profile() -> super::Profile {
     profile
 }
 
-fn declarations() -> Configuration {
+pub(super) fn declarations() -> Configuration {
     Configuration {
         environment_bytes: 0,
         endpoints: Box::new([Endpoint {

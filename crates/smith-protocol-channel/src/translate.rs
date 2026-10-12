@@ -255,6 +255,17 @@ impl Endpoints {
         None
     }
 
+    /// Find the startup wire name by its unique configured endpoint number.
+    #[must_use]
+    pub fn name_for(&self, number: u32) -> Option<&[u8]> {
+        for endpoint in &self.entries {
+            if endpoint.number == number {
+                return Some(&endpoint.name);
+            }
+        }
+        None
+    }
+
     /// Find the configured wire name for one domain endpoint and dialect.
     #[must_use]
     pub fn name_of(&self, number: u32, dialect: u32) -> Option<&[u8]> {

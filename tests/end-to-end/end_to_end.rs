@@ -336,3 +336,13 @@ fn a_one_turn_local_run_is_refused_by_the_actor_before_any_completion() {
         "reserve refusal starts no completion or provider request"
     );
 }
+
+#[test]
+fn the_agents_trace_header_carries_its_effective_limits() {
+    let scratch = Scratch::new();
+    let _seen = support::run(&scratch, World::new(81, &scratch, Placement::Spawned, b"First answer").scenario);
+    let records = support::read_trace(scratch.path(), &[]);
+    let smith_events::Event::SessionStarted(header) = &records[0].event else { panic!("startup header first") };
+    assert!(header.limits.iter().any(|limit| limit.name.as_ref() == b"declared.memory"));
+    assert!(header.limits.iter().any(|limit| limit.name.as_ref() == b"session.history_bytes"));
+}

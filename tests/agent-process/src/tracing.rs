@@ -22,6 +22,7 @@ pub(super) struct Tracing {
     started: bool,
     pub(super) channel_loss: u64,
     capture: agent::sinks::Capture,
+    header: Option<List<smith_events::EffectiveLimit>>,
 }
 
 impl Tracing {
@@ -30,9 +31,17 @@ impl Tracing {
         inherited: &skein_world::Inherited,
         capture: agent::sinks::Capture,
     ) -> Self {
+        let header = effective_header(&configuration.limits, &configuration.channel_endpoints);
         configuration.limits.events = Some(
-            agent::EventLimits::derive(&configuration.limits, capture, 1, 0, skein_lib::Duration::from_secs(1))
-                .expect("world event bounds"),
+            agent::EventLimits::derive(
+                &configuration.limits,
+                capture,
+                1,
+                0,
+                header.as_slice(),
+                skein_lib::Duration::from_secs(1),
+            )
+            .expect("world event bounds"),
         );
         let queue = configuration.limits.queue;
         let memory = agent::worst_case(&configuration.limits, &configuration.llm_endpoints)
@@ -40,6 +49,8 @@ impl Tracing {
             .checked_add(u64::try_from(size_of::<Self>()).expect("observer cells"))
             .and_then(|bound| bound.checked_add(Queue::<Complete>::worst_case(queue)?))
             .and_then(|bound| bound.checked_add(Queue::<Submit>::worst_case(queue)?))
+            .and_then(|bound| bound.checked_add(List::<smith_events::EffectiveLimit>::worst_case(header.len())?))
+            .and_then(|bound| bound.checked_add(header.iter().map(|entry| entry.name.len() as u64).sum::<u64>()))
             .and_then(|bound| bound.checked_add(64))
             .expect("observer ownership");
         let mut service = Service::new(configuration, 7).expect("bounded observed service");
@@ -75,6 +86,7 @@ impl Tracing {
             started: false,
             channel_loss: 0,
             capture,
+            header: Some(header),
         }
     }
 
@@ -126,7 +138,7 @@ impl Host for Tracing {
                     capture: self.capture.encoded(),
                     delivery: smith_events::Delivery::Complete,
                     versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
-                    limits: List::with_capacity(0),
+                    limits: self.header.take().expect("one startup header"),
                 },
             );
         }
@@ -192,6 +204,23 @@ impl Host for Tracing {
 
 /// Receiving bounds derived from the same actual producer configuration.
 pub(super) fn event_limits(limits: &agent::Limits) -> agent::EventLimits {
-    agent::EventLimits::derive(limits, agent::sinks::Capture::Everything, 1, 0, skein_lib::Duration::from_secs(1))
-        .expect("world event bounds")
+    let header = effective_header(limits, &crate::configuration().channel_endpoints);
+    agent::EventLimits::derive(
+        limits,
+        agent::sinks::Capture::Everything,
+        1,
+        0,
+        header.as_slice(),
+        skein_lib::Duration::from_secs(1),
+    )
+    .expect("world event bounds")
+}
+
+fn effective_header(
+    limits: &agent::Limits,
+    names: &smith_protocol_channel::Endpoints,
+) -> List<smith_events::EffectiveLimit> {
+    let configuration = crate::declarations(limits.machine.env_bytes);
+    let inventory = agent::profile::effective(&crate::profile(), &configuration, limits).expect("world inventory");
+    agent::profile::header(&inventory, names, &configuration).expect("world effective names")
 }

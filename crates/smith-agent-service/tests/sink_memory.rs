@@ -54,7 +54,7 @@ mod tests {
             }]),
         };
         let limits = profile::derive(&profile, &declarations).expect("source-admitted product fixture");
-        smith_agent_service::EventLimits::derive(&limits, Capture::Everything, 1, 3, profile.policy.write_deadline)
+        smith_agent_service::EventLimits::derive(&limits, Capture::Everything, 1, 3, &[], profile.policy.write_deadline)
             .expect("actual joint product bounds")
             .sinks
     }
