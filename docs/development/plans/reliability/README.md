@@ -163,7 +163,10 @@ do not already say.
      story's expected value changed (decisions.md, 13.4);
    - a referee or checker of a world that accepts what the increment's
      Shape newly requires, a line or an event, and nothing broader, its
-     other checks unchanged (decisions.md, 13.8).
+     other checks unchanged (decisions.md, 13.8); and a test that asserts
+     a sequence of requests, events or records gaining one assertion for
+     each that the Shape newly requires, where the story now produces it,
+     its other steps and assertions unchanged (decisions.md, 13.19).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For

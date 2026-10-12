@@ -879,4 +879,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    panics in the gate. A plain defect, in session 06's crates; fixed in
    06.4 with a regression test, at most 80 production lines. The
    assertion stays: it is the host's protocol, and the adapter broke it.
+19. **A sequence test consumes what the Shape newly requires** (block of
+   2026-10-12T14:42:57Z, smith 03.7). 03.7's Shape: "its
+   `Request::Answered` moves the answer to the service once shown, owing
+   no terminal". `smith-local-domain/src/parent_tests.rs`'s
+   `a_message_refused_after_the_last_word_keeps_the_single_transcript_reload`
+   asserts Show, Load and Notice in order, and now meets `Answered`
+   between Show and Load. The test gains one assertion that consumes it,
+   and nothing else changes. The case is 13.8's in a unit test: README
+   rule 8's referee case now names sequence tests too.
 
