@@ -150,7 +150,9 @@ do not already say.
    - a removed variant or type replaced by the one the Shape names;
    - a test's expected value changed from the removed variant to what
      the same story now produces, its name, steps and other assertions
-     unchanged;
+     unchanged; or changed to what the same story now produces because
+     of a behaviour the increment's Scope or Shape names, the commit body
+     quoting those words beside the test's name (decisions.md, 13.20);
    - a call changed to a new signature, passing the value the story
      already implies;
    - a lookup or accessor of at most 20 lines added to a type of another

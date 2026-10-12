@@ -888,4 +888,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    between Show and Load. The test gains one assertion that consumes it,
    and nothing else changes. The case is 13.8's in a unit test: README
    rule 8's referee case now names sequence tests too.
+20. **An expected value follows a behaviour the Scope names** (block of
+   2026-10-12T14:45:30Z, smith 05.13). 05.13's Scope: "the line that
+   starts a run travels in its start's messages" (shell.md, 4.1: "The
+   line that starts an activation travels in its start."), so
+   `tests/local/tests/simulation.rs:512`'s
+   `a_crash_before_a_turn_is_saved_resumes_from_the_turn_before_with_a_new_activation`
+   now sees its first saved turn's fence at `Some(Token::new(1))`, not
+   `None`. The assertion changes, and nothing else in the test. The
+   fourth block of this kind (13.1, 13.8, 13.19): README rule 8's
+   expected-value case now covers a value the story now produces because
+   of a behaviour the Scope or Shape names, quoted in the commit body.
 
