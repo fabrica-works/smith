@@ -178,8 +178,9 @@ do not already say.
    - a test fixture's input set so the story keeps testing what it
      tested, where the Scope or Shape changes what that input meant: a
      default the fixture inherited, pinned to its value before; or a
-     limit raised to the least value the story fits under a check the
-     Scope or Shape adds; the test's name, steps and assertions
+     limit raised so the story fits under a check the Scope or Shape
+     adds, at most to the next power of two above what it needs; the
+     test's name, steps and assertions
      unchanged, the commit body quoting the Scope's or Shape's words
      beside it (decisions.md, 13.40 and 13.43).
 
