@@ -1,0 +1,91 @@
+id = "follow-up"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Greet the person by immediately calling finish with exactly GREETING. Do not make any other call for this greeting. If the person gives another request, carry it out and finish as that request asks.\n"
+seed_sha256 = "52d806cda6d00c2ac88635084f235c897c495787475f186c04f81d70041b5965"
+guards = ["domain/run.md, section 6", "domain/host.md, section 8"]
+deciding = ["end", "exit-code", "answer", "file-content:follow-up.txt", "tool-call", "handled-once"]
+
+[budget]
+seconds = 300
+turns = 20
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[person]]
+when = { tool-call = { tool = "finish" } }
+text = "Use exactly one shell call to run printf 'FOLLOW_UP\\n' > follow-up.txt in the workspace. Do not read, list, write, edit or delegate. Then finish with exactly ALPHA.\n"
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "^ALPHA$"
+[[outcome]]
+check = "file-content"
+path = "follow-up.txt"
+content = "FOLLOW_UP\n"
+[[event]]
+check = "tool-call"
+tool = "shell"
+count = { exactly = 1 }
+verdict = "exited"
+[[event]]
+check = "handled-once"
+
+[[variant]]
+name = "eof"
+input_end = "after-last-cue"
+
+[[variant]]
+name = "chat"
+replace_checks = true
+prompt = "This chat has three exchanges. First greet the person with GREETING and call wait. On the next line, answer as instructed and call wait again. On the final line, answer as instructed and finish. Use only wait and finish; no other calls.\n"
+deciding = ["end", "exit-code", "answer", "handled-once", "completion-per-exchange"]
+[[variant.person]]
+when = { tool-call = { tool = "wait" } }
+text = "Second exchange: say SECOND and call wait for the final exchange.\n"
+[[variant.person]]
+when = { tool-call = { tool = "wait" } }
+text = "Final exchange: finish with exactly ALPHA.\n"
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "^ALPHA$"
+[[variant.event]]
+check = "handled-once"
+[[variant.event]]
+check = "completion-per-exchange"

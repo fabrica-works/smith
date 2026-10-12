@@ -3,9 +3,85 @@
 use smith_bench::{CheckVerdict, End, Judgment, Measure, judge, judge_suite};
 use std::path::PathBuf;
 
+pub mod common;
+
 fn result() -> smith_bench::AttemptResult {
     smith_bench::read_result(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json"))
         .expect("unchanged recorded result")
+}
+
+fn follow_up() -> smith_bench::Task {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    smith_bench::check_task(&root.join("tasks/probes/follow-up/task.toml"), &root.join("../docs/design"))
+        .expect("frozen follow-up task")
+}
+
+fn exchanges(records: &mut [smith_events::Record]) -> Measure<bool> {
+    for (position, record) in records.iter_mut().enumerate() {
+        record.t_ms = u64::try_from(position).expect("small fixture");
+    }
+    let bytes = common::events::bytes(records);
+    let ceiling = u32::try_from(bytes.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("records"))
+        .expect("bounded fixture");
+    let mut observer = smith_bench::agent::smith::events::Observer::with_ceiling(&common::events::LIMITS, ceiling)
+        .expect("reader with semantic limits and the fixture's encoded ceiling");
+    observer.feed(&bytes).expect("outside records");
+    observer.finish().expect("whole stream");
+    observer.check(&smith_bench::EventCheck::CompletionPerExchange, "task").passed
+}
+
+#[test]
+fn follow_up_sends_its_request_on_finish() {
+    let task = follow_up();
+    assert_eq!(task.person.len(), 1);
+    assert_eq!(task.person[0].when, smith_bench::agent::Trigger::ToolCall { tool: "finish".into() });
+    assert!(task.person[0].text.contains("printf 'FOLLOW_UP\\n' > follow-up.txt"));
+    assert!(task.event.contains(&smith_bench::EventCheck::HandledOnce));
+    assert!(task.event.contains(&smith_bench::EventCheck::ToolCall {
+        tool: "shell".into(),
+        count: Some(smith_bench::Count::Exactly(1)),
+        input_bytes_at_least: None,
+        verdict: Some("exited".into()),
+        exit: None,
+        clamped: None,
+    }));
+    assert!(task.outcome.contains(&smith_bench::OutcomeCheck::ExitCode { code: 0 }));
+    assert!(task.outcome.contains(&smith_bench::OutcomeCheck::FileContent {
+        path: "follow-up.txt".into(),
+        content: "FOLLOW_UP\n".into(),
+    }));
+}
+
+#[test]
+fn follow_up_eof_ends_input_after_its_second_line() {
+    let base = follow_up();
+    let task = base.with_variant("eof").expect("eof variant");
+    assert_eq!(task.person, base.person);
+    assert_eq!(task.input_end, Some(smith_bench::agent::Close::AfterLastCue));
+    assert_eq!(task.event, base.event);
+    assert_eq!(task.outcome, base.outcome);
+    assert_eq!(task.person.len() + 1, 2);
+}
+
+#[test]
+fn follow_up_chat_judges_one_completion_per_exchange() {
+    let task = follow_up().with_variant("chat").expect("chat variant");
+    assert_eq!(task.person.len() + 1, 3);
+    assert!(task.person.iter().all(|cue| cue.when == smith_bench::agent::Trigger::ToolCall { tool: "wait".into() }));
+    assert!(task.event.contains(&smith_bench::EventCheck::CompletionPerExchange));
+    assert!(task.event.contains(&smith_bench::EventCheck::HandledOnce));
+    let mut records = common::events::balanced();
+    let mut received =
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/message_received_everything.jsonl"));
+    if let smith_events::Event::MessageReceived(value) = &mut received.event {
+        value.run = 0;
+        value.label = Some(b"person".as_slice().into());
+        value.refused = None;
+    }
+    records.insert(2, received.clone());
+    assert_eq!(exchanges(&mut records), Measure::Observed { value: true });
+    records.insert(2, received);
+    assert_eq!(exchanges(&mut records), Measure::Observed { value: false });
 }
 
 fn decision_names_keep_advisory_unknown_and_false_evidence_without_deciding_the_probe() {
