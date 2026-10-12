@@ -188,7 +188,10 @@ impl World {
                 CredentialRequest::Failed { event: local::Event::NoCredential { reason, .. } } => {
                     self.terminal = Some(Err(reason));
                 }
-                CredentialRequest::Ready { .. } | CredentialRequest::Failed { .. } => {
+                CredentialRequest::Closed
+                | CredentialRequest::Notice { .. }
+                | CredentialRequest::Ready { .. }
+                | CredentialRequest::Failed { .. } => {
                     panic!("unexpected OAuth terminal")
                 }
             }

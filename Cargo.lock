@@ -591,6 +591,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-oauth-accounts"
+version = "0.0.0"
+source = "git+https://github.com/forgetic/skein.git#4b61ac5bd692eeae0f8490bf0efc70ac94bedc12"
+dependencies = [
+ "skein-http",
+ "skein-io",
+ "skein-lib",
+ "skein-oauth",
+ "skein-tls",
+]
+
+[[package]]
 name = "skein-shell"
 version = "0.0.0"
 source = "git+https://github.com/forgetic/skein.git#4b61ac5bd692eeae0f8490bf0efc70ac94bedc12"
@@ -1057,6 +1069,7 @@ version = "0.0.0"
 dependencies = [
  "skein-fake-oauth",
  "skein-io",
+ "skein-json",
  "skein-lib",
  "skein-oauth",
  "smith-channel",
@@ -1076,9 +1089,13 @@ dependencies = [
  "skein-channel",
  "skein-fake-machine",
  "skein-fake-peers",
+ "skein-http",
  "skein-io",
  "skein-lib",
+ "skein-oauth",
+ "skein-oauth-accounts",
  "skein-sim",
+ "skein-tls",
  "skein-tls-world",
  "skein-world",
  "smith-agent-process-world",

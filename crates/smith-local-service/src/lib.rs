@@ -12,6 +12,7 @@
 
 extern crate alloc;
 
+mod credentials;
 mod process;
 mod service;
 pub mod stream;
@@ -21,5 +22,6 @@ pub mod profile;
 #[cfg(test)]
 mod tests;
 
+pub use credentials::{ACCOUNTS_MAX_OUT, Accounts, Source, accounts_worst_case};
 pub use process::{Launch, ProcessLimits, to_host_exit};
 pub use service::{AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, worst_case};

@@ -7,6 +7,10 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+skein-oauth.workspace = true
+skein-oauth-accounts.workspace = true
+skein-http.workspace = true
+skein-tls.workspace = true
 skein-lib.workspace = true
 skein-io.workspace = true
 skein-channel.workspace = true

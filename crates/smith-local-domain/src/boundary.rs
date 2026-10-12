@@ -132,6 +132,10 @@ pub enum CredentialFailure {
     Missing,
     /// The account could not be refreshed.
     Refresh,
+    /// A borrowed access token is approaching expiry.
+    BorrowedExpiring { at: skein_lib::Wall },
+    /// A borrowed access token has reached its expiry.
+    BorrowedExpired { at: skein_lib::Wall },
 }
 
 /// How this invocation ended.

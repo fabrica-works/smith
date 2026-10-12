@@ -259,3 +259,81 @@ fn an_incomplete_or_unsupported_plain_tree_is_never_declared_unchanged() {
 }
 
 mod store;
+
+fn login_limits() -> skein_oauth::Limits {
+    skein_oauth::Limits {
+        document_bytes: 1024,
+        string_bytes: 512,
+        token_bytes: 256,
+        client_bytes: 64,
+        detail_bytes: 64,
+        record_bytes: 1024,
+        depth: 8,
+        tokens: 64,
+    }
+}
+
+#[test]
+fn a_valid_borrowed_login_decodes_access_account_and_expiry() {
+    let borrowed = crate::decode_login(
+        crate::LoginFormat::Codex,
+        &std::fs::read("src/login-fixtures/valid.json").expect("synthetic fixture"),
+        &login_limits(),
+    )
+    .expect("bounded login");
+    assert_eq!(borrowed.account_id.as_ref(), b"acc");
+    assert_eq!(borrowed.record.access_token.as_ref(), b"header.eyJleHAiOjEyMH0.signature");
+    assert_eq!(borrowed.record.expires_at, skein_lib::Wall::from_nanos(120_000_000_000));
+}
+
+#[test]
+fn an_expired_login_keeps_the_expiry_for_its_owner() {
+    let borrowed = crate::decode_login(
+        crate::LoginFormat::Codex,
+        &std::fs::read("src/login-fixtures/expired.json").expect("synthetic fixture"),
+        &login_limits(),
+    )
+    .expect("expired metadata");
+    assert_eq!(borrowed.record.remaining(skein_lib::Wall::from_nanos(100_000_000_000)), skein_lib::Duration::ZERO);
+    assert_eq!(borrowed.record.expires_at, skein_lib::Wall::from_nanos(90_000_000_000));
+}
+
+#[test]
+fn malformed_borrowed_logins_are_refused() {
+    for bytes in [
+        b"{".as_slice(),
+        br#"{"tokens":{"access_token":"not-a-token","account_id":"acc"}}"#,
+        br#"{"tokens":{"access_token":"header.eyJleHAiOjEyMH0.signature","account_id":"acc\n"}}"#,
+    ] {
+        assert_eq!(
+            crate::decode_login(crate::LoginFormat::Codex, bytes, &login_limits()).err(),
+            Some(crate::LoginRefusal::Malformed)
+        );
+    }
+}
+
+#[test]
+fn the_refresh_token_of_a_borrowed_login_never_reaches_the_record() {
+    let borrowed = crate::decode_login(
+        crate::LoginFormat::Codex,
+        &std::fs::read("src/login-fixtures/valid.json").expect("synthetic fixture"),
+        &login_limits(),
+    )
+    .expect("access-only login");
+    assert!(borrowed.record.refresh_token.is_none());
+    let encoded = skein_oauth::encode_record(&borrowed.record, &login_limits()).expect("record");
+    for bytes in encoded.windows(b"UNISSUED_REFRESH_MUST_NOT_COPY".len()) {
+        assert_ne!(bytes, b"UNISSUED_REFRESH_MUST_NOT_COPY");
+    }
+}
+
+#[test]
+fn an_access_token_past_its_receiving_bound_is_refused() {
+    let mut limits = login_limits();
+    limits.token_bytes = 16;
+    let bytes = std::fs::read("src/login-fixtures/valid.json").expect("synthetic fixture");
+    assert_eq!(
+        crate::decode_login(crate::LoginFormat::Codex, &bytes, &limits).err(),
+        Some(crate::LoginRefusal::TooLarge)
+    );
+}

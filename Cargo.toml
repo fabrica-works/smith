@@ -33,6 +33,7 @@ skein-tls-world = { git = "https://github.com/forgetic/skein.git" }
 skein-fake-llm-domain = { git = "https://github.com/forgetic/skein.git" }
 skein-fake-llm-protocol = { git = "https://github.com/forgetic/skein.git" }
 skein-llm-world = { git = "https://github.com/forgetic/skein.git" }
+skein-oauth-accounts = { git = "https://github.com/forgetic/skein.git" }
 skein-oauth = { git = "https://github.com/forgetic/skein.git" }
 skein-fake-peers = { git = "https://github.com/forgetic/skein.git" }
 skein-fake-oauth = { git = "https://github.com/forgetic/skein.git" }

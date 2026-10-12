@@ -59,6 +59,10 @@ pub enum CredentialEvent {
 /// One request to the local service or its person and network neighbours.
 #[expect(missing_debug_implementations, reason = "token requests and grants contain secret values")]
 pub enum CredentialRequest {
+    /// The handed-in driver and all its borrowed directories have closed.
+    Closed,
+    /// A handed-in login approaches expiry without ending its held grant.
+    Notice { account: u32, reason: CredentialFailure },
     /// Show this authorization page's address to the person.
     Visit { url: Box<[u8]> },
     /// Make one token endpoint request with exact send evidence in its terminal.
@@ -486,7 +490,9 @@ mod tests {
                 CredentialRequest::Failed { event: local::Event::NoCredential { reason, .. } } if !fresh => {
                     assert_eq!(reason, CredentialFailure::Refresh);
                 }
-                CredentialRequest::Visit { .. }
+                CredentialRequest::Closed
+                | CredentialRequest::Notice { .. }
+                | CredentialRequest::Visit { .. }
                 | CredentialRequest::Http(_)
                 | CredentialRequest::Save { .. }
                 | CredentialRequest::Ready { .. }

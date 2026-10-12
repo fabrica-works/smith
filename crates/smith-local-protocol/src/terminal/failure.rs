@@ -51,6 +51,10 @@ pub(super) fn credential(text: &mut Shown, account: u32, why: local::CredentialF
         text,
         match why {
             local::CredentialFailure::Missing => b" has no credential: run `smith login ",
+            local::CredentialFailure::BorrowedExpiring { .. } => {
+                b" has a borrowed login approaching expiry: run `smith login "
+            }
+            local::CredentialFailure::BorrowedExpired { .. } => b" has an expired borrowed login: run `smith login ",
             local::CredentialFailure::Refresh => b" could not renew its credential: run `smith login ",
         },
     );
