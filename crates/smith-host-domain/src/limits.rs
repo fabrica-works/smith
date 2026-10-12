@@ -63,8 +63,12 @@ pub struct Limits {
     pub long_open: u32,
     /// Independent working wall deadline.
     pub wall_time: Duration,
-    /// Cancel/answer/exit grace before tree termination.
-    pub grace: Duration,
+    /// A cancelled run's grace to answer before tree termination.
+    pub cancel_grace: Duration,
+    /// An answered agent's grace to exit, strictly above teardown.
+    pub exit_grace: Duration,
+    /// The agent's teardown bound, supplied by its configuration owner.
+    pub teardown: Duration,
     /// Terminate grace before tree kill.
     pub kill_after: Duration,
     /// Content-free diagnostic queue capacity.
@@ -74,12 +78,17 @@ pub struct Limits {
 /// A cross-process relationship the kit refuses by name (protocol/limits.md, section 4).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Check {
+    /// The answered agent's exit grace must exceed its teardown bound.
+    GraceOverTeardown { exit_grace: Duration, teardown: Duration },
     /// The watchdog must exceed the agent's silent deadline.
     WatchdogOverSilence { no_progress: Duration, silence: Duration },
 }
 
-/// Refuse a watchdog that can fire during an agent's allowed silence.
+/// Refuse a supervisor grace or watchdog that can end an agent within its allowed bound.
 pub fn check(limits: &Limits) -> Result<(), Check> {
+    if limits.exit_grace <= limits.teardown {
+        return Err(Check::GraceOverTeardown { exit_grace: limits.exit_grace, teardown: limits.teardown });
+    }
     if limits.no_progress <= limits.silence {
         return Err(Check::WatchdogOverSilence { no_progress: limits.no_progress, silence: limits.silence });
     }

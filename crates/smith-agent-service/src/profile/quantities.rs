@@ -189,7 +189,7 @@ pub const fn standard() -> Profile {
             close: Duration::from_secs(5),
             write_deadline: Duration::from_secs(30),
             cancel_grace: Duration::from_secs(5),
-            exit_grace: Duration::from_secs(5),
+            exit_grace: Duration::from_secs(45),
         },
     }
 }

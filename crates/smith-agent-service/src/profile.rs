@@ -18,7 +18,7 @@ use crate as service;
 mod bounds;
 mod quantities;
 
-pub use bounds::silence_bound;
+pub use bounds::{silence_bound, teardown_bound};
 
 mod path;
 

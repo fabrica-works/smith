@@ -816,6 +816,31 @@ fn an_agent_that_exits_on_terminate_after_its_answer_is_gone_terminated() {
 }
 
 #[test]
+fn an_answered_agent_is_signalled_only_past_its_exit_grace() {
+    let mut bounds = limits();
+    bounds.exit_grace = Duration::from_secs(45);
+    bounds.teardown = Duration::from_secs(40);
+    let mut world = World::new(66, bounds);
+    world.live();
+    last(&mut world, RunResult::Parked, 0, 0);
+    world.at(5);
+    assert!(world.seen.signals.is_empty());
+    world.at(44);
+    assert!(world.seen.signals.is_empty());
+    world.at(45);
+    assert_eq!(world.seen.signals, [Signal::Terminate]);
+    world.cleanup(Some(smith_host_domain::Exit::Signal(15)));
+    world.settled();
+    assert_eq!(
+        world.seen.gone,
+        Some(End::Exited {
+            exit: Some(smith_host_domain::Exit::Signal(15)),
+            forced: smith_host_domain::Forced::Terminated,
+        }),
+    );
+}
+
+#[test]
 fn an_unobserved_exit_preserves_unknown_status() {
     let mut world = World::new(64, limits());
     world.live();
@@ -838,7 +863,7 @@ fn stop_and_answer_during_wall_or_draining_preserve_original_shutdown_deadline()
     world.at(24);
     last(&mut world, RunResult::Failed { failure: RunFailure::Cancelled }, 0, 0);
     world.at(25);
-    assert_eq!(world.seen.signals, [Signal::Terminate]);
+    assert!(world.seen.signals.is_empty());
     world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
     let mut world = World::new(44, limits());

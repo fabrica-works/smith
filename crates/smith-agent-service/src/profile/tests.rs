@@ -40,6 +40,31 @@ pub(super) fn declarations() -> Configuration {
 }
 
 #[test]
+fn the_standard_exit_grace_exceeds_its_teardown_bound() {
+    let selected = profile();
+    let mut limits = super::derive(&selected, &declarations()).expect("standard profile");
+    limits.events = Some(
+        crate::EventLimits::derive(&limits, crate::sinks::Capture::None, 1, 0, &[], selected.policy.write_deadline)
+            .expect("standard event stream"),
+    );
+    assert_eq!(selected.policy.exit_grace, Duration::from_secs(45));
+    assert_eq!(super::teardown_bound(&limits), Some(Duration::from_secs(40)));
+    assert!(selected.policy.exit_grace > super::teardown_bound(&limits).expect("bounded teardown"));
+}
+
+#[test]
+fn an_exit_grace_at_the_teardown_bound_names_the_broken_relationship() {
+    let mut selected = profile();
+    selected.policy.exit_grace = Duration::from_secs(40);
+    let refusal = super::derive(&selected, &declarations()).expect_err("no exit margin");
+    assert_eq!(refusal.check(), Some(Check::GraceOverTeardown));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"grace-over-teardown: policy.exit_grace=40000000000 ns; service.teardown=40000000000 ns",
+    );
+}
+
+#[test]
 fn file_bounds_follow_the_tools_admitted_piece_and_listing() {
     let mut selected = profile();
     let mut configuration = declarations();

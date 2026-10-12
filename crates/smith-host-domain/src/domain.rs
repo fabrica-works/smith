@@ -143,7 +143,7 @@ impl Domain {
     #[must_use]
     pub fn new(limits: &Limits) -> Domain {
         assert!(crate::worst_case(limits).is_some(), "host limits are representable and every sealed delivery fits");
-        assert!(crate::check(limits).is_ok(), "host watchdog exceeds the agent's silent bound");
+        assert!(crate::check(limits).is_ok(), "host supervision exceeds the agent's checked bounds");
         Domain {
             agents: Slab::<Agent>::with_capacity(limits.agents),
             alarms: Deadlines::with_capacity(limits.agents.checked_mul(3).expect("validated alarms")),
@@ -940,8 +940,10 @@ fn heard_answer(agent: &mut Agent, answer: crate::Answer, env: &Env<Limits>, out
     }
     agent.owed = None;
     match agent.phase {
-        Phase::Starting | Phase::Live => agent.until = env.now.saturating_add(env.limits.grace),
-        Phase::Cancelled | Phase::Draining | Phase::Exiting | Phase::Terminating | Phase::Killing => {}
+        Phase::Starting | Phase::Live | Phase::Cancelled | Phase::Draining => {
+            agent.until = env.now.saturating_add(env.limits.exit_grace);
+        }
+        Phase::Exiting | Phase::Terminating | Phase::Killing => {}
         Phase::Spawning | Phase::Closed => unreachable!("answer after process start"),
     }
     if agent.phase != Phase::Terminating && agent.phase != Phase::Killing {
@@ -1114,7 +1116,7 @@ fn polite(agent: &mut Agent, env: &Env<Limits>, owed: Option<Fault>) {
             }
             agent.owed = owed;
             agent.phase = Phase::Cancelled;
-            agent.until = env.now.saturating_add(env.limits.grace);
+            agent.until = env.now.saturating_add(env.limits.cancel_grace);
         }
         Phase::Spawning
         | Phase::Cancelled
@@ -1131,7 +1133,7 @@ fn draining(agent: &mut Agent, env: &Env<Limits>) {
         Phase::Starting | Phase::Live => {
             agent.phase = Phase::Draining;
             agent.owed = Some(Fault::Exited);
-            agent.until = env.now.saturating_add(env.limits.grace);
+            agent.until = env.now.saturating_add(env.limits.cancel_grace);
         }
         Phase::Cancelled => {
             agent.phase = Phase::Draining;

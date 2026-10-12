@@ -34,6 +34,19 @@ pub fn host_limits(
     let no_progress = silence
         .checked_add(agent.io.close_timeout)
         .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "no_progress") })?;
+    let teardown_name = LimitName::deployment(Layer::Service, "teardown");
+    let teardown =
+        smith_agent_service::profile::teardown_bound(agent).ok_or(Refusal::Derived { limit: teardown_name })?;
+    if profile.policy.exit_grace <= teardown {
+        return Err(Refusal::Broken {
+            check: Check::GraceOverTeardown,
+            left: LimitName::deployment(Layer::Policy, "exit_grace").value(Value::Duration(profile.policy.exit_grace)),
+            right: teardown_name.value(Value::Duration(teardown)),
+        });
+    }
+    let exit_grace = teardown
+        .checked_add(agent.io.close_timeout)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "exit_grace") })?;
     let limits = host::Limits {
         agents: run.runs,
         directories: run.directories,
@@ -67,12 +80,19 @@ pub fn host_limits(
             .checked_add(1)
             .expect("validated check span bound"),
         wall_time: profile.policy.max_time,
-        grace: profile.policy.exit_grace,
+        cancel_grace: profile.policy.cancel_grace,
+        exit_grace,
+        teardown,
         kill_after: Duration::from_secs(2),
         facts: run.facts,
     };
     match host::check(&limits) {
         Ok(()) => Ok(limits),
+        Err(host::Check::GraceOverTeardown { exit_grace, teardown }) => Err(Refusal::Broken {
+            check: Check::GraceOverTeardown,
+            left: LimitName::deployment(Layer::Service, "exit_grace").value(Value::Duration(exit_grace)),
+            right: teardown_name.value(Value::Duration(teardown)),
+        }),
         Err(host::Check::WatchdogOverSilence { no_progress, silence }) => Err(Refusal::Broken {
             check: Check::WatchdogOverSilence,
             left: LimitName::deployment(Layer::Service, "no_progress").value(Value::Duration(no_progress)),
@@ -100,7 +120,45 @@ pub fn memory(limits: &crate::Limits, available: u64) -> Result<(), Refusal> {
 #[cfg(test)]
 mod tests {
     use super::host_limits;
-    use smith_agent_service::profile::{Layer, LimitName, Refusal, standard};
+    use skein_lib::Duration;
+    use smith_agent_service::profile::{Check, Layer, LimitName, Refusal, Value, standard};
+
+    #[test]
+    fn the_host_exit_grace_is_derived_from_its_agents_teardown_and_one_close() {
+        let profile = standard();
+        let mut agent = smith_agent_process_world::limits();
+        agent.events = Some(
+            smith_agent_service::EventLimits::derive(
+                &agent,
+                smith_agent_service::sinks::Capture::None,
+                1,
+                0,
+                &[],
+                profile.policy.write_deadline,
+            )
+            .expect("bounded event stream"),
+        );
+        let host = host_limits(&profile, &agent).expect("derived grace");
+        assert_eq!(host.teardown, Duration::from_secs(40));
+        assert_eq!(host.exit_grace, Duration::from_secs(45));
+        assert_eq!(host.cancel_grace, profile.policy.cancel_grace);
+    }
+
+    #[test]
+    fn a_policy_exit_grace_below_the_agents_bound_names_grace_over_teardown() {
+        let mut profile = standard();
+        profile.policy.exit_grace = Duration::from_secs(9);
+        let agent = smith_agent_process_world::limits();
+        assert_eq!(
+            host_limits(&profile, &agent),
+            Err(Refusal::Broken {
+                check: Check::GraceOverTeardown,
+                left: LimitName::deployment(Layer::Policy, "exit_grace").value(Value::Duration(Duration::from_secs(9))),
+                right: LimitName::deployment(Layer::Service, "teardown")
+                    .value(Value::Duration(Duration::from_secs(10))),
+            }),
+        );
+    }
 
     #[test]
     fn host_payload_bounds_follow_the_agents_admitted_ownership() {

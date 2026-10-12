@@ -12,3 +12,13 @@ pub fn silence_bound(limits: &Limits) -> Option<Duration> {
     };
     Some(limits.file_timeout.max(limits.io.close_timeout).max(stream))
 }
+
+/// Two ordered io closes and the event stream's final write bound the agent's end.
+#[must_use]
+pub fn teardown_bound(limits: &Limits) -> Option<Duration> {
+    let stream = match limits.events {
+        Some(events) => events.write_deadline,
+        None => Duration::ZERO,
+    };
+    limits.io.close_timeout.checked_add(limits.io.close_timeout)?.checked_add(stream)
+}

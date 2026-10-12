@@ -43,7 +43,9 @@ fn limits() -> crate::Limits {
         long_span: Duration::from_secs(60),
         long_open: 64,
         wall_time: Duration::from_secs(100),
-        grace: Duration::from_secs(5),
+        cancel_grace: Duration::from_secs(5),
+        exit_grace: Duration::from_secs(5),
+        teardown: Duration::ZERO,
         kill_after: Duration::from_secs(2),
         facts: 4,
     }
@@ -397,5 +399,20 @@ fn no_progress_not_above_silence_is_refused_as_watchdog_over_silence() {
         );
     }
     limits.no_progress = Duration::from_secs(11);
+    assert_eq!(crate::check(&limits), Ok(()));
+}
+
+#[test]
+fn exit_grace_not_above_teardown_is_refused_as_grace_over_teardown() {
+    let mut limits = limits();
+    limits.teardown = Duration::from_secs(40);
+    for exit_grace in [Duration::from_secs(39), Duration::from_secs(40)] {
+        limits.exit_grace = exit_grace;
+        assert_eq!(
+            crate::check(&limits),
+            Err(crate::Check::GraceOverTeardown { exit_grace, teardown: Duration::from_secs(40) }),
+        );
+    }
+    limits.exit_grace = Duration::from_secs(45);
     assert_eq!(crate::check(&limits), Ok(()));
 }

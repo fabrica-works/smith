@@ -141,7 +141,9 @@ pub fn limits() -> Limits {
         long_span: Duration::from_secs(120),
         long_open: 64,
         wall_time: Duration::from_secs(900),
-        grace: Duration::from_secs(5),
+        cancel_grace: Duration::from_secs(5),
+        exit_grace: Duration::from_secs(5),
+        teardown: Duration::ZERO,
         kill_after: Duration::from_secs(2),
         facts: 16,
     }

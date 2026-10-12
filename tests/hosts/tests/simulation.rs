@@ -21,6 +21,19 @@ mod tests {
     }
 
     #[test]
+    fn an_answered_agent_exits_within_its_grace_and_is_never_signalled() {
+        let mut world = World::new(19, Program::Service);
+        world.settle();
+        let seen = world.seen();
+        assert!(seen.answered.is_some());
+        assert!(seen.signals.is_empty());
+        assert_eq!(
+            seen.gone,
+            Some(End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No }),
+        );
+    }
+
+    #[test]
     fn an_agent_that_fails_to_start_is_reported_with_its_errors_tail() {
         let mut world = World::new(7, Program::ErrorTail);
         world.settle();

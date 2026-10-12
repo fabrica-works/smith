@@ -95,6 +95,20 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
             }
         }
     }
+    let teardown_name = LimitName::deployment(Layer::Service, "teardown");
+    let teardown = policy
+        .close
+        .checked_add(policy.close)
+        .ok_or(Refusal::Derived { limit: teardown_name })?
+        .checked_add(policy.write_deadline)
+        .ok_or(Refusal::Derived { limit: teardown_name })?;
+    if policy.exit_grace <= teardown {
+        return Err(Refusal::Broken {
+            check: Check::GraceOverTeardown,
+            left: duration("exit_grace", policy.exit_grace),
+            right: teardown_name.value(Value::Duration(teardown)),
+        });
+    }
     if policy.shell_timeout > policy.tool_deadline {
         return Err(Refusal::Broken {
             check: Check::Deadlines,

@@ -111,7 +111,7 @@ fn host_limits() -> host::Limits {
     limits.outcome_bytes = 4096;
     limits.spawn_timeout = Duration::from_secs(2);
     limits.no_progress = Duration::from_secs(10);
-    limits.grace = Duration::from_secs(5);
+    limits.cancel_grace = Duration::from_secs(5);
     limits.kill_after = Duration::from_secs(1);
     limits
 }
