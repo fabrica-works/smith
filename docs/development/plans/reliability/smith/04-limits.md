@@ -193,6 +193,16 @@ and output by rule 6, the transcript's `message_blocks` and the check
     kept turns into it; the agent splits it, counting turns against the
     resume limit's turns, and refuses as malformed a piece whose lengths
     do not end at its end, and as too large one past the limit;
+  - transcript 3's `Found`, as the designer ruled on 2026-10-12
+    (transcript.md, section 7): `hits` from `list 256 Hit` to one piece,
+    `bytes 2097152`, and `Hit.text` from `bytes 4096` to `bytes 2097152`
+    (`crates/smith-transcript/schema/transcript-v3.schema:21`, `:29`).
+    `Hit` stays a record: the piece is the hits as the codec encodes
+    each `Hit`, in order. `turn.rs:246` encodes them into it;
+    `transcript.rs:259` decodes them one by one with the generated `Hit`
+    decoder, counting them against the tools' `search_hits`, and refuses
+    as malformed a piece whose hits do not end at its end. The generator
+    accepts the piece at 2 MiB and refuses it at 4 MiB;
 - the resume limit's turns from the session's `history_messages`
   (46,255 for the standard profile's 272,000-token window), never from
   `max_turns`, and its bytes from one window's turns at their largest
@@ -210,7 +220,9 @@ and `golden/v2/`; the piece: `decode_transcript`
 (`crates/smith-protocol-channel/src/transcript.rs:18`, called at
 `component.rs:802`), the start's parts in
 `crates/smith-host-protocol/src/translate.rs:100`, and
-`channel_bodies` and `channel_start_bytes` (`profile.rs:233`, `:244`).
+`channel_bodies` and `channel_start_bytes` (`profile.rs:233`, `:244`);
+the search piece: `crates/smith-protocol-channel/src/turn.rs:246` and
+`src/transcript.rs:259`.
 Shape: `validate::turn_in_transcript(required, available) ->
 Result<(), Refusal>`, `resume_holds_window`, `turn_in_channel`, each
 naming both sides as `validate::calls_in_transcript` does
@@ -224,7 +236,9 @@ like `transcript_blocks_hold_the_largest_completion_or_name_the_ceiling`
 `a_completion_of_every_call_it_may_make_is_told_and_acknowledged`,
 `a_window_that_holds_one_turn_of_the_largest_size`,
 `a_window_of_more_than_sixty_four_turns_resumes`; unit in
-`smith-protocol-channel`: `a_piece_whose_lengths_pass_its_end_is_malformed`,
+`smith-protocol-channel`: `a_search_hit_holding_all_of_search_bytes_is_told_and_resumed`,
+`a_found_piece_whose_hits_pass_its_end_is_malformed`,
+`a_piece_whose_lengths_pass_its_end_is_malformed`,
 `a_piece_of_more_turns_than_the_resume_limit_is_too_large`; `tests/channel` and
 `tests/hosts`' `memory.rs` at their derived worst cases. Ceilings: unit
 20 ms, world 0.5 s, the property at `main`'s number of cases.
