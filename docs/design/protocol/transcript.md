@@ -1,6 +1,6 @@
 # Turns and transcripts
 
-Provisional, 2026-10-07, revised 2026-10-09. The records of a
+Provisional, 2026-10-07, revised 2026-10-12. The records of a
 conversation kept beyond its process: a turn, as a run tells it, and a
 transcript, as a run resumes from it (domain/session.md, section 3). They
 are the family `smith-transcript`, versioned on their own, since a host
@@ -195,6 +195,14 @@ Each refusal is distinct, and the run fails as transient, saying which
   The schema's ceiling is the vocabulary's, and the derived bound is
   within it. A configuration that breaks either relationship is refused at
   startup, naming it, so every completion a session accepts can be told.
+- **A search's hits** are one piece within an outcome, since they share
+  one bound: at most `search_hits` hits within `search_bytes`, any one of
+  which may hold nearly all of them (protocol/limits.md, 2.2 and rule 6).
+  The piece holds each hit as the codec encodes a hit record, in order.
+  The agent decodes them one by one, counting them against its
+  `search_hits`, and refuses as malformed a piece whose hits do not end
+  at its end. The hits stay typed; only their count and total are the
+  piece's.
 - **A transcript** is bounded by the resume limit, which is the host's and
   the agent's configuration's: the turns and bytes the agent takes in a
   start. Since a transcript holds one window, the resume limit is at least
