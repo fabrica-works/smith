@@ -366,6 +366,27 @@ retry or delay; change 00.14's task, prompt, cues or checks. If the
 reproduction shows the hold is not the cause, stop and ask with it.
 Size: at most 100 production lines.
 
+### 05.s2 A line received while the run starts reaches it
+Added during the run (decisions.md, 13.51). Scope: 05.s1's process
+candidate, two lines typed together, shows `Start` carrying line 1,
+`Waiting { read: None }`, no `Parent(Message)` for line 2, and the
+watchdog's cancel at 10 s: `dispatch_line` refuses while `Starting`, and
+`state_saved`'s `Starting` arm calls `maybe_start` without dispatching the
+next received line (`smith-local-domain/src/domain.rs`). host.md, 8:
+"Lines entered while a run is live go to it as messages, each as it is
+entered", and "Closing input drains: every line received is relayed,
+carried or shown as not delivered". A line received after the start was
+sent is relayed as a message, in order, once the run is admitted.
+Needs: 05.s1 landed (the same file).
+Files: `smith-local-domain/src/domain.rs`; 05.s1's process story file.
+Shape: no new type.
+Test shape: 05.s1's process candidate, named
+`a_line_typed_while_the_run_starts_reaches_it_as_a_message`; it fails on
+the parent. Under 0.5 s.
+Proof: that story, once, failing on the parent and passing on the step.
+Don't: carry the line in a start already sent; add a delay or timeout.
+Size: at most 60 production lines.
+
 ## Interface sketches
 
 `smith-local-domain` owns `Notice` and its kinds, `smith-local-protocol`

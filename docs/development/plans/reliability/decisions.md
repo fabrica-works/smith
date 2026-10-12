@@ -1273,3 +1273,21 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    task 01: smith 0 cached tokens, Codex 97.5k). For the retrospective:
    the harness could count a response refused before its headers as no
    tokens, rather than stopping the batch.
+51. **05.s1 reproduces the live trace at the process world; 05.s2 takes
+   the line typed while the run starts** (block of 2026-10-12T17:20:51Z,
+   smith 05.s1). 05.s1's agent and inline-local candidates pass on the
+   parent, so the acknowledgement hold is not shown there; its process
+   candidate, two lines typed together, fails on the parent for another
+   cause: the second line, received while the run is `Starting`, is
+   never dispatched (`dispatch_line` refuses `Starting`; `state_saved`
+   calls `maybe_start` without the next line), and the watchdog cancels.
+   The live trace is not that: there, line 2 reached the run
+   (`message.received`, run 1, name 2) as the wait started, after turn
+   1. Ruling: 05.s1 keeps its scope and reproduces the live sequence in
+   the process world, where the real store over io acknowledges turns
+   (10.1): a scripted model that answers turn 1 with `wait`, and line 2
+   injected on that wait; it stops and asks if that passes on the
+   parent too. The start gap is a real defect against host.md, 8 ("every
+   line received is relayed, carried or shown as not delivered"): a step
+   not in the plan, 05.s2, after 05.s1, with 05.s1's process candidate as
+   its story.
