@@ -1037,3 +1037,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    record follows it, as `sinks.rs:457` asserts. Signals stay read
    through every `Closing` step, as 06.5's Scope says ("`Answered` or
    `Closing`"), and no test is added beyond its Test shape.
+35. **03.8's two interrupts are two signals in one pass** (block of
+   2026-10-12T16:01:54Z, smith 03.8). 03.8's Test shape had
+   `World::dropped` deliver "both interrupts in one read of the signal
+   stream"; skein's kernel `Op::ReadSignal` completes with one blocked
+   signal, and `signals::up` emits one `Shutdown` and reads again, so no
+   read carries two. A plan defect, mine: what the story needs is the
+   rest of that sentence, "so the second reaches the local domain before
+   any terminal of the cancel". The terminal sends both signals in one
+   pass while the provider holds its response open; no skein change. If
+   the two arrive as one `Shutdown`, the implementer stops and asks,
+   adding no delay or timing to separate them.

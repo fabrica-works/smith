@@ -217,8 +217,8 @@ Needs: 03.7 for the inline kind's record; 03.9 for the spawned kind's.
 Files: `crates/smith-local-service/src/stream.rs`, `src/service.rs`;
 `crates/smith-local-domain/src/domain.rs`, `src/end.rs` (the cause and
 the turns told handed to the service), `src/boundary.rs`;
-`tests/local-process/src/terminal.rs` (two interrupts in one read of the
-signal stream), `src/referee.rs` (`Ending::Dropped`, exit 130 and the
+`tests/local-process/src/terminal.rs` (two interrupts in one pass,
+decisions.md 13.35), `src/referee.rs` (`Ending::Dropped`, exit 130 and the
 stderr line), `tests/local-process/tests/simulation.rs`.
 Shape: the local domain's `Request::Unanswered { cause: EndCause, turns:
 u32, spent: u64, read: Option<Token> }`, once, when its agent is `Gone`
@@ -241,9 +241,10 @@ fn an_interrupt_mid_turn_and_a_second_drop_the_run() {
     }
 }
 ```
-`World::dropped` delivers both interrupts in one read of the signal
-stream while the provider holds its response open, so the second reaches
-the local domain before any terminal of the cancel. `World::errors` is
+`World::dropped` sends both interrupts in one pass of the terminal, two
+signals that the kit reads one at a time (decisions.md, 13.35), while the
+provider holds its response open, so the second reaches the local domain
+before any terminal of the cancel. `World::errors` is
 added beside `World::shown` (`world.rs:610`), returning the terminal's
 (`terminal.rs:235`). Tests: that one;
 `a_dropped_inline_run_completes_as_cancelled_and_dropped`;
