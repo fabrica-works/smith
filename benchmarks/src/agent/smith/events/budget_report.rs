@@ -1,10 +1,10 @@
 //! Visibility retains the last child-usage values actually told before a report.
 //! Model reports compare that text, independently of later budget charges.
-//! The public stream cannot identify the Budget of the step writing that text;
-//! the Smith comparison stays unavailable until its producer supplies that join.
+//! Smith's comparison joins each returned call to its writing-step Budget.
 //! (benchmarks.md, section 11.1; domain/run.md, section 9.2).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::LazyLock;
 
 use smith_events::{Block, ConversationKind, Event, Status};
 
@@ -19,10 +19,12 @@ struct Remaining {
 }
 
 fn told(text: &[u8]) -> Result<Option<Remaining>, &'static str> {
+    static PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?s)\n\nChild usage:.*; ordinary left ([0-9]+) turns and ([^.]+)\.$")
+            .expect("fixed native usage suffix")
+    });
     let text = std::str::from_utf8(text).map_err(|_| "child usage text is not UTF-8")?;
-    let pattern = regex::Regex::new(r"(?s)\n\nChild usage:.*; ordinary left ([0-9]+) turns and ([^.]+)\.$")
-        .expect("fixed native usage suffix");
-    let Some(captures) = pattern.captures(text) else { return Ok(None) };
+    let Some(captures) = PATTERN.captures(text) else { return Ok(None) };
     let turns = captures[1].parse::<u64>().ok();
     let time = &captures[2];
     let seconds = match time {
@@ -53,8 +55,10 @@ struct State {
     main: BTreeSet<(u64, u64)>,
     children: BTreeMap<(u64, u64), Parent>,
     pending: BTreeSet<(u64, u64, Box<[u8]>)>,
+    budgets: BTreeMap<(u64, Box<[u8]>), Remaining>,
     told: BTreeMap<u64, Remaining>,
     measured: bool,
+    wrong: bool,
     report: Report,
 }
 
@@ -80,11 +84,6 @@ impl State {
                     if opening.conversation != value.conversation || opening.call != value.call {
                         return Err("child return does not join its actual parent call");
                     }
-                    if require_writing_budget {
-                        return Err(
-                            "child usage lacks an identified Budget of its actual writing step; session07 prerequisite",
-                        );
-                    }
                     self.pending.insert((value.run, value.conversation, value.call.clone()));
                 }
             }
@@ -98,6 +97,13 @@ impl State {
                                 self.measured = true;
                                 match told(text)? {
                                     Some(actual) => {
+                                        if require_writing_budget {
+                                            let expected = self
+                                                .budgets
+                                                .get(&(value.run, call.clone()))
+                                                .ok_or("child usage lacks its identified writing-step Budget")?;
+                                            self.wrong |= actual != *expected;
+                                        }
                                         self.told.insert(value.run, actual);
                                     }
                                     None => return Err("actual returned child usage values were not captured"),
@@ -118,6 +124,20 @@ impl State {
                     }
                     None if !matches!(self.report, Report::Differs) => self.report = Report::Missing,
                     None => {}
+                }
+            }
+            Event::Budget(value) if require_writing_budget => {
+                if let Some(call) = &value.call {
+                    let ordinary = Remaining {
+                        turns: value.turns.limit.saturating_sub(value.turns.used).saturating_sub(value.reserve.turns),
+                        seconds: value
+                            .time_ms
+                            .limit
+                            .saturating_sub(value.time_ms.used)
+                            .saturating_sub(value.reserve.time_ms)
+                            / 1000,
+                    };
+                    self.budgets.insert((value.run, call.clone()), ordinary);
                 }
             }
             Event::Budget(_)
@@ -161,7 +181,7 @@ pub(super) fn check(observer: &Observer, report: bool) -> Measure<bool> {
                 Report::Differs => true,
             }
         } else {
-            return Measure::unavailable("no exact writing-step Budget join was established");
+            state.wrong
         };
         if wrong {
             return Measure::Observed { value: false };

@@ -6,6 +6,11 @@ use smith_events::{Event, Record};
 pub mod common;
 
 fn records() -> Vec<Record> {
+    static TEMPLATE: std::sync::LazyLock<Vec<Record>> = std::sync::LazyLock::new(build_records);
+    TEMPLATE.clone()
+}
+
+fn build_records() -> Vec<Record> {
     let baseline = common::events::balanced();
     let mut values = baseline[..5].to_vec();
     let budget = Record {
@@ -108,8 +113,12 @@ fn sequence(records: &mut [Record]) {
 }
 
 fn observed(records: &[Record], check: &EventCheck) -> Measure<bool> {
-    let mut observer = smith_bench::agent::smith::events::Observer::new(&common::events::LIMITS).expect("reader");
-    observer.feed(&common::events::bytes(records)).expect("outside codec records");
+    let bytes = common::events::bytes(records);
+    let ceiling = u32::try_from(bytes.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("records"))
+        .expect("bounded fixture lines");
+    let mut observer = smith_bench::agent::smith::events::Observer::with_ceiling(&common::events::LIMITS, ceiling)
+        .expect("reader with the exact encoded ceiling and unchanged semantic limits");
+    observer.feed(&bytes).expect("outside codec records");
     observer.finish().expect("whole stream");
     observer.check(check, "task").passed
 }
@@ -117,6 +126,65 @@ fn observed(records: &[Record], check: &EventCheck) -> Measure<bool> {
 fn checked(records: &mut [Record], check: &EventCheck) -> Measure<bool> {
     sequence(records);
     observed(records, check)
+}
+
+fn writing_budget(records: &mut [Record]) {
+    if let Event::Budget(value) = &mut records[5].event {
+        value.call = Some(b"child0".as_slice().into());
+    }
+}
+
+#[test]
+fn told_values_equal_their_writing_steps_budget() {
+    for (used_ms, time) in [(1500, "6 seconds"), (7000, "1 second"), (7999, "less than a second")] {
+        let mut values = records();
+        writing_budget(&mut values);
+        if let Event::Budget(value) = &mut values[5].event {
+            value.time_ms.used = used_ms;
+        }
+        told_text(&mut values, 6, time);
+        assert_eq!(checked(&mut values, &EventCheck::BudgetTold), Measure::Observed { value: true });
+    }
+}
+
+#[test]
+fn a_told_value_off_its_writing_step_fails() {
+    for (turns, time) in [(7, "6 seconds"), (6, "7 seconds")] {
+        let mut values = records();
+        writing_budget(&mut values);
+        told_text(&mut values, turns, time);
+        report_text(&mut values, &format!("ALPHA {turns} {}", if turns == 7 { 6 } else { 7 }));
+        assert_eq!(checked(&mut values, &EventCheck::BudgetTold), Measure::Observed { value: false });
+        assert_eq!(checked(&mut values, &EventCheck::BudgetReport), Measure::Observed { value: true });
+    }
+}
+
+#[test]
+fn a_return_without_the_join_stays_unavailable() {
+    for field in ["call", "run", "prompt", "usage"] {
+        let mut values = records();
+        writing_budget(&mut values);
+        match field {
+            "call" => {
+                if let Event::Budget(value) = &mut values[5].event {
+                    value.call = Some(b"foreign".as_slice().into());
+                }
+            }
+            "run" => {
+                if let Event::Budget(value) = &mut values[5].event {
+                    value.run = 1;
+                }
+            }
+            "prompt" => {
+                if let Event::ResponseStarted(value) = &mut values[8].event {
+                    value.prompt = None;
+                }
+            }
+            "usage" => told_text(&mut values, 6, "unknown"),
+            _ => unreachable!("fixture selector"),
+        }
+        assert!(matches!(checked(&mut values, &EventCheck::BudgetTold), Measure::Unavailable { .. }), "{field}");
+    }
 }
 
 #[test]
