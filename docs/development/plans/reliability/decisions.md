@@ -1577,3 +1577,24 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    repin lands on its own as smith-10.s1, the gate and the smoke its
    Proof, then 13.6's `slow-completion`; 10.10 waits for 10.8 and 10.s1,
    and invents no interactive front end.
+76. **The repin's commit stands as smith-10.s1** (block of
+   2026-10-12T19:59:39Z, smith 10b). The repin landed as e5c67f5c with
+   `Step: smith-10.10`, before 13.75's instruction reached the thread.
+   The commit stays (no force-push, as 13.28); the ledger records
+   smith-10.s1 `landed` at e5c67f5c and smith-10.10 waiting on 10.8, and
+   plan status's two disagreements this makes (10.10 on `origin/main`
+   unlanded, 10.s1 landed without a commit naming it) are known, as
+   12.1's is. 13.6's `slow-completion` runs now: the pin holds skein
+   bdbdd65b, with 07.s2 and 07.s3.
+77. **08.9 drops a root story's obsolete refusal search** (block of
+   2026-10-12T19:59:39Z, smith 08.9). `crates/smith-domain/src/tests.rs`'s
+   `full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes`
+   binary-searches the credit at which an accepted batch is refused and
+   both calls answered `NotRun::Stopped`; 08.9's Scope, from the
+   designer's 13.5x answer (session.md 8.1: "Every call is run and
+   answered"), removes that refusal, so the search has no boundary.
+   Ruling: the implementer's patch: the search and its refused-turn
+   control go, the story starts at its old lower boundary (twice
+   `delegated_result_bytes`), and its name and every later check (child
+   answers, cancel, late records, tickets, uncharged bytes) stay; the
+   commit body quotes the Scope beside it.
