@@ -1,5 +1,5 @@
 id = "failures"
-version = 2
+version = 3
 kind = "probe"
 tier = "small"
 effort = "low"

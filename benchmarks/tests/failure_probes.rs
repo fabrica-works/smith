@@ -112,6 +112,10 @@ fn provider_failure_uses_typed_status_and_retained_bounded_detail() {
         (Some(200), Some(b"HTTP 404 unknown model".to_vec()), Some(false)),
         (Some(404), Some(vec![b'x'; 1025]), Some(false)),
         (Some(404), Some(vec![]), Some(false)),
+        (Some(400), Some(b"provider HTTP error 400".to_vec()), Some(false)),
+        (Some(400), Some(b"provider HTTP error 404".to_vec()), Some(false)),
+        (Some(400), Some(br#"{"detail":"unknown model"}"#.to_vec()), Some(true)),
+        (Some(400), Some(b"unknown model from upstream".to_vec()), Some(true)),
         (None, Some(b"HTTP 404 unknown model".to_vec()), None),
         (Some(404), None, None),
     ] {

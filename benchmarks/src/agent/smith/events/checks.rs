@@ -351,9 +351,14 @@ fn provider_failure(observer: &Observer, minimum: u16, maximum: u16, detail_boun
                 };
             };
             found_terminal = true;
+            // The retired client fallback contains no provider text (benchmarks.md 11.1).
+            let generated_detail = detail
+                .strip_prefix(b"provider HTTP error ")
+                .is_some_and(|digits| !digits.is_empty() && digits.iter().all(u8::is_ascii_digit));
             passed &= (u64::from(minimum)..=u64::from(maximum)).contains(&status)
                 && !detail.is_empty()
-                && detail.len() <= usize::try_from(detail_bound).expect("bound fits");
+                && detail.len() <= usize::try_from(detail_bound).expect("bound fits")
+                && !generated_detail;
             let retained = &detail[..detail.len().min(usize::try_from(detail_bound).expect("bound fits"))];
             evidence.push(format!(
                 "run={} HTTP={} detail_bytes={} bound={} detail={}",
