@@ -276,7 +276,7 @@ fn local_chat_store_io_failure_keeps_exit_1() {
     let chat = state.join("refused");
     std::fs::write(&chat, b"a file cannot be the chat directory").expect("block chat directory");
     let output = support::refusal_code(&scratch, vec!["local".into(), settings_path.into(), state.clone().into()], 1);
-    assert!(String::from_utf8_lossy(&output).contains("chat store"), "{}", String::from_utf8_lossy(&output));
+    assert!(String::from_utf8_lossy(&output).contains("chat directory"), "{}", String::from_utf8_lossy(&output));
     assert_eq!(std::fs::read(chat).expect("unchanged chat file"), b"a file cannot be the chat directory");
 }
 

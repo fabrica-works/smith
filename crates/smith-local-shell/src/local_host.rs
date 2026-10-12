@@ -18,7 +18,6 @@ use smith_local_service as service;
 use crate::{
     local_auth::{self, Auth},
     local_settings::Account,
-    local_store::Store,
     local_tokens::Tokens,
 };
 
@@ -39,7 +38,7 @@ enum Announcement {
 
 /// Paths and inherited descriptors owned by one invocation's shared shell.
 pub struct Resources {
-    pub state_directory: PathBuf,
+    pub state_root: kernel::Fd,
     pub token_directory: PathBuf,
     pub input: kernel::Fd,
     pub output: kernel::Fd,
@@ -56,7 +55,6 @@ pub struct Resources {
 /// The local service and its shell effects, independent of the driving loop.
 pub struct Local {
     service: service::Service,
-    store: Store,
     tokens: Tokens,
     accounts: Box<[Auth]>,
     writer: io::Io,
@@ -145,7 +143,6 @@ impl Local {
                 return Err(configuration_failure("local account numbers must be unique".into()));
             }
         }
-        let endpoints = config.endpoints.clone();
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
         let outer_queue =
@@ -169,10 +166,9 @@ impl Local {
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
-        let service = service::Service::new(config, resources.seed)
+        let mut service = service::Service::new(config, resources.seed)
             .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
-        let store = Store::new(resources.state_directory, endpoints, 1 << 20)
-            .map_err(|error| host_failure(format!("chat store: {error}")))?;
+        service.adopt_store(resources.state_root).map_err(|error| host_failure(format!("chat store: {error:?}")))?;
         let tokens = Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?;
         let mut writer = io::Io::new(&io_limits);
         let output = writer
@@ -189,7 +185,6 @@ impl Local {
             .map_err(host_failure)?;
         let mut local = Self {
             service,
-            store,
             tokens,
             accounts: accounts.into(),
             writer,
@@ -283,32 +278,21 @@ impl Local {
         })
     }
 
-    /// The configured chat store, for shell diagnostics and crash-cut controls.
-    pub fn store(&mut self) -> &mut Store {
-        &mut self.store
-    }
-
     fn files(&mut self) {
         for _ in 0..self.service.shell_requests().capacity() {
             let Some(request) = self.service.shell_requests().pop() else { break };
-            let mut failed_turn = None;
-            let event = match request {
-                domain::Request::Load => self.store.load(),
-                domain::Request::SaveState { state, fresh } => self.store.save_state(state, fresh),
-                domain::Request::SaveTurn { number, read, opens_window, turn } => {
-                    failed_turn = Some(turn.sequence);
-                    self.store.save_turn(number, read, opens_window, &turn)
-                }
-                domain::Request::SaveDelivery { record } => self.store.save_delivery(&record),
+            match request {
                 domain::Request::Credential { account } => {
                     self.credential(account);
-                    continue;
                 }
                 domain::Request::Exit { status } => {
                     self.exit = Some(status);
-                    continue;
                 }
-                domain::Request::Notice { .. }
+                domain::Request::Load
+                | domain::Request::SaveState { .. }
+                | domain::Request::SaveTurn { .. }
+                | domain::Request::SaveDelivery { .. }
+                | domain::Request::Notice { .. }
                 | domain::Request::Answered { .. }
                 | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
@@ -316,11 +300,7 @@ impl Local {
                 | domain::Request::Lower { .. }
                 | domain::Request::Process(_)
                 | domain::Request::Input { .. } => unreachable!("service owns lower effects"),
-            };
-            self.service.local_event(match event {
-                Ok(event) => event,
-                Err(reason) => domain::Event::StoreFailed { turn: failed_turn, reason },
-            });
+            }
         }
     }
 
@@ -729,8 +709,7 @@ fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) 
         .and_then(|count| count.checked_add(lower_routes))
         .ok_or_else(|| derivation_refusal("local_routes"))?;
     worst = worst
-        .checked_add(Store::worst_case().ok_or_else(|| derivation_refusal("store_worst_case"))?)
-        .and_then(|count| count.checked_add(io::worst_case(&io_limits)?))
+        .checked_add(io::worst_case(&io_limits).ok_or_else(|| derivation_refusal("local_worst_case"))?)
         .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
         .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
         .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))

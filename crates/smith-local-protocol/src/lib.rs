@@ -37,8 +37,8 @@ pub use git_child::{GitChild, git_child_worst_case};
 pub use markers::{MarkerAction, Markers, markers_worst_case};
 pub use plain::{Plain, PlainAction, PlainLimits, Snapshot, plain_worst_case};
 pub use store::{
-    File, STATE_BYTES, StoreError, TURN_HEADER, decode_state, decode_turns, save_state, save_turn, turn_name,
-    turn_opens_window,
+    Action, CHAT_STORE_VERSION, File, History, RecordName, STATE_BYTES, Store, StoreError, StoreFault, StoreLimits,
+    StoreRequest, TURN_HEADER, decode_state, decode_turns, save_state, save_turn, turn_name, turn_opens_window,
 };
 pub use terminal::{
     Event as TerminalEvent, Limits as TerminalLimits, Terminal, max_out as terminal_max_out,

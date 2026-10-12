@@ -243,7 +243,7 @@ impl Service {
             Err(error) => return Err(Error::Local(error)),
         };
         let process =
-            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).ok_or(Error::Process)?;
+            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, seed).ok_or(Error::Process)?;
         let terminal = protocol::Terminal::new(protocol::TerminalLimits {
             line_bytes: config.limits.local.line_bytes,
             show_bytes: config.limits.local.show_bytes,
@@ -399,7 +399,12 @@ impl Service {
         self.local_events.push(local::Event::Credential { grant });
     }
 
-    /// Shell work, including terminal, file, credential and git requests.
+    #[cfg(test)]
+    pub(crate) fn store_requests(&mut self) -> &mut Queue<protocol::StoreRequest> {
+        self.below.process_mut().store_requests()
+    }
+
+    /// Shell work, including credential requests and the final exit.
     pub fn shell_requests(&mut self) -> &mut Queue<local::Request> {
         &mut self.shell
     }
@@ -463,6 +468,11 @@ impl Service {
     /// Kernel completions for the child process and its three pipes.
     pub fn completions(&mut self) -> &mut Queue<kernel::Complete> {
         &mut self.completions
+    }
+
+    /// Adopt the separately opened chat root into the store's IO owner.
+    pub fn adopt_store(&mut self, root: kernel::Fd) -> Result<(), Error> {
+        self.below.process_mut().adopt_store(root).ok_or(Error::Memory)
     }
 
     /// Adopt terminal input and blocked termination signals into the IO pass.
@@ -598,7 +608,7 @@ impl Service {
             local::Request::Load => {
                 self.lower_agent = None;
                 self.terminal.answer_finished();
-                self.shell.push(local::Request::Load);
+                self.below.process_mut().store_request(protocol::StoreRequest::Load);
             }
             local::Request::PlainStatus { owner, directory, deadline } => {
                 self.below.process_mut().plain_status(owner, directory, deadline, &mut self.local_events);
@@ -618,7 +628,10 @@ impl Service {
                         .process_mut()
                         .capture_plain(self.plain_directories.clone(), now.saturating_add(self.capture_time));
                 }
-                self.shell.push(local::Request::SaveState { state, fresh });
+                self.below.process_mut().store_request(protocol::StoreRequest::SaveState {
+                    state,
+                    history: if fresh { protocol::History::Fresh } else { protocol::History::Kept },
+                });
             }
             local::Request::Answered { answer } => {
                 if let Some(effects) = self.below.inline_mut() {
@@ -646,9 +659,14 @@ impl Service {
                     });
                 }
             }
-            other @ (local::Request::SaveTurn { .. }
-            | local::Request::SaveDelivery { .. }
-            | local::Request::Credential { .. }) => self.shell.push(other),
+            local::Request::SaveTurn { number, read, opens_window, turn } => self
+                .below
+                .process_mut()
+                .store_request(protocol::StoreRequest::SaveTurn { number, read, opens_window, turn }),
+            local::Request::SaveDelivery { record } => {
+                self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
+            }
+            other @ local::Request::Credential { .. } => self.shell.push(other),
         }
     }
 

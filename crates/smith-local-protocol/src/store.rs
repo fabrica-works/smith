@@ -5,6 +5,15 @@
 //! decoders translate the domain's concrete records without interpreting a
 //! conversation.
 
+mod boundary;
+mod machine;
+
+pub use boundary::{Action, History, RecordName, StoreFault, StoreLimits, StoreRequest};
+pub use machine::Store;
+
+/// The chat store version named by the product startup record.
+pub const CHAT_STORE_VERSION: u64 = 1;
+
 use alloc::boxed::Box;
 use skein_lib::{List, Reader, Token, Writer};
 use smith_domain::Transcript;
@@ -13,10 +22,10 @@ use smith_protocol_channel::{self as channel, Endpoints};
 use smith_transcript as transcript;
 
 /// Exact bytes in the fixed local metadata file, including its opaque identity.
-pub const STATE_BYTES: usize = 4 + 16 + 8 + 8 + 1 + 8;
+pub const STATE_BYTES: usize = 4 + 8 + 16 + 8 + 8 + 1 + 8;
 
 /// Bytes identifying the read fence and window boundary before a turn body.
-pub const TURN_HEADER: usize = 4 + 1 + 8 + 1;
+pub const TURN_HEADER: usize = 4 + 8 + 1 + 8 + 1;
 
 /// One file replacement; the service acknowledges it only after a durable store terminal.
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +52,7 @@ pub enum StoreError {
 pub fn save_state(state: ChatState) -> File {
     let mut writer = Writer::new(STATE_BYTES);
     writer.put(b"SMLS").expect("fixed state header fits");
+    writer.put(&CHAT_STORE_VERSION.to_be_bytes()).expect("fixed store version fits");
     writer.put(&state.identity.bytes()).expect("fixed identity fits");
     writer.put(&state.activation.to_be_bytes()).expect("fixed activation fits");
     writer.put(&state.next_message.to_be_bytes()).expect("fixed message counter fits");
@@ -65,7 +75,7 @@ pub fn decode_state(bytes: &[u8]) -> Result<ChatState, StoreError> {
         return Err(StoreError::Malformed);
     }
     let mut reader = Reader::new(bytes);
-    if reader.bytes(4) != Some(&b"SMLS"[..]) {
+    if reader.bytes(4) != Some(&b"SMLS"[..]) || reader.u64() != Some(CHAT_STORE_VERSION) {
         return Err(StoreError::Malformed);
     }
     let key: [u8; 16] = reader.bytes(16).ok_or(StoreError::Malformed)?.try_into().or(Err(StoreError::Malformed))?;
@@ -117,6 +127,7 @@ pub fn save_turn(
     let Ok(bytes) = channel::encode_turn(turn, limits, endpoints) else { return Err(StoreError::Turn) };
     let mut writer = Writer::new(TURN_HEADER.checked_add(bytes.len()).ok_or(StoreError::TooLarge)?);
     writer.put(b"SMLT").expect("bounded turn header");
+    writer.put(&CHAT_STORE_VERSION.to_be_bytes()).expect("bounded store version");
     match read {
         Some(read) => {
             writer.put(&[1]).expect("bounded turn flag");
@@ -134,7 +145,7 @@ pub fn save_turn(
 
 /// Read the window flag without decoding the retained turn body.
 pub fn turn_opens_window(bytes: &[u8]) -> Result<bool, StoreError> {
-    if bytes.get(..4) != Some(b"SMLT") {
+    if bytes.get(..4) != Some(b"SMLT") || bytes.get(4..12) != Some(CHAT_STORE_VERSION.to_be_bytes().as_slice()) {
         return Err(StoreError::Malformed);
     }
     match bytes.get(TURN_HEADER.checked_sub(1).expect("nonzero header")) {
@@ -166,7 +177,7 @@ pub fn decode_turns(
     let mut last_read = None;
     for file in files {
         let mut reader = Reader::new(file);
-        if reader.bytes(4) != Some(&b"SMLT"[..]) {
+        if reader.bytes(4) != Some(&b"SMLT"[..]) || reader.u64() != Some(CHAT_STORE_VERSION) {
             return Err(StoreError::Malformed);
         }
         let flag = reader.u8().ok_or(StoreError::Malformed)?;
@@ -189,7 +200,7 @@ pub fn decode_turns(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -220,7 +231,7 @@ mod tests {
         assert!(turn_name(9) < turn_name(10));
     }
 
-    fn fixture() -> (Endpoints, smith_domain::Turn) {
+    pub(crate) fn fixture() -> (Endpoints, smith_domain::Turn) {
         let mut entries = List::with_capacity(1);
         entries
             .push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 2, dialect: 1, account: 0 })

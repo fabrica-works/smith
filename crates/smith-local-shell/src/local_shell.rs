@@ -134,7 +134,10 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         local_config,
         lower,
         Resources {
-            state_directory: chat_path,
+            state_root: {
+                fs::create_dir_all(&chat_path).map_err(|error| host_failure(format!("chat directory: {error}")))?;
+                skein_shell::open_root(&chat_path).map_err(|error| host_failure(format!("chat root: {error}")))?
+            },
             token_directory: token_path,
             input: Fd::new(0),
             output: Fd::new(1),

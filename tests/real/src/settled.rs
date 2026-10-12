@@ -74,11 +74,10 @@ impl Before {
         } else {
             smith_local_process_world::process::lower_configuration().channel_endpoints
         };
-        let store =
-            smith_local_shell::local_store::Store::new(scenario.launch.state_directory.clone(), endpoints, 1 << 20)
-                .expect("outside durable store");
-        let Event::Loaded { state, transcript, deliveries } = store.load().expect("settled durable history") else {
-            unreachable!("store load terminal")
+        let Event::Loaded { state, transcript, deliveries } =
+            smith_local_process_world::world::load_chat(&scenario.launch.state_directory, &endpoints)
+        else {
+            unreachable!("chat codecs return Loaded")
         };
         assert!(state.is_some());
         let transcript = transcript.expect("a settled chat has durable turns");

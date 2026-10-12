@@ -110,7 +110,7 @@ pub(super) fn config() -> Config {
 fn the_local_service_loads_then_routes_durable_start_requests_to_the_shell() {
     let mut service = Service::new(config(), 7).expect("bounded local service");
     iterate(&mut service, Time::ZERO, Wall::EPOCH);
-    let Some(local::Request::Load) = service.shell_requests().pop() else { panic!("load first") };
+    let Some(smith_local_protocol::StoreRequest::Load) = service.store_requests().pop() else { panic!("load first") };
     service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
     for byte in b"hello\n" {
         service.feed(*byte);
@@ -119,7 +119,9 @@ fn the_local_service_loads_then_routes_durable_start_requests_to_the_shell() {
     let Some(local::Request::Credential { account: 7 }) = service.shell_requests().pop() else {
         panic!("credential before start")
     };
-    let Some(local::Request::SaveState { state, fresh: false }) = service.shell_requests().pop() else {
+    let Some(smith_local_protocol::StoreRequest::SaveState { state, history: smith_local_protocol::History::Kept }) =
+        service.store_requests().pop()
+    else {
         panic!("durable state before start")
     };
     assert_eq!(state.activation, 1);
@@ -172,7 +174,7 @@ fn original_conflict_files_are_read_through_the_services_kernel_routes() {
     let root = sim.root(pid, skein_sim::Handle::new(handle.raw()));
     let config = config();
     let mut process =
-        crate::process::ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).unwrap();
+        crate::process::ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, 1).unwrap();
     process.adopt_delivery_roots(Box::new([root]), Box::new([]));
     let mut local_events = Queue::with_capacity(256);
     let mut host_events = Queue::with_capacity(256);
@@ -291,7 +293,7 @@ fn plain_status_uses_the_runs_snapshot_and_refreshes_it_before_the_next_run() {
     let root = sim.root(pid, skein_sim::Handle::new(handle.raw()));
     let config = config();
     let mut process =
-        crate::process::ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).unwrap();
+        crate::process::ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, 1).unwrap();
     process.adopt_delivery_roots(Box::new([root]), Box::new([]));
     let mut events = Queue::with_capacity(256);
     let mut directories = List::with_capacity(1);
@@ -342,7 +344,19 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
         iterate(&mut service, sim.now(), sim.wall());
         while let Some(request) = service.shell_requests().pop() {
             match request {
-                local::Request::Load => {
+                local::Request::Credential { account: 0 } => service.credential(
+                    smith_domain::Grant {
+                        name: smith_domain::GrantName { account: 0, generation: 1 },
+                        valid: Duration::from_secs(7200),
+                    },
+                    Box::from(b"\0\x03acctoken".as_slice()),
+                ),
+                other => panic!("unexpected shell request {other:?}"),
+            }
+        }
+        while let Some(request) = service.store_requests().pop() {
+            match request {
+                smith_local_protocol::StoreRequest::Load => {
                     service.local_event(local::Event::Loaded {
                         state: None,
                         transcript: None,
@@ -355,19 +369,14 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
                         sent = true;
                     }
                 }
-                local::Request::Credential { account: 0 } => service.credential(
-                    smith_domain::Grant {
-                        name: smith_domain::GrantName { account: 0, generation: 1 },
-                        valid: Duration::from_secs(7200),
-                    },
-                    Box::from(b"\0\x03acctoken".as_slice()),
-                ),
-                local::Request::SaveState { .. } => service.local_event(local::Event::StateSaved),
-                local::Request::SaveTurn { number, .. } => {
+                smith_local_protocol::StoreRequest::SaveState { .. } => service.local_event(local::Event::StateSaved),
+                smith_local_protocol::StoreRequest::SaveTurn { number, .. } => {
                     saved_turn = true;
                     service.local_event(local::Event::TurnSaved { number });
                 }
-                other => panic!("unexpected shell request {other:?}"),
+                other @ smith_local_protocol::StoreRequest::SaveDelivery { .. } => {
+                    panic!("unexpected store request {other:?}");
+                }
             }
         }
         while let Some(text) = service.output().pop() {

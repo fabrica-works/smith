@@ -4,8 +4,8 @@
 //! table, and bounded routing queues. The process adapter owns terminal and
 //! delivery descriptors; each lower layer has its own operation tokens.
 //! It never knows OAuth provider responses or token-file paths. [`iterate`]
-//! runs the up, domain and down passes; the shell settles durable store and
-//! credential requests in later iterations. Exit waits for lower closes.
+//! runs the up, domain and down passes, including the durable store; the shell
+//! settles credential requests in later iterations. Exit waits for lower closes.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]

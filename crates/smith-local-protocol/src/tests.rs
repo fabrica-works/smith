@@ -257,3 +257,5 @@ fn an_incomplete_or_unsupported_plain_tree_is_never_declared_unchanged() {
         };
     }
 }
+
+mod store;

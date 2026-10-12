@@ -69,6 +69,7 @@ fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_se
 struct Invocation {
     sim: skein_sim::Sim,
     machine: skein_fake_machine::Machine,
+    state: skein_fake_machine::Opened,
     pid: skein_sim::Pid,
     peer_pid: skein_sim::Pid,
     peer: skein_fake_peers::llm::Peer,
@@ -113,11 +114,12 @@ impl Invocation {
         .expect("saved token");
         tokens.save(0, &token).expect("token durable");
         let (config, lower) = configuration(root);
+        let state = machine.lay(&[]);
         let local = Local::new(
             config,
             Some(lower),
             Resources {
-                state_directory: directory.join("chat"),
+                state_root: { sim.root(pid, skein_sim::Handle::new(state.raw())) },
                 token_directory,
                 input,
                 output,
@@ -135,6 +137,7 @@ impl Invocation {
         Self {
             sim,
             machine,
+            state,
             pid,
             peer_pid,
             peer: smith_agent_process_world::fake::peer(),
@@ -170,6 +173,37 @@ impl Invocation {
         }
     }
 
+    fn turn_saved(&mut self) -> bool {
+        if let Ok(file) = self.machine.open(self.state, b"0000000001.turn", skein_fake_machine::How::Read) {
+            self.machine.close(file);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn load_chat(&mut self) -> local::Event {
+        let root =
+            self.machine.open(self.state, b".", skein_fake_machine::How::Directory).expect("bounded chat fixture");
+        let mut turns = Vec::new();
+        for (_, name) in self.machine.list(root, 4096, 65536).expect("bounded chat fixture") {
+            if name.ends_with(b".turn") {
+                let file = self.machine.open(root, &name, skein_fake_machine::How::Read).expect("bounded chat fixture");
+                turns.push(self.machine.read(file, 0, 64 << 20).expect("bounded chat fixture").into_boxed_slice());
+                self.machine.close(file);
+            }
+        }
+        self.machine.close(root);
+        let endpoints = configuration(skein_io::kernel::Fd::new(0)).0.endpoints;
+        local::Event::Loaded {
+            state: None,
+            transcript: smith_local_protocol::decode_turns(&turns, &smith_transcript::CEILINGS, &endpoints)
+                .expect("bounded chat fixture")
+                .0,
+            deliveries: Box::new([]),
+        }
+    }
+
     fn finish(&mut self) {
         if !self.closed {
             self.sim.peer_close(self.pid, self.input);
@@ -202,7 +236,7 @@ fn the_shared_library_saves_a_plaintext_turn_and_flushes_terminal_output_before_
     assert_eq!(invocation.sim.peer_feed(invocation.pid, invocation.input, b"hello\n"), 6);
     for _ in 0..2000 {
         invocation.step();
-        if invocation.directory.join("chat/0000000001.turn").exists() {
+        if invocation.turn_saved() {
             break;
         }
     }
@@ -210,9 +244,7 @@ fn the_shared_library_saves_a_plaintext_turn_and_flushes_terminal_output_before_
         smith_agent_process_world::fake::replied(&invocation.peer),
         "the shared service reached the plaintext peer"
     );
-    let local::Event::Loaded { transcript: Some(transcript), .. } =
-        invocation.local.store().load().expect("saved chat")
-    else {
+    let local::Event::Loaded { transcript: Some(transcript), .. } = invocation.load_chat() else {
         panic!("the shell saved the typed turn");
     };
     assert_eq!(transcript.turns.len(), 1);

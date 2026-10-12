@@ -83,6 +83,9 @@ pub(crate) struct ProcessAdapter {
     capture_deadline: Time,
     capture_done: Option<bool>,
     files: file_layer::FileIo,
+    store: Option<local_protocol::Store>,
+    store_requests: Queue<local_protocol::StoreRequest>,
+    store_actions: Queue<local_protocol::Action>,
     file_roots: Box<[Token]>,
     file_requests: Queue<(file::Request, Time)>,
     file_events: Queue<file::Event>,
@@ -112,10 +115,14 @@ impl ProcessAdapter {
         limits: &ProcessLimits,
         launch: Launch,
         endpoints: smith_protocol_channel::Endpoints,
+        seed: u64,
     ) -> Option<Self> {
         if !limits.io.is_usable() || limits.queue < io::MAX_OUT_UP.events.max(io::MAX_OUT_UP.submissions) {
             return None;
         }
+        let mut files =
+            file_layer::FileIo::with_whole_limit(66, 4096, 8194, 64 << 20, skein_lib::Duration::from_secs(30));
+        files.seed_randomness(seed);
         Some(Self {
             io: io::Io::new(&limits.io),
             limits: *limits,
@@ -130,7 +137,10 @@ impl ProcessAdapter {
             capture_next: 0,
             capture_deadline: Time::ZERO,
             capture_done: None,
-            files: file_layer::FileIo::with_whole_limit(65, 4096, 256, 65_536, skein_lib::Duration::from_secs(30)),
+            files,
+            store: None,
+            store_requests: Queue::with_capacity(limits.queue),
+            store_actions: Queue::with_capacity(3),
             file_roots: Box::new([]),
             file_requests: Queue::with_capacity(limits.queue),
             file_events: Queue::with_capacity(limits.queue),
@@ -162,8 +172,11 @@ impl ProcessAdapter {
                 limits.channel.endpoints,
                 limits.channel.charter.llm_endpoint,
             )?)?
-            .checked_add(file_layer::FileIo::worst_case(65, 4096, 256, 65_536)?)?
+            .checked_add(file_layer::FileIo::worst_case(66, 4096, 8194, 64 << 20)?)?
             .checked_add(local_protocol::plain_worst_case(&plain_limits())?.checked_mul(65)?)?
+            .checked_add(local_protocol::Store::worst_case(store_limits())?)?
+            .checked_add(Queue::<local_protocol::StoreRequest>::worst_case(limits.queue)?)?
+            .checked_add(Queue::<local_protocol::Action>::worst_case(3)?)?
             .checked_add(Map::<u32, local_protocol::Snapshot>::worst_case(64)?)?
             .checked_add(List::<u32>::worst_case(64)?)?
             .checked_add(local_protocol::markers_worst_case(&git_limits(limits))?)?
@@ -233,6 +246,53 @@ impl ProcessAdapter {
         self.io.adopt_append(fd, skein_lib::Duration::from_secs(30))
     }
 
+    pub(crate) fn adopt_store(&mut self, root: kernel::Fd) -> Option<()> {
+        let token = self.files.adopt_root(root)?;
+        self.store = Some(local_protocol::Store::new(
+            Token::new(u64::MAX - 1),
+            token,
+            root,
+            store_limits(),
+            self.endpoints.clone(),
+        )?);
+        Some(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store_requests(&mut self) -> &mut Queue<local_protocol::StoreRequest> {
+        &mut self.store_requests
+    }
+
+    pub(crate) fn store_request(&mut self, request: local_protocol::StoreRequest) {
+        self.store_requests.push(request);
+    }
+
+    fn store_pass(&mut self, now: Time, local_events: &mut Queue<local::Event>) {
+        for _ in 0_u8..3_u8 {
+            if local_events.room() == 0 || self.file_requests.room() == 0 {
+                break;
+            }
+            let Some(action) = self.store_actions.pop() else { break };
+            match action {
+                local_protocol::Action::Io { request, deadline } => self.file_requests.push((request, deadline)),
+                local_protocol::Action::Domain(event) => local_events.push(event),
+                local_protocol::Action::Fault(_) => {}
+                local_protocol::Action::Closed => self.store = None,
+            }
+        }
+        if self.store_actions.is_empty()
+            && let Some(store) = &mut self.store
+        {
+            if self.closing.is_some() {
+                store.close(now, &mut self.store_actions);
+            } else if store.takes()
+                && let Some(request) = self.store_requests.pop()
+            {
+                store.request(request, now, &mut self.store_actions);
+            }
+        }
+    }
+
     pub(crate) fn close(&mut self) {
         if self.closing.is_some() {
             return;
@@ -253,6 +313,9 @@ impl ProcessAdapter {
     pub(crate) fn settled(&self, streams: u32) -> bool {
         self.closing == Some(0)
             && self.io.sockets() == streams
+            && self.store.is_none()
+            && self.store_requests.is_empty()
+            && self.store_actions.is_empty()
             && self.files.takes()
             && self.files.open_files() == 0
             && self.operations.is_empty()
@@ -469,7 +532,13 @@ impl ProcessAdapter {
             || self.process_work_pending()
             || !self.completions.is_empty()
             || !self.file_events.is_empty()
-            || !self.file_requests.is_empty()
+            || !self.store_actions.is_empty()
+            || (!self.store_requests.is_empty()
+                && match &self.store {
+                    Some(store) => store.takes(),
+                    None => false,
+                })
+            || (!self.file_requests.is_empty() && self.files.takes())
             || !self.io_submissions.is_empty()
             || !self.file_submissions.is_empty()
             || self.files.is_due(now)
@@ -517,11 +586,20 @@ impl ProcessAdapter {
         if self.files.is_due(now) && self.file_submissions.room() >= 2 {
             file_layer::expire(&mut self.files, now, &mut self.file_submissions);
         }
+        self.store_pass(now, local_events);
         for _ in 0..self.file_events.capacity() {
-            if local_events.room() == 0 || self.file_requests.room() == 0 {
+            if local_events.room() == 0 || self.file_requests.room() == 0 || self.store_actions.room() < 3 {
                 break;
             }
             let Some(event) = self.file_events.pop() else { break };
+            if event.owner() == Token::new(u64::MAX - 1) {
+                self.store.as_mut().expect("store owner remains until Closed").from_io(
+                    event,
+                    now,
+                    &mut self.store_actions,
+                );
+                continue;
+            }
             if self.close_root_pending && event.owner() == Token::new(u64::MAX) {
                 self.close_root_pending = false;
                 continue;
@@ -1040,6 +1118,10 @@ fn trace_up(trace: &mut Option<crate::stream::Spawned>, now: Time, event: io::Ev
     Some(event)
 }
 
+fn store_limits() -> local_protocol::StoreLimits {
+    local_protocol::StoreLimits { file_bytes: 64 << 20, turns: 4096, deliveries: 4096, scan_bytes: 16 << 20 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1047,7 +1129,7 @@ mod tests {
     fn prefetched_adapter(owner: Token) -> ProcessAdapter {
         let config = crate::tests::config();
         let mut adapter =
-            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).expect("adapter");
+            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, 1).expect("adapter");
         adapter
             .process_events
             .push(protocol::ProcessEvent::Channel { agent: owner, event: protocol::OpenEvent::WriteFailed });

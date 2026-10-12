@@ -9,7 +9,6 @@ mod local_auth_http;
 pub mod local_host;
 pub mod local_settings;
 pub mod local_shell;
-pub mod local_store;
 pub mod local_tokens;
 
 #[cfg(test)]

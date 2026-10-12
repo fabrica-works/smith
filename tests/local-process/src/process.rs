@@ -627,6 +627,10 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
     let launch = Launch::read(spawn);
     let path = launch.root_path.as_os_str().as_encoded_bytes();
     let mut roots = vec![StartupRoot { name: b"launch".as_slice().into(), path: path.into() }];
+    roots.push(StartupRoot {
+        name: b"state".as_slice().into(),
+        path: launch.state_directory.as_os_str().as_encoded_bytes().into(),
+    });
     if launch.change {
         let path = launch.root_path.join("repo");
         roots.push(StartupRoot {
@@ -669,7 +673,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         config,
         lower,
         Resources {
-            state_directory: launch.state_directory,
+            state_root: root(inherited, b"state"),
             token_directory: launch.token_directory,
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
             output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,

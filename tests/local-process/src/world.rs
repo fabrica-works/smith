@@ -203,6 +203,7 @@ pub struct Machine {
     master: Opened,
     checkout: CheckoutView,
     commands: Vec<Box<[Box<[u8]>]>>,
+    chat_path: PathBuf,
 }
 impl Machine {
     fn current_tree(&mut self) -> Tree {
@@ -311,6 +312,7 @@ impl skein_world::Machine for Machine {
             self.files.close(file);
             Ok(skein_sim::Handle::new(root.raw()))
         } else {
+            let path = if path == self.chat_path.as_os_str().as_encoded_bytes() { b"chat" } else { path };
             self.files
                 .open(self.master, path, How::Directory)
                 .map(|root| skein_sim::Handle::new(root.raw()))
@@ -332,6 +334,14 @@ impl skein_world::Machine for Machine {
         self.files.close(Opened::new(root.raw()));
     }
     fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
+        let root = self.files.open(self.master, b"chat", How::Directory).expect("chat fixture");
+        for entry in std::fs::read_dir(&self.chat_path).expect("outside chat faults") {
+            let entry = entry.expect("fixture entry");
+            if entry.path().is_dir() {
+                let _ = self.files.make_directory(root, entry.file_name().as_encoded_bytes(), 0o700);
+            }
+        }
+        self.files.close(root);
         skein_fake_machine::step(&mut self.files, call, answers);
     }
 }
@@ -502,7 +512,18 @@ impl World {
     ) -> Self {
         let (interrupt_on_query, keep_facts, change) = behavior;
         let mut disk = Filesystem::new();
-        let mut items = vec![skein_fake_machine::Item::directory(b".smith-test")];
+        std::fs::create_dir_all(files.path.join("chat")).expect("chat fixture");
+        let mut items =
+            vec![skein_fake_machine::Item::directory(b".smith-test"), skein_fake_machine::Item::directory(b"chat")];
+        for entry in std::fs::read_dir(files.path.join("chat")).expect("previous chat") {
+            let entry = entry.expect("chat entry");
+            let path = [b"chat/".as_slice(), entry.file_name().as_encoded_bytes()].concat();
+            items.push(if entry.path().is_dir() {
+                skein_fake_machine::Item::directory(&path)
+            } else {
+                skein_fake_machine::Item::file(&path, &std::fs::read(entry.path()).expect("chat record"))
+            });
+        }
         if change {
             items.push(skein_fake_machine::Item::directory(b"repo"));
             items.push(skein_fake_machine::Item::file(b"repo/original.txt", b"original\n"));
@@ -555,7 +576,13 @@ impl World {
                 interrupt_on_query,
                 authentication: None,
             },
-            machine: Some(Machine { files: disk, master, checkout: checkout.clone(), commands: Vec::new() }),
+            machine: Some(Machine {
+                files: disk,
+                master,
+                checkout: checkout.clone(),
+                commands: Vec::new(),
+                chat_path: files.path.join("chat"),
+            }),
             checkout,
             memory: Memory::Unchecked,
             outcome: None,
@@ -685,6 +712,24 @@ impl World {
             world.spawn(|| Proc::Browser(Box::default()));
         }
         self.outcome = Some(world.run());
+        let machine = &mut self.outcome.as_mut().expect("settled").machine;
+        let root = machine.files.open(machine.master, b"chat", How::Directory).expect("settled chat");
+        for entry in std::fs::read_dir(&machine.chat_path).expect("outside fixture") {
+            let entry = entry.expect("chat entry");
+            if entry.path().is_file() {
+                std::fs::remove_file(entry.path()).expect("replace outside fixture");
+            }
+        }
+        for (kind, name) in machine.files.list(root, 16384, 1 << 20).expect("chat fixture entries") {
+            if kind == skein_fake_machine::Is::File {
+                let file = machine.files.open(root, &name, How::Read).expect("chat file");
+                let bytes = machine.files.read(file, 0, 64 << 20).expect("chat bytes");
+                std::fs::write(machine.chat_path.join(std::str::from_utf8(&name).expect("chat record name")), bytes)
+                    .expect("outside record");
+                machine.files.close(file);
+            }
+        }
+        machine.files.close(root);
         let head = self.checkout.head();
         self.commit_message = head.as_ref().map_or_else(Vec::new, |head| self.checkout.message(head));
         // The shared referee's observed values are retained by the peers.
@@ -779,13 +824,11 @@ impl World {
     }
     #[must_use]
     pub fn turns(&mut self) -> usize {
-        let store = smith_local_shell::local_store::Store::new(
-            self.scenario.launch.state_directory.clone(),
-            process::lower_configuration().channel_endpoints,
-            1 << 20,
-        )
-        .expect("outside durable store");
-        let local::Event::Loaded { transcript, .. } = store.load().expect("durable history") else { unreachable!() };
+        let local::Event::Loaded { transcript, .. } =
+            load_chat(&self.scenario.launch.state_directory, &process::lower_configuration().channel_endpoints)
+        else {
+            unreachable!("chat codec terminal")
+        };
         transcript.map_or(0, |history| history.turns.len())
     }
 }
@@ -832,4 +875,39 @@ impl Scenario {
             if self.launch.tls { skein_fake_peers::Transport::Tls } else { skein_fake_peers::Transport::Plaintext },
         )
     }
+}
+
+/// Decode the settled files outside every process, through the shared record codecs.
+pub fn load_chat(path: &Path, endpoints: &smith_protocol_channel::Endpoints) -> local::Event {
+    let state = std::fs::read(path.join("state"))
+        .ok()
+        .map(|bytes| smith_local_protocol::decode_state(&bytes).expect("state record"));
+    let mut entries = std::fs::read_dir(path)
+        .expect("chat directory")
+        .map(|entry| entry.expect("chat entry").path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    let turns = entries
+        .iter()
+        .filter(|path| path.extension().is_some_and(|extension| extension == "turn"))
+        .map(|path| std::fs::read(path).expect("turn file").into_boxed_slice())
+        .collect::<Vec<_>>();
+    let (transcript, read) =
+        smith_local_protocol::decode_turns(&turns, &smith_transcript::CEILINGS, endpoints).expect("chat transcript");
+    let state = state.map(|mut state| {
+        if transcript.is_some() {
+            state.read = read;
+        }
+        state
+    });
+    let deliveries = entries
+        .iter()
+        .filter(|path| path.file_name().is_some_and(|name| name.as_encoded_bytes().len() == 42))
+        .map(|path| {
+            smith_local_protocol::decode_delivery(&std::fs::read(path).expect("delivery file"), 1 << 20)
+                .expect("delivery record")
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    local::Event::Loaded { state, transcript, deliveries }
 }

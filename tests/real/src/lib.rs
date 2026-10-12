@@ -239,13 +239,10 @@ impl World {
     /// Actual durable transcript loaded through the same outside store face.
     #[must_use]
     pub fn turns(&self) -> usize {
-        let store = smith_local_shell::local_store::Store::new(
-            self.scenario.launch.state_directory.clone(),
-            process::lower_configuration().channel_endpoints,
-            1 << 20,
-        )
-        .expect("outside durable store");
-        match store.load().expect("durable history") {
+        match smith_local_process_world::world::load_chat(
+            &self.scenario.launch.state_directory,
+            &process::lower_configuration().channel_endpoints,
+        ) {
             smith_local_domain::Event::Loaded { transcript, .. } => transcript.map_or(0, |history| history.turns.len()),
             _ => unreachable!("store load has its declared terminal"),
         }

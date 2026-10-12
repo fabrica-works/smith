@@ -1039,6 +1039,7 @@ dependencies = [
  "smith-host-protocol",
  "smith-host-world",
  "smith-local-domain",
+ "smith-local-protocol",
  "smith-local-service",
  "smith-local-shell",
  "smith-local-world",
