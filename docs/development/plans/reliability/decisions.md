@@ -899,4 +899,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    fourth block of this kind (13.1, 13.8, 13.19): README rule 8's
    expected-value case now covers a value the story now produces because
    of a behaviour the Scope or Shape names, quoted in the commit body.
+21. **A landed step is checked on its own branch** (block of
+   2026-10-12T14:58:25Z, smith 12.9). development.md 7.3 checks a landed
+   step with `git status --porcelain` printing nothing, and 8.6 tells the
+   implementer to "send the report and go on": by the coordinator's
+   check, smith 12's worktree held 12.10's work, and 12.9 (09d029e7, on
+   `origin/main` with its `Step` trailer) waited. Ruling: 12.9 is
+   `landed`; README rule 10 runs the porcelain check only while the
+   worktree is still on the landed step's branch. A proposal for the
+   retrospective: development.md 7.3's third check says the same.
 

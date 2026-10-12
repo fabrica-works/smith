@@ -183,6 +183,15 @@ do not already say.
    asking; its commit body gives the count and what took the lines.
    Past 600, it stops and asks: the plan splits it. This replaces "at
    most" in every Size line, for this run.
+10. **A landed step's check** (decisions.md, 13.21). The coordinator
+    checks a landed step by its first two commands of development.md
+    7.3 (the commit on `origin/main`, its `Step` trailer), and runs `git
+    status --porcelain` only while the worktree is still on the landed
+    step's branch (`git -C <worktree> branch --show-current`). A worktree
+    on the next increment's branch, clean or not, is that increment's
+    work (development.md 8.6: "After a landing, send the report and go
+    on"), and the step is `landed`. This replaces 7.3's third check for
+    this run.
 
 ## Proving what landed
 
