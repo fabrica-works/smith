@@ -57,7 +57,7 @@ fn a_host_slow_to_acknowledge_loses_projected_facts_and_the_trace_keeps_them() {
     assert_eq!(terminal(&narrow).status, terminal(&wide).status);
     assert_eq!(
         &narrow.records()[..narrow.records().len() - 1],
-        &wide.records()[..wide.records().len() - 1],
+        &with_narrow_channel_header(wide.records())[..wide.records().len() - 1],
         "each typed emission survives the constrained output window"
     );
     let Event::SessionEnded(narrow_end) = &narrow.records().last().expect("narrow end").event else { panic!("end") };
@@ -78,6 +78,19 @@ fn a_host_slow_to_acknowledge_loses_projected_facts_and_the_trace_keeps_them() {
         narrow.channel_loss(),
         wide.channel_loss()
     );
+}
+
+fn with_narrow_channel_header(records: &[smith_events::Record]) -> Vec<smith_events::Record> {
+    let mut expected = records.to_vec();
+    let Event::SessionStarted(start) = &mut expected[0].event else { panic!("header") };
+    let index = start
+        .limits
+        .iter()
+        .position(|entry| entry.name.as_ref() == b"channel.framing.output_frames")
+        .expect("named channel output frame bound");
+    start.limits.get_mut(u32::try_from(index).expect("bounded header")).expect("named bound").value =
+        smith_events::LimitValue::Integer(1);
+    expected
 }
 
 #[test]

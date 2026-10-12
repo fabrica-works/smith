@@ -8,24 +8,29 @@ use skein_lib::List;
 
 /// List every declared, policy and derived agent value under its owning name.
 #[must_use]
-pub fn effective(profile: &Profile, configuration: &Configuration, limits: &crate::Limits) -> Option<Box<[Limit]>> {
+pub fn effective(
+    profile: &Profile,
+    configuration: &Configuration,
+    limits: &crate::Limits,
+    endpoints: &smith_protocol_llm::Endpoints,
+) -> Option<Box<[Limit]>> {
     let mut inventory = Inventory { count: 0, list: None, layer: Layer::Declared, per: Per::Deployment };
-    project(&mut inventory, profile, configuration, limits)?;
+    project(&mut inventory, profile, configuration, limits, endpoints)?;
     inventory.list = Some(List::with_capacity(inventory.count));
     inventory.count = 0;
-    project(&mut inventory, profile, configuration, limits)?;
+    project(&mut inventory, profile, configuration, limits, endpoints)?;
     Some(inventory.list?.into_boxed())
 }
 
-struct Inventory {
+pub(super) struct Inventory {
     count: u32,
     list: Option<List<Limit>>,
-    layer: Layer,
-    per: Per,
+    pub(super) layer: Layer,
+    pub(super) per: Per,
 }
 
 impl Inventory {
-    fn value(&mut self, field: &'static str, value: Value) -> Option<()> {
+    pub(super) fn value(&mut self, field: &'static str, value: Value) -> Option<()> {
         self.count = self.count.checked_add(1)?;
         match &mut self.list {
             Some(list) => list.push(Limit { name: LimitName { layer: self.layer, field, per: self.per }, value }).ok(),
@@ -39,6 +44,7 @@ fn project(
     profile: &Profile,
     configuration: &Configuration,
     limits: &crate::Limits,
+    endpoints: &smith_protocol_llm::Endpoints,
 ) -> Option<()> {
     declared(inventory, &profile.declared)?;
     policy(inventory, &profile.policy)?;
@@ -49,7 +55,32 @@ fn project(
     tools(inventory, &limits.domain.session.tools)?;
     inventory.layer = Layer::Render;
     inventory.value("result", Value::Bytes(u64::from(limits.llm.adapter.rendered_result)))?;
-    service(inventory, limits)
+    service(inventory, limits)?;
+    for endpoint in &configuration.endpoints {
+        inventory.per = Per::Endpoint(endpoint.number);
+        let client = &endpoints.resolve(smith_domain::llm::Endpoint(endpoint.number))?.client;
+        super::llm::client(inventory, client)?;
+        super::llm::http(inventory, &client.http)?;
+        super::llm::sse(inventory, &client.sse)?;
+    }
+    inventory.per = Per::Deployment;
+    super::llm::connection(inventory, &limits.llm.connection)?;
+    super::llm::tls(inventory, &limits.llm.connection.tls)?;
+    super::llm::component(inventory, &limits.llm)?;
+    super::llm::adapter(inventory, &limits.llm.adapter)?;
+    super::llm::receiving(inventory, &limits.llm.receiving)?;
+    super::boundaries::machine(inventory, &limits.machine)?;
+    super::channel::transcript(inventory, &limits.channel.transcript)?;
+    super::channel::bodies(inventory, &limits.channel.bodies)?;
+    super::channel::channel(inventory, &limits.channel)?;
+    super::channel::framing(inventory, &limits.channel.channel)?;
+    super::boundaries::io(inventory, &limits.io)?;
+    if let Some(events) = &limits.events {
+        super::boundaries::events(inventory, events)?;
+        super::boundaries::sinks(inventory, &events.sinks)?;
+        super::boundaries::records(inventory, &events.sinks.records)?;
+    }
+    Some(())
 }
 
 fn declared(inventory: &mut Inventory, limits: &super::super::Declared) -> Option<()> {

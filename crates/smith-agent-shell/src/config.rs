@@ -222,14 +222,16 @@ fn environment_refusal(error: machine::Unencodable) -> String {
 
 fn event_limits(
     limits: &service::Limits,
-    endpoints: &[Endpoint],
+    endpoints: &llm::Endpoints,
+    declarations: &service::profile::Configuration,
     capture: Capture,
     header: &[smith_events::EffectiveLimit],
     write_deadline: Duration,
 ) -> Result<service::EventLimits, String> {
     let mut options = 0_u32;
-    for endpoint in endpoints {
-        if let Some(effort) = &endpoint.reasoning_effort {
+    for endpoint in &declarations.endpoints {
+        let resolved = endpoints.resolve(domain::llm::Endpoint(endpoint.number)).ok_or("unknown event endpoint")?;
+        if let Some(effort) = &resolved.reasoning_effort {
             options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?);
         }
     }
@@ -242,22 +244,12 @@ fn effective_header(
     profile: &service::profile::Profile,
     declarations: &service::profile::Configuration,
     limits: &service::Limits,
-    endpoints: &[Endpoint],
+    names: &channel::Endpoints,
+    endpoints: &llm::Endpoints,
 ) -> Result<List<smith_events::EffectiveLimit>, String> {
-    let mut names = List::with_capacity(ENDPOINTS);
-    for endpoint in endpoints {
-        names
-            .push(channel::Endpoint {
-                name: endpoint.name.as_bytes().into(),
-                number: endpoint.number,
-                dialect: endpoint.dialect,
-                account: endpoint.account,
-            })
-            .map_err(|_| "event names overflow")?;
-    }
-    let inventory = service::profile::effective(profile, declarations, limits).ok_or("effective limits overflow")?;
-    let header = service::profile::header(&inventory, &channel::Endpoints::new(names), declarations)
-        .ok_or("effective names overflow")?;
+    let inventory =
+        service::profile::effective(profile, declarations, limits, endpoints).ok_or("effective limits overflow")?;
+    let header = service::profile::header(&inventory, names, declarations).ok_or("effective names overflow")?;
     Ok(header)
 }
 
@@ -316,21 +308,24 @@ fn build(document: Document) -> Result<Configuration, String> {
         endpoints: declarations.into_boxed_slice(),
     };
     let mut limits = service::profile::derive(&profile, &declarations).map_err(profile_refusal)?;
-    if let Some(trace) = &trace {
-        let header = effective_header(&profile, &declarations, &limits, &document.endpoints)?;
-        let events = event_limits(
-            &limits,
-            &document.endpoints,
-            trace.capture,
-            header.as_slice(),
-            profile.policy.write_deadline,
-        )?;
-        limits.events = Some(events);
-    }
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
     let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
         llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
+    if let Some(trace) = &trace {
+        // First admit the sink, then include its own limits in the receiving header.
+        for _ in 0..2 {
+            let header = effective_header(&profile, &declarations, &limits, &endpoints.channel, &llm_endpoints)?;
+            limits.events = Some(event_limits(
+                &limits,
+                &llm_endpoints,
+                &declarations,
+                trace.capture,
+                header.as_slice(),
+                profile.policy.write_deadline,
+            )?);
+        }
+    }
     let mut models = Vec::new();
     for endpoint in &declarations.endpoints {
         for model in &endpoint.models {
@@ -1286,7 +1281,10 @@ mod tests {
             .map(|effort| u32::try_from(effort.len()).unwrap())
             .max()
             .unwrap_or(0);
-        let header = effective_header(&selected, &declarations, &derived, &dto.endpoints).expect("product header");
+        let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
+        let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
+        let header = effective_header(&selected, &declarations, &derived, &configured.channel, &destinations)
+            .expect("product header");
         let events = service::EventLimits::derive(
             &derived,
             Capture::Everything,
@@ -1305,8 +1303,6 @@ mod tests {
             events.sinks.metadata_string
         );
         derived.events = Some(events);
-        let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
-        let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
         let run = run::worst_case(&derived.domain.run).expect("run bound");
         let session = domain::session::worst_case(&derived.domain.session).expect("session bound");
         let tools = domain::tools::worst_case(&derived.domain.session.tools).expect("tools bound");

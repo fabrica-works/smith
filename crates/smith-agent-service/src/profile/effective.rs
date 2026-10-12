@@ -6,8 +6,11 @@ use skein_lib::Duration;
 
 use super::Fraction;
 
+mod boundaries;
+mod channel;
 mod header;
 mod list;
+mod llm;
 
 pub use header::header;
 pub use list::effective;
@@ -42,9 +45,9 @@ pub enum Layer {
     Tools,
     /// The machine's derived limit, sent by the service.
     Machine,
-    /// A transcript schema limit, sent by the channel.
+    /// A derived transcript limit, sent by the channel.
     Transcript,
-    /// A channel schema limit, sent by the service.
+    /// A derived channel limit, sent by the service.
     Channel,
     /// An event sink limit, sent by the service.
     Events,

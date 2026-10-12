@@ -1,0 +1,170 @@
+//! Named projections of admitted layer limits, without retained state.
+//! Contract: protocol/limits.md, section 9.
+
+use super::list::Inventory;
+use super::{Layer, Value};
+
+pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v3::Limits) -> Option<()> {
+    let smith_transcript::v3::Limits {
+        replay_dialect,
+        replay_bytes,
+        text_text,
+        opaque_dialect,
+        opaque_bytes,
+        call_id,
+        call_name,
+        call_input,
+        entry_name,
+        hit_path,
+        hit_text,
+        read_content,
+        listed_entries,
+        found_hits,
+        command_end_head,
+        command_end_last,
+        ambiguous_lines,
+        working_path_path,
+        other_path_directory,
+        other_path_path,
+        outside_path_path,
+        field_problem_field,
+        said_text,
+        tool_result_id,
+        message_blocks,
+        turn_endpoint,
+        turn_dialect,
+        turn_messages,
+    } = *limits;
+    inventory.layer = Layer::Transcript;
+    inventory.value("replay_dialect", Value::Bytes(u64::from(replay_dialect)))?;
+    inventory.value("replay_bytes", Value::Bytes(u64::from(replay_bytes)))?;
+    inventory.value("text_text", Value::Bytes(u64::from(text_text)))?;
+    inventory.value("opaque_dialect", Value::Bytes(u64::from(opaque_dialect)))?;
+    inventory.value("opaque_bytes", Value::Bytes(u64::from(opaque_bytes)))?;
+    inventory.value("call_id", Value::Bytes(u64::from(call_id)))?;
+    inventory.value("call_name", Value::Bytes(u64::from(call_name)))?;
+    inventory.value("call_input", Value::Bytes(u64::from(call_input)))?;
+    inventory.value("entry_name", Value::Bytes(u64::from(entry_name)))?;
+    inventory.value("hit_path", Value::Bytes(u64::from(hit_path)))?;
+    inventory.value("hit_text", Value::Bytes(u64::from(hit_text)))?;
+    inventory.value("read_content", Value::Bytes(u64::from(read_content)))?;
+    inventory.value("listed_entries", Value::Count(u64::from(listed_entries)))?;
+    inventory.value("found_hits", Value::Bytes(u64::from(found_hits)))?;
+    inventory.value("command_end_head", Value::Bytes(u64::from(command_end_head)))?;
+    inventory.value("command_end_last", Value::Bytes(u64::from(command_end_last)))?;
+    inventory.value("ambiguous_lines", Value::Count(u64::from(ambiguous_lines)))?;
+    inventory.value("working_path_path", Value::Bytes(u64::from(working_path_path)))?;
+    inventory.value("other_path_directory", Value::Bytes(u64::from(other_path_directory)))?;
+    inventory.value("other_path_path", Value::Bytes(u64::from(other_path_path)))?;
+    inventory.value("outside_path_path", Value::Bytes(u64::from(outside_path_path)))?;
+    inventory.value("field_problem_field", Value::Bytes(u64::from(field_problem_field)))?;
+    inventory.value("said_text", Value::Bytes(u64::from(said_text)))?;
+    inventory.value("tool_result_id", Value::Bytes(u64::from(tool_result_id)))?;
+    inventory.value("message_blocks", Value::Count(u64::from(message_blocks)))?;
+    inventory.value("turn_endpoint", Value::Bytes(u64::from(turn_endpoint)))?;
+    inventory.value("turn_dialect", Value::Bytes(u64::from(turn_dialect)))?;
+    inventory.value("turn_messages", Value::Count(u64::from(turn_messages)))?;
+    Some(())
+}
+
+pub(super) fn bodies(inventory: &mut Inventory, limits: &smith_channel::Limits) -> Option<()> {
+    let smith_channel::Limits {
+        directory_name,
+        directory_path,
+        directory_conflicts,
+        directory_conflicts_item,
+        workspace_directories,
+        grant_value_credential,
+        receipt_text,
+        delivered_receipts,
+        marker_path,
+        delivery_refusal_explanation,
+        delivery_failure_diagnostic,
+        host_reply_text,
+        answered_call_tool,
+        message_label,
+        message_text,
+        start_charter,
+        start_transcript,
+        start_answered,
+        start_grants,
+        start_messages,
+        host_ask_tool,
+        host_ask_input,
+        field_name,
+        field_text,
+        deliver_ask_fields,
+        turn_body,
+        accepted_result,
+    } = *limits;
+    inventory.layer = Layer::Channel;
+    inventory.value("directory_name", Value::Bytes(u64::from(directory_name)))?;
+    inventory.value("directory_path", Value::Bytes(u64::from(directory_path)))?;
+    inventory.value("directory_conflicts", Value::Count(u64::from(directory_conflicts)))?;
+    inventory.value("directory_conflicts_item", Value::Bytes(u64::from(directory_conflicts_item)))?;
+    inventory.value("workspace_directories", Value::Count(u64::from(workspace_directories)))?;
+    inventory.value("grant_value_credential", Value::Bytes(u64::from(grant_value_credential)))?;
+    inventory.value("receipt_text", Value::Bytes(u64::from(receipt_text)))?;
+    inventory.value("delivered_receipts", Value::Count(u64::from(delivered_receipts)))?;
+    inventory.value("marker_path", Value::Bytes(u64::from(marker_path)))?;
+    inventory.value("delivery_refusal_explanation", Value::Bytes(u64::from(delivery_refusal_explanation)))?;
+    inventory.value("delivery_failure_diagnostic", Value::Bytes(u64::from(delivery_failure_diagnostic)))?;
+    inventory.value("host_reply_text", Value::Bytes(u64::from(host_reply_text)))?;
+    inventory.value("answered_call_tool", Value::Bytes(u64::from(answered_call_tool)))?;
+    inventory.value("message_label", Value::Bytes(u64::from(message_label)))?;
+    inventory.value("message_text", Value::Bytes(u64::from(message_text)))?;
+    inventory.value("start_charter", Value::Bytes(u64::from(start_charter)))?;
+    inventory.value("start_transcript", Value::Bytes(u64::from(start_transcript)))?;
+    inventory.value("start_answered", Value::Count(u64::from(start_answered)))?;
+    inventory.value("start_grants", Value::Count(u64::from(start_grants)))?;
+    inventory.value("start_messages", Value::Count(u64::from(start_messages)))?;
+    inventory.value("host_ask_tool", Value::Bytes(u64::from(host_ask_tool)))?;
+    inventory.value("host_ask_input", Value::Bytes(u64::from(host_ask_input)))?;
+    inventory.value("field_name", Value::Bytes(u64::from(field_name)))?;
+    inventory.value("field_text", Value::Bytes(u64::from(field_text)))?;
+    inventory.value("deliver_ask_fields", Value::Count(u64::from(deliver_ask_fields)))?;
+    inventory.value("turn_body", Value::Bytes(u64::from(turn_body)))?;
+    inventory.value("accepted_result", Value::Bytes(u64::from(accepted_result)))?;
+    Some(())
+}
+
+pub(super) fn channel(inventory: &mut Inventory, limits: &smith_protocol_channel::Limits) -> Option<()> {
+    let smith_protocol_channel::Limits {
+        bodies: _,
+        start_bytes,
+        charter: _,
+        transcript: _,
+        resume_turns,
+        search_hits,
+        channel: _,
+        endpoints,
+        calls,
+        turns,
+        fact_reserve_frames,
+        fact_reserve_bytes,
+        grants,
+    } = *limits;
+    inventory.layer = Layer::Channel;
+    inventory.value("start_bytes", Value::Bytes(u64::from(start_bytes)))?;
+    inventory.value("resume_turns", Value::Count(u64::from(resume_turns)))?;
+    inventory.value("search_hits", Value::Count(u64::from(search_hits)))?;
+    inventory.value("endpoints", Value::Count(u64::from(endpoints)))?;
+    inventory.value("calls", Value::Count(u64::from(calls)))?;
+    inventory.value("turns", Value::Count(u64::from(turns)))?;
+    inventory.value("fact_reserve_frames", Value::Count(u64::from(fact_reserve_frames)))?;
+    inventory.value("fact_reserve_bytes", Value::Bytes(u64::from(fact_reserve_bytes)))?;
+    inventory.value("grants", Value::Count(u64::from(grants)))?;
+    Some(())
+}
+
+pub(super) fn framing(inventory: &mut Inventory, limits: &skein_channel::Limits) -> Option<()> {
+    let skein_channel::Limits { chunk, credential, skip, output_bytes, output_frames, kinds } = *limits;
+    inventory.layer = Layer::Channel;
+    inventory.value("framing.chunk", Value::Bytes(u64::from(chunk)))?;
+    inventory.value("framing.credential", Value::Bytes(u64::from(credential)))?;
+    inventory.value("framing.skip", Value::Bytes(u64::from(skip)))?;
+    inventory.value("framing.output_bytes", Value::Bytes(u64::from(output_bytes)))?;
+    inventory.value("framing.output_frames", Value::Count(u64::from(output_frames)))?;
+    inventory.value("framing.kinds", Value::Count(u64::from(kinds)))?;
+    Some(())
+}

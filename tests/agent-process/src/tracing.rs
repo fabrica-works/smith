@@ -31,18 +31,23 @@ impl Tracing {
         inherited: &skein_world::Inherited,
         capture: agent::sinks::Capture,
     ) -> Self {
-        let header = effective_header(&configuration.limits, &configuration.channel_endpoints);
-        configuration.limits.events = Some(
-            agent::EventLimits::derive(
-                &configuration.limits,
-                capture,
-                1,
-                0,
-                header.as_slice(),
-                skein_lib::Duration::from_secs(1),
-            )
-            .expect("world event bounds"),
-        );
+        for _ in 0..2 {
+            let header =
+                effective_header(&configuration.limits, &configuration.channel_endpoints, &configuration.llm_endpoints);
+            configuration.limits.events = Some(
+                agent::EventLimits::derive(
+                    &configuration.limits,
+                    capture,
+                    1,
+                    0,
+                    header.as_slice(),
+                    skein_lib::Duration::from_secs(1),
+                )
+                .expect("world event bounds"),
+            );
+        }
+        let header =
+            effective_header(&configuration.limits, &configuration.channel_endpoints, &configuration.llm_endpoints);
         let queue = configuration.limits.queue;
         let memory = agent::worst_case(&configuration.limits, &configuration.llm_endpoints)
             .expect("bounded actual service")
@@ -205,7 +210,8 @@ impl Host for Tracing {
 
 /// Receiving bounds derived from the same actual producer configuration.
 pub(super) fn event_limits(limits: &agent::Limits) -> agent::EventLimits {
-    let header = effective_header(limits, &crate::configuration().channel_endpoints);
+    let header =
+        effective_header(limits, &crate::configuration().channel_endpoints, &crate::configuration().llm_endpoints);
     agent::EventLimits::derive(
         limits,
         agent::sinks::Capture::Everything,
@@ -220,8 +226,10 @@ pub(super) fn event_limits(limits: &agent::Limits) -> agent::EventLimits {
 fn effective_header(
     limits: &agent::Limits,
     names: &smith_protocol_channel::Endpoints,
+    endpoints: &smith_protocol_llm::Endpoints,
 ) -> List<smith_events::EffectiveLimit> {
     let configuration = crate::declarations(limits.machine.env_bytes);
-    let inventory = agent::profile::effective(&crate::profile(), &configuration, limits).expect("world inventory");
+    let inventory =
+        agent::profile::effective(&crate::profile(), &configuration, limits, endpoints).expect("world inventory");
     agent::profile::header(&inventory, names, &configuration).expect("world effective names")
 }

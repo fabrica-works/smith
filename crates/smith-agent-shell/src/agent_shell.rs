@@ -138,6 +138,20 @@ impl Agent {
     }
 }
 
+fn effective_header(configuration: &config::Configuration) -> Result<List<smith_events::EffectiveLimit>, String> {
+    let named = service::profile::effective(
+        &configuration.profile,
+        &configuration.declarations,
+        &configuration.service.limits,
+        &configuration.service.llm_endpoints,
+    )
+    .ok_or_else(|| derivation_refusal("effective"))?;
+    let header_limits =
+        service::profile::header(&named, &configuration.service.channel_endpoints, &configuration.declarations)
+            .ok_or_else(|| derivation_refusal("effective_names"))?;
+    Ok(header_limits)
+}
+
 fn prepare(configuration: config::Configuration, resources: &Resources) -> Result<Prepared, String> {
     let root_count = resources.roots.as_ref().map_or(0, |roots| roots.len());
     if root_count > usize::try_from(configuration.service.limits.domain.run.directories).expect("directory bound") {
@@ -156,12 +170,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         .routes
         .checked_add(extra_operations)
         .ok_or_else(|| derivation_refusal("routes"))?;
-    let named =
-        service::profile::effective(&configuration.profile, &configuration.declarations, &configuration.service.limits)
-            .ok_or_else(|| derivation_refusal("effective"))?;
-    let header_limits =
-        service::profile::header(&named, &configuration.service.channel_endpoints, &configuration.declarations)
-            .ok_or_else(|| derivation_refusal("effective_names"))?;
+    let header_limits = effective_header(&configuration)?;
     let mut header_bytes = List::<smith_events::EffectiveLimit>::worst_case(header_limits.len())
         .ok_or_else(|| derivation_refusal("startup_header"))?;
     for entry in &header_limits {
