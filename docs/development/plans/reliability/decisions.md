@@ -1076,3 +1076,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    when each `Shutdown` reaches the local domain against the cancel's
    terminals. A cause in 03.8's Files is fixed in 03.8; a cause in skein
    comes back as a question, with the trace.
+38. **README rule 11 counts diagnostic runs, not every run** (block of
+   2026-10-12T16:11:12Z, smith 03.8). 03.8's new story
+   `a_store_failure_completes_as_host_store_with_its_turn` failed three
+   times as its fixture was rewritten (the scripted finish, then `wait`,
+   each answering before the failed turn was durable), and the
+   implementer stopped under rule 11 to ask for a fourth run. Rule 11
+   (13.25) bounds diagnostics: prints and assertion messages added to
+   find a cause, never committed. A run after a change to the
+   increment's own code, tests or fixtures, with no such line in place,
+   is ordinary work, and rule 11 now says so. 03.8's correction, a
+   fixture on the world's `changed` workspace story whose scripted calls
+   read `original.txt`, is its implementation choice, within rule 8's
+   100 world-library lines.

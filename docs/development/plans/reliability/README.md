@@ -205,6 +205,10 @@ do not already say.
     every such line before it commits; `git diff origin/main` shows none of
     them at `land`. Nothing else is wanted: no scripts, no repeated runs,
     no observers (development.md 8.2). Past three runs, it stops and asks.
+    The three count runs made with such lines in place, for one failure;
+    a run after a change to the increment's code, tests or fixtures, with
+    none in place, is ordinary work, and is not counted (decisions.md,
+    13.38).
 
 ## Proving what landed
 
