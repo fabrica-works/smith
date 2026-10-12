@@ -1,5 +1,5 @@
 //! One immutable refusal identity precedes the successful first piece and edits.
-//! `oversized_check` and `check` join native payload TooLarge with captured content
+//! `oversized_check` and `check` join native payload `TooLarge` with captured content
 //! or preserve attested protocol Oversized blocks. They never infer an unrecorded
 //! argument or namespace, and never relabel the protocol block counter.
 //! Captured arguments reconstruct only reported successful mutations; a failed
