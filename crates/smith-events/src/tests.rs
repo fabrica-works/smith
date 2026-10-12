@@ -149,3 +149,92 @@ fn measured_resource_objects_round_trip_with_exact_values() {
         assert_eq!(read(&encoded, &limits).expect("read usage"), Some(record.clone()));
     }
 }
+
+fn word_failure(class: crate::AnswerClass) -> crate::AnswerFailure {
+    crate::AnswerFailure {
+        class,
+        endpoint: None,
+        model: None,
+        attempts: None,
+        completion: None,
+        account: None,
+        which: None,
+        reason: None,
+        dropped: None,
+        ended: None,
+        turn: None,
+    }
+}
+
+#[test]
+fn every_answer_class_has_its_words() {
+    use crate::AnswerClass;
+    let cases = [
+        (AnswerClass::Model, b"model failed".as_slice()),
+        (AnswerClass::Budget, b"out of budget".as_slice()),
+        (AnswerClass::Policy, b"policy: unfinished result".as_slice()),
+        (AnswerClass::Cancelled, b"the run was cancelled".as_slice()),
+        (AnswerClass::Agent, b"the agent ended without answering".as_slice()),
+        (AnswerClass::Host, b"host: operation failed".as_slice()),
+        (AnswerClass::Stale, b"stale: workspace changed".as_slice()),
+        (AnswerClass::Transcript, b"chat cannot be resumed: transcript refused".as_slice()),
+        (AnswerClass::Busy, b"busy".as_slice()),
+        (AnswerClass::Invalid, b"invalid: start refused".as_slice()),
+        (AnswerClass::Unknown(b"future".as_slice().into()), b"unknown failure: future".as_slice()),
+    ];
+    for (class, expected) in cases {
+        assert_eq!(crate::words(&word_failure(class)).as_ref(), expected);
+    }
+    let mut turns = word_failure(AnswerClass::Budget);
+    turns.which = Some(b"turns".as_slice().into());
+    assert_eq!(crate::words(&turns).as_ref(), b"out of turns");
+}
+
+#[test]
+fn every_provider_class_has_its_words() {
+    use crate::FailureClass;
+    let cases = [
+        (FailureClass::Overloaded, b"overloaded".as_slice()),
+        (FailureClass::RateLimited, b"rate limited".as_slice()),
+        (FailureClass::Exhausted, b"exhausted".as_slice()),
+        (FailureClass::Unavailable, b"unavailable".as_slice()),
+        (FailureClass::TimedOut, b"timed out".as_slice()),
+        (FailureClass::ContextTooLong, b"context too long".as_slice()),
+        (FailureClass::Invalid, b"invalid".as_slice()),
+        (FailureClass::Unauthorized, b"unauthorized".as_slice()),
+        (FailureClass::Limit, b"limit".as_slice()),
+        (FailureClass::Protocol, b"protocol failed".as_slice()),
+        (FailureClass::Cancelled, b"cancelled".as_slice()),
+        (FailureClass::Unknown(b"future".as_slice().into()), b"future".as_slice()),
+    ];
+    for (class, expected) in cases {
+        let mut failure = word_failure(crate::AnswerClass::Model);
+        failure.completion = Some(crate::CompletionFailure {
+            class,
+            evidence: crate::Evidence::Response,
+            retry_after_ms: None,
+            phase: None,
+            limit: None,
+            status: None,
+            detail: None,
+        });
+        assert_eq!(crate::words(&failure).as_ref(), expected);
+    }
+}
+
+#[test]
+fn clip_stops_at_a_character_boundary() {
+    let mut source = [b'x'; 515];
+    source.get_mut(511..).unwrap().copy_from_slice("🌍".as_bytes());
+    assert_eq!(crate::clip(&source), [b'x'; 511]);
+    let mut source = [b'x'; 512];
+    source.get_mut(508..).unwrap().copy_from_slice("🌍".as_bytes());
+    assert_eq!(crate::clip(&source), source);
+}
+
+#[test]
+fn clip_keeps_the_first_line() {
+    assert_eq!(crate::clip(b"provider refused\nsecond line"), b"provider refused");
+    assert_eq!(crate::clip(b"provider refused\r\nsecond line"), b"provider refused");
+    assert_eq!(crate::clip(b""), b"");
+}

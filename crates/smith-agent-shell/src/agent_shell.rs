@@ -127,8 +127,13 @@ impl Agent {
         self.result = Some(if answered {
             Ok(())
         } else {
-            let why = format!("the run could not answer: {:?}", service::failure(&self.service));
-            Err(why)
+            let why = match service::failure(&self.service).expect("an unanswered agent keeps its first failure") {
+                service::Failure::ChannelEnded => "the channel ended before the answer",
+                service::Failure::WriteFailed => "the channel's output failed",
+                service::Failure::Credential => "a host credential could not be installed",
+                service::Failure::Send => "a required host record could not be sent",
+            };
+            Err(format!("the run could not answer: {why}"))
         });
     }
 }
@@ -234,6 +239,22 @@ impl Host for Agent {
             self.reported = true;
             if let Some(Err(why)) = &self.result {
                 diagnostic(self.errors.as_mut(), why);
+            }
+            match service::last(&self.service) {
+                Some(service::Last::Failed { failure, detail }) => {
+                    let words = smith_events::words(&failure);
+                    let mut line = format!(
+                        "run failed: {}",
+                        String::from_utf8(words.into_vec()).expect("operator words are UTF-8")
+                    );
+                    let detail = smith_events::clip(&detail);
+                    if !detail.is_empty() {
+                        line.push_str(": ");
+                        line.push_str(core::str::from_utf8(detail).expect("clipped detail is UTF-8"));
+                    }
+                    diagnostic(self.errors.as_mut(), &line);
+                }
+                Some(service::Last::Quiet | service::Last::Unanswered(_)) | None => {}
             }
         }
     }

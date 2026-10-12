@@ -5,6 +5,7 @@
 
 #![expect(clippy::manual_map, reason = "the strict subset requires explicit matches instead of closures")]
 
+use alloc::boxed::Box;
 use skein_lib::{Duration, List};
 use smith_domain::run;
 use smith_events::{
@@ -12,6 +13,42 @@ use smith_events::{
 };
 
 use crate::sinks::Capture;
+
+/// The settled agent's last operator line (protocol/agent.md, section 6).
+#[derive(Debug)]
+pub enum Last {
+    /// An accepted or parked answer needs no failure line.
+    Quiet,
+    /// A failed or refused answer, with its operator detail.
+    Failed { failure: Box<AnswerFailure>, detail: Box<[u8]> },
+    /// No answer crossed the channel, for this concrete cause.
+    Unanswered(crate::Failure),
+}
+
+/// Project the settled terminal independently of event capture or destinations.
+#[must_use]
+pub fn last(service: &crate::Service) -> Option<Last> {
+    let answered = crate::done(service)?;
+    if !answered {
+        return Some(Last::Unanswered(crate::failure(service).expect("an unanswered end keeps its first cause")));
+    }
+    let failure = match service.final_failure {
+        Some(why) => failed(why),
+        None => match service.final_refusal {
+            Some(why) => refused(why),
+            None => return Some(Last::Quiet),
+        },
+    };
+    Some(Last::Failed { failure: Box::new(failure), detail: Box::default() })
+}
+
+pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer) {
+    match answer {
+        run::Answer::Failed { failure, .. } => service.final_failure = Some(*failure),
+        run::Answer::Refused(refusal) => service.final_refusal = Some(*refusal),
+        run::Answer::Accepted { .. } | run::Answer::Parked { .. } => {}
+    }
+}
 
 /// The run owner's final fence and measurements, supplied with its actual answer.
 #[derive(Clone, Copy, Debug)]

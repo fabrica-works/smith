@@ -12,6 +12,7 @@ extern crate alloc;
 mod limits;
 mod read;
 mod records;
+mod words;
 mod write;
 
 pub use limits::{Limits, largest_record, largest_record_for, largest_size, worst_case};
@@ -26,6 +27,7 @@ pub use records::{
     RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status,
     Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
+pub use words::{DETAIL_BYTES, clip, words};
 pub use write::{write, write_with_ceiling};
 
 /// The event vocabulary version emitted and accepted by this codec.

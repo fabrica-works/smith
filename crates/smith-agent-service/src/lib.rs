@@ -36,7 +36,7 @@ pub use events::EventLimits;
 
 pub use sinks::Destination;
 
-pub use answers::{AnswerMeta, answer_record};
+pub use answers::{AnswerMeta, Last, answer_record, last};
 
 pub use service::{
     Config, ConfigError, Effects, Failure, Limits, Service, done, effects_worst_case, failure, iterate, next_deadline,

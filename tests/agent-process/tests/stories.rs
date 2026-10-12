@@ -20,6 +20,17 @@ fn an_answered_agent_exits_0_with_no_signal_from_its_host() {
 }
 
 #[test]
+fn a_failed_answer_ends_standard_error_with_its_failure_in_words() {
+    let mut world = World::new(7, &charter());
+    assert!(world.settle());
+    let errors = String::from_utf8(world.errors()).expect("diagnostic UTF-8");
+    assert_eq!(errors.lines().last(), Some("smith: run failed: out of turns"));
+    assert_eq!(errors.lines().filter(|line| line.starts_with("smith: run failed:")).count(), 1);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    world.assert_agent_clean();
+}
+
+#[test]
 fn a_termination_signal_in_the_middle_of_a_turn_answers_cancelled() {
     let charter = charter();
     let mut world = World::new(8, &charter);
@@ -59,7 +70,7 @@ fn an_agent_whose_host_hangs_up_before_its_answer_says_so_and_exits_1() {
             "smith: commands run in process groups and are not contained\nsmith: agent started; worst case "
         )
     );
-    assert_eq!(errors.lines().last(), Some("smith: the run could not answer: Some(ChannelEnded)"));
+    assert_eq!(errors.lines().last(), Some("smith: the run could not answer: the channel ended before the answer"));
     assert_eq!(errors.lines().count(), 3, "containment, startup and failure each appear once");
     world.assert_agent_clean();
 }

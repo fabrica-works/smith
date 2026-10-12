@@ -152,6 +152,8 @@ pub struct Service {
     channel_ended: bool,
     failed: bool,
     failure: Option<Failure>,
+    pub(crate) final_failure: Option<run::Failure>,
+    pub(crate) final_refusal: Option<run::Refusal>,
     outcome: Option<run::outcome::OutcomeSpec>,
     delivery: Option<run::outcome::ChangeSpec>,
     pending_start: Option<Box<channel::DecodedStart>>,
@@ -521,6 +523,8 @@ impl Service {
             channel_ended: false,
             failed: false,
             failure: None,
+            final_failure: None,
+            final_refusal: None,
             outcome: None,
             delivery: None,
             pending_start: None,
@@ -683,6 +687,7 @@ impl Service {
         self.pending_start = None;
         let token = self.next_send();
         let answer = run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Workspace));
+        crate::answers::remember(self, &answer);
         let read = None;
         if let Some(events) = &mut self.events {
             events.answer(self.domain_env.now, self.run_started, &answer, read);
@@ -1712,6 +1717,7 @@ fn domain_request(service: &mut Service, request: domain::Request) {
             }
         }
         domain::Request::Answer { to, answer, read } => {
+            crate::answers::remember(service, &answer);
             assert!(to.into_token() == Token::new(1), "one Start reply right per process");
             if let Some(events) = &mut service.events {
                 events.answer(service.domain_env.now, service.run_started, &answer, read);

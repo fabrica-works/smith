@@ -125,6 +125,7 @@ pub fn review_agent_errors(errors: &[u8], tail: &[u8], answered: bool) {
         text.lines().all(|line| line == "smith: commands run in process groups and are not contained"
             || line.starts_with("smith: agent started; worst case ")
             || line.starts_with("smith: the run could not answer: ")
+            || line.starts_with("smith: run failed: ")
             || line.ends_with(" observations were dropped")),
         "only the shipped agent's words are observed"
     );
