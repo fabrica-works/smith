@@ -906,8 +906,6 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             ),
         },
         parent::Request::Withdrawn { .. } | parent::Request::Told { .. } | parent::Request::Unread { .. } => {}
-        parent::Request::MessageRefused { reason: host::MessageRefusal::Ending, .. }
-            if domain.agent_life == AgentLife::Gone => {}
         parent::Request::Faulted { fault, .. } => {
             let dropped = match fault {
                 host::Fault::Exited => match env.limits.agent {
