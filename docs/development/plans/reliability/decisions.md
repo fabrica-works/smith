@@ -958,4 +958,21 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    durably, so that another machine can run the task". This run needs
    only this machine, where 12.5 runs, so 12.2 goes on as written and the
    durable place goes to `later.md`; nothing waits on the user.
+28. **smith-12.1's Plan trailer is lost; the step stands** (block of
+   2026-10-12T15:30:05Z, the coordinator). 42f2faec's message has a blank
+   line between `Plan: reliability` and `Step: smith-12.1`, so git reads
+   only the last paragraph as trailers and `plan status` does not count
+   it. The commit stays (no force-push); the coordinator keeps 12.1
+   `landed`, and every implementer checks both trailers before `land`.
+   For the retrospective: `land` could refuse a branch whose tip lacks
+   the `Plan` or `Step` trailer during a run.
+29. **smith 10.1 takes 06.4's read-right fix, and 1,050 lines** (block of
+   2026-10-12T15:30:57Z). 10.1's diagnostic (README rule 11) found the
+   local process adapter ignoring `Request::Read`, the defect 13.18 gave
+   06.4, which landed its fix in `crates/smith-local-service/src/process.rs`
+   (a398ca43, after 10.1's parent dc1a4549). 10.1 rebases and keeps 06.4's
+   fix, with no read classifier of its own. Its candidate stood at 1,006
+   lines against 13.15's 1,000; folding a module into another to fit a
+   count is code bent to a number (development.md 4.5), so the bound
+   becomes 1,050.
 

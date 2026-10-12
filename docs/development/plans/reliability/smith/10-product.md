@@ -127,7 +127,7 @@ Ceilings: unit 20 ms; this sweep 5 s, in the fuzzy suite.
 Proof: world, the test above: a chat resumed after a power loss at any
 store operation never reuses an activation; once, within 5 s.
 Don't: never `Expect::Any`; no std file in the shell once the loop runs.
-Size: at most 1,000 lines of production code, in one landing (decisions.md, 13.15; was 550); README rule 9's 600 does not apply to 10.1.
+Size: at most 1,050 lines of production code, in one landing (decisions.md, 13.15 and 13.29; was 550); README rule 9's 600 does not apply to 10.1.
 Removes: `smith-local-shell/src/local_store.rs` and its two
 `#[expect(clippy::disallowed_types)]`.
 
