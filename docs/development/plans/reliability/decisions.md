@@ -1638,3 +1638,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    of its own". A new `crates/skein-llm/src/openai/response/reasoning.rs`,
    the ordered items' walk and append and the share's charge for both
    dialects, joins 07.s4's Files; `Replay` and `Json` stay.
+82. **Session 08's "Done when" holds, with two readings** (block of
+   2026-10-12T20:28:28Z, smith 08). (1) The command naming
+   `a_chat_resumes_from_its_last_window` finds no test since 10.1 moved
+   the store: its equivalent, `a_load_starts_at_the_last_turn_that_opens_a_window`,
+   passes, and is the test that check names from now. (2) The `window: 1`
+   scan finds only `responses.rs:1089`'s `cfg(test)` intent fixture;
+   what 08.6's Removes asked was the production `window: 1`, which is
+   gone (production takes the fact's window). Both read so at the run's
+   end; session 08 is done.
