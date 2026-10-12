@@ -191,6 +191,12 @@ agent's trace its own stream; they fail on the parent, which writes no
 product stream with a spawned agent.
 Don't: decode channel facts into records: they reach this stream only
 as the agent's own trace (channel.md, section 8).
+The harness's face (decisions.md, 13.22): 03.9 appends one entry to
+`benchmarks/agents/smith/faces.toml`, pinned to a commit already on
+`origin/main` when 03.9 starts (its base), whose reader takes the run's
+records from the agent's trace at the trace path with `.agent` when that
+file exists, and from the trace path otherwise. Earlier entries stay as
+they are; no temporary registry, and no following registration step.
 Size: at most 200 lines of production code.
 Removes: nothing.
 

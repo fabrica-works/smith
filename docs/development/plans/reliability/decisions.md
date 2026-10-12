@@ -908,4 +908,23 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `landed`; README rule 10 runs the porcelain check only while the
    worktree is still on the landed step's branch. A proposal for the
    retrospective: development.md 7.3's third check says the same.
+22. **smith 03.9's harness face needs no bootstrap** (block of
+   2026-10-12T15:02:53Z). `smith-bench` picks a face as the newest
+   `faces.toml` entry whose commit is an ancestor of the built arm
+   (`benchmarks/src/agent/smith/faces.rs:162`), and 03.9's own commit is
+   not known before `land` rebases it. Pinning the new face to 03.9's
+   landed commit in a following step would leave a window in which other
+   sessions' smokes build arms with 03.9 under the old face, and fail.
+   Ruling: the new entry is pinned to a commit already on `origin/main`,
+   and reads the run's records from `<trace>.agent` when the product's
+   spawned agent wrote one, from `<trace>` otherwise: before 03.9 no
+   binary writes `.agent`, so arms from then read as before; with the
+   inline kind the run's records stay in the product's stream (03.7).
+23. **A diagnostic never committed** (block of 2026-10-12T15:02:53Z,
+   smith 10.1). The one-off A/B of 13.10's kind showed 10.1's regression:
+   `main` passes and the branch leaves a child running. skein-world's
+   tree check kills the child before it reports its pid, so its command
+   is gone. 10.1 may add a diagnostic in its worktree that prints the
+   leftover child's command once, run the story once, and remove it
+   before its commit; nothing of it lands.
 
