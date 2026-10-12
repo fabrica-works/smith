@@ -511,6 +511,14 @@ source = "borrow"
   at zero at any rate are refused, naming the key.
   The local host's unit is the micro-dollar; settings and the terminal
   use dollars.
+- **Tiered list prices.** Where a provider's list price for a model rises
+  past a prompt size, the preset prices the model at the highest rates a
+  prompt within its window can reach, its window as settings leave it:
+  Haiku 5.5 at its long-prompt rates whenever its window passes 100,000
+  tokens. A charter's prices stay flat (domain/run.md, section 9), so
+  spend is never under-counted. A person who wants the lower rates
+  declares a window at or below the tier's size; prices a person sets
+  are used as set.
 - **Raw byte limits are not settings.** Tests may override them; a person
   declares quantities (protocol/limits.md).
 
@@ -807,10 +815,6 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
 - **The Anthropic window:** whether the preset's window should be the
   models' 1,000,000 tokens once the `history` and `cache-reuse` probes measure
   cost and quality there.
-- **Tiered list prices:** Haiku 5.5's list price rises for prompts past
-  100,000 tokens, and a charter's prices are flat. Proposed: the preset
-  prices it at the higher rate whenever its window passes that size, so
-  spend is never under-counted.
 - **Kept traces:** a default place for traces, their rotation and how
   long they are kept.
 - **`smith-agent`'s life:** whether it outlives temper's decision on how
