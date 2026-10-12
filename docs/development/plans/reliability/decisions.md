@@ -1568,3 +1568,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    06.8's Files for at most 25 production lines, keeping the close's
    state, writing `aborted: true` and the `teardown_aborted` notice when
    a signal aborts it; the stream's other contents unchanged.
+75. **smith-10.s1 lands the skein repin; 10.10 waits for 10.8** (block of
+   2026-10-12T19:51:06Z, smith 10.10). 10.10 asks for the status line's
+   width and `--plain`, which 10.8's interactive owner brings
+   (`crates/smith-local-shell/src/front/interactive.rs` does not exist on
+   `main`); its Needs named only skein 02.6, a plan defect, mine. Its
+   first commit, the repin, is wanted now (13.67, 13.70). Ruling: the
+   repin lands on its own as smith-10.s1, the gate and the smoke its
+   Proof, then 13.6's `slow-completion`; 10.10 waits for 10.8 and 10.s1,
+   and invents no interactive front end.
