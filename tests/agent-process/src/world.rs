@@ -271,6 +271,9 @@ impl Host for Parent {
     fn next_deadline(&self) -> Option<Time> {
         None
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        None
+    }
     fn is_empty(&self) -> bool {
         self.status.is_some()
             && self.input.is_none()
@@ -332,6 +335,9 @@ impl Host for Proc {
     }
     fn next_deadline(&self) -> Option<Time> {
         self.host().next_deadline()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.host().next_policy_deadline()
     }
     fn is_empty(&self) -> bool {
         self.host().is_empty()

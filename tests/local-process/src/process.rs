@@ -132,6 +132,9 @@ pub fn configuration_with_tools(
     host.unacknowledged_bytes = 1_000_000_000;
     host.fact_bytes = 512;
     host.outcome_bytes = 4096;
+    // A workspace's host path is the checkout's absolute path: production's
+    // bound keeps the story independent of where the checkout lives.
+    host.path_bytes = 4096;
     // Actual provider spans carry the charter's whole-session deadline.
     host.long_span = policy.config.budget.time;
     let inline_out = local::max_out(&policy.limits);
@@ -355,6 +358,9 @@ impl Host for LocalProcess {
     fn next_deadline(&self) -> Option<Time> {
         self.local.next_deadline()
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.local.next_policy_deadline()
+    }
     fn is_empty(&self) -> bool {
         self.local.is_empty()
     }
@@ -447,6 +453,9 @@ impl Host for BrowserProcess {
     fn next_deadline(&self) -> Option<Time> {
         self.browser.as_ref().and_then(Host::next_deadline)
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.browser.as_ref().and_then(Host::next_policy_deadline)
+    }
     fn is_empty(&self) -> bool {
         self.browser.as_ref().map_or(self.stopped, Host::is_empty)
             && self.completions.is_empty()
@@ -514,6 +523,9 @@ impl Host for IssuerProcess {
     }
     fn next_deadline(&self) -> Option<Time> {
         self.peer.next_deadline()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.peer.next_policy_deadline()
     }
     fn is_empty(&self) -> bool {
         self.peer.is_empty()
@@ -586,6 +598,9 @@ impl Host for Proc {
     }
     fn next_deadline(&self) -> Option<Time> {
         self.host().next_deadline()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.host().next_policy_deadline()
     }
     fn is_empty(&self) -> bool {
         self.host().is_empty()

@@ -410,6 +410,9 @@ impl Host for Terminal {
     fn next_deadline(&self) -> Option<Time> {
         self.io.next_deadline()
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        None
+    }
     fn is_empty(&self) -> bool {
         if self.terminal.is_some() || self.terminal_ended {
             return self.terminal.is_none()

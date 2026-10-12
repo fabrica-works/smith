@@ -2091,6 +2091,26 @@ pub fn next_deadline(service: &Service) -> Option<Time> {
     earliest
 }
 
+/// Earliest policy deadline: the domain's, the LLM's and the machine's,
+/// excluding io's and the files' (skein's testing-strategy.md, section 6).
+#[must_use]
+pub fn next_policy_deadline(service: &Service) -> Option<Time> {
+    let mut earliest = match &service.domain {
+        Some(domain) => domain.next_deadline(),
+        None => None,
+    };
+    for deadline in [service.llm.next_deadline(), service.machine.next_deadline()] {
+        earliest = match deadline {
+            Some(next) => match earliest {
+                Some(old) => Some(old.min(next)),
+                None => Some(next),
+            },
+            None => earliest,
+        };
+    }
+    earliest
+}
+
 /// Whether another iteration can progress without waiting on the kernel.
 #[must_use]
 pub fn work_pending(service: &Service, now: Time) -> bool {

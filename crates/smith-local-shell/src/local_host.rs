@@ -571,6 +571,12 @@ impl Host for Local {
             .chain(self.accounts.iter().filter_map(Auth::deadline))
             .min()
     }
+
+    /// The service's and the accounts' deadlines; the terminal writer's io
+    /// deadline is no policy deadline.
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.service.next_deadline().into_iter().chain(self.accounts.iter().filter_map(Auth::deadline)).min()
+    }
     fn is_empty(&self) -> bool {
         self.exit.is_some()
             && self.closing

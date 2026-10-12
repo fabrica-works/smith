@@ -72,6 +72,10 @@ impl Host for Proc {
         if matches!(self, Self::Agent { paused: true, .. }) { None } else { self.host().next_deadline() }
     }
 
+    fn next_policy_deadline(&self) -> Option<Time> {
+        if matches!(self, Self::Agent { paused: true, .. }) { None } else { self.host().next_policy_deadline() }
+    }
+
     fn is_empty(&self) -> bool {
         self.host().is_empty()
     }
@@ -112,6 +116,10 @@ impl Host for HostService {
 
     fn next_deadline(&self) -> Option<Time> {
         HostService::next_deadline(self)
+    }
+
+    fn next_policy_deadline(&self) -> Option<Time> {
+        HostService::next_policy_deadline(self)
     }
 
     fn is_empty(&self) -> bool {
@@ -186,6 +194,10 @@ impl Host for ErrorTail {
     }
 
     fn next_deadline(&self) -> Option<Time> {
+        None
+    }
+
+    fn next_policy_deadline(&self) -> Option<Time> {
         None
     }
 

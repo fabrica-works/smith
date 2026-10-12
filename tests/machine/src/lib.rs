@@ -855,6 +855,11 @@ impl Host for Application {
             .min()
             .map(|deadline| Time::from_nanos(deadline.as_nanos().saturating_sub(self.offset.as_nanos())))
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.component
+            .next_deadline()
+            .map(|deadline| Time::from_nanos(deadline.as_nanos().saturating_sub(self.offset.as_nanos())))
+    }
     fn is_empty(&self) -> bool {
         self.terminals.len() == 1
             && self.root_closed

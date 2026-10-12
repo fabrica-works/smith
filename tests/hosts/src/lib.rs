@@ -511,6 +511,15 @@ impl HostService {
         .min()
     }
 
+    /// The domain's and the process protocol's deadlines, excluding io's.
+    #[must_use]
+    pub fn next_policy_deadline(&self) -> Option<Time> {
+        [self.domain.next_deadline(), self.process.as_ref().and_then(protocol::Process::next_deadline)]
+            .into_iter()
+            .flatten()
+            .min()
+    }
+
     #[must_use]
     pub fn work_pending(&self, now: Time) -> bool {
         self.io.is_ready()

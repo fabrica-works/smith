@@ -40,5 +40,5 @@ pub use answers::{AnswerMeta, answer_record};
 
 pub use service::{
     Config, ConfigError, Effects, Failure, Limits, Service, done, effects_worst_case, failure, iterate, next_deadline,
-    work_pending, worst_case,
+    next_policy_deadline, work_pending, worst_case,
 };

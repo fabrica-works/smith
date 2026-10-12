@@ -60,6 +60,9 @@ impl Host for Process {
     fn next_deadline(&self) -> Option<Time> {
         self.host().next_deadline()
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.host().next_policy_deadline()
+    }
     fn is_empty(&self) -> bool {
         self.host().is_empty()
     }

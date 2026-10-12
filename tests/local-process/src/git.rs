@@ -86,6 +86,9 @@ impl Host for Child {
     fn next_deadline(&self) -> Option<Time> {
         None
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        None
+    }
     fn work_pending(&self, _: Time) -> bool {
         !self.pending && !self.is_empty()
     }
@@ -218,6 +221,9 @@ impl Host for Prepared {
             || !self.submissions.is_empty()
     }
     fn next_deadline(&self) -> Option<Time> {
+        None
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
         None
     }
     fn is_empty(&self) -> bool {
