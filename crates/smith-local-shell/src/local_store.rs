@@ -62,15 +62,30 @@ impl Store {
         };
         let mut turns = Vec::new();
         let mut deliveries = Vec::new();
-        let entries = fs::read_dir(&self.directory).map_err(|_| local::StoreFailure::Read)?;
-        for (index, entry) in entries.enumerate() {
-            if index >= RECORDS * 2 {
-                return Err(local::StoreFailure::Read);
+        let mut window = String::new();
+        for entry in fs::read_dir(&self.directory).map_err(|_| local::StoreFailure::Read)? {
+            let entry = entry.map_err(|_| local::StoreFailure::Read)?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or(local::StoreFailure::Read)?;
+            if turn_file(name) && name > window.as_str() {
+                let mut header = [0; protocol::TURN_HEADER];
+                let mut file = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                    .open(entry.path())
+                    .map_err(|_| local::StoreFailure::Read)?;
+                file.read_exact(&mut header).map_err(|_| local::StoreFailure::Read)?;
+                if protocol::turn_opens_window(&header).map_err(|_| local::StoreFailure::Read)? {
+                    name.clone_into(&mut window);
+                }
             }
+        }
+        let entries = fs::read_dir(&self.directory).map_err(|_| local::StoreFailure::Read)?;
+        for entry in entries {
             let entry = entry.map_err(|_| local::StoreFailure::Read)?;
             let name = entry.file_name();
             let Some(name) = name.to_str() else { return Err(local::StoreFailure::Read) };
-            if turn_file(name) {
+            if turn_file(name) && name >= window.as_str() {
                 if turns.len().checked_add(deliveries.len()).ok_or(local::StoreFailure::Read)? >= RECORDS {
                     return Err(local::StoreFailure::Read);
                 }
@@ -118,10 +133,12 @@ impl Store {
         &mut self,
         number: u32,
         read: Option<Token>,
+        opens_window: bool,
         turn: &smith_domain::Turn,
     ) -> Result<local::Event, local::StoreFailure> {
-        let file = protocol::save_turn(turn.sequence, read, turn, &smith_transcript::CEILINGS, &self.endpoints)
-            .map_err(|_| local::StoreFailure::Write)?;
+        let file =
+            protocol::save_turn(turn.sequence, read, opens_window, turn, &smith_transcript::CEILINGS, &self.endpoints)
+                .map_err(|_| local::StoreFailure::Write)?;
         self.replace(&file).map_err(|_| local::StoreFailure::Write)?;
         Ok(local::Event::TurnSaved { number })
     }
@@ -331,7 +348,7 @@ mod tests {
                 false,
             )
             .expect("state durable");
-        store.save_turn(1, Some(Token::new(2)), &turn()).expect("turn durable");
+        store.save_turn(1, Some(Token::new(2)), true, &turn()).expect("turn durable");
         drop(store);
         let reopened = Store::new(path.clone(), endpoints(), 4096).expect("store reopens");
         let local::Event::Loaded { state: Some(state), transcript: Some(transcript), deliveries } =
@@ -342,6 +359,51 @@ mod tests {
         assert_eq!(state.read, Some(Token::new(2)));
         assert_eq!(transcript.turns.len(), 1);
         assert!(deliveries.is_empty());
+        fs::remove_dir_all(path).expect("remove test store");
+    }
+
+    #[test]
+    fn a_chat_resumes_from_its_last_window_and_keeps_earlier_files() {
+        let path = directory();
+        let mut store = Store::new(path.clone(), endpoints(), 4096).expect("store opens");
+        store.save_state(state(1), false).expect("state durable");
+        let affinity = smith_domain::llm::Affinity { key: [0; 16], thread: 0 };
+        let ordinary = Turn { kind: session::record::Kind::Ordinary, sequence: 2, ..turn() };
+        let window = Turn { kind: session::record::Kind::Window { affinity }, sequence: 3, ..turn() };
+        store.save_turn(1, None, true, &turn()).expect("first turn durable");
+        store.save_turn(2, None, false, &ordinary).expect("ordinary turn durable");
+        store.save_turn(3, Some(Token::new(2)), true, &window).expect("window turn durable");
+        let local::Event::Loaded { state: Some(state), transcript: Some(transcript), .. } =
+            store.load().expect("records load")
+        else {
+            panic!("a saved chat loads")
+        };
+        assert_eq!(transcript.turns.iter().map(|turn| turn.sequence).collect::<Vec<_>>(), [3]);
+        assert_eq!(state.read, Some(Token::new(2)));
+        assert!(path.join("0000000001.turn").exists() && path.join("0000000002.turn").exists());
+        fs::remove_dir_all(path).expect("remove test store");
+    }
+
+    #[test]
+    fn earlier_window_files_do_not_count_against_the_record_bound() {
+        let path = directory();
+        let mut store = Store::new(path.clone(), endpoints(), 4096).expect("store opens");
+        store.save_state(state(1), false).expect("state durable");
+        store.save_turn(1, None, true, &turn()).expect("first turn durable");
+        for sequence in 2..=4096 {
+            fs::hard_link(path.join("0000000001.turn"), path.join(format!("{sequence:010}.turn")))
+                .expect("earlier window fixture");
+        }
+        let window = Turn {
+            kind: session::record::Kind::Window { affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 } },
+            sequence: 4097,
+            ..turn()
+        };
+        store.save_turn(4097, None, true, &window).expect("window turn durable");
+        let local::Event::Loaded { transcript: Some(transcript), .. } = store.load().expect("records load") else {
+            panic!("a saved chat loads")
+        };
+        assert_eq!(transcript.turns.as_ref(), &[window]);
         fs::remove_dir_all(path).expect("remove test store");
     }
 
@@ -403,7 +465,7 @@ mod tests {
     fn baseline(path: &Path) -> Store {
         let mut store = Store::new(path.into(), endpoints(), 4096).expect("store");
         store.save_state(state(1), false).expect("metadata acknowledged");
-        store.save_turn(1, Some(Token::new(2)), &turn()).expect("turn acknowledged");
+        store.save_turn(1, Some(Token::new(2)), true, &turn()).expect("turn acknowledged");
         store.save_delivery(&delivery()).expect("answered call acknowledged");
         store
     }
@@ -421,7 +483,7 @@ mod tests {
                         let mut next = turn();
                         next.sequence = 2;
                         next.kind = session::record::Kind::Ordinary;
-                        store.save_turn(2, Some(Token::new(3)), &next)
+                        store.save_turn(2, Some(Token::new(3)), false, &next)
                     }
                     2 => {
                         let mut next = delivery();

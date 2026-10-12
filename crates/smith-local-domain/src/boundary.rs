@@ -274,8 +274,8 @@ pub enum Request {
     /// Save the updated activation or person-message counter before using it.
     /// A fresh start replaces incompatible old history in the same store operation.
     SaveState { state: ChatState, fresh: bool },
-    /// Append one numbered concrete turn and its read fence atomically; answered by `TurnSaved` or `StoreFailed`.
-    SaveTurn { number: u32, read: Option<Token>, turn: agent::Turn },
+    /// Append one numbered concrete turn, its read fence and window flag atomically; answered by `TurnSaved` or `StoreFailed`.
+    SaveTurn { number: u32, read: Option<Token>, opens_window: bool, turn: agent::Turn },
     /// Save a pre-effect intent or terminal; the child hears only the terminal.
     SaveDelivery { record: Box<DeliveryRecord> },
     /// Operate on one git directory within the delivery deadline.

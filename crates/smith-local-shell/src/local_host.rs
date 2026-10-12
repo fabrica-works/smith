@@ -262,9 +262,9 @@ impl Local {
             let event = match request {
                 domain::Request::Load => self.store.load(),
                 domain::Request::SaveState { state, fresh } => self.store.save_state(state, fresh),
-                domain::Request::SaveTurn { number, read, turn } => {
+                domain::Request::SaveTurn { number, read, opens_window, turn } => {
                     failed_turn = Some(turn.sequence);
-                    self.store.save_turn(number, read, &turn)
+                    self.store.save_turn(number, read, opens_window, &turn)
                 }
                 domain::Request::SaveDelivery { record } => self.store.save_delivery(&record),
                 domain::Request::Credential { account } => {

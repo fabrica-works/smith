@@ -1158,3 +1158,74 @@ fn overlapping_kinds_have_exactly_one_terminal_per_begin() {
     assert!(!world.agent_try_ends_long(), "the two begun operations are exhausted");
     assert_eq!(world.observations().iter().filter(|seen| **seen == Observation::HostLongDone).count(), 2);
 }
+
+fn window_turn_fixture() -> smith_domain_session::record::Turn {
+    use smith_domain_session::{llm, record};
+    let affinity = llm::Affinity { key: [0; 16], thread: 0 };
+    record::Turn {
+        kind: record::Kind::First { affinity },
+        version: record::VERSION,
+        endpoint: llm::Endpoint(0),
+        dialect: 0,
+        sequence: 1,
+        usage: llm::Usage::ZERO,
+        spent: 0,
+        messages: Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::Text { text: b"the task and summary".as_slice().into(), replay: None }]),
+        }]),
+    }
+}
+
+fn last_window_turns(world: &World) -> Box<[Box<[u8]>]> {
+    let saved: Vec<_> = world
+        .observations()
+        .iter()
+        .filter_map(|observation| {
+            if let Observation::HostTurn { opens_window, body, .. } = observation {
+                Some((*opens_window, body.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let last = saved.iter().rposition(|(flag, _)| *flag).expect("window boundary");
+    saved[last..].iter().map(|(_, body)| body.clone()).collect::<Vec<_>>().into_boxed_slice()
+}
+
+#[test]
+fn a_host_resumes_from_its_last_window_turn_alone() {
+    use smith_domain_session::{llm, record};
+    let charter: Box<[u8]> =
+        include_bytes!("../../../crates/smith-charter/golden/v2/record_charter_smallest.bin").as_slice().into();
+    let mut turn = window_turn_fixture();
+    let affinity = llm::Affinity { key: [0; 16], thread: 0 };
+    let mut world = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    world.settle();
+    world.send_start(charter.clone());
+    world.settle();
+    world.agent_admits();
+    world.settle();
+    for place in 1..=5 {
+        turn.sequence = place;
+        turn.kind = match place {
+            1 => record::Kind::First { affinity },
+            3 | 5 => record::Kind::Window { affinity },
+            _ => record::Kind::Ordinary,
+        };
+        world.agent_tells_turn(place, None, &turn);
+        world.settle();
+        world.host_acknowledges(place);
+        world.settle();
+    }
+    let history = last_window_turns(&world);
+    let mut resumed = World::new(CEILINGS, CEILINGS, StreamMode::Two);
+    resumed.settle();
+    resumed.send_start_with_turns(charter, Some(history));
+    resumed.settle();
+    assert!(
+        resumed.observations().contains(&Observation::AgentHistory { turns: 1, place: 5 }),
+        "{:?}",
+        resumed.observations()
+    );
+}

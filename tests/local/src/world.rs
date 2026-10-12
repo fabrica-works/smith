@@ -24,6 +24,7 @@ use crate::referee::{Meeting, Seen};
 pub struct Store {
     state: Option<ChatState>,
     turns: Vec<agent::Turn>,
+    window: usize,
     history_override: Option<agent::Transcript>,
     deliveries: BTreeMap<run::CallName, DeliveryRecord>,
     disk: Option<Checkout>,
@@ -56,12 +57,13 @@ impl Store {
         if let Some(history) = &self.history_override {
             return Some(history.clone());
         }
-        let first = self.turns.first()?;
+        let turns = self.turns.get(self.window..)?;
+        let first = turns.first()?;
         Some(agent::Transcript {
             version: agent::session::record::VERSION,
             endpoint: first.endpoint,
             dialect: first.dialect,
-            turns: self.turns.clone().into_boxed_slice(),
+            turns: turns.to_vec().into_boxed_slice(),
         })
     }
 
@@ -1075,6 +1077,7 @@ impl World {
                 }
                 if fresh {
                     self.store.turns.clear();
+                    self.store.window = 0;
                     self.store.history_override = None;
                     self.store.deliveries.clear();
                 }
@@ -1084,7 +1087,7 @@ impl World {
                     self.reached.insert(Goal::Cut);
                 }
             }
-            Request::SaveTurn { number, read, turn } => {
+            Request::SaveTurn { number, read, opens_window, turn } => {
                 self.observe(Seen::SaveTurn { number, read });
                 if self.store_fault == Some(StoreFault::Turn) {
                     self.store_fault = None;
@@ -1102,6 +1105,9 @@ impl World {
                 state.read = read;
                 let activation = state.activation;
                 let sequence = turn.sequence;
+                if opens_window {
+                    self.store.window = self.store.turns.len();
+                }
                 self.store.turns.push(turn);
                 self.store.deliveries.retain(|name, record| {
                     matches!(record.state, DeliveryState::Intent(_))

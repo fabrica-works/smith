@@ -469,3 +469,48 @@ fn a_one_turn_configuration_keeps_scalar_and_completion_startup_checks() {
         Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Turns(limits.smith.run.budget.turns))))
     );
 }
+
+fn saved_window_turn() -> smith_domain::Turn {
+    smith_domain::Turn {
+        kind: smith_domain::session::record::Kind::First {
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+        },
+        version: smith_domain::session::record::VERSION,
+        endpoint: smith_domain::session::llm::Endpoint(4),
+        dialect: 1,
+        sequence: 1,
+        usage: smith_domain::session::llm::Usage::ZERO,
+        spent: 0,
+        messages: Box::default(),
+    }
+}
+
+#[test]
+fn a_told_turns_window_flag_reaches_its_save() {
+    use smith_host_domain::{self as host, process};
+    for opens_window in [false, true] {
+        let (mut domain, env, mut out, owner) = spawned_chat_with_saved_hello();
+        let turn = saved_window_turn();
+        crate::step(
+            &mut domain,
+            &env,
+            Event::Process(process::Event::Received {
+                owner,
+                message: host::Up::Turn {
+                    turn: host::Turn {
+                        opens_window,
+                        number: 1,
+                        read: None,
+                        spent: 0,
+                        body: host::TurnValue::new(turn, host_limits().turn_bytes).expect("sealed turn"),
+                    },
+                },
+            }),
+            &mut out,
+        );
+        let outputs = drain_requests(&mut out);
+        assert!(outputs.iter().any(|request| {
+            if let Request::SaveTurn { opens_window: saved, .. } = request { *saved == opens_window } else { false }
+        }));
+    }
+}

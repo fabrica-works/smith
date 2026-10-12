@@ -825,6 +825,7 @@ fn accept_turn(
     env: &Env<Limits>,
     number: u32,
     read: Option<Token>,
+    opens_window: bool,
     turn: agent::Turn,
     out: &mut Queue<Request>,
 ) {
@@ -836,7 +837,7 @@ fn accept_turn(
     domain.turns.unsaved.push((number, turn.sequence));
     domain.chat.state.read = read;
     observe(domain, Fact::Turn { number });
-    out.push(Request::SaveTurn { number, read, turn });
+    out.push(Request::SaveTurn { number, read, opens_window, turn });
     if !shown.is_empty() {
         out.push(Request::Show { text: shown });
     }
@@ -852,7 +853,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             send_line(domain, env, out);
         }
         parent::Request::Turn { turn, .. } => {
-            accept_turn(domain, env, turn.number, turn.read, turn.body.into_value(), out);
+            accept_turn(domain, env, turn.number, turn.read, turn.opens_window, turn.body.into_value(), out);
         }
         parent::Request::Answered { answer, .. } => {
             observe(domain, Fact::Answered { activation: domain.chat.state.activation });

@@ -14,7 +14,9 @@ use smith_transcript as transcript;
 
 /// Exact bytes in the fixed local metadata file, including its opaque identity.
 pub const STATE_BYTES: usize = 4 + 16 + 8 + 8 + 1 + 8;
-const TURN_HEADER: usize = 4 + 1 + 8;
+
+/// Bytes identifying the read fence and window boundary before a turn body.
+pub const TURN_HEADER: usize = 4 + 1 + 8 + 1;
 
 /// One file replacement; the service acknowledges it only after a durable store terminal.
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +106,7 @@ pub fn turn_name(place: u32) -> Box<[u8]> {
 pub fn save_turn(
     place: u32,
     read: Option<Token>,
+    opens_window: bool,
     turn: &smith_domain::Turn,
     limits: &transcript::v3::Limits,
     endpoints: &Endpoints,
@@ -124,16 +127,40 @@ pub fn save_turn(
             writer.put(&0_u64.to_be_bytes()).expect("bounded read token");
         }
     }
+    writer.put(&[u8::from(opens_window)]).expect("bounded window flag");
     writer.put(&bytes).expect("bounded turn body");
     Ok(File { name: turn_name(place), bytes: writer.finish() })
 }
 
-/// Decode ordered numbered files as one concrete history before returning Loaded.
+/// Read the window flag without decoding the retained turn body.
+pub fn turn_opens_window(bytes: &[u8]) -> Result<bool, StoreError> {
+    if bytes.get(..4) != Some(b"SMLT") {
+        return Err(StoreError::Malformed);
+    }
+    match bytes.get(TURN_HEADER.checked_sub(1).expect("nonzero header")) {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        Some(2..=u8::MAX) | None => Err(StoreError::Malformed),
+    }
+}
+
+/// Decode only the last window's ordered files before returning Loaded.
 pub fn decode_turns(
     files: &[Box<[u8]>],
     limits: &transcript::v3::Limits,
     endpoints: &Endpoints,
 ) -> Result<(Option<Transcript>, Option<Token>), StoreError> {
+    let mut start = None;
+    for (index, file) in files.iter().enumerate() {
+        if turn_opens_window(file)? {
+            start = Some(index);
+        }
+    }
+    let files = match start {
+        Some(start) => files.get(start..).expect("window lies within files"),
+        None if files.is_empty() => files,
+        None => return Err(StoreError::Malformed),
+    };
     let Ok(count) = u32::try_from(files.len()) else { return Err(StoreError::TooLarge) };
     let mut bodies = List::with_capacity(count);
     let mut last_read = None;
@@ -149,6 +176,7 @@ pub fn decode_turns(
             1 => Some(Token::new(raw)),
             0 | 2..=u8::MAX => return Err(StoreError::Malformed),
         };
+        reader.u8().ok_or(StoreError::Malformed)?;
         bodies
             .push(Box::from(reader.bytes(reader.remaining()).ok_or(StoreError::Malformed)?))
             .expect("bounded turn count");
@@ -191,8 +219,7 @@ mod tests {
         assert!(turn_name(9) < turn_name(10));
     }
 
-    #[test]
-    fn one_saved_turn_reloads_as_concrete_history() {
+    fn fixture() -> (Endpoints, smith_domain::Turn) {
         let mut entries = List::with_capacity(1);
         entries
             .push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 2, dialect: 1, account: 0 })
@@ -210,12 +237,50 @@ mod tests {
             spent: 0,
             messages: Box::new([]),
         };
-        let file =
-            save_turn(1, Some(Token::new(9)), &turn, &transcript::CEILINGS, &endpoints).expect("bounded saved turn");
+        (endpoints, turn)
+    }
+
+    #[test]
+    fn one_saved_turn_reloads_as_concrete_history() {
+        let (endpoints, turn) = fixture();
+        let file = save_turn(1, Some(Token::new(9)), true, &turn, &transcript::CEILINGS, &endpoints)
+            .expect("bounded saved turn");
         assert_eq!(file.name.as_ref(), b"0000000001.turn");
         let (loaded, read) = decode_turns(&[file.bytes], &transcript::CEILINGS, &endpoints).expect("valid transcript");
         let loaded = loaded.expect("one turn");
         assert_eq!(read, Some(Token::new(9)));
         assert_eq!(loaded.turns.as_ref(), &[turn]);
+    }
+
+    #[test]
+    fn a_load_starts_at_the_last_turn_that_opens_a_window() {
+        let (endpoints, first) = fixture();
+        let window = smith_domain::Turn {
+            kind: smith_domain::session::record::Kind::Window {
+                affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+            },
+            sequence: 3,
+            ..first.clone()
+        };
+        let earlier = save_turn(1, None, true, &first, &transcript::CEILINGS, &endpoints).expect("first file");
+        let mut unread_body = Writer::new(TURN_HEADER + 21);
+        unread_body.put(&earlier.bytes[..TURN_HEADER]).expect("header fits");
+        unread_body.put(b"not a transcript body").expect("unread body fits");
+        let window_file = save_turn(3, None, true, &window, &transcript::CEILINGS, &endpoints).expect("window file");
+        let ordinary = smith_domain::Turn { kind: smith_domain::session::record::Kind::Ordinary, sequence: 4, ..first };
+        let last = save_turn(4, Some(Token::new(9)), false, &ordinary, &transcript::CEILINGS, &endpoints)
+            .expect("ordinary file");
+        let (loaded, read) =
+            decode_turns(&[unread_body.finish(), window_file.bytes, last.bytes], &transcript::CEILINGS, &endpoints)
+                .expect("only the current window is decoded");
+        assert_eq!(loaded.expect("history").turns.as_ref(), &[window, ordinary]);
+        assert_eq!(read, Some(Token::new(9)));
+    }
+
+    #[test]
+    fn files_without_a_window_flag_are_malformed() {
+        let (endpoints, first) = fixture();
+        let file = save_turn(1, None, false, &first, &transcript::CEILINGS, &endpoints).expect("unflagged file");
+        assert_eq!(decode_turns(&[file.bytes], &transcript::CEILINGS, &endpoints), Err(StoreError::Malformed));
     }
 }

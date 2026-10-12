@@ -803,7 +803,7 @@ impl World {
                 number,
                 read,
                 spent,
-                turn.sequence == 1,
+                turn.kind.opens_window(),
                 turn,
                 skein_lib::Token::new(28),
                 &mut self.agent.agent_events,
