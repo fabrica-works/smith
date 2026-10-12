@@ -1674,3 +1674,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the callers propagate a checked overflow; transcript 3's `Opaque.bytes`
    holds the share plus its durable header (7 bytes), within the schema's
    3 MiB. Those files join 04.s3's Files; no new type or count.
+85. **smith-06.s2: the silence came back; 04.s3's reasoning fix holds**
+   (block of 2026-10-12T21:06:29Z, smiths 13.6 and 04.s3). On 04.s3's
+   candidate arm, `slow-completion` ran 6: 3 passes, 2 not exercised, no
+   `output_items` or reasoning-size failure in any (six native reasoning
+   calls completed, reasoning blocks up to 165,587 bytes). Attempt 06 ended
+   response 2 with `stop: end`, text and no call at 86,887 ms, owed a
+   nudge, and requested nothing until the host's cancel at 121,891 ms:
+   13.71's watch, the fourth such run. A step not in the plan, 06.s2,
+   whose first move is one live diagnostic arm on the two probes that
+   showed it. 04.s3 lands with this batch as its live proof, the reasoning
+   part passing; 13.6 lands not calibrated with these counts, attempt 06
+   named as handed to 06.s2, and reruns nothing.

@@ -454,6 +454,35 @@ Don't: widen a grace or a deadline to hide it; add a retry or delay. If
 no world reproduces it, stop and ask with the diagnostics.
 Size: README rule 9's.
 
+### 06.s2 A run never goes silent after a told turn
+Added during the run (decisions.md, 13.85), reopening 13.71's watch.
+Scope: four live runs went silent after a turn and were cancelled by the
+host about 35 s later: `follow-up/chat` 01 and 06 (16:44Z, a `wait`
+ended by a crossing line), `parallel-children/reviews` 03 (18:19Z) and
+`slow-completion` 06 (`probes-slow-completion-ee17f028-20261012T205437Z/06`:
+response 2 `stop: end`, two blocks, no call, at 86,887 ms; nothing more
+until the cancel at 121,891 ms), each owing the next completion (run.md,
+6 and 7.2: "An LLM that stops without finishing is nudged"). None
+reproduced in a world (05.s1, 06.s1). The first move is one live
+diagnostic arm (README rule 11, a worktree commit that never lands):
+on standard error, in the product and the agent, each turn told, saved
+and acknowledged, each completion requested, held and released, and
+each nudge due and sent; built as an arm, `parallel-children/reviews`
+(12) and `slow-completion` (6) on it, each once. Then a world story of
+what it shows, failing on the parent, and the fix there.
+Needs: nothing.
+Files: the diagnostic arm's (never landed); then the crate the
+diagnostics name, and the story's world test file.
+Shape: no new type.
+Test shape: one story of the shown sequence, failing on the parent.
+Under 0.5 s.
+Proof: that story, once; then both probes once, live, with no run
+silent until the host's cancel.
+Don't: widen a grace, a watchdog or `unacknowledged_bytes`; add a retry
+or a timer. If the arm's 18 runs show no silence, stop and ask with
+them.
+Size: README rule 9's.
+
 ### 06.12 The last failure's kept detail
 Scope: the session keeps the detail of the last failure it met, within
 `failure_bytes`, each later failure replacing it, and hands it up with
