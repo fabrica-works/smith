@@ -407,12 +407,17 @@ Scope (shell.md, 4.2 and 4.3; events.md, 5.2): the command and its usage
 errors; the headless local domain composed inline (`compose`); chats by
 workspace, a new one named in `session.started` and on standard error,
 `--chat`, `--ephemeral`, `--deliver`; the result on standard output and
-`-o FILE`; standard error's status from the records, provider text
-clipped; the last line from smith 06's words; the code from
+`-o FILE`; standard error's status from what the local host hears of
+the run (its told turns, notices and answer), never from the records,
+provider text clipped (shell.md, 4.2, settled 2026-10-12); the last line from smith 06's words; the code from
 `ExitStatus`; a forced exit's warning; `--json`, `--trace` and `[trace]`
-sinks; `session.started` with mode `exec` and `versions.chat_store`.
+sinks, standard output under `--json` adopted by what it is (a regular
+file by `adopt_append`, a pipe or a terminal by `adopt_write_pipe` under
+the same write deadline) through the agent service's one sink owner; `session.started` with mode `exec` and `versions.chat_store`.
 Needs: smith 03's product stream [03.7]; smith 06's words function,
-`smith_events::words` [06.2].
+`smith_events::words` [06.2]; for `--json` on a pipe only, skein's write
+pipe with a stated write deadline (skein's `io.md`, 5.1), a skein step
+its supervisor names, pinned.
 Files: `smith-local-shell` (`command.rs`, `compose.rs`,
 `front/headless.rs`, `local_host.rs`); `smith-local-service`;
 `smith-events` (`records.rs:401`, `read.rs`, `write.rs`) and the users of
@@ -441,7 +446,8 @@ Also `smith_exec_json_ends_accepted_with_its_events_and_exit_0`,
 `the_trace_file_is_read_as_it_grows`. Ceilings: 20 ms, 2 s.
 Proof: process, the test above; once, under 2 s; live in 10.15.
 Don't: `exec` never signs in; no agent configuration file; no words
-function beside smith 06's.
+function beside smith 06's; no reading of the product's own event
+records, and no in-process pipe or second producer for them.
 Size: at most 600.
 Removes: nothing.
 
