@@ -645,6 +645,7 @@ fn copy_prompt(prompt: &llm::Prompt) -> llm::Prompt {
         })
         .collect();
     let copied = llm::Prompt {
+        purpose: prompt.purpose,
         choice: prompt.choice.clone(),
         namespace: prompt.namespace.clone(),
         affinity: prompt.affinity,

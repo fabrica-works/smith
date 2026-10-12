@@ -18,14 +18,15 @@ use smith_domain_run as run;
 use smith_domain_tools as tools;
 
 pub use smith_domain_session::llm::{
-    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Limit, NotRun, Phase, Problem, Replay, Role, Stop,
-    Usage,
+    Affinity, Cap, CompletionName, Endpoint, Evidence, Failure, Limit, NotRun, Phase, Problem, Purpose, Replay, Role,
+    Stop, Usage,
 };
 
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct Prompt {
+    pub purpose: Purpose,
     /// Whether this completion belongs to main or a child, for nesting refusals.
     pub asker: Asker,
     pub endpoint: Endpoint,

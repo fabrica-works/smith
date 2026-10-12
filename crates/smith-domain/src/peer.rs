@@ -239,6 +239,7 @@ impl Peer {
     /// resolved, the answers copied.
     pub(crate) fn prompt(&self, prompt: sllm::Prompt) -> Prompt {
         let sllm::Prompt {
+            purpose,
             endpoint,
             affinity,
             protocol_allowance: _,
@@ -276,6 +277,7 @@ impl Peer {
             resolved.push(Message { role, content: blocks.into_boxed() }).expect("room for every message");
         }
         Prompt {
+            purpose,
             asker: if self.is_main() { llm::Asker::Main } else { llm::Asker::Child },
             endpoint,
             affinity,

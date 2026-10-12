@@ -55,7 +55,7 @@ fn appended_bytes(conversation: &Conversation) -> Option<u64> {
 }
 
 /// Count the same owned prompt form as the session's emitted request without copying it.
-fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
+pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
     let fixed = spec_cost(&conversation.model, &conversation.system, &conversation.delegated, &[])?;
     let mut bytes = fixed
         .checked_add(u64::try_from(size_of::<crate::llm::Prompt>()).ok()?)?

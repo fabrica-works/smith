@@ -1047,6 +1047,7 @@ pub(crate) mod tests {
 
     pub(crate) fn prompt(thread: u32) -> llm::Prompt {
         llm::Prompt {
+            purpose: llm::Purpose::Ordinary,
             endpoint: llm::Endpoint(0),
             affinity: llm::Affinity { key: [0; 16], thread },
             asker: llm::Asker::Main,

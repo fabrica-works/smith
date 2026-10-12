@@ -161,6 +161,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     assert!(live_text.ends_with(b"[next line 6] [window clamped: 99 bytes to 32 bytes]"));
     let history = llm::Prompt {
+        purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
@@ -192,6 +193,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
 #[test]
 fn written_text_and_mechanical_feedback_keep_their_error_flags() {
     let history = llm::Prompt {
+        purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
         affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
@@ -242,6 +244,7 @@ fn written_text_and_mechanical_feedback_keep_their_error_flags() {
 fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
     for name in [b"write".as_slice(), b"edit"] {
         let history = llm::Prompt {
+            purpose: llm::Purpose::Ordinary,
             choice: smith_domain::llm::ToolChoice::Auto,
             namespace: tools::Namespace::One,
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
@@ -305,4 +308,87 @@ fn command_clamps_are_rendered_without_losing_the_exit_or_omitted_output() {
     let (text, error) = adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("command feedback");
     assert_eq!(text.as_ref(), b"exit code 1\nfirst\n... 100 bytes dropped ...\nlast\n[timeout clamped: 9000 ms to 5000 ms]\n[output clamped: 99 bytes to 12 bytes]");
     assert!(error);
+}
+
+fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
+    let earlier = llm::Block::ToolResult {
+        id: b"earlier".as_slice().into(),
+        result: llm::Returned::Text { text: vec![b'x'; 512].into(), error: false, replay: None },
+    };
+    let text = "é界🦀".repeat(40).into_bytes();
+    let owed = Box::new([
+        llm::Block::ToolResult {
+            id: b"read".as_slice().into(),
+            result: llm::Returned::Owned {
+                outcome: tools::Outcome::Read {
+                    content: text.clone().into(),
+                    first: 1,
+                    lines: 1,
+                    total: 1,
+                    cut: tools::Cut::Whole,
+                    next: tools::Next::End,
+                    window: tools::BytesClamp::Within,
+                },
+            },
+        },
+        llm::Block::ToolResult {
+            id: b"host".as_slice().into(),
+            result: llm::Returned::Text { text: text.into(), error: true, replay: None },
+        },
+    ]);
+    llm::Prompt {
+        purpose,
+        choice: llm::ToolChoice::Auto,
+        namespace: tools::Namespace::One,
+        affinity: llm::Affinity { key: [0; 16], thread: 0 },
+        asker: llm::Asker::Main,
+        endpoint: llm::Endpoint(1),
+        model: b"model".as_slice().into(),
+        system: b"the same system".as_slice().into(),
+        tools: tools::Grants { inspect: false, modify: false, shell: false },
+        served: Box::new([]),
+        messages: Box::new([
+            llm::Message { role: llm::Role::User, content: Box::new([earlier]) },
+            llm::Message {
+                role: llm::Role::Assistant,
+                content: Box::new([llm::Block::Text { text: b"prior answer".as_slice().into(), replay: None }]),
+            },
+            llm::Message { role: llm::Role::User, content: owed },
+            llm::Message {
+                role: llm::Role::User,
+                content: Box::new([llm::Block::Text { text: b"Summarise the work.".as_slice().into(), replay: None }]),
+            },
+        ]),
+        max_tokens: 32,
+    }
+}
+
+#[test]
+fn a_compactions_owed_results_are_cut_and_its_history_is_unchanged() {
+    let bounds = limits();
+    let ordinary = adapter::prompt(owed_results_prompt(llm::Purpose::Ordinary), &[], &bounds).expect("admitted prompt");
+    let summary = adapter::prompt(owed_results_prompt(llm::Purpose::Compaction { room: 160 }), &[], &bounds)
+        .expect("admitted prompt");
+    assert_eq!(summary.instructions, ordinary.instructions);
+    assert_eq!(summary.tools, ordinary.tools);
+    assert_eq!(summary.messages[..2], ordinary.messages[..2]);
+    assert_eq!(summary.messages[3], ordinary.messages[3]);
+    let mut kept = 0;
+    for (actual, whole) in summary.messages[2].content.iter().zip(ordinary.messages[2].content.iter()) {
+        let skein_llm::Block::ToolResult { text, is_error, .. } = actual else { panic!("owed result") };
+        let skein_llm::Block::ToolResult { text: original, is_error: old_error, .. } = whole else {
+            panic!("ordinary result")
+        };
+        assert_eq!(is_error, old_error);
+        assert!(text.len() <= 80);
+        kept += text.len();
+        let (prefix, marker) =
+            core::str::from_utf8(text).expect("rendered UTF-8").split_once("\n[").expect("cut marker");
+        assert!(original.starts_with(prefix.as_bytes()));
+        let omitted = marker.split(' ').next().expect("omitted count").parse::<usize>().expect("decimal count");
+        assert_eq!(omitted, original.len() - prefix.len());
+        assert!(marker.ends_with(" bytes omitted]"));
+        assert!(original.len() > 80);
+    }
+    assert!(kept <= 160);
 }

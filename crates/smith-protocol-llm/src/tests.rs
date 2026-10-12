@@ -210,6 +210,7 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
 fn described_prompt() -> smith_domain::llm::Prompt {
     use smith_domain::llm;
     llm::Prompt {
+        purpose: llm::Purpose::Ordinary,
         choice: llm::ToolChoice::Auto,
         namespace: tools::Namespace::One,
         asker: llm::Asker::Main,
@@ -524,5 +525,27 @@ fn every_size_refusal_at_numeric_maxima_fits_the_derived_result_with_its_units()
         assert!(text.contains(&format!("18446744073709551615 {unit}")), "observed size: {text}");
         assert!(text.contains(&format!("bound 4294967295 {unit}")), "exceeded bound: {text}");
         assert!(!text.contains("omitted"), "the longest form must fit: {text}");
+    }
+}
+
+#[test]
+fn owed_results_past_their_room_are_cut_with_markers() {
+    let room = 160;
+    let original = "é界🦀".repeat(30);
+    let outcome = tools::Outcome::Exited {
+        exit: tools::Exit::Code { code: 0 },
+        head: original.as_bytes().into(),
+        tail: Box::new([]),
+        dropped: 0,
+        timeout: tools::TimeoutClamp::Within,
+        output: tools::BytesClamp::Within,
+    };
+    let (cut, error) = render_outcome(&outcome, &tools::Namespace::One, room / 2).unwrap();
+    assert!(!error);
+    for result in [cut, crate::render::cut_text(original.as_bytes().into(), room / 2)] {
+        let text = core::str::from_utf8(&result).unwrap();
+        assert!(result.len() <= 80);
+        assert!(text.contains("\n["));
+        assert!(text.ends_with(" bytes omitted]"));
     }
 }

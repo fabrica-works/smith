@@ -39,6 +39,7 @@ enum Family {
 #[must_use]
 pub fn query(prompt: agent::Prompt, tickets: &Tickets) -> provider::Query {
     let agent::Prompt {
+        purpose: _,
         endpoint: _,
         affinity,
         protocol_allowance: _,

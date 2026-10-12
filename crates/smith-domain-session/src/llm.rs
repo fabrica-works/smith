@@ -233,10 +233,20 @@ pub struct Affinity {
     pub thread: u32,
 }
 
+/// Why the session asks for a completion (domain/session.md, section 8.2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Purpose {
+    /// An ordinary completion keeps every result at its declared render bound.
+    Ordinary,
+    /// A summary completion shares this room in bytes among its owed results.
+    Compaction { room: u64 },
+}
+
 /// One call to an LLM: everything it needs to produce the next assistant
 /// message.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Prompt {
+    pub purpose: Purpose,
     pub endpoint: Endpoint,
     pub affinity: Affinity,
     /// The opening's measured protocol contribution, included in input pricing.

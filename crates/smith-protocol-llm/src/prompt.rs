@@ -72,6 +72,7 @@ fn translate(
         choice,
         messages,
         max_tokens,
+        purpose,
     } = input;
     let mut offered = List::with_capacity(
         u32::try_from(application.len().checked_add(served.len()).ok_or(Error::Limit)?).or(Err(Error::Limit))?,
@@ -107,11 +108,14 @@ fn translate(
             shared::ToolChoice::Only(names.into_boxed())
         }
     };
+    let owed_message = messages.len().checked_sub(2);
+    let result_maximum = owed_result_bound(purpose, &messages, limits.rendered_result)?;
     let mut translated = List::with_capacity(u32::try_from(messages.len()).or(Err(Error::Limit))?);
-    for message in messages {
+    for (index, message) in messages.into_iter().enumerate() {
+        let maximum = if Some(index) == owed_message { result_maximum } else { limits.rendered_result };
         let mut content = List::with_capacity(u32::try_from(message.content.len()).or(Err(Error::Limit))?);
         for block in message.content {
-            let block = translate_block(block, &namespace, &choice, limits)?;
+            let block = translate_block(block, &namespace, &choice, limits, maximum)?;
             content.push(block).expect("room for each admitted source block");
         }
         let role = match message.role {
@@ -133,6 +137,34 @@ fn translate(
         },
         served,
     ))
+}
+
+fn owed_result_bound(purpose: llm::Purpose, messages: &[llm::Message], maximum: u32) -> Result<u32, Error> {
+    let room = match purpose {
+        llm::Purpose::Ordinary => return Ok(maximum),
+        llm::Purpose::Compaction { room } => room,
+    };
+    let message = match messages.len().checked_sub(2) {
+        Some(index) => messages.get(index),
+        None => None,
+    };
+    let Some(message) = message else { return Ok(maximum) };
+    let mut owed = 0_u64;
+    for block in &message.content {
+        match block {
+            llm::Block::ToolResult { .. } => owed = owed.checked_add(1).ok_or(Error::Limit)?,
+            llm::Block::Text { .. }
+            | llm::Block::Refusal { .. }
+            | llm::Block::Opaque { .. }
+            | llm::Block::ToolCall { .. } => {}
+        }
+    }
+    let Some(share) = room.checked_div(owed) else { return Ok(maximum) };
+    let maximum = u32::try_from(share).unwrap_or(u32::MAX).min(maximum);
+    if maximum < crate::render::CUT_MARKER_BYTES {
+        return Err(Error::Limit);
+    }
+    Ok(maximum)
 }
 
 fn served_name(descriptor: &llm::Served) -> &[u8] {
@@ -381,6 +413,7 @@ fn translate_block(
     namespace: &tools::Namespace,
     choice: &llm::ToolChoice,
     limits: &Limits,
+    maximum: u32,
 ) -> Result<shared::Block, Error> {
     match block {
         llm::Block::Text { text, replay } => Ok(shared::Block::Text { text, replay: replay_value(replay, limits)? }),
@@ -398,7 +431,7 @@ fn translate_block(
             Ok(shared::Block::ToolCall { id, name, arguments: input, replay: replay_value(replay, limits)? })
         }
         llm::Block::ToolResult { id, result } => {
-            let (text, error) = result_text(result, namespace, choice, limits)?;
+            let (text, error) = result_text(result, namespace, choice, limits, maximum)?;
             Ok(shared::Block::ToolResult { id, text, is_error: error })
         }
     }
@@ -409,26 +442,27 @@ fn result_text(
     namespace: &tools::Namespace,
     choice: &llm::ToolChoice,
     limits: &Limits,
+    maximum: u32,
 ) -> Result<(Box<[u8]>, bool), Error> {
     match result {
         llm::Returned::Text { text, error, replay } => match replay {
             Some(_) => Err(Error::Unsupported),
-            None => Ok((crate::render::cut_text(text, limits.rendered_result), error)),
+            None => Ok((crate::render::cut_text(text, maximum), error)),
         },
         llm::Returned::Withdrawn => Ok((bytes::copy_of(b"withdrawn"), true)),
         llm::Returned::NotRun { why } => match why {
             llm::NotRun::Stopped => Ok((bytes::copy_of(b"not run"), true)),
-            llm::NotRun::OutsideChoice => Ok((outside_choice(choice, limits.rendered_result)?, true)),
+            llm::NotRun::OutsideChoice => Ok((outside_choice(choice, maximum)?, true)),
         },
-        llm::Returned::Invalid { problem } => Ok((crate::failure::problem(problem, limits.rendered_result)?, true)),
+        llm::Returned::Invalid { problem } => Ok((crate::failure::problem(problem, maximum)?, true)),
         llm::Returned::Served { returned, error } => {
             let value = smith_domain::feedback(returned, u64::from(limits.rendered_result)).or(Err(Error::Limit))?;
             if value.error != error {
                 return Err(Error::Invalid);
             }
-            Ok((value.text, value.error))
+            Ok((crate::render::cut_text(value.text, maximum), value.error))
         }
-        llm::Returned::Owned { outcome } => crate::render::render_outcome(&outcome, namespace, limits.rendered_result),
+        llm::Returned::Owned { outcome } => crate::render::render_outcome(&outcome, namespace, maximum),
     }
 }
 

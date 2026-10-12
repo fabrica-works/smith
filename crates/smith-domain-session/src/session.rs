@@ -2107,7 +2107,32 @@ fn spent(conversation: &Conversation, now: Time) -> Option<Dimension> {
 fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &Limits) -> Request {
     let left = conversation.budget.output.saturating_sub(conversation.reported.output_tokens.unwrap_or(0));
     let max_tokens = u32::try_from(left).unwrap_or(u32::MAX).min(conversation.output);
+    let purpose = if conversation.compaction.asking() {
+        let mut history = compaction::prompt_bytes(conversation).unwrap_or(u64::MAX);
+        for message in conversation.transcript.iter().rev().take(2) {
+            history = history.saturating_sub(content_cost(&message.content).unwrap_or(0));
+            history = history.saturating_sub(u64::try_from(size_of::<Message>()).expect("fixed cell fits"));
+        }
+        let history = match conversation.window.last_prompt {
+            Some(prompt) => prompt.0.saturating_add(conversation.window.last_output.0),
+            None => history.saturating_add(conversation.protocol_allowance),
+        };
+        let window = u64::from(conversation.model_window);
+        let threshold = window
+            .checked_mul(u64::from(limits.threshold[0]))
+            .expect("u32 product fits")
+            .checked_div(u64::from(limits.threshold[1]))
+            .expect("validated threshold");
+        let room = window
+            .saturating_sub(history.min(threshold))
+            .saturating_sub(u64::try_from(conversation.summary.len()).expect("bounded summary"))
+            .saturating_sub(u64::from(conversation.output));
+        crate::llm::Purpose::Compaction { room }
+    } else {
+        crate::llm::Purpose::Ordinary
+    };
     let prompt = Prompt {
+        purpose,
         protocol_allowance: conversation.protocol_allowance,
         endpoint: conversation.endpoint,
         affinity: conversation.affinity,

@@ -4,6 +4,7 @@ use smith_session_world::assert_prompt_extends;
 
 fn prompt() -> Prompt {
     Prompt {
+        purpose: smith_domain_session::llm::Purpose::Ordinary,
         choice: smith_domain_session::llm::ToolChoice::Auto,
         protocol_allowance: 0,
         namespace: smith_domain_tools::Namespace::One,
