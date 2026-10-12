@@ -40,6 +40,10 @@ fn declarations() -> Configuration {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "UTF-8 fixture slices feed an independent test encoder, programming-model.md section 10.2"
+)]
 fn a_payload_sized_write_fits_the_stated_whole_call_input() {
     let mut selected = profile();
     selected.declared.tool_payload = 40_960;
@@ -54,7 +58,8 @@ fn a_payload_sized_write_fits_the_stated_whole_call_input() {
     let path = core::str::from_utf8(&path_bytes).expect("admitted UTF-8 path");
     assert_eq!(path.len(), 256, "the derived path ceiling");
     for byte in [b'a', b'\n', 0] {
-        let content = [byte; 40_960];
+        let mut content = skein_lib::bytes::zeroed(40_960);
+        content.fill(byte);
         let content = core::str::from_utf8(&content).expect("admitted UTF-8 content");
         let input =
             serde_json::to_vec(&serde_json::json!({"path": path, "content": content})).expect("valid write JSON");
