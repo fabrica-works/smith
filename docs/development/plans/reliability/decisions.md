@@ -1515,3 +1515,25 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    names appear in `tests.rs` and `validate.rs`; with `--no-filename` it
    prints 4. A plan defect, mine: the command gains `--no-filename`, and
    session 04 is done.
+70. **skein-07.s3: a reasoning summary's parts are not output items**
+   (block of 2026-10-12T19:24:58Z, smith 13.6; the designer's answer of
+   19:30:20Z, skein bdbe1fd0). 13.6's slow completion made no call and
+   failed `output_items` 10: skein's Codex decoder bounds a part's index
+   within an item as if it were an item, and a high-effort summary
+   writes many parts. A skein step, 07.s3; smith takes it with
+   smith-10.10's repin, as 13.67's 07.s2, and 13.6's `slow-completion`
+   runs once after that repin as both steps' live proof. 13.6 counts its
+   run as that skein defect; 13.7 goes on meanwhile (steer of 19:26:14Z).
+71. **06.s1 closes as not reproduced; a recurrence reopens it** (block of
+   2026-10-12T19:30:00Z, smith 06.s1). The one live diagnostic arm
+   (13.64) reproduced neither failure: `history` passed, and
+   `parallel-children/reviews` ran 12 (3 passes, 9 model deviations),
+   each exit 0, answered, not aborted; `follow-up/chat` passed 24 of 24
+   on `main` (05.s1). Three failures in about 50 live runs earlier, none
+   in 37 since, on a `main` that has moved (03.10, 06.7, 06.12, 06.13,
+   04.s1, 04.s2 landed between). Ruling: 06.s1 lands its process story as
+   coverage, with no production change, its commit body naming the arm's
+   counts and the three original runs. Any later live run that ends
+   "Agent process failed", or silent until the host's cancel, is reported
+   with its raw run as a smith defect, and the supervisor then adds a
+   step with that run's diagnostics.

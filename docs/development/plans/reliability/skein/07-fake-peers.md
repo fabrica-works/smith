@@ -31,3 +31,27 @@ otherwise none, the commit body saying why. Under 20 ms.
 Proof: that test once, or the gate.
 Don't: skip any other error.
 Size: at most 10 production lines.
+
+### 07.s3 A reasoning summary's parts are not output items
+Added during the run (decisions.md, 13.70), from the designer's answer
+of 2026-10-12T19:30:20Z (skein bdbe1fd0, llm.md sections 2, 4.2 and 5).
+Scope: the Codex decoder refuses a delta whose part index reaches
+`output_items` (`crates/skein-llm/src/openai/response.rs:473-477`); for a
+reasoning delta that index is `summary_index` (:380-381), so a
+high-effort summary of ten or more parts fails as `Limit`
+(smith 13.6's `probes-slow-completion-d104cecb-20261012T192137Z/01`).
+llm.md now: "A part's index within an item ... is not an output item".
+The sub-index check goes; the kind check and the bytes against the
+answer stay.
+Needs: nothing.
+Files: `crates/skein-llm/src/openai/response.rs`; its tests.
+Shape: no new type.
+Test shape: llm.md section 5's story: a Codex reasoning summary of more
+parts than output items, and a message of more content parts, complete,
+their deltas forwarded with their indexes, under limits whose output
+items are two; it fails on the parent. Under 20 ms.
+Proof: that test, once; smith's `probes/slow-completion` once after
+smith-10.10's repin takes it.
+Don't: change `output_items` or its formula, the item checks at :329 and
+:498, or the Anthropic decoder's block index check.
+Size: at most 20 production lines.
