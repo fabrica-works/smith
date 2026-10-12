@@ -246,6 +246,9 @@ impl Host for Browser {
     fn next_deadline(&self) -> Option<Time> {
         self.io.next_deadline()
     }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        None
+    }
     fn is_empty(&self) -> bool {
         self.ended
             && self.io.is_empty()

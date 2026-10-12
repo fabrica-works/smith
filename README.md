@@ -42,7 +42,7 @@ gate's timeout. Each world keeps its own fakes and independent
 expectations; generic harness mechanisms are reused from `skein_world`
 and tested in skein.
 
-Dependencies on skein use `https://git.ekanayaka.io/ai/skein.git` without
+Dependencies on skein use `https://github.com/forgetic/skein.git` without
 `rev`, `branch` or `tag`; `Cargo.lock` pins the revision. smith, jig and
 temper must resolve the same skein revision when composed. Changes to
 shared mechanisms land in skein first; smith and its consumers then take

@@ -396,6 +396,10 @@ impl Host for Output {
     fn next_deadline(&self) -> Option<Time> {
         self.trace_poll
     }
+    /// The trace poll paces settlement; it is no policy deadline.
+    fn next_policy_deadline(&self) -> Option<Time> {
+        None
+    }
     fn is_empty(&self) -> bool {
         self.input.is_none()
             && self.stream.is_none()
@@ -452,6 +456,9 @@ impl Host for Process {
     }
     fn next_deadline(&self) -> Option<Time> {
         self.host().next_deadline()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.host().next_policy_deadline()
     }
     fn is_empty(&self) -> bool {
         self.host().is_empty()

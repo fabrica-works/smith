@@ -296,6 +296,9 @@ pub struct Run {
     shutdown: bool,
     end: Option<Time>,
     failed_turn: Option<std::path::PathBuf>,
+    /// The provider's scripted reply delay, which an interrupted turn leaves
+    /// to run out: the scenario's last word (skein's testing-strategy.md, 6).
+    delay: Option<Time>,
 }
 impl Run {
     /// Prepare the scenario's policy, repository face and observed-token check.
@@ -329,6 +332,7 @@ impl Run {
             shutdown: false,
             end: None,
             failed_turn: None,
+            delay: None,
         }
     }
 
@@ -411,6 +415,11 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         let peer =
             procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p.as_ref()) } else { None }).expect("provider");
         assert!(crate::llm::queries(peer).count() <= 64, "bounded provider work");
+        if self.interrupt_on_query
+            && let Some(delay) = peer.next_policy_deadline()
+        {
+            self.delay = Some(self.delay.map_or(delay, |known| known.max(delay)));
+        }
         let authenticated = procs.iter().any(|p| matches!(p, Proc::Issuer(_)));
         if authenticated && !self.saved_before_query && crate::llm::queries(peer).next().is_some() {
             let tokens = smith_local_shell::local_tokens::Tokens::new(
@@ -494,5 +503,8 @@ impl skein_world::Referee<crate::process::Proc> for Run {
     }
     fn passed(&self) -> bool {
         self.reviewed && matches!(self.meeting.verdict(), skein_world::domain::Verdict::Passed)
+    }
+    fn last_word(&self) -> skein_world::LastWord {
+        self.delay.map_or(skein_world::LastWord::LastExpectation, skein_world::LastWord::After)
     }
 }

@@ -335,6 +335,10 @@ impl Host for Agent {
         if self.result.is_none() { service::next_deadline(&self.service) } else { None }
     }
 
+    fn next_policy_deadline(&self) -> Option<Time> {
+        if self.result.is_none() { service::next_policy_deadline(&self.service) } else { None }
+    }
+
     fn is_empty(&self) -> bool {
         self.result.is_some() && self.closing == 0 && self.completions.is_empty() && self.submissions.is_empty()
     }
