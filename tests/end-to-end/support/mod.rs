@@ -541,3 +541,64 @@ pub fn refused_run(scratch: &Scratch) -> Vec<smith_events::Record> {
 pub fn trace_path(directory: &Path, in_process: bool) -> std::path::PathBuf {
     directory.join(if in_process { "agent-trace.jsonl" } else { "agent-trace.jsonl.agent" })
 }
+
+/// Outside observations of one product invocation on pipes.
+pub struct Ran {
+    pub code: u8,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// A user layer confined to this story's scratch configuration directory.
+#[must_use]
+pub fn user_layer(scratch: &Scratch, bytes: &[u8]) -> std::path::PathBuf {
+    let path = scratch.path().join("config/smith/config.toml");
+    std::fs::create_dir_all(path.parent().expect("user layer parent")).expect("scratch user directory");
+    std::fs::write(&path, bytes).expect("scratch user layer");
+    path
+}
+
+/// Drive the shipped product with only the scratch HOME and XDG locations.
+pub fn smith(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
+    assert_no_children();
+    let mut binary = Binary::start(
+        Command {
+            program: env!("CARGO_BIN_EXE_smith").into(),
+            arguments: arguments.iter().map(std::ffi::OsString::from).collect(),
+            environment: vec![
+                ("HOME".into(), scratch.path().into()),
+                ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+                ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+                ("PATH".into(), "/usr/bin:/bin".into()),
+            ],
+            directory: scratch.path().into(),
+        },
+        Mode::Pipes,
+        65_536,
+    )
+    .expect("shipped product pipes");
+    let streams = binary.take_streams().expect("product streams");
+    let descriptors = streams.descriptors();
+    let Streams::Pipes { input: stdin, output } = streams else { unreachable!("product on pipes") };
+    let clock = Clock::new();
+    let now = clock.now().now;
+    let mut world = real::World::new(Refusal { now, deadline: now.saturating_add(Duration::from_secs(1)) });
+    world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
+    world.spawn_with_fds(descriptors, || {
+        let mut commands = Vec::new();
+        if !input.is_empty() {
+            commands.push(smith_local_process_world::terminal::Action::Send(input.into()));
+        }
+        commands.push(smith_local_process_world::terminal::Action::Eof);
+        Process::Script(Proc::Terminal(Box::new(Terminal::piped(stdin, output, commands))))
+    });
+    let outcome = world.run(&clock, Duration::from_secs(2));
+    assert!(outcome.procs.iter().all(Host::is_empty), "product and person drain");
+    let Process::Binary(binary) = outcome.procs.first().expect("binary observation") else { unreachable!("binary") };
+    let Process::Script(Proc::Terminal(person)) = outcome.procs.get(1).expect("person observation") else {
+        unreachable!("person")
+    };
+    let Some(Exit::Code(code)) = binary.exit_status() else { panic!("product exit code") };
+    assert_no_children();
+    Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }
+}

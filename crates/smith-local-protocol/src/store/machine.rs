@@ -64,6 +64,9 @@ pub struct Store {
 }
 
 impl Store {
+    /// The stored record format version this codec writes and reads.
+    pub const FORMAT_VERSION: u64 = super::CHAT_STORE_VERSION;
+
     /// Adopt a chat directory's token and descriptor; the store closes it explicitly.
     #[must_use]
     pub fn new(

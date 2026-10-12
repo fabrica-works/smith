@@ -18,3 +18,8 @@ pub use v2::{
     ReserveParts, RunResult, RunResultParts, Section, SectionParts, TextRule, TextRuleParts, Tools, ToolsParts,
     VerdictRule, VerdictRuleParts,
 };
+
+impl Charter {
+    /// The wire format version this codec writes and reads.
+    pub const FORMAT_VERSION: u64 = 2;
+}

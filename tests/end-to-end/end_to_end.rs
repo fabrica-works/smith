@@ -346,3 +346,62 @@ fn the_agents_trace_header_carries_its_effective_limits() {
     assert!(header.limits.iter().any(|limit| limit.name.as_ref() == b"declared.memory"));
     assert!(header.limits.iter().any(|limit| limit.name.as_ref() == b"session.history_bytes"));
 }
+
+#[test]
+fn a_refusal_in_the_user_layer_names_its_file_line_and_key() {
+    let scratch = Scratch::new();
+    let file = support::user_layer(&scratch, b"model = \"codex/gpt-6-luna\"\nmodle = 1\n");
+    let ran = support::smith(&scratch, &["check"], b"");
+    assert_eq!(ran.code, 2);
+    let line = String::from_utf8(ran.stderr).expect("UTF-8");
+    assert!(line.starts_with("smith: ") && line.contains(&format!("{}:2", file.display())) && line.contains("modle"));
+}
+
+#[test]
+fn smith_check_json_shows_each_value_with_its_layer() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, b"model='codex/gpt-6-luna'\neffort='low'\n");
+    let directory = scratch.path().join(".smith");
+    std::fs::create_dir(&directory).expect("repository layer");
+    std::fs::write(directory.join("config.toml"), b"[environment.set]\nREPO='repository-value'\n")
+        .expect("repository environment");
+    let ran = support::smith(&scratch, &["check", "--json", "-c", "effort='high'"], b"");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
+    assert_eq!(report["version"], 1);
+    assert_eq!(report["settings"]["values"]["model"]["origin"]["layer"], "user");
+    assert_eq!(report["settings"]["values"]["effort"]["value"], "high");
+    assert_eq!(report["settings"]["values"]["effort"]["origin"]["kind"], "override");
+    assert_eq!(report["settings"]["values"]["environment.set.REPO"]["origin"]["layer"], "repository");
+    assert!(!String::from_utf8_lossy(&ran.stdout).contains("repository-value"));
+    assert_eq!(
+        report["formats"],
+        serde_json::json!({"channel":2,"charter":2,"transcript":3,"events":1,"chat_store":1,"check":1})
+    );
+    for tool in ["sh", "rg", "git"] {
+        assert!(report["tools"][tool].as_str().expect("tool path").starts_with('/'));
+    }
+    assert!(report["build"]["build"].as_str().is_some_and(|identity| !identity.is_empty()));
+}
+
+#[test]
+fn a_repository_layer_setting_an_account_is_refused_naming_the_file() {
+    let scratch = Scratch::new();
+    let directory = scratch.path().join(".smith");
+    std::fs::create_dir(&directory).expect("repository layer");
+    let file = directory.join("config.toml");
+    std::fs::write(&file, b"[accounts.codex]\nsource='borrow'\n").expect("account authority");
+    let ran = support::smith(&scratch, &["check"], b"");
+    assert_eq!(ran.code, 2);
+    let line = String::from_utf8(ran.stderr).expect("UTF-8");
+    assert!(line.contains(&file.display().to_string()) && line.contains("accounts") && line.contains("authority"));
+}
+
+#[test]
+fn an_override_past_its_bound_is_refused_naming_the_override() {
+    let scratch = Scratch::new();
+    let ran = support::smith(&scratch, &["check", "-c", "budget.turns=4294967296"], b"");
+    assert_eq!(ran.code, 2);
+    let line = String::from_utf8(ran.stderr).expect("UTF-8");
+    assert!(line.contains("-c override 1") && line.contains("budget.turns") && line.contains("bound"));
+}

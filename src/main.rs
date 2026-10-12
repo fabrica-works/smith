@@ -16,6 +16,9 @@ const USAGE: &str = "usage: smith agent CONFIG.json | smith local SETTINGS.json 
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().collect();
+    if let Some(code) = smith_local_shell::check::command(&args) {
+        return ExitCode::from(code);
+    }
     let result = if args.len() == 3 && args.get(1).is_some_and(|command| command == "agent") {
         return match agent_shell::run(
             Path::new(args.get(2).expect("configuration or settings argument counted")),

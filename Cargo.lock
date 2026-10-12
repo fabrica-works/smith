@@ -1137,6 +1137,7 @@ dependencies = [
  "smith-protocol-machine",
  "smith-real-world",
  "smith-transcript",
+ "toml",
 ]
 
 [[package]]

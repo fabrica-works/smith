@@ -56,7 +56,9 @@ fn a_second_store_of_a_turn_still_expects_absence() {
     store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"turn") }, Time::ZERO, &mut out);
     let Some(Action::Domain(local::Event::TurnSaved { number: 1 })) = out.pop() else { panic!("turn terminal") };
     store.request(StoreRequest::SaveTurn { number: 1, read: None, opens_window: true, turn }, Time::ZERO, &mut out);
-    let file::Request::Store { expected: file::Expect::Absent, .. } = io(&mut out) else { panic!("immutable turn") };
+    let file::Request::Store { expected: file::Expect::Absent, .. } = io(&mut out) else {
+        panic!("a turn always expects its file absent")
+    };
 }
 
 #[test]

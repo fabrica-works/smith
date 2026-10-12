@@ -24,3 +24,8 @@ pub use v3::{
     Text, TextParts, TimeoutClamp, TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts,
     Usage, UsageParts, WorkingPath, WorkingPathParts, Written, WrittenParts,
 };
+
+impl Turn {
+    /// The wire format version this codec writes and reads.
+    pub const FORMAT_VERSION: u64 = 3;
+}

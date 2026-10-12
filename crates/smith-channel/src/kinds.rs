@@ -146,6 +146,11 @@ fn required_terms_gap(
     None
 }
 
+impl KindRule {
+    /// The wire format version this codec writes and reads.
+    pub const FORMAT_VERSION: u64 = 2;
+}
+
 #[cfg(test)]
 mod optional_tests {
     use super::{Body, KindRule, required_terms_gap};

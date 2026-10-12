@@ -6,10 +6,13 @@
 mod local_auth;
 mod local_auth_http;
 
+pub mod check;
+pub mod command;
 pub mod local_host;
 pub mod local_settings;
 pub mod local_shell;
 pub mod local_tokens;
+pub mod settings;
 
 #[cfg(test)]
 mod local_auth_tests;

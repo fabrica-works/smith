@@ -29,7 +29,7 @@ pub enum StoreRequest {
     Load,
     /// Durably reserve the chat's next activation or reset its history.
     SaveState { state: ChatState, history: History },
-    /// Keep one immutable conversation turn and its read fence.
+    /// Store one conversation turn with `Expect::Absent` and its read fence.
     SaveTurn { number: u32, read: Option<Token>, opens_window: bool, turn: smith_domain::Turn },
     /// Replace a delivery intent or its terminal decision.
     SaveDelivery { record: Box<DeliveryRecord> },
@@ -40,7 +40,7 @@ pub enum StoreRequest {
 pub enum RecordName {
     /// Chat metadata, including the next activation.
     State,
-    /// An immutable numbered conversation turn.
+    /// A numbered conversation turn stored only where its file is absent.
     Turn(u32),
     /// One delivery intent or answer under its stable call name.
     Delivery(smith_domain::run::CallName),

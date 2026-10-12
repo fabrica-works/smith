@@ -140,10 +140,29 @@ impl Terminal {
         person
     }
 
+    /// The same scripted person on a shipped binary's separate input and output pipes.
+    #[must_use]
+    pub fn piped(input: kernel::Fd, output: kernel::Fd, commands: Vec<Action>) -> Self {
+        let mut person = Self::new(input, commands);
+        while person.requests.pop().is_some() {}
+        person.root = None;
+        person.root_closed = true;
+        person.input = Some(person.io.adopt_write_pipe(input).expect("person input pipe"));
+        let output = person.io.adopt_read_pipe(output).expect("person output pipe");
+        person.output = Some(output);
+        person.read(output);
+        person
+    }
+
     /// The binary observer supplies only the child's externally observed exit.
     pub fn finished(&mut self, exit: kernel::Exit) {
         self.exit = Some(exit);
         self.commands.clear();
+        if self.sending.is_none()
+            && let Some(input) = self.input.take()
+        {
+            self.requests.push(io::Request::Close { entity: input });
+        }
     }
 
     fn terminal_iterate(&mut self) {
