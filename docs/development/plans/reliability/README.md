@@ -217,6 +217,16 @@ do not already say.
     a run after a change to the increment's code, tests or fixtures, with
     none in place, is ordinary work, and is not counted (decisions.md,
     13.38).
+12. **The Pulse words never land** (decisions.md, 13.45). Before `land`,
+    on its rebased branch, an implementer runs, once:
+
+    ```
+    git diff origin/main -- . ':!docs' | grep -inE '^\+.*\b(actually|genuine|immutable|canonical|verified|qualified|robust|properly|python3)\b'
+    ```
+
+    It prints nothing; each line it prints is reworded to say what the
+    code does, with no synonym in its place. Words already on `main`
+    stay. Applies to every session, until the run ends.
 
 ## Proving what landed
 

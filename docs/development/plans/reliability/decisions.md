@@ -1180,3 +1180,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    Codex's outcome, and the missing attempts run in one more call, an
    exception to session 13's rule 1 ("once") because the defect was the
    supervisor's.
+45. **The Pulse words are checked before `land`** (the check of
+   2026-10-12T16:36:04Z). A Pulse word reached `main` a second time:
+   `immutable` in `benchmarks/README.md` (00.27, the check of 15:32:00Z,
+   reworded by 00.s1), then three times in 10.1 (8d9d5408:
+   `crates/smith-local-protocol/src/store/boundary.rs:32` and `:43`,
+   `src/tests/store.rs:59`). The words are the plan's (README, "Pulse"),
+   and only `plan pulse` read them, after the landing. README rule 12
+   has each implementer run one `git diff | grep` before `land`; the
+   words already on `main` from the first run stay. smith 10 rewords
+   10.1's three lines in its next landing, saying what the code does
+   (a turn is stored only where none is, `Expect::Absent`).
