@@ -12,6 +12,14 @@ const MODELS: [&str; 5] = [
     "anthropic/claude-haiku-5-5",
 ];
 
+/// Extra inherited names for a build toolchain, never patterns or values.
+pub(crate) fn build_homes(preset: &str) -> Option<&'static [&'static str]> {
+    match preset {
+        "rust" => Some(&["CARGO_HOME", "RUSTUP_HOME"]),
+        _ => None,
+    }
+}
+
 /// One provider's built-in endpoint, account metadata and known models.
 #[derive(Clone, Copy, Debug)]
 pub enum Preset {

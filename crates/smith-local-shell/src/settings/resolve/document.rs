@@ -3,7 +3,6 @@
 use super::super::{Refusal, Settings};
 use super::{Account, input, models::Model};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
 pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
     let mut document = json!({"name":input::text(settings,"profile")?,"declared":{},"policy":{}});
@@ -69,25 +68,7 @@ pub(super) fn profile(settings: &Settings) -> Result<Value, Refusal> {
 }
 
 pub(super) fn environment(settings: &Settings) -> Result<Vec<Value>, Refusal> {
-    let mut values = BTreeMap::new();
-    let inherited = input::sourced(settings, "environment.inherit")?.value.as_array().expect("schema array");
-    for name in inherited {
-        let name = name.as_str().expect("schema name");
-        if let Some(value) = std::env::var_os(name) {
-            let value = value
-                .into_string()
-                .map_err(|_| input::refuse(settings, "environment.inherit", "inherited value is not UTF-8"))?;
-            values.insert(name.to_string(), value);
-        }
-    }
-    for (key, value) in &settings.values {
-        if let Some(name) = key.strip_prefix("environment.set.") {
-            values.insert(
-                serde_json::from_str(name).unwrap_or_else(|_| name.into()),
-                value.value.as_str().expect("schema value").into(),
-            );
-        }
-    }
+    let values = super::super::environment::values(settings)?;
     Ok(values.into_iter().map(|(name, value)| json!({"name":name,"value":value})).collect())
 }
 

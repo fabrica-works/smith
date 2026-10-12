@@ -4,6 +4,7 @@
 use serde::Serialize;
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub(crate) mod environment;
 mod layers;
 pub mod resolve;
 mod schema;

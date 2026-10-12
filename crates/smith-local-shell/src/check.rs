@@ -7,6 +7,20 @@ use crate::{
 use serde::Serialize;
 use std::{collections::BTreeMap, ffi::OsString, os::unix::fs::PermissionsExt, path::PathBuf};
 
+pub(crate) mod warnings;
+
+/// A startup warning names its configuration source, never a variable's value.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Warning {
+    /// The kernel could not confirm one named cache's directory access.
+    CacheAccess { cache: PathBuf, reason: String },
+    /// A configured Rust wrapper lacks a listed, writable cache.
+    WrapperCache { configured_by: String, origin: Origin, cache: Option<PathBuf> },
+    /// Commands would receive a variable whose name suggests a credential.
+    CredentialLikeName { name: String, origin: Origin },
+}
+
 /// The version of check's JSON document, read by callers and the harness.
 pub const CHECK_VERSION: u64 = 1;
 
@@ -19,6 +33,8 @@ pub struct Report {
     pub build: serde_json::Value,
     pub tools: BTreeMap<&'static str, PathBuf>,
     pub environment: Vec<String>,
+    pub caches: Vec<PathBuf>,
+    pub warnings: Vec<Warning>,
     pub outside_models: BTreeMap<String, String>,
 }
 
@@ -40,14 +56,11 @@ pub fn report(settings: &Settings) -> Verdict {
         Err(why) => return Verdict::Refused(why),
     };
     let settings = &resolved.settings;
-    let inherited = settings.values.get("environment.inherit").and_then(|value| value.value.as_array());
-    let inherits_path = inherited.is_some_and(|names| names.iter().any(|name| name.as_str() == Some("PATH")));
-    let path = settings
-        .values
-        .get("environment.set.PATH")
-        .and_then(|value| value.value.as_str())
-        .map(OsString::from)
-        .or_else(|| inherits_path.then(|| std::env::var_os("PATH")).flatten());
+    let values = match settings::environment::values(settings) {
+        Ok(values) => values,
+        Err(why) => return Verdict::Refused(why),
+    };
+    let path = values.get("PATH").map(OsString::from);
     let mut tools = BTreeMap::new();
     for name in ["sh", "rg", "git"] {
         let resolved = path.as_ref().and_then(|path| {
@@ -65,24 +78,18 @@ pub fn report(settings: &Settings) -> Verdict {
         };
         tools.insert(name, resolved);
     }
-    let mut environment: Vec<_> = inherited
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str())
-        .filter(|name| std::env::var_os(name).is_some())
-        .map(str::to_owned)
-        .collect();
+    let environment = values.keys().cloned().collect();
+    let caches = settings::environment::caches(settings, &values);
+    let warnings = match warnings::collect(settings, &values, &caches) {
+        Ok(warnings) => warnings,
+        Err(why) => return Verdict::Refused(why),
+    };
     let mut redacted = settings.clone();
     for (key, value) in &mut redacted.values {
-        if let Some(name) = key.strip_prefix("environment.set.") {
-            environment.push(serde_json::from_str(name).unwrap_or_else(|_| name.into()));
-            value.value = toml::Value::String("<redacted>".into());
-        } else if key.starts_with("endpoints.") && key.contains(".headers.") {
+        if key.starts_with("environment.set.") || key.starts_with("endpoints.") && key.contains(".headers.") {
             value.value = toml::Value::String("<redacted>".into());
         }
     }
-    environment.sort();
-    environment.dedup();
     let identity = smith_agent_shell::identity();
     let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
     Verdict::Ready(Report {
@@ -99,8 +106,17 @@ pub fn report(settings: &Settings) -> Verdict {
         build: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version),"build":text(&identity.build)}),
         tools,
         environment,
+        caches,
+        warnings,
         outside_models: resolved.outside_models.into_iter().map(|(model, reason)| (model, reason.into())).collect(),
     })
+}
+
+/// Check the same caches and environment names before composing a product run.
+pub fn startup_warnings(settings: &Settings) -> Result<Vec<Warning>, Refusal> {
+    let values = settings::environment::values(settings)?;
+    let caches = settings::environment::caches(settings, &values);
+    warnings::collect(settings, &values, &caches)
 }
 
 /// Render the same document for scripts as one JSON object.
@@ -123,6 +139,9 @@ pub fn render_text(report: &Report) -> String {
         lines.push(format!("{name} = {}", path.display()));
     }
     lines.push(format!("environment: {}", report.environment.join(", ")));
+    for warning in &report.warnings {
+        lines.push(warnings::line(warning));
+    }
     for (model, reason) in &report.outside_models {
         lines.push(format!("model {model} is outside the run: {reason}"));
     }

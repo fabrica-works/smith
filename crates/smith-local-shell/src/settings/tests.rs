@@ -395,3 +395,44 @@ fn trust_paths_are_resolved_from_the_settings_workspace() {
             .unwrap_or_else(|why| panic!("{}", why.line()));
     assert_eq!(resolved.local.models.len(), 1);
 }
+
+#[test]
+fn inherit_takes_named_variables_never_a_pattern() {
+    let named = settings(&[source(Layer::User, "[environment]\ninherit=['PATH']\n")]).expect("named inheritance");
+    let values = super::environment::values(&named).expect("one inherited name");
+    assert_eq!(values.get("PATH"), std::env::var("PATH").ok().as_ref());
+    assert!(!values.contains_key("HOME"));
+    let pattern = settings(&[source(Layer::User, "[environment]\ninherit=['CARGO_*']\n")]).expect("decoded names");
+    let refusal = super::environment::values(&pattern).expect_err("patterns refused");
+    assert_eq!(refusal.key, "environment.inherit");
+    assert!(refusal.line().contains("fixture.toml:2"));
+}
+
+#[test]
+fn the_rust_preset_adds_its_homes_and_caches() {
+    let decoded = settings(&[source(Layer::User,
+        "[build]\npreset='rust'\ncaches=['/cache/extra']\n[environment]\ninherit=[]\n[environment.set]\nCARGO_HOME='/cache/cargo'\nRUSTUP_HOME='/cache/rustup'\n")]).expect("rust preset");
+    let values = super::environment::values(&decoded).expect("rust names");
+    assert_eq!(values["CARGO_HOME"], "/cache/cargo");
+    assert_eq!(values["RUSTUP_HOME"], "/cache/rustup");
+    assert_eq!(crate::presets::build_homes("rust"), Some(["CARGO_HOME", "RUSTUP_HOME"].as_slice()));
+    assert_eq!(
+        super::environment::caches(&decoded, &values),
+        [PathBuf::from("/cache/cargo/git"), PathBuf::from("/cache/cargo/registry"), PathBuf::from("/cache/extra")]
+    );
+}
+
+#[test]
+fn a_credential_like_name_is_warned() {
+    let decoded = settings(&[source(
+        Layer::User,
+        "[environment]\ninherit=[]\n[environment.set]\nSERVICE_API_KEY='value-never-shown'\n",
+    )])
+    .expect("named value");
+    let values = super::environment::values(&decoded).expect("command environment");
+    let warnings = crate::check::warnings::collect(&decoded, &values, &[]).expect("warnings");
+    assert!(warnings.iter().any(|warning| matches!(warning,
+        crate::check::Warning::CredentialLikeName { name, origin: Origin::File { line: 4, .. } }
+        if name == "SERVICE_API_KEY")));
+    assert!(!serde_json::to_string(&warnings).expect("name-only JSON").contains("value-never-shown"));
+}

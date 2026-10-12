@@ -419,3 +419,66 @@ fn smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling() {
     );
     assert!(ran.stdout.is_empty());
 }
+
+#[test]
+fn smith_check_json_warns_of_a_wrapper_cache_outside_the_caches() {
+    let scratch = Scratch::new();
+    let cargo = scratch.path().join("cargo");
+    for cache in ["registry", "git"] {
+        std::fs::create_dir_all(cargo.join(cache)).expect("existing Rust cache");
+    }
+    let settings = format!(
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\npreset='rust'\n[environment.set]\nCARGO_HOME='{}'\nRUSTC_WRAPPER='sccache'\nSCCACHE_DIR='{}'\n",
+        cargo.display(),
+        scratch.path().join("wrapper-cache").display()
+    );
+    let _file = support::user_layer(&scratch, settings.as_bytes());
+    let ran = support::smith(&scratch, &["check", "--json"], b"");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
+    assert!(
+        report["warnings"]
+            .as_array()
+            .expect("warnings")
+            .iter()
+            .any(|warning| warning["kind"] == "wrapper_cache" && warning["configured_by"] == "RUSTC_WRAPPER")
+    );
+    assert!(!scratch.path().join("wrapper-cache").exists(), "check creates no cache");
+}
+
+#[test]
+fn smith_check_warns_about_an_absent_cache_and_creates_nothing() {
+    let scratch = Scratch::new();
+    let cache = scratch.path().join("absent-cache");
+    let settings = format!(
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
+        cache.display()
+    );
+    let _file = support::user_layer(&scratch, settings.as_bytes());
+    let ran = support::smith(&scratch, &["check", "--json"], b"");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
+    assert!(report["warnings"].as_array().expect("warnings").iter().any(|warning| warning["kind"] == "cache_access"
+        && warning["cache"] == cache.to_str().expect("UTF-8 path")
+        && warning["reason"] == "absent"));
+    assert!(!cache.exists(), "check creates nothing");
+}
+
+#[test]
+fn smith_check_warns_about_a_file_named_as_a_cache_and_keeps_it() {
+    let scratch = Scratch::new();
+    let cache = scratch.path().join("file-cache");
+    std::fs::write(&cache, b"kept").expect("file in place of cache");
+    let settings = format!(
+        "model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n[build]\ncaches=['{}']\n",
+        cache.display()
+    );
+    let _file = support::user_layer(&scratch, settings.as_bytes());
+    let ran = support::smith(&scratch, &["check", "--json"], b"");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
+    assert!(report["warnings"].as_array().expect("warnings").iter().any(|warning| warning["kind"] == "cache_access"
+        && warning["cache"] == cache.to_str().expect("UTF-8 path")
+        && warning["reason"] == "not a directory"));
+    assert_eq!(std::fs::read(cache).expect("cache file remains"), b"kept");
+}
