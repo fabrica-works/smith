@@ -10,13 +10,47 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
+fn version_two_copies_prose_in_one_and_two_read_windows() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let file = root.join("tasks/probes/large-write/task.toml");
+    let task = smith_bench::check_task(&file, &root.join("../docs/design")).expect("frozen task and seed");
+    let oversized = task.with_variant("oversized").expect("oversized variant");
+    assert_eq!(task.version, 2);
+    assert_eq!(task.budget, oversized.budget);
+    assert_eq!(task.smith, oversized.smith);
+    assert_eq!(task.budget.seconds, Some(300));
+    assert_eq!(task.deadline_seconds, 330);
+    assert_eq!(task.smith["read_window"].as_integer(), Some(32768));
+    assert_eq!(task.smith["tool_payload"].as_integer(), Some(40960));
+    for (name, expected, windows) in [("source.txt", 32768, 1), ("oversized-source.txt", 50000, 2)] {
+        let bytes = std::fs::read(file.parent().unwrap().join("seed").join(name)).expect("seed prose");
+        assert_eq!(bytes.len(), expected);
+        assert!(bytes.is_ascii());
+        assert!(bytes.ends_with(b"This is the end of the source report.\n"));
+        assert_eq!(bytes.len().div_ceil(32768), windows);
+        assert!(bytes.split(|byte| *byte == b'\n').all(|line| line.len() <= 76));
+    }
+    assert!(task.prompt.contains("source.txt") && task.prompt.contains("exactly one write"));
+    assert!(oversized.prompt.contains("oversized-source.txt") && oversized.prompt.contains("two read"));
+    assert!(task.event.contains(&EventCheck::ToolCall {
+        tool: "write".into(),
+        count: Some(Count::Exactly(1)),
+        input_bytes_at_least: Some(32768),
+        verdict: Some("written".into()),
+        exit: None,
+        clamped: None,
+    }));
+}
+
+#[test]
 fn oversized_write_requires_the_overflow_and_both_accepted_repair_tools() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &root.join("../docs/design"))
         .expect("manifest and unchanged seed");
     let oversized = task.with_variant("oversized").expect("replacement checks");
-    for (value, size) in [(&task, 32768), (&oversized, 50000)] {
-        let digest = format!("{:x}", Sha256::digest(vec![b'A'; size]));
+    for (value, name) in [(&task, "source.txt"), (&oversized, "oversized-source.txt")] {
+        let source = std::fs::read(root.join("tasks/probes/large-write/seed").join(name)).expect("plain prose seed");
+        let digest = format!("{:x}", Sha256::digest(source));
         assert!(value.outcome.contains(&OutcomeCheck::FileDigest { path: "payload.txt".into(), sha256: digest }));
     }
     let mut records = common::events::balanced();

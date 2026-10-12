@@ -1,11 +1,11 @@
 id = "large-write"
-version = 1
+version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
-prompt = "Create payload.txt with exactly 32768 ASCII A characters and no newline using exactly one write call containing the complete string. Do not use shell, edit, or delegate. Then finish with ALPHA.\n"
-seed_sha256 = "452c822eb37147a50a5ddf1271245fad2f5884ded6513b8f813e81629627fb85"
+prompt = "Read source.txt in one read call with window 32768. Then copy its complete content, including the final newline, into payload.txt using exactly one write call. Copy the text as given rather than summarizing or generating new text. Do not use shell, edit, or delegate. Then finish with ALPHA.\n"
+seed_sha256 = "6eb2bad76a68e80a8fc5044c9153146a1448959a6773d82966a6bc32be6dbd98"
 guards = ["domain/tools.md, section 3", "protocol/limits.md, section 6"]
 deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "tool-call", "no-stop", "run-completed"]
 
@@ -51,7 +51,7 @@ status = "accepted"
 [[outcome]]
 check = "file-digest"
 path = "payload.txt"
-sha256 = "5ff074ddad88b7fcb4339cb7a3e68341061792869e43673b2de8525a75476bd8"
+sha256 = "2aa273aeb8208ed828c366905bca51a53c76e0bea87d75becb58dbdbe87c15e3"
 [[event]]
 check = "tool-call"
 tool = "write"
@@ -65,7 +65,7 @@ stop = "max_tokens"
 [[variant]]
 name = "oversized"
 replace_checks = true
-prompt = "First attempt exactly one write of payload.txt with exactly 50000 ASCII A characters and no newline, in one call. After the oversized refusal, create the same file in pieces: write an initial piece and append the remaining piece with edit, keeping each call within the declared payload, until it contains exactly those 50000 characters. Never use shell or delegate. Then finish with ALPHA.\n"
+prompt = "Read oversized-source.txt in two read calls with window 32768, continuing at the next line reported by the first read. First attempt exactly one write of payload.txt containing the complete source text, including its final newline. After the oversized refusal, copy that same text in pieces: write an initial piece and append the remaining content with edit, keeping each call within the declared payload. Preserve every character and newline rather than summarizing or generating new text. Never use shell or delegate. Then finish with ALPHA.\n"
 deciding = ["end", "exit-code", "answer", "file-digest:payload.txt", "blocks", "tool-call", "no-stop", "run-completed"]
 [[variant.outcome]]
 check = "end"
@@ -79,7 +79,7 @@ pattern = "ALPHA"
 [[variant.outcome]]
 check = "file-digest"
 path = "payload.txt"
-sha256 = "50cbe91e7bc072a7a58eef057cad901d2d3eb30e544a6f30ad0b2bd32274f753"
+sha256 = "8c2cc2fe1a85b3285653f587865dbcbde009f134a2b99c6fca66ac20f56fa5b8"
 [[variant.event]]
 check = "blocks"
 oversized = { exactly = 1 }
