@@ -1790,3 +1790,26 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    land a decoder its bound does not count. Ruling: 10.7 lands at up to
    750 production lines, its commit body giving the count by file; past
    750, it stops and asks.
+97. **06.s2's parent speaks the selected agent's channel limits** (block of
+   2026-10-12T22:16:43Z, smith 06.s2). The story reached startup and was
+   refused at the channel's handshake: its parent used the default host,
+   whose schema advertises a smaller turn bound than the selected agent's
+   (reasoning 65,536). A private `host_with_limits` helper, the default
+   host unchanged, passes the selected configuration's channel limits;
+   the story's library may take 172 lines; preparation, as 13.94; then
+   one execution that reaches admission.
+98. **The harness lets an intended startup refusal pass without stopping
+   a suite** (block of 2026-10-12T22:16:43Z, smith 00.21). The restarted
+   probes suite (`probes-858c9642-20261012T220933Z`) stopped at
+   `failures/bad-setting`, whose story is a startup refusal it passed:
+   `batch.rs:480-488` stops on unknown tokens unless the attempt is
+   "no request" by `observed_no_request` (:89-98), which wants
+   `stream-whole`, a check that story waives; and `probe::judgment` calls
+   every `Refused` incomplete. A harness defect in session 00's own code.
+   Ruling: the implementer's fix: the dispatcher counts a passed explicit
+   startup-refusal story (its no-run, end, exit, last-line and tree checks)
+   as zero provider requests, judgment tells an expected startup refusal
+   from a setup failure, with a focused regression; `batch.rs` and
+   `probe.rs` join 00.21's Files; then one fresh probes run from the
+   start, within the original $10 and 120 minutes. `budget/spend` stays
+   out (13.95): its refusal is not its story's expected end.
