@@ -485,7 +485,7 @@ pub memory: u64,
   smith --test end_to_end -E 'test(effective_limits)'` passes.
 - No empty header is written: `rg -c 'limits: List::with_capacity\(0\)'
   crates/smith-agent-shell/src/agent_shell.rs` prints nothing.
-- The four named checks run: `rg -o 'Check::(TurnInTranscript|ResumeHoldsWindow|TurnInChannel|CancelOverClose)'
+- The four named checks run: `rg --no-filename -o 'Check::(TurnInTranscript|ResumeHoldsWindow|TurnInChannel|CancelOverClose)'
   crates/smith-agent-service/src/profile | sort -u | wc -l` prints 4.
 - No transitional memory: `rg -c 'memory: None|Option<u64>' crates/smith-agent-service/src/profile/quantities.rs`
   prints nothing, and `rg -c '1_099_511_627_776|8_796_093_022_208|1_u64 << 40' crates tests`

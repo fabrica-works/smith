@@ -1508,3 +1508,10 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    was empty) at 19:03:19Z. 06.12 runs `land` once more. What made it is
    not known (04.s2's live run aborted at about that time); if it comes
    back, the session whose run made it gets a step.
+69. **Session 04's check count reads names, not files** (block of
+   2026-10-12T19:09:09Z, smith 04). Its "Done when" command `rg -o
+   'Check::(...)' crates/smith-agent-service/src/profile | sort -u | wc -l`
+   prints 8, since `rg` prefixes each match with its file and the four
+   names appear in `tests.rs` and `validate.rs`; with `--no-filename` it
+   prints 4. A plan defect, mine: the command gains `--no-filename`, and
+   session 04 is done.
