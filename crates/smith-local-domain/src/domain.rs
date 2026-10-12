@@ -514,7 +514,6 @@ fn state_saved(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
         }
         Phase::Running => {
             send_line(domain, env, out);
-            dispatch_line(domain, env, out);
         }
         Phase::Answered { .. } => crate::person::finish_answer(domain, out),
         Phase::Ending | Phase::Loading | Phase::Idle | Phase::Done => {}
@@ -735,7 +734,7 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
     }
 }
 
-fn send_line(domain: &mut Domain, env: &Env<Limits>, _out: &mut Queue<Request>) {
+fn send_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     if domain.chat.phase != Phase::Running {
         return;
     }
@@ -751,6 +750,7 @@ fn send_line(domain: &mut Domain, env: &Env<Limits>, _out: &mut Queue<Request>) 
         );
         observe(domain, Fact::Message { name });
     }
+    dispatch_line(domain, env, out);
 }
 
 fn turn_saved(domain: &mut Domain, env: &Env<Limits>, number: u32, out: &mut Queue<Request>) {

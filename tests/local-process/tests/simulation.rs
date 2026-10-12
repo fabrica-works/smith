@@ -289,3 +289,49 @@ fn a_turn_saved_while_a_line_crosses_a_wait_releases_the_next_response() {
         assert_crossing_wait_records(&records);
     }
 }
+
+fn assert_start_message_records(records: &[smith_events::Record]) {
+    let received: Vec<_> = records
+        .iter()
+        .filter_map(|record| match &record.event {
+            Event::MessageReceived(message) => Some(message.name),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(received, [1, 2]);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(&record.event, Event::MessageRead(message) if message.name == 2))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_line_typed_while_the_run_starts_reaches_it_as_a_message() {
+    use smith_local_process_world::terminal::Action;
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::waiting(37, &files, placement);
+        world.scenario.launch.traced = true;
+        world.scenario.ending = Ending::Report(b"Queued while starting".to_vec());
+        world.scenario.commands = vec![
+            Action::Send(b"hello\nfollow-up\n".as_slice().into()),
+            Action::Wait(b"Queued while starting".as_slice().into()),
+            Action::Eof,
+        ];
+        world.settle();
+        review(&world.seen(), &world, Ending::Report(b"Queued while starting".to_vec())).assert_passed(37);
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+        let records = match placement {
+            Placement::Spawned => world.agent_records(),
+            Placement::InProcess => world.records(),
+        };
+        assert_start_message_records(&records);
+        assert_eq!(
+            world.facts().iter().filter(|fact| matches!(fact, smith_local_domain::Fact::Started { .. })).count(),
+            1
+        );
+    }
+}

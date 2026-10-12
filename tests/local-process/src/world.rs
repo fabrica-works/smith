@@ -890,7 +890,9 @@ impl Scenario {
             tool_scripts()
         } else if self.launch.change {
             change_scripts()
-        } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Crossed wait") {
+        } else if let Ending::Report(text) = &self.ending
+            && (text.as_slice() == b"Crossed wait" || text.as_slice() == b"Queued while starting")
+        {
             let mut scripts = waiting_scripts();
             let mut turns = scripts[0].turns.to_vec();
             let wait = turns.remove(1).lines[0].clone();
@@ -898,7 +900,12 @@ impl Scenario {
             turns[0].finish = api::Finish::ToolCalls;
             turns[1].lines = Box::new([api::Line::Call {
                 name: b"finish".as_slice().into(),
-                arguments: br#"{"form":"report","text":"Crossed wait","fields":{}}"#.as_slice().into(),
+                arguments: format!(
+                    "{{\"form\":\"report\",\"text\":\"{}\",\"fields\":{{}}}}",
+                    String::from_utf8_lossy(text)
+                )
+                .into_bytes()
+                .into(),
             }]);
             scripts[0].turns = turns.into();
             scripts
