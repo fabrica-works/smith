@@ -944,4 +944,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    none of them lands. README rule 11 lets an implementer add them in its
    worktree, for at most three runs per failure, and remove them before
    its commit.
+26. **smith 08.6 at up to 700 lines** (block of 2026-10-12T15:16:15Z,
+   size half). The designer's answer (17bba0da, 85308b95) has 08.6 give
+   the window's limit its cause in the service's terminals, beyond the
+   split's match arms (13.13), while the candidate already holds about
+   600 production lines. The projection belongs with the end that
+   causes it, and a split now would land 08.6 with a gate that fails, so
+   08.6 may take up to 700, its commit body giving the count by file.
 

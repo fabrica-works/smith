@@ -367,7 +367,7 @@ turn after the first opens a window. Under 0.5 s. `history/small-window`
 Don't: edit history within a window; give a fact a field that no record
 carries; add code to `session.rs` beyond call sites;
 end a session on its history's bound in a new way (08.9 owns that).
-Size: at most 600 lines of production code.
+Size: at most 700 lines of production code (decisions.md, 13.26; was 600): the window limit's projection in the service, 17bba0da, adds to the candidate's 600; README rule 9's 600 does not apply to 08.6.
 Removes: `window: 1` and its comment in `responses.rs:200-201`; `0` as
 `summary_bytes` in `profile.rs:320`.
 
