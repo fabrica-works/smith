@@ -1762,3 +1762,21 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    acknowledgements with one turn outstanding), past README rule 8's 100.
    Ruling: up to 160 for this one story; it runs once on the parent, and
    then the fix where it fails.
+94. **06.s2's story takes the live window; a startup refusal is
+   preparation** (block of 2026-10-12T22:04:19Z, smith 06.s2). The story
+   reached smith's startup and was refused `MemoryCeiling` before any run
+   admission, from a model window of 1,048,576 the fixture inherited; the
+   live run's window was 272,000. A story that cannot admit is
+   preparation, as 13.38 reads it. The story pins its model's window to
+   272,000 in its declaration, configured model and charter (7 lines,
+   within 13.93's 160); then one execution that reaches admission.
+95. **The probes suite drops `budget/spend` until its next version**
+   (block of 2026-10-12T22:04:19Z, smith 00.21). 00.21's probes suite
+   (`probes-858c9642-20261012T220035Z`) stopped at `budget/spend`, refused
+   at the entrance as 13.58 found (its $1.00 cannot hold the $1.32
+   reserve at shell.md's values), and the harness stops a suite on that
+   refusal. Ruling: `benchmarks/suites/probes.toml` leaves `budget/spend`
+   out, naming 13.58 in a comment, until its next task version
+   (`later.md`'s row); the probes suite runs once more from the start as
+   a new run; the smoke suite's completed run stands. The suite file
+   joins 00.21's Files.
