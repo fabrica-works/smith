@@ -86,7 +86,8 @@ fn blocks(input: &[shared::Block], limits: &shared::client::Limits) -> Result<Li
                 Block::Result { call: id.clone(), error: *is_error, text: text.clone() }
             }
             shared::Block::Reasoning { replay } => {
-                let encoded = match replay.to_bytes(&crate::limits::replay_limits(limits)) {
+                let replay_limits = crate::limits::replay_limits(limits).ok_or(Error::Limit)?;
+                let encoded = match replay.to_bytes(&replay_limits) {
                     Ok(encoded) => encoded,
                     Err(error) => return Err(Error::from_shared(error)),
                 };

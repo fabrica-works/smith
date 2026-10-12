@@ -40,6 +40,31 @@ pub(super) fn declarations() -> Configuration {
 }
 
 #[test]
+fn a_turn_holds_a_reasoning_block_at_the_completions_share() {
+    use smith_transcript::{Opaque, OpaqueParts};
+    let selected = standard();
+    let mut configuration = declarations();
+    configuration.endpoints[0].models[0].window = 1_048_576;
+    configuration.endpoints[0].models[0].output = 32_768;
+    configuration.endpoints[0].models[0].reasoning_item = 65_536;
+    let derived = super::derive(&selected, &configuration).expect("standard profile");
+    let client = derived.llm.adapter.client;
+    let transcript = derived.channel.transcript;
+    let share = client.output_items.checked_mul(client.reasoning).expect("completion share");
+    assert_eq!(share, 2_228_224);
+    let envelope = share + skein_llm::REPLAY_HEADER_BYTES;
+    assert_eq!(transcript.opaque_bytes, envelope);
+    let bytes = skein_lib::bytes::zeroed(usize::try_from(envelope).expect("envelope fits"));
+    let block = Opaque::new(&transcript, OpaqueParts { dialect: Box::from(b"codex".as_slice()), bytes })
+        .expect("one block holds consecutive reasoning items");
+    assert_eq!(block.bytes().len(), usize::try_from(envelope).expect("envelope fits"));
+    let mut smaller = transcript;
+    smaller.opaque_bytes -= 1;
+    let problem = Opaque::new(&smaller, block.into_parts()).expect_err("one byte beyond the bound");
+    assert_eq!(problem.path, smith_transcript::v3::Path::OpaqueBytes);
+}
+
+#[test]
 fn a_small_window_lowers_the_guide_bound_and_admits_the_run() {
     use skein_lib::Token;
     use smith_domain::run;

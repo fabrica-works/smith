@@ -174,7 +174,14 @@ fn transcript(
     let mut limits = smith_transcript::CEILINGS;
     limits.replay_bytes = client.metadata;
     limits.text_text = client.answer.max(host).max(run.offer_bytes).max(run.answer_bytes);
-    limits.opaque_bytes = client.reasoning;
+    // Consecutive reasoning items share one block, which can hold the
+    // completion's whole reasoning share (protocol/limits.md, section 3.3).
+    limits.opaque_bytes = client
+        .output_items
+        .checked_mul(client.reasoning)
+        .ok_or(derived(Layer::Transcript, "opaque_bytes"))?
+        .checked_add(shared::REPLAY_HEADER_BYTES)
+        .ok_or(derived(Layer::Transcript, "opaque_bytes"))?;
     limits.call_input = client.input;
     limits.entry_name = tools.path_bytes;
     limits.hit_path = tools.path_bytes;

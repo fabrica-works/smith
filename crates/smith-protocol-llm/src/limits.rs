@@ -52,19 +52,20 @@ pub(crate) const fn document_limits(client: &client::Limits, bytes: u32) -> skei
     skein_llm::DocumentLimits { bytes, strings: bytes, tokens: bytes, depth: client.depth }
 }
 
-/// Durable replay receives either one reasoning item or one metadata envelope.
-pub(crate) fn replay_limits(client: &client::Limits) -> skein_llm::DocumentLimits {
-    skein_llm::DocumentLimits {
-        bytes: client.reasoning.max(client.metadata),
+/// One reasoning block may hold the completion's whole share; metadata
+/// envelopes use the same entrance. Strings, tokens and depth stay per block.
+pub(crate) fn replay_limits(client: &client::Limits) -> Option<skein_llm::DocumentLimits> {
+    Some(skein_llm::DocumentLimits {
+        bytes: client.output_items.checked_mul(client.reasoning)?.max(client.metadata),
         strings: client.strings,
         tokens: client.tokens,
         depth: client.depth,
-    }
+    })
 }
 
 /// Complete translated ownership for every completion admitted by the shared Client.
-/// Original text/IDs/arguments are under `answer_bytes`; each replay separately
-/// receives its full raw opaque allowance plus the exported envelope header.
+/// Original text/IDs/arguments are under `answer_bytes`; reasoning shares one
+/// aggregate allowance, beside each block's metadata and durable header.
 /// Decoded ownership is one aggregate allowance, never multiplied per block.
 /// It must first cover one full fallback `Decoded` cell per possible output part.
 /// Returns None on overflow or an invalid shared-client configuration.
@@ -76,7 +77,11 @@ pub fn completion_worst_case(client_limits: &client::Limits, decoded_call_bytes:
     if decoded_call_bytes < decoded_cells {
         return None;
     }
-    let replay = u64::from(skein_llm::replay_bytes(&replay_limits(client_limits))?).checked_mul(parts)?;
+    skein_llm::replay_bytes(&replay_limits(client_limits)?)?;
+    let reasoning = parts.checked_mul(u64::from(client_limits.reasoning))?;
+    let envelopes =
+        u64::from(client_limits.metadata).checked_add(u64::from(skein_llm::REPLAY_HEADER_BYTES))?.checked_mul(parts)?;
+    let replay = reasoning.checked_add(envelopes)?;
     let cell = size_of::<llm::Said>().max(size_of::<session::llm::Block>());
     let wrappers = u64::try_from(cell).ok()?.checked_mul(parts)?;
     u64::from(client_limits.answer)
@@ -128,7 +133,7 @@ pub fn worst_case(limits: &Limits, receiving: &Receiving) -> Option<u64> {
             &limits.client,
             u32::try_from(limits.tool_bytes.max(u64::from(limits.client.input))).ok()?,
         ))?)?
-        .checked_add(skein_llm::replay_worst_case(&replay_limits(&limits.client))?)?
+        .checked_add(skein_llm::replay_worst_case(&replay_limits(&limits.client)?)?)?
         .checked_add(completion.checked_mul(2)?)?
         .checked_add(u64::from(receiving.max_failure_bytes))
 }

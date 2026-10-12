@@ -134,7 +134,8 @@ fn block_value(
             Ok(llm::Said::Refusal { text, replay: encode_replay(replay, context)? })
         }
         shared::Block::Reasoning { replay } => {
-            let bytes = match replay.to_bytes(&crate::limits::replay_limits(&context.limits.client)) {
+            let limits = crate::limits::replay_limits(&context.limits.client).ok_or(Error::Limit)?;
+            let bytes = match replay.to_bytes(&limits) {
                 Ok(bytes) => bytes,
                 Err(error) => return Err(Error::from_shared(error)),
             };
@@ -172,10 +173,13 @@ fn invalid_call(id: Box<[u8]>, name: Box<[u8]>, problem: llm::Problem) -> llm::S
 
 fn encode_replay(value: Option<shared::Replay>, context: &Context) -> Result<Option<llm::Replay>, Error> {
     match value {
-        Some(replay) => match replay.to_bytes(&crate::limits::replay_limits(&context.limits.client)) {
-            Ok(bytes) => Ok(Some(llm::Replay { bytes })),
-            Err(error) => Err(Error::from_shared(error)),
-        },
+        Some(replay) => {
+            let limits = crate::limits::replay_limits(&context.limits.client).ok_or(Error::Limit)?;
+            match replay.to_bytes(&limits) {
+                Ok(bytes) => Ok(Some(llm::Replay { bytes })),
+                Err(error) => Err(Error::from_shared(error)),
+            }
+        }
         None => Ok(None),
     }
 }

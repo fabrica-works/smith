@@ -101,3 +101,14 @@ record = "access-only"
 facts = "choices"
 session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
+
+# Reasoning ownership raises the producer's item and line bounds.
+[[face]]
+commit = "4d06c1106b45b12280bad141cacb2806c514fe26"
+face = "events"
+shape = "local-agent-trace"
+credential = "converted"
+record = "access-only"
+facts = "choices"
+session_ended_aborted = true
+receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }

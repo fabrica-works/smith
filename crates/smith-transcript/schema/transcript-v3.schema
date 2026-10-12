@@ -6,7 +6,7 @@ family smith-transcript 3
 record Usage { input: option u64 output: option u64 cache_read: option u64 cache_write: option u64 reasoning: option u64 }
 record Replay { dialect: text 32 bytes: bytes 1048576 }
 record Text { text: text 1048576 replay: option Replay }
-record Opaque { dialect: text 32 bytes: bytes 1048576 }
+record Opaque { dialect: text 32 bytes: bytes 3145728 }
 record Call {
     id: text 256
     name: text 64

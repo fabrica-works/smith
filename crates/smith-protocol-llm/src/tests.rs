@@ -11,6 +11,38 @@ use smith_domain::tools;
 
 use crate::{CUT_MARKER_BYTES, render_outcome, render_worst_case};
 
+#[test]
+fn replay_admits_an_ordered_run_beyond_one_reasoning_item() {
+    let mut client = skein_llm_world::limits();
+    client.reasoning = 64;
+    client.output_items = 4;
+    let limits = crate::limits::replay_limits(&client).expect("checked share");
+    assert_eq!(limits.bytes, 256);
+    assert_eq!([limits.strings, limits.tokens, limits.depth], [client.strings, client.tokens, client.depth]);
+    let raw =
+        br#"[{"type":"reasoning","encrypted_content":"first"},{"type":"reasoning","encrypted_content":"second"}]"#;
+    assert!(raw.len() > usize::try_from(client.reasoning).expect("item fits"));
+    let value = skein_llm::Json::from_bytes(raw, &limits).expect("ordered run");
+    let replay = skein_llm::Replay { provider: skein_llm::Provider::OpenAiCodex, value };
+    let bytes = replay.to_bytes(&limits).expect("whole durable run");
+    let restored = skein_llm::Replay::from_bytes(&bytes, &limits).expect("whole replay");
+    assert_eq!(restored.value.to_bytes(&limits).expect("raw replay").as_ref(), raw);
+}
+
+#[test]
+fn completion_prices_one_reasoning_share_and_refuses_its_overflow() {
+    let mut client = skein_llm_world::limits();
+    client.output_items = 4;
+    client.reasoning = 32;
+    let smaller = crate::completion_worst_case(&client, 4096).expect("one share");
+    client.reasoning = 64;
+    let larger = crate::completion_worst_case(&client, 4096).expect("larger share");
+    assert_eq!(larger - smaller, 128);
+    client.output_items = u32::MAX;
+    assert_eq!(crate::limits::replay_limits(&client), None);
+    assert_eq!(crate::completion_worst_case(&client, 4096), None);
+}
+
 fn tools() -> tools::Limits {
     tools::Limits {
         shell_output: 128,

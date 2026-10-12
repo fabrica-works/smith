@@ -421,7 +421,8 @@ fn translate_block(
             Ok(shared::Block::Refusal { text, replay: replay_value(replay, limits)? })
         }
         llm::Block::Opaque { bytes } => {
-            let replay = match shared::Replay::from_bytes(&bytes, &crate::limits::replay_limits(&limits.client)) {
+            let replay_limits = crate::limits::replay_limits(&limits.client).ok_or(Error::Limit)?;
+            let replay = match shared::Replay::from_bytes(&bytes, &replay_limits) {
                 Ok(replay) => replay,
                 Err(error) => return Err(Error::from_shared(error)),
             };
@@ -469,7 +470,8 @@ fn result_text(
 fn replay_value(replay: Option<llm::Replay>, limits: &Limits) -> Result<Option<shared::Replay>, Error> {
     match replay {
         Some(replay) => {
-            match shared::Replay::from_bytes(&replay.bytes, &crate::limits::replay_limits(&limits.client)) {
+            let replay_limits = crate::limits::replay_limits(&limits.client).ok_or(Error::Limit)?;
+            match shared::Replay::from_bytes(&replay.bytes, &replay_limits) {
                 Ok(replay) => Ok(Some(replay)),
                 Err(error) => Err(Error::from_shared(error)),
             }

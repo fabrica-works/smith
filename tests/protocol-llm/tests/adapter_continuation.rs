@@ -26,9 +26,7 @@ const CODEX_REFUSAL_REPLAY: &[u8] = br#"{"id":"msg_r"}"#;
 // The native stream retains unknown head fields before its assembled final
 // thinking/signature values. This independent literal keeps that documented
 // order and every extension; no encoder constructs the expected value.
-const THINKING: &[u8] =
-    br#"{"type":"thinking","future":{"proof":[1,true,null]},"thinking":"Plan carefully","signature":"signed-opaque"}"#;
-const REDACTED: &[u8] = br#"{"type":"redacted_thinking","data":"hidden-opaque"}"#;
+const THINKING_RUN: &[u8] = br#"[{"type":"thinking","future":{"proof":[1,true,null]},"thinking":"Plan carefully","signature":"signed-opaque"},{"type":"redacted_thinking","data":"hidden-opaque"}]"#;
 const ROOT_REPLAY: &[u8] = br#"{"item_id":"item_1_0"}"#;
 const RAW: &[u8] = b"{broken\n\"\\";
 const BODY: &[u8] = br#"{ "opaque" : {"future":[1,true,null]}, "extra":"unchanged" }"#;
@@ -234,14 +232,11 @@ fn codex_evidence(completion: &llm::Completion) -> bool {
 }
 
 fn anthropic_evidence(completion: &llm::Completion) -> bool {
-    let [llm::Said::Opaque { bytes }, llm::Said::Opaque { bytes: redacted }, llm::Said::Text { text, replay: None }] =
-        completion.content.as_ref()
-    else {
+    let [llm::Said::Opaque { bytes }, llm::Said::Text { text, replay: None }] = completion.content.as_ref() else {
         return false;
     };
     completion.stop == llm::Stop::EndTurn
-        && envelope(bytes, *b"\x00\x01\x02\x00\x00\x00\x6c", THINKING)
-        && envelope(redacted, *b"\x00\x01\x02\x00\x00\x00\x33", REDACTED)
+        && envelope(bytes, *b"\x00\x01\x02\x00\x00\x00\xa2", THINKING_RUN)
         && text.as_ref() == b"Answer"
 }
 
