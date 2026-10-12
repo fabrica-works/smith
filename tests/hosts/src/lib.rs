@@ -100,7 +100,7 @@ fn host_limits() -> host::Limits {
     profile.policy.inbox = 8;
     profile.policy.unacknowledged = 8;
     let mut limits =
-        smith_local_service::profile::host_limits(&profile, 65_536, agent_fixture::limits().domain.run.message_bytes);
+        smith_local_service::profile::host_limits(&profile, 65_536, &agent_fixture::limits()).expect("host limits");
     limits.accounts = 1;
     limits.charter_bytes = 65_536;
     limits.transcript_bytes = 65_536;

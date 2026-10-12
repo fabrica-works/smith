@@ -137,6 +137,7 @@ pub fn limits() -> Limits {
         detail_bytes: 32,
         spawn_timeout: Duration::from_secs(2),
         no_progress: Duration::from_secs(10),
+        silence: Duration::ZERO,
         long_span: Duration::from_secs(120),
         long_open: 64,
         wall_time: Duration::from_secs(900),

@@ -143,6 +143,7 @@ impl Domain {
     #[must_use]
     pub fn new(limits: &Limits) -> Domain {
         assert!(crate::worst_case(limits).is_some(), "host limits are representable and every sealed delivery fits");
+        assert!(crate::check(limits).is_ok(), "host watchdog exceeds the agent's silent bound");
         Domain {
             agents: Slab::<Agent>::with_capacity(limits.agents),
             alarms: Deadlines::with_capacity(limits.agents.checked_mul(3).expect("validated alarms")),

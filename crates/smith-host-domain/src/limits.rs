@@ -55,6 +55,8 @@ pub struct Limits {
     pub spawn_timeout: Duration,
     /// Unpaused progress deadline.
     pub no_progress: Duration,
+    /// The agent's longest silent deadline between progress reports.
+    pub silence: Duration,
     /// Maximum declared long-operation extension.
     pub long_span: Duration,
     /// Simultaneously announced spans, each ended by one `LongDone`.
@@ -67,6 +69,21 @@ pub struct Limits {
     pub kill_after: Duration,
     /// Content-free diagnostic queue capacity.
     pub facts: u32,
+}
+
+/// A cross-process relationship the kit refuses by name (protocol/limits.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Check {
+    /// The watchdog must exceed the agent's silent deadline.
+    WatchdogOverSilence { no_progress: Duration, silence: Duration },
+}
+
+/// Refuse a watchdog that can fire during an agent's allowed silence.
+pub fn check(limits: &Limits) -> Result<(), Check> {
+    if limits.no_progress <= limits.silence {
+        return Err(Check::WatchdogOverSilence { no_progress: limits.no_progress, silence: limits.silence });
+    }
+    Ok(())
 }
 
 /// Count domain containers, retained payloads, bounded scratch and each retained

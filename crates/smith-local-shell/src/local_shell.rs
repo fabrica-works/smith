@@ -95,11 +95,9 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let executable = std::env::current_exe().map_err(|error| host_failure(format!("agent program path: {error}")))?;
     let largest_turn = smith_domain::max_turn_bytes(&agent_config.service.limits.domain)
         .ok_or_else(|| configuration("agent turn bound overflows".into()))?;
-    let host_limits = service::profile::host_limits(
-        &agent_config.profile,
-        largest_turn,
-        agent_config.service.limits.domain.run.message_bytes,
-    );
+    let host_limits = service::profile::host_limits(&agent_config.profile, largest_turn, &agent_config.service.limits)
+        .map_err(profile_refusal)
+        .map_err(configuration)?;
     if !settings.in_process {
         prepared.limits.agent = local::AgentLimits::Spawned(host_limits);
     }
@@ -306,7 +304,8 @@ fn product_host_startup_and_complete_outer_memory_fit() {
     assert_eq!(agent.service.limits.machine.env_bytes, 883);
     let mut prepared = policy(&settings, &agent.service).expect("product local admission");
     let largest = smith_domain::max_turn_bytes(&agent.service.limits.domain).expect("turn bytes");
-    let host = service::profile::host_limits(&agent.profile, largest, agent.service.limits.domain.run.message_bytes);
+    let host =
+        service::profile::host_limits(&agent.profile, largest, &agent.service.limits).expect("derived host bounds");
     prepared.limits.agent = local::AgentLimits::Spawned(host);
     let limits = service_limits(prepared.limits, host, &agent.service).expect("host directional derivation");
     service::profile::memory(&limits, agent.memory).expect("all local service startup comparisons");

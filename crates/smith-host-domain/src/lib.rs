@@ -57,7 +57,7 @@ pub use facts::Fact;
 
 pub use inbox::Inbox;
 
-pub use limits::{Limits, worst_case};
+pub use limits::{Check, Limits, check, worst_case};
 
 pub use values::{Charter, Declared, Fields, Transcript, TurnValue};
 

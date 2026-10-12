@@ -15,7 +15,10 @@ use smith_protocol_machine as machine;
 
 use crate as service;
 
+mod bounds;
 mod quantities;
+
+pub use bounds::silence_bound;
 
 mod path;
 

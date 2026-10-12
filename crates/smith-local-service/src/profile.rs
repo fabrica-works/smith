@@ -3,16 +3,21 @@
 //! large enough for the agent's largest turn. Contract: shell.md, section 2.1.
 
 use skein_lib::Duration;
+use smith_agent_service::profile::{Check, Layer, LimitName, Refusal, Value};
 use smith_host_domain as host;
 
 /// Build the standard host bounds around the largest turn its agent can emit.
-#[must_use]
 pub fn host_limits(
     profile: &smith_agent_service::profile::Profile,
     largest_turn: u64,
-    message_bytes: u32,
-) -> host::Limits {
-    host::Limits {
+    agent: &smith_agent_service::Limits,
+) -> Result<host::Limits, Refusal> {
+    let name = LimitName::deployment(Layer::Service, "silence");
+    let silence = smith_agent_service::profile::silence_bound(agent).ok_or(Refusal::Derived { limit: name })?;
+    let no_progress = silence
+        .checked_add(agent.io.close_timeout)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "no_progress") })?;
+    let limits = host::Limits {
         agents: 1,
         directories: 2,
         conflicts: 64,
@@ -22,7 +27,7 @@ pub fn host_limits(
         charter_bytes: 262_144,
         transcript_bytes: 33_554_432,
         answered_bytes: 65_536,
-        message_bytes: u64::from(message_bytes),
+        message_bytes: u64::from(agent.domain.run.message_bytes),
         messages: profile.policy.inbox,
         calls: profile.declared.calls_per_response,
         call_bytes: 65_536,
@@ -34,7 +39,8 @@ pub fn host_limits(
         outcome_bytes: 4096,
         detail_bytes: 4096,
         spawn_timeout: Duration::from_secs(20),
-        no_progress: profile.policy.max_waiting,
+        no_progress,
+        silence,
         long_span: profile.policy.max_time,
         long_open: profile
             .declared
@@ -47,14 +53,21 @@ pub fn host_limits(
         grace: profile.policy.exit_grace,
         kill_after: Duration::from_secs(2),
         facts: 1024,
+    };
+    match host::check(&limits) {
+        Ok(()) => Ok(limits),
+        Err(host::Check::WatchdogOverSilence { no_progress, silence }) => Err(Refusal::Broken {
+            check: Check::WatchdogOverSilence,
+            left: LimitName::deployment(Layer::Service, "no_progress").value(Value::Duration(no_progress)),
+            right: name.value(Value::Duration(silence)),
+        }),
     }
 }
 
 /// Refuse the local placement's complete footprint above the declared memory.
 /// The inline placement includes its native agent effects; spawned agents own
 /// those effects in their child process. Contract: protocol/limits.md, section 4.
-pub fn memory(limits: &crate::Limits, available: u64) -> Result<(), smith_agent_service::profile::Refusal> {
-    use smith_agent_service::profile::{Check, Layer, LimitName, Refusal, Value};
+pub fn memory(limits: &crate::Limits, available: u64) -> Result<(), Refusal> {
     let required = crate::worst_case(limits)
         .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Service, "local_worst_case") })?;
     if required > available {

@@ -407,6 +407,7 @@ pub(super) fn host_limits() -> smith_host_domain::Limits {
         detail_bytes: 512,
         spawn_timeout: Duration::from_secs(5),
         no_progress: Duration::from_secs(60),
+        silence: Duration::ZERO,
         long_span: Duration::from_secs(3600),
         long_open: 64,
         wall_time: Duration::from_secs(3600),

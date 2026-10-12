@@ -39,6 +39,7 @@ fn limits() -> crate::Limits {
         detail_bytes: 64,
         spawn_timeout: Duration::from_secs(1),
         no_progress: Duration::from_secs(10),
+        silence: Duration::ZERO,
         long_span: Duration::from_secs(60),
         long_open: 64,
         wall_time: Duration::from_secs(100),
@@ -382,4 +383,19 @@ fn empty_charter() -> crate::Charter {
         models: Box::new([]),
     };
     crate::Charter::new(value, bytes).expect("bounded charter fixture")
+}
+
+#[test]
+fn no_progress_not_above_silence_is_refused_as_watchdog_over_silence() {
+    let mut limits = limits();
+    limits.silence = Duration::from_secs(10);
+    for no_progress in [Duration::from_secs(9), Duration::from_secs(10)] {
+        limits.no_progress = no_progress;
+        assert_eq!(
+            crate::check(&limits),
+            Err(crate::Check::WatchdogOverSilence { no_progress, silence: Duration::from_secs(10) })
+        );
+    }
+    limits.no_progress = Duration::from_secs(11);
+    assert_eq!(crate::check(&limits), Ok(()));
 }
