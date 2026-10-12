@@ -370,7 +370,15 @@ None of these blocks step 3. Each is hard to undo once built on.
    $45 on it.
 7. **Local `sub_agents` on by default** (5.8, smith 07.13): smith 07.13
    recommends, from session 13's `budget` and `parallel-children`
-   records; the user decides.
+   records; the user decides. Its recommendation (8ecdab04,
+   `docs/development/benchmarks/sub-agents-by-default.md`): keep it off.
+   The reserve passed three `budget` variants (starvation, wrap-up,
+   child-quota, each 10 passes); `spend` and both `parallel-children`
+   variants are not calibrated (2 and 1 passes, mostly sequential
+   delegation by the small model); reviews 03 showed a smith stall, now
+   smith-06.s1's. Put to the user 2026-10-12T18:37Z; no step waits on the
+   answer. A yes needs the designer to change shell.md 6.4's row, then
+   the default at `crates/smith-local-shell/src/local_settings.rs:120`.
 
 ## 11. The first run's rulings
 
