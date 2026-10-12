@@ -75,9 +75,15 @@ impl Expectations for Meeting {
         match observation {
             Observation::Fact(fact) => match fact {
                 Fact::Started { activation } => {
-                    judge.check(self.activation.is_none(), "one activation per invocation");
+                    judge.check(
+                        self.activation.is_none() || self.answered,
+                        "an activation starts only after the one before it answered",
+                    );
                     self.activation = Some(activation);
-                    judge.expect("terminal", Duration::from_secs(60));
+                    self.next_turn = 1;
+                    self.answered = false;
+                    self.shown = false;
+                    judge.rearm("terminal", Duration::from_secs(60));
                 }
                 Fact::Message { .. } => {
                     judge.check(self.activation.is_some() && !self.answered, "message belongs to a live activation")

@@ -575,6 +575,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             }
             crate::Mode::Chat { .. } => {}
         }
+        finish_failed_start(domain, out);
         return;
     }
     match domain.head_survey {
@@ -648,6 +649,12 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     observe(domain, Fact::Started { activation: domain.chat.state.activation });
     if let Some(name) = initial {
         observe(domain, Fact::Message { name });
+    }
+}
+
+fn finish_failed_start(domain: &mut Domain, out: &mut Queue<Request>) {
+    if domain.chat.closed {
+        closed(domain, out);
     }
 }
 

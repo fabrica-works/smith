@@ -3,6 +3,7 @@
 use smith_local_process_world::{
     Authentication, Files, Placement, World,
     referee::{CheckoutRead, Ending, review},
+    terminal::Action,
 };
 
 #[test]
@@ -30,6 +31,17 @@ fn seeded_hosted_and_colocated_runs_settle_and_replay() {
                 } else {
                     World::new(seed, &files, placement, b"First answer")
                 };
+                let mut rng = skein_lib::Rng::new(seed);
+                let lines = rng.between(1, 3);
+                let mut commands = Vec::new();
+                for line in 0..lines {
+                    commands.push(Action::Send(format!("person line {line}\n").into_bytes().into()));
+                }
+                commands.push(Action::Eof);
+                if !changed && !cancelled && authentication != Some(Authentication::Refused) {
+                    world.scenario.ending = Ending::Report(b"answer".to_vec());
+                }
+                world.scenario.commands = commands;
                 let before = world.head();
                 world.settle();
                 let seen = world.seen();
@@ -43,7 +55,7 @@ fn seeded_hosted_and_colocated_runs_settle_and_replay() {
                     } else if cancelled {
                         Ending::Cancelled
                     } else {
-                        Ending::Report(b"First answer".to_vec())
+                        Ending::Report(b"answer".to_vec())
                     },
                 )
                 .assert_passed(seed);

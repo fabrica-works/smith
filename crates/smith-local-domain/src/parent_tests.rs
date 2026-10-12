@@ -438,3 +438,23 @@ fn an_unconfigured_host_call_receives_one_unavailable_parent_answer() {
     }
     assert_eq!(replies, 1);
 }
+
+#[test]
+fn closing_input_during_a_refused_start_exits_after_the_notice() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    domain.chat.phase = Phase::Starting;
+    domain.chat.start_saved = true;
+    domain.grants.awaiting = 1;
+    crate::step(&mut domain, &env, Event::Closed, &mut out);
+    assert!(out.is_empty());
+    crate::step(
+        &mut domain,
+        &env,
+        Event::NoCredential { account: 7, reason: crate::CredentialFailure::Missing },
+        &mut out,
+    );
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("failed grant notice") };
+    assert_eq!(notice, Notice::Failure(Failure::Account(AccountFailure::Unavailable)));
+    let Some(Request::Exit { status: crate::ExitStatus::Accepted }) = out.pop() else { panic!("closed input exits") };
+    assert!(out.is_empty());
+}

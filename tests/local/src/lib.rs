@@ -3,6 +3,7 @@
 //! Agent conversation scripts and their translation come from smith-agent-world.
 
 pub mod git;
+pub mod person;
 pub mod referee;
 mod world;
 

@@ -181,3 +181,64 @@ fn a_turn_saved_after_the_result_was_shown_is_rejected() {
         "nothing is told after the shown answer",
     );
 }
+
+#[test]
+fn a_line_relayed_twice_in_one_activation_is_rejected() {
+    broken(
+        vec![
+            Seen::Activation { number: 1, message: 1 },
+            Seen::Message { name: Token::new(1) },
+            Seen::Message { name: Token::new(1) },
+        ],
+        "a line is relayed at most once in an activation",
+    );
+}
+
+#[test]
+fn a_read_line_relayed_again_is_rejected() {
+    broken(
+        vec![
+            Seen::Activation { number: 1, message: 1 },
+            Seen::Message { name: Token::new(1) },
+            Seen::Turn { number: 1 },
+            Seen::SaveTurn { number: 1, read: Some(Token::new(1)) },
+            Seen::TurnSaved { number: 1 },
+            Seen::Activation { number: 2, message: 1 },
+            Seen::Message { name: Token::new(1) },
+        ],
+        "a read line is never relayed again",
+    );
+}
+
+#[test]
+fn a_fence_that_goes_back_is_rejected() {
+    broken(
+        vec![
+            Seen::Activation { number: 1, message: 2 },
+            Seen::Message { name: Token::new(1) },
+            Seen::Message { name: Token::new(2) },
+            Seen::Turn { number: 1 },
+            Seen::SaveTurn { number: 1, read: Some(Token::new(2)) },
+            Seen::TurnSaved { number: 1 },
+            Seen::Turn { number: 2 },
+            Seen::SaveTurn { number: 2, read: Some(Token::new(1)) },
+        ],
+        "the read fence never moves backwards",
+    );
+}
+
+#[test]
+fn an_unread_line_can_be_relayed_in_the_next_activation() {
+    let mut referee = Referee::new(Meeting::default());
+    for seen in [
+        Seen::Activation { number: 1, message: 1 },
+        Seen::Message { name: Token::new(1) },
+        Seen::Answered { activation: 1 },
+        Seen::Shown { activation: 1 },
+        Seen::Activation { number: 2, message: 1 },
+        Seen::Message { name: Token::new(1) },
+    ] {
+        observe(&mut referee, seen);
+    }
+    assert!(!matches!(referee.verdict(), Verdict::Failed(_)));
+}

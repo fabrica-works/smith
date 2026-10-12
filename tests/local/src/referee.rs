@@ -48,13 +48,20 @@ pub enum Seen {
     Wrote { root: u64 },
 }
 
+/// A person line awaiting a message terminal.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Pending {
+    /// The saved line's name.
+    Line(Token),
+}
+
 /// Scenario policy populated only from observations, never domain state.
 #[derive(Debug, Default)]
 pub struct Meeting {
     last_activation: u64,
     has_activation: bool,
     last_message: u64,
-    last_relayed: u64,
+    relayed_here: BTreeSet<Token>,
     last_read: u64,
     next_turn: u32,
     told: BTreeSet<u32>,
@@ -118,7 +125,7 @@ impl Meeting {
 
 impl Expectations for Meeting {
     type Seen = Seen;
-    type Name = &'static str;
+    type Name = Pending;
     type Stimulus = ();
 
     #[expect(clippy::too_many_lines, reason = "one referee keeps every local boundary event in order")]
@@ -130,11 +137,12 @@ impl Expectations for Meeting {
                     self.has_activation || number > self.last_activation,
                     "activations strictly increase across invocations",
                 );
-                judge.check(message == self.last_message + 1, "each saved line gets one increasing name");
+                judge.check(message >= self.last_message, "saved line names never go backwards");
                 if number != self.last_activation {
                     judge.check(number == self.last_activation + 1, "activations strictly increase across invocations");
                     self.last_activation = number;
                     self.next_turn = 0;
+                    self.relayed_here.clear();
                     self.told.clear();
                     self.pending_turns.clear();
                     self.saved.clear();
@@ -143,10 +151,10 @@ impl Expectations for Meeting {
                 self.last_message = message;
             }
             Seen::Message { name } => {
-                judge.check(self.relayed.insert(name), "a person line is relayed only once");
+                judge.check(self.relayed_here.insert(name), "a line is relayed at most once in an activation");
+                judge.check(name.raw() > self.last_read, "a read line is never relayed again");
                 judge.check(name.raw() <= self.last_message, "a relayed line was saved first");
-                judge.check(name.raw() > self.last_relayed, "person lines reach the agent in order");
-                self.last_relayed = name.raw();
+                self.relayed.insert(name);
             }
             Seen::Turn { number } => {
                 judge.check(!self.shown.contains(&self.last_activation), "nothing is told after the shown answer");

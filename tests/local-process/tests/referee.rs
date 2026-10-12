@@ -93,3 +93,16 @@ fn discarding_service_facts_changes_no_terminal_or_peer_work() {
     assert_eq!(observed.exit(), silent.exit());
     assert_eq!(observed.trace(), silent.trace(), "facts never change kernel work");
 }
+
+#[test]
+fn an_activation_started_before_the_last_answered_is_rejected() {
+    let files = Files::new();
+    let mut world = World::new(17, &files, Placement::InProcess, b"First answer");
+    world.settle();
+    let mut seen = world.seen();
+    let started = seen.facts.iter().position(|fact| matches!(fact, Fact::Started { .. })).expect("activation starts");
+    seen.facts.insert(started + 1, Fact::Started { activation: 2 });
+    let referee = review(&seen, &world, Ending::Report(b"First answer".to_vec()));
+    let Verdict::Failed(failure) = referee.verdict() else { panic!("an overlapping activation is rejected") };
+    assert_eq!(failure.why, "an activation starts only after the one before it answered");
+}

@@ -133,6 +133,7 @@ enum Goal {
     Parked,
     Cut,
     Cancelled,
+    Exit,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -218,6 +219,7 @@ pub struct World {
     last_delivery: Option<run::Delivery>,
     shown: Vec<Box<[u8]>>,
     notices: Vec<smith_local_domain::Notice>,
+    person: Option<crate::person::Person>,
     reached: BTreeSet<Goal>,
     exit: Option<ExitStatus>,
     completions: u32,
@@ -711,6 +713,7 @@ impl World {
             store,
             shown: Vec::new(),
             notices: Vec::new(),
+            person: None,
             reached: BTreeSet::new(),
             exit: None,
             completions: 0,
@@ -856,6 +859,35 @@ impl World {
         self.referee.judged()
     }
 
+    /// Attach a person whose actions follow visible observations.
+    pub fn person(&mut self, person: crate::person::Person) {
+        self.person = Some(person);
+    }
+
+    /// End input while draining the live activation.
+    pub fn close(&mut self) {
+        self.events.push_back(Event::Closed);
+    }
+
+    /// Drive through the run's terminal and input closure to host exit.
+    pub fn drive_to_exit(&mut self, iterations: u32) -> bool {
+        self.drive_until(iterations, Goal::Exit)
+    }
+
+    fn act(&mut self, act: Option<crate::person::Act>) {
+        match act {
+            Some(crate::person::Act::Type(text)) => self.line(&text),
+            Some(crate::person::Act::Interrupt) => self.interrupt(),
+            Some(crate::person::Act::Close) => self.close(),
+            None => {}
+        }
+    }
+
+    fn saw(&mut self, shown: crate::person::Shown) {
+        let act = self.person.as_mut().and_then(|person| person.saw(shown));
+        self.act(act);
+    }
+
     /// Drive until a cancelled answer is shown.
     pub fn drive_to_cancelled(&mut self, iterations: u32) -> bool {
         self.drive_until(iterations, Goal::Cancelled)
@@ -949,6 +981,8 @@ impl World {
     )]
     fn drive_until(&mut self, iterations: u32, goal: Goal) -> bool {
         for _ in 0..iterations {
+            let act = self.person.as_mut().and_then(crate::person::Person::step);
+            self.act(act);
             if self.domain.is_ready() {
                 local::resume(&mut self.domain, &self.env, &mut self.out);
                 self.gather_facts();
@@ -1046,13 +1080,23 @@ impl World {
                 return true;
             }
             if !self.domain.is_ready() && self.events.is_empty() && self.out.is_empty() {
+                if self.person.is_some() && self.slow_store && !self.delayed_turns.is_empty() && self.pending.is_empty()
+                {
+                    self.release_turn();
+                    continue;
+                }
                 if (self.slow_store && !self.delayed_turns.is_empty() && self.pending.is_empty())
                     || (self.slow_git && !self.held_git.is_empty())
                 {
                     return false;
                 }
                 let next = [self.domain.next_deadline(), self.provider.next_deadline()].into_iter().flatten().min();
-                let Some(next) = next else { return false };
+                let Some(next) = next else {
+                    if self.person.is_some() {
+                        continue;
+                    }
+                    return false;
+                };
                 self.env.now = next;
                 self.provider_env.now = next;
             }
@@ -1068,6 +1112,7 @@ impl World {
                     self.reached.insert(Goal::Waiting);
                 }
                 self.notices.push(notice);
+                self.saw(crate::person::Shown::Notice(notice));
             }
             Request::Show { text } => {
                 if text.as_ref() == b"Chat parked" {
@@ -1320,7 +1365,10 @@ impl World {
                 self.agent_request(request);
             }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
-            Request::Exit { status } => self.exit = Some(status),
+            Request::Exit { status } => {
+                self.exit = Some(status);
+                self.reached.insert(Goal::Exit);
+            }
         }
     }
 
@@ -1415,9 +1463,15 @@ impl World {
             let seen = match fact {
                 local::Fact::Started { activation: _ } => None,
                 local::Fact::Message { name } => Some(Seen::Message { name }),
-                local::Fact::Turn { number } => Some(Seen::Turn { number }),
+                local::Fact::Turn { number } => {
+                    self.saw(crate::person::Shown::Turn);
+                    Some(Seen::Turn { number })
+                }
                 local::Fact::Answered { activation } => Some(Seen::Answered { activation }),
-                local::Fact::Shown { activation } => Some(Seen::Shown { activation }),
+                local::Fact::Shown { activation } => {
+                    self.saw(crate::person::Shown::Answer);
+                    Some(Seen::Shown { activation })
+                }
                 local::Fact::DeliveryReturned { name } => Some(Seen::DeliveryReturned { name }),
             };
             if let Some(seen) = seen {

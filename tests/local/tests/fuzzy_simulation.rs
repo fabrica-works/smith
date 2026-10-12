@@ -77,3 +77,16 @@ fn random_local_chats_settle_against_the_boundary_referee() {
         }
     }
 }
+
+#[test]
+fn drawn_people_settle_against_the_message_rules() {
+    for seed in 0..64 {
+        let mut world = World::new(seed + 2_000);
+        world.person(smith_local_world::person::Person::drawn(seed));
+        if seed % 3 == 0 {
+            world.slow_store();
+        }
+        assert!(world.drive_to_exit(4_000), "seed {seed}: person closes and chat exits");
+        assert_eq!(world.exit(), Some(ExitStatus::Accepted), "seed {seed}");
+    }
+}
