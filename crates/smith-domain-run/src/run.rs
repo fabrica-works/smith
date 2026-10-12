@@ -703,7 +703,11 @@ pub(crate) fn priced(domain: &mut Domain, conversation: Token, own: u64, subtree
     run.spent = total;
     if account_state(run, &mut domain.ready, run_id, domain.facts.now()) {
         domain.facts.about(run_id.token());
-        domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, domain.facts.now()) });
+        domain.facts.push(FactKind::Budget {
+            run: run_id.token(),
+            standing: standing(run, domain.facts.now()),
+            call: None,
+        });
     }
     follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
 }
@@ -736,7 +740,11 @@ pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: 
     run.spent = run_total;
     account_state(run, &mut domain.ready, run_id, domain.facts.now());
     domain.facts.about(run_id.token());
-    domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, domain.facts.now()) });
+    domain.facts.push(FactKind::Budget {
+        run: run_id.token(),
+        standing: standing(run, domain.facts.now()),
+        call: None,
+    });
     follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
 }
 
@@ -865,7 +873,7 @@ pub(crate) fn completion_permit(domain: &mut Domain, conversation: Token, now: T
     if changed {
         domain.facts.begin(now);
         domain.facts.about(run_id.token());
-        domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, now) });
+        domain.facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, now), call: None });
     }
     let permit = working_permit(run, child, now);
     if child && permit == CompletionPermit::Closing {
@@ -1297,9 +1305,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     let run = runs.get_mut(run_id).expect("a run lives until its conversations have ended");
     run.spent = run.spent.accumulate(unaccounted).expect("terminal usage was checked before it was reported");
     let changed = account_state(run, ready, run_id, facts.now());
-    if unaccounted.turns > 0 || changed {
-        facts.push(FactKind::Budget { run: run_id.token(), standing: standing(run, facts.now()) });
-    }
+    let snapshot = standing(run, facts.now());
     let failure = terminal_failure(end);
     if let (Some(failure), Some(_)) = (failure, asker) {
         let state = mem::replace(&mut run.state, State::Closed);
@@ -1316,15 +1322,7 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
         if writing {
             run.lease.child_returned(asker);
         }
-        let reserve_spend =
-            crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm).expect("admitted reserve");
-        let left = crate::budget::ordinary(
-            &run.charter.budget,
-            run.charter.reserve,
-            reserve_spend,
-            run.spent,
-            run.deadline.saturating_since(facts.now()),
-        );
+        let left = crate::budget::left(&snapshot);
         let call = calls.get_mut(asker).expect("a sub-agent's call lives until it has ended");
         let result = match &mut call.work {
             Work::Child(child) => {
@@ -1336,6 +1334,11 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
             }
             Work::Landing(_) | Work::Host(_) => unreachable!("a sub-agent serves a sub-agent's call"),
         };
+        let told = tells_budget(&result);
+        if told || unaccounted.turns > 0 || changed {
+            let call = if told { Some(call.owner) } else { None };
+            facts.push(FactKind::Budget { run: run_id.token(), standing: snapshot, call });
+        }
         crate::facts::child_returned(facts, run_id.token(), call.owner, &result, used);
         out.push(Request::Return { spent: bill, call: call.owner, result });
         retire_call(calls, alarms, conversations, asker);
@@ -1343,6 +1346,9 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
             child_ready(run, out);
         }
         return;
+    }
+    if unaccounted.turns > 0 || changed {
+        facts.push(FactKind::Budget { run: run_id.token(), standing: snapshot, call: None });
     }
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
@@ -1382,7 +1388,7 @@ pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request
         State::Working { reply_to, main } => match run.wind_down {
             None if facts.now() < run.deadline => {
                 begin_wind_down(run, ready, id, Exhausted::Time);
-                facts.push(FactKind::Budget { run: id.token(), standing: standing(run, facts.now()) });
+                facts.push(FactKind::Budget { run: id.token(), standing: standing(run, facts.now()), call: None });
                 State::Working { reply_to, main }
             }
             None | Some(_) => wind_down(conversations, reply_to, main, Ending::Failed(failure), out),
@@ -1400,7 +1406,37 @@ pub(crate) fn opened(conversations: &Slab<Conversation>, conversation: Token) ->
     conversations.get(Id::from_token(conversation)).expect("a conversation is told of as it opens").kind
 }
 
+fn tells_budget(result: &Returned) -> bool {
+    match result {
+        Returned::Answered { .. } | Returned::Unanswered { .. } => true,
+        Returned::Waited { .. }
+        | Returned::Withheld
+        | Returned::Crossed { .. }
+        | Returned::HostAnswered(_)
+        | Returned::HostTooLarge { .. }
+        | Returned::HostReportedTooLarge
+        | Returned::HostUnknown
+        | Returned::HostRejected(_)
+        | Returned::Delivered(_)
+        | Returned::Nothing
+        | Returned::DeliveryRefused(_)
+        | Returned::Accepted
+        | Returned::Rejected { .. }
+        | Returned::ChecksFailed { .. }
+        | Returned::Stale
+        | Returned::DeliveryFailed { .. }
+        | Returned::Cancelled
+        | Returned::TimedOut
+        | Returned::Busy
+        | Returned::Refused { .. } => false,
+    }
+}
+
 fn standing(run: &Run, now: Time) -> crate::facts::Standing {
+    let nanos = now.saturating_since(run.started_at).as_nanos();
+    let millis = (nanos / 1_000_000)
+        .checked_add(u64::from(!nanos.is_multiple_of(1_000_000)))
+        .expect("a rounded millisecond count fits the nanosecond clock");
     crate::facts::Standing {
         stage: match run.wind_down {
             Some(_) => crate::Stage::WindDown,
@@ -1410,7 +1446,7 @@ fn standing(run: &Run, now: Time) -> crate::facts::Standing {
         turns_limit: run.charter.budget.turns,
         spend: run.spent.units,
         spend_limit: run.charter.budget.spend,
-        time: now.saturating_since(run.started_at),
+        time: Duration::from_millis(millis),
         time_limit: run.charter.budget.time,
         reserve: run.charter.reserve,
         reserve_spend: crate::budget::reserve_spend(run.charter.reserve, &run.charter.llm)

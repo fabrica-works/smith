@@ -412,6 +412,19 @@ pub(crate) fn ordinary(budget: &Budget, reserve: Reserve, reserve_spend: u64, sp
     }
 }
 
+/// Ordinary credit from the usage-line snapshot's whole milliseconds, saturating at zero.
+pub(crate) fn left(standing: &crate::facts::Standing) -> Budget {
+    Budget {
+        turns: standing.turns_limit.saturating_sub(standing.turns).saturating_sub(standing.reserve.turns),
+        spend: standing.spend_limit.saturating_sub(standing.spend).saturating_sub(standing.reserve_spend),
+        time: Duration::from_millis(
+            (standing.time_limit.as_nanos() / 1_000_000)
+                .saturating_sub(standing.time.as_nanos() / 1_000_000)
+                .saturating_sub(standing.reserve.time.as_nanos() / 1_000_000),
+        ),
+    }
+}
+
 /// Root admission decision before any Client effect. Closing has its
 /// existing terminal right and must never be reported as scalar exhaustion.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

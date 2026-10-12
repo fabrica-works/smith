@@ -346,12 +346,17 @@ impl Producer {
                 self.calls.delivered(status);
                 return;
             }
-            run::facts::FactKind::Budget { standing, .. } => {
+            run::facts::FactKind::Budget { standing, call, .. } => {
                 self.wind_down = match standing.stage {
                     run::Stage::Ordinary => false,
                     run::Stage::WindDown => true,
                 };
-                self.sinks.record(&crate::budget_record(fact, origin, self.activation()).expect("matched budget fact"));
+                let call = match call {
+                    Some(owner) => Some(self.calls.id(owner)),
+                    None => None,
+                };
+                self.sinks
+                    .record(&crate::budget_record(fact, origin, self.activation(), call).expect("matched budget fact"));
                 return;
             }
             run::facts::FactKind::MessageReceived { run: _, name, bytes } => self.message_received(name, bytes, None),

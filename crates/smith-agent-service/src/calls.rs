@@ -90,6 +90,11 @@ impl Book {
         }
     }
 
+    /// Provider identity retained until this call's terminal drains.
+    pub(crate) fn id(&self, owner: Token) -> Box<[u8]> {
+        self.calls.get(&owner).expect("the returning child retains its provider call").metadata.id.clone()
+    }
+
     /// Actual provider identity of the call which opened this child.
     pub(crate) fn child_opened(
         &mut self,

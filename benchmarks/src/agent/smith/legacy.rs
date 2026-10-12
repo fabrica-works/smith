@@ -541,6 +541,7 @@ fn validate_fact(domain: &str, fact: &Value, shape: FactShape) -> Result<(), Par
         ("Run", "MessageUnread") => &["run", "name"],
         ("Run", "Prepared") => &["run", "guides", "checks"],
         ("Run", "Opened") if shape.kinds() => &["run", "conversation", "kind"],
+        ("Run", "Budget") if shape.kinds() && fact.field("call").is_ok() => &["run", "standing", "call"],
         ("Run", "Budget") if shape.kinds() => &["run", "standing"],
         ("Run", "Opened") if fact.field("parent").is_ok() || fact.field("call").is_ok() => {
             &["run", "conversation", "child", "parent", "call"]
@@ -579,6 +580,7 @@ fn validate_fact(domain: &str, fact: &Value, shape: FactShape) -> Result<(), Par
     for field in fields {
         match *field {
             "parent" | "call" if domain == "Run" && name == "Opened" => fact.optional_token(field)?,
+            "call" if domain == "Run" && name == "Budget" => fact.optional_token(field)?,
             "run" | "conversation" | "call" | "opener" | "session" | "name" => {
                 fact.token(field)?;
             }

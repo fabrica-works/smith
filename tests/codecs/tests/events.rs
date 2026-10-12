@@ -950,3 +950,33 @@ fn failure_metadata_is_typed_and_detail_remains_capture_selected_and_bounded() {
         }
     }
 }
+
+#[test]
+fn budget_goldens_keep_the_usage_lines_call_under_every_capture() {
+    for (name, call) in [("budget_ordinary", None), ("budget_told", Some(b"child-7".as_slice()))] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../crates/smith-events/golden/v1/{name}.jsonl"));
+        let frozen = std::fs::read(path).expect("budget golden");
+        let record = read(&frozen, &limits()).expect("bounded budget record").expect("budget event");
+        let Event::Budget(value) = &record.event else { panic!("budget") };
+        assert_eq!(value.call.as_deref(), call);
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            assert_eq!(
+                write(&record, &capture, &limits()).expect("bounded budget record").expect("budget event").as_ref(),
+                frozen
+            );
+        }
+    }
+}
+
+#[test]
+fn a_budget_call_is_bounded_like_a_tool_call() {
+    let frozen = include_bytes!("../../../crates/smith-events/golden/v1/budget_told.jsonl");
+    let mut record = read(frozen, &limits()).expect("bounded budget record").expect("budget event");
+    let Event::Budget(value) = &mut record.event else { panic!("budget") };
+    value.call = Some(b"provider-child-7".as_slice().into());
+    let line = write(&record, &Capture::None, &limits()).expect("bounded budget record").expect("budget event");
+    let bounded = Limits { string: 8, ..limits() };
+    assert_eq!(read(&line, &bounded), Err(Error::Shape));
+    assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Limits));
+}

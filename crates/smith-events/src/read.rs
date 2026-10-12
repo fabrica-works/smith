@@ -1723,6 +1723,10 @@ fn read_budget_standing(tokens: &[Token], limits: &Limits) -> Result<BudgetStand
         spend: read_quantity(required(tokens, b"spend")?)?,
         time_ms: read_quantity(required(tokens, b"time_ms")?)?,
         reserve: read_reserve(required(tokens, b"reserve")?)?,
+        call: match field(tokens, b"call")? {
+            Some(item) => Some(text(item, limits.string)?),
+            None => None,
+        },
     })
 }
 

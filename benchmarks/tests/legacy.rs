@@ -276,6 +276,7 @@ fn native_kind_facts_are_selected_without_changing_frozen_flag_records() {
         },
     };
     let standing = FactKind::Budget {
+        call: None,
         run,
         standing: Standing {
             stage: Stage::WindDown,

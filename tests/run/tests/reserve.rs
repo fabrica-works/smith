@@ -99,7 +99,7 @@ fn actual_facts_tell_child_shares_and_budget_without_deciding_work() {
         .facts_seen()
         .iter()
         .filter_map(|fact| {
-            let FactKind::Budget { run, standing } = fact.kind else { return None };
+            let FactKind::Budget { run, standing, .. } = fact.kind else { return None };
             Some((fact.at, run, standing))
         })
         .collect();

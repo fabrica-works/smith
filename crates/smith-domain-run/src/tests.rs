@@ -1630,6 +1630,80 @@ impl Harness {
 }
 
 #[test]
+fn a_child_closed_after_its_last_charge_tells_the_budget_of_its_return() {
+    let mut h = Harness::new(LIMITS);
+    let (_, main) = h.running_on(1, 100, agents());
+    let (child, _) = h.child(main, 7, families(true, false, false), 101);
+    drop(h.step(Event::Used { conversation: child, spend: spend(50) }));
+    drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"Found.") }));
+    h.after(Duration::from_nanos(2_000_000_500));
+    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
+    let [Request::Return { result: Returned::Answered { left, .. }, .. }] = &*emitted else {
+        panic!("expected the child's answer, got {emitted:?}");
+    };
+    assert_eq!(*left, Budget { turns: 9, spend: 9_950, time: Duration::from_millis(597_999) });
+    let mut told = List::with_capacity(2);
+    for fact in &facts(&mut h) {
+        if let Fact::Budget { standing, call: Some(call), .. } = fact {
+            told.push((*call, standing.time)).expect("two slots admit any duplicate");
+        }
+    }
+    assert_eq!(told.as_slice(), &[(Token::new(7), Duration::from_millis(2_001))], "one snapshot names the call");
+}
+
+#[test]
+fn a_snapshot_rounds_used_time_up_to_a_whole_millisecond() {
+    for (nanos, millis) in [(0, 0), (1, 1), (1_000_000, 1), (2_000_000_500, 2_001)] {
+        let mut h = Harness::new(LIMITS);
+        let (_, main) = h.running_on(1, 100, agents());
+        h.after(Duration::from_nanos(nanos));
+        drop(h.step(Event::Used { conversation: main, spend: spend(50) }));
+        let mut snapshots = List::with_capacity(2);
+        for fact in &facts(&mut h) {
+            if let Fact::Budget { standing, .. } = fact {
+                snapshots.push(standing.time).expect("two slots admit any duplicate");
+            }
+        }
+        assert_eq!(snapshots.as_slice(), &[Duration::from_millis(millis)]);
+    }
+}
+
+#[test]
+fn a_childs_return_pushes_one_budget_even_with_its_stage_change() {
+    let mut h = Harness::new(LIMITS);
+    let mut charter = agents();
+    charter.reserve.turns = 2;
+    let (_, main) = h.running_on(1, 100, charter);
+    let (child, _) = h.child(main, 7, families(true, false, false), 101);
+    drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"Found.") }));
+    drop(facts(&mut h));
+    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend { turns: 8, ..spend(50) } }));
+    let mut snapshots = List::with_capacity(2);
+    for fact in &facts(&mut h) {
+        if let Fact::Budget { standing, call, .. } = fact {
+            snapshots.push((standing.stage, *call)).expect("two slots admit any duplicate");
+        }
+    }
+    assert_eq!(snapshots.as_slice(), &[(crate::Stage::WindDown, Some(Token::new(7)))]);
+}
+
+#[test]
+fn mains_end_names_no_call_in_its_budget() {
+    let mut h = Harness::new(LIMITS);
+    let (_, main) = h.running_on(1, 100, agents());
+    drop(h.step(finish(main, 8, verdict(b"approve", Box::new([])))));
+    drop(facts(&mut h));
+    drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: spend(50) }));
+    let mut snapshots = List::with_capacity(2);
+    for fact in &facts(&mut h) {
+        if let Fact::Budget { call, .. } = fact {
+            snapshots.push(*call).expect("two slots admit any duplicate");
+        }
+    }
+    assert_eq!(snapshots.as_slice(), &[None]);
+}
+
+#[test]
 fn a_sub_agent_answers_with_its_last_message_once_it_has_ended() {
     let mut h = Harness::new(LIMITS);
     let (_, main) = h.running_on(1, 100, agents());
@@ -2148,6 +2222,7 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
         },
         Fact::Budget {
             run,
+            call: None,
             standing: crate::facts::Standing {
                 stage: crate::Stage::Ordinary,
                 turns: 1,
@@ -2161,6 +2236,21 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
             },
         },
         Fact::Ended { run, conversation: child, end: End::Closed },
+        Fact::Budget {
+            run,
+            call: Some(Token::new(7)),
+            standing: crate::facts::Standing {
+                stage: crate::Stage::Ordinary,
+                turns: 1,
+                turns_limit: BUDGET.turns,
+                spend: 100,
+                spend_limit: BUDGET.spend,
+                time: Duration::from_secs(5),
+                time_limit: BUDGET.time,
+                reserve,
+                reserve_spend: 2,
+            },
+        },
         Fact::Returned {
             run,
             call: Token::new(7),

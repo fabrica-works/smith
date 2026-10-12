@@ -35,7 +35,11 @@ impl Expectations for Meeting {
         let got = seen.standing;
         let outside = seen.charged;
         judge.check(
-            got.turns == outside.spent.turns && got.spend == outside.spent.units && got.time == outside.time,
+            got.turns == outside.spent.turns
+                && got.spend == outside.spent.units
+                && got.time.as_nanos().is_multiple_of(1_000_000)
+                && got.time >= outside.time
+                && got.time.as_nanos().saturating_sub(outside.time.as_nanos()) < 1_000_000,
             "budget facts reproduce actual completion callbacks and the injected clock",
         );
         judge.check(

@@ -417,6 +417,7 @@ pub fn largest_samples(limits: &smith_events::Limits) -> Vec<Record> {
         Record {
             t_ms: u64::MAX,
             event: Event::Budget(BudgetStanding {
+                call: Some(payload(limits.string)),
                 run: u64::MAX,
                 stage: BudgetStage::Unknown(payload(limits.string)),
                 turns: Quantity { used: u64::MAX, limit: u64::MAX },

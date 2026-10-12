@@ -854,7 +854,13 @@ fn check_text(text: &[u8], capacity: u32) -> Result<(), Error> {
 
 fn validate_record(record: &Record, limits: &Limits) -> Result<(), Error> {
     match &record.event {
-        Event::Budget(value) => validate_budget_stage(&value.stage, limits),
+        Event::Budget(value) => {
+            validate_budget_stage(&value.stage, limits)?;
+            if let Some(call) = &value.call {
+                check_text(call, limits.string)?;
+            }
+            Ok(())
+        }
         Event::SessionStarted(value) => validate_session_started(value, limits),
         Event::SessionEnded(value) => validate_session_ended(value, limits),
         Event::RunStarted(value) => validate_run_started(value, limits),
@@ -2064,4 +2070,8 @@ fn encode_budget_standing(json: &mut Encoder, value: &BudgetStanding, _capture: 
     write_quantity(json, &value.time_ms);
     json.key(b"reserve");
     write_reserve(json, &value.reserve);
+    if let Some(call) = &value.call {
+        json.key(b"call");
+        json.string(call);
+    }
 }

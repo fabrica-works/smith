@@ -933,6 +933,7 @@ fn build_visible_budget() -> Vec<Record> {
     let budget = Record {
         t_ms: 5,
         event: Event::Budget(smith_events::BudgetStanding {
+            call: None,
             run: 0,
             stage: smith_events::BudgetStage::Ordinary,
             turns: smith_events::Quantity { used: 1, limit: 10 },

@@ -949,5 +949,9 @@ fn size_block(_capture: &Capture, limits: &Limits) -> Option<u64> {
 fn size_budget_standing(limits: &Limits) -> Option<u64> {
     // Six used/limit integers, three reserve integers and the run name.
     let stage = u64::from(limits.string).checked_mul(6)?.checked_add(2)?.max(11);
-    141_u64.checked_add(20_u64.checked_mul(10)?)?.checked_add(stage)
+    141_u64
+        .checked_add(20_u64.checked_mul(10)?)?
+        .checked_add(stage)?
+        .checked_add(8)?
+        .checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)
 }

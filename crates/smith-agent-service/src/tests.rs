@@ -362,7 +362,7 @@ fn actual_root_budget_facts_encode_without_content_under_every_capture() {
     let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
     for fact in world.facts() {
         let Fact::Run { fact, opening: _ } = fact else { continue };
-        let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO, 1) else { continue };
+        let Some(record) = crate::budget_record(fact, skein_lib::Time::ZERO, 1, None) else { continue };
         budget_count += 1;
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             let line = smith_events::write(&record, &capture, &limits)
@@ -379,6 +379,40 @@ fn actual_root_budget_facts_encode_without_content_under_every_capture() {
         }
     }
     assert!(budget_count > 0, "real root/session completions produce charges");
+}
+
+#[test]
+fn a_budget_record_names_the_provider_id_of_its_call() {
+    use smith_domain::run;
+    use smith_events::{Capture, Event};
+    let fact = run::facts::Fact {
+        at: skein_lib::Time::from_nanos(2_001_000_000),
+        kind: run::facts::FactKind::Budget {
+            run: skein_lib::Token::new(3),
+            call: Some(skein_lib::Token::new(7)),
+            standing: run::facts::Standing {
+                stage: run::Stage::Ordinary,
+                turns: 1,
+                turns_limit: 10,
+                spend: 50,
+                spend_limit: 10_000,
+                time: skein_lib::Duration::from_millis(2_001),
+                time_limit: skein_lib::Duration::from_secs(600),
+                reserve: run::charter::Reserve { turns: 2, time: skein_lib::Duration::from_secs(60) },
+                reserve_spend: 2,
+            },
+        },
+    };
+    let record = crate::budget_record(&fact, skein_lib::Time::ZERO, 1, Some(b"provider-child-7".as_slice().into()))
+        .expect("actual budget fact");
+    let Event::Budget(value) = &record.event else { panic!("budget projection") };
+    assert_eq!(value.call.as_deref(), Some(b"provider-child-7".as_slice()));
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        let limits = smith_events::Limits { string: 64, content: 1024, items: 8 };
+        let line =
+            smith_events::write(&record, &capture, &limits).expect("bounded budget record").expect("budget event");
+        assert_eq!(smith_events::read(&line, &limits).expect("bounded budget record"), Some(record.clone()));
+    }
 }
 
 #[test]

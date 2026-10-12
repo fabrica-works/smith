@@ -535,7 +535,7 @@ pub struct Reserve {
     pub spend: u64,
 }
 
-/// A cumulative run budget observation, sent once at each actual charge.
+/// A run budget at a charge, stage change, or child return (protocol/events.md, section 3.8).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct BudgetStanding {
     pub run: u64,
@@ -544,6 +544,8 @@ pub struct BudgetStanding {
     pub spend: Quantity,
     pub time_ms: Quantity,
     pub reserve: Reserve,
+    /// The returning sub-agent call's provider id, whose usage line tells this snapshot.
+    pub call: Option<Box<[u8]>>,
 }
 
 /// The tool families and host tool names the service records at admission.

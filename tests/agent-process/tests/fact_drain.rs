@@ -214,3 +214,51 @@ fn initial_task_receipt_carries_the_actual_channel_label_and_text() {
     assert_eq!(terminal(&world).status, Status::Accepted);
     world.assert_agent_clean();
 }
+
+fn child_usage(world: &World, parent: u64, call: &[u8]) -> String {
+    for record in world.records() {
+        if let Event::ResponseStarted(response) = &record.event
+            && response.conversation == parent
+        {
+            for message in &response.prompt.as_ref().expect("full capture").messages {
+                for block in &message.blocks {
+                    if let smith_events::Block::Result { call: result_call, text, .. } = block
+                        && result_call.as_ref() == call
+                    {
+                        return std::str::from_utf8(text).expect("rendered child result is UTF-8").to_owned();
+                    }
+                }
+            }
+        }
+    }
+    panic!("child result in main's next actual request");
+}
+
+#[test]
+fn a_child_usage_line_tells_the_budget_record_naming_its_call() {
+    let mut world = World::new(19, &charter());
+    world.capture(smith_agent_service::sinks::Capture::Everything);
+    world.observe_facts(TraceCase::ChildAnswered, 4);
+    assert!(world.settle());
+    let child = world
+        .records()
+        .iter()
+        .filter_map(|record| if let Event::ConversationOpened(child) = &record.event { Some(child) } else { None })
+        .find(|child| child.kind == smith_events::ConversationKind::Child)
+        .expect("one actual child");
+    let call = child.call.as_ref().expect("provider call");
+    let told: Vec<_> = world
+        .records()
+        .iter()
+        .filter_map(|record| if let Event::Budget(budget) = &record.event { Some(budget) } else { None })
+        .filter(|budget| budget.call.as_ref() == Some(call))
+        .collect();
+    assert_eq!(told.len(), 1, "one return snapshot for this provider call");
+    let budget = told[0];
+    let turns = budget.turns.limit.saturating_sub(budget.turns.used).saturating_sub(budget.reserve.turns);
+    let seconds =
+        budget.time_ms.limit.saturating_sub(budget.time_ms.used).saturating_sub(budget.reserve.time_ms) / 1000;
+    let usage = child_usage(&world, child.parent.expect("the actual child names its parent"), call);
+    let expected = format!("; ordinary left {turns} turns and {seconds} seconds.");
+    assert!(usage.contains(&expected));
+}

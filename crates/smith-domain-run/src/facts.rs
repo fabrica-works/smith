@@ -58,8 +58,13 @@ pub enum FactKind {
     },
     /// It opened main or a child with its asked and effective share.
     Opened { run: Token, conversation: Token, kind: Kind },
-    /// A completion was charged against the run's shared activation budget.
-    Budget { run: Token, standing: Standing },
+    /// The run's budget at a charge, stage change, or a child's usage line (domain/run.md, section 9.2).
+    Budget {
+        run: Token,
+        standing: Standing,
+        /// The returning child's run-issued call; absent on other snapshots.
+        call: Option<Token>,
+    },
     /// The conversation ended, or was refused at its entrance.
     Ended {
         run: Token,
@@ -112,7 +117,7 @@ pub enum Kind {
     Child { parent: Token, call: Token, asked: Share, granted: Granted },
 }
 
-/// The run's activation budget at a charge (protocol/events.md, section 3.8).
+/// The run's activation budget snapshot (protocol/events.md, section 3.8).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Standing {
     pub stage: Stage,
@@ -120,6 +125,7 @@ pub struct Standing {
     pub turns_limit: u32,
     pub spend: u64,
     pub spend_limit: u64,
+    /// Used wall time, rounded up to a whole millisecond.
     pub time: Duration,
     pub time_limit: Duration,
     pub reserve: Reserve,

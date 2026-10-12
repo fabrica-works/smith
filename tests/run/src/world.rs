@@ -1458,7 +1458,7 @@ impl World {
             None if landing => "landing",
             None if self.facts_seen.iter().rev().any(|fact| {
                 matches!(fact.kind,
-                run::facts::FactKind::Budget { run: owner, standing }
+                run::facts::FactKind::Budget { run: owner, standing, .. }
                     if owner == run && standing.stage == run::Stage::WindDown)
             }) =>
             {

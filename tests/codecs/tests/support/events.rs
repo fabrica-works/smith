@@ -1662,6 +1662,7 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
         Record {
             t_ms: 750,
             event: Event::Budget(BudgetStanding {
+                call: None,
                 run: 1,
                 stage: BudgetStage::Ordinary,
                 turns: Quantity { used: 2, limit: 10 },
@@ -1673,10 +1674,27 @@ fn budget_samples() -> Vec<(&'static str, Record, Capture)> {
         Capture::Everything,
     ));
     samples.push((
+        "budget_told",
+        Record {
+            t_ms: 750,
+            event: Event::Budget(BudgetStanding {
+                run: 1,
+                stage: BudgetStage::Ordinary,
+                turns: Quantity { used: 2, limit: 10 },
+                spend: Quantity { used: 3, limit: 100 },
+                time_ms: Quantity { used: 750, limit: 1999 },
+                reserve: Reserve { turns: 1, time_ms: 750, spend: 10 },
+                call: Some(Box::from(b"child-7".as_slice())),
+            }),
+        },
+        Capture::Everything,
+    ));
+    samples.push((
         "budget_wind_down",
         Record {
             t_ms: 750,
             event: Event::Budget(BudgetStanding {
+                call: None,
                 run: 1,
                 stage: BudgetStage::WindDown,
                 turns: Quantity { used: 2, limit: 10 },
