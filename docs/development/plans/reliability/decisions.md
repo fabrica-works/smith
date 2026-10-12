@@ -1725,3 +1725,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    arm yet, with its process Proof; the reading for exec and chat arms and
    `an_exec_arms_teardown_bound_comes_from_check` move to 10.15, which
    brings the harness onto `smith exec`. No face or front end invented.
+90. **The teardown bound is an effective limit by name** (block of
+   2026-10-12T21:40:22Z, smith 10.14). The effective owner's service rows
+   (`smith-agent-service/src/profile/effective/list.rs`) do not name the
+   teardown bound, which `profile::teardown_bound` derives (two io close
+   deadlines plus the events write deadline, limits.md section 7). Ruling:
+   the owner gains one row, `service.teardown`, from that function; no
+   second list, and the harness reads that row, not its inputs. The file
+   joins 10.14's Files for that row.
