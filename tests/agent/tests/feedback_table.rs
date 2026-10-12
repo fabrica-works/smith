@@ -237,12 +237,12 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
     }
     let cooldown = Duration::from_nanos(19);
     for (failure, label) in [
-        (run::CompletionFailure::Limit, "limit"),
+        (run::CompletionFailure::Limit { which: run::Limit::Path(run::Cap::Answer), bound: 512 }, "limit"),
         (run::CompletionFailure::Protocol, "protocol"),
         (run::CompletionFailure::Cancelled, "unsolicited-cancelled"),
         (run::CompletionFailure::Overloaded, "overloaded"),
         (run::CompletionFailure::Unavailable, "unavailable"),
-        (run::CompletionFailure::TimedOut, "timed-out"),
+        (run::CompletionFailure::TimedOut { phase: run::Phase::Whole }, "timed-out"),
         (run::CompletionFailure::ContextTooLong, "context-too-long"),
         (run::CompletionFailure::Invalid, "invalid"),
         (run::CompletionFailure::Unauthorized, "unauthorized"),
@@ -252,7 +252,7 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
         for (evidence, evidence_label) in [
             (run::CompletionEvidence::Unsent, "unsent"),
             (run::CompletionEvidence::Unknown, "unknown"),
-            (run::CompletionEvidence::Response, "response"),
+            (run::CompletionEvidence::Response { status: None }, "response"),
         ] {
             rendered(
                 unanswered(run::End::Fault(run::Fault::Completion { failure, evidence })),
@@ -260,5 +260,56 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
                 true,
             );
         }
+    }
+}
+
+fn failure_fields() -> Vec<(smith_domain::llm::Failure, run::CompletionFailure)> {
+    use smith_domain::llm;
+    let retry_after = Duration::from_millis(7);
+    vec![
+        (
+            llm::Failure::Limit { which: llm::Limit::Pool { reservation: 73 }, bound: 64 },
+            run::CompletionFailure::Limit { which: run::Limit::Pool { reservation: 73 }, bound: 64 },
+        ),
+        (
+            llm::Failure::Limit { which: llm::Limit::Path(llm::Cap::Answer), bound: 512 },
+            run::CompletionFailure::Limit { which: run::Limit::Path(run::Cap::Answer), bound: 512 },
+        ),
+        (llm::Failure::ApplicationLimit, run::CompletionFailure::ApplicationLimit),
+        (llm::Failure::Protocol, run::CompletionFailure::Protocol),
+        (llm::Failure::Cancelled, run::CompletionFailure::Cancelled),
+        (llm::Failure::Overloaded, run::CompletionFailure::Overloaded),
+        (llm::Failure::Unavailable, run::CompletionFailure::Unavailable),
+        (
+            llm::Failure::TimedOut { phase: llm::Phase::Head },
+            run::CompletionFailure::TimedOut { phase: run::Phase::Head },
+        ),
+        (llm::Failure::Invalid, run::CompletionFailure::Invalid),
+        (llm::Failure::Unauthorized, run::CompletionFailure::Unauthorized),
+        (llm::Failure::RateLimited { retry_after }, run::CompletionFailure::RateLimited { retry_after }),
+        (llm::Failure::Exhausted { retry_after }, run::CompletionFailure::Exhausted { retry_after }),
+    ]
+}
+
+#[test]
+fn every_completion_failure_reaches_the_answer_with_its_fields() {
+    use smith_agent_world::{Settings, World};
+    use smith_domain::llm;
+    for (source, expected) in failure_fields() {
+        let mut settings = Settings::calm(6807);
+        settings.limits.session.retries = 0;
+        let mut world = World::with_failure(settings, source, llm::Evidence::Response { status: Some(503) });
+        world.run(20_000);
+        assert_eq!(
+            world.answer(),
+            &run::Answer::Failed {
+                failure: run::Failure::Model(run::Fault::Completion {
+                    failure: expected,
+                    evidence: run::CompletionEvidence::Response { status: Some(503) }
+                }),
+                spent: run::Spend::ZERO,
+                turns: 0,
+            }
+        );
     }
 }

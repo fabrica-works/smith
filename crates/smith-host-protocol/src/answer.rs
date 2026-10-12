@@ -92,12 +92,17 @@ fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
     let result = match source {
         wire::ModelFault::Completion(record) => {
             let failure = match record.failure() {
-                wire::CompletionFailure::Limit => host::CompletionFailure::Limit,
+                wire::CompletionFailure::Limit(record) => {
+                    host::CompletionFailure::Limit { which: completion_limit(record.which()), bound: record.bound() }
+                }
+                wire::CompletionFailure::ApplicationLimit => host::CompletionFailure::ApplicationLimit,
                 wire::CompletionFailure::Protocol => host::CompletionFailure::Protocol,
                 wire::CompletionFailure::Cancelled => host::CompletionFailure::Cancelled,
                 wire::CompletionFailure::Overloaded => host::CompletionFailure::Overloaded,
                 wire::CompletionFailure::Unavailable => host::CompletionFailure::Unavailable,
-                wire::CompletionFailure::TimedOut => host::CompletionFailure::TimedOut,
+                wire::CompletionFailure::TimedOut(record) => {
+                    host::CompletionFailure::TimedOut { phase: completion_phase(record.phase()) }
+                }
                 wire::CompletionFailure::ContextTooLong => host::CompletionFailure::ContextTooLong,
                 wire::CompletionFailure::Invalid => host::CompletionFailure::Invalid,
                 wire::CompletionFailure::Unauthorized => host::CompletionFailure::Unauthorized,
@@ -111,7 +116,9 @@ fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
             let evidence = match record.evidence() {
                 wire::CompletionEvidence::Unsent => host::CompletionEvidence::Unsent,
                 wire::CompletionEvidence::Unknown => host::CompletionEvidence::Unknown,
-                wire::CompletionEvidence::Response => host::CompletionEvidence::Response,
+                wire::CompletionEvidence::Response(record) => {
+                    host::CompletionEvidence::Response { status: *record.status() }
+                }
             };
             host::ModelFault::Completion { failure, evidence }
         }
@@ -179,5 +186,52 @@ fn budget_refusal(refusal: &wire::BudgetRefusal) -> host::BudgetRefusal {
         wire::BudgetRefusal::Checks(record) => {
             host::BudgetRefusal::Checks { reserve: record.reserve(), checks: record.checks() }
         }
+    }
+}
+
+fn completion_limit(which: &wire::CompletionLimit) -> host::Limit {
+    match which {
+        wire::CompletionLimit::Pool(record) => host::Limit::Pool { reservation: record.reservation() },
+        wire::CompletionLimit::Path(record) => host::Limit::Path(completion_cap(record.value())),
+        wire::CompletionLimit::History => host::Limit::History,
+        wire::CompletionLimit::Window => host::Limit::Window,
+        wire::CompletionLimit::Call => host::Limit::Call,
+        wire::CompletionLimit::Message => host::Limit::Message,
+    }
+}
+
+const fn completion_cap(cap: &wire::Cap) -> host::Cap {
+    match cap {
+        wire::Cap::Request => host::Cap::Request,
+        wire::Cap::RequestHead => host::Cap::RequestHead,
+        wire::Cap::ResponseHead => host::Cap::ResponseHead,
+        wire::Cap::ResponseFields => host::Cap::ResponseFields,
+        wire::Cap::Skip => host::Cap::Skip,
+        wire::Cap::Field => host::Cap::Field,
+        wire::Cap::Retained => host::Cap::Retained,
+        wire::Cap::Tokens => host::Cap::Tokens,
+        wire::Cap::Depth => host::Cap::Depth,
+        wire::Cap::Strings => host::Cap::Strings,
+        wire::Cap::Number => host::Cap::Number,
+        wire::Cap::Reasoning => host::Cap::Reasoning,
+        wire::Cap::OutputItems => host::Cap::OutputItems,
+        wire::Cap::Metadata => host::Cap::Metadata,
+        wire::Cap::Tools => host::Cap::Tools,
+        wire::Cap::HistoryItems => host::Cap::HistoryItems,
+        wire::Cap::Output => host::Cap::Output,
+        wire::Cap::Answer => host::Cap::Answer,
+        wire::Cap::ErrorBody => host::Cap::ErrorBody,
+        wire::Cap::AccessToken => host::Cap::AccessToken,
+        wire::Cap::AccountId => host::Cap::AccountId,
+    }
+}
+
+const fn completion_phase(phase: &wire::CompletionPhase) -> host::Phase {
+    match phase {
+        wire::CompletionPhase::Connect => host::Phase::Connect,
+        wire::CompletionPhase::Handshake => host::Phase::Handshake,
+        wire::CompletionPhase::Head => host::Phase::Head,
+        wire::CompletionPhase::Idle => host::Phase::Idle,
+        wire::CompletionPhase::Whole => host::Phase::Whole,
     }
 }

@@ -1313,7 +1313,7 @@ fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
         h.step(Event::Failed {
             owner,
             failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
-            evidence: crate::llm::Evidence::Response,
+            evidence: crate::llm::Evidence::Response { status: None },
             detail: Box::default(),
         }),
         Some(ended(OUT_OF_TIME, 0))
@@ -1344,7 +1344,7 @@ fn each_transient_timeout_phase_retries_with_the_same_absolute_expiry() {
         let end = h.step(Event::Failed {
             owner,
             failure: Failure::TimedOut { phase: crate::llm::Phase::Whole },
-            evidence: crate::llm::Evidence::Response,
+            evidence: crate::llm::Evidence::Response { status: None },
             detail: Box::default(),
         });
         assert_eq!(

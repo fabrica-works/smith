@@ -65,9 +65,9 @@ mod wind_down;
 mod workspace;
 
 pub use boundary::{
-    Answer, Ask, AskRefusal, CompletionEvidence, CompletionFailure, End, Event, Exit, Failure, Fault, FinalTurn,
-    Invalid, Message, MessageRefusal, Opening, Place, Policy, Ran, Read, Refusal, Request, Returned, Stop,
-    TranscriptRefusal, Window,
+    Answer, Ask, AskRefusal, Cap, CompletionEvidence, CompletionFailure, End, Event, Exit, Failure, Fault, FinalTurn,
+    Invalid, Limit, Message, MessageRefusal, Opening, Phase, Place, Policy, Ran, Read, Refusal, Request, Returned,
+    Stop, TranscriptRefusal, Window,
 };
 pub use budget::{
     Budget, BudgetRefusal, Ceiling, CompletionPermit, Exhausted, Granted, Overflow, Part, Prices, Rate, ReceivingLimit,

@@ -190,12 +190,95 @@ pub enum Reply {
     TooLarge,
 }
 
+/// A native LLM path cap, sent by the protocol in a terminal failure.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Cap {
+    /// The configured bound on encoded request body.
+    Request,
+    /// The configured bound on encoded request head.
+    RequestHead,
+    /// The configured bound on response head.
+    ResponseHead,
+    /// The configured bound on HTTP header field count.
+    ResponseFields,
+    /// Scanned wire bytes of one event.
+    Skip,
+    /// The configured bound on an SSE event type or identifier.
+    Field,
+    /// The configured bound on retained decoded text.
+    Retained,
+    /// The configured bound on retained JSON tokens.
+    Tokens,
+    /// The configured bound on JSON nesting depth.
+    Depth,
+    /// The configured bound on retained string.
+    Strings,
+    /// The fixed tokenizer bound on a numeral.
+    Number,
+    /// The configured bound on provider reasoning replay.
+    Reasoning,
+    /// The configured bound on completion items.
+    OutputItems,
+    /// The configured bound on other replay metadata.
+    Metadata,
+    /// The configured bound on offered tools.
+    Tools,
+    /// The configured bound on history messages and blocks.
+    HistoryItems,
+    /// The endpoint model's declared completion ceiling in tokens.
+    Output,
+    /// The configured bound on completion answer.
+    Answer,
+    /// The configured bound on provider error body.
+    ErrorBody,
+    /// The configured bound on access token.
+    AccessToken,
+    /// The configured bound on account identifier.
+    AccountId,
+}
+
+/// The owner of a bounded value, sent in a terminal limit failure.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Limit {
+    /// The requested reservation exceeds the entire native connection pool.
+    Pool { reservation: u64 },
+    /// The native provider path refused its named cap.
+    Path(Cap),
+    /// The session's retained window refused its history bound.
+    History,
+    /// The usable model window could not make its first ordinary completion.
+    Window,
+    /// One received tool call refused its argument bound.
+    Call,
+    /// One injected message refused its receiving bound.
+    Message,
+}
+
+/// The protocol's elapsed call phase, carried losslessly in timeout terminals
+/// (protocol/llm.md, sections 6 and 10).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Phase {
+    /// The connection's socket admission deadline.
+    Connect,
+    /// The connection's TLS handshake deadline.
+    Handshake,
+    /// The completion's first response-byte deadline.
+    Head,
+    /// The completion's deadline between response events.
+    Idle,
+    /// The completion's absolute whole-call deadline.
+    Whole,
+}
+
 /// Exact neutral completion failure after retries or nonretryable refusal.
 /// Diagnostic bytes were consumed by session policy; this record remains content-free.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum CompletionFailure {
     /// Shared-client receiving allowance exceeded.
-    Limit,
+    Limit { which: Limit, bound: u64 },
+
+    /// The application aggregate receiving allowance was exceeded.
+    ApplicationLimit,
 
     /// Shared protocol response contract violated.
     Protocol,
@@ -210,7 +293,7 @@ pub enum CompletionFailure {
     Unavailable,
 
     /// The completion deadline elapsed.
-    TimedOut,
+    TimedOut { phase: Phase },
 
     /// Provider context allowance was exceeded.
     ContextTooLong,
@@ -245,7 +328,7 @@ pub enum CompletionEvidence {
     Unknown,
 
     /// A peer response, including a refusal, was received.
-    Response,
+    Response { status: Option<u16> },
 }
 
 /// What kept an LLM from going on.

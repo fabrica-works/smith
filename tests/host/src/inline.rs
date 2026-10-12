@@ -127,6 +127,7 @@ pub struct World {
     pub long_notices: Vec<(Time, Option<(host::Operation, Duration)>)>,
     pub lower: Ledger<Token, (Token, Token)>,
     provider: provider::Domain,
+    failure: Option<(smith::llm::Failure, smith::llm::Evidence)>,
     provider_env: Env<provider::Config>,
     provider_out: Queue<provider::Request>,
     bindings: BTreeMap<Token, Binding>,
@@ -161,6 +162,7 @@ impl World {
             long_notices: Vec::new(),
             lower: Ledger::new("inline native provider terminal"),
             provider: smith_agent_world::scripted_provider(&configuration, seed),
+            failure: None,
             provider_env: Env { now: Time::ZERO, wall: skein_lib::Wall::EPOCH, limits: configuration },
             provider_out: Queue::with_capacity(provider::MAX_OUT),
             bindings: BTreeMap::new(),
@@ -198,6 +200,14 @@ impl World {
             auto_answer: true,
             pending: Vec::new(),
         }
+    }
+
+    /// Fail actual provider requests with selected typed terminal metadata.
+    pub fn fail_with(&mut self, failure: smith::llm::Failure, evidence: smith::llm::Evidence) {
+        assert_eq!(self.provider.calls(), 0);
+        self.provider_env.limits.overloaded = 1000;
+        self.provider = smith_agent_world::scripted_provider(&self.provider_env.limits, 1);
+        self.failure = Some((failure, evidence));
     }
 
     /// Replace the native provider script before the first request.
@@ -488,12 +498,13 @@ impl World {
                             binding.asker,
                         ),
                     },
-                    Err(error) => Below::Failed {
-                        owner: binding.owner,
-                        failure: smith_agent_world::translate::failure(error),
-                        evidence: smith::llm::Evidence::Response,
-                        detail: Box::default(),
-                    },
+                    Err(error) => {
+                        let (failure, evidence) = self.failure.unwrap_or((
+                            smith_agent_world::translate::failure(error),
+                            smith::llm::Evidence::Response { status: None },
+                        ));
+                        Below::Failed { owner: binding.owner, failure, evidence, detail: Box::default() }
+                    }
                 }
             };
             inline::step(

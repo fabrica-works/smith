@@ -51,7 +51,7 @@ pub fn failed(
     let evidence = match evidence {
         client::Evidence::Unsent => llm::Evidence::Unsent,
         client::Evidence::Unknown => llm::Evidence::Unknown,
-        client::Evidence::Response { status: _ } => llm::Evidence::Response,
+        client::Evidence::Response { status } => llm::Evidence::Response { status: Some(status) },
     };
     Ok(Event::Failed { owner, failure, evidence, detail })
 }

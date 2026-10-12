@@ -607,12 +607,25 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
     let value = match fault {
         run::Fault::Completion { failure, evidence } => {
             let (failure, retry_after) = match failure {
-                run::CompletionFailure::Limit => (channel::CompletionFailure::Limit, None),
+                run::CompletionFailure::Limit { which, bound } => (
+                    channel::CompletionFailure::Limit(channel::LimitFailure::new(
+                        limits,
+                        channel::LimitFailureParts { which: completion_limit(which, limits)?, bound },
+                    )?),
+                    None,
+                ),
+                run::CompletionFailure::ApplicationLimit => (channel::CompletionFailure::ApplicationLimit, None),
                 run::CompletionFailure::Protocol => (channel::CompletionFailure::Protocol, None),
                 run::CompletionFailure::Cancelled => (channel::CompletionFailure::Cancelled, None),
                 run::CompletionFailure::Overloaded => (channel::CompletionFailure::Overloaded, None),
                 run::CompletionFailure::Unavailable => (channel::CompletionFailure::Unavailable, None),
-                run::CompletionFailure::TimedOut => (channel::CompletionFailure::TimedOut, None),
+                run::CompletionFailure::TimedOut { phase } => (
+                    channel::CompletionFailure::TimedOut(channel::TimeoutFailure::new(
+                        limits,
+                        channel::TimeoutFailureParts { phase: completion_phase(phase) },
+                    )?),
+                    None,
+                ),
                 run::CompletionFailure::ContextTooLong => (channel::CompletionFailure::ContextTooLong, None),
                 run::CompletionFailure::Invalid => (channel::CompletionFailure::Invalid, None),
                 run::CompletionFailure::Unauthorized => (channel::CompletionFailure::Unauthorized, None),
@@ -626,7 +639,9 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
             let evidence = match evidence {
                 run::CompletionEvidence::Unsent => channel::CompletionEvidence::Unsent,
                 run::CompletionEvidence::Unknown => channel::CompletionEvidence::Unknown,
-                run::CompletionEvidence::Response => channel::CompletionEvidence::Response,
+                run::CompletionEvidence::Response { status } => channel::CompletionEvidence::Response(
+                    channel::ResponseEvidence::new(limits, channel::ResponseEvidenceParts { status })?,
+                ),
             };
             channel::ModelFault::Completion(channel::CompletionFault::new(
                 limits,
@@ -776,4 +791,57 @@ pub fn host_path(path: &[u8], maximum: u32) -> Option<Box<[u8]>> {
         writer.put(name).ok()?;
     }
     Some(writer.finish())
+}
+
+fn completion_limit(which: run::Limit, limits: &channel::Limits) -> Result<channel::CompletionLimit, Error> {
+    let which = match which {
+        run::Limit::Pool { reservation } => {
+            channel::CompletionLimit::Pool(channel::PoolLimit::new(limits, channel::PoolLimitParts { reservation })?)
+        }
+        run::Limit::Path(cap) => channel::CompletionLimit::Path(channel::PathCap::new(
+            limits,
+            channel::PathCapParts { value: completion_cap(cap) },
+        )?),
+        run::Limit::History => channel::CompletionLimit::History,
+        run::Limit::Window => channel::CompletionLimit::Window,
+        run::Limit::Call => channel::CompletionLimit::Call,
+        run::Limit::Message => channel::CompletionLimit::Message,
+    };
+    Ok(which)
+}
+
+const fn completion_cap(cap: run::Cap) -> channel::Cap {
+    match cap {
+        run::Cap::Request => channel::Cap::Request,
+        run::Cap::RequestHead => channel::Cap::RequestHead,
+        run::Cap::ResponseHead => channel::Cap::ResponseHead,
+        run::Cap::ResponseFields => channel::Cap::ResponseFields,
+        run::Cap::Skip => channel::Cap::Skip,
+        run::Cap::Field => channel::Cap::Field,
+        run::Cap::Retained => channel::Cap::Retained,
+        run::Cap::Tokens => channel::Cap::Tokens,
+        run::Cap::Depth => channel::Cap::Depth,
+        run::Cap::Strings => channel::Cap::Strings,
+        run::Cap::Number => channel::Cap::Number,
+        run::Cap::Reasoning => channel::Cap::Reasoning,
+        run::Cap::OutputItems => channel::Cap::OutputItems,
+        run::Cap::Metadata => channel::Cap::Metadata,
+        run::Cap::Tools => channel::Cap::Tools,
+        run::Cap::HistoryItems => channel::Cap::HistoryItems,
+        run::Cap::Output => channel::Cap::Output,
+        run::Cap::Answer => channel::Cap::Answer,
+        run::Cap::ErrorBody => channel::Cap::ErrorBody,
+        run::Cap::AccessToken => channel::Cap::AccessToken,
+        run::Cap::AccountId => channel::Cap::AccountId,
+    }
+}
+
+const fn completion_phase(phase: run::Phase) -> channel::CompletionPhase {
+    match phase {
+        run::Phase::Connect => channel::CompletionPhase::Connect,
+        run::Phase::Handshake => channel::CompletionPhase::Handshake,
+        run::Phase::Head => channel::CompletionPhase::Head,
+        run::Phase::Idle => channel::CompletionPhase::Idle,
+        run::Phase::Whole => channel::CompletionPhase::Whole,
+    }
 }

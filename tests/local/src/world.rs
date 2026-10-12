@@ -1561,7 +1561,7 @@ impl World {
                     self.events.push_back(self.below(Below::Failed {
                         owner,
                         failure: agent::llm::Failure::Exhausted { retry_after: Duration::from_secs(60) },
-                        evidence: agent::llm::Evidence::Response,
+                        evidence: agent::llm::Evidence::Response { status: None },
                         detail: Box::new([]),
                     }));
                     return;
@@ -1571,7 +1571,7 @@ impl World {
                     self.events.push_back(self.below(Below::Failed {
                         owner,
                         failure: agent::llm::Failure::Unauthorized,
-                        evidence: agent::llm::Evidence::Response,
+                        evidence: agent::llm::Evidence::Response { status: None },
                         detail: Box::new([]),
                     }));
                     return;

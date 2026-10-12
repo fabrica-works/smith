@@ -37,14 +37,7 @@ pub enum ToDomain {
     /// The completion and its decoded calls.
     Completed { owner: Token, completion: llm::Completion },
     /// One failure with the shared client's evidence.
-    Failed {
-        owner: Token,
-        failure: llm::Failure,
-        evidence: llm::Evidence,
-        /// Actual shared-client HTTP response status; absent without a response.
-        status: Option<u16>,
-        detail: Box<[u8]>,
-    },
+    Failed { owner: Token, failure: llm::Failure, evidence: llm::Evidence, detail: Box<[u8]> },
     /// The accepted call was cancelled.
     Cancelled { owner: Token },
     /// Text arrived in flight; only its byte count crosses the boundary.

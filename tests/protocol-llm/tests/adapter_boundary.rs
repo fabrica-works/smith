@@ -247,7 +247,7 @@ fn failed_owner_class_evidence_and_detail_survive_only_the_matching_context() {
                 };
                 assert_eq!(owner, OWNER);
                 assert_eq!(failure, llm::Failure::Overloaded);
-                assert_eq!(evidence, llm::Evidence::Response);
+                assert_eq!(evidence, llm::Evidence::Response { status: Some(503) });
                 assert_eq!(detail.as_ref(), b"overloaded_error");
             }
             close_won(&mut peer);

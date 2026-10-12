@@ -254,7 +254,7 @@ fn every_shared_failure_class_keeps_each_evidence_and_detail() {
     let evidence = [
         (shared::client::Evidence::Unsent, llm::Evidence::Unsent),
         (shared::client::Evidence::Unknown, llm::Evidence::Unknown),
-        (shared::client::Evidence::Response { status: 429 }, llm::Evidence::Response),
+        (shared::client::Evidence::Response { status: 429 }, llm::Evidence::Response { status: Some(429) }),
     ];
     for (source, expected) in cases {
         for (sent, expected_sent) in evidence {
@@ -409,4 +409,33 @@ fn an_observed_request_is_native_validated_before_its_payload_is_copied() {
         );
         assert!(up.is_empty(), "one refusal terminal");
     }
+}
+
+#[test]
+fn a_response_failure_keeps_its_status_in_the_evidence() {
+    let limits = limits();
+    let prepared = adapter::prepare(
+        adapter::Input {
+            owner: Token::new(71),
+            prompt: prompt(),
+            endpoint_name: llm::Endpoint(42),
+            endpoint: shared::Endpoint::codex(),
+            credential: credential(b"secret"),
+            application: Box::new([]),
+            receiving: limits.receiving,
+        },
+        &limits.adapter,
+    )
+    .expect("bounded preparation");
+    let terminal = adapter::failed(
+        prepared.context,
+        Token::new(71),
+        shared::Failure::Unavailable,
+        shared::client::Evidence::Response { status: 503 },
+        Box::default(),
+    )
+    .expect("matching terminal");
+    let smith_domain::Event::Failed { failure, evidence, .. } = terminal else { panic!("failure terminal") };
+    assert_eq!(failure, llm::Failure::Unavailable);
+    assert_eq!(evidence, llm::Evidence::Response { status: Some(503) });
 }

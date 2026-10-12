@@ -236,7 +236,7 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
             failure: smith_domain::run::CompletionFailure::RateLimited {
                 retry_after: skein_lib::Duration::from_nanos(42),
             },
-            evidence: smith_domain::run::CompletionEvidence::Response,
+            evidence: smith_domain::run::CompletionEvidence::Response { status: None },
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 2,
@@ -254,7 +254,7 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
         panic!("expected completion");
     };
     assert!(matches!(fault.failure(), smith_channel::CompletionFailure::RateLimited));
-    assert!(matches!(fault.evidence(), smith_channel::CompletionEvidence::Response));
+    assert!(matches!(fault.evidence(), smith_channel::CompletionEvidence::Response(_)));
     assert_eq!(fault.retry_after(), &Some(skein_lib::Duration::from_nanos(42)));
 }
 
@@ -272,7 +272,7 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
     world.agent_answers(smith_domain::run::Answer::Failed {
         failure: smith_domain::run::Failure::Model(smith_domain::run::Fault::Completion {
             failure: smith_domain::run::CompletionFailure::RateLimited { retry_after },
-            evidence: smith_domain::run::CompletionEvidence::Response,
+            evidence: smith_domain::run::CompletionEvidence::Response { status: None },
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 0,
@@ -288,7 +288,7 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
                 failure: smith_host_domain::channel::RunFailure::Model(
                     smith_host_domain::channel::ModelFault::Completion {
                         failure: smith_host_domain::channel::CompletionFailure::RateLimited { retry_after },
-                        evidence: smith_host_domain::channel::CompletionEvidence::Response,
+                        evidence: smith_host_domain::channel::CompletionEvidence::Response { status: None }
                     },
                 ),
             },

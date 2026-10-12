@@ -100,11 +100,24 @@ enum Overflow { spend, usage }
 record ReceivingLimitValue { value: ReceivingLimit }
 record OverflowValue { value: Overflow }
 enum BudgetFailure { turns, spend, time, tokens: ReceivingLimitValue, overflow: OverflowValue }
-enum CompletionFailure {
-    limit, protocol, cancelled, overloaded, unavailable, timed_out,
-    context_too_long, invalid, unauthorized, rate_limited, exhausted
+enum Cap {
+    request, request_head, response_head, response_fields, skip, field,
+    retained, tokens, depth, strings, number, reasoning, output_items,
+    metadata, tools, history_items, output, answer, error_body, access_token, account_id
 }
-enum CompletionEvidence { unsent, unknown, response }
+record PathCap { value: Cap }
+record PoolLimit { reservation: u64 }
+enum CompletionLimit { pool: PoolLimit, path: PathCap, history, window, call, message }
+record LimitFailure { which: CompletionLimit bound: u64 }
+enum CompletionPhase { connect, handshake, head, idle, whole }
+record TimeoutFailure { phase: CompletionPhase }
+enum CompletionFailure {
+    limit: LimitFailure, application_limit, protocol, cancelled, overloaded,
+    unavailable, timed_out: TimeoutFailure, context_too_long, invalid,
+    unauthorized, rate_limited, exhausted
+}
+record ResponseEvidence { status: option u16 }
+enum CompletionEvidence { unsent, unknown, response: ResponseEvidence }
 record CompletionFault {
     failure: CompletionFailure
     evidence: CompletionEvidence

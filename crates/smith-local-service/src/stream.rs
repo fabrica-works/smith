@@ -186,12 +186,14 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
 
 fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) -> CompletionFailure {
     let (class, retry_after_ms) = match why {
-        host::CompletionFailure::Limit => (FailureClass::Limit, None),
+        host::CompletionFailure::Limit { .. } | host::CompletionFailure::ApplicationLimit => {
+            (FailureClass::Limit, None)
+        }
         host::CompletionFailure::Protocol => (FailureClass::Protocol, None),
         host::CompletionFailure::Cancelled => (FailureClass::Cancelled, None),
         host::CompletionFailure::Overloaded => (FailureClass::Overloaded, None),
         host::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
-        host::CompletionFailure::TimedOut => (FailureClass::TimedOut, None),
+        host::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         host::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
         host::CompletionFailure::Invalid => (FailureClass::Invalid, None),
         host::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
@@ -205,7 +207,7 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
     let evidence = match evidence {
         host::CompletionEvidence::Unsent => Evidence::Unsent,
         host::CompletionEvidence::Unknown => Evidence::MaybeSent,
-        host::CompletionEvidence::Response => Evidence::Response,
+        host::CompletionEvidence::Response { .. } => Evidence::Response,
     };
     CompletionFailure { class, evidence, retry_after_ms, phase: None, limit: None, status: None, detail: None }
 }

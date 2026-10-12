@@ -537,8 +537,11 @@ fn failure_corruptions(event: &mut Event, owner: Token, failure: llm::Failure, e
         panic!("actual failure")
     };
     *actual_detail = retained;
-    *actual_evidence =
-        if evidence == llm::Evidence::Response { llm::Evidence::Unsent } else { llm::Evidence::Response };
+    *actual_evidence = if matches!(evidence, llm::Evidence::Response { .. }) {
+        llm::Evidence::Unsent
+    } else {
+        llm::Evidence::Response { status: None }
+    };
     assert!(!failure_evidence(event, owner, failure, evidence, detail));
     let Event::Failed { evidence: actual_evidence, failure: actual_failure, .. } = event else {
         panic!("actual failure")
@@ -603,7 +606,7 @@ fn response_unknown_and_unsent_failures_preserve_full_evidence() {
         &mut peer,
         Token::new(71),
         llm::Failure::RateLimited { retry_after: Duration::from_secs(4) },
-        llm::Evidence::Response,
+        llm::Evidence::Response { status: Some(429) },
         b"literal full detail",
     );
     let (context, mut peer) = adopt(&configuration, Token::new(72), Box::new([user(b"Start.")]), Vec::new());

@@ -36,7 +36,7 @@ fn context_too_long(world: &mut World) {
     world.step(session::Event::Failed {
         owner: world.completing.expect("pending request"),
         failure: llm::Failure::ContextTooLong,
-        evidence: llm::Evidence::Response,
+        evidence: llm::Evidence::Response { status: None },
         detail: Box::new([]),
     });
 }
@@ -87,7 +87,7 @@ fn context_too_long_on_the_compaction_fails_naming_the_window() {
         world.end,
         Some(session::End::Failed {
             failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 2_000 },
-            evidence: llm::Evidence::Response
+            evidence: llm::Evidence::Response { status: None }
         })
     ));
     assert_eq!(world.turns.len(), 1);

@@ -87,12 +87,15 @@ fn every_transcript_refusal_keeps_its_reason() {
 fn every_completion_failure_and_transport_evidence_maps_without_inference() {
     let cooldown = Duration::from_nanos(23);
     let failures = [
-        (llm::Failure::ApplicationLimit, run::CompletionFailure::Limit),
+        (llm::Failure::ApplicationLimit, run::CompletionFailure::ApplicationLimit),
         (llm::Failure::Protocol, run::CompletionFailure::Protocol),
         (llm::Failure::Cancelled, run::CompletionFailure::Cancelled),
         (llm::Failure::Overloaded, run::CompletionFailure::Overloaded),
         (llm::Failure::Unavailable, run::CompletionFailure::Unavailable),
-        (llm::Failure::TimedOut { phase: llm::Phase::Whole }, run::CompletionFailure::TimedOut),
+        (
+            llm::Failure::TimedOut { phase: llm::Phase::Whole },
+            run::CompletionFailure::TimedOut { phase: run::Phase::Whole },
+        ),
         (llm::Failure::ContextTooLong, run::CompletionFailure::ContextTooLong),
         (llm::Failure::Invalid, run::CompletionFailure::Invalid),
         (llm::Failure::Unauthorized, run::CompletionFailure::Unauthorized),
@@ -109,7 +112,7 @@ fn every_completion_failure_and_transport_evidence_maps_without_inference() {
         for (evidence, mapped_evidence) in [
             (llm::Evidence::Unsent, run::CompletionEvidence::Unsent),
             (llm::Evidence::Unknown, run::CompletionEvidence::Unknown),
-            (llm::Evidence::Response, run::CompletionEvidence::Response),
+            (llm::Evidence::Response { status: None }, run::CompletionEvidence::Response { status: None }),
         ] {
             assert_eq!(
                 translate::end(session::End::Failed { failure, evidence }),

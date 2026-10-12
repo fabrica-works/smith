@@ -80,7 +80,7 @@ fn session_whole_expiry_and_cancel_leave_the_sibling_live() {
     assert!(peer.terminals.is_empty());
     peer.advance(90);
     assert!(
-        matches!(peer.terminals.as_slice(), [ToDomain::Failed { owner, failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, evidence: llm::Evidence::Response, .. }] if *owner == Token::new(1))
+        matches!(peer.terminals.as_slice(), [ToDomain::Failed { owner, failure: llm::Failure::TimedOut { phase: llm::Phase::Whole }, evidence: llm::Evidence::Response { status: Some(200) }, .. }] if *owner == Token::new(1))
     );
     peer.bytes(101, &body());
     assert!(matches!(&peer.terminals[1], ToDomain::Completed { owner, .. } if *owner == Token::new(2)));
@@ -111,14 +111,18 @@ fn session_with_time(seconds: u64) -> World {
 }
 
 fn deliver_failure(peer: &mut Peer, world: &mut World) {
-    let ToDomain::Failed { owner, failure, evidence, status, detail } = peer.terminals.remove(0) else {
+    let ToDomain::Failed { owner, failure, evidence, detail } = peer.terminals.remove(0) else {
         panic!("one native failed attempt")
     };
     assert_eq!(world.completing, Some(owner));
+    let status = match evidence {
+        llm::Evidence::Response { status } => status,
+        llm::Evidence::Unsent | llm::Evidence::Unknown => None,
+    };
     assert_eq!(
         status,
         match evidence {
-            llm::Evidence::Response => Some(200),
+            llm::Evidence::Response { .. } => Some(200),
             llm::Evidence::Unsent | llm::Evidence::Unknown => None,
         },
         "status follows the actual independent response head, never inferred from its diagnostic"

@@ -451,7 +451,7 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
             text.put(match evidence {
                 run::CompletionEvidence::Unsent => b"unsent",
                 run::CompletionEvidence::Unknown => b"unknown",
-                run::CompletionEvidence::Response => b"response",
+                run::CompletionEvidence::Response { .. } => b"response",
             });
         }
         run::Fault::Exhausted => text.put(b"exhausted"),
@@ -465,12 +465,13 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
 
 fn render_completion_failure(text: &mut Text, failure: run::CompletionFailure) {
     match failure {
-        run::CompletionFailure::Limit => text.put(b"limit"),
+        run::CompletionFailure::Limit { .. } => text.put(b"limit"),
+        run::CompletionFailure::ApplicationLimit => text.put(b"application-limit"),
         run::CompletionFailure::Protocol => text.put(b"protocol"),
         run::CompletionFailure::Cancelled => text.put(b"unsolicited-cancelled"),
         run::CompletionFailure::Overloaded => text.put(b"overloaded"),
         run::CompletionFailure::Unavailable => text.put(b"unavailable"),
-        run::CompletionFailure::TimedOut => text.put(b"timed-out"),
+        run::CompletionFailure::TimedOut { .. } => text.put(b"timed-out"),
         run::CompletionFailure::ContextTooLong => text.put(b"context-too-long"),
         run::CompletionFailure::Invalid => text.put(b"invalid"),
         run::CompletionFailure::Unauthorized => text.put(b"unauthorized"),

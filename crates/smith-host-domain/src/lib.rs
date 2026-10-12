@@ -41,9 +41,9 @@ mod tests;
 pub use boundary::{End, Exit, Fault, Forced, Input, Invalid, MessageRefusal, Output, Signal};
 
 pub use channel::{
-    Answer, AnsweredCall, Ask, BudgetRefusal, CallName, Ceiling, CompletionEvidence, CompletionFailure, Directory,
-    Down, Effect, Exhausted, Grant, Message, ModelFault, Overflow, Part, Policy, Rate, ReceivingLimit, Refusal, Reply,
-    RunFailure, RunInvalid, RunResult, SavedReply, Start, TranscriptRefusal, Turn, Up, Window,
+    Answer, AnsweredCall, Ask, BudgetRefusal, CallName, Cap, Ceiling, CompletionEvidence, CompletionFailure, Directory,
+    Down, Effect, Exhausted, Grant, Limit, Message, ModelFault, Overflow, Part, Phase, Policy, Rate, ReceivingLimit,
+    Refusal, Reply, RunFailure, RunInvalid, RunResult, SavedReply, Start, TranscriptRefusal, Turn, Up, Window,
 };
 
 pub use delivery::{

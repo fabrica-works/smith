@@ -267,16 +267,16 @@ pub(crate) const fn host_effect(effect: run::HostEffect) -> Effect {
     }
 }
 
-/// Project the existing run failure class; native cap detail remains in session facts.
-/// Smith06.7 extends the application answer carrier; no retry policy lives here.
+/// Carry the session's typed failure into the run without retry policy.
 fn completion_failure(failure: llm::Failure) -> run::CompletionFailure {
     match failure {
-        llm::Failure::Limit { .. } | llm::Failure::ApplicationLimit => run::CompletionFailure::Limit,
+        llm::Failure::Limit { which, bound } => run::CompletionFailure::Limit { which: completion_limit(which), bound },
+        llm::Failure::ApplicationLimit => run::CompletionFailure::ApplicationLimit,
         llm::Failure::Protocol => run::CompletionFailure::Protocol,
         llm::Failure::Cancelled => run::CompletionFailure::Cancelled,
         llm::Failure::Overloaded => run::CompletionFailure::Overloaded,
         llm::Failure::Unavailable => run::CompletionFailure::Unavailable,
-        llm::Failure::TimedOut { .. } => run::CompletionFailure::TimedOut,
+        llm::Failure::TimedOut { phase } => run::CompletionFailure::TimedOut { phase: completion_phase(phase) },
         llm::Failure::ContextTooLong => run::CompletionFailure::ContextTooLong,
         llm::Failure::Invalid => run::CompletionFailure::Invalid,
         llm::Failure::Unauthorized => run::CompletionFailure::Unauthorized,
@@ -290,7 +290,7 @@ fn completion_evidence(evidence: llm::Evidence) -> run::CompletionEvidence {
     match evidence {
         llm::Evidence::Unsent => run::CompletionEvidence::Unsent,
         llm::Evidence::Unknown => run::CompletionEvidence::Unknown,
-        llm::Evidence::Response => run::CompletionEvidence::Response,
+        llm::Evidence::Response { status } => run::CompletionEvidence::Response { status },
     }
 }
 
@@ -326,4 +326,51 @@ fn host_names(host: &[u8]) -> Option<Box<[Name]>> {
         }
     }
     Some(names.into_boxed())
+}
+
+const fn completion_limit(which: llm::Limit) -> run::Limit {
+    match which {
+        llm::Limit::Pool { reservation } => run::Limit::Pool { reservation },
+        llm::Limit::Path(cap) => run::Limit::Path(completion_cap(cap)),
+        llm::Limit::History => run::Limit::History,
+        llm::Limit::Window => run::Limit::Window,
+        llm::Limit::Call => run::Limit::Call,
+        llm::Limit::Message => run::Limit::Message,
+    }
+}
+
+const fn completion_cap(cap: llm::Cap) -> run::Cap {
+    match cap {
+        llm::Cap::Request => run::Cap::Request,
+        llm::Cap::RequestHead => run::Cap::RequestHead,
+        llm::Cap::ResponseHead => run::Cap::ResponseHead,
+        llm::Cap::ResponseFields => run::Cap::ResponseFields,
+        llm::Cap::Skip => run::Cap::Skip,
+        llm::Cap::Field => run::Cap::Field,
+        llm::Cap::Retained => run::Cap::Retained,
+        llm::Cap::Tokens => run::Cap::Tokens,
+        llm::Cap::Depth => run::Cap::Depth,
+        llm::Cap::Strings => run::Cap::Strings,
+        llm::Cap::Number => run::Cap::Number,
+        llm::Cap::Reasoning => run::Cap::Reasoning,
+        llm::Cap::OutputItems => run::Cap::OutputItems,
+        llm::Cap::Metadata => run::Cap::Metadata,
+        llm::Cap::Tools => run::Cap::Tools,
+        llm::Cap::HistoryItems => run::Cap::HistoryItems,
+        llm::Cap::Output => run::Cap::Output,
+        llm::Cap::Answer => run::Cap::Answer,
+        llm::Cap::ErrorBody => run::Cap::ErrorBody,
+        llm::Cap::AccessToken => run::Cap::AccessToken,
+        llm::Cap::AccountId => run::Cap::AccountId,
+    }
+}
+
+const fn completion_phase(phase: llm::Phase) -> run::Phase {
+    match phase {
+        llm::Phase::Connect => run::Phase::Connect,
+        llm::Phase::Handshake => run::Phase::Handshake,
+        llm::Phase::Head => run::Phase::Head,
+        llm::Phase::Idle => run::Phase::Idle,
+        llm::Phase::Whole => run::Phase::Whole,
+    }
 }

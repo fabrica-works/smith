@@ -1965,7 +1965,7 @@ fn scalar_reservation_denies_before_any_provider_call_or_credential_lookup() {
     assert_eq!(
         *failure,
         run::Failure::Model(run::Fault::Completion {
-            failure: run::CompletionFailure::Limit,
+            failure: run::CompletionFailure::Limit { which: run::Limit::Window, bound: 8 },
             evidence: run::CompletionEvidence::Unsent
         })
     );

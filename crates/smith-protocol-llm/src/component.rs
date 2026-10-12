@@ -522,7 +522,7 @@ impl Component {
                             }
                             let resolved = self.resolve(&completion, &active);
                             match crate::completion(active.context, call, completion, resolved) {
-                                Ok(event) => Self::domain_event(event, None, to_domain),
+                                Ok(event) => Self::domain_event(event, to_domain),
                                 Err(error) => {
                                     Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                                 }
@@ -536,12 +536,8 @@ impl Component {
                     match self.active.remove(&call) {
                         Some(active) => {
                             self.measures.push(crate::Measure::Terminal { owner: call, measures });
-                            let status = match evidence {
-                                shared::client::Evidence::Unsent | shared::client::Evidence::Unknown => None,
-                                shared::client::Evidence::Response { status } => Some(status),
-                            };
                             match crate::failed(active.context, call, failure, evidence, detail) {
-                                Ok(event) => Self::domain_event(event, status, to_domain),
+                                Ok(event) => Self::domain_event(event, to_domain),
                                 Err(error) => {
                                     Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                                 }
@@ -556,7 +552,7 @@ impl Component {
                         Some(active) => {
                             self.measures.push(crate::Measure::Terminal { owner: call, measures });
                             match crate::cancelled(active.context, call) {
-                                Ok(event) => Self::domain_event(event, None, to_domain),
+                                Ok(event) => Self::domain_event(event, to_domain),
                                 Err(error) => {
                                     Self::refusal(call, error, self.limits.adapter.client.detail_bytes, to_domain);
                                 }
@@ -655,11 +651,11 @@ impl Component {
         resolved.into_boxed()
     }
 
-    fn domain_event(event: DomainEvent, status: Option<u16>, to_domain: &mut Queue<ToDomain>) {
+    fn domain_event(event: DomainEvent, to_domain: &mut Queue<ToDomain>) {
         match event {
             DomainEvent::Completed { owner, completion } => to_domain.push(ToDomain::Completed { owner, completion }),
             DomainEvent::Failed { owner, failure, evidence, detail } => {
-                to_domain.push(ToDomain::Failed { owner, failure, evidence, status, detail });
+                to_domain.push(ToDomain::Failed { owner, failure, evidence, detail });
             }
             DomainEvent::Cancelled { owner } => to_domain.push(ToDomain::Cancelled { owner }),
             DomainEvent::HostReturned { .. }
@@ -678,7 +674,7 @@ impl Component {
     }
 
     fn refusal(owner: Token, error: Error, maximum: u32, to_domain: &mut Queue<ToDomain>) {
-        Self::domain_event(crate::refusal(owner, error, maximum), None, to_domain);
+        Self::domain_event(crate::refusal(owner, error, maximum), to_domain);
     }
 
     fn local_failure(owner: Token, failure: llm::Failure, maximum: u32, to_domain: &mut Queue<ToDomain>) {
@@ -688,7 +684,6 @@ impl Component {
             owner,
             failure,
             evidence: llm::Evidence::Unsent,
-            status: None,
             detail: bytes::copy_of(detail.get(..length).expect("clipped fixed local diagnostic")),
         });
     }

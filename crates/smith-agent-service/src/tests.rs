@@ -898,8 +898,7 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
     book.failed(
         Token::new(99),
         llm::Failure::ContextTooLong,
-        llm::Evidence::Response,
-        Some(400),
+        llm::Evidence::Response { status: Some(400) },
         b"context",
         crate::sinks::Capture::Calls,
     );
@@ -910,7 +909,7 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
             session::FactKind::CompletionFailed {
                 opener: owner,
                 failure: llm::Failure::ContextTooLong,
-                evidence: llm::Evidence::Response,
+                evidence: llm::Evidence::Response { status: None },
             },
             3,
             None,
@@ -939,7 +938,7 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
                 opener: owner,
                 end: session::End::Failed {
                     failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 123 },
-                    evidence: llm::Evidence::Response,
+                    evidence: llm::Evidence::Response { status: None },
                 },
                 turns: 2,
                 usage: llm::Usage::NONE,

@@ -1368,11 +1368,11 @@ fn llm_events_up(service: &mut Service) {
                 }
                 service.domain_events.push(domain::Event::Completed { owner, completion });
             }
-            llm::ToDomain::Failed { owner, failure, evidence, status, detail } => {
+            llm::ToDomain::Failed { owner, failure, evidence, detail } => {
                 match &mut service.events {
                     Some(events) => {
                         events.sinks.attempt_ready(owner);
-                        events.sinks.failed(owner, failure, evidence, status, &detail);
+                        events.sinks.failed(owner, failure, evidence, &detail);
                     }
                     None => {}
                 }

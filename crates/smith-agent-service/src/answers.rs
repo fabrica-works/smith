@@ -245,12 +245,12 @@ fn failed(why: run::Failure) -> AnswerFailure {
 
 fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) -> CompletionFailure {
     let (class, retry_after_ms) = match why {
-        run::CompletionFailure::Limit => (FailureClass::Limit, None),
+        run::CompletionFailure::Limit { .. } | run::CompletionFailure::ApplicationLimit => (FailureClass::Limit, None),
         run::CompletionFailure::Protocol => (FailureClass::Protocol, None),
         run::CompletionFailure::Cancelled => (FailureClass::Cancelled, None),
         run::CompletionFailure::Overloaded => (FailureClass::Overloaded, None),
         run::CompletionFailure::Unavailable => (FailureClass::Unavailable, None),
-        run::CompletionFailure::TimedOut => (FailureClass::TimedOut, None),
+        run::CompletionFailure::TimedOut { .. } => (FailureClass::TimedOut, None),
         run::CompletionFailure::ContextTooLong => (FailureClass::ContextTooLong, None),
         run::CompletionFailure::Invalid => (FailureClass::Invalid, None),
         run::CompletionFailure::Unauthorized => (FailureClass::Unauthorized, None),
@@ -261,12 +261,88 @@ fn completion(why: run::CompletionFailure, evidence: run::CompletionEvidence) ->
             (FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
         }
     };
+    let status = match evidence {
+        run::CompletionEvidence::Unsent | run::CompletionEvidence::Unknown => None,
+        run::CompletionEvidence::Response { status } => match status {
+            Some(status) => Some(u64::from(status)),
+            None => None,
+        },
+    };
+    let phase = match why {
+        run::CompletionFailure::TimedOut { phase } => Some(match phase {
+            run::Phase::Connect => smith_events::FailurePhase::Connect,
+            run::Phase::Handshake => smith_events::FailurePhase::Handshake,
+            run::Phase::Head => smith_events::FailurePhase::Head,
+            run::Phase::Idle => smith_events::FailurePhase::Idle,
+            run::Phase::Whole => smith_events::FailurePhase::Whole,
+        }),
+        run::CompletionFailure::Limit { .. }
+        | run::CompletionFailure::ApplicationLimit
+        | run::CompletionFailure::Protocol
+        | run::CompletionFailure::Cancelled
+        | run::CompletionFailure::Overloaded
+        | run::CompletionFailure::Unavailable
+        | run::CompletionFailure::ContextTooLong
+        | run::CompletionFailure::Invalid
+        | run::CompletionFailure::Unauthorized
+        | run::CompletionFailure::RateLimited { .. }
+        | run::CompletionFailure::Exhausted { .. } => None,
+    };
+    let limit = match why {
+        run::CompletionFailure::Limit { which, bound } => {
+            Some(smith_events::FailureLimit { which: limit_name(which).into(), bound })
+        }
+        run::CompletionFailure::ApplicationLimit
+        | run::CompletionFailure::Protocol
+        | run::CompletionFailure::Cancelled
+        | run::CompletionFailure::Overloaded
+        | run::CompletionFailure::Unavailable
+        | run::CompletionFailure::TimedOut { .. }
+        | run::CompletionFailure::ContextTooLong
+        | run::CompletionFailure::Invalid
+        | run::CompletionFailure::Unauthorized
+        | run::CompletionFailure::RateLimited { .. }
+        | run::CompletionFailure::Exhausted { .. } => None,
+    };
     let evidence = match evidence {
         run::CompletionEvidence::Unsent => Evidence::Unsent,
         run::CompletionEvidence::Unknown => Evidence::MaybeSent,
-        run::CompletionEvidence::Response => Evidence::Response,
+        run::CompletionEvidence::Response { .. } => Evidence::Response,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase: None, limit: None, status: None, detail: None }
+    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status, detail: None }
+}
+
+fn limit_name(which: run::Limit) -> &'static [u8] {
+    match which {
+        run::Limit::Pool { .. } => b"pool",
+        run::Limit::History => b"history",
+        run::Limit::Window => b"window",
+        run::Limit::Call => b"call",
+        run::Limit::Message => b"message",
+        run::Limit::Path(which) => match which {
+            run::Cap::Request => b"request",
+            run::Cap::RequestHead => b"request_head",
+            run::Cap::ResponseHead => b"response_head",
+            run::Cap::ResponseFields => b"response_fields",
+            run::Cap::Skip => b"skip",
+            run::Cap::Field => b"field",
+            run::Cap::Retained => b"retained",
+            run::Cap::Tokens => b"tokens",
+            run::Cap::Depth => b"depth",
+            run::Cap::Strings => b"strings",
+            run::Cap::Number => b"number",
+            run::Cap::Reasoning => b"reasoning",
+            run::Cap::OutputItems => b"output_items",
+            run::Cap::Metadata => b"metadata",
+            run::Cap::Tools => b"tools",
+            run::Cap::HistoryItems => b"history_items",
+            run::Cap::Output => b"output",
+            run::Cap::Answer => b"answer",
+            run::Cap::ErrorBody => b"error_body",
+            run::Cap::AccessToken => b"access_token",
+            run::Cap::AccountId => b"account_id",
+        },
+    }
 }
 
 #[cfg(test)]
@@ -329,7 +405,7 @@ mod tests {
                 run::Answer::Failed {
                     failure: run::Failure::Model(run::Fault::Completion {
                         failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
-                        evidence: run::CompletionEvidence::Response,
+                        evidence: run::CompletionEvidence::Response { status: None },
                     }),
                     spent,
                     turns: 2,
@@ -374,7 +450,7 @@ mod tests {
         }
         let why = failed(run::Failure::Model(run::Fault::Completion {
             failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
-            evidence: run::CompletionEvidence::Response,
+            evidence: run::CompletionEvidence::Response { status: None },
         }));
         assert_eq!(
             why.completion,

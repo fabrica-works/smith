@@ -200,7 +200,7 @@ const fn completion_evidence(value: run::CompletionEvidence) -> host::Completion
     match value {
         run::CompletionEvidence::Unsent => host::CompletionEvidence::Unsent,
         run::CompletionEvidence::Unknown => host::CompletionEvidence::Unknown,
-        run::CompletionEvidence::Response => host::CompletionEvidence::Response,
+        run::CompletionEvidence::Response { status } => host::CompletionEvidence::Response { status },
     }
 }
 
@@ -238,12 +238,17 @@ pub(crate) const fn message_refusal(value: run::MessageRefusal) -> host::Message
 
 const fn completion_failure(value: run::CompletionFailure) -> host::CompletionFailure {
     match value {
-        run::CompletionFailure::Limit => host::CompletionFailure::Limit,
+        run::CompletionFailure::Limit { which, bound } => {
+            host::CompletionFailure::Limit { which: completion_limit(which), bound }
+        }
+        run::CompletionFailure::ApplicationLimit => host::CompletionFailure::ApplicationLimit,
         run::CompletionFailure::Protocol => host::CompletionFailure::Protocol,
         run::CompletionFailure::Cancelled => host::CompletionFailure::Cancelled,
         run::CompletionFailure::Overloaded => host::CompletionFailure::Overloaded,
         run::CompletionFailure::Unavailable => host::CompletionFailure::Unavailable,
-        run::CompletionFailure::TimedOut => host::CompletionFailure::TimedOut,
+        run::CompletionFailure::TimedOut { phase } => {
+            host::CompletionFailure::TimedOut { phase: completion_phase(phase) }
+        }
         run::CompletionFailure::ContextTooLong => host::CompletionFailure::ContextTooLong,
         run::CompletionFailure::Invalid => host::CompletionFailure::Invalid,
         run::CompletionFailure::Unauthorized => host::CompletionFailure::Unauthorized,
@@ -534,5 +539,52 @@ const fn budget_refusal(refusal: run::BudgetRefusal) -> host::BudgetRefusal {
         run::BudgetRefusal::Reserve(part) => host::BudgetRefusal::Reserve(budget_part(part)),
         run::BudgetRefusal::Completion { most } => host::BudgetRefusal::Completion { most },
         run::BudgetRefusal::Checks { reserve, checks } => host::BudgetRefusal::Checks { reserve, checks },
+    }
+}
+
+const fn completion_limit(which: run::Limit) -> host::Limit {
+    match which {
+        run::Limit::Pool { reservation } => host::Limit::Pool { reservation },
+        run::Limit::Path(cap) => host::Limit::Path(completion_cap(cap)),
+        run::Limit::History => host::Limit::History,
+        run::Limit::Window => host::Limit::Window,
+        run::Limit::Call => host::Limit::Call,
+        run::Limit::Message => host::Limit::Message,
+    }
+}
+
+const fn completion_cap(cap: run::Cap) -> host::Cap {
+    match cap {
+        run::Cap::Request => host::Cap::Request,
+        run::Cap::RequestHead => host::Cap::RequestHead,
+        run::Cap::ResponseHead => host::Cap::ResponseHead,
+        run::Cap::ResponseFields => host::Cap::ResponseFields,
+        run::Cap::Skip => host::Cap::Skip,
+        run::Cap::Field => host::Cap::Field,
+        run::Cap::Retained => host::Cap::Retained,
+        run::Cap::Tokens => host::Cap::Tokens,
+        run::Cap::Depth => host::Cap::Depth,
+        run::Cap::Strings => host::Cap::Strings,
+        run::Cap::Number => host::Cap::Number,
+        run::Cap::Reasoning => host::Cap::Reasoning,
+        run::Cap::OutputItems => host::Cap::OutputItems,
+        run::Cap::Metadata => host::Cap::Metadata,
+        run::Cap::Tools => host::Cap::Tools,
+        run::Cap::HistoryItems => host::Cap::HistoryItems,
+        run::Cap::Output => host::Cap::Output,
+        run::Cap::Answer => host::Cap::Answer,
+        run::Cap::ErrorBody => host::Cap::ErrorBody,
+        run::Cap::AccessToken => host::Cap::AccessToken,
+        run::Cap::AccountId => host::Cap::AccountId,
+    }
+}
+
+const fn completion_phase(phase: run::Phase) -> host::Phase {
+    match phase {
+        run::Phase::Connect => host::Phase::Connect,
+        run::Phase::Handshake => host::Phase::Handshake,
+        run::Phase::Head => host::Phase::Head,
+        run::Phase::Idle => host::Phase::Idle,
+        run::Phase::Whole => host::Phase::Whole,
     }
 }

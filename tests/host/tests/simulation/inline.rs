@@ -491,3 +491,25 @@ fn a_real_completion_stretches_the_spawned_watchdog_past_no_progress() {
     spawned.cleanup(Some(smith_host_domain::Exit::Code(0)));
     spawned.settled();
 }
+
+#[test]
+fn an_inline_answer_keeps_its_typed_completion_failure() {
+    let mut bounds = inline::limits();
+    bounds.smith.session.retries = 2;
+    let start = inline::start(6808, Job::HostTools);
+    let mut world = World::new(6808, bounds);
+    world.fail_with(
+        smith_domain::llm::Failure::TimedOut { phase: smith_domain::llm::Phase::Head },
+        smith_domain::llm::Evidence::Response { status: Some(503) },
+    );
+    world.event(parent::Event::Spawn { client: Token::new(1), start });
+    world.run();
+    world.settled();
+    let RunResult::Failed { failure: RunFailure::Model(host::ModelFault::Completion { failure, evidence }) } =
+        world.seen[&Token::new(1)].answer.as_ref().expect("answer").result
+    else {
+        panic!("typed model failure")
+    };
+    assert_eq!(failure, host::CompletionFailure::TimedOut { phase: host::Phase::Head });
+    assert_eq!(evidence, host::CompletionEvidence::Response { status: Some(503) });
+}

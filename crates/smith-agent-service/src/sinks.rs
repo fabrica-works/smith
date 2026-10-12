@@ -406,14 +406,13 @@ impl Sinks {
         owner: Token,
         failure: smith_domain::llm::Failure,
         evidence: smith_domain::llm::Evidence,
-        status: Option<u16>,
         detail: &[u8],
     ) {
         assert!(
             detail.len() <= usize::try_from(self.limits.scalar_content).expect("u32 fits"),
             "the native diagnostic respects its configured source bound"
         );
-        self.responses.failed(owner, failure, evidence, status, detail, self.capture);
+        self.responses.failed(owner, failure, evidence, detail, self.capture);
     }
 
     pub(crate) fn answer_failure(&mut self, record: &mut smith_events::RunCompleted) {

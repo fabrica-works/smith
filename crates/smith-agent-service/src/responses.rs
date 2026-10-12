@@ -276,17 +276,12 @@ impl Book {
         request_owner: Token,
         failure: llm::Failure,
         evidence: llm::Evidence,
-        status: Option<u16>,
         detail: &[u8],
         capture: crate::sinks::Capture,
     ) {
         let owner = self.owner_for(request_owner).expect("failure belongs to an actual request");
         let conversation = self.conversations.get_mut(&owner).expect("found above");
         let mut observed = completion_failure(failure, evidence);
-        observed.status = match status {
-            Some(status) => Some(u64::from(status)),
-            None => None,
-        };
         observed.detail = match capture {
             crate::sinks::Capture::None => None,
             crate::sinks::Capture::Calls | crate::sinks::Capture::Everything => Some(detail.into()),
@@ -871,10 +866,17 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
             (smith_events::FailureClass::Exhausted, Some(retry_after.as_nanos() / 1_000_000))
         }
     };
+    let status = match evidence {
+        llm::Evidence::Unsent | llm::Evidence::Unknown => None,
+        llm::Evidence::Response { status } => match status {
+            Some(status) => Some(u64::from(status)),
+            None => None,
+        },
+    };
     let evidence = match evidence {
         llm::Evidence::Unsent => smith_events::Evidence::Unsent,
         llm::Evidence::Unknown => smith_events::Evidence::MaybeSent,
-        llm::Evidence::Response => smith_events::Evidence::Response,
+        llm::Evidence::Response { .. } => smith_events::Evidence::Response,
     };
     let phase = match failure {
         llm::Failure::TimedOut { phase } => Some(match phase {
@@ -912,7 +914,7 @@ pub(crate) fn completion_failure(failure: llm::Failure, evidence: llm::Evidence)
         | llm::Failure::RateLimited { .. }
         | llm::Failure::Exhausted { .. } => None,
     };
-    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status: None, detail: None }
+    CompletionFailure { class, evidence, retry_after_ms, phase, limit, status, detail: None }
 }
 
 fn limit_name(which: llm::Limit) -> &'static [u8] {
@@ -1103,7 +1105,7 @@ pub(crate) mod tests {
             session::FactKind::CompletionFailed {
                 opener: owner,
                 failure: llm::Failure::ContextTooLong,
-                evidence: llm::Evidence::Response,
+                evidence: llm::Evidence::Response { status: None },
             },
             1,
             None,
@@ -1141,7 +1143,7 @@ pub(crate) mod tests {
             session::FactKind::CompletionFailed {
                 opener: owner,
                 failure: llm::Failure::RateLimited { retry_after: Duration::from_millis(29) },
-                evidence: llm::Evidence::Response,
+                evidence: llm::Evidence::Response { status: None },
             },
             1,
             None,
@@ -1575,13 +1577,17 @@ pub(crate) mod tests {
         } else {
             llm::Failure::Invalid
         };
-        book.failed(request, failure, llm::Evidence::Response, Some(status), detail, capture);
+        book.failed(request, failure, llm::Evidence::Response { status: Some(status) }, detail, capture);
         assert!(
             book.fact(
                 Time::ZERO,
                 &fact(
                     5,
-                    session::FactKind::CompletionFailed { opener: owner, failure, evidence: llm::Evidence::Response },
+                    session::FactKind::CompletionFailed {
+                        opener: owner,
+                        failure,
+                        evidence: llm::Evidence::Response { status: None }
+                    },
                     1,
                     None
                 )
@@ -1632,7 +1638,7 @@ pub(crate) mod tests {
                             opener: owner,
                             end: session::End::Failed {
                                 failure: llm::Failure::Invalid,
-                                evidence: llm::Evidence::Response,
+                                evidence: llm::Evidence::Response { status: None },
                             },
                             turns: 0,
                             usage: llm::Usage::NONE,
@@ -1665,7 +1671,10 @@ pub(crate) mod tests {
                         endpoint: None,
                         model: None,
                         attempts: None,
-                        completion: Some(completion_failure(llm::Failure::Invalid, llm::Evidence::Response)),
+                        completion: Some(completion_failure(
+                            llm::Failure::Invalid,
+                            llm::Evidence::Response { status: None },
+                        )),
                         account: None,
                         which: None,
                         reason: None,

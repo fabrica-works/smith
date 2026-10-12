@@ -369,6 +369,7 @@ pub enum CompletionTerminal {
 #[derive(Debug)]
 pub struct World {
     settings: Settings,
+    failure: Option<(agent::llm::Failure, agent::llm::Evidence)>,
     now: Time,
     rng: Rng,
     agent: agent::Domain,
@@ -486,6 +487,15 @@ impl World {
     #[must_use]
     pub fn new(settings: Settings) -> World {
         Self::with_history(settings, None)
+    }
+
+    /// A real fake-provider failure with the selected typed terminal metadata.
+    #[must_use]
+    pub fn with_failure(mut settings: Settings, failure: agent::llm::Failure, evidence: agent::llm::Evidence) -> Self {
+        settings.provider.overloaded = 1000;
+        let mut world = Self::new(settings);
+        world.failure = Some((failure, evidence));
+        world
     }
 
     /// Typed V2 entrance from saved turns, with no later answers supplied.
@@ -700,6 +710,7 @@ impl World {
             referee,
             stimuli,
             terminals: 0,
+            failure: None,
         }
     }
 
@@ -1084,12 +1095,11 @@ impl World {
                     Ok(answer) => {
                         Event::Completed { owner, completion: translate::completion(answer, grants, &served, asker) }
                     }
-                    Err(error) => Event::Failed {
-                        owner,
-                        failure: translate::failure(error),
-                        evidence: smith_domain::llm::Evidence::Unknown,
-                        detail: Box::default(),
-                    },
+                    Err(error) => {
+                        let (failure, evidence) =
+                            self.failure.unwrap_or((translate::failure(error), agent::llm::Evidence::Unknown));
+                        Event::Failed { owner, failure, evidence, detail: Box::default() }
+                    }
                 };
                 self.send(Family::Completion, owner, event);
             }

@@ -445,7 +445,7 @@ pub enum Evidence {
     Unknown,
 
     /// The peer response was received, including a refused response.
-    Response,
+    Response { status: Option<u16> },
 }
 
 /// The protocol's elapsed call phase, carried losslessly in timeout terminals

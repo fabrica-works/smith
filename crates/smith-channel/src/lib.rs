@@ -17,6 +17,11 @@ mod kinds;
 
 pub use kinds::{KindRule, Overflow, V2, peer_terms_gap, schema};
 pub use v2::{
+    Cap, CompletionLimit, CompletionPhase, LimitFailure, LimitFailureParts, PathCap, PathCapParts, PoolLimit,
+    PoolLimitParts, ResponseEvidence, ResponseEvidenceParts, TimeoutFailure, TimeoutFailureParts,
+};
+
+pub use v2::{
     Accepted, AcceptedParts, Acknowledge, AcknowledgeParts, Admitted, AdmittedParts, Answer, AnswerParts, AnsweredCall,
     AnsweredCallParts, Ask, BudgetCeiling, BudgetCeilingValue, BudgetCeilingValueParts, BudgetChecks,
     BudgetChecksParts, BudgetCompletion, BudgetCompletionParts, BudgetFailure, BudgetFailureValue,
