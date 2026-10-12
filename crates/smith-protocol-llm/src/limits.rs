@@ -165,6 +165,7 @@ pub fn render_worst_case(tools: &smith_domain::tools::Limits, host_answer: u32, 
         .max(host)
         .max(delegated_answer)
         .max(failure_path)
+        .max(crate::render::size_refusal_worst_case()?)
         .max(128);
     u32::try_from(largest.checked_add(u64::from(crate::render::CUT_MARKER_BYTES))?).ok()
 }

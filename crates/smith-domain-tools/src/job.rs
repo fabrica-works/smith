@@ -260,9 +260,7 @@ pub(crate) fn done(domain: &mut Domain, env: &Env<Limits>, owner: Token, done: D
     let state = mem::replace(&mut job.state, State::Done);
     let clamped = state_clamped(&state);
     let next = match state {
-        State::Reading { reply_to, place, span } => {
-            loaded(&kit.checkout, &mut kit.knowledge, reply_to, place, span, done)
-        }
+        State::Reading { reply_to, place, span } => loaded(kit, reply_to, place, span, done, env.limits.file_bytes),
         State::Listing { reply_to, place } => scanned(&kit.checkout, reply_to, place, done),
         State::Searching { reply_to, place } => found(&kit.checkout, reply_to, place, done),
         State::Editing { reply_to, editing } => to_edit(kit, id, reply_to, editing, done, env, out),
@@ -329,28 +327,21 @@ fn follow(kits: &mut Slab<Kit>, jobs: &mut Slab<Job>, facts: &mut Facts, id: Id<
 // comes next.
 
 /// Reading, ended: answer with the window, and know the version read.
-fn loaded(
-    checkout: &Checkout,
-    knowledge: &mut Knowledge,
-    reply_to: ReplyTo,
-    place: Place,
-    span: Span,
-    done: Done,
-) -> Next {
+fn loaded(kit: &mut Kit, reply_to: ReplyTo, place: Place, span: Span, done: Done, bound: u32) -> Next {
     let outcome = match done {
         Done::Loaded { content, version } => {
-            knowledge.record(place, version);
+            kit.knowledge.record(place, version);
             let read = window::read(content, span);
             return Next::Answer { reply_to, outcome: read.outcome, omitted_bytes: read.omitted_bytes };
         }
         Done::Missing => {
-            knowledge.forget(&place);
-            Outcome::NotFound { path: authority::resolved(checkout, &place) }
+            kit.knowledge.forget(&place);
+            Outcome::NotFound { path: authority::resolved(&kit.checkout, &place) }
         }
         Done::NotFile => Outcome::NotFile,
-        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(checkout, &place) },
-        Done::TooLarge { size } => Outcome::TooLarge { size },
-        Done::Escapes => Outcome::Outside { path: authority::resolved(checkout, &place) },
+        Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(&kit.checkout, &place) },
+        Done::TooLarge { size } => Outcome::TooLarge { what: crate::SizePart::File, size, bound },
+        Done::Escapes => Outcome::Outside { path: authority::resolved(&kit.checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,
         Done::Cancelled => Outcome::Cancelled,
@@ -451,7 +442,9 @@ fn to_edit(
         }
         Done::NotFile => Outcome::NotFile,
         Done::NotDirectory => Outcome::NotDirectory { path: authority::resolved(&kit.checkout, &place) },
-        Done::TooLarge { size } => Outcome::TooLarge { size },
+        Done::TooLarge { size } => {
+            Outcome::TooLarge { what: crate::SizePart::File, size, bound: env.limits.file_bytes }
+        }
         Done::Escapes => Outcome::Outside { path: authority::resolved(&kit.checkout, &place) },
         Done::Failed { fault } => Outcome::Failed { fault },
         Done::TimedOut => Outcome::TimedOut,

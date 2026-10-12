@@ -182,6 +182,28 @@ pub enum Effect {
     Write,
 }
 
+/// The material whose size the tools refused; carried by a `TooLarge` terminal.
+/// Contract: domain/tools.md, section 4.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SizePart {
+    /// A loaded file exceeded the whole-file byte bound.
+    File,
+    /// A Write's content exceeded the per-piece byte bound.
+    WriteContent,
+    /// An Edit's old snippets exceeded their aggregate byte bound.
+    EditOld,
+    /// An Edit's new snippets exceeded their aggregate byte bound.
+    EditNew,
+    /// An Edit's replacement count exceeded its item bound.
+    EditItems,
+    /// An Edit's resulting file exceeded the whole-file byte bound.
+    EditResult,
+    /// An Edit's total matched replacements exceeded its count bound.
+    EditReplacements,
+    /// A List's glob exceeded its byte bound.
+    ListGlob,
+}
+
 /// The effect of `call`. A command may do anything, so it writes.
 #[must_use]
 pub const fn effect(call: &Call) -> Effect {
@@ -275,11 +297,13 @@ pub enum Outcome {
     /// What is at the path, or a directory on the way to it, is not a
     /// directory.
     NotDirectory { path: Resolved },
-    /// The file, or the content to write, is `size` bytes: more than the
-    /// tools load or store.
+    /// The tools refused `what` at its size bound and returned both quantities.
     TooLarge {
-        /// Observed file size which exceeds the receiving byte cap.
+        what: SizePart,
+        /// Observed bytes, or items for `EditItems` and `EditReplacements`.
         size: u64,
+        /// Exceeded bound in the same unit as size.
+        bound: u32,
     },
     /// A write names an existing file whose version the LLM has not read.
     NotRead,

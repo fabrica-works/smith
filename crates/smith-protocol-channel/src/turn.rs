@@ -323,9 +323,10 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
             limits,
             wire::ResolvedFailureParts { path: encode_resolved(path, limits)? },
         )?),
-        tools::Outcome::TooLarge { size } => {
-            wire::Outcome::TooLarge(wire::TooLarge::new(limits, wire::TooLargeParts { size: *size })?)
-        }
+        tools::Outcome::TooLarge { what, size, bound } => wire::Outcome::TooLarge(wire::TooLarge::new(
+            limits,
+            wire::TooLargeParts { what: encode_size_part(*what), size: *size, bound: *bound },
+        )?),
         tools::Outcome::NotRead => wire::Outcome::NotRead,
         tools::Outcome::Stale => wire::Outcome::Stale,
         tools::Outcome::EditFailed { edit, why } => {
@@ -408,4 +409,17 @@ fn encode_mismatch(source: &tools::Mismatch, limits: &wire::v3::Limits) -> Resul
         }
     };
     Ok(mismatch)
+}
+
+fn encode_size_part(what: tools::SizePart) -> wire::SizePart {
+    match what {
+        tools::SizePart::File => wire::SizePart::File,
+        tools::SizePart::WriteContent => wire::SizePart::WriteContent,
+        tools::SizePart::EditOld => wire::SizePart::EditOld,
+        tools::SizePart::EditNew => wire::SizePart::EditNew,
+        tools::SizePart::EditItems => wire::SizePart::EditItems,
+        tools::SizePart::EditResult => wire::SizePart::EditResult,
+        tools::SizePart::EditReplacements => wire::SizePart::EditReplacements,
+        tools::SizePart::ListGlob => wire::SizePart::ListGlob,
+    }
 }

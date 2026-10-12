@@ -14,6 +14,41 @@ fn limits() -> Limits {
 }
 
 #[test]
+fn a_refused_write_names_its_payload_bound_and_the_piece_then_edits_route() {
+    use smith_tools_world::{Settings, Step, World, fixture::Fixture};
+
+    let fixture = Fixture::new();
+    let authority = fixture.authority(tools::Grants { inspect: true, modify: true, shell: false });
+    let mut settings = Settings::calm(42020);
+    settings.tools.tool_payload = 40_960;
+    settings.tools.file_bytes = 1_048_576;
+    let maximum = adapter::render_worst_case(&settings.tools, 4096, 4096).expect("derived result bound");
+    let mut world = World::new(settings, fixture.checkout);
+    let session = world.session(
+        skein_lib::Time::ZERO,
+        authority,
+        vec![Step::Calls(vec![tools::Call::Write {
+            path: smith_tools_world::translate::path(b"payload.txt"),
+            content: vec![b'x'; 50_008].into(),
+        }])],
+    );
+    world.run(1000);
+    assert_eq!(world.stats().ops, 0, "oversized content never reaches file IO");
+    let answers = world.answers(session);
+    assert_eq!(answers.len(), 1, "the refused call has one terminal");
+    let (text, error) = adapter::render_outcome(answers[0], &tools::Namespace::One, maximum).expect("live refusal");
+    let text = String::from_utf8(text.into_vec()).expect("rendered UTF-8");
+    assert!(error);
+    assert!(text.contains("write content"), "what was too large: {text}");
+    assert!(text.contains("50008 bytes"), "actual size: {text}");
+    assert!(text.contains("bound 40960 bytes"), "declared bound: {text}");
+    assert!(text.contains("first part within the bound"), "bounded first piece: {text}");
+    assert!(text.contains("extend it with edits"), "extend the file: {text}");
+    assert!(text.contains("as many edits in one call as fit"), "batch the edits: {text}");
+    assert!(!text.contains("omitted"), "the full refusal fits its derived result bound");
+}
+
+#[test]
 fn workspace_successes_render_the_retained_content_and_counts() {
     let cases = [
         (
@@ -80,7 +115,7 @@ fn workspace_failures_and_invalid_bytes_stay_visible_and_bounded() {
         tools::Outcome::Linked,
         tools::Outcome::Protected,
         tools::Outcome::NotDirectory { path: tools::Resolved::Working { path: b"gone.rs".as_slice().into() } },
-        tools::Outcome::TooLarge { size: 10_000 },
+        tools::Outcome::TooLarge { what: tools::SizePart::File, size: 10_000, bound: 4096 },
         tools::Outcome::NotRead,
         tools::Outcome::Stale,
         tools::Outcome::EditFailed { edit: 2, why: tools::Mismatch::NoMatch },

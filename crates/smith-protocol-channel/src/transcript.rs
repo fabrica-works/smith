@@ -303,7 +303,9 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
         wire::Outcome::Linked => tools::Outcome::Linked,
         wire::Outcome::Protected => tools::Outcome::Protected,
         wire::Outcome::NotDirectory(failure) => tools::Outcome::NotDirectory { path: resolved(failure.path())? },
-        wire::Outcome::TooLarge(size) => tools::Outcome::TooLarge { size: size.size() },
+        wire::Outcome::TooLarge(size) => {
+            tools::Outcome::TooLarge { what: size_part(size.what()), size: size.size(), bound: size.bound() }
+        }
         wire::Outcome::NotRead => tools::Outcome::NotRead,
         wire::Outcome::Stale => tools::Outcome::Stale,
         wire::Outcome::EditFailed(failed) => {
@@ -442,6 +444,19 @@ fn read_outcome(read: &wire::Read) -> Result<tools::Outcome, record::Refusal> {
         cut,
         window,
     })
+}
+
+fn size_part(what: &wire::SizePart) -> tools::SizePart {
+    match what {
+        wire::SizePart::File => tools::SizePart::File,
+        wire::SizePart::WriteContent => tools::SizePart::WriteContent,
+        wire::SizePart::EditOld => tools::SizePart::EditOld,
+        wire::SizePart::EditNew => tools::SizePart::EditNew,
+        wire::SizePart::EditItems => tools::SizePart::EditItems,
+        wire::SizePart::EditResult => tools::SizePart::EditResult,
+        wire::SizePart::EditReplacements => tools::SizePart::EditReplacements,
+        wire::SizePart::ListGlob => tools::SizePart::ListGlob,
+    }
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ pub(crate) fn apply(
     }
     let size = size(content.len(), matches, edit.old.len(), edit.new.len()).unwrap_or(u64::MAX);
     if size > u64::from(limits.file_bytes) {
-        return Err(Outcome::TooLarge { size });
+        return Err(Outcome::TooLarge { what: crate::SizePart::EditResult, size, bound: limits.file_bytes });
     }
     let mut writer = Writer::new(usize::try_from(size).expect("no larger than the file limit"));
     let mut from: usize = 0;
@@ -67,9 +67,17 @@ pub(crate) fn apply_edits(
     let mut number = 0_u32;
     let mut replaced = 0_u32;
     for edit in edits {
-        number = number.checked_add(1).ok_or(Outcome::TooLarge { size: u64::MAX })?;
+        number = number.checked_add(1).ok_or(Outcome::TooLarge {
+            what: crate::SizePart::EditItems,
+            size: u64::from(number).checked_add(1).expect("u32 increment fits u64"),
+            bound: limits.tool_payload,
+        })?;
         let (next, count) = apply(&content, edit, number, limits)?;
-        replaced = replaced.checked_add(count).ok_or(Outcome::TooLarge { size: u64::MAX })?;
+        replaced = replaced.checked_add(count).ok_or(Outcome::TooLarge {
+            what: crate::SizePart::EditReplacements,
+            size: u64::from(replaced).checked_add(u64::from(count)).expect("two u32 counts fit u64"),
+            bound: u32::MAX,
+        })?;
         content = next;
     }
     Ok((content, replaced))

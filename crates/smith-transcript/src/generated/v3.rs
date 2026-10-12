@@ -213,8 +213,14 @@ pub enum Path {
     CommandEndOutput,
     /// Bytes after `CommandEnd`.
     CommandEndTail,
+    /// The tag of `SizePart`.
+    SizePartTag,
+    /// The `what` field of `TooLarge`.
+    TooLargeWhat,
     /// The `size` field of `TooLarge`.
     TooLargeSize,
+    /// The `bound` field of `TooLarge`.
+    TooLargeBound,
     /// Bytes after `TooLarge`.
     TooLargeTail,
     /// The `count` field of `Ambiguous`.
@@ -2052,38 +2058,38 @@ impl CommandEnd {
     }
 }
 
-/// Movable fields of `TooLarge`.
+/// `SizePart` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TooLargeParts {
-    /// The `size` field.
-    pub size: u64,
+pub enum SizePart {
+    /// `file` without a payload.
+    File,
+    /// `write_content` without a payload.
+    WriteContent,
+    /// `edit_old` without a payload.
+    EditOld,
+    /// `edit_new` without a payload.
+    EditNew,
+    /// `edit_items` without a payload.
+    EditItems,
+    /// `edit_result` without a payload.
+    EditResult,
+    /// `edit_replacements` without a payload.
+    EditReplacements,
+    /// `list_glob` without a payload.
+    ListGlob,
 }
 
-/// `TooLarge` in this codec family.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TooLarge {
-    size: u64,
-}
-
-impl TooLarge {
-    /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: TooLargeParts) -> Result<Self, Problem> {
-        let TooLargeParts { size } = parts;
-        let value = Self { size };
+impl SizePart {
+    /// Checks the payload against the given limits.
+    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
         value.check(limits)?;
         Ok(value)
     }
 
-    /// Reads the `size` field.
-    #[must_use]
-    pub fn size(&self) -> u64 { self.size }
-
-    /// Moves the fields out without copying.
-    #[must_use]
-    pub fn into_parts(self) -> TooLargeParts { TooLargeParts { size: self.size } }
-
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
+        match self {
+            Self::File | Self::WriteContent | Self::EditOld | Self::EditNew | Self::EditItems | Self::EditResult | Self::EditReplacements | Self::ListGlob => Ok(()),
+        }?;
         if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
         if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
         if limits.text_text > CEILINGS.text_text { return Err(Problem { path: Path::TextText, reason: skein_codec::Reason::Bound }); }
@@ -2112,6 +2118,84 @@ impl TooLarge {
         if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
         if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
         if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// Movable fields of `TooLarge`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TooLargeParts {
+    /// The `what` field.
+    pub what: SizePart,
+    /// The `size` field.
+    pub size: u64,
+    /// The `bound` field.
+    pub bound: u32,
+}
+
+/// `TooLarge` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TooLarge {
+    what: SizePart,
+    size: u64,
+    bound: u32,
+}
+
+impl TooLarge {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: TooLargeParts) -> Result<Self, Problem> {
+        let TooLargeParts { what, size, bound } = parts;
+        let value = Self { what, size, bound };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `what` field.
+    #[must_use]
+    pub fn what(&self) -> &SizePart { &self.what }
+
+    /// Reads the `size` field.
+    #[must_use]
+    pub fn size(&self) -> u64 { self.size }
+
+    /// Reads the `bound` field.
+    #[must_use]
+    pub fn bound(&self) -> u32 { self.bound }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> TooLargeParts { TooLargeParts { what: self.what, size: self.size, bound: self.bound } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if limits.replay_dialect > CEILINGS.replay_dialect { return Err(Problem { path: Path::ReplayDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.replay_bytes > CEILINGS.replay_bytes { return Err(Problem { path: Path::ReplayBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.text_text > CEILINGS.text_text { return Err(Problem { path: Path::TextText, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_dialect > CEILINGS.opaque_dialect { return Err(Problem { path: Path::OpaqueDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.opaque_bytes > CEILINGS.opaque_bytes { return Err(Problem { path: Path::OpaqueBytes, reason: skein_codec::Reason::Bound }); }
+        if limits.call_id > CEILINGS.call_id { return Err(Problem { path: Path::CallId, reason: skein_codec::Reason::Bound }); }
+        if limits.call_name > CEILINGS.call_name { return Err(Problem { path: Path::CallName, reason: skein_codec::Reason::Bound }); }
+        if limits.call_input > CEILINGS.call_input { return Err(Problem { path: Path::CallInput, reason: skein_codec::Reason::Bound }); }
+        if limits.entry_name > CEILINGS.entry_name { return Err(Problem { path: Path::EntryName, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_path > CEILINGS.hit_path { return Err(Problem { path: Path::HitPath, reason: skein_codec::Reason::Bound }); }
+        if limits.hit_text > CEILINGS.hit_text { return Err(Problem { path: Path::HitText, reason: skein_codec::Reason::Bound }); }
+        if limits.read_content > CEILINGS.read_content { return Err(Problem { path: Path::ReadContent, reason: skein_codec::Reason::Bound }); }
+        if limits.listed_entries > CEILINGS.listed_entries { return Err(Problem { path: Path::ListedEntries, reason: skein_codec::Reason::Bound }); }
+        if limits.found_hits > CEILINGS.found_hits { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_head > CEILINGS.command_end_head { return Err(Problem { path: Path::CommandEndHead, reason: skein_codec::Reason::Bound }); }
+        if limits.command_end_last > CEILINGS.command_end_last { return Err(Problem { path: Path::CommandEndLast, reason: skein_codec::Reason::Bound }); }
+        if limits.ambiguous_lines > CEILINGS.ambiguous_lines { return Err(Problem { path: Path::AmbiguousLines, reason: skein_codec::Reason::Bound }); }
+        if limits.working_path_path > CEILINGS.working_path_path { return Err(Problem { path: Path::WorkingPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_directory > CEILINGS.other_path_directory { return Err(Problem { path: Path::OtherPathDirectory, reason: skein_codec::Reason::Bound }); }
+        if limits.other_path_path > CEILINGS.other_path_path { return Err(Problem { path: Path::OtherPathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.outside_path_path > CEILINGS.outside_path_path { return Err(Problem { path: Path::OutsidePathPath, reason: skein_codec::Reason::Bound }); }
+        if limits.field_problem_field > CEILINGS.field_problem_field { return Err(Problem { path: Path::FieldProblemField, reason: skein_codec::Reason::Bound }); }
+        if limits.said_text > CEILINGS.said_text { return Err(Problem { path: Path::SaidText, reason: skein_codec::Reason::Bound }); }
+        if limits.tool_result_id > CEILINGS.tool_result_id { return Err(Problem { path: Path::ToolResultId, reason: skein_codec::Reason::Bound }); }
+        if limits.message_blocks > CEILINGS.message_blocks { return Err(Problem { path: Path::MessageBlocks, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
+        if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
+        self.what.check(limits)?;
         Ok(())
     }
 }
@@ -4897,19 +4981,74 @@ impl CommandEnd {
     }
 }
 
+impl SizePart {
+    /// Measures this variant's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        match self {
+            Self::File | Self::WriteContent | Self::EditOld | Self::EditNew | Self::EditItems | Self::EditResult | Self::EditReplacements | Self::ListGlob => 1,
+        }
+    }
+
+    /// Writes this variant's tag and payload.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        match self {
+            Self::File => writer.put(&[0_u8])?,
+            Self::WriteContent => writer.put(&[1_u8])?,
+            Self::EditOld => writer.put(&[2_u8])?,
+            Self::EditNew => writer.put(&[3_u8])?,
+            Self::EditItems => writer.put(&[4_u8])?,
+            Self::EditResult => writer.put(&[5_u8])?,
+            Self::EditReplacements => writer.put(&[6_u8])?,
+            Self::ListGlob => writer.put(&[7_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole variant and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::SizePartTag, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let tag = reader.u8().ok_or(Problem { path: Path::SizePartTag, reason: skein_codec::Reason::Short })?;
+        let value = match tag {
+            0 => Self::File,
+            1 => Self::WriteContent,
+            2 => Self::EditOld,
+            3 => Self::EditNew,
+            4 => Self::EditItems,
+            5 => Self::EditResult,
+            6 => Self::EditReplacements,
+            7 => Self::ListGlob,
+            _ => return Err(Problem { path: Path::SizePartTag, reason: skein_codec::Reason::Tag }),
+        };
+        Self::new(limits, value)
+    }
+}
+
 impl TooLarge {
     /// Measures this record's wire encoding.
     #[must_use]
     pub fn measure(&self) -> u32 {
         let mut size = 0_u32;
+        let field_what = &self.what;
+        size = size.checked_add(field_what.measure()).expect("schema ceilings fit u32");
         size = size.checked_add(8).expect("schema ceilings fit u32");
+        size = size.checked_add(4).expect("schema ceilings fit u32");
         size
     }
 
     /// Writes into a writer with room for the measured bytes.
     pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_what = &self.what;
+        field_what.encode(writer)?;
         let field_size = &self.size;
         writer.put(&field_size.to_be_bytes())?;
+        let field_bound = &self.bound;
+        writer.put(&field_bound.to_be_bytes())?;
         Ok(())
     }
 
@@ -4921,8 +5060,10 @@ impl TooLarge {
     }
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_what = SizePart::decode_from(limits, reader)?;
         let decoded_size = reader.u64().ok_or(Problem { path: Path::TooLargeSize, reason: skein_codec::Reason::Short })?;
-        Self::new(limits, TooLargeParts { size: decoded_size })
+        let decoded_bound = reader.u32().ok_or(Problem { path: Path::TooLargeBound, reason: skein_codec::Reason::Short })?;
+        Self::new(limits, TooLargeParts { what: decoded_what, size: decoded_size, bound: decoded_bound })
     }
 }
 
@@ -6512,13 +6653,33 @@ impl CommandEnd {
     }
 }
 
+impl SizePart {
+    /// Maximum encoded bytes among variants.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let biggest = 0_u64;
+        1_u64.checked_add(biggest)
+    }
+
+    /// Maximum heap held by any decoded variant.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let biggest = 0_u64;
+        Some(biggest)
+    }
+}
+
 impl TooLarge {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut size = 0_u64;
+        size = size.checked_add(SizePart::worst_case_bytes(limits)?)?;
         size = size.checked_add(8_u64)?;
+        size = size.checked_add(4_u64)?;
         Some(size)
     }
 
@@ -6527,6 +6688,8 @@ impl TooLarge {
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut heap = 0_u64;
+        heap = heap.checked_add(SizePart::worst_case_heap(limits)?)?;
+        heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         Some(heap)
     }
@@ -7153,6 +7316,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(DurationClamp::worst_case_bytes(limits)?);
     biggest = biggest.max(TimeoutClamp::worst_case_bytes(limits)?);
     biggest = biggest.max(CommandEnd::worst_case_bytes(limits)?);
+    biggest = biggest.max(SizePart::worst_case_bytes(limits)?);
     biggest = biggest.max(TooLarge::worst_case_bytes(limits)?);
     biggest = biggest.max(Ambiguous::worst_case_bytes(limits)?);
     biggest = biggest.max(Mismatch::worst_case_bytes(limits)?);
@@ -7212,6 +7376,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(DurationClamp::worst_case_heap(limits)?);
     biggest = biggest.max(TimeoutClamp::worst_case_heap(limits)?);
     biggest = biggest.max(CommandEnd::worst_case_heap(limits)?);
+    biggest = biggest.max(SizePart::worst_case_heap(limits)?);
     biggest = biggest.max(TooLarge::worst_case_heap(limits)?);
     biggest = biggest.max(Ambiguous::worst_case_heap(limits)?);
     biggest = biggest.max(Mismatch::worst_case_heap(limits)?);
@@ -7244,7 +7409,7 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Usage, UsageParts, Replay, ReplayParts, Text, TextParts, Opaque, OpaqueParts, Call, CallParts, Kind, Entry, EntryParts, Hit, HitParts, LineNumber, LineNumberParts, Next, ReadCut, ByteClamp, ByteClampParts, BytesClamp, Read, ReadParts, Listed, ListedParts, Found, FoundParts, Written, WrittenParts, Edited, EditedParts, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Exit, DurationClamp, DurationClampParts, TimeoutClamp, CommandEnd, CommandEndParts, TooLarge, TooLargeParts, Ambiguous, AmbiguousParts, Mismatch, EditFailed, EditFailedParts, Fault, Failed, FailedParts, WorkingPath, WorkingPathParts, OtherPath, OtherPathParts, OutsidePath, OutsidePathParts, Resolved, ResolvedFailure, ResolvedFailureParts, Outcome, FieldProblem, FieldProblemParts, OversizeProblem, OversizeProblemParts, CutProblem, CutProblemParts, CallProblem, Said, SaidParts, Invalid, InvalidParts, OwnedOutcome, OwnedOutcomeParts, Returned, ToolResult, ToolResultParts, Block, Role, Message, MessageParts, Affinity, AffinityParts, TurnKind, Turn, TurnParts};
+    use super::{CEILINGS, Path, Usage, UsageParts, Replay, ReplayParts, Text, TextParts, Opaque, OpaqueParts, Call, CallParts, Kind, Entry, EntryParts, Hit, HitParts, LineNumber, LineNumberParts, Next, ReadCut, ByteClamp, ByteClampParts, BytesClamp, Read, ReadParts, Listed, ListedParts, Found, FoundParts, Written, WrittenParts, Edited, EditedParts, ExitCode, ExitCodeParts, ExitSignal, ExitSignalParts, Exit, DurationClamp, DurationClampParts, TimeoutClamp, CommandEnd, CommandEndParts, SizePart, TooLarge, TooLargeParts, Ambiguous, AmbiguousParts, Mismatch, EditFailed, EditFailedParts, Fault, Failed, FailedParts, WorkingPath, WorkingPathParts, OtherPath, OtherPathParts, OutsidePath, OutsidePathParts, Resolved, ResolvedFailure, ResolvedFailureParts, Outcome, FieldProblem, FieldProblemParts, OversizeProblem, OversizeProblemParts, CutProblem, CutProblemParts, CallProblem, Said, SaidParts, Invalid, InvalidParts, OwnedOutcome, OwnedOutcomeParts, Returned, ToolResult, ToolResultParts, Block, Role, Message, MessageParts, Affinity, AffinityParts, TurnKind, Turn, TurnParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -7908,9 +8073,169 @@ mod golden_tests {
     }
 
     #[test]
+    fn enum_size_part_file_smallest() {
+        let value = SizePart::File;
+        let golden: &[u8] = &[0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_file_full() {
+        let value = SizePart::File;
+        let golden: &[u8] = &[0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_write_content_smallest() {
+        let value = SizePart::WriteContent;
+        let golden: &[u8] = &[1];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_write_content_full() {
+        let value = SizePart::WriteContent;
+        let golden: &[u8] = &[1];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_old_smallest() {
+        let value = SizePart::EditOld;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_old_full() {
+        let value = SizePart::EditOld;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_new_smallest() {
+        let value = SizePart::EditNew;
+        let golden: &[u8] = &[3];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_new_full() {
+        let value = SizePart::EditNew;
+        let golden: &[u8] = &[3];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_items_smallest() {
+        let value = SizePart::EditItems;
+        let golden: &[u8] = &[4];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_items_full() {
+        let value = SizePart::EditItems;
+        let golden: &[u8] = &[4];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_result_smallest() {
+        let value = SizePart::EditResult;
+        let golden: &[u8] = &[5];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_result_full() {
+        let value = SizePart::EditResult;
+        let golden: &[u8] = &[5];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_replacements_smallest() {
+        let value = SizePart::EditReplacements;
+        let golden: &[u8] = &[6];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_edit_replacements_full() {
+        let value = SizePart::EditReplacements;
+        let golden: &[u8] = &[6];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_list_glob_smallest() {
+        let value = SizePart::ListGlob;
+        let golden: &[u8] = &[7];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_size_part_list_glob_full() {
+        let value = SizePart::ListGlob;
+        let golden: &[u8] = &[7];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(SizePart::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
     fn record_too_large_smallest() {
-        let value = TooLarge::new(&CEILINGS, TooLargeParts { size: 0_u64 }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
+        let value = TooLarge::new(&CEILINGS, TooLargeParts { what: SizePart::File, size: 0_u64, bound: 0_u32 }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -7919,8 +8244,8 @@ mod golden_tests {
 
     #[test]
     fn record_too_large_full() {
-        let value = TooLarge::new(&CEILINGS, TooLargeParts { size: u64::MAX }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255];
+        let value = TooLarge::new(&CEILINGS, TooLargeParts { what: SizePart::File, size: u64::MAX, bound: u32::MAX }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -8549,8 +8874,8 @@ mod golden_tests {
 
     #[test]
     fn enum_outcome_too_large_smallest() {
-        let value = Outcome::TooLarge(TooLarge::new(&CEILINGS, TooLargeParts { size: 0_u64 }).expect("golden within ceilings"));
-        let golden: &[u8] = &[15, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = Outcome::TooLarge(TooLarge::new(&CEILINGS, TooLargeParts { what: SizePart::File, size: 0_u64, bound: 0_u32 }).expect("golden within ceilings"));
+        let golden: &[u8] = &[15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -8559,8 +8884,8 @@ mod golden_tests {
 
     #[test]
     fn enum_outcome_too_large_full() {
-        let value = Outcome::TooLarge(TooLarge::new(&CEILINGS, TooLargeParts { size: u64::MAX }).expect("golden within ceilings"));
-        let golden: &[u8] = &[15, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = Outcome::TooLarge(TooLarge::new(&CEILINGS, TooLargeParts { what: SizePart::File, size: u64::MAX, bound: u32::MAX }).expect("golden within ceilings"));
+        let golden: &[u8] = &[15, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

@@ -142,6 +142,8 @@ fn hex(value: u8) -> u8 {
     *b"0123456789abcdef".get(usize::from(value)).expect("four-bit escaped field byte")
 }
 
+pub(crate) const WRITE_SIZE_SUFFIX: &[u8] = b" bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound";
+
 fn call_size_problem(bytes: u64, bound: Option<u32>, maximum: u32) -> Result<Box<[u8]>, Error> {
     let size = Decimal::of(bytes);
     #[expect(clippy::manual_map, reason = "production subset uses exhaustive matches without mapping callbacks")]
@@ -150,7 +152,7 @@ fn call_size_problem(bytes: u64, bound: Option<u32>, maximum: u32) -> Result<Box
         None => None,
     };
     let (prefix, suffix): (&[u8], &[u8]) = match bound {
-        Some(_) => (b"input too large: ", b" bytes; make a smaller write or an edit. For a larger file, write its first part within the bound, then extend it with edits; put as many edits in one call as fit the bound"),
+        Some(_) => (b"input too large: ", WRITE_SIZE_SUFFIX),
         None => (b"input cut off after ", b" bytes; make a smaller call and try again"),
     };
     let mut length = prefix.len().checked_add(size.as_bytes().len()).ok_or(Error::Limit)?;

@@ -147,7 +147,7 @@ fn reads_and_listings_are_bounded() {
         entry(b"src", Kind::Directory),
     ];
     let expected = vec![
-        Outcome::TooLarge { size: 5000 },
+        Outcome::TooLarge { what: tools::SizePart::File, size: 5000, bound: 4096 },
         // As many whole lines as fit the 1024 bytes a read answers with.
         read_of(&long[..1020], 0, 51, 100),
         read_of(&long[1900..], 95, 5, 100),
@@ -163,7 +163,13 @@ fn reads_and_edits_refuse_files_past_the_independent_whole_file_bound() {
     assert_eq!(settings.tools.file_bytes, 4096);
     let script = vec![Step::Calls(vec![read(b"big.txt"), edit(b"big.txt", b"x", b"y", true)])];
     let (answers, world) = run(settings, MODIFY, script);
-    assert_eq!(answers, vec![Outcome::TooLarge { size: 5000 }, Outcome::TooLarge { size: 5000 }]);
+    assert_eq!(
+        answers,
+        vec![
+            Outcome::TooLarge { what: tools::SizePart::File, size: 5000, bound: 4096 },
+            Outcome::TooLarge { what: tools::SizePart::File, size: 5000, bound: 4096 }
+        ]
+    );
     assert_eq!(world.checkout().content(b"work/temper/big.txt"), Some([b'x'; 5000].as_slice()));
     assert_eq!(world.stats().ops, 2, "both loads refuse before any store");
 }
@@ -518,7 +524,7 @@ fn writes_stay_in_writable_repositories_of_granted_kits() {
         Outcome::ReadOnly { path: tools::Resolved::Working { path: b"temper/vendor/lib/lib.rs".as_slice().into() } },
         Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
         Outcome::Outside { path: tools::Resolved::Outside { path: b"etc/passwd".as_slice().into() } },
-        Outcome::TooLarge { size: 5000 },
+        Outcome::TooLarge { what: tools::SizePart::WriteContent, size: 5000, bound: 4096 },
         Outcome::NotFile,
         Outcome::NotFile,
         Outcome::NotDirectory { path: tools::Resolved::Working { path: b"temper/Cargo.toml/x".as_slice().into() } },
@@ -628,7 +634,7 @@ fn an_edit_that_would_be_wrong_changes_nothing() {
         Outcome::EditFailed { edit: 1, why: tools::Mismatch::Ambiguous { count: 3, lines: Box::new([1, 2, 3]) } },
         Outcome::EditFailed { edit: 1, why: tools::Mismatch::Unchanged },
         Outcome::EditFailed { edit: 1, why: tools::Mismatch::NoMatch },
-        Outcome::TooLarge { size: 6044 },
+        Outcome::TooLarge { what: tools::SizePart::EditResult, size: 6044, bound: 4096 },
         Outcome::ReadOnly { path: tools::Resolved::Working { path: b"docs/guide.md".as_slice().into() } },
     ];
     assert_eq!(answers, expected);

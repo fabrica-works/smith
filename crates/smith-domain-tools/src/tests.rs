@@ -539,7 +539,11 @@ fn calls_are_refused_at_the_entrance() {
             edit(b"vendor/lib/x.rs"),
             Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } },
         ),
-        (modify, write(b"src/big.rs", 1025), Outcome::TooLarge { size: 1025 }),
+        (
+            modify,
+            write(b"src/big.rs", 1025),
+            Outcome::TooLarge { what: crate::SizePart::WriteContent, size: 1025, bound: 1024 },
+        ),
         (modify, write(b".git/config", 1), Outcome::Protected),
         (modify, write(b"src/../.git/hooks/pre-commit", 1), Outcome::Protected),
         (modify, edit(b".git/HEAD"), Outcome::Protected),
@@ -682,7 +686,7 @@ fn every_other_end_of_a_load_answers_for_itself() {
     let table = [
         (Done::NotFile, Outcome::NotFile),
         (Done::NotDirectory, Outcome::NotDirectory { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
-        (Done::TooLarge { size: 4096 }, Outcome::TooLarge { size: 4096 }),
+        (Done::TooLarge { size: 4096 }, Outcome::TooLarge { what: crate::SizePart::File, size: 4096, bound: 1024 }),
         (Done::Escapes, Outcome::Outside { path: path::Resolved::Working { path: bytes(b"temper/link") } }),
         (Done::Failed { fault: Fault::Denied }, Outcome::Failed { fault: Fault::Denied }),
         (Done::TimedOut, Outcome::TimedOut),
@@ -938,7 +942,12 @@ fn an_edit_replaces_its_one_match_or_all_of_them() {
         // Matches do not overlap.
         (b"aaa", snippet(b"aa", b"b", false), &LIMITS, Ok(edited(b"ba", 1))),
         (b"abc", snippet(b"abc", b"", false), &LIMITS, Ok(edited(b"", 1))),
-        (b"abc", snippet(b"b", b"0123456789", false), &small, Err(Outcome::TooLarge { size: 12 })),
+        (
+            b"abc",
+            snippet(b"b", b"0123456789", false),
+            &small,
+            Err(Outcome::TooLarge { what: crate::SizePart::EditResult, size: 12, bound: 8 }),
+        ),
         (b"abc", snippet(b"b", b"012345", false), &small, Ok(edited(b"a012345c", 1))),
     ];
     for (content, edit, limits, expected) in table {
@@ -1052,7 +1061,7 @@ fn edit_shape_bounds_are_refused_before_io_but_semantics_follow_the_loaded_bytes
     }
     h.domain.reclaim();
     let big = Call::Edit { path: path(b"src/lib.rs"), edits: Box::new([snippet(b"a", &[b'x'; 1025], false)]) };
-    assert_eq!(h.call(kit, big), Outcome::TooLarge { size: 1025 });
+    assert_eq!(h.call(kit, big), Outcome::TooLarge { what: crate::SizePart::EditNew, size: 1025, bound: 1024 });
     assert_eq!(
         h.call(kit, change(b"vendor/lib/x.rs", b"a", b"b")),
         Outcome::ReadOnly { path: path::Resolved::Working { path: bytes(b"temper/vendor/lib/x.rs") } }
@@ -1766,7 +1775,7 @@ fn an_edit_can_grow_to_the_whole_file_bound_and_refuses_one_byte_past_it() {
             assert_eq!(changed.len(), 128);
             assert_eq!(count, 1);
         } else {
-            assert_eq!(result, Err(Outcome::TooLarge { size: 129 }));
+            assert_eq!(result, Err(Outcome::TooLarge { what: crate::SizePart::EditResult, size: 129, bound: 128 }));
         }
     }
 }

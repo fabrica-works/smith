@@ -20,7 +20,7 @@ pub use v3::{
     FoundParts, Hit, HitParts, Invalid, InvalidParts, Kind, LineNumber, LineNumberParts, Listed, ListedParts, Message,
     MessageParts, Mismatch, Next, Opaque, OpaqueParts, OtherPath, OtherPathParts, Outcome, OutsidePath,
     OutsidePathParts, OversizeProblem, OversizeProblemParts, OwnedOutcome, OwnedOutcomeParts, Read, ReadCut, ReadParts,
-    Replay, ReplayParts, Resolved, ResolvedFailure, ResolvedFailureParts, Returned, Role, Said, SaidParts, Text,
-    TextParts, TimeoutClamp, TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts, Usage,
-    UsageParts, WorkingPath, WorkingPathParts, Written, WrittenParts,
+    Replay, ReplayParts, Resolved, ResolvedFailure, ResolvedFailureParts, Returned, Role, Said, SaidParts, SizePart,
+    Text, TextParts, TimeoutClamp, TooLarge, TooLargeParts, ToolResult, ToolResultParts, Turn, TurnKind, TurnParts,
+    Usage, UsageParts, WorkingPath, WorkingPathParts, Written, WrittenParts,
 };

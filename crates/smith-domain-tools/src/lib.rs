@@ -57,7 +57,7 @@ pub use authority::{Authority, Grants, Repo};
 pub use boundary::{Done, Event, Expect, Op, Refusal, Request, Version};
 pub use call::{
     Budget, BytesClamp, Call, Cut, Depth, Effect, Entry, Exit, Fault, Hit, Kind, Mismatch, Next, Occurrences, Outcome,
-    Replacement, Timeout, TimeoutClamp, Tool, effect, tool,
+    Replacement, SizePart, Timeout, TimeoutClamp, Tool, effect, tool,
 };
 pub use domain::{Domain, max_facts, max_out, step};
 pub use facts::{CallInfo, Fact, FactKind, Verdict};

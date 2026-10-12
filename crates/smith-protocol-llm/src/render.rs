@@ -284,10 +284,8 @@ fn render(outcome: &Outcome, namespace: &tools::Namespace, output: &mut Sink) ->
             resolved_path(path, namespace, output)?;
             true
         }
-        Outcome::TooLarge { size } => {
-            output.put(b"file or content too large: ")?;
-            output.number(*size)?;
-            output.put(b" bytes")?;
+        Outcome::TooLarge { what, size, bound } => {
+            size_refusal(*what, *size, *bound, output)?;
             true
         }
         Outcome::NotRead => {
@@ -484,4 +482,63 @@ fn named_path(directory: &tools::Name, path: &[u8], output: &mut Sink) -> Result
         output.put(b"/")?;
     }
     output.text(path)
+}
+
+fn size_refusal(what: tools::SizePart, size: u64, bound: u32, output: &mut Sink) -> Result<(), Error> {
+    let prefix: &[u8] = match what {
+        tools::SizePart::File => b"file too large: ",
+        tools::SizePart::WriteContent => b"write content too large: ",
+        tools::SizePart::EditOld => b"edit old snippets too large: ",
+        tools::SizePart::EditNew => b"edit new snippets too large: ",
+        tools::SizePart::EditItems => b"edit list too large: ",
+        tools::SizePart::EditResult => b"edit result too large: ",
+        tools::SizePart::EditReplacements => b"edit replacement count too large: ",
+        tools::SizePart::ListGlob => b"list glob too large: ",
+    };
+    let unit: &[u8] = match what {
+        tools::SizePart::EditItems => b" edits",
+        tools::SizePart::EditReplacements => b" replacements",
+        tools::SizePart::File
+        | tools::SizePart::WriteContent
+        | tools::SizePart::EditOld
+        | tools::SizePart::EditNew
+        | tools::SizePart::EditResult
+        | tools::SizePart::ListGlob => b" bytes",
+    };
+    output.put(prefix)?;
+    output.number(size)?;
+    output.put(unit)?;
+    output.put(b", bound ")?;
+    output.number(u64::from(bound))?;
+    match what {
+        tools::SizePart::WriteContent => output.put(crate::failure::WRITE_SIZE_SUFFIX),
+        tools::SizePart::File
+        | tools::SizePart::EditOld
+        | tools::SizePart::EditNew
+        | tools::SizePart::EditItems
+        | tools::SizePart::EditResult
+        | tools::SizePart::EditReplacements
+        | tools::SizePart::ListGlob => output.put(unit),
+    }
+}
+
+// Measure the actual longest refusal at both integer maxima, using the same
+// words as live and resumed rendering. No independent word-cap constant.
+pub(crate) fn size_refusal_worst_case() -> Option<u64> {
+    let mut largest = 0;
+    for what in [
+        tools::SizePart::File,
+        tools::SizePart::WriteContent,
+        tools::SizePart::EditOld,
+        tools::SizePart::EditNew,
+        tools::SizePart::EditItems,
+        tools::SizePart::EditResult,
+        tools::SizePart::EditReplacements,
+        tools::SizePart::ListGlob,
+    ] {
+        let mut measure = Sink { length: 0, kept: 0, maximum: u64::MAX, cut: false, writer: None };
+        size_refusal(what, u64::MAX, u32::MAX, &mut measure).ok()?;
+        largest = largest.max(measure.length);
+    }
+    Some(largest)
 }

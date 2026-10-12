@@ -490,3 +490,39 @@ fn drawn_contract_schema_costs_equal_every_rendered_byte() {
         );
     }
 }
+
+#[test]
+fn every_size_refusal_at_numeric_maxima_fits_the_derived_result_with_its_units() {
+    let mut caps = tools();
+    caps.tool_payload = 1;
+    caps.read_bytes = 1;
+    caps.list_bytes = 1;
+    caps.list_entries = 1;
+    caps.search_bytes = 1;
+    caps.search_hits = 1;
+    caps.shell_head = 0;
+    caps.shell_tail = 0;
+    caps.match_lines = 0;
+    caps.path_bytes = 1;
+    let maximum = render_worst_case(&caps, 0, 0).expect("longest feedback");
+    let table = [
+        (tools::SizePart::File, "file", "bytes"),
+        (tools::SizePart::WriteContent, "write content", "bytes"),
+        (tools::SizePart::EditOld, "edit old snippets", "bytes"),
+        (tools::SizePart::EditNew, "edit new snippets", "bytes"),
+        (tools::SizePart::EditItems, "edit list", "edits"),
+        (tools::SizePart::EditResult, "edit result", "bytes"),
+        (tools::SizePart::EditReplacements, "edit replacement count", "replacements"),
+        (tools::SizePart::ListGlob, "list glob", "bytes"),
+    ];
+    for (what, subject, unit) in table {
+        let outcome = tools::Outcome::TooLarge { what, size: u64::MAX, bound: u32::MAX };
+        let (text, error) = render_outcome(&outcome, &tools::Namespace::One, maximum).expect("size feedback");
+        let text = String::from_utf8(text.into_vec()).expect("UTF8 words");
+        assert!(error);
+        assert!(text.starts_with(subject), "subject: {text}");
+        assert!(text.contains(&format!("18446744073709551615 {unit}")), "observed size: {text}");
+        assert!(text.contains(&format!("bound 4294967295 {unit}")), "exceeded bound: {text}");
+        assert!(!text.contains("omitted"), "the longest form must fit: {text}");
+    }
+}

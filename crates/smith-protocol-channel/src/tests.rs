@@ -197,6 +197,38 @@ fn optional_usage_round_trips_without_turning_absence_into_zero() {
 }
 
 #[test]
+fn size_refusal_subject_size_and_bound_survive_version_three_resume() {
+    use smith_domain_session::llm;
+    use smith_domain_tools::{Outcome, SizePart};
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved turn");
+    for what in [
+        SizePart::File,
+        SizePart::WriteContent,
+        SizePart::EditOld,
+        SizePart::EditNew,
+        SizePart::EditItems,
+        SizePart::EditResult,
+        SizePart::EditReplacements,
+        SizePart::ListGlob,
+    ] {
+        turn.messages = Box::new([llm::Message {
+            role: llm::Role::User,
+            content: Box::new([llm::Block::ToolResult {
+                id: b"size-refusal".as_slice().into(),
+                result: llm::Returned::Owned { outcome: Outcome::TooLarge { what, size: 50_008, bound: 40_960 } },
+            }]),
+        }]);
+        let bytes = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("bounded size refusal");
+        let decoded = crate::decode_turn(&bytes, 1, &smith_transcript::CEILINGS, &endpoints).expect("resumed refusal");
+        assert_eq!(decoded.messages, turn.messages, "live and saved refusals carry identical quantities");
+    }
+}
+
+#[test]
 fn resolved_failures_round_trip_in_version_three_and_refuse_unnormalized_paths() {
     use smith_domain_session::{llm, record};
     use smith_domain_tools::{Name, Outcome, Resolved};
