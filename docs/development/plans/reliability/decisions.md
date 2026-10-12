@@ -825,4 +825,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    skein's `main` between smith's pin (30dc6f7) and now changed only
    Markdown, and a precise pin keeps skein 02.6's new io records out of
    smith until smith 10.10 takes them.
+13. **smith 08.6 splits; 08.10 takes the service's records** (block of
+   2026-10-12T13:58:11Z). 08.6's work in progress adds about 645
+   production lines before restored windows, the memory allowance and
+   the world's support, past README rule 9's 600: `compaction.rs` 283,
+   `window.rs` 104, the service's response joining 118, the session's
+   call sites 50. Ruling: the implementer's split. 08.6 keeps the domain
+   and root mechanism and its agent-world proof; 08.10, the next unused
+   number of session 08, takes the service's compaction conversation in
+   the stream, with a unit proof. Between the two, the stream tells a
+   compaction's responses as an ordinary completion's; nothing reads
+   that live until smith 00.16, which now needs 08.10 too.
 

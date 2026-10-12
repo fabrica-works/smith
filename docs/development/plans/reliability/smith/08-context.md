@@ -185,6 +185,18 @@ Size: at most 80 lines of production code.
 Removes: nothing.
 
 ### 08.6 Compaction into a new window, admitted against the window
+Split (decisions.md, 13.13): the service's compaction records go to
+08.10. From this increment, these move there, and 08.6 does not do them:
+the Shape's sentences from "The service sets `response.started`'s
+`window`" to "`end` `closed` or `failed`."; "`responses.rs:831` maps it
+to `ConversationEnd::Failed` with no completion failure, and the
+compaction's own `conversation.closed` is `failed` with none"; the Events
+test `a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`;
+the Files `smith-agent-service/src/responses.rs` and `events.rs:596`;
+and the first item of Removes. 08.6 gives the agent service only the
+match arms its new facts and ends need, each doing what that match
+does today for an ordinary completion's, and writes no compaction
+record.
 Scope: smith 08's compaction. The window check before each completion,
 compaction on a failed check or *context too long*, the new window told
 as a window turn, once per window (session.md, 8.1 and 8.2); a due
@@ -338,6 +350,37 @@ end a session on its history's bound in a new way (08.9 owns that).
 Size: at most 600 lines of production code.
 Removes: `window: 1` and its comment in `responses.rs:200-201`; `0` as
 `summary_bytes` in `profile.rs:320`.
+
+### 08.10 A compaction's own conversation in the stream
+Scope: the service's half of 08.6, split from it (decisions.md, 13.13):
+a compaction told in the event stream as a conversation of its own
+(events.md, 3.1, 3.4 and 3.5).
+Needs: 08.6.
+Files: `crates/smith-agent-service/src/responses.rs` (`:201`, `:459`,
+`:797`, `:831`), `src/events.rs:596`, `src/tests.rs`.
+Shape: as 08.6's Shape had it: "The service sets `response.started`'s
+`window` from `CompletionStarted.window`; on `CompactionStarted` it writes
+`conversation.opened` of kind `compaction`, `parent` the summarised
+conversation, its thread and model kept, its number the next among the
+run's conversations (events.md, 3.1); the compaction's responses carry
+its number; on `CompactionEnded` it writes `conversation.closed`, `end`
+`closed` or `failed`." `NoSummary` maps to `ConversationEnd::Failed`
+with no completion failure, and the compaction's own
+`conversation.closed` is `failed` with none. No format changes.
+Test shape: `smith-agent-service/src/tests.rs`:
+`a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`, and
+`a_refused_compaction_closes_failed_with_no_completion_failure`; each
+reads the records as literals. Ceilings: unit 20 ms.
+Proof: unit, `a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`,
+once: the stream holds a `conversation.opened` of kind `compaction`
+whose `parent` is the summarised conversation, and the compaction's
+`response.started` carries its number; on the parent no such record.
+`history/small-window` (smith 00.16) shows it live; not this
+increment's proof.
+Don't: change a record's fields or the events version; write records
+in the domain.
+Size: at most 200 lines of production code.
+Removes: `window: 1` and its comment in `responses.rs:200-201`.
 
 ### 08.7 The results owed to a compaction, cut to its room
 Scope: a compaction's owed results render within the room the window

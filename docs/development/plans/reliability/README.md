@@ -39,7 +39,7 @@ does its other increments meanwhile (development.md, section 8.7).
 
 | File | Session | Needs at start | Increments that need more |
 |---|---|---|---|
-| `00-benchmarks.md` | 00: one command per probe run first, then fixtures 01 and 02, the scripted person, the probes suite, and the probes still to build (`follow-up`, `history`, `credentials`, `budget/visibility`'s told check); the first baseline on events | — | 00.17: smith 07's writing-step budget [07.14]; 00.14: smith 05's lines carried and held [05.13]; 00.16: smith 08's compaction [08.6]; 00.30: smith 10's `borrow` and the harness on `smith exec` [10.7, 10.15]; 00.21: session 13's end |
+| `00-benchmarks.md` | 00: one command per probe run first, then fixtures 01 and 02, the scripted person, the probes suite, and the probes still to build (`follow-up`, `history`, `credentials`, `budget/visibility`'s told check); the first baseline on events | — | 00.17: smith 07's writing-step budget [07.14]; 00.14: smith 05's lines carried and held [05.13]; 00.16: smith 08's compaction and its records [08.6, 08.10]; 00.30: smith 10's `borrow` and the harness on `smith exec` [10.7, 10.15]; 00.21: session 13's end |
 | `03-inline-agent.md` | 03: the product's event stream, with either kind of agent; the rest of the cancel, grace and drop ladder | — | 03.10: smith 06's exit evidence [06.1] |
 | `04-limits.md` | 04: effective limits by name; the derivation's rest; the memory default; the profile at shell.md's values | — | 04.22: smith 03's product stream [03.7] |
 | `05-messages.md` | 05: typed notices; the reacting person; lines carried and held until read; "waiting" by the fence | — | 05.13's Proof: smith 00's one command per probe run [00.27] |
