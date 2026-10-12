@@ -172,6 +172,15 @@ modify (`write`, `edit`), shell.
 
   A file past `file_bytes` is answered as too large, by `read` and by
   `edit` alike. The tools' descriptions state both bounds.
+- **A size refusal says what to do** (added 2026-10-12). Whatever is
+  answered as too large, a call, a `write`'s content, a file or an
+  `edit`'s result, the LLM is told what was too large, its size, and the
+  bound it passed, with its unit. A `write` whose content passes the
+  payload bound is also told how to make it fit, as a call too large is:
+  write the file's first piece within the bound, then extend it with
+  `edit`s, as many in one call as fit. The common case is this one, since
+  a call's bound sits well above the payload's, so the route is told
+  where models meet it.
 - **Bounded and visible.** Each tool's output has a size limit, and what
   a limit cut is said, with how much. A failure comes back with its
   output (a failing test's tail, an edit that matched nothing), not a
