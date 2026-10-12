@@ -316,6 +316,7 @@ impl Local {
                 | domain::Request::Notice { .. }
                 | domain::Request::Answered { .. }
                 | domain::Request::Unanswered { .. }
+                | domain::Request::ForcedExit { .. }
                 | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
@@ -564,7 +565,7 @@ impl Host for Local {
                     }
                     Some(
                         domain::EndCause::Host { turn: None, .. }
-                        | domain::EndCause::Agent
+                        | domain::EndCause::Agent { .. }
                         | domain::EndCause::Cancelled,
                     )
                     | None => "local chat ended with a failure".into(),

@@ -548,6 +548,8 @@ pub enum Proc {
     Local(Box<LocalProcess>),
     /// The spawned agent service, ending after its channel and descriptors settle.
     Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, smith_agent_process_world::AgentErrors),
+    /// A child that ends before admitting an opening.
+    Ended(Box<crate::git::Child>),
     /// The independent fake provider, stopped after the terminal exits.
     Peer(Box<Peer>),
     /// The independent fake issuer and observed POST timing.
@@ -563,6 +565,7 @@ impl Proc {
             Self::Terminal(p) => p.as_ref(),
             Self::Local(p) => p.as_ref(),
             Self::Agent(p, _) => p.as_ref(),
+            Self::Ended(p) => p.as_ref(),
             Self::Peer(p) => p.as_ref(),
             Self::Issuer(p) => p.as_ref(),
             Self::Browser(p) => p.as_ref(),
@@ -574,6 +577,7 @@ impl Proc {
             Self::Terminal(p) => p.as_mut(),
             Self::Local(p) => p.as_mut(),
             Self::Agent(p, _) => p.as_mut(),
+            Self::Ended(p) => p.as_mut(),
             Self::Peer(p) => p.as_mut(),
             Self::Issuer(p) => p.as_mut(),
             Self::Browser(p) => p.as_mut(),
@@ -608,7 +612,10 @@ impl Host for Proc {
         self.host().is_empty()
     }
     fn exit(&self) -> Option<kernel::Exit> {
-        self.host().exit()
+        match self {
+            Self::Ended(child) => child.is_empty().then_some(kernel::Exit::Code(child.code())),
+            _ => self.host().exit(),
+        }
     }
     fn worst_case(&self) -> u64 {
         self.host().worst_case() + size_of::<Self>() as u64 + 4096
@@ -833,4 +840,9 @@ pub fn agent_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
         append.path = b"events.jsonl.agent".as_slice().into();
     }
     appends
+}
+
+/// Bind a child that opens its channel and exits without answering.
+pub fn make_exited_agent(_: &kernel::Spawn, inherited: &Inherited) -> Proc {
+    Proc::Ended(Box::new(crate::git::Child::unanswered(inherited)))
 }

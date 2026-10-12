@@ -75,3 +75,51 @@ fn the_spawned_agents_records_stay_in_its_own_trace() {
     assert!(agent.iter().any(|r| matches!(r.event, Event::ResponseCompleted(_))));
     assert!(!product.iter().any(|r| matches!(r.event, Event::RunStarted(_) | Event::ResponseCompleted(_))));
 }
+
+#[test]
+fn a_spawned_agent_that_exits_without_answering_completes_as_agent_ended() {
+    let files = Files::new();
+    let mut world = World::traced(23, &files, Placement::Spawned, b"First answer");
+    world.scenario.ending = smith_local_process_world::referee::Ending::AgentEnded;
+    world.scenario.commands = vec![smith_local_process_world::terminal::Action::Send(b"hello\n".as_slice().into())];
+    world.settle();
+    let records = world.records();
+    let completed: Vec<_> = records
+        .iter()
+        .filter_map(|record| if let Event::RunCompleted(completed) = &record.event { Some(completed) } else { None })
+        .collect();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].status, smith_events::Status::Failed);
+    let failure = completed[0].failure.as_ref().expect("unanswering agent");
+    assert_eq!(failure.class, smith_events::AnswerClass::Agent);
+    assert_eq!(failure.ended, Some(smith_events::AgentExit::Code(7)));
+    assert_eq!(completed[0].result, None);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(1)));
+}
+
+#[test]
+fn a_forced_exit_is_a_host_notice_in_the_product_stream() {
+    let files = Files::new();
+    let mut world = World::dropped(12, &files, Placement::Spawned);
+    world.scenario.launch.traced = true;
+    world.settle();
+    let records = world.records();
+    let notices: Vec<_> = records
+        .iter()
+        .filter_map(|record| {
+            if let Event::Notice(notice) = &record.event
+                && notice.kind == smith_events::NoticeKind::ForcedExit
+            {
+                Some(notice)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].level, smith_events::Level::Warning);
+    assert_eq!(notices[0].forced, Some(smith_events::Forced::Terminated));
+    assert_eq!(notices[0].exit, Some(smith_events::AgentExit::Code(0)));
+    assert_eq!(notices[0].run, Some(1));
+    assert!(matches!(records.last().map(|r| &r.event), Some(Event::SessionEnded(_))));
+}

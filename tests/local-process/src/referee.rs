@@ -44,6 +44,8 @@ pub enum Ending {
     Cancelled,
     /// The second interrupt ends the invocation before any answer.
     Dropped,
+    /// The spawned child exits before answering or contacting the provider.
+    AgentEnded,
     Change {
         before: Vec<u8>,
     },
@@ -123,6 +125,7 @@ impl Expectations for Meeting {
                     Ending::Report(text) => text.as_slice(),
                     Ending::Cancelled => b"Run cancelled",
                     Ending::Dropped => b"Run dropped",
+                    Ending::AgentEnded => b"Agent process failed",
                     Ending::Change { .. } => b"Change delivered",
                     Ending::Unavailable => b"account is unavailable",
                     Ending::HostFailure | Ending::HostFailureBeforeAnswer => b"could not be kept: write failed",
@@ -134,7 +137,7 @@ impl Expectations for Meeting {
                     );
                 } else if matches!(self.ending, Ending::HostFailure | Ending::HostFailureBeforeAnswer) {
                     judge.check(self.activation.is_some() && !self.shown, "failed store owns the terminal failure");
-                } else if matches!(self.ending, Ending::Dropped) {
+                } else if matches!(self.ending, Ending::Dropped | Ending::AgentEnded) {
                     judge.check(
                         self.activation.is_some() && !self.answered && !self.shown,
                         "a dropped run never answers",
@@ -143,13 +146,17 @@ impl Expectations for Meeting {
                     judge.check(self.shown && self.answered, "the invocation actually answered and showed it");
                 }
                 let code = match self.ending {
-                    Ending::HostFailure | Ending::HostFailureBeforeAnswer => 1,
+                    Ending::HostFailure | Ending::HostFailureBeforeAnswer | Ending::AgentEnded => 1,
                     Ending::Dropped => 130,
                     _ => 0,
                 };
                 judge.check(exit == Some(kernel::Exit::Code(code)), "shell exit matches the host terminal");
                 judge.check(
-                    if matches!(self.ending, Ending::Unavailable) { queries == 0 } else { queries > 0 },
+                    if matches!(self.ending, Ending::Unavailable | Ending::AgentEnded) {
+                        queries == 0
+                    } else {
+                        queries > 0
+                    },
                     "provider work matches account availability",
                 );
                 let start = b"smith: local host started; worst case ";
@@ -157,6 +164,8 @@ impl Expectations for Meeting {
                     errors.strip_suffix(b"smith: run failed: chat main: turn 2 could not be kept: write failed\n")
                 } else if matches!(self.ending, Ending::Dropped) {
                     errors.strip_suffix(b"smith: interrupted: the run was dropped before it answered\n")
+                } else if matches!(self.ending, Ending::AgentEnded) {
+                    errors.strip_suffix(b"smith: local chat ended with a failure\n")
                 } else {
                     Some(errors.as_slice())
                 };
@@ -451,7 +460,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
                         browser.shutdown();
                     }
                 }
-                Proc::Local(_) | Proc::Agent(_, _) | Proc::Git(_) => {}
+                Proc::Local(_) | Proc::Agent(_, _) | Proc::Ended(_) | Proc::Git(_) => {}
             }
         }
     }

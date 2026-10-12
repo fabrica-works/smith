@@ -606,6 +606,8 @@ fn value_notice(name: &str, spelling: &str) -> Notice {
         account: Some(u64::MAX),
         bytes: None,
         wait_ms: Some(u64::MAX),
+        exit: None,
+        forced: None,
     }
 }
 
@@ -1512,21 +1514,7 @@ fn samples_14() -> Vec<(&'static str, Record, Capture)> {
 }
 
 pub fn samples() -> Vec<(&'static str, Record, Capture)> {
-    let mut samples = vec![(
-        "notice_kind_reasoning_dropped",
-        Record {
-            t_ms: u64::MAX,
-            event: Event::Notice(Notice {
-                level: Level::Warning,
-                kind: NoticeKind::ReasoningDropped,
-                run: Some(u64::MAX),
-                account: None,
-                wait_ms: None,
-                bytes: Some(u64::MAX),
-            }),
-        },
-        Capture::Everything,
-    )];
+    let mut samples = vec![reasoning_dropped_sample()];
     let mut signal = value_tool_completed("", "");
     signal.exit = Some(CommandExit::Signal { signal: u64::MAX });
     samples.push((
@@ -1975,9 +1963,61 @@ fn end_samples() -> Vec<(&'static str, Record, Capture)> {
                 account: None,
                 wait_ms: None,
                 bytes: None,
+                exit: None,
+                forced: None,
             }),
         },
         Capture::Everything,
     ));
+    samples.extend(forced_exit_samples());
     samples
+}
+
+fn forced_exit_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for (name, exit, forced) in [
+        ("notice_forced_exit", Some(smith_events::AgentExit::Signal(9)), smith_events::Forced::Killed),
+        ("notice_forced_terminated", Some(smith_events::AgentExit::Code(7)), smith_events::Forced::Terminated),
+        ("notice_forced_no", None, smith_events::Forced::No),
+        ("notice_forced_unknown", None, smith_events::Forced::Unknown(b"future".as_slice().into())),
+    ] {
+        samples.push((
+            name,
+            Record {
+                t_ms: 0,
+                event: Event::Notice(Notice {
+                    level: Level::Warning,
+                    kind: NoticeKind::ForcedExit,
+                    run: Some(1),
+                    account: None,
+                    wait_ms: None,
+                    bytes: None,
+                    exit,
+                    forced: Some(forced),
+                }),
+            },
+            Capture::Everything,
+        ));
+    }
+    samples
+}
+
+fn reasoning_dropped_sample() -> (&'static str, Record, Capture) {
+    (
+        "notice_kind_reasoning_dropped",
+        Record {
+            t_ms: u64::MAX,
+            event: Event::Notice(Notice {
+                level: Level::Warning,
+                kind: NoticeKind::ReasoningDropped,
+                run: Some(u64::MAX),
+                account: None,
+                wait_ms: None,
+                bytes: Some(u64::MAX),
+                exit: None,
+                forced: None,
+            }),
+        },
+        Capture::Everything,
+    )
 }

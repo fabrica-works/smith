@@ -999,3 +999,49 @@ fn session_started_chat_round_trips() {
     };
     assert_eq!(header.chat, None);
 }
+
+#[test]
+fn a_forced_exit_notice_keeps_the_kits_evidence_under_every_capture() {
+    let frozen = include_bytes!("../../../crates/smith-events/golden/v1/notice_forced_exit.jsonl");
+    let record = read(frozen, &limits()).expect("forced exit golden").expect("notice");
+    let Event::Notice(notice) = &record.event else { panic!("notice") };
+    assert_eq!(notice.kind, smith_events::NoticeKind::ForcedExit);
+    assert_eq!(notice.level, smith_events::Level::Warning);
+    assert_eq!(notice.exit, Some(smith_events::AgentExit::Signal(9)));
+    assert_eq!(notice.forced, Some(smith_events::Forced::Killed));
+    for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+        assert_eq!(write(&record, &capture, &limits()).expect("notice").expect("record").as_ref(), frozen);
+    }
+}
+
+#[test]
+fn forced_exit_notices_round_trip_known_and_unknown_evidence_and_reject_missing_fields() {
+    let base =
+        r#"{"v":1,"type":"notice","t_ms":0,"level":"warning","kind":"forced_exit","exit":null,"forced":"terminated"}"#;
+    for (exit, forced) in
+        [("null", "no"), ("{\"code\":7}", "terminated"), ("{\"signal\":15}", "killed"), ("null", "future")]
+    {
+        let wire = base.replace("null", exit).replace("terminated", forced);
+        let record = read(wire.as_bytes(), &limits()).expect("exit evidence").expect("notice");
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            let line = write(&record, &capture, &limits()).expect("bounded notice").expect("notice");
+            assert_eq!(read(&line, &limits()), Ok(Some(record.clone())));
+            assert!(
+                line.len()
+                    <= usize::try_from(smith_events::largest_size(&record.event, &capture, &limits()).expect("size"))
+                        .expect("usize")
+            );
+        }
+    }
+    for invalid in [
+        base.replace(",\"forced\":\"terminated\"", ""),
+        base.replace(",\"exit\":null", ""),
+        base.replace("\"terminated\"", "null"),
+        base.replace("null", "{\"code\":7,\"signal\":9}"),
+    ] {
+        assert_eq!(read(invalid.as_bytes(), &limits()), Err(Error::Shape));
+    }
+    let bounded = Limits { string: 16, ..limits() };
+    let too_large = base.replace("terminated", "xxxxxxxxxxxxxxxxx");
+    assert_eq!(read(too_large.as_bytes(), &bounded), Err(Error::Shape));
+}

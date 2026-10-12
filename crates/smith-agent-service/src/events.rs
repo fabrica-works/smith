@@ -221,7 +221,19 @@ impl Producer {
         assert!(self.origin.is_none(), "one process startup before its first pass");
         self.origin = Some(now);
         self.sinks.record(&Record { t_ms: 0, event: Event::SessionStarted(header) });
-        self.notice(now, smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()), None, None, None);
+        self.notice(
+            now,
+            smith_events::Notice {
+                level: smith_events::Level::Warning,
+                kind: smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()),
+                run: None,
+                account: None,
+                wait_ms: None,
+                bytes: None,
+                exit: None,
+                forced: None,
+            },
+        );
     }
 
     pub(crate) fn message(&mut self, name: Token, label: &[u8], text: &[u8]) {
@@ -557,24 +569,19 @@ impl Producer {
         });
     }
 
-    pub fn notice(
-        &mut self,
-        now: Time,
-        kind: smith_events::NoticeKind,
-        account: Option<u64>,
-        wait_ms: Option<u64>,
-        bytes: Option<u64>,
-    ) {
+    /// Write an operator notice, attaching the run observed by this writer.
+    pub fn notice(&mut self, now: Time, mut notice: smith_events::Notice) {
+        notice.run = match notice.kind {
+            smith_events::NoticeKind::ForcedExit => self.activation,
+            smith_events::NoticeKind::ReasoningDropped
+            | smith_events::NoticeKind::CredentialRejected
+            | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::TeardownAborted
+            | smith_events::NoticeKind::Unknown(_) => self.admitted,
+        };
         self.sinks.record(&Record {
             t_ms: now.saturating_since(self.origin()).as_nanos() / 1_000_000,
-            event: Event::Notice(smith_events::Notice {
-                level: smith_events::Level::Warning,
-                kind,
-                run: self.admitted,
-                account,
-                wait_ms,
-                bytes,
-            }),
+            event: Event::Notice(notice),
         });
     }
 }

@@ -5,10 +5,10 @@ use crate::records::{
     Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Form, Level, LimitValue, Loss, Message,
-    MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss,
-    Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult,
-    RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
+    EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Forced, Form, Level, LimitValue, Loss,
+    Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome,
+    PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role, RunCompleted,
+    RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status, Stop, TextDelta,
     ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
@@ -363,6 +363,7 @@ fn write_notice_kind(json: &mut Encoder, value: &NoticeKind, _capture: &Capture)
         NoticeKind::CredentialRejected => json.string(b"credential_rejected"),
         NoticeKind::AccountExhausted => json.string(b"account_exhausted"),
         NoticeKind::TeardownAborted => json.string(b"teardown_aborted"),
+        NoticeKind::ForcedExit => json.string(b"forced_exit"),
         NoticeKind::Unknown(text) => json.string(text),
     }
 }
@@ -609,18 +610,7 @@ fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Cap
     }
     if let Some(item) = &value.ended {
         json.key(b"ended");
-        json.object_start();
-        match item {
-            AgentExit::Code(code) => {
-                json.key(b"code");
-                json.signed(*code);
-            }
-            AgentExit::Signal(signal) => {
-                json.key(b"signal");
-                json.unsigned(*signal);
-            }
-        }
-        json.object_end();
+        write_agent_exit(json, *item);
     }
     if let Some(item) = value.turn {
         json.key(b"turn");
@@ -1085,7 +1075,8 @@ fn validate_notice_kind(value: &NoticeKind, limits: &Limits) -> Result<(), Error
         NoticeKind::ReasoningDropped
         | NoticeKind::CredentialRejected
         | NoticeKind::AccountExhausted
-        | NoticeKind::TeardownAborted => Ok(()),
+        | NoticeKind::TeardownAborted
+        | NoticeKind::ForcedExit => Ok(()),
         NoticeKind::Unknown(text) => check_text(text, limits.string),
     }
 }
@@ -1393,13 +1384,19 @@ fn validate_message_received(value: &MessageReceived, limits: &Limits) -> Result
 fn validate_notice(value: &Notice, limits: &Limits) -> Result<(), Error> {
     validate_level(&value.level, limits)?;
     validate_notice_kind(&value.kind, limits)?;
+    match &value.forced {
+        Some(Forced::Unknown(value)) => check_text(value, limits.string)?,
+        Some(Forced::No | Forced::Terminated | Forced::Killed) | None => {}
+    }
     match value.kind {
+        NoticeKind::ForcedExit if value.forced.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped if value.bytes.is_none() => Err(Error::Shape),
         NoticeKind::CredentialRejected | NoticeKind::AccountExhausted if value.account.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped
         | NoticeKind::CredentialRejected
         | NoticeKind::AccountExhausted
         | NoticeKind::TeardownAborted
+        | NoticeKind::ForcedExit
         | NoticeKind::Unknown(_) => Ok(()),
     }
 }
@@ -1963,11 +1960,56 @@ fn encode_message_unread(json: &mut Encoder, value: &MessageUnread) {
     json.unsigned(value.name);
 }
 
+fn write_agent_exit(json: &mut Encoder, exit: AgentExit) {
+    json.object_start();
+    match exit {
+        AgentExit::Code(code) => {
+            json.key(b"code");
+            json.signed(code);
+        }
+        AgentExit::Signal(signal) => {
+            json.key(b"signal");
+            json.unsigned(signal);
+        }
+    }
+    json.object_end();
+}
+
+fn write_forced(json: &mut Encoder, forced: &Forced) {
+    match forced {
+        Forced::No => json.string(b"no"),
+        Forced::Terminated => json.string(b"terminated"),
+        Forced::Killed => json.string(b"killed"),
+        Forced::Unknown(value) => json.string(value),
+    }
+}
+
 fn encode_notice(json: &mut Encoder, value: &Notice, capture: &Capture) {
     json.key(b"level");
     write_level(json, &value.level, capture);
     json.key(b"kind");
     write_notice_kind(json, &value.kind, capture);
+    match value.exit {
+        Some(exit) => {
+            json.key(b"exit");
+            write_agent_exit(json, exit);
+        }
+        None => match value.kind {
+            NoticeKind::ForcedExit => {
+                json.key(b"exit");
+                json.null();
+            }
+            NoticeKind::ReasoningDropped
+            | NoticeKind::CredentialRejected
+            | NoticeKind::AccountExhausted
+            | NoticeKind::TeardownAborted
+            | NoticeKind::Unknown(_) => {}
+        },
+    }
+    if let Some(forced) = &value.forced {
+        json.key(b"forced");
+        write_forced(json, forced);
+    }
     if let Some(item) = &value.run {
         json.key(b"run");
         json.unsigned(*item);

@@ -1387,7 +1387,7 @@ impl World {
                 self.agent_request(request);
             }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
-            Request::Answered { .. } | Request::Unanswered { .. } => {}
+            Request::Answered { .. } | Request::Unanswered { .. } | Request::ForcedExit { .. } => {}
             Request::Exit { status } => {
                 self.exit = Some(status);
                 self.reached.insert(Goal::Exit);

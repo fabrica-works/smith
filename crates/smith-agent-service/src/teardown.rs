@@ -166,7 +166,19 @@ pub(super) fn shutdown(service: &mut Service) {
             service.io_requests.push(io::Request::Abort { entity });
         }
         if let Some(events) = &mut service.events {
-            events.notice(service.io_env.now, smith_events::NoticeKind::TeardownAborted, None, None, None);
+            events.notice(
+                service.io_env.now,
+                smith_events::Notice {
+                    level: smith_events::Level::Warning,
+                    kind: smith_events::NoticeKind::TeardownAborted,
+                    run: None,
+                    account: None,
+                    wait_ms: None,
+                    bytes: None,
+                    exit: None,
+                    forced: None,
+                },
+            );
         }
     }
 }

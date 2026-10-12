@@ -373,6 +373,8 @@ pub enum NoticeKind {
     CredentialRejected,
     /// The `account_exhausted` classification.
     AccountExhausted,
+    /// The host had to signal its agent to end its tree.
+    ForcedExit,
     /// A termination signal interrupted the service's teardown after its answer.
     TeardownAborted,
     /// A value this reader does not know, retained as UTF-8.
@@ -616,12 +618,25 @@ pub struct AnswerFailure {
 }
 
 /// The process terminal supplied by the host kit for an unanswering agent.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AgentExit {
     /// The process ended with this exit code.
     Code(i64),
     /// This signal ended the process.
     Signal(u64),
+}
+
+/// The last tree signal the host kit sent while ending its agent.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Forced {
+    /// The kit sent no tree signal.
+    No,
+    /// The kit sent a termination signal.
+    Terminated,
+    /// The kit sent a kill signal.
+    Killed,
+    /// A future listed value retained by this reader.
+    Unknown(Box<[u8]>),
 }
 
 /// One named result field the service records under full content capture.
@@ -966,7 +981,7 @@ pub struct MessageUnread {
     pub name: u64,
 }
 
-/// An operator notice the service records for an account or a dropped reasoning item.
+/// An operator notice from the service or the host kit's process evidence.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Notice {
     pub level: Level,
@@ -976,6 +991,8 @@ pub struct Notice {
     pub wait_ms: Option<u64>,
     /// Actual size of the reasoning item omitted from history, in bytes.
     pub bytes: Option<u64>,
+    pub exit: Option<AgentExit>,
+    pub forced: Option<Forced>,
 }
 
 /// A content block supplied by a provider or a prompt owner.

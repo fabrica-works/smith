@@ -352,7 +352,9 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
         },
         &mut out,
     );
-    let Some(Request::Unanswered { cause: crate::EndCause::Agent, turns: 0, spent: 0, read: None }) = out.pop() else {
+    let Some(Request::Unanswered { cause: crate::EndCause::Agent { ended: None }, turns: 0, spent: 0, read: None }) =
+        out.pop()
+    else {
         panic!("unanswered run reaches its event writer")
     };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("missing answer notice") };
@@ -547,6 +549,7 @@ fn shown_requests(out: &mut Queue<Request>) -> u32 {
                 | Request::Notice { .. }
                 | Request::Answered { .. }
                 | Request::Unanswered { .. }
+                | Request::ForcedExit { .. }
                 | Request::Load
                 | Request::SaveState { .. }
                 | Request::SaveTurn { .. }
@@ -562,4 +565,66 @@ fn shown_requests(out: &mut Queue<Request>) -> u32 {
         }
     }
     shown
+}
+
+#[test]
+fn gone_fills_the_agents_first_cause_with_the_exit_the_kit_reported() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Exited },
+        &mut out,
+    );
+    assert_eq!(domain.end_cause(), Some(crate::EndCause::Agent { ended: None }));
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Exited { exit: Some(host::Exit::Signal(9)), forced: host::Forced::Killed },
+            detail: Box::default(),
+        },
+        &mut out,
+    );
+    assert_eq!(domain.end_cause(), Some(crate::EndCause::Agent { ended: Some(smith_events::AgentExit::Signal(9)) }));
+    let mut notices = 0_u32;
+    let mut completed = 0_u32;
+    for _ in 0..out.capacity() {
+        match out.pop() {
+            Some(Request::ForcedExit { exit: Some(host::Exit::Signal(9)), forced: host::Forced::Killed }) => {
+                notices = notices.checked_add(1).expect("bounded output");
+            }
+            Some(Request::Unanswered {
+                cause: crate::EndCause::Agent { ended: Some(smith_events::AgentExit::Signal(9)) },
+                ..
+            }) => {
+                completed = completed.checked_add(1).expect("bounded output");
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(notices, 1);
+    assert_eq!(completed, 1);
+}
+
+#[test]
+fn gone_without_observed_process_evidence_keeps_ended_absent() {
+    for end in [host::End::Unspawned, host::End::Settled, host::End::Exited { exit: None, forced: host::Forced::No }] {
+        let (mut domain, env, mut out) = running(crate::tests::config());
+        parent_request(
+            &mut domain,
+            &env,
+            parent::Request::Gone { client: Token::new(1), end, detail: Box::default() },
+            &mut out,
+        );
+        assert_eq!(domain.end_cause(), Some(crate::EndCause::Agent { ended: None }));
+        let mut completed = 0_u32;
+        for _ in 0..out.capacity() {
+            if let Some(Request::Unanswered { cause: crate::EndCause::Agent { ended: None }, .. }) = out.pop() {
+                completed = completed.checked_add(1).expect("bounded output");
+            }
+        }
+        assert_eq!(completed, 1);
+    }
 }

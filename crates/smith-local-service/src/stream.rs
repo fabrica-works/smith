@@ -55,7 +55,11 @@ pub fn unanswered(
             };
             failure
         }
-        smith_local_domain::EndCause::Agent => failure(AnswerClass::Agent, None),
+        smith_local_domain::EndCause::Agent { ended } => {
+            let mut failure = failure(AnswerClass::Agent, None);
+            failure.ended = ended;
+            failure
+        }
     };
     Answered {
         status: Status::Failed,
@@ -258,6 +262,30 @@ impl Spawned {
     pub(crate) fn unanswered(&mut self, now: skein_lib::Time, answer: Answered) {
         self.producer.answered(now, self.start, answer);
         self.answered = true;
+    }
+
+    pub(crate) fn forced_exit(&mut self, now: skein_lib::Time, exit: Option<host::Exit>, forced: host::Forced) {
+        self.producer.notice(
+            now,
+            smith_events::Notice {
+                level: smith_events::Level::Warning,
+                kind: smith_events::NoticeKind::ForcedExit,
+                run: None,
+                account: None,
+                wait_ms: None,
+                bytes: None,
+                exit: match exit {
+                    Some(host::Exit::Code(code)) => Some(smith_events::AgentExit::Code(i64::from(code))),
+                    Some(host::Exit::Signal(signal)) => Some(smith_events::AgentExit::Signal(u64::from(signal))),
+                    None => None,
+                },
+                forced: Some(match forced {
+                    host::Forced::No => smith_events::Forced::No,
+                    host::Forced::Terminated => smith_events::Forced::Terminated,
+                    host::Forced::Killed => smith_events::Forced::Killed,
+                }),
+            },
+        );
     }
 
     pub(crate) fn owns(&self, owner: skein_lib::Token) -> bool {

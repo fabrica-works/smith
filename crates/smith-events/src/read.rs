@@ -8,11 +8,11 @@ use crate::records::{
     Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
     CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
-    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Form, Level, LimitValue,
-    Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind,
-    Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted, Role,
-    RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source, Status,
-    Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Forced, Form, Level,
+    LimitValue, Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice,
+    NoticeKind, Outcome, PeakRss, Prompt, Quantity, Record, Requested, Reserve, ResponseCompleted, ResponseStarted,
+    Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Share, ShareBound, SharePart, Source,
+    Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
 };
 use crate::{Error, Limits};
 
@@ -669,6 +669,7 @@ fn read_notice_kind(tokens: &[Token], limits: &Limits) -> Result<NoticeKind, Err
         b"credential_rejected" => NoticeKind::CredentialRejected,
         b"account_exhausted" => NoticeKind::AccountExhausted,
         b"teardown_aborted" => NoticeKind::TeardownAborted,
+        b"forced_exit" => NoticeKind::ForcedExit,
         _ => {
             if value.len() > usize::try_from(limits.string).expect("u32 fits") {
                 return Err(Error::Limits);
@@ -1413,9 +1414,27 @@ fn read_message_unread(tokens: &[Token]) -> Result<MessageUnread, Error> {
     Ok(MessageUnread { run: unsigned(required(tokens, b"run")?)?, name: unsigned(required(tokens, b"name")?)? })
 }
 
+fn read_forced(tokens: &[Token], limits: &Limits) -> Result<Forced, Error> {
+    let value = text(tokens, limits.string)?;
+    Ok(match value.as_ref() {
+        b"no" => Forced::No,
+        b"terminated" => Forced::Terminated,
+        b"killed" => Forced::Killed,
+        _ => Forced::Unknown(value),
+    })
+}
+
 fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
     object(tokens)?;
     let notice = Notice {
+        exit: match field(tokens, b"exit")? {
+            Some([Token::Null]) | None => None,
+            Some(item) => Some(read_agent_exit(item)?),
+        },
+        forced: match field(tokens, b"forced")? {
+            Some(item) => Some(read_forced(item, limits)?),
+            None => None,
+        },
         level: read_level(required(tokens, b"level")?, limits)?,
         kind: read_notice_kind(required(tokens, b"kind")?, limits)?,
         run: match field(tokens, b"run")? {
@@ -1436,12 +1455,14 @@ fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
         },
     };
     match notice.kind {
+        NoticeKind::ForcedExit if notice.forced.is_none() || field(tokens, b"exit")?.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped if notice.bytes.is_none() => Err(Error::Shape),
         NoticeKind::CredentialRejected | NoticeKind::AccountExhausted if notice.account.is_none() => Err(Error::Shape),
         NoticeKind::ReasoningDropped
         | NoticeKind::CredentialRejected
         | NoticeKind::AccountExhausted
         | NoticeKind::TeardownAborted
+        | NoticeKind::ForcedExit
         | NoticeKind::Unknown(_) => Ok(notice),
     }
 }

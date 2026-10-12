@@ -642,6 +642,7 @@ impl Service {
                 }
             }
             local::Request::Unanswered { cause, turns, spent, read } => self.unanswered(now, cause, turns, spent, read),
+            local::Request::ForcedExit { exit, forced } => self.forced_exit(now, exit, forced),
             local::Request::Exit { status } => {
                 if let Some(stream) = &mut self.stream {
                     stream.exit = Some(crate::stream::exit(status));
@@ -668,6 +669,12 @@ impl Service {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
             }
             other @ local::Request::Credential { .. } => self.shell.push(other),
+        }
+    }
+
+    fn forced_exit(&mut self, now: Time, exit: Option<host::Exit>, forced: host::Forced) {
+        if let Some(stream) = &mut self.stream {
+            stream.forced_exit(now, exit, forced);
         }
     }
 

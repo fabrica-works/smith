@@ -311,6 +311,8 @@ pub enum Request {
     Answered { answer: smith_host_domain::Answer },
     /// The agent went without answering; the service writes its run terminal. Owes no terminal.
     Unanswered { cause: crate::EndCause, turns: u32, spent: u64, read: Option<Token> },
+    /// Gone reports a tree signal the kit sent; the product records a notice, owing no terminal.
+    ForcedExit { exit: Option<smith_host_domain::Exit>, forced: smith_host_domain::Forced },
     /// The caller may terminate this invocation.
     Exit { status: ExitStatus },
 }

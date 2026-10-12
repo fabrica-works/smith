@@ -16,6 +16,8 @@ pub struct Child {
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     code: u8,
+    extra: Vec<kernel::Fd>,
+    opening: u32,
 }
 
 impl Child {
@@ -32,8 +34,43 @@ impl Child {
             completions: Queue::with_capacity(32),
             submissions: Queue::with_capacity(32),
             code,
+            extra: Vec::new(),
+            opening: 0,
         }
     }
+    /// A valid opening followed by an exit before any answer, with every inherited descriptor closed.
+    #[must_use]
+    pub fn unanswered(inherited: &skein_world::Inherited) -> Self {
+        let configuration = crate::process::lower_configuration();
+        let limits = configuration.limits.channel.channel;
+        let schema = smith_protocol_channel::schema(&configuration.limits.channel).expect("agent channel schema");
+        let version = schema.range().expect("one channel version").1;
+        let mut entries = skein_lib::List::with_capacity(limits.kinds);
+        for kind in &schema.version(version).expect("selected channel version").kinds {
+            if kind.direction == skein_channel::Direction::FromInitiator {
+                entries.push(skein_channel::Term { kind: kind.kind, largest: kind.largest }).expect("schema terms");
+            }
+        }
+        let mut bytes = Vec::new();
+        for control in
+            [skein_channel::Control::Accept { version, features: 0 }, skein_channel::Control::Terms { entries }]
+        {
+            bytes.extend_from_slice(skein_channel::control_frame(&control, &limits).expect("opening frame").bytes());
+        }
+        let pipes: Vec<_> = inherited.pipes.iter().filter(|(number, _)| *number != 0).copied().collect();
+        let mut child = Self::new(&pipes, bytes.into_boxed_slice(), 7);
+        child.extra = vec![inherited.signal, inherited.pipes.iter().find(|(number, _)| *number == 0).expect("stdin").1];
+        child.opening = 34
+            + 6 * schema
+                .version(version)
+                .expect("selected version")
+                .kinds
+                .iter()
+                .filter(|kind| kind.direction == skein_channel::Direction::FromResponder)
+                .count() as u32;
+        child
+    }
+
     #[must_use]
     pub fn code(&self) -> u8 {
         self.code
@@ -52,7 +89,13 @@ impl Host for Child {
             assert!(self.pending);
             self.pending = false;
             match complete.result.expect("fake git pipe outcome") {
-                kernel::Done::Count(count) => self.written = self.written.checked_add(count).expect("bounded stdout"),
+                kernel::Done::Count(count) => {
+                    if complete.op == Token::new(5) {
+                        self.opening = self.opening.saturating_sub(count);
+                    } else {
+                        self.written = self.written.checked_add(count).expect("bounded stdout");
+                    }
+                }
                 kernel::Done::Nothing => {
                     if complete.op == Token::new(2) {
                         self.output = None;
@@ -72,11 +115,21 @@ impl Host for Child {
                     op: Token::new(1),
                     kind: kernel::Op::PipeWrite { fd: output, bytes: self.bytes.clone(), from: self.written },
                 }
+            } else if self.opening > 0 {
+                kernel::Submit {
+                    op: Token::new(5),
+                    kind: kernel::Op::PipeRead {
+                        fd: *self.extra.last().expect("opening input"),
+                        buf: vec![0; 32_768].into_boxed_slice(),
+                    },
+                }
             } else {
                 kernel::Submit { op: Token::new(2), kind: kernel::Op::Close { fd: output } }
             }
         } else if let Some(error) = self.error {
             kernel::Submit { op: Token::new(3), kind: kernel::Op::Close { fd: error } }
+        } else if let Some(fd) = self.extra.pop() {
+            kernel::Submit { op: Token::new(4), kind: kernel::Op::Close { fd } }
         } else {
             return;
         };
@@ -93,13 +146,14 @@ impl Host for Child {
         !self.pending && !self.is_empty()
     }
     fn is_empty(&self) -> bool {
-        self.output.is_none() && self.error.is_none() && !self.pending
+        self.output.is_none() && self.error.is_none() && self.extra.is_empty() && !self.pending
     }
     fn operations(&self) -> u32 {
         1
     }
     fn worst_case(&self) -> u64 {
         65_536
+            + 2 * std::mem::size_of::<kernel::Fd>() as u64
             + Queue::<kernel::Complete>::worst_case(32).expect("git completions")
             + Queue::<kernel::Submit>::worst_case(32).expect("git submissions")
             + std::mem::size_of::<Self>() as u64

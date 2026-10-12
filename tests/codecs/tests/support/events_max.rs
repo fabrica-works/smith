@@ -348,6 +348,8 @@ fn max_notice(limits: &smith_events::Limits) -> Notice {
         account: Some(u64::MAX),
         bytes: Some(u64::MAX),
         wait_ms: Some(u64::MAX),
+        exit: Some(smith_events::AgentExit::Signal(u64::MAX)),
+        forced: Some(smith_events::Forced::Unknown(payload(limits.string))),
     }
 }
 

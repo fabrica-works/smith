@@ -698,16 +698,25 @@ impl World {
             process::local_roots,
             process::local_appends,
         );
-        world.host_startup(
-            HostedProgram {
+        if matches!(self.scenario.ending, Ending::AgentEnded) {
+            world.host(HostedProgram {
                 program: b"smith-agent".as_slice().into(),
-                make: process::make_agent,
-                instances: 8,
-                operations: process::lower_configuration().limits.routes + 3,
-            },
-            process::agent_roots,
-            process::agent_appends,
-        );
+                make: process::make_exited_agent,
+                instances: 1,
+                operations: 1,
+            });
+        } else {
+            world.host_startup(
+                HostedProgram {
+                    program: b"smith-agent".as_slice().into(),
+                    make: process::make_agent,
+                    instances: 8,
+                    operations: process::lower_configuration().limits.routes + 3,
+                },
+                process::agent_roots,
+                process::agent_appends,
+            );
+        }
         world.host_roots(
             HostedProgram {
                 program: b"/usr/bin/git".as_slice().into(),

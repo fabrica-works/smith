@@ -25,14 +25,14 @@ pub enum EndCause {
     Cancelled,
     /// The store failed while the run went on; its turn is absent for a non-turn write.
     Host { turn: Option<u32>, reason: StoreFailure },
-    /// The child ended without an answer; the kit's exit evidence is added by teardown.
-    Agent,
+    /// The child ended without answering; Gone supplies any process exit the kit observed.
+    Agent { ended: Option<smith_events::AgentExit> },
 }
 
 pub(crate) const fn exit_status(cause: Option<EndCause>) -> ExitStatus {
     match cause {
         Some(EndCause::Cancelled) => ExitStatus::Interrupted,
-        Some(EndCause::Host { .. } | EndCause::Agent) | None => ExitStatus::RunFailed,
+        Some(EndCause::Host { .. } | EndCause::Agent { .. }) | None => ExitStatus::RunFailed,
     }
 }
 

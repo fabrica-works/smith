@@ -1010,7 +1010,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 },
                 host::Fault::Rules | host::Fault::TooLarge | host::Fault::NoProgress | host::Fault::WallTime => false,
             };
-            let cause = if dropped { crate::EndCause::Cancelled } else { crate::EndCause::Agent };
+            let cause = if dropped { crate::EndCause::Cancelled } else { crate::EndCause::Agent { ended: None } };
             record_cause(domain, cause);
             failed_child(domain, out);
         }
@@ -1020,11 +1020,25 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 notice: Notice::NotDelivered { line: Some(name), why: Undelivered::Refused(reason) },
             });
         }
-        parent::Request::Gone { .. } => gone(domain, out),
+        parent::Request::Gone { end, .. } => gone(domain, end, out),
     }
 }
 
-fn gone(domain: &mut Domain, out: &mut Queue<Request>) {
+fn gone(domain: &mut Domain, end: host::End, out: &mut Queue<Request>) {
+    let ended = match end {
+        host::End::Exited { exit, forced } => {
+            match forced {
+                host::Forced::No => {}
+                host::Forced::Terminated | host::Forced::Killed => out.push(Request::ForcedExit { exit, forced }),
+            }
+            match exit {
+                Some(host::Exit::Code(code)) => Some(smith_events::AgentExit::Code(i64::from(code))),
+                Some(host::Exit::Signal(signal)) => Some(smith_events::AgentExit::Signal(u64::from(signal))),
+                None => None,
+            }
+        }
+        host::End::Busy | host::End::Invalid(_) | host::End::Unspawned | host::End::Settled => None,
+    };
     domain.agent_life = AgentLife::Gone;
     match domain.chat.phase {
         Phase::Answered { .. } => domain.chat.phase = Phase::Answered { gone: Gone::Heard },
@@ -1032,20 +1046,23 @@ fn gone(domain: &mut Domain, out: &mut Queue<Request>) {
     }
     domain.run = None;
     if domain.turns.answer.is_none() {
+        match domain.end_cause {
+            Some(crate::EndCause::Agent { .. }) | None => domain.end_cause = Some(crate::EndCause::Agent { ended }),
+            Some(crate::EndCause::Cancelled | crate::EndCause::Host { .. }) => {}
+        }
         out.push(Request::Unanswered {
-            cause: domain.end_cause.unwrap_or(crate::EndCause::Agent),
+            cause: domain.end_cause.expect("Gone records an end cause"),
             turns: domain.told.turns,
             spent: domain.told.spent,
             read: domain.told.read,
         });
     }
     if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
-        record_cause(domain, crate::EndCause::Agent);
         domain.agent_failed = true;
         crate::person::show_dropped(&mut domain.lines, out);
         let end = match domain.end_cause {
             Some(crate::EndCause::Cancelled) => AgentEnd::Dropped,
-            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => AgentEnd::NoAnswer,
+            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent { .. }) | None => AgentEnd::NoAnswer,
         };
         out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(end)) });
     }
@@ -1065,7 +1082,7 @@ fn failed_child(domain: &mut Domain, out: &mut Queue<Request>) {
     if !domain.stop_failed {
         let end = match domain.end_cause {
             Some(crate::EndCause::Cancelled) => AgentEnd::Dropped,
-            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => AgentEnd::Failed,
+            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent { .. }) | None => AgentEnd::Failed,
         };
         out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(end)) });
     }

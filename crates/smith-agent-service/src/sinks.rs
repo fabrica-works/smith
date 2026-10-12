@@ -843,6 +843,7 @@ fn authoritative(event: &Event) -> bool {
             smith_events::NoticeKind::ReasoningDropped
             | smith_events::NoticeKind::CredentialRejected
             | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::ForcedExit
             | smith_events::NoticeKind::Unknown(_) => false,
         },
     }

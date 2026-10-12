@@ -325,7 +325,7 @@ fn heap_check_completed(limits: &Limits) -> Option<u64> {
 }
 
 fn heap_notice(limits: &Limits) -> Option<u64> {
-    let mut length = 0_u64;
+    let mut length = u64::from(limits.string);
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
     Some(length)
@@ -868,6 +868,8 @@ fn size_message_unread() -> Option<u64> {
 
 fn size_notice(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
+    length = length.checked_add(8)?.checked_add(11)?.checked_add(20)?;
+    length = length.checked_add(10)?.checked_add(u64::from(limits.string.max(10)).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(9)?.checked_add(size_level(capture, limits)?)?;
     length = length.checked_add(8)?.checked_add(size_notice_kind(capture, limits)?)?;
     length = length.checked_add(7)?.checked_add(20_u64)?;

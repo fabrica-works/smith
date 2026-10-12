@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 smith-local-protocol = { path = "../../crates/smith-local-protocol" }
 skein-shell.workspace = true
+skein-channel.workspace = true
 skein-http.workspace = true
 skein-fake-peers.workspace = true
 skein-fake-oauth.workspace = true

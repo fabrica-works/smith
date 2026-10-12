@@ -1003,6 +1003,7 @@ dependencies = [
  "skein-lib",
  "smith-agent-world",
  "smith-domain",
+ "smith-events",
  "smith-host-domain",
  "smith-inline-agent",
 ]
@@ -1013,6 +1014,7 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "skein-channel",
  "skein-fake-checkout",
  "skein-fake-llm-domain",
  "skein-fake-machine",
