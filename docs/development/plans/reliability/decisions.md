@@ -1010,3 +1010,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    second line" is read so, since this script reads line 2 only in the
    turn that answers. A step of an existing story changed this way is
    not in README rule 8; a second such block adds it.
+33. **sha2 is optimized in dev and test builds** (block of
+   2026-10-12T15:52:22Z, smith 00.s1). The Rust test peer that replaces
+   the replay arm's Python script is a 6.2 MiB debug executable, and
+   `smith-bench` checks an arm binary's SHA-256 each time it reads the
+   arm (`benchmarks/src/arm.rs:269`), so
+   `a_replay_arm_runs_through_the_probe_command_and_prints_one_line`
+   went from about 0.35 s to 2.939 s, past twice the 0.5 s ceiling
+   (development.md 8.2). `smith-bench` is sha2's only user in
+   `Cargo.lock`. Ruling: the root `Cargo.toml` gains
+   `[profile.dev.package.sha2]` with `opt-level = 3`, which the test
+   profile inherits: no dependency, every check kept. Not a stripped
+   fixture, which would need a tool and a preparation step. The table
+   joins 00.s1's Files, for that table only.

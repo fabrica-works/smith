@@ -287,7 +287,9 @@ them (decisions.md, the preamble). Both become one Rust fixture binary.
 Needs: nothing; it follows the increment smith 00 is on.
 Files: `benchmarks/Cargo.toml` (one `[[bin]]`, `test-peer`, test-only by
 its name and docs); new `benchmarks/src/bin/test_peer.rs`;
-`benchmarks/tests/{probe_command.rs,smith_adapter.rs}`; `benchmarks/README.md`
+`benchmarks/tests/{probe_command.rs,smith_adapter.rs}`; the root
+`Cargo.toml`, one `[profile.dev.package.sha2]` table only (decisions.md,
+13.33); `benchmarks/README.md`
 (its "immutable `arms/`": say what the code does, "`arms/`, which
 `build` writes once and never rewrites", and no synonym).
 Shape: `test-peer replay <recording> <settings>` copies the recording to
