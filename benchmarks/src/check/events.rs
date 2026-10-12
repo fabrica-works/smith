@@ -74,19 +74,13 @@ pub(super) fn checks(
 ) -> Result<(), Refusal> {
     for (index, check) in checks.iter().enumerate() {
         let key = format!("{key}[{index}]");
-        if file_check(file, &key, check, native_file_bytes, native_tool_payload)? {
+        if file_check(file, &key, check, native_file_bytes, native_tool_payload)? || identity_check(file, &key, check)?
+        {
             continue;
         }
         match check {
-            EventCheck::ToolPath { tool, path, aliases, verdict } => {
-                if tool.trim().is_empty()
-                    || path.is_empty()
-                    || path.contains('\0')
-                    || aliases.iter().any(|alias| alias.is_empty() || alias.contains('\0'))
-                {
-                    return Err(Refusal::new(file, &key, "tool and path must be nonempty namespace text"));
-                }
-                named(file, &format!("{key}.verdict"), verdict, VERDICTS)?;
+            EventCheck::ToolPath { .. } | EventCheck::RunCompleted { .. } | EventCheck::ProviderFailure { .. } => {
+                unreachable!("identity checks return above")
             }
             EventCheck::WrittenFile { .. } | EventCheck::FilePieces { .. } | EventCheck::OversizedWrite { .. } => {
                 unreachable!("file checks return above")
@@ -137,28 +131,6 @@ pub(super) fn checks(
                 }
             }
             EventCheck::NoFailure { class } => named(file, &format!("{key}.class"), class, FAILURES)?,
-            EventCheck::RunCompleted { status, class, which, reason } => {
-                named(file, &format!("{key}.status"), status, &["accepted", "parked", "failed", "refused"])?;
-                if let Some(value) = class {
-                    named(file, &format!("{key}.class"), value, ANSWERS)?;
-                }
-                if which.as_ref().is_some_and(|value| value.trim().is_empty()) {
-                    return Err(Refusal::new(file, &format!("{key}.which"), "typed failure identity must be nonempty"));
-                }
-                if let Some(pattern) = reason {
-                    regex::Regex::new(pattern)
-                        .map_err(|error| Refusal::new(file, &format!("{key}.reason"), error.to_string()))?;
-                }
-            }
-            EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } => {
-                if *status_at_least < 100
-                    || *status_at_most > 599
-                    || status_at_least > status_at_most
-                    || *detail_bytes_at_most == 0
-                {
-                    return Err(Refusal::new(file, &key, "HTTP status range and diagnostic bound must be valid"));
-                }
-            }
             EventCheck::CallsInOneResponse { tool, at_least } => {
                 if tool.trim().is_empty() || *at_least == 0 {
                     return Err(Refusal::new(file, &key, "tool and cardinality must be nonempty"));
@@ -199,6 +171,45 @@ pub(super) fn checks(
         }
     }
     Ok(())
+}
+
+fn identity_check(file: &Path, key: &str, check: &EventCheck) -> Result<bool, Refusal> {
+    if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
+        if tool.trim().is_empty()
+            || path.is_empty()
+            || path.contains('\0')
+            || aliases.iter().any(|alias| alias.is_empty() || alias.contains('\0'))
+        {
+            return Err(Refusal::new(file, key, "tool and path must be nonempty namespace text"));
+        }
+        named(file, &format!("{key}.verdict"), verdict, VERDICTS)?;
+        return Ok(true);
+    }
+    if let EventCheck::RunCompleted { status, class, which, reason } = check {
+        named(file, &format!("{key}.status"), status, &["accepted", "parked", "failed", "refused"])?;
+        if let Some(value) = class {
+            named(file, &format!("{key}.class"), value, ANSWERS)?;
+        }
+        if which.as_ref().is_some_and(|value| value.trim().is_empty()) {
+            return Err(Refusal::new(file, &format!("{key}.which"), "typed failure identity must be nonempty"));
+        }
+        if let Some(pattern) = reason {
+            regex::Regex::new(pattern)
+                .map_err(|error| Refusal::new(file, &format!("{key}.reason"), error.to_string()))?;
+        }
+        return Ok(true);
+    }
+    if let EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } = check {
+        if *status_at_least < 100
+            || *status_at_most > 599
+            || status_at_least > status_at_most
+            || *detail_bytes_at_most == 0
+        {
+            return Err(Refusal::new(file, key, "HTTP status range and diagnostic bound must be valid"));
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn file_check(

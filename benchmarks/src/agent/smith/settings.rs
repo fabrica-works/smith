@@ -346,9 +346,7 @@ mod tests {
         assert_eq!(current["sub_agents"], true);
         let local: smith_local_shell::local_settings::Settings =
             serde_json::from_value(current.clone()).expect("shipped local settings");
-        let encoded = smith_local_shell::local_settings::agent_document(&local).expect("local generates its models");
-        let configured =
-            smith_agent_shell::config::parse(&encoded).expect("shipped agent accepts the local-generated document");
+        let configured = native_agent_configuration(&local);
         native_failure_settings(&current, configured.profile.declared.file_bytes);
         native_parallel_profiles(&directory, &root, &render);
         task.smith.insert("output".into(), toml::Value::Integer(1024));
