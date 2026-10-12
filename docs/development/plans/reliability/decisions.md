@@ -1698,3 +1698,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    any rebase; the bounds only grow, so an arm between that parent and
    04.s3 reads within them. The old entries and the test stay; the file
    joins 04.s3's Files.
+87. **smith 10.7 splits; 10.19 takes composition and check** (block of
+   2026-10-12T21:22:15Z). 10.7's unfinished candidate (`b8b04eeb`) holds
+   721 production lines (decoder 166, driver and file owner 334, the
+   shell's credential inspection 160, other files 61), past README rule
+   9's 700, with an estimate of 1,000 to 1,100 for its whole Scope.
+   Ruling: the implementer's split, not a ceiling: 10.7 lands the decoder
+   and the driver with a unit Proof; 10.19 takes the credential
+   inspection, composition and `smith check` with 10.7's world test. 10.9
+   may go on meanwhile (development.md 8.7).

@@ -358,9 +358,21 @@ probe (smith 00.30) shows it live; it is not this increment's proof.
 Don't: never a refresh token in smith's state, a write to a login file,
 or a refresh of another tool's login; no test reads `~/.codex`; no
 credential value in settings shown, events, traces, lines or checks.
-Size: at most 550.
+Split (decisions.md, 13.87): 10.7 lands the protocol decoder and the
+driver that owns the borrowed file, with their unit tests and a unit
+Proof; 10.19 takes the shell's credential inspection, the product's
+composition and `smith check`, with the world test above as its Proof.
+Size: README rule 9's, each.
 Removes: nothing.
 
+
+### 10.19 Credentials composed into the product and `smith check`
+Split from 10.7 (decisions.md, 13.87). Scope: 10.7's Scope for the
+shell's credential inspection, the product's composition and `smith
+check`'s report; its candidate's parts start from 10.7's (`b8b04eeb`).
+Needs: 10.7.
+Files, Test shape, Proof and Don't: 10.7's, as named for 10.19.
+Size: README rule 9's.
 ### 10.9 The build environment
 Scope (shell.md, 8): `[environment]` `inherit` (the core list by default,
 names only) and `set`; `[build]` preset `rust` (`CARGO_HOME`,
