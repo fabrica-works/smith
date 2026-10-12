@@ -1659,3 +1659,18 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    no new declaration, override or standard value. The file joins 10.18's
    Files, within 13.80's 950 lines. If the larger count breaks the memory
    check of the standard profile, 10.18 stops and asks.
+84. **04.s3 raises the replay cap to the share** (block of
+   2026-10-12T20:42:57Z, smith 04.s3). `smith-protocol-llm/src/limits.rs:56`'s
+   `replay_limits` admits one raw reasoning item
+   (`client.reasoning.max(client.metadata)`), used for durable replay by
+   `completion.rs:137` and `prompt.rs:424`, so a run of reasoning items
+   kept as one block (skein-07.s4) is refused before the transcript sees
+   it. limits.md 3.2 and 3.3 (the designer's a55b0681): a completion's
+   reasoning at skein's share, one block possibly holding it all.
+   Ruling: the implementer's proposal: the replay's raw cap is the
+   checked share, output items x reasoning; the per-string and per-block
+   retained-token and depth bounds stay; a completion's ownership is
+   priced as one share plus each block's envelope, not a share per block;
+   the callers propagate a checked overflow; transcript 3's `Opaque.bytes`
+   holds the share plus its durable header (7 bytes), within the schema's
+   3 MiB. Those files join 04.s3's Files; no new type or count.
