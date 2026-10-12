@@ -118,8 +118,8 @@ on 2026-10-09, in micro-dollars per million tokens; they also bound subscription
 usage notionally.
 
 The agent profile is `{"name":"standard","declared":{"memory":N},"policy":{}}`;
-each declared quantity or policy can be overridden by name. `memory` remains
-required while memory-pool derivation is being introduced. Policy durations,
+each declared quantity or policy can be overridden by name. `memory` defaults to
+2 GiB; an override declares the process's real memory. Policy durations,
 including `group_stop`, are milliseconds. Raw derived limits and the former
 `memory_bytes` and `grace_ms` keys are refused.
 

@@ -10,7 +10,7 @@ use super::{
 
 fn profile() -> super::Profile {
     let mut profile = standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     profile.declared.tool_payload = 256;
     profile.declared.read_window = 256;
     profile.declared.calls_per_response = 2;
@@ -394,4 +394,24 @@ fn transcript_blocks_hold_the_largest_completion_or_name_the_ceiling() {
         words(&refusal).as_ref(),
         b"calls-in-transcript: session.message_blocks=65 items; transcript.message_blocks=64 items"
     );
+}
+
+#[test]
+fn the_worst_case_does_not_grow_with_connections_times_the_request() {
+    let mut selected = profile();
+    selected.declared.memory = 2_147_483_648;
+    let mut configuration = declarations();
+    for conversations in [1, 2, 4, 6] {
+        selected.declared.conversations = conversations;
+        let small = super::derive(&selected, &configuration).expect("small window");
+        configuration.endpoints[0].models[0].window *= 2;
+        let large = super::derive(&selected, &configuration).expect("large window");
+        assert_eq!(small.llm.connection.memory, large.llm.connection.memory);
+        assert_eq!(large.llm.connection.memory, selected.declared.llm_pool);
+        let small_client = small.llm.adapter.client;
+        let large_client = large.llm.adapter.client;
+        assert!(large_client.request > small_client.request);
+        assert_eq!(skein_llm::client::worst_case(&small_client), skein_llm::client::worst_case(&large_client));
+        configuration.endpoints[0].models[0].window /= 2;
+    }
 }

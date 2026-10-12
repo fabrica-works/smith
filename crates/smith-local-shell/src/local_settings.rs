@@ -612,7 +612,7 @@ mod tests {
         smith_agent_service::profile::derive(
             &{
                 let mut profile = smith_agent_service::profile::standard();
-                profile.declared.memory = Some(u64::MAX);
+                profile.declared.memory = u64::MAX;
                 profile.declared.tool_payload = 256;
                 profile.declared.read_window = 256;
                 profile.declared.calls_per_response = 2;

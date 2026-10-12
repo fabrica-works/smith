@@ -96,7 +96,7 @@ fn host_limits() -> host::Limits {
     let mut profile = smith_agent_service::profile::standard();
     profile.declared.conversations = 2;
     profile.declared.calls_per_response = 8;
-    profile.declared.memory = Some(1_u64 << 40_u32);
+    profile.declared.memory = 2_147_483_648;
     profile.policy.inbox = 8;
     profile.policy.unacknowledged = 8;
     let mut limits =

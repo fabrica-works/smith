@@ -49,8 +49,8 @@ pub struct Declared {
     pub guide: u32,
     /// Shared LLM admission memory, in bytes.
     pub llm_pool: u64,
-    /// Process memory bytes, required until the real pool lands.
-    pub memory: Option<u64>,
+    /// The process's real memory, in bytes: `standard()` declares 2 GiB.
+    pub memory: u64,
 }
 
 /// Count and duration ceilings selected by the deployment profile.
@@ -146,7 +146,7 @@ pub struct Configuration {
     pub endpoints: Box<[Endpoint]>,
 }
 
-/// Today's transitional bundle; process memory remains a required override.
+/// The transitional deployment bundle, with 2 GiB of process memory.
 #[must_use]
 pub const fn standard() -> Profile {
     Profile {
@@ -165,7 +165,7 @@ pub const fn standard() -> Profile {
             list_entries: 64,
             guide: 1024,
             llm_pool: 134_217_728,
-            memory: None,
+            memory: 2_147_483_648,
         },
         policy: Policy {
             max_turns: 4096,

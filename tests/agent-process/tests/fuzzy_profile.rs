@@ -9,7 +9,7 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
         let mut rng = Rng::new(seed);
         for case in 0_u32..512 {
             let mut profile = profile::standard();
-            profile.declared.memory = Some(u64::MAX);
+            profile.declared.memory = 2_147_483_648;
             profile.declared.tool_payload = u32::try_from(rng.next_u64() % 65536 + 1).expect("payload");
             profile.declared.read_window = u32::try_from(rng.next_u64() % 65536 + 1).expect("read");
             profile.declared.search_bytes = u32::try_from(rng.next_u64() % 8192 + 1).expect("search");

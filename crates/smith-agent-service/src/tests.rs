@@ -103,7 +103,7 @@ fn standard_profile_admits_the_priced_shell_run_defaults() {
     use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
     use smith_domain::run;
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain;
     let charter = priced_charter();
     let mut domain = run::Domain::new(&limits.run, 0);
@@ -169,7 +169,7 @@ fn actual_reserve_refusals_keep_their_part_through_every_capture() {
     use skein_lib::Duration;
     use smith_domain::run;
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     let limits = crate::profile::derive(&profile, &declarations(0)).expect("standard profile").domain.run;
     let mut turns = priced_charter();
     turns.budget.turns = 1;
@@ -226,7 +226,7 @@ fn standard_profile_builds_a_complete_bounded_service() {
     let limits = crate::profile::derive(
         &{
             let mut profile = crate::profile::standard();
-            profile.declared.memory = Some(u64::MAX);
+            profile.declared.memory = u64::MAX;
             profile
         },
         &declarations(0),
@@ -256,7 +256,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
     let mut rng = skein_lib::Rng::new(941);
     for _ in 0_u32..256 {
         let mut profile = crate::profile::standard();
-        profile.declared.memory = Some(u64::MAX);
+        profile.declared.memory = u64::MAX;
         profile.declared.tool_payload = u32::try_from(rng.next_u64() % 65536 + 1).expect("bounded payload");
         profile.declared.read_window =
             u32::try_from(rng.next_u64() % u64::from(profile.declared.tool_payload) + 1).expect("bounded read");
@@ -284,7 +284,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
         assert_eq!(limits.llm.adapter.stated, stated);
     }
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     profile.declared.search_bytes = u32::MAX;
     assert_eq!(
         crate::profile::derive(&profile, &declarations(0)).err(),
@@ -298,7 +298,7 @@ fn random_tool_render_caps_derive_a_machine_that_holds_them() {
 fn every_declared_conversation_can_use_the_same_endpoint() {
     for conversations in [1, 2, 3, 5, 8] {
         let mut profile = crate::profile::standard();
-        profile.declared.memory = Some(u64::MAX);
+        profile.declared.memory = u64::MAX;
         profile.declared.conversations = conversations;
         let configuration = declarations(0);
         let limits = crate::profile::derive(&profile, &configuration).expect("declared conversations derive");
@@ -386,7 +386,7 @@ fn the_measured_large_contract_is_admitted_at_the_host_edge_and_refused_one_byte
     use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
     use smith_domain::run;
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     let receiving = crate::profile::derive(&profile, &declarations(0)).expect("declared model").domain.run;
     let enter = |bound, instructions: &[u8]| {
         let limits = run::Limits { host_part: bound, ..receiving };
@@ -471,7 +471,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
     use smith_domain::{llm, run};
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     let limits = crate::profile::derive(&profile, &declarations(0)).expect("real model");
     let mut selected = priced_charter();
     selected.outcome.report = Some(run::outcome::TextSpec { max: 32, fields: Box::default() });
@@ -546,7 +546,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
 
 fn standard_limits() -> Result<crate::Limits, crate::profile::Refusal> {
     let mut profile = crate::profile::standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     crate::profile::derive(&profile, &declarations(0))
 }
 

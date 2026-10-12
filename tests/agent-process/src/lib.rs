@@ -94,7 +94,7 @@ pub fn configured(
     smith_agent_shell::Agent::new(
         smith_agent_shell::config::Configuration {
             service: configuration,
-            memory: u64::MAX,
+            memory: profile().declared.memory,
             trace: None,
             profile: profile(),
             declarations: declarations(environment_bytes),
@@ -128,8 +128,8 @@ pub fn profile() -> agent::profile::Profile {
     profile.declared.search_bytes = 256;
     profile.declared.list_entries = 2;
     profile.declared.guide = 128;
-    profile.declared.memory = Some(1_u64 << 40_u32);
-    profile.declared.llm_pool = 1_u64 << 30_u32;
+    profile.declared.memory = 2_147_483_648;
+    profile.declared.llm_pool = agent::profile::standard().declared.llm_pool;
     profile.policy.max_turns = 512;
     profile.policy.max_time = Duration::from_secs(3600);
     profile.policy.inbox = 8;

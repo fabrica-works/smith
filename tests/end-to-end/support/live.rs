@@ -155,7 +155,7 @@ impl Backend {
             ("api.anthropic.com", "claude-code", headers.iter().map(|header| serde_json::json!({"name":String::from_utf8_lossy(&header.name),"value":String::from_utf8_lossy(&header.value)})).collect::<Vec<_>>())
         };
         let mut settings = serde_json::json!({
-            "agent":{"profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64},"policy":{"group_stop":1000}},
+            "agent":{"profile":{"name":"standard","declared":{"memory":2_147_483_648_u64},"policy":{"group_stop":1000}},
                 "endpoints":[{"name":self.name,"number":0,"dialect":0,"account":0,"provider":self.name,"connect":10000,"handshake":10000,"address":format!("{host}:443"),"server_name":host,"transport":"tls","identity":identity,"headers":headers,"reasoning_effort":if self.name == "codex" { Some("low") } else { None }}],
                 "environment":[],"trace":{"path":directory.join("agent-trace.jsonl"),"capture":"calls"}},
             "chat":"chat","instructions":"@local-shell Follow the user's requested outcome exactly. Use the tools and call finish when done.",

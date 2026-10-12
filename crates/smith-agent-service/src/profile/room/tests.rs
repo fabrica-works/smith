@@ -122,7 +122,7 @@ fn random_declared_rooms_refuse_by_name_or_hold_a_largest_fresh_window() {
 #[test]
 fn fixed_own_measurement_is_checked_and_real_declared_models_leave_room() {
     let mut profile = standard();
-    profile.declared.memory = Some(u64::MAX);
+    profile.declared.memory = u64::MAX;
     profile.declared.tool_payload = 256;
     profile.declared.read_window = 256;
     profile.declared.calls_per_response = 2;

@@ -33,7 +33,7 @@ mod tests {
         profile.declared.search_bytes = 16384;
         profile.declared.list_entries = 512;
         profile.declared.llm_pool = 134_217_728;
-        profile.declared.memory = Some(2_147_483_648);
+        profile.declared.memory = 2_147_483_648;
         let declarations = Configuration {
             environment_bytes: 835,
             endpoints: Box::new([Endpoint {

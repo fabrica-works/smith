@@ -10,7 +10,7 @@ use smith_session_world::recorded::{World, opening};
 fn a_window_opened_at_its_largest_makes_its_first_completion() {
     for window in [65_536, 131_072] {
         let mut profile = profile::standard();
-        profile.declared.memory = Some(u64::MAX);
+        profile.declared.memory = 2_147_483_648;
         profile.declared.conversations = 1;
         profile.declared.calls_per_response = 2;
         profile.declared.tool_payload = 256;

@@ -53,7 +53,7 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     validate::declarations(profile, configuration)?;
     let declared = profile.declared;
     let policy = profile.policy;
-    let memory = declared.memory.ok_or(derived(Layer::Declared, "memory"))?;
+    let memory = declared.memory;
     let path = path::path(profile, configuration)?;
     let mut client = path.client;
     // Receiving maxima cover both configured transports; each destination

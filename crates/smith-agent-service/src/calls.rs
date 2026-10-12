@@ -485,7 +485,7 @@ mod tests {
 
     fn fixture(capture: Capture) -> (Book, Sinks, Token, Token, session::ToolCall) {
         let mut profile = crate::profile::standard();
-        profile.declared.memory = Some(1_u64 << 40_u32);
+        profile.declared.memory = 2_147_483_648;
         let mut source = crate::profile::derive(&profile, &crate::tests::declarations(0)).unwrap().domain.session;
         source.sessions = 1;
         source.parallel_tools = 2;

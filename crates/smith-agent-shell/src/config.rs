@@ -241,7 +241,7 @@ fn event_limits(
 
 fn build(document: Document) -> Result<Configuration, String> {
     let profile = build_profile(&document.profile)?;
-    let memory = profile.declared.memory.ok_or("profile.declared.memory is required")?;
+    let memory = profile.declared.memory;
     if document.endpoints.is_empty() {
         return Err(profile_refusal(Refusal::Field { limit: LimitName::deployment(Layer::Declared, "endpoints") }));
     }
@@ -562,7 +562,7 @@ fn apply_declared(profile: &mut service::profile::Profile, overrides: &DeclaredO
         if value == 0 {
             return Err("profile.declared.memory must be positive".into());
         }
-        profile.declared.memory = Some(value);
+        profile.declared.memory = value;
     }
     Ok(())
 }
@@ -977,7 +977,7 @@ mod tests {
 
     fn shaped_document() -> serde_json::Value {
         serde_json::json!({
-            "profile":{"name":"standard","declared":{"memory":1_099_511_627_776_u64,"tool_payload":256,"read_window":256}},
+            "profile":{"name":"standard","declared":{"memory":2_147_483_648_u64,"tool_payload":256,"read_window":256}},
             "endpoints":[{"name":"local","number":0,"dialect":0,"account":0,"provider":"codex",
                 "address":"127.0.0.1:8080","transport":"plaintext","connect":10000,"handshake":10000,
                 "models":[{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}]}],
@@ -987,6 +987,14 @@ mod tests {
 
     fn parse_value(value: &serde_json::Value) -> Result<Configuration, String> {
         parse(&serde_json::to_vec(value).expect("configuration JSON"))
+    }
+
+    #[test]
+    fn omitted_memory_uses_the_standard_process_declaration() {
+        let mut document = shaped_document();
+        document["profile"]["declared"].as_object_mut().expect("declarations").remove("memory");
+        let configuration = parse_value(&document).expect("default memory fits");
+        assert_eq!(configuration.memory, 2_147_483_648);
     }
 
     #[test]
@@ -1400,7 +1408,7 @@ mod tests {
                 .expect("drawn complete bound");
             match validate::memory(complete, limits.memory) {
                 Ok(()) => {
-                    assert!(complete <= profile.declared.memory.unwrap());
+                    assert!(complete <= profile.declared.memory);
                     parse_value(&document).expect("all concrete startup comparisons");
                     admitted += 1;
                 }

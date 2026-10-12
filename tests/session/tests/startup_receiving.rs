@@ -9,7 +9,7 @@ use smith_session_world::recorded::{World, opening};
 #[test]
 fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns() {
     let mut profile = profile::standard();
-    profile.declared.memory = Some(1_000_000_000_000);
+    profile.declared.memory = 2_147_483_648;
     profile.declared.tool_payload = 256;
     profile.declared.read_window = 256;
     profile.declared.calls_per_response = 1;

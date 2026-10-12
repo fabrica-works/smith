@@ -80,3 +80,57 @@ fn configured_environment_commands_fit_the_composed_agent_bound() {
     assert_eq!(world.command_environments().len(), 1);
     world.assert_agent_clean();
 }
+
+#[test]
+fn every_conversation_open_with_the_pool_full_fits_the_worst_case() {
+    use skein_lib::{Env, Queue, Time, Token, Wall};
+    use skein_llm_connection::{Component, Deadlines, Request};
+    use skein_world::domain::heap::Meter;
+    let (endpoints, pool, bound) = full_pool();
+    let meter = Meter::new();
+    meter.start();
+    let mut component = Component::new(endpoints, &pool).expect("bounded full pool");
+    let mut up = Queue::with_capacity(32);
+    let mut io = Queue::with_capacity(32);
+    for number in 0..pool.calls {
+        let call = skein_llm_world::call(u64::from(number));
+        component.down(
+            &Env { now: Time::ZERO, wall: Wall::EPOCH, limits: pool },
+            Request::Start {
+                call: Token::new(u64::from(number)),
+                endpoint: 0,
+                prompt: call.prompt,
+                credential: call.credential,
+                deadlines: Deadlines::none(),
+                drop_reasoning: false,
+            },
+            &mut up,
+            &mut io,
+        );
+    }
+    let measured = meter.end();
+    assert!(up.is_empty(), "every declared conversation was admitted");
+    assert_eq!(io.len(), pool.calls, "every conversation opened its connection");
+    assert_eq!(component.reserved(), pool.memory, "admitted calls fill the real pool");
+    assert!(measured.peak() <= bound, "peak {} exceeds {bound}", measured.peak());
+    assert_eq!(smith_agent_process_world::profile().declared.memory, 2_147_483_648);
+}
+
+fn full_pool() -> (List<skein_llm_connection::Endpoint>, skein_llm_connection::Limits, u64) {
+    use skein_lib::Queue;
+    let configured = smith_agent_process_world::configuration();
+    let (mut endpoints, _) = configured.llm_endpoints.into_parts();
+    let client = endpoints.get_mut(0).expect("one endpoint");
+    let call = skein_llm_world::call(7);
+    let measured =
+        skein_llm::client::measure(&call.prompt, &call.credential, &client.llm, &client.limits).expect("fixture fits");
+    client.limits.request = measured.body;
+    let reservation = skein_llm::client::reservation(measured, &client.limits).expect("reservation");
+    let mut pool = configured.limits.llm.connection;
+    pool.memory = reservation * u64::from(pool.calls);
+    assert!(pool.memory <= smith_agent_process_world::profile().declared.llm_pool);
+    let bound = skein_llm_connection::worst_case(&pool, &endpoints).expect("full pool bound")
+        + Queue::<skein_llm_connection::Event>::worst_case(32).expect("events")
+        + Queue::<skein_io::Request>::worst_case(32).expect("requests");
+    (endpoints, pool, bound)
+}
