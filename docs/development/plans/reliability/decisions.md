@@ -1406,3 +1406,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    retry of `land`, as development.md 8.5 allows for a timeout. A second
    occurrence in any session's gate makes it a skein step (skein-world
    treating `EINVAL` as it treats `ESRCH`) and a repin.
+61. **06.12 counts the detail it keeps** (block of 2026-10-12T18:23:33Z,
+   smith 06.12). 06.12's Scope: "the session keeps the detail of the last
+   failure it met, within `failure_bytes`" and "The run keeps its main
+   conversation's last detail and answers with it". The session's worst
+   case (`smith-domain-session/src/limits.rs:150-154`) and the root's
+   queued run-output payload (`smith-domain/src/limits.rs:116-120`) do not
+   count a kept `failure_bytes`. Ruling: the implementer's proposal: at
+   most 5 lines in the session's `limits.rs` count one kept
+   `failure_bytes` per session, and at most 3 in the root's include it in
+   the run-output payload's maximum; no limit, derivation or ceiling
+   changes. Both files join 06.12's Files.
