@@ -1302,3 +1302,44 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    adds the last completion's model (13.49's numbering, `Peer`'s index,
    the `Charter` lookup) and its attempts over the same carriers, with
    06.7's reference test gaining their assertions. 06.9 needs both.
+53. **05.s1: run the live chat on `main` before narrowing further**
+   (block of 2026-10-12T17:46:29Z, smith 05.s1). 05.s1's process story,
+   the live order (wait, line 2 received, line 1 read, the next
+   response), passes on the parent in both placements, with the turn
+   acknowledged through the real store. The failed attempt's own files
+   say more than its trace: its terminal ends "Agent process failed",
+   and its stream's `run.completed` is `cancelled` at 36,401 ms with
+   `session.ended` `answered: false`, `exit: 1`: the agent went silent
+   after the wait, requesting nothing, until the host ended it, which is
+   the watchdog over silence's doing (06.3). Ruling: `follow-up/chat` runs
+   live on the current `main` in two calls of 12 attempts (README rule
+   3). Stalled again: README rule 11's diagnostic in a worktree commit
+   that never lands, naming in the product's and the agent's standard
+   error each turn's save and acknowledgement and each completion held
+   and released, built as an arm and run once more (12); then the fix
+   where it shows. No stall in 24: 05.s1 lands its process story as
+   coverage, with no production change, and the counts in its commit
+   body.
+54. **The harness reads arms from before 06.5's `aborted`** (block of
+   2026-10-12T17:46:29Z, smith 00.16). 00.16's control
+   (`probes-history-small-window-8d9d5408-20261012T174019Z/01`) ended
+   `HarnessError("events record has an invalid known field")`: 06.5
+   (8d2ec9b8) added `session.ended`'s `aborted`, and the reader now
+   requires it of every arm, so no control built before 06.5 can be read,
+   for any probe. README rule 4: "the harness follows the binary ... so
+   probes keep running." 00.16 adds, as 13.22 did, a face entry pinned to
+   8d2ec9b8 whose `session.ended` carries `aborted`, earlier faces reading
+   it as absent, with a test that reads a recording without it; its
+   control then runs. Not a lower-layer proof in its place.
+55. **smith-04.s1: a small window lowers the material's bounds** (block
+   of 2026-10-12T17:46:29Z, smith 00.16). The current arm's small-window
+   attempt ended `Refused(invalid host_part)` before any request: the
+   window derives `host_part` 8,874, and the charter's host bytes
+   reserve the declared `guide`, 16,384 per directory, without an
+   `AGENTS.md`. session.md, 8.1: "Where a declared window would not hold
+   that material, the derivation lowers the material's bounds, never the
+   window." A smith defect the probe found; pinning `guide` at 1,024 in
+   the probe, the implementer's proposal, would hide it. A step not in
+   the plan, 04.s1, in session 04's file; 00.16's `small-window`
+   calibration waits for it and is its live proof, within 00.16's
+   original bound ($10, 45 minutes); `history` runs meanwhile.

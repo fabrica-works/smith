@@ -370,6 +370,32 @@ Don't: rename the agent's entries in the product's list.
 Size: at most 180 lines of production code.
 Removes: nothing.
 
+### 04.s1 A small window lowers the material's bounds, not the run
+Added during the run (decisions.md, 13.55). Scope: smith 00.16's
+`history/small-window` (`probes-history-small-window-ad9c80ac-20261012T174018Z/01`)
+ends `Refused(invalid host_part)` before any request: its window derives
+`host_part` 8,874 bytes, and the charter's host bytes reserve the declared
+`guide`, 16,384 per directory, with no `AGENTS.md` in the seed.
+session.md, 8.1: "Where a declared window would not hold that material,
+the derivation lowers the material's bounds, never the window
+(protocol/limits.md)." The derivation lowers `guide` (and any other
+material bound the opening reserves) so that the opening fits
+`host_part`; a run is refused only where no material bound can fit.
+Needs: nothing.
+Files: `crates/smith-agent-service/src/profile.rs` (the derivation, `:173`,
+`:272`, `:559`) and the file that reserves `guide` in the charter's host
+bytes; their unit tests.
+Shape: no new type.
+Test shape: a unit test, `a_small_window_lowers_the_guide_bound_and_admits_the_run`,
+at small-window's declared window: the derived `guide` fits `host_part`
+and the charter is admitted; it fails on the parent. Under 20 ms.
+Proof: that test, once, failing on the parent; then 00.16's
+`history/small-window` calibration is its live proof.
+Don't: lower the window or `host_part`; pin a smaller `guide` in the
+probe's settings to pass. If the refusal comes from elsewhere, stop and
+ask with where.
+Size: README rule 9's.
+
 ## Interface sketches
 
 **04.7.** The types on `main` stay: `LimitName`, `Layer`, `Per`, `Value`,
