@@ -196,7 +196,10 @@ the Files `smith-agent-service/src/responses.rs` and `events.rs:596`;
 and the first item of Removes. 08.6 gives the agent service only the
 match arms its new facts and ends need, each doing what that match
 does today for an ordinary completion's, and writes no compaction
-record.
+record. One exception, from the designer's ruling of 2026-10-12
+(session.md, 8.2, "The window's limit keeps its cause"; events.md,
+3.10): 08.6 makes the window's limit keep its cause in the service's
+terminals, as the Shape's last sentences say.
 Scope: smith 08's compaction. The window check before each completion,
 compaction on a failed check or *context too long*, the new window told
 as a window turn, once per window (session.md, 8.1 and 8.2); a due
@@ -251,6 +254,16 @@ answers as `Failure::Model` (`run.rs:2097`); `responses.rs:831` maps it
 to `ConversationEnd::Failed` with no completion failure, and the
 compaction's own `conversation.closed` is `failed` with none. No format
 changes: the channel and the stream already carry the three faults.
+The window's limit keeps its cause: after *context too long*, the
+session ends `Failed { failure: Limit { which: Window, bound: window },
+evidence }` with that attempt's evidence (`compaction.rs` gives `Unsent`
+throughout today), and a failed check's end stays `Unsent`. The
+service's `Ended` arm (`responses.rs:548-551`) keeps a typed limit's
+class and `limit` and takes `evidence`, `status` and `detail` from the
+captured native failure where there is one, so `conversation.closed`
+and `run.completed` agree with it and `answer_failure`'s checks
+(`responses.rs:264`) hold; that attempt's `response.completed` keeps
+`context_too_long`.
 Test shape: a new file, `tests/session/tests/compaction.rs`, on the
 step-level world (`tests/session/src/recorded.rs`: `World` `:65`, `step`
 `:180`, `open` `:285`, `complete` `:292`, `opening` `:34`, which gains a
@@ -314,7 +327,14 @@ the proof's test,
 `a_message_held_back_by_a_compaction_is_read_by_the_window_turn`, and
 `a_refused_compaction_fails_the_run_as_refused_its_message_unread`. Events
 (`smith-agent-service/src/tests.rs`):
-`a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`.
+`a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`
+(08.10's); 08.6's own: `a_window_limit_after_context_too_long_keeps_its_status_and_detail_in_every_terminal`
+and `a_window_limit_from_a_failed_check_is_unsent_with_the_limits_words`,
+and `native_provider_failure_keeps_status_and_capture_selected_detail_in_every_terminal`
+(`tests/agent-process/tests/content.rs:255`), whose 400 *context too
+long* falls in a fresh window: its `response` expectations stay, and its
+`conversation` and `run` ones become class `limit`, `limit.which`
+`window`, with the response's evidence, status and detail.
 Ceilings: unit 20 ms, world 0.5 s, fuzzy 5 s.
 
 ```rust
@@ -511,12 +531,12 @@ pub fn save_turn(place: u32, read: Option<Token>, opens_window: bool, turn: &smi
 window  compaction  event                                     next                      emits
 Fresh   Idle        ordinary completion made                  Used                      -
 Used    Idle        check fails, or context too long          Used, Asking              Complete (the summary instruction last)
-Fresh   Idle        check fails, or context too long          -                         Ended: Limit { Window, window }
+Fresh   Idle        check fails, or context too long          -                         Ended: Limit { Window, window }; Unsent after a check, the response's evidence after context too long
 Used    Asking      answer with text, cut or not; no refusal  Fresh (number + 1), Idle  Turn { kind: Window }; old history released
 Used    Asking      a refusal: its stop, or a refusal block   -                         Ended: NoSummary { Refused }; no turn told
 Used    Asking      no text, a stop at the output limit       -                         Ended: NoSummary { Truncated }; no turn told
 Used    Asking      no text, any other stop                   -                         Ended: NoSummary { Malformed }; no turn told
-Used    Asking      context too long                          -                         Ended: Limit { Window, window }
+Used    Asking      context too long                          -                         Ended: Limit { Window, window }, the response's evidence
 Used    Asking      another failure, past its retries         -                         Ended: Failed, as any completion
 Used    Asking      no room in a budget for it                -                         Ended: Budget
 ```
