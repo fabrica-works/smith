@@ -108,3 +108,47 @@ count = 2
 check = "cache-reuse"
 median_at_least = 0.85
 full_misses_per_ten_at_most = 1
+
+[[variant]]
+name = "crossing"
+replace_checks = true
+effort = "medium"
+prompt = "Follow the twelve-file pointer chain beginning at node-cobalt.txt, reading exactly one file per completion and summing the value fields. After the sixth read, call wait exactly once for the person before reading the remaining six files. Do not list, batch reads, edit, write, or delegate. After twelve reads, finish with exactly ALPHA and the sum.\n"
+deciding = ["end", "exit-code", "answer", "run-completed", "tool-call", "completions", "calls-per-response", "cache-reuse"]
+[[variant.person]]
+when = { tool-call = { tool = "wait" } }
+text = "Continue the remaining six reads and finish with the sum.\n"
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "^ALPHA 197$"
+[[variant.event]]
+check = "run-completed"
+status = "accepted"
+[[variant.event]]
+check = "tool-call"
+tool = "read"
+count = { exactly = 12 }
+verdict = "read"
+[[variant.event]]
+check = "completions"
+count = { exactly = 14 }
+before = "answer"
+[[variant.event]]
+check = "calls-per-response"
+tool = "read"
+at_most = 1
+[[variant.event]]
+check = "cache-reuse"
+median_at_least = 0.85
+full_misses_per_ten_at_most = 1
+
+[[variant.event]]
+check = "tool-call"
+tool = "wait"
+count = { exactly = 1 }

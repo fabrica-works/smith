@@ -4,6 +4,8 @@
 
 use std::collections::VecDeque;
 
+use serde::Deserialize;
+
 use super::Seen;
 
 /// A person's ordered lines and its input-close policy.
@@ -14,14 +16,16 @@ pub struct Script {
 }
 
 /// One complete line typed when its outside trigger is observed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Cue {
     pub when: Trigger,
     pub text: String,
 }
 
 /// The outside evidence that permits one scripted line.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Trigger {
     /// Type the initial prompt before any response.
     Start,
@@ -32,7 +36,8 @@ pub enum Trigger {
 }
 
 /// When the person closes its input, after queued bytes have been written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 pub enum Close {
     /// Close after the initial prompt, for a noninteractive command.
     AfterPrompt,

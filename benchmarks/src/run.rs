@@ -1030,11 +1030,11 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             setup_step = error.step;
             error.reason
         })?;
-        let prompt = task.prompt.as_bytes().to_vec();
-        let mut process = execute(
+        let script = script(&task, &capture);
+        let mut process = crate::process::execute_script(
             &clock,
             command,
-            prompt.into_boxed_slice(),
+            script,
             capture,
             Bounds {
                 hard: Duration::from_secs(task.deadline_seconds),
@@ -1072,6 +1072,20 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
     let bytes = crate::render_result(&result)?;
     let _: Artifact = crate::grade::archive(guard, &directory, "result.json", bytes.as_bytes())?;
     Ok(Recorded { result, directory, incomplete })
+}
+
+/// Put a task's authored lines behind its prompt, preserving pipe input closure.
+#[must_use]
+pub fn script(task: &Task, capture: &Capture) -> crate::agent::Script {
+    let default = match capture {
+        Capture::Agent(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
+            crate::agent::Close::AfterAnswer
+        }
+        Capture::Agent(_) | Capture::Raw | Capture::Codex => crate::agent::Close::AfterPrompt,
+    };
+    let mut cues = vec![crate::agent::Cue { when: crate::agent::Trigger::Start, text: task.prompt.clone() }];
+    cues.extend(task.person.clone());
+    crate::agent::Script { cues, close: task.input_end.unwrap_or(default) }
 }
 
 /// Archive a dispatcher-observed failure without inventing agent measurements.

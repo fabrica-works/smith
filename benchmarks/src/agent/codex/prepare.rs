@@ -39,6 +39,9 @@ pub struct Observing {
 /// Prepare a version-matched Codex command without touching its existing login.
 pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
     let configuration = (|| {
+        if !context.task.person.is_empty() {
+            return Err("Codex does not accept later person lines".into());
+        }
         if context.pin.pin.agent != Agent::Codex || context.pin.pin.provider != Provider::Codex {
             return Err("Codex requires its own codex configuration pin".into());
         }

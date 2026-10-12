@@ -7,6 +7,33 @@ use smith_events::{Block, Event};
 
 pub mod common;
 
+#[test]
+fn the_crossing_variant_waits_once_at_medium_effort() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let base = smith_bench::check_task(&root.join("tasks/probes/cache-reuse/task.toml"), &root.join("../docs/design"))
+        .expect("cache task");
+    let task = base.with_variant("crossing").expect("crossing");
+    assert_eq!(task.effort.as_deref(), Some("medium"));
+    assert!(task.prompt.contains("After the sixth read, call wait exactly once"));
+    assert_eq!(task.person.len(), 1);
+    assert_eq!(task.person[0].when, smith_bench::agent::Trigger::ToolCall { tool: "wait".into() });
+    assert!(task.event.contains(&EventCheck::ToolCall {
+        tool: "wait".into(),
+        count: Some(smith_bench::Count::Exactly(1)),
+        input_bytes_at_least: None,
+        verdict: None,
+        exit: None,
+        clamped: None,
+    }));
+    assert!(task.event.contains(&EventCheck::Completions {
+        count: smith_bench::Count::Exactly(14),
+        before: smith_bench::Before::Answer
+    }));
+    let cache =
+        base.event.iter().find(|check| matches!(check, EventCheck::CacheReuse { .. })).expect("base cache check");
+    assert!(task.event.contains(cache));
+}
+
 fn repetition(position: u32, read: u64, misses: u64) -> smith_bench::AttemptResult {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut value = smith_bench::read_result(&root.join("tests/recorded/results/attempt.json")).expect("fixture");

@@ -325,6 +325,72 @@ fn fact(observing: &mut Observing, text: &str) {
     observing.feed_line(&line).expect("native fact");
 }
 
+fn person_capture(trace: &Path) -> Capture {
+    let mut prepared = observing(trace).prepared;
+    prepared.face = Face::Events(smith_bench::agent::smith::events::Shape::LocalTrace);
+    prepared.registry.face = prepared.face;
+    prepared.registry.receiving = Some(
+        serde_json::from_value(serde_json::json!({
+            "string":128,"content":1024,"items":16,"encoded_line":4096
+        }))
+        .expect("fixture receiving limits"),
+    );
+    Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(Observing::new(prepared).expect("event observer"))))
+}
+
+fn person_recording() -> Vec<u8> {
+    let mut records = common::events::balanced();
+    let mut started =
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_started_everything.jsonl"));
+    started.t_ms = 4;
+    if let smith_events::Event::ToolStarted(value) = &mut started.event {
+        value.run = 0;
+        value.conversation = 0;
+        value.call = Box::from(&b"finish"[..]);
+        value.tool = Box::from(&b"finish"[..]);
+        value.deadline_ms = Some(100);
+        value.input_bytes = 0;
+        value.input = None;
+    }
+    records.insert(4, started);
+    common::events::bytes(&records)
+}
+
+#[test]
+fn a_task_person_line_follows_its_tool_cue_at_the_terminal() {
+    let directory = root("task-cue");
+    std::fs::create_dir(&directory).expect("fixture directory");
+    let trace = directory.join("trace.jsonl");
+    std::fs::write(&trace, []).expect("append file");
+    let replay = directory.join("records.jsonl");
+    std::fs::write(&replay, person_recording()).expect("tool cue");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut task = smith_bench::read_task(&project.join("tests/recorded/tasks/valid/task.toml")).expect("task");
+    task.person = vec![
+        toml::from_str("when = { tool-call = { tool = 'finish' } }\ntext = \"second line\\n\"\n")
+            .expect("authored cue"),
+    ];
+    task.input_end = Some(smith_bench::agent::Close::AfterLastCue);
+    let command=Command {program:"/bin/sh".into(),arguments:vec!["-c".into(),
+        "IFS= read -r prompt; cat \"$1\" >> \"$2\"; IFS= read -r reply || exit 7; test \"$reply\" = 'second line' || exit 8; if IFS= read -r extra; then exit 9; fi".into(),
+        "replay".into(),replay.into_os_string(),trace.clone().into_os_string()],
+        environment:vec![("PATH".into(),"/usr/bin:/bin".into())],directory:directory.clone()};
+    let capture = person_capture(&trace);
+    let result = smith_bench::process::execute_script(
+        &Clock::new(),
+        command,
+        smith_bench::run::script(&task, &capture),
+        capture,
+        bounds(),
+    )
+    .expect("settled task script");
+    assert_eq!(result.exit, smith_bench::Exit::Code(0), "{:?}", result.error);
+    assert_eq!(result.forced, Forced::No);
+    assert!(result.error.is_none(), "{:?}", result.error);
+    assert!(result.tree.live_pids.is_empty());
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
 #[test]
 fn a_later_person_line_waits_for_its_named_tool_cue_and_eof_follows_that_line() {
     use smith_bench::agent::{Close, Cue, Script, Trigger};

@@ -123,6 +123,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         return Err(Refusal::new(file, "version/deadline_seconds/repetitions", "counts must be positive"));
     }
     check_prompt(file, "prompt", &task.prompt)?;
+    person(file, "person", &task.person)?;
     check_budget(file, "budget", &task.budget)?;
     if let Some(path) = &task.working_directory {
         check_path(file, "working_directory", path)?;
@@ -156,6 +157,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         if let Some(prompt) = &variant.prompt {
             check_prompt(file, &format!("{key}.prompt"), prompt)?;
         }
+        person(file, &format!("{key}.person"), variant.person.as_deref().unwrap_or_default())?;
         if let Some(budget) = &variant.budget {
             check_budget(file, &format!("{key}.budget"), budget)?;
         }
@@ -212,6 +214,41 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         ));
     }
     Ok(task)
+}
+
+fn person(file: &Path, key: &str, cues: &[crate::agent::Cue]) -> Result<(), Refusal> {
+    if cues.len() > 63 {
+        return Err(Refusal::new(file, key, "at most 63 later person lines are allowed"));
+    }
+    for (index, cue) in cues.iter().enumerate() {
+        let key = format!("{key}[{index}]");
+        let bytes = cue.text.as_bytes();
+        if bytes.is_empty()
+            || bytes.len() > 4088
+            || !bytes.ends_with(b"\n")
+            || bytes[..bytes.len() - 1].contains(&b'\n')
+        {
+            return Err(Refusal::new(
+                file,
+                &key,
+                "person text must be one line ending in a newline, at most 4,088 bytes",
+            ));
+        }
+        match &cue.when {
+            crate::agent::Trigger::Start => {
+                return Err(Refusal::new(file, &key, "a later person line cannot use start"));
+            }
+            crate::agent::Trigger::Answer => {}
+            crate::agent::Trigger::ToolCall { tool } => {
+                if !["read", "list", "search", "write", "edit", "shell", "wait", "sub_agent", "deliver", "finish"]
+                    .contains(&tool.as_str())
+                {
+                    return Err(Refusal::new(file, &key, "person cue names a tool smith does not offer"));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn valid_name(name: &str) -> bool {

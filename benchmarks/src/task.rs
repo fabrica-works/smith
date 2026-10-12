@@ -276,6 +276,9 @@ pub struct Variant {
     pub deciding: Vec<String>,
     pub name: String,
     pub prompt: Option<String>,
+    pub effort: Option<String>,
+    pub person: Option<Vec<crate::agent::Cue>>,
+    pub input_end: Option<crate::agent::Close>,
     #[serde(default)]
     pub smith: BTreeMap<String, toml::Value>,
     #[serde(default)]
@@ -307,6 +310,9 @@ pub struct Task {
     pub tier: String,
     pub effort: Option<String>,
     pub prompt: String,
+    #[serde(default)]
+    pub person: Vec<crate::agent::Cue>,
+    pub input_end: Option<crate::agent::Close>,
     pub deadline_seconds: u64,
     pub estimate: Option<Estimate>,
     pub seed_sha256: String,
@@ -356,6 +362,15 @@ impl Task {
         let mut task = self.clone();
         if let Some(prompt) = &variant.prompt {
             task.prompt.clone_from(prompt);
+        }
+        if let Some(effort) = &variant.effort {
+            task.effort = Some(effort.clone());
+        }
+        if let Some(person) = &variant.person {
+            task.person.clone_from(person);
+        }
+        if let Some(close) = variant.input_end {
+            task.input_end = Some(close);
         }
         if variant.replace_checks {
             task.deciding.clear();

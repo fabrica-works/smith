@@ -16,6 +16,93 @@ prompt = "Read the README and finish.\n"
 seed_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 "#;
 
+fn person_document(name: &str, suffix: &str) -> Result<crate::Task, crate::Refusal> {
+    let root = std::env::temp_dir().join(format!("smith-bench-person-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("seed")).expect("empty seed");
+    let file = root.join("task.toml");
+    std::fs::write(&file, format!("{DOCUMENT}{suffix}")).expect("task document");
+    let result = check_task(&file, &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/design"));
+    std::fs::remove_dir_all(root).expect("fixture cleanup");
+    result
+}
+
+#[test]
+fn a_person_line_names_its_tool_cue_and_ends_in_a_newline() {
+    let task =
+        person_document("cue", "[[person]]\nwhen = { tool-call = { tool = 'wait' } }\ntext = \"next line\\n\"\n")
+            .expect("person cue");
+    assert_eq!(
+        task.person,
+        [crate::agent::Cue {
+            when: crate::agent::Trigger::ToolCall { tool: "wait".into() },
+            text: "next line\n".into()
+        }]
+    );
+}
+
+#[test]
+fn a_start_trigger_or_a_two_line_person_text_is_refused() {
+    for (name, document) in [
+        ("start", "[[person]]\nwhen = 'start'\ntext = \"next line\\n\"\n"),
+        ("two-lines", "[[person]]\nwhen = 'answer'\ntext = \"first\\nsecond\\n\"\n"),
+    ] {
+        assert!(person_document(name, document).expect_err("bad cue").key.starts_with("person"));
+    }
+}
+
+#[test]
+fn a_person_line_over_4088_bytes_is_refused() {
+    let suffix = format!("[[person]]\nwhen = 'answer'\ntext = \"{}\\n\"\n", "x".repeat(4088));
+    assert!(person_document("long", &suffix).expect_err("long line").reason.contains("4,088"));
+}
+
+#[test]
+fn a_person_line_without_its_final_newline_is_refused() {
+    let suffix = "[[person]]\nwhen = 'answer'\ntext = 'line'\n";
+    assert!(person_document("unfinished", suffix).expect_err("unfinished line").reason.contains("ending in a newline"));
+}
+
+#[test]
+fn more_than_63_later_person_lines_are_refused() {
+    let suffix = "[[person]]\nwhen = 'answer'\ntext = \"line\\n\"\n".repeat(64);
+    assert!(person_document("many", &suffix).expect_err("many lines").reason.contains("63"));
+}
+
+#[test]
+fn a_person_cue_for_an_unoffered_tool_is_refused() {
+    let suffix = "[[person]]\nwhen = { tool-call = { tool = 'other' } }\ntext = \"line\\n\"\n";
+    assert!(person_document("tool", suffix).expect_err("unknown tool").reason.contains("does not offer"));
+}
+
+#[test]
+fn a_variant_replaces_person_lines_and_effort() {
+    let task = person_document(
+        "variant",
+        r#"
+effort = "low"
+input_end = "after-answer"
+[[person]]
+when = { tool-call = { tool = "wait" } }
+text = "base\n"
+[[variant]]
+name = "later"
+effort = "medium"
+input_end = "after-last-cue"
+[[variant.person]]
+when = "answer"
+text = "replacement\n"
+"#,
+    )
+    .expect("variant cue");
+    let variant = task.with_variant("later").expect("variant");
+    assert_eq!(
+        variant.person,
+        [crate::agent::Cue { when: crate::agent::Trigger::Answer, text: "replacement\n".into() }]
+    );
+    assert_eq!(variant.effort.as_deref(), Some("medium"));
+    assert_eq!(variant.input_end, Some(crate::agent::Close::AfterLastCue));
+}
+
 fn a_task_retains_all_of_its_typed_parts() {
     let document = format!(
         r#"{DOCUMENT}
@@ -167,6 +254,9 @@ fn sample_catalogue() -> Vec<crate::CatalogueTask> {
         deciding: Vec::new(),
         name: "short".into(),
         prompt: None,
+        effort: None,
+        person: None,
+        input_end: None,
         smith: std::collections::BTreeMap::new(),
         environment: std::collections::BTreeMap::new(),
         outcome: Vec::new(),

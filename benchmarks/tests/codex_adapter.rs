@@ -68,6 +68,42 @@ fn private(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("smith-codex-adapter-{}-{name}", std::process::id()))
 }
 
+#[test]
+fn codex_refuses_later_person_lines_before_reading_a_login() {
+    let root = private("person");
+    std::fs::create_dir(&root).expect("fixture root");
+    let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+        .expect("guard");
+    let scratch = smith_bench::isolate::empty(&guard, &root.join("scratch")).expect("private scratch");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let pin_file = project.join("agents/codex/standard.pin.toml");
+    let pin = smith_bench::read_configuration(&pin_file).expect("Codex pin");
+    let mut task = smith_bench::read_task(&project.join("tests/recorded/tasks/valid/task.toml")).expect("task");
+    task.person = vec![smith_bench::agent::Cue { when: smith_bench::agent::Trigger::Answer, text: "later\n".into() }];
+    let arm = smith_bench::arm::ArmRef::Installed { program: "/bin/true".into() };
+    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+    let context = smith_bench::agent::Context {
+        guard: &guard,
+        private: &scratch,
+        pin: &pin,
+        pin_file: &pin_file,
+        task: &task,
+        variant: None,
+        model: &model,
+        arm: &arm,
+        installed_version: "codex-cli 0.160.0",
+        home: &root.join("missing-login"),
+        wall: skein_lib::Wall::EPOCH,
+        lifetime: skein_lib::Duration::from_secs(1),
+        environment: &[],
+    };
+    let refusal = smith_bench::agent::codex::prepare(&context).expect_err("interactive task refused before login");
+    assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration);
+    assert!(refusal.reason.contains("later person lines"));
+    assert!(!scratch.root.join("codex").exists());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
 fn read_only_collection_follows_only_the_named_roots_descendants() {
     let home = private("named");
     std::fs::create_dir_all(home.join("sessions")).expect("private fixture");
