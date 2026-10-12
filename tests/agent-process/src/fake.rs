@@ -87,15 +87,33 @@ fn configured_dialect(
     anthropic: bool,
     rejected: bool,
 ) -> llm::Peer {
+    configured_bounds(scripts, credential, latency, transport, anthropic, rejected, (32_768, 16_384))
+}
+
+fn configured_bounds(
+    scripts: Box<[api::Script]>,
+    credential: skein_llm::Credential,
+    latency: Duration,
+    transport: Transport,
+    anthropic: bool,
+    rejected: bool,
+    bounds: (u32, u32),
+) -> llm::Peer {
     let mut config = skein_llm_world::fake::config();
     config.latency_min = latency;
     config.latency_max = latency;
+    config.script_bytes = config.script_bytes.max(bounds.1);
+    config.answer_bytes = config.answer_bytes.max(bounds.1);
+    config.query_bytes = config.query_bytes.max(bounds.1);
     if rejected {
         config.too_long = 1000;
     }
     let mut protocol = skein_llm_world::fake::limits(&skein_llm_world::limits());
-    protocol.documents.openai.request = 32_768;
-    protocol.documents.openai.strings = 16_384;
+    protocol.documents.openai.request = bounds.0;
+    protocol.documents.openai.strings = bounds.1;
+    protocol.documents.openai.answer = protocol.documents.openai.answer.max(bounds.1);
+    protocol.http.body = protocol.http.body.max(u64::from(bounds.0));
+    protocol.sse.event = protocol.sse.event.max(bounds.1);
     protocol.documents.openai.tokens = 4096;
     protocol.documents.openai.output_items = 256;
     protocol.documents.anthropic.output_items = 256;
@@ -147,4 +165,17 @@ pub fn context_rejected(peer: &llm::Peer) -> bool {
     peer.observations().iter().any(|observation| {
         matches!(observation, llm::Observation::Answered { result: Err(api::Error::ContextTooLong), .. })
     })
+}
+
+/// Admit the observed reasoning turn when it is replayed in the next request.
+pub(crate) fn reasoning(scripts: Box<[api::Script]>) -> llm::Peer {
+    configured_bounds(
+        scripts,
+        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        Duration::ZERO,
+        Transport::Plaintext,
+        false,
+        false,
+        (131_072, 131_072),
+    )
 }

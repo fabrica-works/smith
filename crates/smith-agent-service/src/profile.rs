@@ -172,7 +172,9 @@ fn transcript(
     validate::calls_in_transcript(message_blocks, smith_transcript::CEILINGS.message_blocks)?;
     let host = u32::try_from(run.host_part).or(Err(derived(Layer::Transcript, "text_text")))?;
     let mut limits = smith_transcript::CEILINGS;
-    limits.replay_bytes = client.metadata;
+    // A text or call's native metadata carries the durable replay header.
+    limits.replay_bytes =
+        client.metadata.checked_add(shared::REPLAY_HEADER_BYTES).ok_or(derived(Layer::Transcript, "replay_bytes"))?;
     limits.text_text = client.answer.max(host).max(run.offer_bytes).max(run.answer_bytes);
     // Consecutive reasoning items share one block, which can hold the
     // completion's whole reasoning share (protocol/limits.md, section 3.3).

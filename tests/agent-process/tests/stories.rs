@@ -262,3 +262,45 @@ fn a_provider_refusal_ends_standard_error_with_its_clipped_text() {
     assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
     world.assert_agent_clean();
 }
+
+fn stopped_reasoning_charter() -> Box<[u8]> {
+    let mut parts = smith_charter::Charter::decode(&smith_charter::CEILINGS, &mut skein_lib::Reader::new(&charter()))
+        .expect("ordinary charter")
+        .into_parts();
+    let mut main = parts.main.into_parts();
+    main.window = 272_000;
+    main.output = 16_384;
+    parts.main = smith_charter::Llm::new(&smith_charter::CEILINGS, main).expect("live window");
+    let mut budget = parts.budget.into_parts();
+    budget.turns = 8;
+    budget.spend = 1_000_000;
+    parts.budget = smith_charter::Budget::new(&smith_charter::CEILINGS, budget).expect("three-turn story");
+    let mut tools = parts.tools.into_parts();
+    let mut families = tools.families.into_parts();
+    families.skein_bools[0] = true;
+    tools.families = smith_charter::Families::new(&smith_charter::CEILINGS, families).expect("read authority");
+    parts.tools = smith_charter::Tools::new(&smith_charter::CEILINGS, tools).expect("read and finish");
+    let record = smith_charter::Charter::new(&smith_charter::CEILINGS, parts).expect("stopped-turn charter");
+    let mut bytes = skein_lib::Writer::new(usize::try_from(record.measure()).expect("charter size"));
+    record.encode(&mut bytes).expect("charter bytes");
+    bytes.finish()
+}
+
+#[test]
+fn a_reasoning_turn_that_stops_after_a_read_is_told_and_nudged() {
+    let mut world = World::new(1_791_840_074_363_144_235, &stopped_reasoning_charter());
+    world.observe_facts(smith_agent_process_world::TraceCase::StoppedReasoning, 8);
+    world.acknowledgement_window(1);
+    assert!(world.settle());
+    let queries = world.peer_queries();
+    assert_eq!(queries.len(), 3);
+    assert!(queries[2].messages.iter().flat_map(|message| &message.parts).any(|part| {
+        matches!(part, skein_fake_llm_domain::api::Part::Text { text } if text.windows(b"You stopped without calling `finish`".len()).any(|part| part == b"You stopped without calling `finish`"))
+    }));
+    let answer = world.answer().expect("the finish answered");
+    assert!(matches!(answer.result(), RunResult::Accepted(_)));
+    assert_eq!(answer.turns(), 3);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    assert!(!world.signalled());
+    world.assert_agent_clean();
+}

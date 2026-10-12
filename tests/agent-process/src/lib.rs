@@ -178,6 +178,10 @@ pub fn configuration() -> agent::Config {
 }
 
 fn configuration_for(anthropic: bool) -> agent::Config {
+    configuration_with_limits(anthropic, &limits())
+}
+
+fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::Config {
     let mut endpoints = List::with_capacity(1);
     endpoints
         .push(channel::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 })
@@ -188,10 +192,10 @@ fn configuration_for(anthropic: bool) -> agent::Config {
             handshake: skein_lib::Duration::from_secs(1),
             name: smith_domain::llm::Endpoint(0),
             destination: skein_llm_connection::Endpoint {
-                limits: limits().llm.adapter.client,
+                limits: limits.llm.adapter.client,
                 credential: skein_llm::client::CredentialLimits {
-                    access_token: limits().llm.grant_value_bytes,
-                    account_id: limits().llm.grant_value_bytes,
+                    access_token: limits.llm.grant_value_bytes,
+                    account_id: limits.llm.grant_value_bytes,
                 },
                 address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 443)),
                 transport: skein_llm_connection::Transport::Plaintext,
@@ -207,14 +211,14 @@ fn configuration_for(anthropic: bool) -> agent::Config {
     )
     .expect("one LLM endpoint");
     agent::Config {
-        limits: limits(),
+        limits: *limits,
         domain: smith_domain::Config {
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
                 protocol_allowance: agent::profile::endpoint_allowance(
                     &profile(),
                     &declarations(0).endpoints[0],
-                    &limits().domain.session.tools,
+                    &limits.domain.session.tools,
                 )
                 .expect("derived endpoint framing"),
                 endpoint: smith_domain::run::charter::Endpoint(0),
@@ -227,16 +231,31 @@ fn configuration_for(anthropic: bool) -> agent::Config {
         },
         channel_endpoints: channel::Endpoints::new(endpoints),
         llm_endpoints,
-        environment: smith_protocol_machine::Environment::encode(&[], &limits().machine)
-            .expect("empty environment fits"),
+        environment: smith_protocol_machine::Environment::encode(&[], &limits.machine).expect("empty environment fits"),
         stream_mode: StreamMode::Two,
     }
+}
+
+/// The same process with the live reasoning-item entrance for the stopped-turn story.
+fn reasoning_configuration() -> agent::Config {
+    let mut declaration = declarations(0);
+    declaration.endpoints[0].models[0].window = 272_000;
+    declaration.endpoints[0].models[0].output = 16_384;
+    declaration.endpoints[0].models[0].reasoning_item = 65_536;
+    let limits = agent::profile::derive(&profile(), &declaration).expect("reasoning profile derives");
+    let mut configuration = configuration_with_limits(false, &limits);
+    configuration.domain.models[0].window = 272_000;
+    configuration.domain.models[0].output = 16_384;
+    configuration
 }
 
 /// The scripted channel initiator used by agent startup stories.
 #[must_use]
 pub fn host() -> ScriptedPeer {
-    let mut limits = limits().channel;
+    host_with_limits(limits().channel)
+}
+
+fn host_with_limits(mut limits: channel::Limits) -> ScriptedPeer {
     let schema = channel::schema_for_start(&limits.bodies, limits.start_bytes).expect("joint Start schema");
     // The scripted host sends the initiator's kinds, with the same joint
     // Start as the agent receives (protocol/limits.md, section 3, rule 6).
@@ -264,13 +283,14 @@ pub(crate) fn start_window(charter: &[u8], turns: u32) -> skein_channel::Frame {
 }
 
 pub(crate) fn start_workspace(charter: &[u8], turns: u32, workspace: bool) -> skein_channel::Frame {
-    start_workspace_message(charter, turns, workspace, None, &scenario_credential(false, false))
+    start_workspace_message(charter, turns, workspace, false, None, &scenario_credential(false, false))
 }
 
 pub(crate) fn start_workspace_message(
     charter: &[u8],
     turns: u32,
     workspace: bool,
+    absolute: bool,
     message: Option<&smith_channel::Message>,
     credential: &skein_llm::Credential,
 ) -> skein_channel::Frame {
@@ -312,6 +332,7 @@ pub(crate) fn start_workspace_message(
                 for (name, path) in
                     [(b"repo".as_slice(), b"unused-a".as_slice()), (b"other".as_slice(), b"unused-b".as_slice())]
                 {
+                    let path = if absolute { [b"/".as_slice(), path].concat() } else { path.into() };
                     directories
                         .push(
                             smith_channel::Directory::new(
@@ -430,6 +451,16 @@ pub use world::{TraceCase, World};
 pub use events::check as assert_event_conformance;
 
 mod world;
+
+fn acknowledge(number: u32) -> skein_channel::Frame {
+    let record = smith_channel::Acknowledge::new(&smith_channel::CEILINGS, smith_channel::AcknowledgeParts { number })
+        .expect("durable prefix acknowledgement");
+    let mut body = Writer::new(usize::try_from(record.measure()).expect("ACK body size"));
+    record.encode(&mut body).expect("ACK body");
+    let mut frame = frame_writer(0x0103, record.measure()).expect("ACK frame");
+    frame.put(&body.finish()).expect("ACK body fits frame");
+    frame.finish().expect("ACK frame filled")
+}
 
 #[cfg(test)]
 mod memory {

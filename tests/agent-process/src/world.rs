@@ -30,6 +30,8 @@ struct Parent {
     errors: Vec<u8>,
     closing: u32,
     next: u64,
+    acknowledge_turns: bool,
+    acknowledged: u32,
 }
 
 impl Parent {
@@ -46,9 +48,20 @@ impl Parent {
         anthropic: bool,
         credential: &skein_llm::Credential,
     ) -> Self {
-        let mut peer = crate::host();
+        let mut peer = if matches!(tracing, Some((TraceCase::StoppedReasoning, _))) {
+            crate::host_with_limits(crate::reasoning_configuration().limits.channel)
+        } else {
+            crate::host()
+        };
         if !hang_up {
-            peer.play(crate::start_workspace_message(charter, window, environment, message, credential));
+            peer.play(crate::start_workspace_message(
+                charter,
+                window,
+                environment || matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
+                matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
+                message,
+                credential,
+            ));
         }
         let mut parent = Self {
             peer,
@@ -70,6 +83,8 @@ impl Parent {
             errors: Vec::new(),
             closing: 0,
             next: 0,
+            acknowledge_turns: matches!(tracing, Some((TraceCase::StoppedReasoning, _))),
+            acknowledged: 0,
         };
         parent.submit(Op::Spawn {
             spawn: Box::new(Spawn {
@@ -116,6 +131,27 @@ impl Parent {
     fn close(&mut self, fd: Fd) {
         self.closing = self.closing.checked_add(1).expect("five parent descriptors");
         self.submit(Op::Close { fd });
+    }
+
+    fn acknowledge(&mut self) {
+        if self.acknowledge_turns {
+            let turns: Vec<_> = self
+                .peer
+                .observed()
+                .iter()
+                .filter(|frame| frame.kind == 0x0109)
+                .map(|frame| {
+                    smith_channel::Turn::decode(&smith_channel::CEILINGS, &mut skein_lib::Reader::new(&frame.body))
+                        .expect("told turn")
+                        .number()
+                })
+                .filter(|number| *number > self.acknowledged)
+                .collect();
+            for number in turns {
+                self.peer.play(crate::acknowledge(number));
+                self.acknowledged = number;
+            }
+        }
     }
 
     fn answered(&self) -> bool {
@@ -221,6 +257,7 @@ impl Host for Parent {
         while let Some(complete) = self.completions.pop() {
             self.completed(complete);
         }
+        self.acknowledge();
         for _ in self.signalled..self.signal {
             self.signalled = self.signalled.checked_add(1).expect("finite requested signals");
             self.submit(Op::Signal {
@@ -383,7 +420,11 @@ fn make(spawn: &Spawn, inherited: &Inherited) -> Proc {
 }
 
 fn make_tracing(spawn: &Spawn, inherited: &Inherited) -> Proc {
-    let mut configuration = crate::configuration_for(spawn.args[3].as_ref() == b"anthropic");
+    let mut configuration = if spawn.args[0].as_ref() == b"8" {
+        crate::reasoning_configuration()
+    } else {
+        crate::configuration_for(spawn.args[3].as_ref() == b"anthropic")
+    };
     if spawn.args[0].as_ref() == b"6" {
         configuration.limits.llm.connection.connections = 3;
         configuration.limits.llm.connection.calls = 3;
@@ -424,6 +465,7 @@ struct Machine {
     spawns: Vec<Spawned>,
     next_root: u32,
     trace_root: Option<u32>,
+    stopped_reasoning: bool,
 }
 impl skein_world::Machine for Machine {
     fn open_root(&mut self, path: &[u8]) -> Result<skein_sim::Handle, kernel::Error> {
@@ -432,7 +474,12 @@ impl skein_world::Machine for Machine {
             self.trace_root = Some(self.next_root);
         }
         self.next_root += 1;
-        Ok(skein_sim::Handle::new(self.files.lay(&[]).raw()))
+        let items = if self.stopped_reasoning && path == b"unused-a" {
+            vec![skein_fake_machine::Item::file(b"problem.txt", b"problem")]
+        } else {
+            Vec::new()
+        };
+        Ok(skein_sim::Handle::new(self.files.lay(&items).raw()))
     }
 
     fn close_root(&mut self, root: skein_sim::Handle) {
@@ -662,6 +709,8 @@ pub enum TraceCase {
     ThreeChildren,
     /// The actual independent provider sends a typed HTTP context rejection.
     ProviderRejected,
+    /// A read is told, then reasoning stops without a finish and needs a nudge.
+    StoppedReasoning,
 }
 
 impl TraceCase {
@@ -675,6 +724,7 @@ impl TraceCase {
             Self::ChildAnswered => 5,
             Self::ThreeChildren => 6,
             Self::ProviderRejected => 7,
+            Self::StoppedReasoning => 8,
         }
     }
 
@@ -682,6 +732,9 @@ impl TraceCase {
         use skein_fake_llm_domain::api;
         if self == Self::ChildAnswered || self == Self::ThreeChildren {
             return child_peer(anthropic, self == Self::ThreeChildren, private_grant);
+        }
+        if self == Self::StoppedReasoning {
+            return stopped_reasoning_peer();
         }
         let turns = match self {
             Self::Accepted => vec![api::Turn {
@@ -709,7 +762,9 @@ impl TraceCase {
             ],
             Self::Failed | Self::Refused | Self::Cancelled => return fake::peer(),
             Self::ProviderRejected => return fake::rejected(),
-            Self::ChildAnswered | Self::ThreeChildren => unreachable!("selected actual child scripts above"),
+            Self::ChildAnswered | Self::ThreeChildren | Self::StoppedReasoning => {
+                unreachable!("selected actual child scripts above")
+            }
         };
         fake::configured(
             Box::new([api::Script { cue: Box::new([]), turns: turns.into() }]),
@@ -1068,7 +1123,7 @@ impl World {
     fn maximum_queries(&self) -> usize {
         if matches!(self.tracing, Some((TraceCase::ThreeChildren, _))) {
             5
-        } else if matches!(self.tracing, Some((TraceCase::ChildAnswered, _))) {
+        } else if matches!(self.tracing, Some((TraceCase::ChildAnswered | TraceCase::StoppedReasoning, _))) {
             3
         } else if self.environment || self.tracing.is_some() {
             2
@@ -1115,6 +1170,7 @@ impl World {
             spawns: Vec::new(),
             next_root: 1,
             trace_root: None,
+            stopped_reasoning: matches!(self.tracing, Some((TraceCase::StoppedReasoning, _))),
         });
         world.host_roots(
             HostedProgram {
@@ -1317,4 +1373,60 @@ impl World {
     pub fn trace(&self) -> Vec<String> {
         self.outcome.as_ref().expect("settled world").trace.iter().map(|entry| format!("{entry:?}")).collect()
     }
+}
+
+fn stopped_reasoning_peer() -> skein_fake_peers::llm::Peer {
+    use skein_fake_llm_domain::api;
+    fake::reasoning(Box::new([api::Script {
+        cue: Box::new([]),
+        turns: Box::new([
+            api::Turn {
+                lines: Box::new([api::Line::Call {
+                    name: b"read".as_slice().into(),
+                    arguments: br#"{"path":"problem.txt"}"#.as_slice().into(),
+                }]),
+                finish: api::Finish::ToolCalls,
+                tokens: 1,
+            },
+            api::Turn {
+                lines: Box::new([
+                    api::Line::Opaque {
+                        bytes: format!(
+                            r#"{{"id":"r2","type":"reasoning","encrypted_content":"{}","summary":[]}}"#,
+                            "r".repeat(43_688)
+                        )
+                        .into_bytes()
+                        .into(),
+                    },
+                    api::Line::Opaque {
+                        bytes: format!(
+                            r#"{{"id":"r3","type":"reasoning","encrypted_content":"{}","summary":[]}}"#,
+                            "r".repeat(43_688)
+                        )
+                        .into_bytes()
+                        .into(),
+                    },
+                    api::Line::Opaque {
+                        bytes: format!(
+                            r#"{{"id":"{}","type":"message","phase":"final_answer","role":"assistant","content":[{{"type":"output_text","text":"{}","annotations":[]}}]}}"#,
+                            "m".repeat(54),
+                            "t".repeat(903)
+                        )
+                        .into_bytes()
+                        .into(),
+                    },
+                ]),
+                finish: api::Finish::Stop,
+                tokens: 1,
+            },
+            api::Turn {
+                lines: Box::new([api::Line::Call {
+                    name: b"finish".as_slice().into(),
+                    arguments: br#"{"form":"report","text":"REASONING COMPLETE","fields":{}}"#.as_slice().into(),
+                }]),
+                finish: api::Finish::ToolCalls,
+                tokens: 1,
+            },
+        ]),
+    }]))
 }
