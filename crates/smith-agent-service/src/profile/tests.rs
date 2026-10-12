@@ -40,6 +40,51 @@ fn declarations() -> Configuration {
 }
 
 #[test]
+fn a_payload_sized_write_fits_the_stated_whole_call_input() {
+    let mut selected = profile();
+    selected.declared.tool_payload = 40_960;
+    selected.declared.read_window = 32_768;
+    let mut configuration = declarations();
+    configuration.endpoints[0].models[0].output = 32_000;
+    configuration.endpoints[0].models[0].window = 272_000;
+    let limits = super::derive(&selected, &configuration).expect("product call limits");
+    let stated = limits.llm.adapter.stated;
+    let path = alloc::format!("{}/{}", "\u{1}".repeat(127), "\u{1}".repeat(128));
+    assert_eq!(path.len(), 256, "the derived path ceiling");
+    for character in ['a', '\n', '\0'] {
+        let content: String = core::iter::repeat_n(character, 40_960).collect();
+        let input =
+            serde_json::to_vec(&serde_json::json!({"path": path, "content": content})).expect("valid write JSON");
+        assert!(
+            input.len() <= usize::try_from(stated.call_input_bytes).expect("input fits usize"),
+            "a payload-sized write needs {} encoded bytes, but the stated whole-call bound is {}",
+            input.len(),
+            stated.call_input_bytes
+        );
+    }
+}
+
+#[test]
+fn write_envelopes_derive_checked_room_for_different_piece_sizes() {
+    let mut selected = profile();
+    let mut configuration = declarations();
+    configuration.endpoints[0].models[0].output = 32_000;
+    let framing = u32::try_from(br#"{"path":"","content":""}"#.len()).unwrap();
+    for payload in [1, 2, 17, 256, 4096, 40_960] {
+        selected.declared.tool_payload = payload;
+        selected.declared.read_window = payload;
+        let tools = super::derive_tools(&selected).expect("derived tools path");
+        let client = super::endpoint_client(&selected, &configuration.endpoints[0], 2).expect("call envelope");
+        let encoded = (payload + tools.path_bytes) * skein_llm::ESCAPE + framing;
+        assert!(client.input >= encoded, "the complete Write envelope fits");
+        assert!(client.input - encoded < skein_llm::ESCAPE, "rounding adds less than one escape");
+    }
+    selected.declared.tool_payload = u32::MAX;
+    let refusal = super::endpoint_client(&selected, &configuration.endpoints[0], 2).expect_err("input overflow");
+    assert_eq!(refusal, Refusal::Derived { limit: LimitName::deployment(Layer::Llm, "input") });
+}
+
+#[test]
 fn declared_whole_file_read_reaches_the_kernel_open() {
     use skein_io::{file, file_layer, kernel};
     use skein_lib::{Queue, Time, Token};

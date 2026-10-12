@@ -283,16 +283,10 @@ fn threshold_bytes(policy: &Policy, configuration: &Configuration) -> Result<u64
     Ok(largest)
 }
 
-fn derive_domain(
-    profile: &Profile,
-    configuration: &Configuration,
-    path: &path::Path,
-    completion: u64,
-    decoded_call_bytes: u64,
-) -> Result<domain::Limits, Refusal> {
+fn derive_tools(profile: &Profile) -> Result<tools::Limits, Refusal> {
     let declared = profile.declared;
     let policy = profile.policy;
-    let tools = match tools::derive(&tools::Derivation {
+    match tools::derive(&tools::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         tool_payload: declared.tool_payload,
@@ -307,9 +301,21 @@ fn derive_domain(
         tool_deadline: policy.tool_deadline,
         shell_timeout: policy.shell_timeout,
     }) {
-        Ok(limits) => limits,
-        Err(field) => return Err(derived(Layer::Tools, field.name())),
-    };
+        Ok(limits) => Ok(limits),
+        Err(field) => Err(derived(Layer::Tools, field.name())),
+    }
+}
+
+fn derive_domain(
+    profile: &Profile,
+    configuration: &Configuration,
+    path: &path::Path,
+    completion: u64,
+    decoded_call_bytes: u64,
+) -> Result<domain::Limits, Refusal> {
+    let declared = profile.declared;
+    let policy = profile.policy;
+    let tools = derive_tools(profile)?;
     let own = room::own_part(&tools, path.client.input, path.framing).ok_or(derived(Layer::Service, "own_part"))?;
     let parts = room::room(profile, configuration, own, 0)?;
     let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
