@@ -33,6 +33,17 @@ pub(super) fn observation(process: &ProcessResult, task: &Task) -> Option<Measur
         | EventCheck::ChildrenOverlap { .. }
         | EventCheck::NoFailure { .. }
         | EventCheck::RunCompleted { .. }
+        | EventCheck::ToolPath { .. }
+        | EventCheck::WrittenFile { .. }
+        | EventCheck::OversizedWrite { .. }
+        | EventCheck::FilePieces { .. }
+        | EventCheck::ToolResultBytes { .. }
+        | EventCheck::ToolTimeout { .. }
+        | EventCheck::SlowCompletion { .. }
+        | EventCheck::BudgetTold
+        | EventCheck::BudgetReport
+        | EventCheck::ProviderFailure { .. }
+        | EventCheck::NoRun
         | EventCheck::NoRequest => None,
     })?;
     Some(match process.observing.as_deref() {

@@ -211,6 +211,14 @@ impl Observing {
                         | crate::EventCheck::RunCompleted { .. }
                         | crate::EventCheck::ProviderFailure { .. }
                         | crate::EventCheck::NoRequest
+                        | crate::EventCheck::ToolPath { .. }
+                        | crate::EventCheck::ToolResultBytes { .. }
+                        | crate::EventCheck::ToolTimeout { .. }
+                        | crate::EventCheck::SlowCompletion { .. }
+                        | crate::EventCheck::BudgetTold
+                        | crate::EventCheck::BudgetReport
+                        | crate::EventCheck::CallsPerResponse { .. }
+                        | crate::EventCheck::ChildrenInTurn { .. }
                         | crate::EventCheck::NoRun => None,
                     });
                     match protocol_bound {
