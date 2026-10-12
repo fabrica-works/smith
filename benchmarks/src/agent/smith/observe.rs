@@ -181,7 +181,44 @@ impl Observing {
                     Observer::Events(observer),
                 ) => observer.oversized_write(path, *content_bytes_above, *protocol_input_bytes_above, workspace),
                 (crate::EventCheck::FilePieces { path, bytes_above, file_bytes }, Observer::Events(observer)) => {
-                    observer.file_pieces(path, *bytes_above, *file_bytes, workspace)
+                    let protocol_bound = checks.iter().find_map(|check| match check {
+                        crate::EventCheck::OversizedWrite { protocol_input_bytes_above, .. } => {
+                            *protocol_input_bytes_above
+                        }
+                        crate::EventCheck::WrittenFile { .. }
+                        | crate::EventCheck::FilePieces { .. }
+                        | crate::EventCheck::ToolCall { .. }
+                        | crate::EventCheck::UsageSums
+                        | crate::EventCheck::NoVerdict { .. }
+                        | crate::EventCheck::Completions { .. }
+                        | crate::EventCheck::FirstRequestHoldsTask
+                        | crate::EventCheck::NothingBeforeTask
+                        | crate::EventCheck::HandledOnce
+                        | crate::EventCheck::CompletionPerExchange
+                        | crate::EventCheck::NoStop { .. }
+                        | crate::EventCheck::Blocks { .. }
+                        | crate::EventCheck::ConversationOpened { .. }
+                        | crate::EventCheck::PromptWithinWindow
+                        | crate::EventCheck::CacheReuse { .. }
+                        | crate::EventCheck::MainAfterChild
+                        | crate::EventCheck::FinalTurn
+                        | crate::EventCheck::ChildShare { .. }
+                        | crate::EventCheck::BudgetVisible
+                        | crate::EventCheck::SpendWithin { .. }
+                        | crate::EventCheck::CallsInOneResponse { .. }
+                        | crate::EventCheck::ChildrenOverlap { .. }
+                        | crate::EventCheck::NoFailure { .. }
+                        | crate::EventCheck::RunCompleted { .. }
+                        | crate::EventCheck::ProviderFailure { .. }
+                        | crate::EventCheck::NoRequest
+                        | crate::EventCheck::NoRun => None,
+                    });
+                    match protocol_bound {
+                        Some(bound) => {
+                            observer.file_pieces_for_protocol_probe(path, *bytes_above, *file_bytes, bound, workspace)
+                        }
+                        None => observer.file_pieces(path, *bytes_above, *file_bytes, workspace),
+                    }
                 }
                 _ => self.checks(std::slice::from_ref(check), task).remove(0),
             })

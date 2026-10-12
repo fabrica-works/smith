@@ -301,6 +301,19 @@ impl Observer {
         file_pieces::check(self, path, above, file_bytes, workspace)
     }
 
+    /// Judge accepted pieces even when the protocol trigger was not exercised.
+    #[must_use]
+    pub fn file_pieces_for_protocol_probe(
+        &self,
+        path: &std::path::Path,
+        above: u64,
+        file_bytes: u64,
+        protocol_bound: u64,
+        workspace: &std::path::Path,
+    ) -> crate::CheckVerdict {
+        file_pieces::check_protocol(self, path, above, file_bytes, protocol_bound, workspace)
+    }
+
     /// Report typed stream integrity, pairing, loss and spend observations.
     #[must_use]
     pub fn health(&self, exit: Exit, forced: Forced, teardown_bound_ms: u64) -> crate::Health {

@@ -12,6 +12,58 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
+fn protocol_probe_judges_accepted_pieces_without_inventing_a_refusal() {
+    let directory = std::env::temp_dir().join(format!("smith-pieces-unexercised-{}", std::process::id()));
+    fs::create_dir(&directory).expect("fresh workspace");
+    fs::write(directory.join("payload.txt"), "hello world").expect("actual settled pieces");
+    let mut records = common::events::balanced();
+    piece(
+        &mut records,
+        "write",
+        "first",
+        &serde_json::json!({"path":"payload.txt","content":"hello"}),
+        Verdict::Written,
+    );
+    piece(
+        &mut records,
+        "edit",
+        "append",
+        &serde_json::json!({"path":"payload.txt","edits":[{"old":"hello","new":"hello world"}]}),
+        Verdict::Edited,
+    );
+    let checked = |records: &[smith_events::Record]| {
+        observe(records)
+            .file_pieces_for_protocol_probe(std::path::Path::new("payload.txt"), 10, 64, 15, &directory)
+            .passed
+    };
+    assert_eq!(checked(&records), Measure::Observed { value: true });
+    assert_eq!(
+        observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, Some(15), &directory).passed,
+        Measure::Observed { value: false }
+    );
+    // Historical v7/v8 semantics and assertions are unchanged.
+    assert_eq!(
+        observe(&records).file_pieces(std::path::Path::new("payload.txt"), 10, 64, &directory).passed,
+        Measure::Observed { value: false }
+    );
+    let original = records.clone();
+    records.retain(|record| {
+        !matches!(&record.event, Event::ToolStarted(start) if start.tool.as_ref() == b"edit")
+            && !matches!(&record.event, Event::ToolCompleted(end) if end.tool.as_ref() == b"edit")
+    });
+    assert_eq!(checked(&records), Measure::Observed { value: false });
+    records = original.clone();
+    if let Event::ToolStarted(start) = &mut records[7].event {
+        start.input = None;
+    }
+    assert!(matches!(checked(&records), Measure::Unavailable { .. }));
+    records = original;
+    fs::write(directory.join("payload.txt"), "altered").expect("saved file mismatch");
+    assert_eq!(checked(&records), Measure::Observed { value: false });
+    fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[test]
 fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let normal =

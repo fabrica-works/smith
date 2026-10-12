@@ -4,6 +4,8 @@
 //! argument or namespace, and never relabel the protocol block counter.
 //! Protocol-only judgments use the authored actual call-input bound; the elided
 //! refusal path is never known. Accepted piece paths remain independently judged.
+//! In protocol-probe mode no trigger is a separate not-exercised observation;
+//! accepted pieces still replay on one actual run/conversation scope.
 //! Captured arguments reconstruct only reported successful mutations; a failed
 //! edit is retained as evidence and changes nothing. Missing content stays
 //! unavailable. Replay scratch is bounded by the task's unchanged file cap.
@@ -63,7 +65,20 @@ fn complete(observer: &Observer) -> bool {
 
 pub(super) fn check(observer: &Observer, path: &Path, above: u64, maximum: u64, workspace: &Path) -> CheckVerdict {
     let mut evidence = Vec::new();
-    let passed = evaluate(observer, path, above, maximum, workspace, &mut evidence);
+    let passed = evaluate(observer, path, above, maximum, None, workspace, &mut evidence);
+    CheckVerdict { check: "file-pieces".into(), passed, evidence }
+}
+
+pub(super) fn check_protocol(
+    observer: &Observer,
+    path: &Path,
+    above: u64,
+    maximum: u64,
+    protocol_bound: u64,
+    workspace: &Path,
+) -> CheckVerdict {
+    let mut evidence = Vec::new();
+    let passed = evaluate(observer, path, above, maximum, Some(protocol_bound), workspace, &mut evidence);
     CheckVerdict { check: "file-pieces".into(), passed, evidence }
 }
 
@@ -72,6 +87,7 @@ fn evaluate(
     path: &Path,
     above: u64,
     maximum: u64,
+    protocol_bound: Option<u64>,
     workspace: &Path,
     evidence: &mut Vec<String>,
 ) -> Measure<bool> {
@@ -79,10 +95,11 @@ fn evaluate(
     if !complete(observer) {
         return Measure::unavailable("incomplete event stream prevents a complete piece/file comparison");
     }
-    let refused = match refusal(observer, path, above, workspace, evidence) {
+    let mut scope = match repair_scope(observer, path, above, protocol_bound, workspace, evidence) {
         Ok(scope) => scope,
         Err(measure) => return measure,
     };
+    let has_refusal = scope.is_some();
     let mut content: Option<String> = None;
     let mut edits = 0;
     for (session_index, session) in observer.sessions.iter().enumerate() {
@@ -101,17 +118,13 @@ fn evaluate(
             if start.tool.as_ref() == b"edit" && verdict != Verdict::Edited {
                 continue;
             }
-            if session_index != refused.session
-                || start.run != refused.run
-                || start.conversation != refused.conversation
-            {
-                return Measure::unavailable("piece mutations span independent call scopes");
+            if protocol_bound.is_some() && !has_refusal && verdict == Verdict::TooLarge {
+                continue;
             }
-            if at <= refused.at {
-                if start.call == refused.call && verdict == Verdict::TooLarge {
-                    continue;
-                }
-                return measured(false);
+            match mutation_scope(&mut scope, session_index, start, at, &verdict, has_refusal) {
+                Ok(false) => continue,
+                Ok(true) => (),
+                Err(measure) => return measure,
             }
             if let Err(measure) = apply(&mut content, &start.tool, &input, &verdict, maximum, &mut edits) {
                 return measure;
@@ -138,6 +151,53 @@ fn evaluate(
             measured(false)
         }
     }
+}
+
+fn repair_scope(
+    observer: &Observer,
+    path: &Path,
+    above: u64,
+    protocol_bound: Option<u64>,
+    workspace: &Path,
+    evidence: &mut Vec<String>,
+) -> Result<Option<Refusal>, Measure<bool>> {
+    match protocol_bound {
+        Some(bound) => {
+            let mut refused = Vec::new();
+            protocol_refusals(observer, bound, evidence, &mut refused)?;
+            if refused.len() > 1 {
+                return Err(Measure::Observed { value: false });
+            }
+            evidence.push(format!("protocol_triggers={}; accepted pieces judged independently", refused.len()));
+            Ok(refused.pop())
+        }
+        None => refusal(observer, path, above, workspace, evidence).map(Some),
+    }
+}
+
+fn mutation_scope(
+    scope: &mut Option<Refusal>,
+    session: usize,
+    start: &smith_events::ToolStarted,
+    at: usize,
+    verdict: &Verdict,
+    has_refusal: bool,
+) -> Result<bool, Measure<bool>> {
+    if scope.is_none() {
+        *scope =
+            Some(Refusal { session, run: start.run, conversation: start.conversation, call: start.call.clone(), at });
+    }
+    let scope = scope.as_ref().expect("first accepted piece or observed refusal supplies scope");
+    if session != scope.session || start.run != scope.run || start.conversation != scope.conversation {
+        return Err(Measure::unavailable("piece mutations span independent call scopes"));
+    }
+    if has_refusal && at <= scope.at {
+        if start.call == scope.call && *verdict == Verdict::TooLarge {
+            return Ok(false);
+        }
+        return Err(Measure::Observed { value: false });
+    }
+    Ok(true)
 }
 
 fn refusal(
