@@ -138,8 +138,11 @@ fn frozen_slow_task_uses_high_effort_native_only_and_the_declared_preset_bounds(
     assert_eq!(task.effort.as_deref(), Some("high"));
     assert!(task.event.contains(&check()));
     assert!(task.prompt.contains("reasoning alone") && task.prompt.contains("Do not simulate slowness"));
-    let suite_file = root.join("suites/slow-completion.toml");
-    let suite = smith_bench::read_suite(&suite_file).expect("native-only suite");
+    let suite_file = root.join("suites/probes.toml");
+    let mut suite = smith_bench::read_suite(&suite_file).expect("native-only suite");
+    suite.tasks = vec!["probes/slow-completion".into()];
+    suite.agents.retain(|agent| agent.tasks.iter().any(|name| name == "probes/slow-completion"));
+    suite.agents[0].tasks.clone_from(&suite.tasks);
     assert_eq!(suite.agents.len(), 1);
     assert_eq!(suite.agents[0].agent, smith_bench::Agent::Smith);
     let catalogue = smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design")).expect("catalogue");

@@ -1,0 +1,50 @@
+name = "probes"
+tier = "small"
+design = "single"
+repetitions = 1
+rerun_failed = 1
+max_wall_seconds = 7200
+max_tokens = 8000000
+tasks = ["probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write", "probes/large-write/oversized", "probes/first-request", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion", "probes/failures", "probes/failures/one-turn", "probes/failures/unknown-model", "probes/failures/derived-limit", "probes/failures/bad-setting", "probes/budget", "probes/budget/child-quota", "probes/budget/wrap-up", "probes/budget/starvation", "probes/budget/spend", "probes/budget/visibility", "probes/cache-reuse", "probes/cache-reuse/children", "probes/cache-reuse/crossing", "probes/parallel-read", "probes/parallel-children", "probes/parallel-children/reviews"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "smoke"
+tasks = ["probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write", "probes/large-write/oversized"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "first-request"
+tasks = ["probes/first-request", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "failures"
+tasks = ["probes/failures", "probes/failures/one-turn", "probes/failures/unknown-model", "probes/failures/derived-limit", "probes/failures/bad-setting"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "budget"
+tasks = ["probes/budget", "probes/budget/child-quota", "probes/budget/wrap-up", "probes/budget/starvation", "probes/budget/spend", "probes/budget/visibility"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "cache-reuse"
+tasks = ["probes/cache-reuse", "probes/cache-reuse/children", "probes/cache-reuse/crossing"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "parallel"
+tasks = ["probes/parallel-read", "probes/parallel-children", "probes/parallel-children/reviews"]
+
+[[agents]]
+agent = "codex"
+provider = "codex"
+config = "standard"
+tasks = ["probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write"]

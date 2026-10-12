@@ -259,6 +259,17 @@ fn narrowed(file: &Path, order: &Order) -> Result<toml::Value, String> {
         let codex = toml::from_str::<toml::Value>("[[agents]]\nagent='codex'\nprovider='codex'\nconfig='standard'")
             .map_err(|error| error.to_string())?;
         fields.insert("agents".into(), codex["agents"].clone());
+    } else {
+        let agents = fields.get_mut("agents").and_then(toml::Value::as_array_mut).ok_or("suite agents")?;
+        agents.retain(|agent| {
+            agent["agent"].as_str() == Some("smith")
+                && agent["tasks"].as_array().is_none_or(|tasks| {
+                    tasks.is_empty() || tasks.iter().any(|task| task.as_str() == Some(&order.probe))
+                })
+        });
+        for agent in agents {
+            agent["tasks"] = toml::Value::Array(vec![toml::Value::String(order.probe.clone())]);
+        }
     }
     Ok(value)
 }
@@ -342,6 +353,9 @@ fn prepare(
             task.repetitions.unwrap_or(suite.repetitions)
         };
         for agent in &suite.agents {
+            if !agent.tasks.is_empty() && !agent.tasks.contains(&name) {
+                continue;
+            }
             let installed;
             let selected = if agent.agent == Agent::Codex && matches!(arm, ArmRef::Built(_)) {
                 installed = codex()?;

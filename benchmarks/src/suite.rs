@@ -36,6 +36,9 @@ pub struct SuiteAgent {
     pub agent: Agent,
     pub provider: Provider,
     pub config: String,
+    /// Empty selects every suite task; otherwise these exact tasks and variants.
+    #[serde(default)]
+    pub tasks: Vec<String>,
 }
 
 /// A comparison arm supplied by the suite author to the runner.
@@ -173,6 +176,9 @@ pub fn validate_suite(
         return Err(Refusal::new(file, "tasks/select", "suite must name an existing task"));
     }
     for agent in &suite.agents {
+        if agent.tasks.iter().any(|name| !selected.contains(name)) {
+            return Err(Refusal::new(file, "agents.tasks", "agent task must be selected by the suite"));
+        }
         validate_agent(file, agent, &suite.tier, agents, models)?;
     }
     let mut arm_names = BTreeSet::new();
@@ -188,7 +194,7 @@ pub fn validate_suite(
             Arm::Agent { name, agent, provider, config } => {
                 validate_agent(
                     file,
-                    &SuiteAgent { agent: *agent, provider: *provider, config: config.clone() },
+                    &SuiteAgent { agent: *agent, provider: *provider, config: config.clone(), tasks: Vec::new() },
                     &suite.tier,
                     agents,
                     models,
@@ -266,19 +272,21 @@ pub fn choose_guards_with_costs(
     let mut selection =
         GuardSelection { selected: Vec::new(), omitted: Vec::new(), estimated_seconds: 0, estimated_tokens: 0 };
     let arms = u64::try_from(suite.arms.len().max(1)).expect("arm count fits u64");
-    let agents = u64::try_from(suite.agents.len()).expect("agent count fits u64");
     for entry in tasks {
         if !entry.task.guards.iter().any(|guard| sections.contains(guard)) {
             continue;
         }
         let repetitions = u64::from(entry.task.repetitions.unwrap_or(suite.repetitions));
-        let multiplier = repetitions
-            .checked_mul(u64::from(suite.rerun_failed) + 1)
-            .and_then(|count| count.checked_mul(agents))
-            .and_then(|count| count.checked_mul(arms));
         let names = std::iter::once(entry.name.clone())
             .chain(entry.task.variant.iter().map(|variant| format!("{}/{}", entry.name, variant.name)));
         for name in names {
+            let agents =
+                suite.agents.iter().filter(|agent| agent.tasks.is_empty() || agent.tasks.contains(&name)).count();
+            let agents = u64::try_from(agents).expect("agent count fits u64");
+            let multiplier = repetitions
+                .checked_mul(u64::from(suite.rerun_failed) + 1)
+                .and_then(|count| count.checked_mul(agents))
+                .and_then(|count| count.checked_mul(arms));
             let Some(estimate) = costs.get(&name).or(entry.task.estimate.as_ref()) else {
                 selection.omitted.push((name, "cost unavailable".into()));
                 continue;

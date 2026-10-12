@@ -171,8 +171,10 @@ fn the_frozen_path_tasks_keep_namespace_authority_and_two_completion_bounds() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&project.join("tasks/probes/paths/task.toml"), &project.join("../docs/design"))
         .expect("actual task validation");
-    let suite = smith_bench::read_suite(&project.join("suites/paths.toml")).expect("native suite");
-    assert_eq!(suite.agents[0].config, "first-request");
+    let suite = smith_bench::read_suite(&project.join("suites/probes.toml")).expect("native suite");
+    let agent =
+        suite.agents.iter().find(|agent| agent.tasks.iter().any(|name| name == "probes/paths")).expect("probe pin");
+    assert_eq!(agent.config, "first-request");
     assert_eq!(task.protected.len(), 2);
     assert_eq!(task.working_directory, Some(PathBuf::from("app")));
     assert!(task.prompt.contains("../spec/rules.txt"));

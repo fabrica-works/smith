@@ -11,21 +11,8 @@ use crate::{AttemptResult, End, Judgment, judge_suite};
 mod prepare;
 
 /// Select the probe's committed pin without overriding another probe's instructions.
-pub(crate) fn calibration_suite(probe: &str) -> std::path::PathBuf {
-    let file = if probe == "probes/first-request" {
-        "first-request.toml"
-    } else if probe.starts_with("probes/failures/") {
-        "failures.toml"
-    } else if probe == "probes/cache-reuse" || probe == "probes/cache-reuse/children" {
-        "cache-reuse.toml"
-    } else if probe == "probes/parallel-read" || probe.starts_with("probes/parallel-children") {
-        "parallel.toml"
-    } else if probe.starts_with("probes/budget/") {
-        "budget.toml"
-    } else {
-        "calibrate.toml"
-    };
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("suites").join(file)
+pub(crate) fn calibration_suite(_probe: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("suites/probes.toml")
 }
 
 /// One verified arm's actual probe run, supplied by the common dispatcher.

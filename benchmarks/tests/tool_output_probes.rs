@@ -12,8 +12,11 @@ fn tool_output_inputs_and_deciders_match_the_authored_cases() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&root.join("tasks/probes/tool-output/task.toml"), &root.join("../docs/design"))
         .expect("frozen inputs and checks");
-    let suite_file = root.join("suites/tool-output.toml");
-    let suite = smith_bench::read_suite(&suite_file).expect("four authored variants");
+    let suite_file = root.join("suites/probes.toml");
+    let mut suite = smith_bench::read_suite(&suite_file).expect("four authored variants");
+    suite.tasks.retain(|name| name.starts_with("probes/tool-output/"));
+    suite.agents.retain(|agent| agent.tasks.iter().any(|name| name == "probes/tool-output"));
+    suite.agents[0].tasks.clone_from(&suite.tasks);
     let catalogue =
         smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design")).expect("frozen catalogue");
     let models = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("tiers");

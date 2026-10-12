@@ -33,9 +33,14 @@ fn the_first_request_pin_renders_only_the_probes_empty_instructions() {
     .expect("fixture guard");
     let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let suite = smith_bench::read_suite(&project.join("suites/first-request.toml")).expect("dedicated suite");
-    assert_eq!(suite.agents[0].config, "first-request");
-    let pin_file = project.join("agents/smith").join(format!("{}.pin.toml", suite.agents[0].config));
+    let suite = smith_bench::read_suite(&project.join("suites/probes.toml")).expect("dedicated suite");
+    let agent = suite
+        .agents
+        .iter()
+        .find(|agent| agent.tasks.iter().any(|name| name == "probes/first-request"))
+        .expect("probe pin");
+    assert_eq!(agent.config, "first-request");
+    let pin_file = project.join("agents/smith").join(format!("{}.pin.toml", agent.config));
     let pin = smith_bench::read_configuration(&pin_file).expect("selected committed pin");
     let task = smith_bench::read_task(&project.join("tasks/probes/first-request/task.toml")).expect("original task");
     let model = smith_bench::ModelChoice { model: Some("selected-model".into()), effort: Some("low".into()) };

@@ -186,3 +186,66 @@ fn fix_body_keeps_both_runs_and_distinguishes_effect_from_unjudged() {
     after.verdict = Judgment::Fail;
     assert_eq!(report("probe".into(), before, after).shown, Shown::FailsAfter);
 }
+
+#[test]
+fn the_probes_suite_names_each_probe_and_variant_once() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let tasks: Vec<_> = std::fs::read_dir(root.join("tasks/probes"))
+        .expect("probe catalogue")
+        .map(|entry| entry.expect("probe directory"))
+        .filter(|entry| entry.file_type().expect("catalogue entry type").is_dir())
+        .map(|entry| smith_bench::read_task(&entry.path().join("task.toml")).expect("probe manifest"))
+        .collect();
+    let suite = smith_bench::read_suite(&root.join("suites/probes.toml")).expect("probes suite");
+    let mut named: Vec<&str> = suite
+        .agents
+        .iter()
+        .filter(|agent| agent.agent == smith_bench::Agent::Smith)
+        .flat_map(|agent| agent.tasks.iter().map(String::as_str))
+        .collect();
+    named.sort_unstable();
+    let mut expected: Vec<String> = tasks
+        .iter()
+        .flat_map(|task| {
+            std::iter::once(format!("probes/{}", task.id))
+                .chain(task.variant.iter().map(|variant| format!("probes/{}/{}", task.id, variant.name)))
+        })
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(named, expected.iter().map(String::as_str).collect::<Vec<_>>());
+    let mut selected = suite.tasks.clone();
+    selected.sort_unstable();
+    assert_eq!(selected, expected);
+}
+
+#[test]
+fn an_agent_task_outside_the_suite_is_refused() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = root.join("tasks/probes/smoke-tools/task.toml");
+    let tasks = [smith_bench::CatalogueTask {
+        name: "probes/smoke-tools".into(),
+        task: smith_bench::read_task(&manifest).expect("task"),
+        manifest,
+    }];
+    let file = root.join("suites/probes.toml");
+    let mut suite = smith_bench::read_suite(&file).expect("suite");
+    suite.tasks = vec!["probes/smoke-tools".into()];
+    suite.agents[0].tasks = vec!["fixtures/01-backoff".into()];
+    let models = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("tiers");
+    assert_eq!(
+        smith_bench::validate_suite(&file, &suite, &tasks, &root.join("agents"), &models)
+            .expect_err("agent task outside suite")
+            .key,
+        "agents.tasks"
+    );
+}
+
+#[test]
+fn codex_runs_only_its_outcome_halves() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let suite = smith_bench::read_suite(&root.join("suites/probes.toml")).expect("suite");
+    let codex: Vec<_> = suite.agents.iter().filter(|agent| agent.agent == smith_bench::Agent::Codex).collect();
+    assert_eq!(codex.len(), 1);
+    assert_eq!(codex[0].config, "standard");
+    assert_eq!(codex[0].tasks, ["probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write"]);
+}

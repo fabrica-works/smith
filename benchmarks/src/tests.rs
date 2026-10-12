@@ -1066,3 +1066,31 @@ fn delegation_medians_join_the_arm_summary() {
         );
     }
 }
+
+#[test]
+fn committed_costs_require_only_the_agents_selected_for_that_task() {
+    use sha2::{Digest, Sha256};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let agents = root.join("agents");
+    let models = crate::read_model_tiers(&agents.join("models.toml")).expect("tiers");
+    let tasks = sample_catalogue();
+    let mut suite = sample_suite();
+    suite.agents[0].tasks = vec!["probes/recorded".into()];
+    let mut excluded = suite.agents[0].clone();
+    excluded.agent = crate::Agent::Smith;
+    excluded.config = "smoke".into();
+    excluded.tasks = vec!["probes/recorded/short".into()];
+    suite.agents.push(excluded);
+    let mut result = recorded_result();
+    result.identity.configuration_sha256 =
+        crate::read_configuration(&agents.join("codex/standard.pin.toml")).expect("pin").sha256;
+    result.identity.prompt_sha256 = format!("{:x}", Sha256::digest(tasks[0].task.prompt.as_bytes()));
+    let summary =
+        crate::summarise(&[result], "sample", "small", crate::Design::Single, 1, None, &crate::PriceTable::default())
+            .expect("summary");
+    let costs = crate::committed_costs(&suite, &tasks, std::slice::from_ref(&summary), &agents, &models)
+        .expect("selected pin costs");
+    assert_eq!(costs["probes/recorded"].tokens, 110);
+    suite.agents[0].tasks = vec!["probes/recorded/short".into()];
+    assert!(crate::committed_costs(&suite, &tasks, &[summary], &agents, &models).expect("excluded group").is_empty());
+}

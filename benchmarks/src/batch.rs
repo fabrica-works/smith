@@ -128,6 +128,38 @@ fn configuration_matches(pin: &crate::PinnedConfiguration, request: &Prepared) -
     }
 }
 
+fn selected_configuration_matches(
+    agents: &[crate::SuiteAgent],
+    pins: &[crate::PinnedConfiguration],
+    request: &Prepared,
+) -> Result<bool, String> {
+    let mut matched = false;
+    for (agent, pin) in agents.iter().zip(pins) {
+        if agent.tasks.is_empty() || agent.tasks.contains(&request.identity.task) {
+            matched |= configuration_matches(pin, request)?;
+        }
+    }
+    Ok(matched)
+}
+
+fn allowed_agents(suite: &Suite) -> Vec<crate::SuiteAgent> {
+    let mut allowed = suite.agents.clone();
+    for arm in &suite.arms {
+        match arm {
+            crate::Arm::Agent { agent, provider, config, .. } => {
+                allowed.push(crate::SuiteAgent {
+                    agent: *agent,
+                    provider: *provider,
+                    config: config.clone(),
+                    tasks: Vec::new(),
+                });
+            }
+            crate::Arm::Binary { .. } | crate::Arm::Override { .. } => {}
+        }
+    }
+    allowed
+}
+
 fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let catalogue =
@@ -142,15 +174,7 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         .cloned()
         .collect();
     let selected = crate::include(suite_file, suite, &selected, &asked).map_err(|error| error.to_string())?;
-    let mut allowed = suite.agents.clone();
-    for arm in &suite.arms {
-        match arm {
-            crate::Arm::Agent { agent, provider, config, .. } => {
-                allowed.push(crate::SuiteAgent { agent: *agent, provider: *provider, config: config.clone() });
-            }
-            crate::Arm::Binary { .. } | crate::Arm::Override { .. } => {}
-        }
-    }
+    let allowed = allowed_agents(suite);
     let mut pins = Vec::new();
     for agent in &allowed {
         let path = root.join("agents").join(agent.agent.directory()).join(format!("{}.pin.toml", agent.config));
@@ -171,11 +195,7 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         {
             return Err("prepared request names a different task manifest".into());
         }
-        let mut matched = false;
-        for pin in &pins {
-            matched |= configuration_matches(pin, request)?;
-        }
-        if !matched {
+        if !selected_configuration_matches(&allowed, &pins, request)? {
             return Err("prepared agent configuration differs from the suite's pins".into());
         }
         let model = models
@@ -201,6 +221,9 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
     }
     for task in &selected {
         for agent in &suite.agents {
+            if !agent.tasks.is_empty() && !agent.tasks.contains(task) {
+                continue;
+            }
             let pin = pins
                 .iter()
                 .find(|pin| {
@@ -341,6 +364,10 @@ fn probe_suite(suite_file: &Path, probe: &str, repetitions: u32) -> Result<Suite
         return Err("probe dispatch requires a probe selector and positive repetitions".into());
     }
     let mut suite = crate::read_suite(suite_file).map_err(|error| error.to_string())?;
+    suite.agents.retain(|agent| agent.tasks.is_empty() || agent.tasks.iter().any(|name| name == probe));
+    for agent in &mut suite.agents {
+        agent.tasks = vec![probe.into()];
+    }
     suite.tasks = vec![probe.into()];
     suite.select.clear();
     suite.repetitions = repetitions;
@@ -661,8 +688,8 @@ mod native_suite_pin_tests {
     }
 
     fn unknown_model_admission(root: &Path, request: &mut Prepared) {
-        let suite_file = root.join("suites/failures.toml");
-        let mut suite = crate::read_suite(&suite_file).expect("failure suite");
+        let suite_file = root.join("suites/probes.toml");
+        let mut suite = probe_suite(&suite_file, "probes/failures/unknown-model", 1).expect("failure suite");
         suite.tasks = vec!["probes/failures/unknown-model".into()];
         let pin_file = root.join("agents/smith/failures.pin.toml");
         let pin = crate::read_configuration(&pin_file).expect("failure pin");
@@ -708,7 +735,7 @@ mod cache_order_tests {
     #[test]
     fn logical_calibration_requires_thirty_runs_but_one_suite_triplet_requires_three() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut suite = crate::read_suite(&root.join("suites/cache-reuse.toml")).expect("cache suite");
+        let mut suite = crate::read_suite(&root.join("suites/probes.toml")).expect("cache suite");
         suite.repetitions = 10;
         let result = crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("fixture");
         let requests: Vec<_> = (0..30)
@@ -739,5 +766,51 @@ mod cache_order_tests {
         assert_eq!(ordered(&suite, requests[..3].to_vec(), 1).expect("one triplet").len(), 3);
         suite.repetitions = 1;
         assert_eq!(order(&suite, requests[..3].to_vec(), 1, true).expect("one control triplet").len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod agent_task_tests {
+    use super::*;
+
+    #[test]
+    fn a_prepared_pin_runs_only_its_selected_tasks() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let suite_file = root.join("suites/probes.toml");
+        let mut suite = crate::read_suite(&suite_file).expect("suite");
+        suite.tasks = vec!["probes/smoke-tools".into(), "probes/large-write".into()];
+        suite.agents.retain(|agent| agent.agent == crate::Agent::Codex);
+        suite.agents[0].tasks = vec!["probes/large-write".into()];
+        let pin_file = root.join("agents/codex/standard.pin.toml");
+        let pin = crate::read_configuration(&pin_file).expect("pin");
+        let mut identity =
+            crate::read_result(&root.join("tests/recorded/results/attempt.json")).expect("identity fixture").identity;
+        identity.task = "probes/large-write".into();
+        identity.agent = crate::Agent::Codex;
+        identity.provider = crate::Provider::Codex;
+        identity.agent_version = pin.pin.version.clone();
+        identity.configuration_sha256 = pin.sha256.clone();
+        identity.model.requested_model = "gpt-6-luna".into();
+        identity.model.requested_effort = "low".into();
+        let mut request = Prepared {
+            task: root.join("tasks/probes/large-write/task.toml"),
+            identity,
+            program: "/nonexecuted".into(),
+            arguments: vec![],
+            codex_home: None,
+            configuration: Some(pin_file),
+            teardown_ms: 0,
+            grace_ms: 1,
+            settlement_ms: 1,
+            setup_deadline_seconds: 1,
+            max_stdout_bytes: 1,
+            max_stderr_bytes: 1,
+            disk_estimate_bytes: 1,
+            force_walk: true,
+        };
+        assert_eq!(selected_configuration_matches(&suite.agents, std::slice::from_ref(&pin), &request), Ok(true));
+        request.identity.task = "probes/smoke-tools".into();
+        request.task = root.join("tasks/probes/smoke-tools/task.toml");
+        assert_eq!(selected_configuration_matches(&suite.agents, &[pin], &request), Ok(false));
     }
 }

@@ -24,8 +24,11 @@ fn nested_process_task_freezes_the_command_profile_and_tree_criterion() {
         grace_ms: 250,
         command: Some(COMMAND.into()),
     }));
-    let suite_file = root.join("suites/process-tree.toml");
-    let suite = smith_bench::read_suite(&suite_file).expect("suite");
+    let suite_file = root.join("suites/probes.toml");
+    let mut suite = smith_bench::read_suite(&suite_file).expect("suite");
+    suite.tasks = vec!["probes/process-tree".into()];
+    suite.agents.retain(|agent| agent.tasks.iter().any(|name| name == "probes/process-tree"));
+    suite.agents[0].tasks.clone_from(&suite.tasks);
     assert_eq!(suite.agents[0].config, "first-request");
     let catalogue = smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design")).expect("catalogue");
     let tiers = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("tiers");

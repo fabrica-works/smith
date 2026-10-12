@@ -663,7 +663,7 @@ pub fn committed_costs(
         let choice = models
             .lookup(&agents.join("models.toml"), &suite.tier, agent.provider)
             .map_err(|error| error.to_string())?;
-        pins.push((pin, choice));
+        pins.push((pin, choice, agent));
     }
     let mut latest: BTreeMap<(String, String), (String, crate::Estimate)> = BTreeMap::new();
     for summary in summaries {
@@ -671,8 +671,9 @@ pub fn committed_costs(
             continue;
         }
         for group in &summary.groups {
-            let Some((pin, _)) = pins.iter().find(|(pin, choice)| {
-                pin.pin.agent == group.agent
+            let Some((pin, _, _)) = pins.iter().find(|(pin, choice, agent)| {
+                (agent.tasks.is_empty() || agent.tasks.contains(&group.task))
+                    && pin.pin.agent == group.agent
                     && pin.pin.provider == group.provider
                     && pin.pin.version == group.agent_version
                     && pin.sha256 == group.configuration_sha256
@@ -725,7 +726,10 @@ pub fn committed_costs(
     for name in names {
         let mut estimate = crate::Estimate { seconds: 0, tokens: 0 };
         let mut complete = true;
-        for (pin, _) in &pins {
+        for (pin, _, agent) in &pins {
+            if !agent.tasks.is_empty() && !agent.tasks.contains(&name) {
+                continue;
+            }
             if let Some((_, cost)) = latest.get(&(name.clone(), pin.sha256.clone())) {
                 estimate.seconds = estimate.seconds.max(cost.seconds);
                 estimate.tokens = estimate.tokens.max(cost.tokens);
