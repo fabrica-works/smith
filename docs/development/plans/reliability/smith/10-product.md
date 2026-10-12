@@ -233,7 +233,11 @@ Removes: nothing.
 Scope (shell.md, 5.2 to 5.4, 6.1, 6.2, 6.4): presets `codex` and
 `anthropic`: an endpoint and an account of each name, their models'
 declared values and notional prices; a model no preset knows declares
-`window`, `output` and prices; `resolve` builds the agent configuration
+`window`, `output` and prices; a preset model whose list price rises
+past a prompt size priced at the highest rates a prompt within its
+resolved window can reach, after settings resolve the window, and prices
+a person sets used as set (shell.md, 5.2, settled 2026-10-12); `resolve`
+builds the agent configuration
 (smith 04's `Profile`, `[deployment]` over `standard()`) and the local
 `Config` as values; each relationship checked by name
 (`smith_agent_service::profile::derive`), the budget against the ceilings
@@ -246,7 +250,9 @@ Shape: `presets::{Preset, built_in}`; `resolve(settings: &Settings,
 command: &Command) -> Result<Resolved, Refusal>`, `Resolved { agent,
 local, accounts }`.
 Test shape: unit in `settings/tests.rs`: the built-in layer against a
-byte-stable golden, one refusal per relationship. End to end
+byte-stable golden, one refusal per relationship,
+`haiku_takes_its_long_prompt_rates_only_past_a_100000_token_window`
+(the preset's 200,000 and a declared 100,000). End to end
 `smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling`,
 expecting 5.3's line `smith: budget.turns = 5000 (from -c) exceeds the
 standard profile's ceiling of 4096 turns`. Ceilings: 20 ms, 2 s.
@@ -624,8 +630,9 @@ failed, `RunFailed` (shell.md, 4.3).
 - ~~**Repository trust** (11; 10.3)~~: settled by the designer on
   2026-10-12 (shell.md, 5.1, "The line" and "No approval"): the
   authority keys are refused, and nothing else; no approval step.
-- **Tiered list prices** (11; 10.13): propose Haiku 5.5's higher rate
-  whenever its window passes 100,000 tokens.
+- ~~**Tiered list prices** (11; 10.13)~~: settled by the designer on
+  2026-10-12 (shell.md, 5.2, "Tiered list prices"): the preset prices a
+  model at the highest rates a prompt within its window can reach.
 
 ## Done when
 
