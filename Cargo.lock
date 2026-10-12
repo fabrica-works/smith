@@ -1062,6 +1062,7 @@ dependencies = [
  "smith-channel",
  "smith-charter",
  "smith-domain",
+ "smith-events",
  "smith-host-domain",
  "smith-local-domain",
  "smith-protocol-channel",
@@ -1154,6 +1155,7 @@ dependencies = [
  "smith-domain",
  "smith-inline-agent",
  "smith-local-domain",
+ "smith-local-protocol",
  "smith-session-world",
 ]
 

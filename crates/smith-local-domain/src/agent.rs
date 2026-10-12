@@ -329,7 +329,7 @@ pub(crate) struct RunStart {
     pub(crate) grants: Box<[root::Grant]>,
 }
 
-/// Preserve today's display words while retaining the host-owned typed answer.
+/// Separate accepted text from the typed failure notice the terminal renders.
 pub(crate) fn answer_text(answer: &host::Answer) -> Box<[u8]> {
     match &answer.result {
         host::RunResult::Accepted { outcome } => match outcome.value() {
@@ -339,14 +339,16 @@ pub(crate) fn answer_text(answer: &host::Answer) -> Box<[u8]> {
             run::outcome::Declared::Change(_) => Box::from(&b"Change delivered"[..]),
         },
         host::RunResult::Parked => Box::from(&b"Chat parked"[..]),
-        host::RunResult::Refused { .. } => Box::from(&b"The agent refused this run"[..]),
-        host::RunResult::Failed { failure } => match failure {
-            host::RunFailure::Cancelled => Box::from(&b"Run cancelled"[..]),
-            host::RunFailure::Transcript(_) => Box::from(&b"Saved transcript was refused"[..]),
-            host::RunFailure::Model(_)
-            | host::RunFailure::Budget(_)
-            | host::RunFailure::Policy(_)
-            | host::RunFailure::Stale => Box::from(&b"Run failed"[..]),
-        },
+        host::RunResult::Refused { .. } | host::RunResult::Failed { .. } => Box::new([]),
+    }
+}
+
+/// Name the bounded value that prevented preparing the common Start.
+pub(crate) fn preparation_refusal(error: BridgeError) -> host::Invalid {
+    match error {
+        BridgeError::Terminal => host::Invalid::Answered,
+        BridgeError::Charter => host::Invalid::Charter,
+        BridgeError::Transcript => host::Invalid::Transcript,
+        BridgeError::Values => host::Invalid::Limits,
     }
 }

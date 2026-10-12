@@ -6,6 +6,8 @@ use alloc::boxed::Box;
 use skein_lib::{List, Queue};
 use smith_local_domain as local;
 
+mod failure;
+
 /// Receiving and display bounds of one local terminal.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -101,8 +103,25 @@ impl Terminal {
     }
 
     /// Render a typed host notice as bounded UTF-8 lines ending in newlines.
-    pub fn notice(&self, notice: local::Notice, chat: &[u8], out: &mut Queue<Event>) {
-        let mut text = Shown { bytes: List::with_capacity(self.limits.show_bytes), cut: false };
+    pub fn notice(
+        &self,
+        notice: &local::Notice,
+        chat: &[u8],
+        models: &[smith_domain::run::charter::Llm],
+        out: &mut Queue<Event>,
+    ) {
+        out.push(Event::Write(notice_text(notice, chat, models, self.limits.show_bytes)));
+    }
+
+    /// Render the same bounded notice for the terminal and operator's error output.
+    #[must_use]
+    pub fn notice_text(
+        notice: &local::Notice,
+        chat: &[u8],
+        models: &[smith_domain::run::charter::Llm],
+        cap: u32,
+    ) -> Box<[u8]> {
+        let mut text = Shown { bytes: List::with_capacity(cap), cut: false };
         match notice {
             local::Notice::Waiting => append(&mut text, b"Waiting for a message"),
             local::Notice::Checking(checks) => append(
@@ -143,26 +162,37 @@ impl Terminal {
                     },
                 ),
                 local::Failure::HeadUnavailable => append(&mut text, b"Repository head unavailable"),
-                local::Failure::NotStarted => append(&mut text, b"Agent failed"),
-                local::Failure::Agent(end) => append(
-                    &mut text,
-                    match end {
-                        local::AgentEnd::Failed => b"Agent process failed",
-                        local::AgentEnd::Dropped => b"Run dropped",
-                        local::AgentEnd::NoAnswer => b"Agent process ended without an answer",
-                    },
-                ),
+                local::Failure::Run { failure, detail } => failure::run(&mut text, *failure, detail, models),
+                local::Failure::Refused(refusal) => failure::refused(&mut text, *refusal),
+                local::Failure::Unstarted(end) => failure::end(&mut text, *end),
+                local::Failure::Credential { account, reason } => failure::credential(&mut text, *account, *reason),
+                local::Failure::Agent { failure: why, end, detail } => {
+                    append(&mut text, b"run failed: the agent ");
+                    append(
+                        &mut text,
+                        match why {
+                            local::AgentFailure::NotStarted => b"could not start",
+                            local::AgentFailure::Fault(fault) => match fault {
+                                smith_host_domain::Fault::Exited => b"ended without answering",
+                                smith_host_domain::Fault::Rules => b"broke the channel rules",
+                                smith_host_domain::Fault::TooLarge => b"exceeded its receiving bound",
+                                smith_host_domain::Fault::NoProgress => b"made no progress",
+                                smith_host_domain::Fault::WallTime => b"reached its wall time bound",
+                            },
+                        },
+                    );
+                    failure::end(&mut text, *end);
+                    failure::detail(&mut text, detail);
+                }
                 local::Failure::DeliveryUnsaved => {
                     append(&mut text, b"A delivery committed, but its answer could not be saved");
                 }
                 local::Failure::Store { turn, reason } => {
-                    append(&mut text, b"The chat could not be saved");
                     if let Some(number) = turn {
-                        newline(&mut text);
-                        append(&mut text, b"Chat ");
+                        append(&mut text, b"run failed: chat ");
                         append(&mut text, chat);
-                        append(&mut text, b" turn ");
-                        decimal(&mut text, u64::from(number));
+                        append(&mut text, b": turn ");
+                        decimal(&mut text, u64::from(*number));
                         append(
                             &mut text,
                             match reason {
@@ -170,12 +200,18 @@ impl Terminal {
                                 local::StoreFailure::Write => b" could not be kept: write failed",
                             },
                         );
+                    } else {
+                        append(&mut text, b"The chat could not be saved");
                     }
                 }
             },
+            local::Notice::Warning(local::Warning::ForcedExit { exit, forced }) => {
+                append(&mut text, b"warning: agent forced to exit after answering");
+                failure::end(&mut text, smith_host_domain::End::Exited { exit: *exit, forced: *forced });
+            }
         }
         newline(&mut text);
-        out.push(Event::Write(text.bytes.into_boxed()));
+        text.bytes.into_boxed()
     }
 
     fn finish_line(&mut self, out: &mut Queue<Event>) {
@@ -203,6 +239,17 @@ impl Terminal {
         }
         self.line = kept;
     }
+}
+
+/// Render the same bounded notice for the terminal and operator's error output.
+#[must_use]
+pub fn notice_text(
+    notice: &local::Notice,
+    chat: &[u8],
+    models: &[smith_domain::run::charter::Llm],
+    cap: u32,
+) -> Box<[u8]> {
+    Terminal::notice_text(notice, chat, models, cap)
 }
 
 struct Shown {
@@ -278,7 +325,7 @@ mod tests {
     fn rendered(notice: local::Notice) -> Box<[u8]> {
         let terminal = Terminal::new(Limits { line_bytes: 32, show_bytes: 128 }).expect("valid terminal");
         let mut out = Queue::with_capacity(max_out());
-        terminal.notice(notice, b"main", &mut out);
+        terminal.notice(&notice, b"main", &[], &mut out);
         let Some(Event::Write(text)) = out.pop() else { panic!("one notice written") };
         assert!(out.is_empty());
         text
@@ -329,10 +376,7 @@ mod tests {
     fn a_store_failure_names_the_chat_and_its_turn_on_two_lines() {
         let notice =
             local::Notice::Failure(local::Failure::Store { turn: Some(3), reason: local::StoreFailure::Write });
-        assert_eq!(
-            rendered(notice).as_ref(),
-            b"The chat could not be saved\nChat main turn 3 could not be kept: write failed\n"
-        );
+        assert_eq!(rendered(notice).as_ref(), b"run failed: chat main: turn 3 could not be kept: write failed\n");
     }
 
     #[test]
@@ -346,7 +390,10 @@ mod tests {
         for (failure, expected) in [
             (local::Failure::NamesExhausted, b"Chat names exhausted\n".as_slice()),
             (local::Failure::HeadUnavailable, b"Repository head unavailable\n".as_slice()),
-            (local::Failure::NotStarted, b"Agent failed\n".as_slice()),
+            (
+                local::Failure::Unstarted(smith_host_domain::End::Busy),
+                b"agent start refused: no agent slot\n".as_slice(),
+            ),
             (local::Failure::DeliveryUnsaved, b"A delivery committed, but its answer could not be saved\n".as_slice()),
         ] {
             assert_eq!(rendered(local::Notice::Failure(failure)).as_ref(), expected);
@@ -366,13 +413,18 @@ mod tests {
 
     #[test]
     fn unsuccessful_agent_ends_keep_their_own_words() {
-        for (end, expected) in [
-            (local::AgentEnd::Failed, b"Agent process failed\n".as_slice()),
-            (local::AgentEnd::Dropped, b"Run dropped\n".as_slice()),
-            (local::AgentEnd::NoAnswer, b"Agent process ended without an answer\n".as_slice()),
-        ] {
-            assert_eq!(rendered(local::Notice::Failure(local::Failure::Agent(end))).as_ref(), expected);
-        }
+        let notice = local::Notice::Failure(local::Failure::Agent {
+            failure: local::AgentFailure::Fault(smith_host_domain::Fault::Rules),
+            end: smith_host_domain::End::Exited {
+                exit: Some(smith_host_domain::Exit::Code(7)),
+                forced: smith_host_domain::Forced::No,
+            },
+            detail: b"broken frame\nsecret next line".as_slice().into(),
+        });
+        assert_eq!(
+            rendered(notice).as_ref(),
+            b"run failed: the agent broke the channel rules (exit 7): broken frame\n"
+        );
     }
 
     #[test]
@@ -380,12 +432,13 @@ mod tests {
         let terminal = Terminal::new(Limits { line_bytes: 32, show_bytes: 37 }).expect("valid terminal");
         let mut out = Queue::with_capacity(max_out());
         terminal.notice(
-            local::Notice::Failure(local::Failure::Store { turn: Some(1), reason: local::StoreFailure::Write }),
+            &local::Notice::Failure(local::Failure::Store { turn: Some(1), reason: local::StoreFailure::Write }),
             "éé".as_bytes(),
+            &[],
             &mut out,
         );
         let Some(Event::Write(text)) = out.pop() else { panic!("one notice written") };
-        assert_eq!(text.as_ref(), "The chat could not be saved\nChat é\n".as_bytes());
+        assert_eq!(text.as_ref(), "run failed: chat éé: turn 1 could \n".as_bytes());
     }
 
     #[test]
@@ -442,5 +495,73 @@ mod tests {
             Event::Domain(local::Event::Line { text }) => assert_eq!(text.as_ref(), b"ok"),
             Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected line"),
         }
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+    use smith_host_domain as host;
+
+    fn shown(failure: local::Failure) -> Box<[u8]> {
+        notice_text(&local::Notice::Failure(failure), b"main", &[], 512)
+    }
+
+    #[test]
+    fn each_budget_failure_names_what_ran_out() {
+        for (kind, expected) in [
+            (host::Exhausted::Turns, b"run failed: out of turns\n".as_slice()),
+            (host::Exhausted::Spend, b"run failed: out of spend\n".as_slice()),
+            (host::Exhausted::Time, b"run failed: out of time\n".as_slice()),
+        ] {
+            assert_eq!(
+                shown(local::Failure::Run { failure: host::RunFailure::Budget(kind), detail: Box::new([]) }).as_ref(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn a_provider_limit_keeps_its_name_bound_status_and_detail() {
+        let failure = host::RunFailure::Model(host::ModelFault::Completion {
+            failure: host::CompletionFailure::Limit { which: host::Limit::Path(host::Cap::ErrorBody), bound: 19 },
+            evidence: host::CompletionEvidence::Response { status: Some(400) },
+            model: 0,
+            attempts: 3,
+        });
+        assert_eq!(
+            shown(local::Failure::Run { failure, detail: b"provider reason\nprivate".as_slice().into() }).as_ref(),
+            b"run failed: limit: error_body reached its bound of 19 (HTTP 400) after 3 attempts: provider reason\n"
+        );
+    }
+
+    #[test]
+    fn a_provider_timeout_keeps_its_phase() {
+        let failure = host::RunFailure::Model(host::ModelFault::Completion {
+            failure: host::CompletionFailure::TimedOut { phase: host::Phase::Head },
+            evidence: host::CompletionEvidence::Unsent,
+            model: 0,
+            attempts: 2,
+        });
+        assert_eq!(
+            shown(local::Failure::Run { failure, detail: Box::new([]) }).as_ref(),
+            b"run failed: timed out during response head after 2 attempts\n"
+        );
+    }
+
+    #[test]
+    fn a_refused_start_names_what_was_invalid() {
+        assert_eq!(
+            shown(local::Failure::Refused(host::Refusal::Invalid(host::RunInvalid::Workspace))).as_ref(),
+            b"run refused: invalid: workspace\n"
+        );
+    }
+
+    #[test]
+    fn a_missing_credential_names_its_account_and_login() {
+        assert_eq!(
+            shown(local::Failure::Credential { account: 7, reason: local::CredentialFailure::Missing }).as_ref(),
+            b"account 7 has no credential: run `smith login 7`\n"
+        );
     }
 }

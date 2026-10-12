@@ -158,6 +158,7 @@ enum FirstFailure {
     None,
     Reject,
     Exhaust,
+    Refused,
     Used,
 }
 
@@ -775,6 +776,25 @@ impl World {
         self.first_failure = FirstFailure::Exhaust;
     }
 
+    /// Let the first completion permanently refuse its model, keeping its diagnostic.
+    pub fn refuse_first_model(&mut self) {
+        self.first_failure = FirstFailure::Refused;
+    }
+
+    /// Reject a failure diagnostic found in a durable turn or any provider prompt.
+    #[must_use]
+    pub fn diagnostic_in_history(&self, diagnostic: &[u8]) -> bool {
+        self.prompt_texts.iter().any(|text| text.windows(diagnostic.len()).any(|part| part == diagnostic))
+            || self.store.turns.iter().any(|turn| {
+                turn.messages.iter().any(|message| {
+                    message.content.iter().any(|block| {
+                        matches!(block, agent::session::llm::Block::Text { text, .. } | agent::session::llm::Block::Refusal { text, .. }
+                    if text.windows(diagnostic.len()).any(|part| part == diagnostic))
+                    })
+                })
+            })
+    }
+
     /// Hold store turn acknowledgements until released by the story.
     pub fn slow_store(&mut self) {
         self.slow_store = true;
@@ -1133,7 +1153,17 @@ impl World {
                 if let local::Notice::NotDelivered { line: Some(name), .. } = notice {
                     self.observe(Seen::NotDelivered { name });
                 }
-                self.notices.push(notice);
+                let text = smith_local_protocol::notice_text(
+                    &notice,
+                    self.domain.chat_name(),
+                    self.domain.models(),
+                    self.env.limits.show_bytes,
+                );
+                if text.as_ref() == b"interrupted: the run was cancelled\n" {
+                    self.reached.insert(Goal::Cancelled);
+                }
+                self.shown.push(text);
+                self.notices.push(notice.clone());
                 self.saw(crate::person::Shown::Notice(notice));
             }
             Request::Show { text } => {
@@ -1387,7 +1417,7 @@ impl World {
                 self.agent_request(request);
             }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
-            Request::Answered { .. } | Request::Unanswered { .. } | Request::ForcedExit { .. } => {}
+            Request::Answered { .. } | Request::Unanswered { .. } => {}
             Request::Exit { status } => {
                 self.exit = Some(status);
                 self.reached.insert(Goal::Exit);
@@ -1556,6 +1586,16 @@ impl World {
                 let asker = prompt.asker;
                 let grants = prompt.tools;
                 let served = prompt.served.clone();
+                if matches!(self.first_failure, FirstFailure::Refused) {
+                    self.first_failure = FirstFailure::Used;
+                    self.events.push_back(self.below(Below::Failed {
+                        owner,
+                        failure: agent::llm::Failure::Invalid,
+                        evidence: agent::llm::Evidence::Response { status: Some(400) },
+                        detail: b"model does not exist\nsecond line is private".as_slice().into(),
+                    }));
+                    return;
+                }
                 if matches!(self.first_failure, FirstFailure::Exhaust) {
                     self.first_failure = FirstFailure::Used;
                     self.events.push_back(self.below(Below::Failed {

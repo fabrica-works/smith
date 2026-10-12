@@ -86,6 +86,8 @@ pub struct Local {
     error: Option<String>,
     errors: Box<dyn Write>,
     announcement: Announcement,
+    started: Option<Time>,
+    last_line: Option<Box<[u8]>>,
     worst: u64,
     operations: u32,
 }
@@ -235,6 +237,8 @@ impl Local {
             error: None,
             errors,
             announcement: Announcement::BeforeStart,
+            started: None,
+            last_line: None,
             worst,
             operations,
         };
@@ -316,14 +320,54 @@ impl Local {
                 domain::Request::Exit { status } => {
                     self.exit = Some(status);
                 }
+                domain::Request::Answered { answer } => match answer.result {
+                    smith_host_domain::RunResult::Accepted { .. } => {
+                        let elapsed = self.env.now.saturating_since(self.started.unwrap_or(self.env.now));
+                        self.operator_line(
+                            format!(
+                                "accepted in {} turns, {} notional, {} ms\n",
+                                answer.turns,
+                                answer.spent,
+                                elapsed.as_nanos() / 1_000_000
+                            )
+                            .into_bytes()
+                            .into_boxed_slice(),
+                        );
+                    }
+                    smith_host_domain::RunResult::Parked => {
+                        self.operator_line(
+                            format!(
+                                "needs input: answer with `smith exec --chat {}`\n",
+                                String::from_utf8_lossy(self.service.chat_name())
+                            )
+                            .into_bytes()
+                            .into_boxed_slice(),
+                        );
+                    }
+                    smith_host_domain::RunResult::Failed { .. } | smith_host_domain::RunResult::Refused { .. } => {}
+                },
+                domain::Request::Notice { notice } => {
+                    let text = smith_local_protocol::notice_text(
+                        &notice,
+                        self.service.chat_name(),
+                        self.service.models(),
+                        self.service.show_bytes(),
+                    );
+                    match notice {
+                        domain::Notice::Warning(_) => {
+                            drop(write!(self.errors, "smith: {}", String::from_utf8_lossy(&text)));
+                        }
+                        domain::Notice::Failure(_) => self.operator_line(text),
+                        domain::Notice::Waiting | domain::Notice::Checking(_) | domain::Notice::NotDelivered { .. } => {
+                            unreachable!("only operator notices reach the shell")
+                        }
+                    }
+                }
                 domain::Request::Load
                 | domain::Request::SaveState { .. }
                 | domain::Request::SaveTurn { .. }
                 | domain::Request::SaveDelivery { .. }
-                | domain::Request::Notice { .. }
-                | domain::Request::Answered { .. }
                 | domain::Request::Unanswered { .. }
-                | domain::Request::ForcedExit { .. }
                 | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
@@ -331,6 +375,12 @@ impl Local {
                 | domain::Request::Process(_)
                 | domain::Request::Input { .. } => unreachable!("service owns lower effects"),
             }
+        }
+    }
+
+    fn operator_line(&mut self, text: Box<[u8]>) {
+        if let Some(previous) = self.last_line.replace(text) {
+            drop(write!(self.errors, "smith: {}", String::from_utf8_lossy(&previous)));
         }
     }
 
@@ -570,39 +620,17 @@ impl Host for Local {
         }
         if self.is_empty() && self.announcement != Announcement::Ended {
             self.announcement = Announcement::Ended;
-            let failure = match self.result() {
-                Some(Err(why)) => Some(why.to_owned()),
-                Some(Ok(
-                    domain::ExitStatus::RunFailed
-                    | domain::ExitStatus::Budget
-                    | domain::ExitStatus::Credentials { .. }
-                    | domain::ExitStatus::Refused
-                    | domain::ExitStatus::NeedsInput,
-                )) => Some(match self.service.end_cause() {
-                    Some(domain::EndCause::Host { turn: Some(turn), reason }) => {
-                        let reason = match reason {
-                            domain::StoreFailure::Read => "read failed",
-                            domain::StoreFailure::Write => "write failed",
-                        };
-                        format!(
-                            "run failed: chat {}: turn {turn} could not be kept: {reason}",
-                            String::from_utf8_lossy(self.service.chat_name())
-                        )
-                    }
-                    Some(
-                        domain::EndCause::Host { turn: None, .. }
-                        | domain::EndCause::Agent { .. }
-                        | domain::EndCause::Cancelled,
-                    )
-                    | None => "local chat ended with a failure".into(),
-                }),
-                Some(Ok(domain::ExitStatus::Interrupted)) => {
-                    Some("interrupted: the run was dropped before it answered".into())
-                }
-                Some(Ok(domain::ExitStatus::Accepted)) | None => None,
-            };
-            if let Some(why) = failure {
+            if let Some(text) = self.last_line.take() {
+                drop(write!(self.errors, "smith: {}", String::from_utf8_lossy(&text)));
+            }
+            if let Some(Err(why)) = self.result() {
+                let why = why.to_owned();
                 drop(writeln!(self.errors, "smith: {why}"));
+            }
+            if self.exit == Some(domain::ExitStatus::Interrupted)
+                && self.service.end_cause() == Some(domain::EndCause::Cancelled)
+            {
+                drop(writeln!(self.errors, "smith: interrupted: the run was dropped before it answered"));
             }
         }
     }
@@ -610,6 +638,9 @@ impl Host for Local {
     fn iterate(&mut self, now: Time, wall: Wall) {
         self.env.now = now;
         self.env.wall = wall;
+        if self.started.is_none() {
+            self.started = Some(now);
+        }
         while let Some(complete) = self.completions.pop() {
             match self.routes.remove(&complete.op).expect("each operation has one lower owner") {
                 Route::Service(op) => self.service.completions().push(kernel::Complete {
@@ -772,6 +803,7 @@ fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) 
     worst = worst
         .checked_add(io::worst_case(&io_limits).ok_or_else(|| derivation_refusal("local_worst_case"))?)
         .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
+        .and_then(|count| count.checked_add(u64::from(show_bytes.max(512))))
         .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
         .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))
         .and_then(|count| count.checked_add(Queue::<io::Event>::worst_case(queue)?))

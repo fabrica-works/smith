@@ -353,6 +353,8 @@ pub struct Scenario {
     pub ending: Ending,
     pub interrupt_on_query: bool,
     pub terminate_on_output_end: bool,
+    /// Keep the answered spawned process alive until its host sends a signal.
+    pub linger_agent: bool,
     pub authentication: Option<Authentication>,
 }
 /// Simulated configuration and the settled shared-harness result.
@@ -483,7 +485,7 @@ impl World {
             placement,
             vec![
                 Action::Send(b"hello\n".as_slice().into()),
-                Action::Wait(b"Run cancelled".as_slice().into()),
+                Action::Wait(b"interrupted: the run was cancelled".as_slice().into()),
                 Action::Eof,
             ],
             Ending::Cancelled,
@@ -603,6 +605,8 @@ impl World {
                     change,
                     tools: false,
                     read_report: false,
+                    headless: false,
+                    budget_failure: false,
                     in_process: placement == Placement::InProcess,
                     keep_facts,
                     traced: false,
@@ -615,6 +619,7 @@ impl World {
                 ending,
                 interrupt_on_query,
                 terminate_on_output_end: false,
+                linger_agent: false,
                 authentication: None,
             },
             machine: Some(Machine {
@@ -638,7 +643,7 @@ impl World {
             seed,
             files,
             placement,
-            if mode == Authentication::Refused { b"account is unavailable" } else { b"First answer" },
+            if mode == Authentication::Refused { b"credential" } else { b"First answer" },
         );
         world.scenario.launch.authenticated = true;
         world.scenario.authentication = Some(mode);
@@ -735,7 +740,7 @@ impl World {
             world.host_startup(
                 HostedProgram {
                     program: b"smith-agent".as_slice().into(),
-                    make: process::make_agent,
+                    make: if self.scenario.linger_agent { process::make_lingering_agent } else { process::make_agent },
                     instances: 8,
                     operations: process::lower_configuration().limits.routes + 3,
                 },
@@ -914,6 +919,7 @@ impl Scenario {
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
         let mut provider_scripts = if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"After three tools")
+            || matches!(self.ending, Ending::Budget)
         {
             let mut turns = Vec::new();
             for _ in 0..3 {

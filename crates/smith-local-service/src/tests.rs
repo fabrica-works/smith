@@ -352,6 +352,13 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
                     },
                     Box::from(b"\0\x03acctoken".as_slice()),
                 ),
+                local::Request::Notice {
+                    notice:
+                        local::Notice::Failure(local::Failure::Run {
+                            failure: smith_host_domain::RunFailure::Budget(smith_host_domain::Exhausted::Turns),
+                            ..
+                        }),
+                } => {}
                 other => panic!("unexpected shell request {other:?}"),
             }
         }

@@ -150,7 +150,7 @@ fn an_interrupt_in_the_middle_of_a_turn_cancels_the_run() {
         let files = Files::new();
         let mut world = World::interrupted(4, &files, placement);
         world.settle();
-        assert!(world.shown().windows(13).any(|text| text == b"Run cancelled"));
+        assert!(world.shown().windows(34).any(|text| text == b"interrupted: the run was cancelled"));
         assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
         assert_eq!(world.queries().len(), 1);
     }
@@ -170,7 +170,7 @@ fn a_store_failure_stops_the_chat_and_tells_the_person() {
         failed.settle();
         assert_eq!(failed.exit(), Some(kernel::Exit::Code(1)));
         let shown = String::from_utf8_lossy(failed.shown());
-        assert!(shown.contains("Chat main turn 2 could not be kept: write failed"), "{shown}");
+        assert!(shown.contains("run failed: chat main: turn 2 could not be kept: write failed"), "{shown}");
         assert!(!failed.queries().is_empty());
         let fault = failed.scenario.launch.state_directory.join("0000000002.turn");
         assert!(std::fs::metadata(&fault).expect("failed turn target").is_dir());
@@ -229,7 +229,7 @@ fn an_interrupt_with_a_line_unread_starts_nothing_in_both_placements() {
         let mut world = World::interrupted(21, &files, placement);
         world.scenario.commands = vec![
             Action::Send(b"hello\nfollow-up\n".as_slice().into()),
-            Action::Wait(b"Run cancelled".as_slice().into()),
+            Action::Wait(b"interrupted: the run was cancelled".as_slice().into()),
             Action::Eof,
         ];
         world.settle();
@@ -390,5 +390,51 @@ fn a_termination_signal_while_closing_aborts_and_says_so() {
             Event::SessionEnded(end) if end.answered && end.exit == 0 && end.aborted == Some(true)));
         assert_eq!(records.iter().filter(|record| matches!(record.event, Event::SessionEnded(_))).count(), 1);
         assert!(records.last().expect("terminal").t_ms - records[notice].t_ms < 5_000);
+    }
+}
+
+#[test]
+fn a_forced_exit_after_an_accepted_answer_is_shown_as_a_warning() {
+    for placement in [Placement::InProcess, Placement::Spawned] {
+        let files = Files::new();
+        let mut world = World::new(51, &files, placement, b"First answer");
+        world.scenario.linger_agent = placement == Placement::Spawned;
+        world.scenario.launch.headless = true;
+        world.scenario.commands = vec![
+            smith_local_process_world::terminal::Action::Wait(b"First answer".as_slice().into()),
+            smith_local_process_world::terminal::Action::Eof,
+        ];
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+        assert!(world.shown().windows(12).any(|part| part == b"First answer"));
+        assert_eq!(
+            world.errors().windows(45).any(|part| part == b"warning: agent forced to exit after answering"),
+            placement == Placement::Spawned
+        );
+    }
+}
+
+#[test]
+fn a_forced_exit_after_a_failed_answer_keeps_its_code_and_last_line() {
+    for placement in [Placement::InProcess, Placement::Spawned] {
+        let files = Files::new();
+        let mut world = World::reading(52, &files, placement);
+        world.scenario.launch.headless = true;
+        world.scenario.launch.budget_failure = true;
+        world.scenario.linger_agent = placement == Placement::Spawned;
+        world.scenario.commands = vec![
+            smith_local_process_world::terminal::Action::Wait(b"run failed: out of turns".as_slice().into()),
+            smith_local_process_world::terminal::Action::Eof,
+        ];
+        world.scenario.ending = smith_local_process_world::referee::Ending::Budget;
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(4)));
+        let errors = String::from_utf8_lossy(world.errors());
+        let last = match placement {
+            Placement::InProcess => "smith: run failed: out of turns\n",
+            Placement::Spawned => "smith: run failed: out of turns: smith: run failed: out of turns\n",
+        };
+        assert!(errors.ends_with(last));
+        assert_eq!(errors.contains("warning: agent forced to exit after answering"), placement == Placement::Spawned);
     }
 }

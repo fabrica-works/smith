@@ -376,6 +376,18 @@ impl Service {
         self.terminal.closed(&mut self.terminal_events);
     }
 
+    /// Receiving cap used by both renders of a notice.
+    #[must_use]
+    pub fn show_bytes(&self) -> u32 {
+        self.limits.local.show_bytes
+    }
+
+    /// Model inventory borrowed by the operator notice renderer.
+    #[must_use]
+    pub fn models(&self) -> &[agent::run::charter::Llm] {
+        self.local.models()
+    }
+
     /// Text ready for the terminal writer.
     pub fn output(&mut self) -> &mut Queue<Box<[u8]>> {
         &mut self.output
@@ -601,9 +613,7 @@ impl Service {
                 self.below.inline_mut().expect("native IO belongs to inline mode").request(to_root_request(request));
             }
             local::Request::Input { reading } => self.below.process_mut().input(reading),
-            local::Request::Notice { notice } => {
-                self.terminal.notice(notice, self.local.chat_name(), &mut self.terminal_events);
-            }
+            local::Request::Notice { notice } => self.notice(now, notice),
             local::Request::Show { text } => self.terminal.show(text, &mut self.terminal_events),
             local::Request::Load => {
                 self.lower_agent = None;
@@ -640,9 +650,11 @@ impl Service {
                 if let Some(stream) = &mut self.stream {
                     stream.answered(now, &answer);
                 }
+                if self.local.headless() {
+                    self.shell.push(local::Request::Answered { answer });
+                }
             }
             local::Request::Unanswered { cause, turns, spent, read } => self.unanswered(now, cause, turns, spent, read),
-            local::Request::ForcedExit { exit, forced } => self.forced_exit(now, exit, forced),
             local::Request::Exit { status } => {
                 let shell_closed = match self.ending {
                     Ending::Live { shell_closed } => shell_closed,
@@ -668,6 +680,18 @@ impl Service {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
             }
             other @ local::Request::Credential { .. } => self.shell.push(other),
+        }
+    }
+
+    fn notice(&mut self, now: Time, notice: local::Notice) {
+        self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
+        match notice {
+            local::Notice::Warning(local::Warning::ForcedExit { exit, forced }) => {
+                self.forced_exit(now, exit, forced);
+                self.shell.push(local::Request::Notice { notice });
+            }
+            local::Notice::Failure(_) => self.shell.push(local::Request::Notice { notice }),
+            local::Notice::Waiting | local::Notice::Checking(_) | local::Notice::NotDelivered { .. } => {}
         }
     }
 

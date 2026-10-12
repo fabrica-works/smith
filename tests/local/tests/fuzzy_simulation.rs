@@ -46,7 +46,7 @@ fn random_local_chats_settle_against_the_boundary_referee() {
                 assert!(
                     world.waiting()
                         || world.exit().is_some()
-                        || world.shown().iter().any(|text| text.as_ref() == b"Run cancelled")
+                        || world.shown().iter().any(|text| text.as_ref() == b"interrupted: the run was cancelled\n")
                 );
             }
             5..=7 => {

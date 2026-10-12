@@ -41,6 +41,6 @@ pub use store::{
     StoreRequest, TURN_HEADER, decode_state, decode_turns, save_state, save_turn, turn_name, turn_opens_window,
 };
 pub use terminal::{
-    Event as TerminalEvent, Limits as TerminalLimits, Terminal, max_out as terminal_max_out,
+    Event as TerminalEvent, Limits as TerminalLimits, Terminal, max_out as terminal_max_out, notice_text,
     worst_case as terminal_worst_case,
 };

@@ -117,7 +117,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         u64::from(limits.smith.session.history_messages).checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
     )?;
     let unsaved = u64::from(limits.unsaved).checked_mul(record)?;
-    let out = Queue::<Request>::worst_case(crate::max_out(limits))?.checked_add(u64::from(limits.show_bytes))?;
+    let detail = match limits.agent {
+        AgentLimits::Inline(_) => u64::from(limits.smith.session.failure_bytes),
+        AgentLimits::Spawned(child) => u64::from(child.detail_bytes),
+    };
+    let out = Queue::<Request>::worst_case(crate::max_out(limits))?
+        .checked_add(u64::from(limits.show_bytes))?
+        .checked_add(detail.checked_mul(2)?)?;
     let child_out = match limits.agent {
         AgentLimits::Inline(_) => Queue::<smith_inline_agent::Output>::worst_case(crate::max_out(limits))?,
         AgentLimits::Spawned(_) => Queue::<smith_host_domain::Output>::worst_case(crate::max_out(limits))?,

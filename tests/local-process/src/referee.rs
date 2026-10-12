@@ -42,6 +42,8 @@ pub struct OAuthSeen {
 pub enum Ending {
     Report(Vec<u8>),
     Cancelled,
+    /// A headless answer failed because its turn budget ran out.
+    Budget,
     /// The second interrupt ends the invocation before any answer.
     Dropped,
     /// The spawned child exits before answering or contacting the provider.
@@ -123,11 +125,12 @@ impl Expectations for Meeting {
             Observation::Terminal { shown, errors, exit, queries } => {
                 let expected = match &self.ending {
                     Ending::Report(text) => text.as_slice(),
-                    Ending::Cancelled => b"Run cancelled",
-                    Ending::Dropped => b"Run dropped",
-                    Ending::AgentEnded => b"Agent process failed",
+                    Ending::Cancelled => b"interrupted: the run was cancelled",
+                    Ending::Budget => b"run failed: out of turns",
+                    Ending::Dropped => b"not delivered",
+                    Ending::AgentEnded => b"run failed: the agent ended without answering",
                     Ending::Change { .. } => b"Change delivered",
-                    Ending::Unavailable => b"account is unavailable",
+                    Ending::Unavailable => b"credential",
                     Ending::HostFailure | Ending::HostFailureBeforeAnswer => b"could not be kept: write failed",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
@@ -148,6 +151,7 @@ impl Expectations for Meeting {
                 let code = match self.ending {
                     Ending::HostFailure | Ending::HostFailureBeforeAnswer | Ending::AgentEnded => 1,
                     Ending::Dropped => 130,
+                    Ending::Budget => 4,
                     _ => 0,
                 };
                 judge.check(exit == Some(kernel::Exit::Code(code)), "shell exit matches the host terminal");
@@ -165,10 +169,50 @@ impl Expectations for Meeting {
                 } else if matches!(self.ending, Ending::Dropped) {
                     errors.strip_suffix(b"smith: interrupted: the run was dropped before it answered\n")
                 } else if matches!(self.ending, Ending::AgentEnded) {
-                    errors.strip_suffix(b"smith: local chat ended with a failure\n")
+                    errors.strip_suffix(b"smith: run failed: the agent ended without answering (exit 7); terminated\n")
+                } else if matches!(self.ending, Ending::Budget) {
+                    errors
+                        .strip_suffix(b"smith: run failed: out of turns: smith: run failed: out of turns\n")
+                        .or_else(|| errors.strip_suffix(b"smith: run failed: out of turns\n"))
+                } else if matches!(self.ending, Ending::Cancelled) {
+                    errors.strip_suffix(b"smith: interrupted: the run was cancelled\n").or_else(|| {
+                        errors
+                            .strip_suffix(
+                                b"smith: interrupted: the run was cancelled: n failed: the run was cancelled\n",
+                            )
+                            .or_else(|| {
+                                errors.strip_suffix(
+                                    b"smith: interrupted: the run was cancelled: call aborted by its owner\n",
+                                )
+                            })
+                    })
+                } else if matches!(self.ending, Ending::Unavailable) {
+                    errors.strip_suffix(b"smith: account 0 has no credential: run `smith login 0`\n").or_else(|| {
+                        errors.strip_suffix(b"smith: account 0 could not renew its credential: run `smith login 0`\n")
+                    })
                 } else {
                     Some(errors.as_slice())
                 };
+                let diagnostic = diagnostic.map(|bytes| {
+                    let bytes = if let Some(at) = bytes.windows(19).rposition(|part| part == b"smith: accepted in ") {
+                        &bytes[..at]
+                    } else {
+                        bytes
+                    };
+                    bytes
+                        .strip_suffix(b"smith: warning: agent forced to exit after answering (signal 9); killed\n")
+                        .or_else(|| {
+                            bytes.strip_suffix(
+                                b"smith: warning: agent forced to exit after answering (signal 15); terminated\n",
+                            )
+                        })
+                        .or_else(|| {
+                            bytes.strip_suffix(
+                                b"smith: warning: agent forced to exit after answering (exit 0); terminated\n",
+                            )
+                        })
+                        .unwrap_or(bytes)
+                });
                 let expected_diagnostic = diagnostic.is_some_and(|bytes| {
                     bytes.is_empty()
                         || bytes
@@ -223,7 +267,7 @@ impl Expectations for Meeting {
                         files.get(b"result.txt".as_slice()).is_some_and(|bytes| bytes == b"new\n"),
                         "commit contains the agent's change",
                     );
-                } else if matches!(self.ending, Ending::HostFailureBeforeAnswer)
+                } else if matches!(self.ending, Ending::HostFailureBeforeAnswer | Ending::Budget)
                     || matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"After three tools")
                 {
                     judge.check(
@@ -418,9 +462,13 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         let wait = procs.iter().any(|proc| match proc {
             Proc::Local(local) => local.wait_seen(),
             Proc::Agent(_, _, wait) => *wait,
-            Proc::Terminal(_) | Proc::Peer(_) | Proc::Issuer(_) | Proc::Browser(_) | Proc::Ended(_) | Proc::Git(_) => {
-                false
-            }
+            Proc::Terminal(_)
+            | Proc::Peer(_)
+            | Proc::Issuer(_)
+            | Proc::Browser(_)
+            | Proc::Ended(_)
+            | Proc::Git(_)
+            | Proc::LingeringAgent(_) => false,
         });
         let line = if wait { self.line_on_wait.take() } else { None };
         let exited = procs.iter().any(|p| matches!(p, Proc::Terminal(t) if t.exit().is_some()));
@@ -481,7 +529,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
                         browser.shutdown();
                     }
                 }
-                Proc::Local(_) | Proc::Agent(_, _, _) | Proc::Ended(_) | Proc::Git(_) => {}
+                Proc::Local(_) | Proc::Agent(_, _, _) | Proc::Ended(_) | Proc::Git(_) | Proc::LingeringAgent(_) => {}
             }
         }
     }
@@ -529,9 +577,13 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         let wait = procs.iter().any(|proc| match proc {
             Proc::Local(local) => local.wait_seen(),
             Proc::Agent(_, _, wait) => *wait,
-            Proc::Terminal(_) | Proc::Peer(_) | Proc::Issuer(_) | Proc::Browser(_) | Proc::Ended(_) | Proc::Git(_) => {
-                false
-            }
+            Proc::Terminal(_)
+            | Proc::Peer(_)
+            | Proc::Issuer(_)
+            | Proc::Browser(_)
+            | Proc::Ended(_)
+            | Proc::Git(_)
+            | Proc::LingeringAgent(_) => false,
         });
         if (self.line_on_wait.is_some() && wait)
             || (self.interrupt_on_query && !self.interrupted && crate::llm::queries(peer).next().is_some())

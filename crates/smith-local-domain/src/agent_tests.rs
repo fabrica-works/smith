@@ -18,7 +18,7 @@ fn a_spawned_last_word_keeps_its_local_display_class() {
             result: host::RunResult::Failed { failure: host::RunFailure::Cancelled }
         })
         .as_ref(),
-        b"Run cancelled"
+        b""
     );
 }
 

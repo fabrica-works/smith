@@ -50,7 +50,7 @@ pub struct Cue {
 }
 
 /// What the terminal showed, without rendering bytes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Shown {
     /// A displayed turn.
     Turn,
@@ -116,7 +116,7 @@ impl Person {
                 Notice::Waiting => Kind::Waiting,
                 Notice::Checking(_) => Kind::Checking,
                 Notice::NotDelivered { .. } => Kind::NotDelivered,
-                Notice::Failure(_) => Kind::Failure,
+                Notice::Failure(_) | Notice::Warning(_) => Kind::Failure,
             }),
         };
         if self.cues.front().is_some_and(|cue| cue.on == on) { self.cues.pop_front().map(|cue| cue.act) } else { None }

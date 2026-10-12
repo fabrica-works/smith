@@ -202,7 +202,7 @@ pub enum Reading {
 }
 
 /// A local host notice rendered by the terminal (protocol/hosts.md, section 5.1).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Notice {
     /// The run is waiting for a person message.
     Waiting,
@@ -212,6 +212,8 @@ pub enum Notice {
     NotDelivered { line: Option<Token>, why: Undelivered },
     /// A local host operation failed.
     Failure(Failure),
+    /// The kit forced an answered agent to exit; its answer still stands.
+    Warning(Warning),
 }
 
 /// The run reports a checking span to the person.
@@ -235,7 +237,7 @@ pub enum Undelivered {
 }
 
 /// A host failure sent to the terminal for the person.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Failure {
     /// The chat's increasing names ran out.
     NamesExhausted,
@@ -243,10 +245,16 @@ pub enum Failure {
     Account(AccountFailure),
     /// A repository head could not be read.
     HeadUnavailable,
-    /// The agent could not be prepared.
-    NotStarted,
-    /// The agent ended unsuccessfully.
-    Agent(AgentEnd),
+    /// The answered run failed with its last diagnostic, for the person and operator.
+    Run { failure: smith_host_domain::RunFailure, detail: Box<[u8]> },
+    /// The run refused its start, naming the refusal.
+    Refused(smith_host_domain::Refusal),
+    /// The kit refused before an agent existed.
+    Unstarted(smith_host_domain::End),
+    /// The agent failed before answering, carrying its settled exit and diagnostic.
+    Agent { failure: AgentFailure, end: smith_host_domain::End, detail: Box<[u8]> },
+    /// This account needs a credential from the person.
+    Credential { account: u32, reason: CredentialFailure },
     /// The chat could not be kept; a turn save names its turn.
     Store { turn: Option<u32>, reason: StoreFailure },
     /// A committed delivery's answer could not be kept.
@@ -264,15 +272,20 @@ pub enum AccountFailure {
     Exhausted,
 }
 
-/// The agent's unsuccessful end shown to the person.
+/// Why the child failed before it could answer (domain/host.md, section 4).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AgentEnd {
-    /// The agent failed.
-    Failed,
-    /// The person dropped the run.
-    Dropped,
-    /// The agent ended without an answer.
-    NoAnswer,
+pub enum AgentFailure {
+    /// The process or its opening could not start.
+    NotStarted,
+    /// The kit observed this process or channel failure.
+    Fault(smith_host_domain::Fault),
+}
+
+/// An operator warning that leaves the run's answer unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Warning {
+    /// The kit sent a signal after the answer; its settled exit is retained.
+    ForcedExit { exit: Option<smith_host_domain::Exit>, forced: smith_host_domain::Forced },
 }
 
 /// One request to the person, store, credential source or agent IO.
@@ -311,8 +324,6 @@ pub enum Request {
     Answered { answer: smith_host_domain::Answer },
     /// The agent went without answering; the service writes its run terminal. Owes no terminal.
     Unanswered { cause: crate::EndCause, turns: u32, spent: u64, read: Option<Token> },
-    /// Gone reports a tree signal the kit sent; the product records a notice, owing no terminal.
-    ForcedExit { exit: Option<smith_host_domain::Exit>, forced: smith_host_domain::Forced },
     /// The caller may terminate this invocation.
     Exit { status: ExitStatus },
 }

@@ -57,6 +57,20 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure) {
     match &failure.completion {
         Some(completion) => {
             put(line, class(&completion.class));
+            if let Some(phase) = &completion.phase {
+                put(line, b" during ");
+                put(
+                    line,
+                    match phase {
+                        crate::FailurePhase::Connect => b"connect",
+                        crate::FailurePhase::Handshake => b"handshake",
+                        crate::FailurePhase::Head => b"response head",
+                        crate::FailurePhase::Idle => b"response idle",
+                        crate::FailurePhase::Whole => b"whole request",
+                        crate::FailurePhase::Unknown(value) => clip(value),
+                    },
+                );
+            }
             if let Some(limit) = &completion.limit {
                 named(line, b": ", Some(&limit.which), b"limit");
                 put(line, b" reached its bound of ");

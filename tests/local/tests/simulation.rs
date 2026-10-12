@@ -126,7 +126,7 @@ fn a_cancel_during_a_delivery_waits_for_it_and_still_answers_cancelled() {
     }
     assert!(world.commit_message().is_some(), "the in-flight delivery completed");
     assert!(
-        world.shown().iter().any(|text| text.as_ref() == b"Run cancelled"),
+        world.shown().iter().any(|text| text.as_ref() == b"interrupted: the run was cancelled\n"),
         "shown: {:?}, delivery: {:?}",
         world.shown(),
         world.delivery()
@@ -164,7 +164,7 @@ fn a_moved_remote_makes_a_configured_push_stale() {
     world.drive(500);
     assert_eq!(world.remote_head(), Some(2), "the remote stayed on its outside commit");
     assert!(matches!(world.delivery(), Some(smith_domain::run::Delivery::Stale)));
-    assert!(world.shown().iter().any(|text| text.as_ref() == b"Run failed"));
+    assert!(world.shown().iter().any(|text| text.as_ref() == b"run failed: stale: workspace changed\n"));
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn a_transcript_the_agent_refuses_is_reported_and_nothing_starts() {
     second.line(b"Continue");
     assert!(!second.drive(300), "a refused transcript cannot reach a wait");
     assert_eq!(second.completions(), 0, "refusal precedes provider effects");
-    assert!(second.shown().iter().any(|text| text.as_ref() == b"Saved transcript was refused"));
+    assert!(second.shown().iter().any(|text| text.as_ref() == b"run failed: chat cannot be resumed: version\n"));
 
     let stored = second.into_store();
     let mut fresh = World::with_store_fresh(31, stored);
@@ -595,7 +595,7 @@ fn a_run_cancelled_at_the_terminal_answers_cancelled_after_its_last_turn_is_save
     assert!(world.delayed_turns() > 0);
     world.interrupt();
     assert!(!world.drive_to_cancelled(300), "the cancelled answer waits for the store");
-    assert!(!world.shown().iter().any(|text| text.as_ref() == b"Run cancelled"));
+    assert!(!world.shown().iter().any(|text| text.as_ref() == b"interrupted: the run was cancelled\n"));
     for _ in 0..4 {
         assert!(world.release_turn(), "a stalled turn must be acknowledged");
         if world.drive_to_cancelled(300) {
@@ -603,7 +603,7 @@ fn a_run_cancelled_at_the_terminal_answers_cancelled_after_its_last_turn_is_save
         }
     }
     assert!(
-        world.shown().iter().any(|text| text.as_ref() == b"Run cancelled"),
+        world.shown().iter().any(|text| text.as_ref() == b"interrupted: the run was cancelled\n"),
         "the answer follows the last saved turn"
     );
     assert!(world.saved_turns() > 0);
@@ -803,4 +803,23 @@ fn a_headless_delivery_commits_in_place() {
     assert!(world.commit_message().is_some_and(|message| message.starts_with(b"Make the answer 43")));
     let (content, _) = world.disk().load(1, b"src/lib.rs", 4096).expect("committed source");
     assert_eq!(content, b"pub fn answer() -> u32 { 43 }\n");
+}
+
+#[test]
+fn a_budget_failure_is_shown_naming_what_ran_out() {
+    let mut world = World::headless_budget(47, b"Update the source");
+    world.drive_to_exit(300);
+    assert!(world.shown().iter().any(|text| text.as_ref() == b"run failed: out of turns\n"));
+}
+
+#[test]
+fn a_provider_refusal_is_shown_with_its_class_and_text() {
+    let mut world = World::new(48);
+    world.refuse_first_model();
+    world.line(b"Hello");
+    world.drive(300);
+    let shown = world.shown().iter().find(|text| text.starts_with(b"run failed: ")).expect("failure line");
+    assert!(shown.windows(18).any(|part| part == b"invalid (HTTP 400)"));
+    assert!(shown.ends_with(b"after 1 attempts: model does not exist\n"));
+    assert!(!shown.windows(11).any(|part| part == b"second line"));
 }

@@ -372,8 +372,19 @@ pub(crate) fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
         }
         crate::Mode::Chat { .. } => ExitStatus::Accepted,
     };
-    let text = crate::agent::answer_text(&answer);
-    out.push(Request::Show { text: bounded_text(&text, domain.show_bytes) });
+    let detail = core::mem::replace(&mut domain.turns.detail, Box::new([]));
+    match answer.result {
+        host::RunResult::Failed { failure } => {
+            out.push(Request::Notice { notice: crate::Notice::Failure(crate::Failure::Run { failure, detail }) });
+        }
+        host::RunResult::Refused { refusal } => {
+            out.push(Request::Notice { notice: crate::Notice::Failure(crate::Failure::Refused(refusal)) });
+        }
+        host::RunResult::Accepted { .. } | host::RunResult::Parked => {
+            let text = crate::agent::answer_text(&answer);
+            out.push(Request::Show { text: bounded_text(&text, domain.show_bytes) });
+        }
+    }
     out.push(Request::Answered { answer });
     domain.run = None;
     domain.wall_deadline = None;
@@ -483,7 +494,7 @@ pub(crate) fn waiting(lines: &mut Lines, read: Option<Token>, out: &mut Queue<Re
     }
 }
 
-pub(crate) fn answered(domain: &mut Domain, answer: host::Answer, out: &mut Queue<Request>) {
+pub(crate) fn answered(domain: &mut Domain, answer: host::Answer, detail: Box<[u8]>, out: &mut Queue<Request>) {
     domain.lines.fence(answer.read);
     domain.chat.state.read = answer.read;
     crate::domain::observe(domain, Fact::Answered { activation: domain.chat.state.activation, read: answer.read });
@@ -494,6 +505,7 @@ pub(crate) fn answered(domain: &mut Domain, answer: host::Answer, out: &mut Queu
         UnreadPolicy::Drop => show_dropped(&mut domain.lines, out),
     }
     domain.turns.answer = Some(answer);
+    domain.turns.detail = detail;
     if domain.turns.unsaved.is_empty() {
         finish_answer(domain, out);
     }

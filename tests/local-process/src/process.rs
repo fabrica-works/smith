@@ -33,6 +33,12 @@ pub struct Launch {
     /// Keep the workspace but accept a report after reads.
     #[serde(default)]
     pub read_report: bool,
+    /// Start one unattended run from the fixture's retained prompt.
+    #[serde(default)]
+    pub headless: bool,
+    /// Admit three tool turns, so the fourth would exceed the budget.
+    #[serde(default)]
+    pub budget_failure: bool,
     pub in_process: bool,
     pub keep_facts: bool,
     #[serde(default)]
@@ -573,6 +579,8 @@ pub enum Proc {
     Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, smith_agent_process_world::AgentErrors, bool),
     /// A child that ends before admitting an opening.
     Ended(Box<crate::git::Child>),
+    /// A child that answered and closed its descriptors but has not exited.
+    LingeringAgent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>),
     /// The independent fake provider, stopped after the terminal exits.
     Peer(Box<Peer>),
     /// The independent fake issuer and observed POST timing.
@@ -589,6 +597,7 @@ impl Proc {
             Self::Local(p) => p.as_ref(),
             Self::Agent(p, _, _) => p.as_ref(),
             Self::Ended(p) => p.as_ref(),
+            Self::LingeringAgent(p) => p.as_ref(),
             Self::Peer(p) => p.as_ref(),
             Self::Issuer(p) => p.as_ref(),
             Self::Browser(p) => p.as_ref(),
@@ -601,6 +610,7 @@ impl Proc {
             Self::Local(p) => p.as_mut(),
             Self::Agent(p, _, _) => p.as_mut(),
             Self::Ended(p) => p.as_mut(),
+            Self::LingeringAgent(p) => p.as_mut(),
             Self::Peer(p) => p.as_mut(),
             Self::Issuer(p) => p.as_mut(),
             Self::Browser(p) => p.as_mut(),
@@ -637,11 +647,15 @@ impl Host for Proc {
         self.host().next_policy_deadline()
     }
     fn is_empty(&self) -> bool {
-        self.host().is_empty()
+        match self {
+            Self::LingeringAgent(_) => false,
+            _ => self.host().is_empty(),
+        }
     }
     fn exit(&self) -> Option<kernel::Exit> {
         match self {
             Self::Ended(child) => child.is_empty().then_some(kernel::Exit::Code(child.code())),
+            Self::LingeringAgent(_) => None,
             _ => self.host().exit(),
         }
     }
@@ -687,6 +701,12 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
     let (mut config, mut lower) =
         configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
+    if launch.headless {
+        config.local.mode = local::Mode::Headless { prompt: b"hello".as_slice().into() };
+    }
+    if launch.budget_failure {
+        config.local.budget.turns = 3;
+    }
     if launch.read_report {
         config.local.contract =
             local::Contract::Report(smith_domain::run::outcome::TextSpec { max: 128, fields: Box::new([]) });
@@ -877,4 +897,11 @@ pub fn agent_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
 /// Bind a child that opens its channel and exits without answering.
 pub fn make_exited_agent(_: &kernel::Spawn, inherited: &Inherited) -> Proc {
     Proc::Ended(Box::new(crate::git::Child::unanswered(inherited)))
+}
+
+/// Reuse the real agent while withholding its process exit from the host kit.
+#[must_use]
+pub fn make_lingering_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
+    let Proc::Agent(agent, _, _) = make_agent(spawn, inherited) else { panic!("agent fixture") };
+    Proc::LingeringAgent(agent)
 }

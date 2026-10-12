@@ -1,7 +1,9 @@
 //! Local policy consumes each typed parent variant; process ownership is
 //! exercised separately by the spawned lifecycle unit and composed worlds.
 use super::{AgentLife, Domain, Phase, parent_request};
-use crate::{AccountFailure, AgentEnd, Checks, Config, Contract, Event, Failure, Limits, Notice, Request, Undelivered};
+use crate::{
+    AccountFailure, AgentFailure, Checks, Config, Contract, Event, Failure, Limits, Notice, Request, Undelivered,
+};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use smith_domain::{run, session};
@@ -242,9 +244,23 @@ fn an_agent_fault_keeps_the_current_failure_class() {
         parent::Request::Faulted { client: Token::new(1), fault: host::Fault::Rules },
         &mut out,
     );
-    assert!(domain.agent_failed);
+    assert!(domain.agent_failed.is_some());
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone { client: Token::new(1), end: host::End::Settled, detail: Box::new([]) },
+        &mut out,
+    );
+    let Some(Request::Unanswered { .. }) = out.pop() else { panic!("unanswered terminal") };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("failure notice") };
-    assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::Failed)));
+    assert_eq!(
+        notice,
+        Notice::Failure(Failure::Agent {
+            failure: AgentFailure::Fault(host::Fault::Rules),
+            end: host::End::Settled,
+            detail: Box::new([])
+        })
+    );
 }
 
 #[test]
@@ -262,7 +278,7 @@ fn every_message_refusal_ends_the_message_without_failing_the_agent() {
             parent::Request::MessageRefused { client: Token::new(1), name: Token::new(3), reason },
             &mut out,
         );
-        assert!(!domain.agent_failed);
+        assert!(domain.agent_failed.is_none());
         assert_eq!(domain.chat.phase, Phase::Running);
         let Some(Request::Notice { notice }) = out.pop() else { panic!("message terminal notice") };
         assert_eq!(notice, Notice::NotDelivered { line: Some(Token::new(3)), why: Undelivered::Refused(reason) });
@@ -279,7 +295,7 @@ fn unread_names_reach_the_parent_without_an_agent_failure_or_another_activation(
         parent::Request::Unread { client: Token::new(1), names: Box::from([Token::new(3)]) },
         &mut out,
     );
-    assert!(!domain.agent_failed);
+    assert!(domain.agent_failed.is_none());
     assert_eq!(domain.chat.phase, Phase::Running);
     assert!(out.is_empty());
 }
@@ -327,8 +343,14 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
         },
         &mut out,
     );
-    let Some(Request::Show { text }) = out.pop() else { panic!("actual transcript refusal") };
-    assert_eq!(text.as_ref(), b"Saved transcript was refused");
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("actual transcript refusal") };
+    assert_eq!(
+        notice,
+        Notice::Failure(Failure::Run {
+            failure: host::RunFailure::Transcript(host::TranscriptRefusal::Version),
+            detail: Box::new([])
+        })
+    );
     let Some(Request::Answered { .. }) = out.pop() else { panic!("answer reaches its event writer") };
     let Some(Request::Load) = out.pop() else { panic!("one transcript reload") };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("late message terminal") };
@@ -338,7 +360,7 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
     );
     assert!(out.is_empty());
     assert_eq!(domain.chat.phase, Phase::Loading);
-    assert!(!domain.agent_failed);
+    assert!(domain.agent_failed.is_none());
 }
 
 #[test]
@@ -360,7 +382,14 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
         panic!("unanswered run reaches its event writer")
     };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("missing answer notice") };
-    assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)));
+    assert_eq!(
+        notice,
+        Notice::Failure(Failure::Agent {
+            failure: AgentFailure::NotStarted,
+            end: host::End::Unspawned,
+            detail: b"unavailable".as_slice().into()
+        })
+    );
     let Some(Request::Exit { status: crate::ExitStatus::RunFailed }) = out.pop() else { panic!("failed invocation") };
 }
 
@@ -462,7 +491,7 @@ fn closing_input_during_a_refused_start_exits_after_the_notice() {
         &mut out,
     );
     let Some(Request::Notice { notice }) = out.pop() else { panic!("failed grant notice") };
-    assert_eq!(notice, Notice::Failure(Failure::Account(AccountFailure::Unavailable)));
+    assert_eq!(notice, Notice::Failure(Failure::Credential { account: 7, reason: crate::CredentialFailure::Missing }));
     let Some(Request::Exit { status: crate::ExitStatus::Accepted }) = out.pop() else { panic!("closed input exits") };
     assert!(out.is_empty());
 }
@@ -553,7 +582,6 @@ fn shown_requests(out: &mut Queue<Request>) -> u32 {
                 | Request::Notice { .. }
                 | Request::Answered { .. }
                 | Request::Unanswered { .. }
-                | Request::ForcedExit { .. }
                 | Request::Load
                 | Request::SaveState { .. }
                 | Request::SaveTurn { .. }
@@ -596,7 +624,13 @@ fn gone_fills_the_agents_first_cause_with_the_exit_the_kit_reported() {
     let mut completed = 0_u32;
     for _ in 0..out.capacity() {
         match out.pop() {
-            Some(Request::ForcedExit { exit: Some(host::Exit::Signal(9)), forced: host::Forced::Killed }) => {
+            Some(Request::Notice {
+                notice:
+                    Notice::Failure(Failure::Agent {
+                        end: host::End::Exited { exit: Some(host::Exit::Signal(9)), forced: host::Forced::Killed },
+                        ..
+                    }),
+            }) => {
                 notices = notices.checked_add(1).expect("bounded output");
             }
             Some(Request::Unanswered {
@@ -630,5 +664,56 @@ fn gone_without_observed_process_evidence_keeps_ended_absent() {
             }
         }
         assert_eq!(completed, 1);
+    }
+}
+
+fn after_an_answered_agents_forced_exit(result: host::RunResult) -> Queue<Request> {
+    let mut config = crate::tests::config();
+    config.mode = crate::Mode::Headless { prompt: b"hello".as_slice().into() };
+    let (mut domain, env, mut out) = running(config);
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Answered {
+            client: Token::new(1),
+            answer: host::Answer { read: None, turns: 0, spent: 0, result },
+            detail: Box::new([]),
+        },
+        &mut out,
+    );
+    while out.pop().is_some() {}
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Exited { exit: Some(host::Exit::Signal(9)), forced: host::Forced::Killed },
+            detail: Box::new([]),
+        },
+        &mut out,
+    );
+    out
+}
+
+#[test]
+fn a_forced_exit_after_a_parked_or_cancelled_answer_keeps_its_terminal() {
+    for (result, expected) in [
+        (host::RunResult::Parked, crate::ExitStatus::NeedsInput),
+        (host::RunResult::Failed { failure: host::RunFailure::Cancelled }, crate::ExitStatus::Interrupted),
+    ] {
+        let mut out = after_an_answered_agents_forced_exit(result);
+        let Some(Request::Notice {
+            notice: Notice::Warning(crate::Warning::ForcedExit { forced: host::Forced::Killed, .. }),
+        }) = out.pop()
+        else {
+            panic!("warning comes before the answer")
+        };
+        let mut exit = None;
+        while let Some(request) = out.pop() {
+            if let Request::Exit { status } = request {
+                exit = Some(status);
+            }
+        }
+        assert_eq!(exit, Some(expected));
     }
 }
