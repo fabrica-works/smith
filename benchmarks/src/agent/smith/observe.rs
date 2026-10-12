@@ -162,6 +162,28 @@ impl Observing {
             .collect()
     }
 
+    /// File-dependent predicates run after the process tree settles.
+    #[must_use]
+    pub fn checks_in_workspace(
+        &self,
+        checks: &[crate::EventCheck],
+        task: &str,
+        workspace: &std::path::Path,
+    ) -> Vec<crate::CheckVerdict> {
+        checks
+            .iter()
+            .map(|check| match (check, &self.observer) {
+                (crate::EventCheck::WrittenFile { path, content_bytes_at_least }, Observer::Events(observer)) => {
+                    observer.written_file(path, *content_bytes_at_least, workspace)
+                }
+                (crate::EventCheck::FilePieces { path, bytes_above, file_bytes }, Observer::Events(observer)) => {
+                    observer.file_pieces(path, *bytes_above, *file_bytes, workspace)
+                }
+                _ => self.checks(std::slice::from_ref(check), task).remove(0),
+            })
+            .collect()
+    }
+
     /// Counts are lower bounds because the old writer cannot report loss.
     #[must_use]
     pub fn counts(&self) -> Counts {

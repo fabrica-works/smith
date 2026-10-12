@@ -87,7 +87,7 @@ fn smoke_catalogue_selects_five_active_probes_and_retains_deferred_one_turn_with
     assert!(one_turn.deciding.iter().any(|name| name == "no-request"));
     let write = tasks.iter().find(|task| task.name == "probes/large-write").expect("large-write");
     let oversized = write.task.with_variant("oversized").expect("named replacement");
-    assert_eq!(write.task.event.len(), 3, "normal one-call assertions retained");
+    assert_eq!(write.task.event.len(), 4, "original three assertions plus captured-file comparison");
     assert!(matches!(
         write.task.event[1],
         smith_bench::EventCheck::ToolCall { count: Some(smith_bench::Count::Exactly(1)), .. }

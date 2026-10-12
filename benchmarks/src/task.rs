@@ -28,6 +28,8 @@ pub enum OutcomeCheck {
     FileContent { path: PathBuf, content: String },
     /// The named file must have this SHA-256 digest.
     FileDigest { path: PathBuf, sha256: String },
+    /// The named regular file must contain at least this many bytes.
+    FileSize { path: PathBuf, bytes_at_least: u64 },
     /// The named workspace path must be absent.
     Absent { path: PathBuf },
     /// The named file must match the given pattern.
@@ -50,6 +52,15 @@ pub enum OutcomeCheck {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "check", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum EventCheck {
+    /// One successful captured write supplies the exact settled file bytes.
+    WrittenFile { path: PathBuf, content_bytes_at_least: u64 },
+    /// An oversized write is repaired by a first write and captured extending edits.
+    FilePieces {
+        path: PathBuf,
+        bytes_above: u64,
+        /// The authored native `file_bytes` bound, also bounding replay scratch.
+        file_bytes: u64,
+    },
     /// Calls of one tool match the supplied cardinality and terminal metadata.
     ToolCall {
         tool: String,
@@ -114,6 +125,8 @@ impl EventCheck {
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
+            Self::WrittenFile { .. } => "written-file",
+            Self::FilePieces { .. } => "file-pieces",
             Self::ToolCall { .. } => "tool-call",
             Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",

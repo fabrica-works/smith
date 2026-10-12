@@ -260,6 +260,8 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
 fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, currency: Option<u64>) -> Measure<bool> {
     let records = records(observer);
     match check {
+        EventCheck::WrittenFile { .. } => unavailable("written file comparison requires the settled workspace"),
+        EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
         EventCheck::UsageSums => super::usage_sums::check(observer),
         EventCheck::ToolCall { .. } => tool_call(observer, check),
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,

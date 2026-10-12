@@ -45,6 +45,7 @@ pub(super) fn check(check: &OutcomeCheck, ended: &Ended) -> CheckVerdict {
         }
         OutcomeCheck::LoginUnchanged => ("login-unchanged", ended.login_unchanged.clone()),
         OutcomeCheck::FileContent { .. }
+        | OutcomeCheck::FileSize { .. }
         | OutcomeCheck::FileDigest { .. }
         | OutcomeCheck::Absent { .. }
         | OutcomeCheck::Pattern { .. }

@@ -100,6 +100,8 @@ fn terminal(records: &[Observation], status: &str, class: Option<&str>) -> Measu
 fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
     match check {
         EventCheck::ToolCall { .. } => tool(records, check),
+        EventCheck::WrittenFile { .. } => missing("legacy facts omit exact captured write content"),
+        EventCheck::FilePieces { .. } => missing("legacy facts omit oversized call identity and captured edit pieces"),
         EventCheck::Completions { count, before } => lower_count(*count, completions(records, *before)),
         EventCheck::ConversationOpened { kind, count } if kind == "main" || kind == "child" => {
             let number = records.iter().filter(|record| matches!(record,

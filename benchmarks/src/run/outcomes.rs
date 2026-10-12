@@ -15,6 +15,7 @@ pub(super) const fn neutral(check: &OutcomeCheck) -> bool {
         | OutcomeCheck::Answer { .. }
         | OutcomeCheck::LoginUnchanged => true,
         OutcomeCheck::FileContent { .. }
+        | OutcomeCheck::FileSize { .. }
         | OutcomeCheck::FileDigest { .. }
         | OutcomeCheck::Absent { .. }
         | OutcomeCheck::Pattern { .. }

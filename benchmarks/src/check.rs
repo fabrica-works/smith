@@ -127,7 +127,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         check_path(file, "protected", path)?;
     }
     check_outcomes(file, "outcome", &task.outcome)?;
-    events::checks(file, "event", &task.event)?;
+    events::checks(file, "event", &task.event, declared_file_bytes(&task.smith, None))?;
     deciding(file, "deciding", &task.deciding, &task.outcome, &task.event)?;
     for (index, grade) in task.grade.iter().enumerate() {
         if grade.command.is_empty() || grade.deadline_seconds == 0 || grade.max_output_bytes == 0 {
@@ -156,7 +156,12 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
             check_budget(file, &format!("{key}.budget"), budget)?;
         }
         check_outcomes(file, &format!("{key}.outcome"), &variant.outcome)?;
-        events::checks(file, &format!("{key}.event"), &variant.event)?;
+        events::checks(
+            file,
+            &format!("{key}.event"),
+            &variant.event,
+            declared_file_bytes(&task.smith, variant.smith.get("file_bytes")),
+        )?;
         let outcomes = if variant.replace_checks {
             variant.outcome.clone()
         } else {
@@ -250,6 +255,7 @@ fn check_outcomes(file: &Path, key: &str, outcomes: &[OutcomeCheck]) -> Result<(
         let key = format!("{key}[{index}]");
         let path = match outcome {
             OutcomeCheck::FileContent { path, content: _ }
+            | OutcomeCheck::FileSize { path, .. }
             | OutcomeCheck::Absent { path }
             | OutcomeCheck::Pattern { path, pattern: _ }
             | OutcomeCheck::Protected { path } => path,
@@ -412,6 +418,7 @@ fn outcome_name(check: &OutcomeCheck) -> String {
     match check {
         OutcomeCheck::FileContent { path, .. } => format!("file-content:{}", path.display()),
         OutcomeCheck::FileDigest { path, .. } => format!("file-digest:{}", path.display()),
+        OutcomeCheck::FileSize { path, .. } => format!("file-size:{}", path.display()),
         OutcomeCheck::Absent { path } => format!("absent:{}", path.display()),
         OutcomeCheck::Pattern { path, .. } => format!("pattern:{}", path.display()),
         OutcomeCheck::Protected { path } => format!("protected:{}", path.display()),
@@ -421,4 +428,14 @@ fn outcome_name(check: &OutcomeCheck) -> String {
         OutcomeCheck::Answer { .. } => "answer".into(),
         OutcomeCheck::LoginUnchanged => "login-unchanged".into(),
     }
+}
+
+fn declared_file_bytes(
+    smith: &std::collections::BTreeMap<String, toml::Value>,
+    override_value: Option<&toml::Value>,
+) -> Option<u64> {
+    override_value
+        .or_else(|| smith.get("file_bytes"))
+        .and_then(toml::Value::as_integer)
+        .and_then(|value| u64::try_from(value).ok())
 }

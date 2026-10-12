@@ -65,10 +65,19 @@ fn named(file: &Path, key: &str, value: &str, allowed: &[&str]) -> Result<(), Re
     }
 }
 
-pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<(), Refusal> {
+pub(super) fn checks(
+    file: &Path,
+    key: &str,
+    checks: &[EventCheck],
+    native_file_bytes: Option<u64>,
+) -> Result<(), Refusal> {
     for (index, check) in checks.iter().enumerate() {
         let key = format!("{key}[{index}]");
+        if file_check(file, &key, check, native_file_bytes)? {
+            continue;
+        }
         match check {
+            EventCheck::WrittenFile { .. } | EventCheck::FilePieces { .. } => unreachable!("file checks return above"),
             EventCheck::ToolCall { tool, verdict, .. } => {
                 if tool.trim().is_empty() {
                     return Err(Refusal::new(file, &format!("{key}.tool"), "tool name is empty"));
@@ -155,4 +164,25 @@ pub(super) fn checks(file: &Path, key: &str, checks: &[EventCheck]) -> Result<()
         }
     }
     Ok(())
+}
+
+fn file_check(file: &Path, key: &str, check: &EventCheck, native_file_bytes: Option<u64>) -> Result<bool, Refusal> {
+    if let EventCheck::WrittenFile { path, content_bytes_at_least } = check {
+        super::check_path(file, &format!("{key}.path"), path)?;
+        if *content_bytes_at_least == 0 {
+            return Err(Refusal::new(file, key, "content byte minimum must be positive"));
+        }
+        return Ok(true);
+    }
+    if let EventCheck::FilePieces { path, bytes_above, file_bytes } = check {
+        super::check_path(file, &format!("{key}.path"), path)?;
+        if *bytes_above == 0 || bytes_above >= file_bytes {
+            return Err(Refusal::new(file, key, "piece threshold must be positive and below the declared file bound"));
+        }
+        if native_file_bytes != Some(*file_bytes) {
+            return Err(Refusal::new(file, key, "piece replay bound must match the authored native file_bytes"));
+        }
+        return Ok(true);
+    }
+    Ok(false)
 }

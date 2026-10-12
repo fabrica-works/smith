@@ -80,7 +80,7 @@ fn walk(root: &Path, directory: &Path, entries: &mut Snapshot, skip_git: bool) -
     Ok(())
 }
 
-fn file(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+pub(crate) fn file(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     if relative.is_absolute() || relative.components().any(|part| !matches!(part, Component::Normal(_))) {
         return Err("check path must be relative without traversal".into());
     }
@@ -135,6 +135,7 @@ pub fn checks(
             let (name, path) = match check {
                 OutcomeCheck::FileContent { path, .. } => ("file-content", path),
                 OutcomeCheck::FileDigest { path, .. } => ("file-digest", path),
+                OutcomeCheck::FileSize { path, .. } => ("file-size", path),
                 OutcomeCheck::Absent { path } => ("absent", path),
                 OutcomeCheck::Pattern { path, .. } => ("pattern", path),
                 OutcomeCheck::Protected { path } => ("protected", path),
@@ -151,6 +152,9 @@ pub fn checks(
                 OutcomeCheck::FileDigest { path, sha256 } => file(workspace, path)
                     .and_then(|path| crate::arm::binary_digest(&path))
                     .map(|actual| actual == *sha256),
+                OutcomeCheck::FileSize { path, bytes_at_least } => file(workspace, path)
+                    .and_then(|path| fs::metadata(path).map_err(|error| error.to_string()))
+                    .map(|metadata| metadata.len() >= *bytes_at_least),
                 OutcomeCheck::Absent { path } => {
                     Ok(!after.contains_key(path) && !after.keys().any(|item| item.starts_with(path)))
                 }

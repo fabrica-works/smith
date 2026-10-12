@@ -38,6 +38,10 @@ mod cache;
 
 mod spend;
 
+mod written_file;
+
+mod file_pieces;
+
 /// A binary invocation selected by the event-era face registry.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -260,6 +264,29 @@ impl Observer {
     #[must_use]
     pub fn check_with_currency(&self, check: &crate::EventCheck, task: &str, currency: u64) -> crate::CheckVerdict {
         checks::evaluate(self, check, task, Some(currency))
+    }
+
+    /// Compare a captured successful write with its settled regular file.
+    #[must_use]
+    pub fn written_file(
+        &self,
+        path: &std::path::Path,
+        minimum: u64,
+        workspace: &std::path::Path,
+    ) -> crate::CheckVerdict {
+        written_file::check(self, path, minimum, workspace)
+    }
+
+    /// Apply successful captured pieces in order against the declared file bound.
+    #[must_use]
+    pub fn file_pieces(
+        &self,
+        path: &std::path::Path,
+        above: u64,
+        file_bytes: u64,
+        workspace: &std::path::Path,
+    ) -> crate::CheckVerdict {
+        file_pieces::check(self, path, above, file_bytes, workspace)
     }
 
     /// Report typed stream integrity, pairing, loss and spend observations.

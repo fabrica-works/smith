@@ -645,7 +645,7 @@ fn observe(
                     )),
                     crate::agent::smith::Face::Events(_) => {}
                 }
-                result.outcome.checks.extend(observing.checks(&task.event, &task.prompt));
+                result.outcome.checks.extend(observing.checks_in_workspace(&task.event, &task.prompt, workspace));
             }
         }
     }

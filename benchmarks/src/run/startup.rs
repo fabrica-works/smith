@@ -38,6 +38,7 @@ fn refused(task: &Task, observer: &events::Observer, exit: Exit, forced: Forced,
     let diagnostic = task.outcome.iter().any(|check| match check {
         OutcomeCheck::LastLine { pattern } => regex::Regex::new(pattern).is_ok_and(|pattern| pattern.is_match(line)),
         OutcomeCheck::FileContent { .. }
+        | OutcomeCheck::FileSize { .. }
         | OutcomeCheck::FileDigest { .. }
         | OutcomeCheck::Absent { .. }
         | OutcomeCheck::Pattern { .. }
