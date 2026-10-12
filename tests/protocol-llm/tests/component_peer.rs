@@ -66,7 +66,7 @@ fn limits() -> ComponentLimits {
 }
 
 #[expect(clippy::too_many_lines, reason = "the protocol story drives the component, io and fake peer")]
-fn run(dialect: Provider, calls: bool, observed: bool) {
+fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
     let mut call = skein_llm_world::call(7);
     match dialect {
         Provider::OpenAiCodex => {}
@@ -162,6 +162,8 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
     let mut wire = Wire::new(Server::new(pki::Server::plain().config()));
     let mut received = 0_usize;
     let mut owner = None;
+    let mut closing = false;
+    let mut close_terminals = 0;
     let mut completed = 0_u32;
     let mut captured = Vec::new();
     provider::start(&mut peer, &mut service, &peer_credential, &peer_env, &mut peer_up, &mut peer_down);
@@ -249,7 +251,8 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
                 }
             }
         }
-        if let Some(request) = io.pop() {
+        for _ in 0..MAX_OUT.below {
+            let Some(request) = io.pop() else { break };
             match request {
                 IoRequest::Connect { owner: token, .. } => {
                     assert!(owner.replace(token).is_none());
@@ -267,6 +270,8 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
                 }
                 IoRequest::Close { entity } | IoRequest::Abort { entity } => {
                     assert_eq!(entity, Token::new(100));
+                    assert!(!component.closed(), "the socket still owes its close terminal");
+                    close_terminals += 1;
                     component.from_below(
                         &env,
                         IoEvent::Closed { owner: owner.expect("connected owner") },
@@ -364,12 +369,28 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
         if component.has_work() {
             component.fire(&env, &mut up, &mut io);
         }
-        if completed == 1 && !component.has_work() && io.is_empty() && up.is_empty() && !peer.has_work() {
+        if owner_close && completed == 1 && !closing && component.measures_drained() {
+            closing = true;
+            assert!(!component.closed());
+            component.close(&env, &mut up, &mut io);
+        }
+        if (!owner_close || component.closed())
+            && completed == 1
+            && !component.has_work()
+            && io.is_empty()
+            && up.is_empty()
+            && !peer.has_work()
+        {
             break;
         }
     }
     assert_eq!(service.count(), 1, "the independent fake decoded the call");
     assert_eq!(completed, 1);
+    if owner_close {
+        assert!(component.closed());
+        assert_eq!(close_terminals, 1, "every socket settles once");
+        assert!(up.is_empty(), "close creates no additional call terminal");
+    }
     let mut terminal_count = 0;
     let mut content = Vec::new();
     for measure in captured {
@@ -446,32 +467,38 @@ fn run(dialect: Provider, calls: bool, observed: bool) {
 
 #[test]
 fn codex_fake_peer_over_tls() {
-    run(Provider::OpenAiCodex, false, false);
+    run(Provider::OpenAiCodex, false, false, false);
 }
 
 #[test]
 fn anthropic_fake_peer_over_tls() {
-    run(Provider::Anthropic, false, false);
+    run(Provider::Anthropic, false, false, false);
 }
 
 #[test]
 fn codex_tool_input_is_typed_through_the_owned_connection() {
-    run(Provider::OpenAiCodex, true, false);
+    run(Provider::OpenAiCodex, true, false, false);
 }
 
 #[test]
 fn anthropic_tool_input_is_typed_through_the_owned_connection() {
-    run(Provider::Anthropic, true, false);
+    run(Provider::Anthropic, true, false, false);
 }
 
 #[test]
 fn captured_native_codex_text_and_calls_keep_actual_prompt_and_deltas() {
-    run(Provider::OpenAiCodex, false, true);
-    run(Provider::OpenAiCodex, true, true);
+    run(Provider::OpenAiCodex, false, true, false);
+    run(Provider::OpenAiCodex, true, true, false);
 }
 
 #[test]
 fn captured_native_anthropic_text_and_calls_keep_actual_prompt_and_deltas() {
-    run(Provider::Anthropic, false, true);
-    run(Provider::Anthropic, true, true);
+    run(Provider::Anthropic, false, true, false);
+    run(Provider::Anthropic, true, true, false);
+}
+
+#[test]
+fn an_owner_close_reports_closed_once_every_socket_settled() {
+    run(Provider::OpenAiCodex, false, false, true);
+    run(Provider::Anthropic, false, false, true);
 }

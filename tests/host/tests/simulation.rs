@@ -1364,3 +1364,21 @@ fn long_capacity_and_unowned_endings_are_channel_rule_faults() {
     world.up(Up::Long { operation: smith_host_domain::Operation::Command, span: Duration::from_secs(30) });
     faulted(&mut world, Fault::Rules);
 }
+
+#[test]
+fn a_process_exit_preserves_the_read_fence_of_its_buffered_answer() {
+    let mut world = World::new(65, limits());
+    world.live();
+    message(&mut world, 1, 1);
+    world.sent();
+    world.event(Input::Process(process::Event::Exited {
+        owner: world.owner(),
+        exit: Some(smith_host_domain::Exit::Code(0)),
+    }));
+    world.up(Up::Waiting { read: Some(Token::new(1)) });
+    last(&mut world, RunResult::Parked, 0, 0);
+    assert_eq!(world.seen.fault, None);
+    assert_eq!(world.seen.answer.as_ref().expect("buffered answer").read, Some(Token::new(1)));
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
+    world.settled();
+}

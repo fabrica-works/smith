@@ -182,3 +182,34 @@ fn the_complete_shell_memory_refusal_precedes_channel_adoption() {
     assert!(refusal.ends_with(&format!("; declared.memory={available} bytes")));
     assert_eq!(String::from_utf8(errors.bytes()).expect("UTF-8 refusal"), format!("smith: {refusal}\n"));
 }
+
+#[test]
+fn an_answered_agent_exits_while_its_host_holds_the_channel_open() {
+    let mut world = World::new(7, &charter());
+    world.hold_channel();
+    assert!(world.settle(), "the agent ends by itself");
+    assert!(world.answer().is_some());
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    assert!(!world.signalled());
+    world.assert_agent_clean();
+}
+
+#[test]
+fn a_host_that_hangs_up_mid_call_gets_one_cancelled_terminal_per_call() {
+    let mut world = World::new(8, &charter());
+    world.observe_facts(smith_agent_process_world::TraceCase::Accepted, 128);
+    world.hang_up_mid_call();
+    assert!(world.settle(), "the cancelled run and its components settle");
+    assert!(world.answer().is_none());
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(1)));
+    assert!(!world.signalled());
+    assert_eq!(
+        world
+            .records()
+            .iter()
+            .filter(|record| matches!(&record.event, smith_events::Event::ResponseCompleted(response) if response.outcome == smith_events::Outcome::Cancelled))
+            .count(),
+        1
+    );
+    world.assert_agent_clean();
+}

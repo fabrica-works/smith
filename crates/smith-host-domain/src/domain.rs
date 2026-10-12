@@ -1286,8 +1286,10 @@ fn send_next(agent: &mut Agent, owner: Token, out: &mut Queue<Output>) {
 }
 
 fn disconnect(agent: &mut Agent, limits: &Limits, out: &mut Queue<Output>) {
-    // Queued transmissions cannot happen after EOF/last word, but parent rights survive.
-    report_unread(agent, out);
+    // Exit can precede the last buffered turn and answer on the read pipe.
+    if agent.eof || agent.last_word {
+        report_unread(agent, out);
+    }
     let count = agent.outbox.len();
     for _ in 0..count {
         let message = agent.outbox.pop().expect("bounded queue snapshot");

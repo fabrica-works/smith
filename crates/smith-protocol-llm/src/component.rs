@@ -78,6 +78,7 @@ pub struct Component {
     events: Queue<connection::Event>,
     measures: Queue<crate::Measure>,
     prepared: Option<Prepared>,
+    closed: bool,
 }
 
 impl fmt::Debug for Component {
@@ -198,6 +199,7 @@ impl Component {
             events: Queue::with_capacity(MAX_OUT.above),
             measures: Queue::with_capacity(MEASURES),
             prepared: None,
+            closed: false,
         })
     }
 
@@ -313,6 +315,12 @@ impl Component {
         let child_env = self.child_env(env);
         self.connection.down(&child_env, connection::Request::Close, &mut self.events, io);
         self.route(env.now, to_domain);
+    }
+
+    /// The pool reported that every call and socket has settled.
+    #[must_use]
+    pub const fn closed(&self) -> bool {
+        self.closed
     }
 
     fn child_env(&self, env: &Env<ComponentLimits>) -> Env<connection::Limits> {
@@ -446,6 +454,11 @@ impl Component {
         self.route(env.now, to_domain);
     }
 
+    fn record_closed(&mut self) {
+        assert!(!self.closed, "one pool close terminal");
+        self.closed = true;
+    }
+
     fn route(&mut self, now: Time, to_domain: &mut Queue<ToDomain>) {
         for _ in 0..MAX_OUT.above {
             let event = match self.events.pop() {
@@ -453,7 +466,7 @@ impl Component {
                 None => break,
             };
             match event {
-                connection::Event::Closed => {}
+                connection::Event::Closed => self.record_closed(),
                 connection::Event::Refused { call, why } => {
                     self.next.remove(&call);
                     let active = self.active.remove(&call);
@@ -472,7 +485,8 @@ impl Component {
                             continue;
                         }
                         connection::Refusal::Endpoint => Error::Invalid,
-                        connection::Refusal::Calls { bound: _ } | connection::Refusal::Closed => Error::Limit,
+                        connection::Refusal::Calls { bound: _ } => Error::Limit,
+                        connection::Refusal::Closed => unreachable!("the service closes the pool after its answer"),
                         connection::Refusal::Client(error) => Error::from_shared(error),
                     };
                     Self::refusal(call, error, maximum, to_domain);

@@ -8,7 +8,7 @@ use smith_local_domain as local;
 
 use crate::{Config, Launch, Limits, ProcessLimits, Service, iterate};
 
-fn config() -> Config {
+pub(super) fn config() -> Config {
     let mut local_limits = local::Limits {
         smith: smith_agent_world::LIMITS,
         agent: local::AgentLimits::inline(

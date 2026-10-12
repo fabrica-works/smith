@@ -150,6 +150,12 @@ impl Component {
         })
     }
 
+    /// The channel has reported its end to its service.
+    #[must_use]
+    pub const fn ended(&self) -> bool {
+        self.ended
+    }
+
     /// Consume one stream event and progress the opening.
     pub fn from_below(&mut self, event: LowerEvent, to_service: &mut Queue<OpenEvent>, below: &mut Queue<Lower>) {
         self.machine.up(event, &mut self.events, below);

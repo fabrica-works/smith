@@ -32,6 +32,8 @@ pub use observations::{
     request_tool_choice,
 };
 
+pub use service::teardown::{Answer, Close, Step, Teardown};
+
 pub use events::EventLimits;
 
 pub use sinks::Destination;

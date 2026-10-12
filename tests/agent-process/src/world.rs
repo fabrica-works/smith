@@ -26,6 +26,7 @@ struct Parent {
     signal: bool,
     signalled: bool,
     hang_up: bool,
+    hold_channel: bool,
     errors: Vec<u8>,
     closing: u32,
     next: u64,
@@ -65,6 +66,7 @@ impl Parent {
             signal: false,
             signalled: false,
             hang_up,
+            hold_channel: false,
             errors: Vec::new(),
             closing: 0,
             next: 0,
@@ -246,7 +248,7 @@ impl Host for Parent {
             self.writing = true;
             self.submit(Op::PipeWrite { fd: self.input.expect("child stdin"), bytes, from });
         }
-        if self.answered()
+        if (self.status.is_some() || (self.answered() && !self.hold_channel))
             && !self.writing
             && self.pending.is_none()
             && let Some(fd) = self.input.take()
@@ -492,9 +494,15 @@ impl skein_world::Expectation<Proc> for Terminal {
         Time::from_nanos(Duration::from_secs(120).as_nanos())
     }
 }
+enum HangUp {
+    Never,
+    BeforeStart,
+    MidCall,
+}
+
 struct Referee {
     cancel: bool,
-    hang_up: bool,
+    hang_up: HangUp,
     reviewed: usize,
     admitted_facts: usize,
     answer_facts: usize,
@@ -507,9 +515,16 @@ impl skein_world::Referee<Proc> for Referee {
     fn act(&mut self, _now: Time, procs: &mut [Proc]) {
         let admitted = procs.iter().any(|p| matches!(p, Proc::Parent(parent) if parent.admitted()));
         let exited = procs.iter().any(|p| matches!(p, Proc::Parent(parent) if parent.status.is_some()));
+        let calling = procs.iter().any(|p| matches!(p, Proc::Peer(peer) if fake::queries(peer).count() > 0));
         for proc in procs {
             match proc {
                 Proc::Parent(parent) => {
+                    if matches!(self.hang_up, HangUp::MidCall)
+                        && calling
+                        && let Some(input) = parent.input.take()
+                    {
+                        parent.close(input);
+                    }
                     if self.cancel && admitted {
                         parent.signal = true;
                     }
@@ -533,7 +548,7 @@ impl skein_world::Referee<Proc> for Referee {
         );
         let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
         assert!(fake::queries(peer).count() <= self.maximum_queries, "bounded completion scenario");
-        if !self.hang_up && parent.status.is_some() {
+        if matches!(self.hang_up, HangUp::Never) && parent.status.is_some() {
             if matches!(self.tracing, Some((TraceCase::Refused, _))) {
                 assert!(!parent.admitted(), "an entrance refusal has no admission");
             } else {
@@ -600,7 +615,7 @@ impl skein_world::Referee<Proc> for Referee {
         }
         self.reviewed = parent.peer.observed().len();
         assert!(self.admitted_facts <= 1 && self.answer_facts <= 1, "one fact terminal per activation");
-        if !self.hang_up && parent.status.is_some() && self.tracing.is_none() {
+        if matches!(self.hang_up, HangUp::Never) && parent.status.is_some() && self.tracing.is_none() {
             assert_eq!(
                 parent.peer.observed().iter().filter(|frame| frame.kind == 0x0106).count(),
                 1,
@@ -800,6 +815,8 @@ pub struct World {
     charter: Box<[u8]>,
     cancel: bool,
     hang_up: bool,
+    hold_channel: bool,
+    hang_up_mid_call: bool,
     memory: Memory,
     full_completion: bool,
     outcome: Option<Outcome<Proc, Machine>>,
@@ -822,6 +839,8 @@ impl World {
             charter: charter.into(),
             cancel: false,
             hang_up: false,
+            hold_channel: false,
+            hang_up_mid_call: false,
             memory: Memory::Unchecked,
             full_completion: false,
             outcome: None,
@@ -835,6 +854,16 @@ impl World {
             anthropic: false,
             private_grant: false,
         }
+    }
+
+    /// Keep the host's input open until the agent's exit is observed.
+    pub fn hold_channel(&mut self) {
+        self.hold_channel = true;
+    }
+
+    /// Hang up only once the provider has decoded an active call.
+    pub fn hang_up_mid_call(&mut self) {
+        self.hang_up_mid_call = true;
     }
 
     /// Send this concrete message in the actual channel Start.
@@ -1009,6 +1038,14 @@ impl World {
             1
         }
     }
+    fn hang_up_case(&self) -> HangUp {
+        match (self.hang_up, self.hang_up_mid_call) {
+            (true, _) => HangUp::BeforeStart,
+            (false, true) => HangUp::MidCall,
+            (false, false) => HangUp::Never,
+        }
+    }
+
     /// Run until the one Answer and complete descriptor settlement.
     pub fn settle(&mut self) -> bool {
         let mut config = skein_sim::Config::calm();
@@ -1017,14 +1054,17 @@ impl World {
         let root = machine.lay(&[]);
         let referee = Referee {
             cancel: self.cancel,
-            hang_up: self.hang_up,
+            hang_up: self.hang_up_case(),
             reviewed: 0,
             admitted_facts: 0,
             answer_facts: 0,
             full_completion: self.full_completion,
             tracing: self.tracing,
             maximum_queries: self.maximum_queries(),
-            expected: skein_world::Expectations::new(self.seed, vec![Terminal { hang_up: self.hang_up }]),
+            expected: skein_world::Expectations::new(
+                self.seed,
+                vec![Terminal { hang_up: self.hang_up || self.hang_up_mid_call }],
+            ),
         };
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory).with_machine(Machine {
             files: machine,
@@ -1042,7 +1082,7 @@ impl World {
             unused_roots,
         );
         world.spawn_root(skein_sim::Handle::new(root.raw()), |root| {
-            Proc::Parent(Box::new(Parent::new(
+            let mut parent = Parent::new(
                 root,
                 &self.charter,
                 self.hang_up,
@@ -1053,7 +1093,9 @@ impl World {
                 self.capture,
                 self.anthropic,
                 &crate::scenario_credential(self.anthropic, self.private_grant),
-            )))
+            );
+            parent.hold_channel = self.hold_channel;
+            Proc::Parent(Box::new(parent))
         });
         world.spawn(|| {
             Proc::Peer(Box::new(if self.environment {
@@ -1105,7 +1147,7 @@ impl World {
         let mut outcome = world.run();
         (self.records, self.trace_bytes) = read_records(&mut outcome.machine);
         self.outcome = Some(outcome);
-        self.parent().status == Some(kernel::Exit::Code(u8::from(self.hang_up)))
+        self.parent().status == Some(kernel::Exit::Code(u8::from(self.hang_up || self.hang_up_mid_call)))
     }
     fn parent(&self) -> &Parent {
         self.outcome

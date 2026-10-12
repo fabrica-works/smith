@@ -8,6 +8,11 @@
 
 use alloc::boxed::Box;
 
+#[path = "teardown.rs"]
+pub mod teardown;
+
+use teardown::{Step, Teardown};
+
 use skein_channel::{Lower as ChannelLower, LowerEvent as ChannelLowerEvent, StreamMode};
 use skein_io::{self as io, file, file_layer, kernel};
 use skein_lib::{Duration, Env, Id, List, Map, Queue, ReplyTo, Slab, Time, Token, Wall, stream};
@@ -106,11 +111,10 @@ enum Operation {
 
 /// The running agent and every bounded queue between its layers.
 #[derive(Debug)]
-#[expect(clippy::struct_excessive_bools, reason = "answer, channel, cleanup and root-close progress are independent")]
 pub struct Service {
     limits: Limits,
     events: Option<crate::events::Producer>,
-    ending: Ending,
+    teardown: Teardown,
     product_exit: Option<u8>,
     usage_unread: bool,
     domain: Option<domain::Domain>,
@@ -149,9 +153,6 @@ pub struct Service {
     admitted: Option<Token>,
     run_started: Time,
     cancel_pending: bool,
-    answer_sent: bool,
-    channel_ended: bool,
-    failed: bool,
     failure: Option<Failure>,
     pub(crate) final_failure: Option<run::Failure>,
     pub(crate) final_refusal: Option<run::Refusal>,
@@ -164,18 +165,6 @@ pub struct Service {
     roots: List<Token>,
     root_close_next: u32,
     root_close_pending: bool,
-    cleanup_started: bool,
-}
-
-/// The process resource read, made after the last non-destination child closes.
-#[derive(Clone, Copy, Debug)]
-enum Ending {
-    /// The service still owns work or has no event destination.
-    Running,
-    /// IO owes the process usage terminal.
-    Measuring,
-    /// The authoritative end was offered once; destinations are closing.
-    Closing,
 }
 
 const USAGE_OWNER: Token = Token::new(u64::MAX - 1);
@@ -200,7 +189,6 @@ impl Effects {
         let mut service = Service::new(config, seed)?;
         service.domain = None;
         service.channel = None;
-        service.answer_sent = true;
         Ok(Self { service, installed: Map::with_capacity(accounts) })
     }
 
@@ -303,8 +291,7 @@ impl Effects {
         let service = &mut self.service;
         domain_down(service);
         component_down(service);
-        cleanup(service);
-        finish_events(service);
+        teardown::advance(service);
         if let Some(events) = &mut service.events {
             events.sinks.down(&mut service.io_requests);
         }
@@ -354,7 +341,6 @@ impl Effects {
     /// Retain the values supplied by the parent face's start.
     pub fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
         self.service.run_started = self.service.domain_env.now;
-        self.service.answer_sent = false;
         if let Some(events) = &mut self.service.events {
             events.starting(activation, messages, charter);
         }
@@ -405,7 +391,6 @@ impl Effects {
 
     /// Record the answer where the product meets it, with its producer's totals.
     pub fn answered(&mut self, now: Time, answer: crate::Answered) {
-        self.service.answer_sent = true;
         if let Some(events) = &mut self.service.events {
             events.answered(now, self.service.run_started, answer);
         }
@@ -414,13 +399,12 @@ impl Effects {
     /// End the stream with the product's exit after its children settle.
     pub fn end(&mut self, exit: u8) {
         self.service.product_exit = Some(exit);
-        self.service.channel_ended = true;
+        teardown::answered(&mut self.service);
     }
 
     /// Close reusable lower entities after the local domain has ended its run.
     pub fn close(&mut self) {
-        self.service.channel_ended = true;
-        self.service.answer_sent = true;
+        teardown::answered(&mut self.service);
     }
 
     /// Every lower child and adopted root has completed its close.
@@ -562,7 +546,7 @@ impl Service {
         Ok(Service {
             limits,
             events,
-            ending: Ending::Running,
+            teardown: Teardown::Live,
             product_exit: None,
             usage_unread: false,
             domain: Some(domain::Domain::new(&limits.domain, config.domain, seed)),
@@ -607,9 +591,6 @@ impl Service {
             admitted: None,
             run_started: Time::ZERO,
             cancel_pending: false,
-            answer_sent: false,
-            channel_ended: false,
-            failed: false,
             failure: None,
             final_failure: None,
             final_refusal: None,
@@ -622,7 +603,6 @@ impl Service {
             roots: List::with_capacity(limits.machine.roots),
             root_close_next: 0,
             root_close_pending: false,
-            cleanup_started: false,
         })
     }
 
@@ -765,10 +745,10 @@ impl Service {
     }
 
     fn mark_failed(&mut self, reason: Failure) {
-        self.failed = true;
         if self.failure.is_none() {
             self.failure = Some(reason);
         }
+        teardown::failed(self, self.failure.expect("kept first failure"));
     }
 
     fn refuse_start(&mut self) {
@@ -788,9 +768,8 @@ impl Service {
             .is_err()
         {
             self.mark_failed(Failure::Send);
-        } else {
-            self.answer_sent = true;
         }
+        teardown::answered(self);
     }
 
     fn start_ready(&mut self) {
@@ -872,8 +851,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     domain_up(service);
     domain_down(service);
     component_down(service);
-    cleanup(service);
-    finish_events(service);
+    teardown::advance(service);
     if let Some(events) = &mut service.events {
         events.sinks.down(&mut service.io_requests);
     }
@@ -981,28 +959,7 @@ fn lower_events(service: &mut Service) {
     }
 }
 
-fn cleanup(service: &mut Service) {
-    if !service.channel_ended {
-        return;
-    }
-    if !service.cleanup_started
-        && service.io_requests.room() >= 3
-        && service.llm.measures_drained()
-        && service.llm_events.room() >= llm::MAX_OUT.above
-        && service.llm_below.room() >= llm::MAX_OUT.below
-    {
-        service.cleanup_started = true;
-        service.llm.close(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
-        if let Some(entity) = service.input {
-            service.io_requests.push(io::Request::Close { entity });
-        }
-        if let Some(entity) = service.output {
-            service.io_requests.push(io::Request::Close { entity });
-        }
-        if let Some(entity) = service.signals {
-            service.io_requests.push(io::Request::Close { entity });
-        }
-    }
+fn close_roots(service: &mut Service) {
     if service.owners.is_empty()
         && service.pipe_routes.is_empty()
         && service.files.takes()
@@ -1028,10 +985,12 @@ fn cleanup(service: &mut Service) {
 }
 
 fn record_usage(service: &mut Service, usage: io::Measured) {
-    match service.ending {
-        Ending::Measuring => {}
-        Ending::Running | Ending::Closing => unreachable!("one requested usage terminal"),
-    }
+    let (at, answer, close) = match service.teardown {
+        Teardown::Closing { at, answer, close, step: Step::Usage } => (at, answer, close),
+        Teardown::Live | Teardown::Answered { .. } | Teardown::Closing { .. } | Teardown::Closed { .. } => {
+            unreachable!("one requested usage terminal")
+        }
+    };
     service.usage_unread = match usage {
         io::Measured::Read(_) => false,
         io::Measured::Unread => true,
@@ -1050,14 +1009,17 @@ fn record_usage(service: &mut Service, usage: io::Measured) {
         service.io_env.now,
         events.origin(),
         &crate::sinks::Ended {
-            exit: service.product_exit.unwrap_or(u8::from(!service.answer_sent || service.failed)),
-            answered: service.answer_sent,
+            exit: service.product_exit.unwrap_or(u8::from(!answer.sent())),
+            answered: match service.product_exit {
+                Some(_) => events.answer_at().is_some(),
+                None => answer.sent(),
+            },
             teardown,
             usage,
             channel,
         },
     );
-    service.ending = Ending::Closing;
+    service.teardown = Teardown::Closing { at, answer, close, step: Step::Stream };
 }
 
 fn route_io_event(service: &mut Service, event: io::Event) {
@@ -1502,15 +1464,17 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
             }
         }
         channel::OpenEvent::WriteFailed => service.mark_failed(Failure::WriteFailed),
-        channel::OpenEvent::Ended { why: _ } => {
-            service.channel_ended = true;
-            if !service.answer_sent {
+        channel::OpenEvent::Ended { why: _ } => match service.teardown {
+            Teardown::Live => {
                 service.mark_failed(Failure::ChannelEnded);
                 if let Some(run) = service.admitted {
                     service.domain_events.push(domain::Event::Cancel { run });
+                } else {
+                    teardown::answered(service);
                 }
             }
-        }
+            Teardown::Answered { .. } | Teardown::Closing { .. } | Teardown::Closed { .. } => {}
+        },
     }
 }
 
@@ -1823,9 +1787,8 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 .is_err()
             {
                 service.mark_failed(Failure::Send);
-            } else {
-                service.answer_sent = true;
             }
+            teardown::answered(service);
         }
         domain::Request::Long { host_run: _, operation, until } => {
             let token = service.next_send();
@@ -2223,7 +2186,7 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         Some(deadline) => deadline <= now,
         None => false,
     };
-    due || end_pending(service)
+    due || teardown::work_pending(service)
         || service.io.is_ready()
         || (takes && (service.llm.has_work() || !service.llm.measures_drained()))
         || match &service.events {
@@ -2249,55 +2212,24 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         || !service.io_requests.is_empty()
         || !service.io_submissions.is_empty()
         || !service.file_submissions.is_empty()
-        || (service.channel_ended
-            && !service.roots.is_empty()
-            && service.owners.is_empty()
-            && service.pipe_routes.is_empty()
-            && service.files.takes()
-            && !service.root_close_pending)
 }
 
 /// The channel has ended, every lower child has settled, and the final
 /// answer crossed the channel.
 #[must_use]
 pub fn done(service: &Service) -> Option<bool> {
-    if settled(service, 0)
-        && service.io.is_empty()
-        && match &service.events {
-            Some(events) => events.sinks.closed(),
-            None => true,
-        }
-    {
-        Some(service.answer_sent && !service.failed)
-    } else {
-        None
+    match service.teardown {
+        Teardown::Closed { answer, .. } => Some(answer.sent()),
+        Teardown::Live | Teardown::Answered { .. } | Teardown::Closing { .. } => None,
     }
-}
-
-fn finish_events(service: &mut Service) {
-    if end_pending(service) {
-        service.io_requests.push(io::Request::Usage { owner: USAGE_OWNER });
-        service.ending = Ending::Measuring;
-    }
-}
-
-/// Reclaim can settle the last child after the down pass; the next pass must run.
-fn end_pending(service: &Service) -> bool {
-    match service.ending {
-        Ending::Running => {}
-        Ending::Measuring | Ending::Closing => return false,
-    }
-    let streams = match &service.events {
-        Some(events) => events.sinks.open_streams(),
-        None => return false,
-    };
-    settled(service, streams) && service.io_requests.room() > 0
 }
 
 /// All non-destination children have reported closed; only these streams may remain.
 fn settled(service: &Service, streams: u32) -> bool {
-    service.channel_ended
-        && service.channel_events.is_empty()
+    (match &service.channel {
+        Some(channel) => channel.ended(),
+        None => true,
+    }) && service.channel_events.is_empty()
         && service.channel_below.is_empty()
         && service.llm_events.is_empty()
         && service.llm.measures_drained()
@@ -2337,6 +2269,7 @@ pub const fn failure(service: &Service) -> Option<Failure> {
 mod tests {
     use super::*;
     use skein_lib::Duration;
+    use teardown::{Answer, Close};
 
     #[expect(clippy::too_many_lines, reason = "complete composed test limits keep each owned layer visible")]
     fn limits() -> Limits {
@@ -2488,7 +2421,9 @@ mod tests {
             .grant(grant, b"\0\x03acctoken", Time::from_nanos(1))
             .expect("same saved generation on another activation");
         effects.close();
-        effects.iterate(Time::ZERO, Wall::EPOCH);
+        for _ in 0..3_u32 {
+            effects.iterate(Time::ZERO, Wall::EPOCH);
+        }
         assert!(effects.closed());
     }
 
@@ -2646,28 +2581,102 @@ mod tests {
         let mut service = service();
         channel_event(&mut service, channel::OpenEvent::Ended { why: skein_channel::Closed::Truncated });
         assert_eq!(failure(&service), Some(Failure::ChannelEnded));
-        assert!(service.channel_ended);
-        assert!(!service.answer_sent);
+        assert_eq!(
+            service.teardown,
+            Teardown::Answered {
+                at: Time::ZERO,
+                answer: Answer::Unsent(Failure::ChannelEnded),
+                close: Close::Graceful,
+            }
+        );
     }
 
     #[test]
-    fn success_requires_a_sent_answer_and_every_lower_route_settled() {
+    fn the_answer_requests_every_close_in_one_pass() {
         let mut service = service();
-        service.channel_ended = true;
-        service.answer_sent = true;
-        assert_eq!(done(&service), Some(true));
+        service.input = Some(Token::new(11));
+        service.output = Some(Token::new(12));
+        service.signals = Some(Token::new(13));
+        service.mark_failed(Failure::Send);
+        teardown::answered(&mut service);
+        assert!(!service.llm.closed());
+        teardown::advance(&mut service);
+        assert!(service.llm.closed(), "an empty pool reports its close immediately");
+        for expected in [11, 12, 13] {
+            match service.io_requests.pop() {
+                Some(io::Request::Close { entity }) => assert_eq!(entity, Token::new(expected)),
+                unexpected => panic!("one close per descriptor: {unexpected:?}"),
+            }
+        }
+        assert_eq!(
+            service.teardown,
+            Teardown::Closing {
+                at: Time::ZERO,
+                answer: Answer::Unsent(Failure::Send),
+                close: Close::Graceful,
+                step: Step::Components,
+            }
+        );
+    }
+
+    #[test]
+    fn a_sent_answer_keeps_its_channel_output_right_until_finish() {
+        let mut service = service();
+        service.input = Some(Token::new(11));
+        service.output = Some(Token::new(12));
+        teardown::answered(&mut service);
+        teardown::advance(&mut service);
+        match service.io_requests.pop() {
+            Some(io::Request::Close { entity }) => assert_eq!(entity, Token::new(11)),
+            unexpected => panic!("input close: {unexpected:?}"),
+        }
+        assert!(service.io_requests.is_empty(), "the channel owns its queued frames and output finish");
+    }
+
+    #[test]
+    fn an_answer_waits_for_room_before_requesting_any_close() {
+        let mut service = service();
+        for _ in 0..service.io_requests.capacity() {
+            service.io_requests.push(io::Request::Usage { owner: Token::new(1) });
+        }
+        teardown::answered(&mut service);
+        teardown::advance(&mut service);
+        assert_eq!(
+            service.teardown,
+            Teardown::Answered { at: Time::ZERO, answer: Answer::Sent, close: Close::Graceful }
+        );
+        assert!(!service.llm.closed());
+        assert_eq!(done(&service), None);
+    }
+
+    #[test]
+    fn done_is_some_only_when_closed() {
+        let mut service = service();
+        service.channel = None;
+        assert_eq!(done(&service), None);
+        teardown::answered(&mut service);
+        assert_eq!(done(&service), None);
+        teardown::advance(&mut service);
         service.operations.insert(Token::new(77), Operation::Io(Token::new(4))).expect("one route");
+        teardown::advance(&mut service);
         assert_eq!(done(&service), None);
         service.operations.remove(&Token::new(77));
+        teardown::advance(&mut service);
+        assert_eq!(
+            service.teardown,
+            Teardown::Closing { at: Time::ZERO, answer: Answer::Sent, close: Close::Graceful, step: Step::Stream }
+        );
+        assert_eq!(done(&service), None);
+        assert!(work_pending(&service, Time::ZERO), "the last close wakes the phase after reclaim");
+        teardown::advance(&mut service);
         assert_eq!(done(&service), Some(true));
     }
 
-    #[test]
-    fn a_settled_event_producer_is_runnable_before_its_usage_request() {
-        let mut configuration = configuration();
-        configuration.limits.events = Some(
+    fn event_service() -> Service {
+        let mut config = configuration();
+        config.limits.events = Some(
             crate::events::EventLimits::derive(
-                &configuration.limits,
+                &config.limits,
                 crate::sinks::Capture::Calls,
                 1,
                 0,
@@ -2676,18 +2685,63 @@ mod tests {
             )
             .expect("bounded event configuration"),
         );
-        let mut service = Service::new(configuration, 1).expect("bounded producer service");
-        service.channel_ended = true;
-        service.answer_sent = true;
-        assert!(settled(&service, 0), "all non-destination entities have been reclaimed");
+        let mut service = Service::new(config, 1).expect("bounded producer service");
+        service.channel = None;
+        service.start_session(
+            Time::ZERO,
+            smith_events::SessionStarted {
+                chat: None,
+                wall_ms: 0,
+                agent: smith_events::Agent {
+                    name: b"test".as_slice().into(),
+                    version: Box::default(),
+                    build: Box::default(),
+                },
+                mode: smith_events::Mode::Agent,
+                containment: smith_events::Containment::Groups,
+                pid: 1,
+                profile: b"test".as_slice().into(),
+                capture: smith_events::Capture::Calls,
+                delivery: smith_events::Delivery::Complete,
+                versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
+                limits: List::with_capacity(0),
+            },
+        );
+        service
+    }
+
+    #[test]
+    fn a_settled_event_producer_is_runnable_before_its_usage_request() {
+        let mut service = event_service();
+        teardown::answered(&mut service);
+        teardown::advance(&mut service);
         assert!(work_pending(&service, Time::ZERO), "usage must be requested before the kernel waits");
-        finish_events(&mut service);
+        teardown::advance(&mut service);
         match service.io_requests.pop() {
             Some(io::Request::Usage { owner }) => assert_eq!(owner, USAGE_OWNER),
-            unexpected => panic!("one process usage request: {unexpected:?}"),
+            unexpected => panic!("usage request: {unexpected:?}"),
         }
-        assert!(!end_pending(&service), "the requested usage terminal is owed exactly once");
-        finish_events(&mut service);
+        assert_eq!(done(&service), None);
+        assert!(!teardown::work_pending(&service), "the usage terminal is owed exactly once");
+        teardown::advance(&mut service);
         assert!(service.io_requests.is_empty());
+    }
+
+    #[test]
+    fn usage_writes_the_session_end_before_the_stream_closes() {
+        let mut service = event_service();
+        teardown::answered(&mut service);
+        teardown::advance(&mut service);
+        teardown::advance(&mut service);
+        service.io_requests.pop().expect("usage request");
+        record_usage(&mut service, io::Measured::Unread);
+        assert!(service.pop_usage_unread());
+        assert_eq!(
+            service.teardown,
+            Teardown::Closing { at: Time::ZERO, answer: Answer::Sent, close: Close::Graceful, step: Step::Stream }
+        );
+        assert_eq!(done(&service), None);
+        teardown::advance(&mut service);
+        assert_eq!(done(&service), Some(true));
     }
 }

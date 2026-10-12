@@ -98,6 +98,7 @@ pub(crate) struct ProcessAdapter {
     submissions: Queue<kernel::Submit>,
     completions: Queue<kernel::Complete>,
     send: u64,
+    reading: bool,
     failed: bool,
     terminal_input: Option<Token>,
     signals: Option<Token>,
@@ -144,6 +145,7 @@ impl ProcessAdapter {
             submissions: Queue::with_capacity(limits.queue),
             completions: Queue::with_capacity(limits.queue),
             send: 1,
+            reading: false,
             failed: false,
             terminal_input: None,
             signals: None,
@@ -434,7 +436,7 @@ impl ProcessAdapter {
             || self.io.is_due(now)
             || !self.io_events.is_empty()
             || !self.io_requests.is_empty()
-            || !self.process_events.is_empty()
+            || self.process_work_pending()
             || !self.completions.is_empty()
             || !self.file_events.is_empty()
             || !self.file_requests.is_empty()
@@ -608,11 +610,40 @@ impl ProcessAdapter {
         {
             process.fire(now, &mut self.process_events, &mut self.io_requests);
         }
-        for _ in 0..self.process_events.capacity() {
-            if host_events.room() == 0 {
-                break;
+        self.drain_process(host_events);
+    }
+
+    fn process_work_pending(&self) -> bool {
+        for event in &self.process_events {
+            if self.reading || !read_terminal(event) {
+                return true;
             }
-            let Some(event) = self.process_events.pop() else { break };
+        }
+        false
+    }
+
+    fn drain_process(&mut self, host_events: &mut Queue<host::Input>) {
+        for _ in 0..self.process_events.len() {
+            let event = self.process_events.pop().expect("bounded queued events");
+            if host_events.room() == 0 {
+                self.process_events.push(event);
+                continue;
+            }
+            match &event {
+                protocol::ProcessEvent::Channel { event: protocol::OpenEvent::WriteFailed, .. } => continue,
+                protocol::ProcessEvent::Channel { .. }
+                | protocol::ProcessEvent::Spawned { .. }
+                | protocol::ProcessEvent::Unspawned { .. }
+                | protocol::ProcessEvent::Exited { .. }
+                | protocol::ProcessEvent::Reaped { .. } => {}
+            }
+            if read_terminal(&event) {
+                if !self.reading {
+                    self.process_events.push(event);
+                    continue;
+                }
+                self.reading = false;
+            }
             host_events.push(to_host_event(event));
         }
     }
@@ -811,10 +842,40 @@ impl ProcessAdapter {
                 self.process.as_ref().expect("spawned child").signal(signal, &mut self.io_requests);
                 host_events.push(host::Input::Process(host::process::Event::Signalled { owner }));
             }
-            host::process::Request::Read { .. }
-            | host::process::Request::Wait { .. }
-            | host::process::Request::Reap { .. } => {}
+            host::process::Request::Read { .. } => {
+                assert!(!self.reading, "one host read at a time");
+                self.reading = true;
+            }
+            host::process::Request::Wait { .. } | host::process::Request::Reap { .. } => {}
         }
+    }
+}
+
+fn read_terminal(event: &protocol::ProcessEvent) -> bool {
+    match event {
+        protocol::ProcessEvent::Channel { event, .. } => match event {
+            protocol::OpenEvent::Opened { .. }
+            | protocol::OpenEvent::Sent { .. }
+            | protocol::OpenEvent::Unsent { .. }
+            | protocol::OpenEvent::WriteFailed => false,
+            protocol::OpenEvent::Hangup { .. }
+            | protocol::OpenEvent::Answer { .. }
+            | protocol::OpenEvent::Admitted
+            | protocol::OpenEvent::MessageRefused { .. }
+            | protocol::OpenEvent::Waiting { .. }
+            | protocol::OpenEvent::Long { .. }
+            | protocol::OpenEvent::LongDone
+            | protocol::OpenEvent::Turn { .. }
+            | protocol::OpenEvent::Fact { .. }
+            | protocol::OpenEvent::Rejected { .. }
+            | protocol::OpenEvent::Exhausted { .. }
+            | protocol::OpenEvent::Call { .. }
+            | protocol::OpenEvent::Withdraw { .. } => true,
+        },
+        protocol::ProcessEvent::Spawned { .. }
+        | protocol::ProcessEvent::Unspawned { .. }
+        | protocol::ProcessEvent::Exited { .. }
+        | protocol::ProcessEvent::Reaped { .. } => false,
     }
 }
 
@@ -887,7 +948,7 @@ fn channel_event(agent: Token, event: protocol::OpenEvent) -> host::Input {
             owner: agent,
             message: host::Up::Exhausted { account, retry_after },
         }),
-        OpenEvent::WriteFailed => host::Input::Process(host::process::Event::Malformed { owner: agent }),
+        OpenEvent::WriteFailed => unreachable!("write failure does not end a host read"),
         OpenEvent::Call { call, name, deadline, ask } => host::Input::Process(host::process::Event::Received {
             owner: agent,
             message: host::Up::Call { call, name, deadline, ask },
@@ -927,4 +988,69 @@ fn io_owner(event: &io::Event) -> Option<Token> {
 
 fn plain_limits() -> local_protocol::PlainLimits {
     local_protocol::PlainLimits { entries: 256, path_bytes: 4096, file_bytes: 65_536 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prefetched_adapter(owner: Token) -> ProcessAdapter {
+        let config = crate::tests::config();
+        let mut adapter =
+            ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints).expect("adapter");
+        adapter
+            .process_events
+            .push(protocol::ProcessEvent::Channel { agent: owner, event: protocol::OpenEvent::WriteFailed });
+        adapter.process_events.push(protocol::ProcessEvent::Channel {
+            agent: owner,
+            event: protocol::OpenEvent::Fact { body: b"first".as_slice().into() },
+        });
+        adapter.process_events.push(protocol::ProcessEvent::Exited { agent: owner, exit: None });
+        adapter.process_events.push(protocol::ProcessEvent::Channel {
+            agent: owner,
+            event: protocol::OpenEvent::Fact { body: b"second".as_slice().into() },
+        });
+        adapter
+    }
+
+    fn take_exit(events: &mut Queue<host::Input>) {
+        match events.pop() {
+            Some(host::Input::Process(host::process::Event::Exited { .. })) => {}
+            other @ (Some(host::Input::Process(_) | host::Input::Parent(_)) | None) => {
+                panic!("exit terminal: {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn a_write_failure_does_not_spend_the_hosts_pending_read() {
+        let owner = Token::new(7);
+        let mut adapter = prefetched_adapter(owner);
+        let mut events = Queue::with_capacity(1);
+        adapter.drain_process(&mut events);
+        take_exit(&mut events);
+        assert!(events.is_empty(), "no record without a held Read");
+        assert!(!adapter.work_pending(Time::ZERO), "prefetched records wait without spinning");
+        for text in [b"first".as_slice(), b"second".as_slice()] {
+            adapter.request(
+                host::process::Request::Read { owner, process: Token::new(9) },
+                &mut None,
+                &Map::with_capacity(1),
+                &mut events,
+            );
+            adapter.drain_process(&mut events);
+            match events.pop().expect("one read terminal") {
+                host::Input::Process(host::process::Event::Received {
+                    owner: actual,
+                    message: host::Up::Fact { body },
+                }) => {
+                    assert_eq!(actual, owner);
+                    assert_eq!(&*body, text);
+                }
+                other @ (host::Input::Parent(_) | host::Input::Process(_)) => panic!("fact terminal: {other:?}"),
+            }
+            assert!(events.is_empty(), "one terminal per Read");
+        }
+        assert!(adapter.process_events.is_empty());
+    }
 }
