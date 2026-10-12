@@ -1537,3 +1537,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    "Agent process failed", or silent until the host's cancel, is reported
    with its raw run as a smith defect, and the supervisor then adds a
    step with that run's diagnostics.
+72. **13.7 lands not calibrated: `budget-visible` unavailable at the
+   records' precision** (block of 2026-10-12T19:34:39Z, smith 13.7). Its
+   one batch (`probes-budget-visibility-8d6cb05a-20261012T192914Z`): 3
+   attempts, all accepted, 00.17's told check passing 3 of 3, every other
+   deciding check passing, and `budget-visible` unavailable in each
+   ("child time share touches the reserve within submillisecond record
+   precision"). No smith defect is shown and the checker keeps its
+   uncertainty, as it should. 13.7 lands not calibrated, its summary
+   generated once, with those counts; 07.9 stands on its deterministic
+   tests; the next task version is `later.md`'s existing row. No new
+   batch, no check or task change.
