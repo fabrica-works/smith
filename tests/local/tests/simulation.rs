@@ -581,7 +581,9 @@ fn an_exhausted_account_is_shown_to_the_person() {
     world.exhaust_first_account();
     world.line(b"Hello");
     world.drive(300);
-    assert!(world.shown().iter().any(|text| text.as_ref() == b"A model account is exhausted"));
+    assert!(world.notices().contains(&smith_local_domain::Notice::Failure(smith_local_domain::Failure::Account(
+        smith_local_domain::AccountFailure::Exhausted
+    ))));
 }
 
 #[test]
@@ -679,7 +681,10 @@ fn a_store_failure_stops_the_chat_and_tells_the_person() {
         world.line(b"Hello");
         world.drive(300);
         assert_eq!(world.exit(), Some(ExitStatus::Failed), "{fault:?} failure exits");
-        assert!(world.shown().iter().any(|text| text.as_ref() == b"The chat could not be saved"));
+        assert!(world.notices().iter().any(|notice| matches!(
+            notice,
+            smith_local_domain::Notice::Failure(smith_local_domain::Failure::Store { .. })
+        )));
     }
 }
 

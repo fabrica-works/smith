@@ -1,7 +1,7 @@
 //! Local policy consumes each typed parent variant; process ownership is
 //! exercised separately by the spawned lifecycle unit and composed worlds.
 use super::{AgentLife, Domain, Phase, parent_request};
-use crate::{Config, Contract, Event, Limits, Request};
+use crate::{AccountFailure, AgentEnd, Checks, Config, Contract, Event, Failure, Limits, Notice, Request, Undelivered};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use smith_domain::{run, session};
@@ -75,24 +75,24 @@ fn the_first_drop_cause_survives_store_failure_and_the_childs_later_fault() {
 }
 
 #[test]
-fn waiting_and_both_long_notices_reach_the_person() {
+fn waiting_and_both_long_notices_reach_the_person_by_kind() {
     let notices = [
-        (parent::Request::Waiting { client: Token::new(1), read: None }, b"Waiting for a message".as_slice()),
+        (parent::Request::Waiting { client: Token::new(1), read: None }, Notice::Waiting),
         (
             parent::Request::Long {
                 client: Token::new(1),
                 operation: host::Operation::Checks,
                 span: Duration::from_secs(9),
             },
-            b"Running checks".as_slice(),
+            Notice::Checking(Checks::Started),
         ),
-        (parent::Request::LongDone { client: Token::new(1) }, b"Checks finished".as_slice()),
+        (parent::Request::LongDone { client: Token::new(1) }, Notice::Checking(Checks::Ended)),
     ];
     let (mut domain, env, mut out) = running(crate::tests::config());
     for (notice, expected) in notices {
         parent_request(&mut domain, &env, notice, &mut out);
-        let Some(Request::Show { text }) = out.pop() else { panic!("one person notice") };
-        assert_eq!(text.as_ref(), expected);
+        let Some(Request::Notice { notice }) = out.pop() else { panic!("one person notice") };
+        assert_eq!(notice, expected);
         assert!(out.is_empty());
     }
 }
@@ -131,8 +131,8 @@ fn rejection_keeps_the_account_and_exhaustion_keeps_its_notice() {
         parent::Request::Exhausted { client: Token::new(1), account: 7, retry_after: Duration::from_secs(2) },
         &mut out,
     );
-    let Some(Request::Show { text }) = out.pop() else { panic!("quota notice") };
-    assert_eq!(text.as_ref(), b"A model account is exhausted");
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("quota notice") };
+    assert_eq!(notice, Notice::Failure(Failure::Account(AccountFailure::Exhausted)));
 }
 
 #[test]
@@ -225,8 +225,8 @@ fn an_agent_fault_keeps_the_current_failure_class() {
         &mut out,
     );
     assert!(domain.agent_failed);
-    let Some(Request::Show { text }) = out.pop() else { panic!("failure notice") };
-    assert_eq!(text.as_ref(), b"Agent process failed");
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("failure notice") };
+    assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::Failed)));
 }
 
 #[test]
@@ -246,8 +246,8 @@ fn every_message_refusal_ends_the_message_without_failing_the_agent() {
         );
         assert!(!domain.agent_failed);
         assert_eq!(domain.chat.phase, Phase::Running);
-        let Some(Request::Show { text }) = out.pop() else { panic!("message terminal notice") };
-        assert_eq!(text.as_ref(), b"Message not delivered");
+        let Some(Request::Notice { notice }) = out.pop() else { panic!("message terminal notice") };
+        assert_eq!(notice, Notice::NotDelivered { line: Some(Token::new(3)), why: Undelivered::Refused(reason) });
         assert!(out.is_empty());
     }
 }
@@ -304,8 +304,11 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
     let Some(Request::Show { text }) = out.pop() else { panic!("actual transcript refusal") };
     assert_eq!(text.as_ref(), b"Saved transcript was refused");
     let Some(Request::Load) = out.pop() else { panic!("one transcript reload") };
-    let Some(Request::Show { text }) = out.pop() else { panic!("late message terminal") };
-    assert_eq!(text.as_ref(), b"Message not delivered");
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("late message terminal") };
+    assert_eq!(
+        notice,
+        Notice::NotDelivered { line: Some(Token::new(3)), why: Undelivered::Refused(host::MessageRefusal::Ending) }
+    );
     assert!(out.is_empty());
     assert_eq!(domain.chat.phase, Phase::Loading);
     assert!(!domain.agent_failed);
@@ -324,8 +327,8 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
         },
         &mut out,
     );
-    let Some(Request::Show { text }) = out.pop() else { panic!("missing answer notice") };
-    assert_eq!(text.as_ref(), b"Agent process ended without an answer");
+    let Some(Request::Notice { notice }) = out.pop() else { panic!("missing answer notice") };
+    assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)));
     let Some(Request::Exit { status: crate::ExitStatus::Failed }) = out.pop() else { panic!("failed invocation") };
 }
 

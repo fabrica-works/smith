@@ -184,6 +184,80 @@ pub enum Event {
     Process(smith_host_domain::process::Event),
 }
 
+/// A local host notice rendered by the terminal (protocol/hosts.md, section 5.1).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Notice {
+    /// The run is waiting for a person message.
+    Waiting,
+    /// The run's checks began or ended.
+    Checking(Checks),
+    /// A person line could not reach the run.
+    NotDelivered { line: Option<Token>, why: Undelivered },
+    /// A local host operation failed.
+    Failure(Failure),
+}
+
+/// The run reports a checking span to the person.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Checks {
+    /// The checks began.
+    Started,
+    /// The checks ended.
+    Ended,
+}
+
+/// Why a person line did not reach the run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Undelivered {
+    /// The line exceeds the terminal bound and has no name.
+    TooLong,
+    /// The local queue is full and the line has no name.
+    Full,
+    /// The kit or run refused the named line at admission.
+    Refused(smith_host_domain::MessageRefusal),
+}
+
+/// A host failure sent to the terminal for the person.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Failure {
+    /// The chat's increasing names ran out.
+    NamesExhausted,
+    /// A configured account could not serve the run.
+    Account(AccountFailure),
+    /// A repository head could not be read.
+    HeadUnavailable,
+    /// The agent could not be prepared.
+    NotStarted,
+    /// The agent ended unsuccessfully.
+    Agent(AgentEnd),
+    /// The chat could not be kept; a turn save names its turn.
+    Store { turn: Option<u32>, reason: StoreFailure },
+    /// A committed delivery's answer could not be kept.
+    DeliveryUnsaved,
+}
+
+/// An account's terminal failure shown to the person.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AccountFailure {
+    /// No usable account is available.
+    Unavailable,
+    /// The account could not refresh.
+    NotRefreshed,
+    /// The account is exhausted.
+    Exhausted,
+}
+
+/// The agent's unsuccessful end shown to the person.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AgentEnd {
+    /// The agent failed.
+    Failed,
+    /// The person dropped the run.
+    Dropped,
+    /// The agent ended without an answer.
+    NoAnswer,
+}
+
 /// One request to the person, store, credential source or agent IO.
 #[derive(Debug)]
 #[expect(
@@ -193,6 +267,8 @@ pub enum Event {
 pub enum Request {
     /// Bounded text shown to the person.
     Show { text: Box<[u8]> },
+    /// A typed local host notice for the terminal to render.
+    Notice { notice: Notice },
     /// Load this configured chat's metadata and concrete history.
     Load,
     /// Save the updated activation or person-message counter before using it.

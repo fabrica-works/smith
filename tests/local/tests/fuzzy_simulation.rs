@@ -55,7 +55,9 @@ fn random_local_chats_settle_against_the_boundary_referee() {
             }
             2 => {
                 world.drive(300);
-                assert!(world.shown().iter().any(|text| text.as_ref() == b"A model account is exhausted"));
+                assert!(world.notices().contains(&smith_local_domain::Notice::Failure(
+                    smith_local_domain::Failure::Account(smith_local_domain::AccountFailure::Exhausted)
+                )));
             }
             8 | 9 => {
                 let cut = if mode == 8 { Cut::BeforeSaveTurn(2) } else { Cut::AfterTurnSaved(2) };

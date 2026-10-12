@@ -3,6 +3,7 @@
 //! names before use and holds an answer until every turn has a store terminal.
 
 use crate::agent::{Agent, Output, RunStart, command};
+use crate::{AccountFailure, AgentEnd, Checks, Failure, Notice, Undelivered};
 use alloc::boxed::Box;
 use core::mem;
 use skein_lib::{Env, List, Map, Queue, Time, Token};
@@ -362,11 +363,11 @@ pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) 
 
 fn receive_line(domain: &mut Domain, env: &Env<Limits>, text: Box<[u8]>, out: &mut Queue<Request>) {
     if text.len() > usize::try_from(env.limits.line_bytes).expect("u32 fits usize") {
-        out.push(Request::Show { text: Box::from(&b"Line is too long"[..]) });
+        out.push(Request::Notice { notice: Notice::NotDelivered { line: None, why: Undelivered::TooLong } });
         return;
     }
     if domain.raw_lines.try_push(text).is_err() {
-        out.push(Request::Show { text: Box::from(&b"Too many lines waiting"[..]) });
+        out.push(Request::Notice { notice: Notice::NotDelivered { line: None, why: Undelivered::Full } });
         return;
     }
     dispatch_line(domain, env, out);
@@ -412,7 +413,7 @@ fn dispatch_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request
 
 fn stop_names(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.chat.phase = Phase::Done;
-    out.push(Request::Show { text: Box::from(&b"Chat names exhausted"[..]) });
+    out.push(Request::Notice { notice: Notice::Failure(Failure::NamesExhausted) });
     out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
 }
 
@@ -530,7 +531,7 @@ fn no_credential(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request
             maybe_start(domain, env, out);
         }
         Phase::Running | Phase::Ending => {
-            out.push(Request::Show { text: Box::from(&b"A model account could not refresh"[..]) });
+            out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::NotRefreshed)) });
         }
         Phase::Loading | Phase::Idle | Phase::Done => unreachable!("missing grant answers a live account request"),
     }
@@ -543,7 +544,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     if domain.grant_failed {
         domain.chat.phase = Phase::Idle;
         domain.line = None;
-        out.push(Request::Show { text: Box::from(&b"A model account is unavailable"[..]) });
+        out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Unavailable)) });
         return;
     }
     match domain.head_survey {
@@ -595,7 +596,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
         Err(_) => {
             domain.agent_failed = true;
             domain.agent_life = AgentLife::Gone;
-            out.push(Request::Show { text: Box::from(&b"Agent failed"[..]) });
+            out.push(Request::Notice { notice: Notice::Failure(Failure::NotStarted) });
             out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         }
     }
@@ -644,7 +645,7 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
         GitResult::Head { .. } | GitResult::Failed { .. } => {
             domain.chat.phase = Phase::Idle;
             domain.line = None;
-            out.push(Request::Show { text: Box::from(&b"Repository head unavailable"[..]) });
+            out.push(Request::Notice { notice: Notice::Failure(Failure::HeadUnavailable) });
         }
         GitResult::Status { .. }
         | GitResult::Inspected { .. }
@@ -760,18 +761,13 @@ fn store_failed(
     domain.chat.closed = true;
     domain.wall_deadline = None;
     domain.turns.unsaved = Queue::with_capacity(env.limits.unsaved);
-    out.push(Request::Show { text: Box::from(&b"The chat could not be saved"[..]) });
-    if let Some(number) = turn {
-        out.push(Request::Show {
-            text: crate::person::store_failure(&domain.config.chat, number, reason, domain.show_bytes),
-        });
-    }
+    out.push(Request::Notice { notice: Notice::Failure(Failure::Store { turn, reason }) });
     if let Some(record) = domain.saving.take() {
         let owner = domain.delivery_owner.take();
         match &record.state {
-            DeliveryState::Answer(agent::run::Delivery::Delivered(_)) => out.push(Request::Show {
-                text: Box::from(&b"A delivery committed, but its answer could not be saved"[..]),
-            }),
+            DeliveryState::Answer(agent::run::Delivery::Delivered(_)) => {
+                out.push(Request::Notice { notice: Notice::Failure(Failure::DeliveryUnsaved) });
+            }
             DeliveryState::Intent(_)
             | DeliveryState::Answer(
                 agent::run::Delivery::Nothing
@@ -865,20 +861,20 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 finish_answer(domain, out);
             }
         }
-        parent::Request::Waiting { .. } => out.push(Request::Show { text: Box::from(&b"Waiting for a message"[..]) }),
+        parent::Request::Waiting { .. } => out.push(Request::Notice { notice: Notice::Waiting }),
         parent::Request::Long { operation, .. } => {
             if domain.long.begin(operation) {
-                out.push(Request::Show { text: Box::from(&b"Running checks"[..]) });
+                out.push(Request::Notice { notice: Notice::Checking(Checks::Started) });
             }
         }
         parent::Request::LongDone { .. } => {
             if domain.long.end() {
-                out.push(Request::Show { text: Box::from(&b"Checks finished"[..]) });
+                out.push(Request::Notice { notice: Notice::Checking(Checks::Ended) });
             }
         }
         parent::Request::Rejected { account, .. } => out.push(Request::Credential { account }),
         parent::Request::Exhausted { .. } => {
-            out.push(Request::Show { text: Box::from(&b"A model account is exhausted"[..]) });
+            out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Exhausted)) });
         }
         parent::Request::Called { call, name, deadline, ask, .. } => match ask {
             host::Ask::Deliver { fields } => begin_delivery(
@@ -918,8 +914,10 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             record_cause(domain, cause);
             failed_child(domain, out);
         }
-        parent::Request::MessageRefused { .. } => {
-            out.push(Request::Show { text: Box::from(&b"Message not delivered"[..]) });
+        parent::Request::MessageRefused { name, reason, .. } => {
+            out.push(Request::Notice {
+                notice: Notice::NotDelivered { line: Some(name), why: Undelivered::Refused(reason) },
+            });
         }
         parent::Request::Gone { .. } => {
             domain.agent_life = AgentLife::Gone;
@@ -927,7 +925,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
                 record_cause(domain, crate::EndCause::Agent);
                 domain.agent_failed = true;
-                out.push(Request::Show { text: Box::from(&b"Agent process ended without an answer"[..]) });
+                out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)) });
             }
             if domain.turns.unsaved.is_empty() {
                 if domain.agent_failed || domain.stop_failed {
@@ -944,11 +942,11 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
 fn failed_child(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.agent_failed = true;
     if !domain.stop_failed {
-        let text: &[u8] = match domain.end_cause {
-            Some(crate::EndCause::Cancelled) => b"Run dropped",
-            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => b"Agent process failed",
+        let end = match domain.end_cause {
+            Some(crate::EndCause::Cancelled) => AgentEnd::Dropped,
+            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => AgentEnd::Failed,
         };
-        out.push(Request::Show { text: Box::from(text) });
+        out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(end)) });
     }
     if domain.turns.unsaved.is_empty() && domain.agent_life == AgentLife::Gone {
         domain.chat.phase = Phase::Done;

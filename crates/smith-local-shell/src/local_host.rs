@@ -275,7 +275,8 @@ impl Local {
                     self.exit = Some(status);
                     continue;
                 }
-                domain::Request::Show { .. }
+                domain::Request::Notice { .. }
+                | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
                 | domain::Request::Lower { .. }

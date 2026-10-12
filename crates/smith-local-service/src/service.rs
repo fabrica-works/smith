@@ -519,6 +519,9 @@ impl Service {
                 }
                 self.below.inline_mut().expect("native IO belongs to inline mode").request(to_root_request(request));
             }
+            local::Request::Notice { notice } => {
+                self.terminal.notice(notice, self.local.chat_name(), &mut self.terminal_events);
+            }
             local::Request::Show { text } => self.terminal.show(text, &mut self.terminal_events),
             local::Request::Load => {
                 self.lower_agent = None;

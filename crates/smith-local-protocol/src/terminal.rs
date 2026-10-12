@@ -100,6 +100,84 @@ impl Terminal {
         out.push(Event::Write(Box::from(kept)));
     }
 
+    /// Render a typed host notice as bounded UTF-8 lines ending in newlines.
+    pub fn notice(&self, notice: local::Notice, chat: &[u8], out: &mut Queue<Event>) {
+        let mut text = Shown { bytes: List::with_capacity(self.limits.show_bytes), cut: false };
+        match notice {
+            local::Notice::Waiting => append(&mut text, b"Waiting for a message"),
+            local::Notice::Checking(checks) => append(
+                &mut text,
+                match checks {
+                    local::Checks::Started => b"Running checks",
+                    local::Checks::Ended => b"Checks finished",
+                },
+            ),
+            local::Notice::NotDelivered { line, why } => {
+                if let Some(name) = line {
+                    append(&mut text, b"Line ");
+                    decimal(&mut text, name.raw());
+                    append(&mut text, b" not delivered: ");
+                }
+                append(
+                    &mut text,
+                    match why {
+                        local::Undelivered::TooLong => b"Line is too long",
+                        local::Undelivered::Full => b"Too many lines waiting",
+                        local::Undelivered::Refused(reason) => match reason {
+                            smith_host_domain::MessageRefusal::TooLarge => b"it is too large",
+                            smith_host_domain::MessageRefusal::Full => b"the inbox is full",
+                            smith_host_domain::MessageRefusal::Ending => b"the run is ending",
+                            smith_host_domain::MessageRefusal::NameInUse => b"its name is in use",
+                        },
+                    },
+                );
+            }
+            local::Notice::Failure(failure) => match failure {
+                local::Failure::NamesExhausted => append(&mut text, b"Chat names exhausted"),
+                local::Failure::Account(account) => append(
+                    &mut text,
+                    match account {
+                        local::AccountFailure::Unavailable => b"A model account is unavailable",
+                        local::AccountFailure::NotRefreshed => b"A model account could not refresh",
+                        local::AccountFailure::Exhausted => b"A model account is exhausted",
+                    },
+                ),
+                local::Failure::HeadUnavailable => append(&mut text, b"Repository head unavailable"),
+                local::Failure::NotStarted => append(&mut text, b"Agent failed"),
+                local::Failure::Agent(end) => append(
+                    &mut text,
+                    match end {
+                        local::AgentEnd::Failed => b"Agent process failed",
+                        local::AgentEnd::Dropped => b"Run dropped",
+                        local::AgentEnd::NoAnswer => b"Agent process ended without an answer",
+                    },
+                ),
+                local::Failure::DeliveryUnsaved => {
+                    append(&mut text, b"A delivery committed, but its answer could not be saved");
+                }
+                local::Failure::Store { turn, reason } => {
+                    append(&mut text, b"The chat could not be saved");
+                    if let Some(number) = turn {
+                        newline(&mut text);
+                        append(&mut text, b"Chat ");
+                        append(&mut text, chat);
+                        append(&mut text, b" turn ");
+                        decimal(&mut text, u64::from(number));
+                        append(
+                            &mut text,
+                            match reason {
+                                local::StoreFailure::Read => b" could not be kept: read failed",
+                                local::StoreFailure::Write => b" could not be kept: write failed",
+                            },
+                        );
+                    }
+                }
+            },
+        }
+        newline(&mut text);
+        out.push(Event::Write(text.bytes.into_boxed()));
+    }
+
     fn finish_line(&mut self, out: &mut Queue<Event>) {
         if self.discarding {
             self.discarding = false;
@@ -127,12 +205,187 @@ impl Terminal {
     }
 }
 
+struct Shown {
+    bytes: List<u8>,
+    cut: bool,
+}
+
+// Keep one byte for a newline and cut only at a complete character.
+fn append(text: &mut Shown, bytes: &[u8]) {
+    if text.cut {
+        return;
+    }
+    let mut skip = 0_u8;
+    for (index, byte) in bytes.iter().enumerate() {
+        if skip > 0 {
+            skip = skip.checked_sub(1).expect("continuation count is positive");
+            continue;
+        }
+        let width = if *byte < 0x80 {
+            1
+        } else if *byte < 0xe0 {
+            2
+        } else if *byte < 0xf0 {
+            3
+        } else {
+            4
+        };
+        if width >= text.bytes.room() {
+            text.cut = true;
+            return;
+        }
+        let end = index.checked_add(usize::try_from(width).expect("character width fits usize")).expect("bounded text");
+        let Some(character) = bytes.get(index..end) else {
+            text.cut = true;
+            return;
+        };
+        for byte in character {
+            text.bytes.push(*byte).expect("character and newline room checked");
+        }
+        skip = u8::try_from(width.checked_sub(1).expect("positive width")).expect("character width fits u8");
+    }
+}
+
+fn newline(text: &mut Shown) {
+    if text.bytes.room() > 0 {
+        text.bytes.push(b'\n').expect("newline room checked");
+    }
+}
+
+fn decimal(text: &mut Shown, mut number: u64) {
+    let mut digits = [0; 20];
+    let mut first = digits.len();
+    for _ in 0..digits.len() {
+        first = first.checked_sub(1).expect("u64 fits twenty decimal digits");
+        *digits.get_mut(first).expect("bounded decimal position") =
+            u8::try_from(number % 10).expect("decimal digit").checked_add(b'0').expect("ASCII digit");
+        number /= 10;
+        if number == 0 {
+            break;
+        }
+    }
+    append(text, digits.get(first..).expect("bounded decimal suffix"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn terminal() -> Terminal {
         Terminal::new(Limits { line_bytes: 32, show_bytes: 32 }).expect("valid terminal")
+    }
+
+    fn rendered(notice: local::Notice) -> Box<[u8]> {
+        let terminal = Terminal::new(Limits { line_bytes: 32, show_bytes: 128 }).expect("valid terminal");
+        let mut out = Queue::with_capacity(max_out());
+        terminal.notice(notice, b"main", &mut out);
+        let Some(Event::Write(text)) = out.pop() else { panic!("one notice written") };
+        assert!(out.is_empty());
+        text
+    }
+
+    #[test]
+    fn waiting_is_one_line_ending_in_a_newline() {
+        assert_eq!(rendered(local::Notice::Waiting).as_ref(), b"Waiting for a message\n");
+    }
+
+    #[test]
+    fn checking_spans_are_shown_as_whole_lines() {
+        for (checks, expected) in [
+            (local::Checks::Started, b"Running checks\n".as_slice()),
+            (local::Checks::Ended, b"Checks finished\n".as_slice()),
+        ] {
+            assert_eq!(rendered(local::Notice::Checking(checks)).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn a_refused_line_is_shown_by_name_and_reason_as_one_line() {
+        for (reason, expected) in [
+            (smith_host_domain::MessageRefusal::Full, b"Line 3 not delivered: the inbox is full\n".as_slice()),
+            (smith_host_domain::MessageRefusal::TooLarge, b"Line 3 not delivered: it is too large\n".as_slice()),
+            (smith_host_domain::MessageRefusal::Ending, b"Line 3 not delivered: the run is ending\n".as_slice()),
+            (smith_host_domain::MessageRefusal::NameInUse, b"Line 3 not delivered: its name is in use\n".as_slice()),
+        ] {
+            let notice = local::Notice::NotDelivered {
+                line: Some(skein_lib::Token::new(3)),
+                why: local::Undelivered::Refused(reason),
+            };
+            assert_eq!(rendered(notice).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn unnamed_lines_show_the_local_admission_reason() {
+        for (why, expected) in [
+            (local::Undelivered::TooLong, b"Line is too long\n".as_slice()),
+            (local::Undelivered::Full, b"Too many lines waiting\n".as_slice()),
+        ] {
+            assert_eq!(rendered(local::Notice::NotDelivered { line: None, why }).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn a_store_failure_names_the_chat_and_its_turn_on_two_lines() {
+        let notice =
+            local::Notice::Failure(local::Failure::Store { turn: Some(3), reason: local::StoreFailure::Write });
+        assert_eq!(
+            rendered(notice).as_ref(),
+            b"The chat could not be saved\nChat main turn 3 could not be kept: write failed\n"
+        );
+    }
+
+    #[test]
+    fn a_store_failure_without_a_turn_is_one_line() {
+        let notice = local::Notice::Failure(local::Failure::Store { turn: None, reason: local::StoreFailure::Read });
+        assert_eq!(rendered(notice).as_ref(), b"The chat could not be saved\n");
+    }
+
+    #[test]
+    fn local_failures_keep_their_own_words() {
+        for (failure, expected) in [
+            (local::Failure::NamesExhausted, b"Chat names exhausted\n".as_slice()),
+            (local::Failure::HeadUnavailable, b"Repository head unavailable\n".as_slice()),
+            (local::Failure::NotStarted, b"Agent failed\n".as_slice()),
+            (local::Failure::DeliveryUnsaved, b"A delivery committed, but its answer could not be saved\n".as_slice()),
+        ] {
+            assert_eq!(rendered(local::Notice::Failure(failure)).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn account_failures_keep_their_own_words() {
+        for (account, expected) in [
+            (local::AccountFailure::Unavailable, b"A model account is unavailable\n".as_slice()),
+            (local::AccountFailure::NotRefreshed, b"A model account could not refresh\n".as_slice()),
+            (local::AccountFailure::Exhausted, b"A model account is exhausted\n".as_slice()),
+        ] {
+            assert_eq!(rendered(local::Notice::Failure(local::Failure::Account(account))).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn unsuccessful_agent_ends_keep_their_own_words() {
+        for (end, expected) in [
+            (local::AgentEnd::Failed, b"Agent process failed\n".as_slice()),
+            (local::AgentEnd::Dropped, b"Run dropped\n".as_slice()),
+            (local::AgentEnd::NoAnswer, b"Agent process ended without an answer\n".as_slice()),
+        ] {
+            assert_eq!(rendered(local::Notice::Failure(local::Failure::Agent(end))).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn a_capped_store_notice_ends_on_a_character_boundary_with_a_newline() {
+        let terminal = Terminal::new(Limits { line_bytes: 32, show_bytes: 37 }).expect("valid terminal");
+        let mut out = Queue::with_capacity(max_out());
+        terminal.notice(
+            local::Notice::Failure(local::Failure::Store { turn: Some(1), reason: local::StoreFailure::Write }),
+            "éé".as_bytes(),
+            &mut out,
+        );
+        let Some(Event::Write(text)) = out.pop() else { panic!("one notice written") };
+        assert_eq!(text.as_ref(), "The chat could not be saved\nChat é\n".as_bytes());
     }
 
     #[test]

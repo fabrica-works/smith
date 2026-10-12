@@ -213,6 +213,7 @@ pub struct World {
     store: Store,
     last_delivery: Option<run::Delivery>,
     shown: Vec<Box<[u8]>>,
+    notices: Vec<smith_local_domain::Notice>,
     reached: BTreeSet<Goal>,
     exit: Option<ExitStatus>,
     completions: u32,
@@ -683,6 +684,7 @@ impl World {
             }),
             store,
             shown: Vec::new(),
+            notices: Vec::new(),
             reached: BTreeSet::new(),
             exit: None,
             completions: 0,
@@ -830,6 +832,12 @@ impl World {
     /// Drive until a cancelled answer is shown.
     pub fn drive_to_cancelled(&mut self, iterations: u32) -> bool {
         self.drive_until(iterations, Goal::Cancelled)
+    }
+
+    /// Notices shown to the person by kind.
+    #[must_use]
+    pub fn notices(&self) -> &[smith_local_domain::Notice] {
+        &self.notices
     }
 
     /// Type a person line; its name becomes durable before agent delivery.
@@ -1028,10 +1036,13 @@ impl World {
     #[expect(clippy::too_many_lines, reason = "the test adapter settles each local request beside its terminal")]
     fn request(&mut self, request: Request) {
         match request {
-            Request::Show { text } => {
-                if text.as_ref() == b"Waiting for a message" {
+            Request::Notice { notice } => {
+                if notice == smith_local_domain::Notice::Waiting {
                     self.reached.insert(Goal::Waiting);
                 }
+                self.notices.push(notice);
+            }
+            Request::Show { text } => {
                 if text.as_ref() == b"Chat parked" {
                     self.reached.insert(Goal::Parked);
                 }
