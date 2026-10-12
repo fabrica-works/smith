@@ -425,8 +425,18 @@ once it has answered, whatever the answer, and with failure only when
 it could not answer: startup, or a broken channel." Something broke the
 channel or signalled the agent at its answer. 05.s1's live stall also
 ends "Agent process failed"; read its findings first.
-Needs: 05.s1's live diagnostic (decisions.md, 13.63): no world
-reproduced it on the parent.
+It also takes the live silence 05.s1 could not reproduce and that
+`follow-up/chat` no longer shows on `main` (24 of 24, 3f15308c):
+`probes-parallel-children-reviews-3f15308c-20261012T181923Z/03`, a main
+turn ending with text and no calls at 14,845 ms, owed a nudge (run.md,
+7.2), then nothing until the host's cancel at 49,846 ms (decisions.md,
+13.64). No world reproduced either on the parent, so the first move is
+one live diagnostic arm (README rule 11, a worktree commit that never
+lands): on standard error, in the product and the agent, each turn's
+save and acknowledgement, each completion held and released, and each
+signal and channel close the product sends its agent and why; built as
+an arm, `history` once and `parallel-children/reviews` once (12) on it.
+Needs: nothing.
 Files: the reproduction's world test file; then the crate where the
 channel breaks or the signal comes from (the local host's agent handling,
 `smith-host-domain`, `smith-local-domain`, `smith-local-service`, or the
@@ -435,8 +445,9 @@ Shape: no new type; README rule 11 finds where.
 Test shape: one process-world story of a spawned agent that answers
 accepted after several tool calls; it fails on `main` (exit 1 or a
 failure shown). Under 0.5 s.
-Proof: that story, once, failing on the parent; then `history` once,
-live, through `heavy --gate`, its count in the commit body.
+Proof: a story the diagnostics point to, once, failing on the parent;
+then `history` once and `parallel-children/reviews` once (12), live,
+through `heavy --gate`, their counts in the commit body.
 Don't: widen a grace or a deadline to hide it; add a retry or delay. If
 no world reproduces it, stop and ask with the diagnostics.
 Size: README rule 9's.

@@ -1441,3 +1441,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    beside `follow-up/chat`. 06.s1 keeps its story on its branch and waits
    for that arm's findings; then it fixes what they show for its symptom,
    or lands its story as coverage if the cause is 05.s1's.
+64. **06.s1 owns both live failures and the one diagnostic arm** (block
+   of 2026-10-12T18:27:47Z, the coordinator). 05.s1 had already landed as
+   coverage (3f15308c: `follow-up/chat` 24 of 24 on `main`) and 05.s2
+   after it, so 13.62 and 13.63 sent their additions to a finished step.
+   The silence still happens on `main`: 13.4's reviews 03 ran on
+   3f15308c itself. Ruling: smith-06.s1 takes it beside its own accepted
+   answer that ended as a failure; its first move is the live diagnostic
+   arm 13.63 gave 05.s1, running `history` once and
+   `parallel-children/reviews` once (12); its Proof is a story the
+   diagnostics point to, failing on the parent, then both probes once
+   live. 06.s1 needs nothing; session 06's implementer takes it after
+   06.12. 13.62's and 13.63's instructions to 05.s1 lapse.
