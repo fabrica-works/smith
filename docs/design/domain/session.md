@@ -332,6 +332,17 @@ window, history only grows (section 3).
   derived so that the window check is reached first (protocol/limits.md).
   A history that would cross one of them anyway is compacted as a full
   window would be. A session never ends because its history grew.
+- **A completion's results never cross them.** The derivation holds one
+  batch's results whole: the calls that run together (section 5), each
+  at its tool's caps (protocol/limits.md, 3.2). A later batch of the same
+  completion runs within what is left of the history, less room for an
+  answer to each call after it, shared among its calls: each result is
+  what its tool answers with that share as its cap, saying what it left
+  out (tools.md, section 4), and a text result, a host's answer or a
+  sub-agent's, is cut with its marker. Every call is run and answered,
+  and the compaction is owed each result as it was kept. A history so
+  filled has no room for another completion, so the next is the
+  compaction, whose request cuts the owed results to its own room (8.2).
 
 ### 8.2 Compaction
 

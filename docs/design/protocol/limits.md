@@ -257,8 +257,11 @@ declarations:
   (domain/session.md, 8.1). Its bytes come from the window's side, by
   rule 4: the threshold's tokens at `TOKEN_BYTES` bytes each, plus what
   the window must receive before its next check, which is one
-  completion's reserve beyond its answer and one batch's results. So
-  `window-first` holds by construction. Its messages and blocks are
+  completion's reserve beyond its answer and one batch's results: the
+  calls that run together (domain/session.md, section 5), each at its
+  render bound. A completion's later batches run within what is left
+  (domain/session.md, 8.1), never in more history. So `window-first`
+  holds by construction. Its messages and blocks are
   those bytes over a block's cell in memory, by rule 3, and they are
   also skein's declared history items (skein's `llm.md`, 4.2). A prompt
   the session admits is within skein's request, because the threshold
@@ -560,6 +563,7 @@ reserve against the budget.
 | a tool call cut off by the output limit | marked by skein; the session keeps a note and an error result in its place (llm.md, section 4) |
 | history that reaches the window's threshold | a compaction, not a failure (domain/session.md, section 8) |
 | results owed to a compaction past what its headroom leaves | cut with their markers in the compaction's request only (3.9) |
+| a completion's later batch past what is left of the history | each call runs with its share of what is left as its cap, its result saying what it left out; the next completion is the compaction (domain/session.md, 8.1) |
 | messages queued past one offer | they wait, in order, for the next offer (3.9) |
 | a provider's "context too long" | one compaction; a second in the same window fails the session |
 | a completion past `calls_per_response` | a typed limit failure of the completion; the tools' descriptions state the bound |
