@@ -846,4 +846,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    a second build waits. Not the gate lane: 00.27's Shape keeps release
    builds out of it. Until 00.27 lands, no smoke runs (README rule 1), so
    04.7 lands without one.
+15. **smith 10.1 lands whole, at up to 1,000 lines** (block of
+   2026-10-12T14:04:18Z). The store component alone is about 731
+   production lines, before about 100 to 150 of routing and the shell's
+   root, past README rule 9's 600. A split cannot bring both parts under
+   600: the component alone is past it, and a component landed unused
+   would stand beside `local_store.rs`, two owners of the chat's files
+   (code-organization.md, section 7). Ruling: 10.1 stays one increment,
+   at most 1,000 production lines, its commit body giving the count by
+   file. The exception is 10.1's; rule 9 stands for the rest.
 
