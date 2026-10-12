@@ -1,10 +1,11 @@
 # Events
 
-Provisional, 2026-10-09. The event vocabulary: one versioned stream of
-JSON lines that says what a process running smith did, from its start to
-its end. `smith exec --json` writes it to standard output, and a trace
-file is the same stream. Its records, their writer and their reader are
-`smith-events` (README.md, section 5). This document covers:
+Provisional, 2026-10-09, revised 2026-10-12. The event vocabulary: one
+versioned stream of JSON lines that says what a process running smith
+did, from its start to its end. `smith exec --json` writes it to
+standard output, and a trace file is the same stream. Its records,
+their writer and their reader are `smith-events` (README.md, section
+5). This document covers:
 
 - the stream, and who writes it;
 - its records and their fields;
@@ -207,7 +208,7 @@ its host writes `run.completed` from the turns it was told:
 | `run`, `conversation` | integer | |
 | `end` | string | `closed`, `budget`, `failed`, `refused`, `transcript` or `overflow` (domain/session.md) |
 | `which` | string, optional | for `budget`, what ran out |
-| `failure` | completion failure, optional | for `failed` (3.10) |
+| `failure` | completion failure, optional | for `failed`, when a completion failed (3.10); absent when a compaction's answer gave no summary, whose `response.completed` gives its `stop` (domain/session.md, 8.2) |
 | `turns` | integer | its completions |
 | `usage` | usage | its totals |
 | `spent` | integer | its spend |
@@ -400,7 +401,9 @@ when it is about one; and the kind's fields.
   (llm.md, section 6).
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
-  `completion`, a completion failure, or `account`), `budget` (with `which`: `turns`,
+  `completion`, a completion failure; or with `account`; or with
+  `which`, a fault of the model's own answer, `refused`, `truncated` or
+  `malformed`, domain/run.md, section 10), `budget` (with `which`: `turns`,
   `spend` or `time`), `policy`, `cancelled` (with `dropped`), `stale`,
   `transcript` (with `reason`), `agent` (with `ended`) or `host` (with
   `reason`) for a failed run; `busy` or `invalid` (with `which`, what was

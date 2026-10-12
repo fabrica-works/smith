@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-09. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-12. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -353,6 +353,11 @@ window, history only grows (section 3).
   summary (the answer's text), then the held-back messages. The
   compaction's own blocks are not kept, and the old window's history is
   released.
+- **The summary** is the text of the answer's text blocks, in order. A
+  summary cut at the output limit opens the window as written, with no
+  marker, as an ordinary answer cut there stays in history as written;
+  the compaction's `response.completed` has `stop` `max_tokens`
+  (protocol/events.md, 3.5).
 - **Told as a window turn,** like any other turn: its usage and spend
   are the compaction's, and its messages are the new window's opening
   (section 3). It records the conversation's affinity, so a transcript
@@ -366,6 +371,23 @@ window, history only grows (section 3).
   window that has made no ordinary completion yet, fails the session
   with a limit naming the window. A compaction that fails otherwise
   fails as any completion does, after its retries (section 4).
+- **No summary, no window.** An answer that is a refusal (its completion
+  stopped for refusal, or it holds a refusal block), or whose text
+  blocks hold nothing but ASCII whitespace, opens no window. The session
+  fails at once, with the fault of the model's answer:
+  - *refused*, for a refusal, whatever text came with it;
+  - *truncated*, for no text and a stop at the output limit;
+  - *malformed*, for no text otherwise.
+
+  The compaction is neither retried nor nudged: a window is compacted
+  once, and the headroom above the threshold holds one compaction, not
+  an exchange after it (8.1). It is charged and counted against the
+  budgets like any completion (section 6), and told as no turn, so the
+  transcript still ends at the window's last told turn, and a session
+  opened from it compacts first (section 3). The messages held back for
+  the new window are not read. The run takes the failure as any
+  session's: main's fails the run with that fault (run.md, section 10),
+  and a child's returns unanswered (run.md, 5.3).
 
 ### 8.3 What else keeps context small
 
@@ -419,6 +441,9 @@ budgets.
     long; context too long on the compaction, failing; calls in a
     compaction's answer not run; a request skein finds too large, taken
     once as context too long;
+  - a summary cut at the output limit, opening its window as written; a
+    refused compaction, and ones with no text, cut and not, each failing
+    with its fault and telling no turn;
   - a wind-down offering only some tools, with a call outside them; a
     child's final turn answered with `stop: budget`;
   - a sub-agent's spend counted once; cache writes priced at their own
@@ -445,10 +470,6 @@ budgets.
 - **A window's contents:** the task, the summary and the held-back
   messages, as section 8.2 has them; whether the last results should
   also be kept is for the history probe to measure.
-- **A compaction cut short or refused:** whether a summary that reached
-  the output limit, or a refusal, may open a window. Proposed: a cut
-  summary opens it as written; a refusal or an answer with no text fails
-  the session.
 - **An unreported input or output count:** section 6 charges the
   reservation in its place. To confirm against each dialect's reporting.
 - **Calls past the completion's bound:** failing the completion, as
