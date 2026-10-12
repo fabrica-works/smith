@@ -191,12 +191,14 @@ do not already say.
    changed). Any other edit outside Files is still a question: new
    behaviour, a test renamed, removed or with new steps, a limit or its
    accounting. Applies to every session, until the run ends.
-9. **A Size line is a guide up to 600** (decisions.md, 13.9). An
-   increment that needs more production lines than its Size line gives,
-   but at most 600 (code-organization.md, section 8), lands without
-   asking; its commit body gives the count and what took the lines.
-   Past 600, it stops and asks: the plan splits it. This replaces "at
-   most" in every Size line, for this run.
+9. **A Size line is a guide up to 700** (decisions.md, 13.9 and 13.46).
+   An increment that needs more production lines than its Size line
+   gives, but at most 700, lands without asking; its commit body gives
+   the count by file and what took the lines. Past 700, it stops and
+   asks: the plan splits it. Never fold, inline or compress code to fit
+   a count. This replaces "at most" in every Size line, and
+   code-organization.md 8's "about 600", for this run; the exceptions
+   already ruled (10.1's 1,050) stand.
 10. **A landed step's check** (decisions.md, 13.21). The coordinator
     checks a landed step by its first two commands of development.md
     7.3 (the commit on `origin/main`, its `Step` trailer), and runs `git

@@ -1191,3 +1191,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    words already on `main` from the first run stay. smith 10 rewords
    10.1's three lines in its next landing, saying what the code does
    (a turn is stored only where none is, `Expect::Absent`).
+46. **README rule 9's bound becomes 700** (block of 2026-10-12T16:52:00Z,
+   smith 10.3). 10.3's draft stands at 626 production lines against its
+   Size of 600, before its nested-array error locations: the layered
+   TOML with origins and a strict schema, the check document, command
+   handling. The third Size block past 600 in three hours, each ruled an
+   exception rather than a split (08.6 at 700, 13.26; 10.1 at 1,000
+   then 1,050, 13.15 and 13.29), since a split would land a part unused
+   or with a failing gate. Rule 9 now lets an increment land up to 700
+   without asking, its commit body giving the count by file; past 700,
+   the plan splits it. Folding or compressing code to fit a count stays
+   forbidden (13.29). 10.3 completes its Scope within 700.
