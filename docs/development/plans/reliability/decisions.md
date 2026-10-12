@@ -1558,3 +1558,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    with a unit Proof; 10.18 takes the rest with the end-to-end process
    Proof. For the retrospective: 10.13's Size line was 500 for what took
    three increments.
+74. **06.8 writes the spawned product's `aborted` in `stream.rs`** (block
+   of 2026-10-12T19:50:21Z, smith 06.8). 06.8's Scope: "then it writes
+   `session.ended` and closes the product's stream" and "A termination
+   signal while closing aborts, as 06.5 does"; the spawned product's
+   `SessionEnded` is built in `crates/smith-local-service/src/stream.rs`
+   (`Spawned::up`) with `aborted: false` always, and that file is not in
+   06.8's Files. Ruling: the implementer's proposal: `stream.rs` joins
+   06.8's Files for at most 25 production lines, keeping the close's
+   state, writing `aborted: true` and the `teardown_aborted` notice when
+   a signal aborts it; the stream's other contents unchanged.
