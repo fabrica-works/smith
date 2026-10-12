@@ -116,6 +116,8 @@ pub enum Request {
         client: Token,
         /// Validated last word.
         answer: Answer,
+        /// Inline diagnostic; spawned agents report their standard-error tail.
+        detail: Box<[u8]>,
     },
     /// Capability names its remaining accepted messages unread, once after the answer or before failure/end.
     Unread { client: Token, names: Box<[Token]> },

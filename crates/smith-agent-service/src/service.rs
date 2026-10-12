@@ -157,6 +157,7 @@ pub struct Service {
     failure: Option<Failure>,
     pub(crate) final_failure: Option<run::Failure>,
     pub(crate) final_refusal: Option<run::Refusal>,
+    pub(crate) final_detail: Box<[u8]>,
     outcome: Option<run::outcome::OutcomeSpec>,
     delivery: Option<run::outcome::ChangeSpec>,
     pending_start: Option<Box<channel::DecodedStart>>,
@@ -474,6 +475,7 @@ pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
         .checked_add(environment_copies)?
         .checked_add(roots)?
         .checked_add(pipe_routes)?
+        .checked_add(u64::from(limits.domain.session.failure_bytes).checked_mul(2)?)?
         .checked_add(match limits.events {
             Some(_) => crate::events::worst_case(limits)?,
             None => 0,
@@ -595,6 +597,7 @@ impl Service {
             failure: None,
             final_failure: None,
             final_refusal: None,
+            final_detail: Box::default(),
             outcome: None,
             delivery: None,
             pending_start: None,
@@ -756,7 +759,7 @@ impl Service {
         self.pending_start = None;
         let token = self.next_send();
         let answer = run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Workspace));
-        crate::answers::remember(self, &answer);
+        crate::answers::remember(self, &answer, Box::default());
         let read = None;
         if let Some(events) = &mut self.events {
             events.answer(self.domain_env.now, self.run_started, &answer, read);
@@ -1802,8 +1805,8 @@ fn domain_request(service: &mut Service, request: domain::Request) {
                 service.mark_failed(Failure::Send);
             }
         }
-        domain::Request::Answer { to, answer, read } => {
-            crate::answers::remember(service, &answer);
+        domain::Request::Answer { to, answer, read, detail } => {
+            crate::answers::remember(service, &answer, detail);
             assert!(to.into_token() == Token::new(1), "one Start reply right per process");
             if let Some(events) = &mut service.events {
                 events.answer(service.domain_env.now, service.run_started, &answer, read);

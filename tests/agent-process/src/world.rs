@@ -504,6 +504,7 @@ enum HangUp {
 
 struct Referee {
     cancel: bool,
+    provider_rejected: bool,
     after_answer: u32,
     hang_up: HangUp,
     reviewed: usize,
@@ -563,7 +564,7 @@ impl skein_world::Referee<Proc> for Referee {
             let peer = procs.iter().find_map(|p| if let Proc::Peer(p) = p { Some(p) } else { None }).expect("peer");
             if matches!(self.tracing, Some((TraceCase::Parked, _))) {
                 assert_eq!(fake::queries(peer).count(), 0, "empty zero-waiting work parks without a provider request");
-            } else if matches!(self.tracing, Some((TraceCase::ProviderRejected, _))) {
+            } else if self.provider_rejected || matches!(self.tracing, Some((TraceCase::ProviderRejected, _))) {
                 assert!(fake::context_rejected(peer), "the independent provider rejected the actual request");
             } else if !self.cancel && !matches!(self.tracing, Some((TraceCase::Refused, _))) {
                 assert!(
@@ -818,6 +819,7 @@ fn environment_peer() -> skein_fake_peers::llm::Peer {
 )]
 pub struct World {
     seed: u64,
+    provider_rejected: bool,
     charter: Box<[u8]>,
     cancel: bool,
     after_answer: u32,
@@ -843,6 +845,7 @@ impl World {
     pub fn new(seed: u64, charter: &[u8]) -> Self {
         Self {
             seed,
+            provider_rejected: false,
             charter: charter.into(),
             cancel: false,
             after_answer: 0,
@@ -867,6 +870,11 @@ impl World {
     /// Keep the host's input open until the agent's exit is observed.
     pub fn hold_channel(&mut self) {
         self.hold_channel = true;
+    }
+
+    /// Make the independent byte provider refuse the actual model request.
+    pub fn reject_provider(&mut self) {
+        self.provider_rejected = true;
     }
 
     /// Hang up only once the provider has decoded an active call.
@@ -1048,6 +1056,9 @@ impl World {
     }
 
     fn hold_peer(&self, mut peer: skein_fake_peers::llm::Peer) -> skein_fake_peers::llm::Peer {
+        if self.provider_rejected {
+            peer = fake::rejected();
+        }
         if self.after_answer > 0 {
             peer.ignore_half_close();
         }
@@ -1073,14 +1084,10 @@ impl World {
         }
     }
 
-    /// Run until the one Answer and complete descriptor settlement.
-    pub fn settle(&mut self) -> bool {
-        let mut config = skein_sim::Config::calm();
-        config.wall = skein_tls_world::pki::VALID;
-        let mut machine = skein_fake_machine::Machine::new();
-        let root = machine.lay(&[]);
-        let referee = Referee {
+    fn referee(&self) -> Referee {
+        Referee {
             cancel: self.cancel,
+            provider_rejected: self.provider_rejected,
             after_answer: self.after_answer,
             hang_up: self.hang_up_case(),
             reviewed: 0,
@@ -1093,7 +1100,16 @@ impl World {
                 self.seed,
                 vec![Terminal { hang_up: self.hang_up || self.hang_up_mid_call }],
             ),
-        };
+        }
+    }
+
+    /// Run until the one Answer and complete descriptor settlement.
+    pub fn settle(&mut self) -> bool {
+        let mut config = skein_sim::Config::calm();
+        config.wall = skein_tls_world::pki::VALID;
+        let mut machine = skein_fake_machine::Machine::new();
+        let root = machine.lay(&[]);
+        let referee = self.referee();
         let mut world = skein_world::World::new(self.seed, config, referee, self.memory).with_machine(Machine {
             files: machine,
             spawns: Vec::new(),

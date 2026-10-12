@@ -251,7 +251,7 @@ fn observed_request(request: Request, selected: Option<&smith_domain_run::Conven
             }
             Asked::Check { owner }
         }
-        Request::Answer { answer, to: _, read: _ } => Asked::Answer { answer },
+        Request::Answer { answer, to: _, read: _, detail: _ } => Asked::Answer { answer },
         Request::HostCall { .. }
         | Request::WithdrawHost { .. }
         | Request::Turn { .. }
@@ -377,7 +377,7 @@ fn fill_selected(limits: &Limits, selected: Option<&smith_domain_run::Convention
         let answer = bytes(u64::from(limits.answer_bytes) + 10);
         let yielded = Event::Yielded { conversation: child, stop: Stop::EndTurn, text: answer };
         assert_eq!(step(yielded), [Asked::Other], "the sub-agent is closed");
-        let ended = Event::Ended { conversation: child, end: End::Closed, spend };
+        let ended = Event::Ended { conversation: child, end: End::Closed, spend, detail: Box::default() };
         assert_eq!(step(ended), [Asked::Other], "its call returns its answer");
         let change = full_change(limits.outcome_bytes);
         let ask = Ask::Finish { outcome: Declared::Change(change) };
@@ -424,7 +424,7 @@ fn refuse_oversized_charter(limits: &Limits, env: &Env<Limits>, out: &mut Queue<
     };
     while domain.pop_fact().is_some() {}
     smith_domain_run::step(&mut domain, env, start, out);
-    let Some(Request::Answer { to: _, answer, read: _ }) = out.pop() else { panic!("expected an answer") };
+    let Some(Request::Answer { to: _, answer, read: _, detail: _ }) = out.pop() else { panic!("expected an answer") };
     assert_eq!(answer, Answer::Refused(Refusal::Invalid(Invalid::TooLarge)));
 }
 
@@ -635,7 +635,7 @@ fn full_receipt_delivery_settles_before_a_cancelled_answer() {
         &env,
         &mut out,
         &meter,
-        Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO },
+        Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() },
     );
     assert!(answered, "the pending delivery settles before the cancelled answer");
 }
@@ -848,7 +848,12 @@ fn complete_declaration_and_maximum_opaque_input_answer_retries_reach_the_measur
         &env,
         &mut out,
         &meter,
-        Some(Event::Ended { conversation, end: smith_domain_run::End::Closed, spend: smith_domain_run::Spend::ZERO }),
+        Some(Event::Ended {
+            conversation,
+            end: smith_domain_run::End::Closed,
+            spend: smith_domain_run::Spend::ZERO,
+            detail: Box::default(),
+        }),
     );
     domain.reclaim();
     assert_eq!((domain.runs(), domain.conversations(), domain.calls()), (0, 0, 0));
@@ -990,7 +995,11 @@ fn a_run_at_scalar_maxima_emits_its_largest_final_note_within_its_ownership_boun
     drop(note); // The completion receiver owns this output, as it owns Open and Say.
     meter.check(measured, bound, &limits);
     take(&mut domain, &env, Event::Cancel { run });
-    take(&mut domain, &env, Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    take(
+        &mut domain,
+        &env,
+        Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() },
+    );
     domain.reclaim();
     assert_eq!((domain.runs(), domain.conversations(), domain.calls()), (0, 0, 0));
 }

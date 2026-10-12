@@ -355,7 +355,7 @@ impl Harness {
                     );
                     self.turns.push(turn).expect("bounded activation fixture turns");
                 }
-                Request::Answer { to, answer, read } => {
+                Request::Answer { to, answer, read, detail: _ } => {
                     match &answer {
                         run::Answer::Parked { turns, .. }
                         | run::Answer::Accepted { turns, .. }
@@ -364,7 +364,9 @@ impl Harness {
                         }
                         run::Answer::Refused(_) => assert!(self.turns.is_empty()),
                     }
-                    requests.push(Request::Answer { to, answer, read }).expect("room for max_out");
+                    requests
+                        .push(Request::Answer { to, answer, read, detail: Box::default() })
+                        .expect("room for max_out");
                 }
                 Request::Long { host_run, operation, until } => {
                     self.long.push(Some(operation)).expect("bounded issued operation history");
@@ -562,6 +564,7 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
                 read: None,
                 to: ReplyTo::new(Token::new(7)),
                 answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Endpoint)),
+                detail: Box::default(),
             }]
         );
         assert_eq!(h.domain.peers(), 0);
@@ -979,7 +982,7 @@ fn an_unsafe_workspace_mount_refuses_start_before_discovery() {
         transcript: None,
     });
     let requests = Box::<[Request; 1]>::try_from(emitted).expect("one refusal terminal, no admission or discovery");
-    let [Request::Answer { to, answer, read: _ }] = *requests else {
+    let [Request::Answer { to, answer, read: _, detail: _ }] = *requests else {
         panic!("unsafe mount refuses before admission or discovery");
     };
     assert_eq!(to.into_token(), Token::new(7));
@@ -1031,7 +1034,7 @@ fn an_opening_larger_than_a_session_holds_refuses_main_as_invalid() {
         panic!("writable directory probes checks before opening: {emitted:?}");
     };
     let emitted = h.step(Event::Probed { owner: *run, executable: false });
-    let [Request::Answer { to: _, answer, read: _ }] = &*emitted else {
+    let [Request::Answer { to: _, answer, read: _, detail: _ }] = &*emitted else {
         panic!("expected the run's answer, got {emitted:?}");
     };
     assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Conversation)));
@@ -1079,7 +1082,9 @@ fn an_accepted_finish_closes_main_and_the_run_answers_the_worker() {
     // The answer and the close come in the next iteration: the close first,
     // which withdraws the call, whose answer has won.
     let emitted = h.next();
-    let [Request::Answer { to, answer: run::Answer::Accepted { outcome: _, spent, .. }, read: _ }] = &*emitted else {
+    let [Request::Answer { to, answer: run::Answer::Accepted { outcome: _, spent, .. }, read: _, detail: _ }] =
+        &*emitted
+    else {
         panic!("expected the run accepted, got {emitted:?}");
     };
     assert_eq!(to, &ReplyTo::new(Token::new(7)));
@@ -1128,7 +1133,8 @@ fn a_change_lands_through_the_worker_and_the_run_answers_with_it() {
         "the answer and the close wait"
     );
     let emitted = h.next();
-    let [Request::Answer { to: _, answer: run::Answer::Accepted { outcome, spent: _, .. }, read: _ }] = &*emitted
+    let [Request::Answer { to: _, answer: run::Answer::Accepted { outcome, spent: _, .. }, read: _, detail: _ }] =
+        &*emitted
     else {
         panic!("expected the run accepted, got {emitted:?}");
     };
@@ -1387,7 +1393,9 @@ fn the_runs_deadline_fires_before_the_sessions_expiry_at_the_same_instant() {
     assert!(!h.domain.is_due(h.env.now));
     assert!(h.next().is_empty(), "the close finds main closing already");
     let emitted = h.step(Event::Cancelled { owner: main });
-    let [Request::Answer { to: _, answer: run::Answer::Failed { failure, spent: _, .. }, read: _ }] = &*emitted else {
+    let [Request::Answer { to: _, answer: run::Answer::Failed { failure, spent: _, .. }, read: _, detail: _ }] =
+        &*emitted
+    else {
         panic!("expected the run failed, got {emitted:?}");
     };
     assert_eq!(failure, &run::Failure::Budget(run::Exhausted::Time));

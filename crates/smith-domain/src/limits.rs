@@ -108,6 +108,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // or returned feedback. Inline
     // request storage is counted by Queue; this is its owned payload.
     let payload = peer::payload(run_limits)?
+        .max(u64::from(session_limits.failure_bytes))
         .max(run_limits.outcome_bytes)
         .max(run::Delivered::worst_case())
         .max(run_limits.run_bytes.checked_add(u64::from(run_limits.host_input_bytes))?);

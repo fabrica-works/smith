@@ -207,6 +207,7 @@ fn the_parent_answer_keeps_its_host_spend_until_gone() {
         parent::Request::Answered {
             client: Token::new(1),
             answer: host::Answer { read: None, turns: 3, spent: 29, result: host::RunResult::Parked },
+            detail: Box::default(),
         },
         &mut out,
     );
@@ -299,6 +300,7 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
                     failure: host::RunFailure::Transcript(host::TranscriptRefusal::Version),
                 },
             },
+            detail: Box::default(),
         },
         &mut out,
     );
@@ -476,6 +478,7 @@ fn answer_with_a_late_state_save(gone_first: bool) {
         parent::Request::Answered {
             client: Token::new(1),
             answer: host::Answer { read: None, turns: 0, spent: 0, result: host::RunResult::Parked },
+            detail: Box::default(),
         },
         &mut out,
     );
@@ -519,6 +522,7 @@ fn gone_after_a_late_turn_save_shows_the_answer_once() {
         parent::Request::Answered {
             client: Token::new(1),
             answer: host::Answer { read: None, turns: 1, spent: 0, result: host::RunResult::Parked },
+            detail: Box::default(),
         },
         &mut out,
     );

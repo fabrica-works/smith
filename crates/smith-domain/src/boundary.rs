@@ -299,6 +299,8 @@ pub enum Request {
         to: ReplyTo,
         /// Single terminal value returned to the caller.
         answer: run::Answer,
+        /// Main conversation's last diagnostic, for the operator.
+        detail: Box<[u8]>,
         /// Last message covered by an actual told main turn; none before any read.
         read: Option<Token>,
     },

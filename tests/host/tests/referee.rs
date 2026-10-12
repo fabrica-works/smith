@@ -30,6 +30,7 @@ fn the_common_parent_referee_rejects_two_run_answers() {
             parent::Request::Answered {
                 client: Token::new(1),
                 answer: host::Answer { read: None, turns: 0, spent: 0, result: RunResult::Parked },
+                detail: Box::default(),
             },
             true,
             true,

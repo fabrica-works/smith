@@ -182,6 +182,8 @@ pub enum Event {
         /// Session's exact cumulative raw usage after all terminals settled.
         /// Units remain supplied separately by `Priced`.
         spend: Spend,
+        /// Session diagnostic kept outside turns, facts and the channel.
+        detail: Box<[u8]>,
     },
     /// Terminal for `Read`.
     Read {
@@ -322,6 +324,8 @@ pub enum Request {
         to: ReplyTo,
         /// Single terminal value returned to the caller.
         answer: Answer,
+        /// Main conversation's last diagnostic, for the operator.
+        detail: Box<[u8]>,
         /// Last message covered by an actual told main turn; none before any read.
         read: Option<Token>,
     },

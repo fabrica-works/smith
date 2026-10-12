@@ -359,7 +359,7 @@ fn answered(emitted: Box<[Request]>) -> (u64, Answer) {
     let Ok(one) = Box::<[Request; 1]>::try_from(emitted) else {
         panic!("expected one request");
     };
-    let [Request::Answer { to, answer, read: _ }] = *one else {
+    let [Request::Answer { to, answer, read: _, detail: _ }] = *one else {
         panic!("expected an answer");
     };
     (to.into_token().raw(), answer)
@@ -728,7 +728,7 @@ fn a_run_whose_main_conversation_fails_answers_with_its_fault_and_what_it_spent(
     let (_, conversation) = h.running(1, 100);
     assert!(h.step(Event::Used { conversation, spend: spend(100) }).is_empty(), "within the budget");
     let end = End::Fault(Fault::Provider);
-    let emitted = h.step(Event::Ended { conversation, end, spend: spend(100) });
+    let emitted = h.step(Event::Ended { conversation, end, spend: spend(100), detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Model(Fault::Provider), spend(100))));
     assert_eq!(h.domain.next_deadline(), None);
     h.domain.reclaim();
@@ -740,7 +740,7 @@ fn a_run_whose_main_conversation_runs_out_of_budget_fails_for_budget() {
     let mut h = Harness::new(LIMITS);
     let (_, conversation) = h.running(1, 100);
     let end = End::Budget(Exhausted::Turns);
-    let emitted = h.step(Event::Ended { conversation, end, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Turns), Spend::ZERO)));
 }
 
@@ -748,10 +748,10 @@ fn a_run_whose_main_conversation_runs_out_of_budget_fails_for_budget() {
 fn a_main_conversation_refused_at_its_entrance_refuses_the_run() {
     let mut h = Harness::new(LIMITS);
     let (_, conversation) = h.admit(1);
-    let emitted = h.step(Event::Ended { conversation, end: End::Busy, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Busy, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, Answer::Refused(Refusal::Busy)));
     let (_, conversation) = h.admit(2);
-    let emitted = h.step(Event::Ended { conversation, end: End::Invalid, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Invalid, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (2, Answer::Refused(Refusal::Invalid(Invalid::Conversation))));
 }
 
@@ -798,7 +798,7 @@ fn an_llm_that_stops_without_finishing_is_nudged_until_its_nudges_run_out() {
         cache_write: Some(0),
         reasoning: None,
     };
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total, detail: Box::default() });
     let unfinished = Failure::Policy(Policy::Unfinished { nudges: LIMITS.nudges, rejected: 0 });
     assert_eq!(answered(emitted), (1, failed(unfinished, total)));
 }
@@ -815,7 +815,8 @@ fn an_llm_whose_last_stop_shows_a_fault_fails_the_run_with_it() {
         let mut h = Harness::new(Limits { nudges: 0, ..LIMITS });
         let (_, conversation) = h.running(1, 100);
         drop(h.step(Event::Yielded { conversation, stop, text: bytes(b"") }));
-        let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+        let emitted =
+            h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
         assert_eq!(answered(emitted), (1, failed(Failure::Model(fault), Spend::ZERO)));
     }
 }
@@ -826,7 +827,8 @@ fn an_llm_with_no_input_or_output_left_is_not_nudged() {
     let (_, conversation) = h.running(1, 100);
     drop(h.step(Event::Used { conversation, spend: spend(BUDGET.spend) }));
     assert_eq!(&*h.step(end_turn(conversation)), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend) });
+    let emitted =
+        h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend), detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend))));
 }
 
@@ -838,7 +840,7 @@ fn an_llm_with_no_turn_left_is_not_nudged() {
     assert!(h.step(Event::Used { conversation, spend: all }).is_empty(), "at the budget");
     let yielded = Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"") };
     assert_eq!(&*h.step(yielded), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: all });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: all, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Turns), all)));
 }
 
@@ -859,7 +861,7 @@ fn spending_past_the_budget_keeps_admitted_turns_stable_until_yield() {
         cache_write: Some(0),
         reasoning: None,
     };
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), total)));
 
     // Or it yields, and is closed then.
@@ -874,7 +876,7 @@ fn what_an_end_counts_beyond_the_turns_used_is_charged() {
     let (_, conversation) = h.running(1, 100);
     drop(h.step(Event::Used { conversation, spend: spend(10) }));
     let end = End::Fault(Fault::ContextFull);
-    let emitted = h.step(Event::Ended { conversation, end, spend: spend(30) });
+    let emitted = h.step(Event::Ended { conversation, end, spend: spend(30), detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Model(Fault::ContextFull), Spend { units: 10, ..spend(30) })));
 }
 
@@ -884,7 +886,12 @@ fn the_deadline_closes_main_and_fails_the_run_for_time() {
     let (_, conversation) = h.running(1, 100);
     h.after(BUDGET.time);
     assert_eq!(&*h.fire(), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Budget(Exhausted::Time), spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended {
+        conversation,
+        end: End::Budget(Exhausted::Time),
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
 }
 
@@ -1049,7 +1056,7 @@ fn an_outcome_that_does_not_fit_the_spec_is_rejected_and_the_run_goes_on() {
         drop(h.step(end_turn(conversation)));
     }
     assert_eq!(&*h.step(end_turn(conversation)), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     let unfinished = Failure::Policy(Policy::Unfinished { nudges: LIMITS.nudges, rejected: 2 });
     assert_eq!(answered(emitted), (1, failed(unfinished, Spend::ZERO)));
 }
@@ -1061,7 +1068,7 @@ fn a_verdict_that_fits_is_accepted_and_the_run_finishes_with_it() {
     let outcome = verdict(b"request", Box::new([comment()]));
     let emitted = h.step(finish(conversation, 7, outcome));
     assert_eq!(&*emitted, &[returned(7, Returned::Accepted), Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(5) });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(5), detail: Box::default() });
     let accepted = Answer::Accepted {
         outcome: verdict(b"request", Box::new([comment()])),
         spent: Spend { units: 0, ..spend(5) },
@@ -1099,7 +1106,7 @@ fn a_change_runs_each_repositorys_checks_then_is_pushed_and_accepted() {
     let emitted = h.step(Event::Delivered { owner, delivery: delivered() });
     assert_eq!(h.domain.runs.get(skein_lib::Id::from_token(run)).unwrap().lease, crate::lease::Lease::Free);
     assert_eq!(&*emitted, &[returned(7, Returned::Delivered(receipts())), Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     let accepted = Answer::Accepted { outcome: Declared::Change(change()), spent: Spend::ZERO, turns: 0 };
     assert_eq!(answered(emitted), (1, accepted));
     h.domain.reclaim();
@@ -1175,7 +1182,12 @@ fn a_change_can_be_delivered_after_failing_checks_when_its_contract_allows_it() 
         [returned(7, Returned::Delivered(receipts())), Request::Close { peer: Token::new(100) }]
     );
     assert_eq!(
-        answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
+        answered(harness.step(Event::Ended {
+            conversation,
+            end: End::Closed,
+            spend: Spend::ZERO,
+            detail: Box::default()
+        })),
         (1, Answer::Accepted { outcome: Declared::Change(change()), spent: Spend::ZERO, turns: 0 })
     );
 }
@@ -1189,7 +1201,7 @@ fn a_change_whose_branch_moved_ends_the_run_as_stale() {
     drop(h.step(Event::Checked { owner, ran: ran(0, b"") }));
     let emitted = h.step(Event::Delivered { owner, delivery: Delivery::Stale });
     assert_eq!(&*emitted, &[returned(7, Returned::Stale), Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Stale, Spend::ZERO)));
 }
 
@@ -1200,7 +1212,8 @@ fn past_the_budget_the_deadline_fails_the_run_for_the_part_it_went_past() {
     drop(h.step(Event::Used { conversation, spend: spend(BUDGET.spend + 1) }));
     h.after(BUDGET.time);
     assert_eq!(&*h.fire(), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend + 1) });
+    let emitted =
+        h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend + 1), detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend + 1))));
 }
 
@@ -1293,7 +1306,7 @@ fn past_the_budget_a_finish_in_the_turn_in_flight_still_counts() {
     let emitted = h.step(finish(conversation, 7, verdict(b"approve", Box::new([]))));
     assert_eq!(&*emitted, &[returned(7, Returned::Accepted), Request::Close { peer: Token::new(100) }]);
     let total = spend(BUDGET.spend + 1);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total, detail: Box::default() });
     assert_eq!(
         answered(emitted),
         (1, Answer::Accepted { outcome: verdict(b"approve", Box::new([])), spent: total, turns: 0 })
@@ -1344,13 +1357,13 @@ fn a_cancel_while_main_opens_closes_main_once_it_starts() {
     assert!(h.step(Event::Cancel { run }).is_empty(), "the ending is decided");
     let peer = Token::new(100);
     assert_eq!(&*h.step(Event::Started { conversation, peer }), &[Request::Close { peer }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, cancelled()));
 
     // Or main is refused, and the cancel is still how the run ends.
     let (run, conversation) = h.admit(2);
     drop(h.step(Event::Cancel { run }));
-    let emitted = h.step(Event::Ended { conversation, end: End::Busy, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Busy, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (2, cancelled()));
 }
 
@@ -1360,7 +1373,12 @@ fn a_cancel_while_main_works_closes_it() {
     let (run, conversation) = h.running(1, 100);
     assert_eq!(&*h.step(Event::Cancel { run }), &[Request::Close { peer: Token::new(100) }]);
     // The conversation failed before it saw the close: the cancel still wins.
-    let emitted = h.step(Event::Ended { conversation, end: End::Fault(Fault::Provider), spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended {
+        conversation,
+        end: End::Fault(Fault::Provider),
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    });
     assert_eq!(answered(emitted), (1, cancelled()));
 }
 
@@ -1371,7 +1389,8 @@ fn a_cancel_while_main_is_over_the_budget_closes_it() {
     drop(h.step(Event::Used { conversation, spend: spend(BUDGET.spend + 1) }));
     assert_eq!(&*h.step(Event::Cancel { run }), &[Request::Close { peer: Token::new(100) }]);
     let spent = spend(BUDGET.spend + 1);
-    let emitted = h.step(Event::Ended { conversation, end: End::Budget(Exhausted::Spend), spend: spent });
+    let emitted =
+        h.step(Event::Ended { conversation, end: End::Budget(Exhausted::Spend), spend: spent, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Cancelled, spent)));
 }
 
@@ -1388,7 +1407,7 @@ fn a_cancel_while_a_change_is_checked_stops_the_checks_once_main_withdraws_its_c
     // A finish that crossed the close is cancelled too.
     let crossed = finish(conversation, 8, verdict(b"approve", Box::new([])));
     assert_eq!(&*h.step(crossed), &[returned(8, Returned::Cancelled)]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, cancelled()));
 }
 
@@ -1409,7 +1428,7 @@ fn a_push_that_lands_while_a_cancel_closes_main_wins_over_it() {
         &*h.step(Event::Delivered { owner, delivery: delivered() }),
         &[returned(7, Returned::Delivered(receipts()))]
     );
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     let accepted = Answer::Accepted { outcome: Declared::Change(change()), spent: Spend::ZERO, turns: 0 };
     assert_eq!(answered(emitted), (1, accepted));
 
@@ -1431,7 +1450,7 @@ fn a_push_that_lands_while_a_cancel_closes_main_wins_over_it() {
             Returned::DeliveryFailed { failure: crate::DeliveryFailure::new(0, crate::DeliveryReason::TimedOut) }
         )]
     );
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (2, cancelled()));
 }
 
@@ -1452,7 +1471,7 @@ fn a_push_that_lands_after_the_deadline_wins_over_it() {
         &[returned(7, Returned::Delivered(receipts()))]
     );
     assert!(h.step(Event::Withdraw { conversation, call: Token::new(7) }).is_empty(), "returned already");
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     let accepted = Answer::Accepted { outcome: Declared::Change(change()), spent: Spend::ZERO, turns: 0 };
     assert_eq!(answered(emitted), (1, accepted));
 
@@ -1472,7 +1491,7 @@ fn a_push_that_lands_after_the_deadline_wins_over_it() {
         &[returned(8, Returned::Delivered(receipts()))]
     );
     let total = spend(BUDGET.spend + 1);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total, detail: Box::default() });
     assert_eq!(
         answered(emitted),
         (1, Answer::Accepted { outcome: Declared::Change(change()), spent: total, turns: 0 })
@@ -1489,7 +1508,7 @@ fn checks_that_pass_once_the_run_winds_down_push_nothing() {
     // Main's caller deadline equals the run's time budget and has passed;
     // this pre-submission check returns timeout without any host delivery.
     assert_eq!(&*h.step(Event::Checked { owner, ran: ran(0, b"") }), &[returned(7, Returned::TimedOut)]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
 }
 
@@ -1500,14 +1519,14 @@ fn a_cancel_while_the_run_winds_down_changes_nothing() {
     h.after(BUDGET.time);
     drop(h.fire());
     assert!(h.step(Event::Cancel { run }).is_empty(), "the ending is decided");
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
 
     // Winding down to an accepted outcome, too.
     let (run, conversation) = h.running(2, 101);
     drop(h.step(finish(conversation, 7, verdict(b"approve", Box::new([])))));
     assert!(h.step(Event::Cancel { run }).is_empty(), "the ending is decided");
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     let accepted = Answer::Accepted { outcome: verdict(b"approve", Box::new([])), spent: Spend::ZERO, turns: 0 };
     assert_eq!(answered(emitted), (2, accepted));
 }
@@ -1516,7 +1535,12 @@ fn a_cancel_while_the_run_winds_down_changes_nothing() {
 fn a_cancel_of_a_run_that_has_answered_changes_nothing() {
     let mut h = Harness::new(LIMITS);
     let (run, conversation) = h.running(1, 100);
-    drop(h.step(Event::Ended { conversation, end: End::Fault(Fault::Provider), spend: Spend::ZERO }));
+    drop(h.step(Event::Ended {
+        conversation,
+        end: End::Fault(Fault::Provider),
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }));
     assert!(h.step(Event::Cancel { run }).is_empty(), "answered, not reclaimed yet");
     h.domain.reclaim();
     assert!(h.step(Event::Cancel { run }).is_empty(), "answered and gone");
@@ -1640,7 +1664,8 @@ fn a_child_closed_after_its_last_charge_tells_the_budget_of_its_return() {
     drop(h.step(Event::Used { conversation: child, spend: spend(50) }));
     drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"Found.") }));
     h.after(Duration::from_nanos(2_000_000_500));
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50), detail: Box::default() });
     let [Request::Return { result: Returned::Answered { left, .. }, .. }] = &*emitted else {
         panic!("expected the child's answer, got {emitted:?}");
     };
@@ -1680,7 +1705,12 @@ fn a_childs_return_pushes_one_budget_even_with_its_stage_change() {
     let (child, _) = h.child(main, 7, families(true, false, false), 101);
     drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"Found.") }));
     drop(facts(&mut h));
-    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend { turns: 8, ..spend(50) } }));
+    drop(h.step(Event::Ended {
+        conversation: child,
+        end: End::Closed,
+        spend: Spend { turns: 8, ..spend(50) },
+        detail: Box::default(),
+    }));
     let mut snapshots = List::with_capacity(2);
     for fact in &facts(&mut h) {
         if let Fact::Budget { standing, call, .. } = fact {
@@ -1696,7 +1726,7 @@ fn mains_end_names_no_call_in_its_budget() {
     let (_, main) = h.running_on(1, 100, agents());
     drop(h.step(finish(main, 8, verdict(b"approve", Box::new([])))));
     drop(facts(&mut h));
-    drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: spend(50) }));
+    drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: spend(50), detail: Box::default() }));
     let mut snapshots = List::with_capacity(2);
     for fact in &facts(&mut h) {
         if let Fact::Budget { call, .. } = fact {
@@ -1720,7 +1750,8 @@ fn a_sub_agent_answers_with_its_last_message_once_it_has_ended() {
     let yielded =
         Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"The parser is in src/parse.rs.") };
     assert_eq!(&*h.step(yielded), &[Request::Close { peer: Token::new(101) }], "a sub-agent that yields is done");
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50), detail: Box::default() });
     let answer = Returned::Answered {
         text: bytes(b"The parser is in"),
         cut: 14,
@@ -1767,7 +1798,17 @@ fn writing_children_hold_the_lease_until_their_actual_end_even_after_withdrawal(
             &[Request::Close { peer: Token::new(101) }]
         );
         assert_eq!(harness.domain.runs.get(run).unwrap().lease, held);
-        assert_eq!(harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }).len(), 1);
+        assert_eq!(
+            harness
+                .step(Event::Ended {
+                    conversation: child,
+                    end: End::Closed,
+                    spend: Spend::ZERO,
+                    detail: Box::default()
+                })
+                .len(),
+            1
+        );
         assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
     }
 }
@@ -1783,7 +1824,12 @@ fn inspect_only_children_keep_the_lease_free_while_their_calls_overlap() {
     assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
     for child in [second, first] {
         drop(harness.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"found") }));
-        drop(harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }));
+        drop(harness.step(Event::Ended {
+            conversation: child,
+            end: End::Closed,
+            spend: Spend::ZERO,
+            detail: Box::default(),
+        }));
         assert_eq!(harness.domain.runs.get(run).unwrap().lease, crate::lease::Lease::Free);
     }
 }
@@ -1959,12 +2005,18 @@ fn pending_children_cannot_reserve_the_same_last_ordinary_turn() {
     drop(harness.step(Event::Used { conversation: first, spend: spend(1) }));
     assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(101) }]);
     assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(102) }]);
-    let second_return = harness.step(Event::Ended { conversation: second, end: End::Closed, spend: Spend::ZERO });
+    let second_return = harness.step(Event::Ended {
+        conversation: second,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    });
     let [Request::Return { call, result: Returned::Unanswered { end, .. }, .. }] = second_return.as_ref() else {
         panic!("one settled child return: {second_return:?}");
     };
     assert_eq!((*call, *end), (Token::new(8), End::Budget(Exhausted::Turns)));
-    let first_return = harness.step(Event::Ended { conversation: first, end: End::Closed, spend: spend(1) });
+    let first_return =
+        harness.step(Event::Ended { conversation: first, end: End::Closed, spend: spend(1), detail: Box::default() });
     let [
         Request::Return { call, result: Returned::Unanswered { end, .. }, .. },
         Request::CompletionReady { conversation },
@@ -2002,7 +2054,12 @@ fn ordinary_time_closes_a_child_then_main_receives_its_final_permit() {
     assert_eq!(harness.fire().as_ref(), &[]);
     assert_eq!(crate::completion_permit(&mut harness.domain, main, harness.env.now, 0), crate::CompletionPermit::Held);
     assert_eq!(harness.resume().as_ref(), &[Request::Close { peer: Token::new(101) }]);
-    let returned = harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let returned = harness.step(Event::Ended {
+        conversation: child,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    });
     let [Request::Return { result: Returned::Unanswered { end, .. }, .. }, Request::CompletionReady { conversation }] =
         returned.as_ref()
     else {
@@ -2077,7 +2134,12 @@ fn a_sub_agent_that_ends_without_answering_returns_how_it_ended() {
     let mut h = Harness::new(LIMITS);
     let (_, main) = h.running_on(1, 100, agents());
     let (child, _) = h.child(main, 7, families(true, false, false), 101);
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Fault(Fault::Provider), spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended {
+        conversation: child,
+        end: End::Fault(Fault::Provider),
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    });
     assert_eq!(
         &*emitted,
         &[returned(
@@ -2104,7 +2166,8 @@ fn a_withdrawn_sub_agent_is_closed_and_its_call_returns_once_it_has_ended() {
     // Its answer crossed the close: the call is cancelled all the same.
     let yielded = Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"late") };
     assert!(h.step(yielded).is_empty(), "closing already");
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(&*emitted, &[returned(7, Returned::Cancelled)]);
     h.domain.reclaim();
 
@@ -2117,7 +2180,8 @@ fn a_withdrawn_sub_agent_is_closed_and_its_call_returns_once_it_has_ended() {
         &*h.step(Event::Started { conversation: child, peer: Token::new(102) }),
         &[Request::Close { peer: Token::new(102) }]
     );
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(&*emitted, &[returned(8, Returned::Cancelled)]);
 }
 
@@ -2136,7 +2200,8 @@ fn a_sub_agent_past_its_deadline_is_closed_and_returns_timed_out_once_it_has_end
     // Its answer crossed the close.
     let yielded = Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"late") };
     assert!(h.step(yielded).is_empty(), "closing already");
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(&*emitted, &[returned(7, Returned::TimedOut)]);
     assert_eq!(h.step(end_turn(main)).len(), 1, "the run goes on: main is nudged");
     h.domain.reclaim();
@@ -2149,7 +2214,8 @@ fn a_sub_agent_past_its_deadline_is_closed_and_returns_timed_out_once_it_has_end
     drop(h.step(Event::Withdraw { conversation: main, call: Token::new(8) }));
     h.after(minute);
     assert!(!h.domain.is_due(h.env.now), "a withdraw cancels its call's deadline");
-    let emitted = h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO });
+    let emitted =
+        h.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(&*emitted, &[returned(8, Returned::Cancelled)]);
 }
 
@@ -2161,9 +2227,15 @@ fn a_sub_agent_that_spends_past_the_budget_winds_the_run_down() {
     let emitted = h.step(Event::Used { conversation: child, spend: spend(BUDGET.spend + 1) });
     assert!(emitted.is_empty(), "the crossing child and main settle their admitted turn");
     drop(h.step(Event::Withdraw { conversation: main, call: Token::new(7) }));
-    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(BUDGET.spend + 1) }));
+    drop(h.step(Event::Ended {
+        conversation: child,
+        end: End::Closed,
+        spend: spend(BUDGET.spend + 1),
+        detail: Box::default(),
+    }));
     assert_eq!(&*h.step(end_turn(main)), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO });
+    let emitted =
+        h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend + 1))));
 }
 
@@ -2198,9 +2270,9 @@ fn a_run_tells_what_it_did_as_content_free_facts() {
     drop(h.step(Event::Used { conversation: child, spend: spend(100) }));
     h.after(Duration::from_secs(2));
     drop(h.step(Event::Yielded { conversation: child, stop: Stop::EndTurn, text: bytes(b"done") }));
-    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(100) }));
+    drop(h.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(100), detail: Box::default() }));
     drop(h.step(finish(main, 8, verdict(b"approve", Box::new([])))));
-    drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO }));
+    drop(h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO, detail: Box::default() }));
     let told = facts(&mut h);
     let expected = [
         Fact::Admitted { run, resumed: false },
@@ -2277,7 +2349,7 @@ fn a_minimum_fact_reserve_keeps_the_admitted_terminal_and_every_prior_fact() {
     let mut h = Harness::new(Limits { facts: required, ..LIMITS });
     let (run, conversation) = h.running(1, 100);
     assert_eq!(&*h.step(Event::Cancel { run }), &[Request::Close { peer: Token::new(100) }]);
-    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO });
+    let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
     assert_eq!(answered(emitted), (1, cancelled()));
     let observed = facts(&mut h);
     assert_eq!(observed.len(), 5);
@@ -2392,7 +2464,7 @@ fn reports_and_declared_failures_settle_once_without_checks_or_push() {
             h.step(Event::Priced { conversation, own_spent: 5, subtree_spent: 5 }).is_empty(),
             "an own price notice charges the terminal's usage independently"
         );
-        let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(5) });
+        let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: spend(5), detail: Box::default() });
         assert_eq!(
             answered(emitted),
             (1, Answer::Accepted { outcome: text_result(failure, text), spent: spend(5), turns: 0 })
@@ -2561,7 +2633,13 @@ fn mid_report_landing_settles_before_an_interrupted_run_answers() {
         if !interrupted {
             drop(harness.step(finish(conversation, 51, report())));
         }
-        let answer = answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })).1;
+        let answer = answered(harness.step(Event::Ended {
+            conversation,
+            end: End::Closed,
+            spend: Spend::ZERO,
+            detail: Box::default(),
+        }))
+        .1;
         if interrupted {
             assert_eq!(answer, Answer::Failed { failure: Failure::Cancelled, spent: Spend::ZERO, turns: 0 });
         } else {
@@ -2594,7 +2672,13 @@ fn malformed_host_mount_or_zero_origin_never_becomes_successful_delivery() {
         )]
     );
     drop(harness.step(finish(conversation, 51, report())));
-    let answer = answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })).1;
+    let answer = answered(harness.step(Event::Ended {
+        conversation,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }))
+    .1;
     assert_eq!(answer, Answer::Accepted { outcome: report(), spent: Spend::ZERO, turns: 0 });
 }
 
@@ -2632,7 +2716,13 @@ fn time_and_spend_shutdown_keep_an_already_submitted_mid_landing() {
         }
         // Closing the session waits for the host terminal; its one End
         // then reports the spend it already used, without another delivery.
-        let answer = answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: expected_spend })).1;
+        let answer = answered(harness.step(Event::Ended {
+            conversation,
+            end: End::Closed,
+            spend: expected_spend,
+            detail: Box::default(),
+        }))
+        .1;
         assert_eq!(answer, Answer::Failed { failure: expected, spent: expected_spend, turns: 0 });
     }
 }
@@ -2649,7 +2739,13 @@ fn generic_non_marker_host_refusal_is_feedback_and_report_can_finish() {
         &[returned(50, Returned::DeliveryRefused(refusal))]
     );
     drop(harness.step(finish(conversation, 51, report())));
-    let answer = answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })).1;
+    let answer = answered(harness.step(Event::Ended {
+        conversation,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }))
+    .1;
     assert_eq!(answer, Answer::Accepted { outcome: report(), spent: Spend::ZERO, turns: 0 });
 }
 
@@ -2703,7 +2799,13 @@ fn caller_only_stop_keeps_submitted_mid_delivery_and_ordinary_continuation() {
             } else {
                 drop(harness.step(finish(conversation, 51, report())));
             }
-            let answer = answered(harness.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })).1;
+            let answer = answered(harness.step(Event::Ended {
+                conversation,
+                end: End::Closed,
+                spend: Spend::ZERO,
+                detail: Box::default(),
+            }))
+            .1;
             assert_eq!(
                 answer,
                 if later_cancel {
@@ -2899,7 +3001,12 @@ fn host_withdrawal_and_timeout_retain_relay_until_terminal_answer_wins() {
         );
         match stop {
             Stop::CancelRun => {
-                let (_, answer) = answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO }));
+                let (_, answer) = answered(h.step(Event::Ended {
+                    conversation,
+                    end: End::Closed,
+                    spend: Spend::ZERO,
+                    detail: Box::default(),
+                }));
                 assert_eq!(answer, failed(Failure::Cancelled, Spend::ZERO));
             }
             Stop::Withdraw | Stop::RelayTimeout => {}
@@ -3058,7 +3165,7 @@ fn opaque_fifo_wakes_waiting_and_read_advances_only_on_main_turn() {
     assert_eq!(h.fire().as_ref(), &[returned(20, Returned::Withheld), Request::Close { peer: Token::new(9) }]);
     h.step(Event::Turn { conversation, record: Token::new(52), sequence: 3, opens_window: false });
     assert_eq!(
-        answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
+        answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() })),
         (1, Answer::Parked { spent: Spend::ZERO, turns: 3 })
     );
     h.domain.reclaim();
@@ -3092,7 +3199,7 @@ fn zero_waiting_time_parks_with_its_wait_result_withheld() {
     );
     h.step(Event::Turn { conversation, record: Token::new(73), sequence: 1, opens_window: true });
     assert_eq!(
-        answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO })),
+        answered(h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() })),
         (70, Answer::Parked { spent: Spend::ZERO, turns: 1 })
     );
 }
@@ -3134,11 +3241,12 @@ fn bounded_message_and_input_at_idle_deadline_preserve_existing_fifo() {
     assert!(!h.domain.is_due(h.env.now), "same-iteration input cancels idle expiry before fire");
     assert_eq!(&*h.step(Event::Cancel { run }), &[Request::Close { peer: Token::new(9) }]);
     assert_eq!(
-        &*h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO }),
+        &*h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() }),
         &[Request::Answer {
             to: ReplyTo::new(Token::new(1)),
             answer: Answer::Failed { failure: Failure::Cancelled, spent: Spend::ZERO, turns: 1 },
             read: Some(Token::new(5)),
+            detail: Box::default(),
         }]
     );
     h.domain.reclaim();
@@ -3538,7 +3646,13 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
     };
     assert_eq!(harness.step(wait).as_ref(), &[returned(91, Returned::Refused { refusal: AskRefusal::Over })]);
     assert_eq!(harness.step(end_turn(main)).as_ref(), &[Request::Close { peer: Token::new(100) }]);
-    let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO })).1;
+    let answer = answered(harness.step(Event::Ended {
+        conversation: main,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }))
+    .1;
     assert_eq!(answer, failed(Failure::Budget(Exhausted::Spend), Spend { units: BUDGET.spend, ..Spend::ZERO }));
 }
 
@@ -3611,7 +3725,9 @@ fn completion_gate_distinguishes_child_withdrawal_from_budget_denial() {
         crate::CompletionPermit::Allowed
     );
     assert_eq!(
-        harness.step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO }).as_ref(),
+        harness
+            .step(Event::Ended { conversation: child, end: End::Closed, spend: Spend::ZERO, detail: Box::default() })
+            .as_ref(),
         &[returned(7, Returned::Cancelled)]
     );
 }
@@ -3626,8 +3742,13 @@ fn run_wide_overflow_preflight_preserves_charged_prefix() {
         Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)))
     );
     assert_eq!(crate::completion_overflow(&harness.domain, main, 0, Spend { turns: 1, ..Spend::ZERO }), None);
-    let answer =
-        answered(harness.step(Event::Ended { conversation: main, end: End::PriceOverflow, spend: Spend::ZERO })).1;
+    let answer = answered(harness.step(Event::Ended {
+        conversation: main,
+        end: End::PriceOverflow,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }))
+    .1;
     assert_eq!(
         answer,
         failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)), Spend { units: u64::MAX, ..Spend::ZERO })
@@ -3651,7 +3772,13 @@ fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
             harness.step(Event::Used { conversation: main, spend: overflow }).as_ref(),
             &[Request::Close { peer: Token::new(100) }]
         );
-        let answer = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: full })).1;
+        let answer = answered(harness.step(Event::Ended {
+            conversation: main,
+            end: End::Closed,
+            spend: full,
+            detail: Box::default(),
+        }))
+        .1;
         assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), full));
     }
 }
@@ -3660,8 +3787,13 @@ fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
 fn a_session_usage_overflow_becomes_the_run_failure() {
     let mut harness = Harness::new(LIMITS);
     let (_, main) = harness.running(1, 100);
-    let answer =
-        answered(harness.step(Event::Ended { conversation: main, end: End::UsageOverflow, spend: Spend::ZERO })).1;
+    let answer = answered(harness.step(Event::Ended {
+        conversation: main,
+        end: End::UsageOverflow,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }))
+    .1;
     assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), Spend::ZERO));
 }
 
@@ -3772,7 +3904,12 @@ fn messages_during_stopping_over_winding_and_closed_each_have_an_ending_terminal
                 running.step(end_turn(main));
             }
             22 => {
-                running.step(Event::Ended { conversation: main, end: End::Closed, spend: spend(BUDGET.spend) });
+                running.step(Event::Ended {
+                    conversation: main,
+                    end: End::Closed,
+                    spend: spend(BUDGET.spend),
+                    detail: Box::default(),
+                });
             }
             23 => {}
             _ => unreachable!("three known phases"),
@@ -3805,7 +3942,12 @@ fn ordered_offers_end_each_message_read_or_unread_and_the_answer_keeps_the_last_
             &[Request::Say { peer: Token::new(9), text: bytes(b"peer: aaa\n\npeer: aaa") }]
         );
         harness.step(Event::Cancel { run });
-        let terminal = harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO });
+        let terminal = harness.step(Event::Ended {
+            conversation: main,
+            end: End::Closed,
+            spend: Spend::ZERO,
+            detail: Box::default(),
+        });
         let [Request::Answer { read, .. }] = &*terminal else { panic!("one run terminal") };
         assert_eq!(*read, Some(Token::new(0)), "an untold offer cannot move the final fence");
         let mut terminals = alloc::collections::BTreeMap::new();
@@ -4193,7 +4335,7 @@ fn a_finish_crossing_a_message_continues_only_with_wait_authority() {
         } else {
             assert_eq!(emitted.as_ref(), [returned(96, Returned::Accepted), Request::Close { peer: Token::new(100) }]);
         }
-        harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO });
+        harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
         let facts = observed_facts(&mut harness);
         let mut read = 0_u32;
         let mut unread = 0_u32;
@@ -4243,7 +4385,12 @@ fn a_supplied_identity_reaches_main_and_children_with_ordinals_never_reused() {
     assert_eq!(identity.bytes(), [0; 16]);
     let (first, opening) = harness.child(main, 7, families(false, false, false), 101);
     assert_eq!((opening.identity, opening.ordinal), (identity, 1));
-    drop(harness.step(Event::Ended { conversation: first, end: End::Closed, spend: Spend::ZERO }));
+    drop(harness.step(Event::Ended {
+        conversation: first,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }));
     harness.domain.reclaim();
     let (_, second) = harness.child(main, 8, families(false, false, false), 102);
     assert_eq!((second.identity, second.ordinal), (identity, 2), "ended children never free their ordinal");
@@ -4337,7 +4484,12 @@ fn final_turns_ignore_ordinary_nudges_and_fail_once_only_after_the_last() {
         reasoning: None,
         units: 3,
     };
-    let (_, answer) = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: actual }));
+    let (_, answer) = answered(harness.step(Event::Ended {
+        conversation: main,
+        end: End::Closed,
+        spend: actual,
+        detail: Box::default(),
+    }));
     assert_eq!(answer, failed(Failure::Budget(Exhausted::Turns), actual));
 }
 
@@ -4362,7 +4514,13 @@ fn a_report_accepted_in_main_final_work_remains_accepted_once() {
     );
     let actual = Spend { turns: 3, ..Spend::ZERO };
     assert_eq!(
-        answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: actual })).1,
+        answered(harness.step(Event::Ended {
+            conversation: main,
+            end: End::Closed,
+            spend: actual,
+            detail: Box::default()
+        }))
+        .1,
         Answer::Accepted { outcome: report(), spent: actual, turns: 0 }
     );
     assert!(harness.step(Event::Cancel { run }).is_empty(), "no second answer after acceptance");
@@ -4390,7 +4548,12 @@ fn ordinary_time_exhaustion_parks_a_wait_and_withholds_its_actual_call() {
     );
     harness.env.now = Time::ZERO.saturating_add(Duration::from_secs(540));
     assert_eq!(harness.fire().as_ref(), &[returned(91, Returned::Withheld), Request::Close { peer: Token::new(100) }]);
-    let (_, answer) = answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO }));
+    let (_, answer) = answered(harness.step(Event::Ended {
+        conversation: main,
+        end: End::Closed,
+        spend: Spend::ZERO,
+        detail: Box::default(),
+    }));
     assert_eq!(answer, Answer::Parked { spent: Spend::ZERO, turns: 0 });
 }
 
@@ -4446,7 +4609,8 @@ fn a_capped_child_answer_keeps_its_budget_stop_until_the_actual_end_and_returns_
             .as_ref(),
         &[Request::Close { peer: Token::new(101) }]
     );
-    let emitted = harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) });
+    let emitted =
+        harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50), detail: Box::default() });
     let [Request::Return { call, result: Returned::Answered { text, stop, used, .. }, spent }] = emitted.as_ref()
     else {
         panic!("actual parent receives one answered terminal: {emitted:?}");
@@ -4457,7 +4621,9 @@ fn a_capped_child_answer_keeps_its_budget_stop_until_the_actual_end_and_returns_
     assert_eq!(used.turns, 1);
     assert_eq!(*spent, 50);
     assert!(
-        harness.step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50) }).is_empty(),
+        harness
+            .step(Event::Ended { conversation: child, end: End::Closed, spend: spend(50), detail: Box::default() })
+            .is_empty(),
         "stale end cannot answer twice"
     );
 }
@@ -4642,7 +4808,13 @@ fn spend_above_the_reserve_runs_out_then_main_finishes_and_is_accepted() {
     );
     let actual = spend(1).accumulate(spend(1)).expect("two bounded charges");
     assert_eq!(
-        answered(harness.step(Event::Ended { conversation: main, end: End::Closed, spend: actual })).1,
+        answered(harness.step(Event::Ended {
+            conversation: main,
+            end: End::Closed,
+            spend: actual,
+            detail: Box::default()
+        }))
+        .1,
         Answer::Accepted { outcome: report(), spent: actual, turns: 0 }
     );
     assert!(harness.step(Event::Cancel { run }).is_empty());

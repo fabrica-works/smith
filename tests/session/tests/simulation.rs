@@ -572,3 +572,80 @@ fn a_yielded_call_tail_becomes_not_run_only_after_the_continue() {
         "the yielded call had no effect and exactly one continuation"
     );
 }
+
+#[test]
+fn a_failed_sessions_end_carries_its_last_detail() {
+    use smith_domain_session::{self as session, llm};
+    let mut world = recorded::World::new(6812, 256);
+    world.open(recorded::opening(None, u64::MAX));
+    world.step(session::Event::Failed {
+        owner: world.completing.expect("provider request"),
+        failure: llm::Failure::Invalid,
+        evidence: llm::Evidence::Response { status: Some(400) },
+        detail: b"private provider diagnostic".as_slice().into(),
+    });
+    assert_eq!(world.detail.as_ref(), b"private provider diagnostic");
+    assert!(matches!(world.end, Some(session::End::Failed { failure: llm::Failure::Invalid, .. })));
+    assert_eq!(world.prompts.len(), 1);
+    assert!(world.prompts.iter().all(|prompt| prompt.messages.iter().all(|message| {
+        message.content.iter().all(|block| match block {
+            llm::Block::Text { text, .. } => {
+                !text.windows(b"private provider diagnostic".len()).any(|bytes| bytes == b"private provider diagnostic")
+            }
+            llm::Block::Opaque { .. }
+            | llm::Block::Refusal { .. }
+            | llm::Block::ToolCall { .. }
+            | llm::Block::ToolResult { .. } => true,
+        })
+    })));
+    world.close();
+}
+
+#[test]
+fn a_later_failure_replaces_the_kept_detail() {
+    use smith_domain_session::{self as session, llm};
+    let mut world = recorded::World::new(6813, 256);
+    world.open(recorded::opening(None, u64::MAX));
+    world.step(session::Event::Failed {
+        owner: world.completing.expect("first provider request"),
+        failure: llm::Failure::Overloaded,
+        evidence: llm::Evidence::Response { status: Some(503) },
+        detail: b"first private diagnostic".as_slice().into(),
+    });
+    world.fire();
+    world.step(session::Event::Failed {
+        owner: world.completing.expect("second provider request"),
+        failure: llm::Failure::Invalid,
+        evidence: llm::Evidence::Response { status: Some(400) },
+        detail: b"last private diagnostic".as_slice().into(),
+    });
+    assert_eq!(world.detail.as_ref(), b"last private diagnostic");
+    world.close();
+}
+
+#[test]
+fn no_prompt_holds_a_kept_detail() {
+    use smith_domain_session::{self as session, llm};
+    let mut world = recorded::World::new(6814, 256);
+    world.open(recorded::opening(None, u64::MAX));
+    world.step(session::Event::Failed {
+        owner: world.completing.expect("first provider request"),
+        failure: llm::Failure::Overloaded,
+        evidence: llm::Evidence::Response { status: Some(503) },
+        detail: b"private provider diagnostic".as_slice().into(),
+    });
+    world.fire();
+    assert_eq!(world.prompts.len(), 2);
+    assert!(world.prompts.iter().all(|prompt| prompt.messages.iter().all(|message| {
+        message.content.iter().all(|block| match block {
+            llm::Block::Text { text, .. } => {
+                !text.windows(b"private provider diagnostic".len()).any(|bytes| bytes == b"private provider diagnostic")
+            }
+            llm::Block::Opaque { .. }
+            | llm::Block::Refusal { .. }
+            | llm::Block::ToolCall { .. }
+            | llm::Block::ToolResult { .. } => true,
+        })
+    })));
+    world.close();
+}

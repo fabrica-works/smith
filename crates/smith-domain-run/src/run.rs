@@ -261,6 +261,11 @@ pub(crate) struct Start {
     pub(crate) resumed: bool,
 }
 
+/// A refused entrance has no conversation diagnostic or read fence.
+fn refuse_start(reply_to: ReplyTo, refusal: Refusal, out: &mut Queue<Request>) {
+    out.push(Request::Answer { to: reply_to, answer: Answer::Refused(refusal), read: None, detail: Box::default() });
+}
+
 pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &mut Queue<Request>) {
     let Start { reply_to, host_run, activation, identity, window, messages, charter, workspace, transcript, resumed } =
         start;
@@ -268,38 +273,26 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
     // A charter that can never fit is invalid, room or not: busy invites a
     // retry.
     if activation == 0 {
-        out.push(Request::Answer {
-            to: reply_to,
-            answer: Answer::Refused(Refusal::Invalid(Invalid::Activation)),
-            read: None,
-        });
+        refuse_start(reply_to, Refusal::Invalid(Invalid::Activation), out);
         return;
     }
     if window.turns == 0 || window.largest_turn == 0 || window.bytes < window.largest_turn {
-        out.push(Request::Answer {
-            to: reply_to,
-            answer: Answer::Refused(Refusal::Invalid(Invalid::Window)),
-            read: None,
-        });
+        refuse_start(reply_to, Refusal::Invalid(Invalid::Window), out);
         return;
     }
     let guide_bytes = match charter::check(&charter, workspace.as_ref(), &env.limits) {
         Ok(guide_bytes) => guide_bytes,
         Err(invalid) => {
-            out.push(Request::Answer { to: reply_to, answer: Answer::Refused(Refusal::Invalid(invalid)), read: None });
+            refuse_start(reply_to, Refusal::Invalid(invalid), out);
             return;
         }
     };
     if !inbox::messages_valid(&messages, &env.limits) {
-        out.push(Request::Answer {
-            to: reply_to,
-            answer: Answer::Refused(Refusal::Invalid(Invalid::Messages)),
-            read: None,
-        });
+        refuse_start(reply_to, Refusal::Invalid(Invalid::Messages), out);
         return;
     }
     if runs.is_full() || conversations.is_full() {
-        out.push(Request::Answer { to: reply_to, answer: Answer::Refused(Refusal::Busy), read: None });
+        refuse_start(reply_to, Refusal::Busy, out);
         return;
     }
     let identity = match identity {
@@ -1276,7 +1269,14 @@ fn terminal_failure(end: End) -> Option<Failure> {
     }
 }
 
-pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: Spend, out: &mut Queue<Request>) {
+pub(crate) fn ended(
+    domain: &mut Domain,
+    conversation: Token,
+    end: End,
+    spend: Spend,
+    detail: Box<[u8]>,
+    out: &mut Queue<Request>,
+) {
     let Domain { rng: _, runs, conversations, calls, alarms, facts, ready } = domain;
     let id = Id::<Conversation>::from_token(conversation);
     let Some(conversation) = conversations.get_mut(id) else {
@@ -1360,14 +1360,14 @@ pub(crate) fn ended(domain: &mut Domain, conversation: Token, end: End, spend: S
     run.state = match state {
         State::Working { reply_to, main } | State::Waiting { reply_to, main, call: _, until: _ } => {
             assert!(main == id, "a conversation with no asker is main");
-            answer(reply_to, ending(end, run.spent, run.turns), run.inbox.fence(), out)
+            answer(reply_to, ending(end, run.spent, run.turns), run.inbox.fence(), detail, out)
         }
         State::Winding { reply_to, ending } => {
             let ending = match failure {
                 Some(failure) => Ending::Failed(failure),
                 None => ending,
             };
-            answer(reply_to, finished(ending, run.spent, run.turns), run.inbox.fence(), out)
+            answer(reply_to, finished(ending, run.spent, run.turns), run.inbox.fence(), detail, out)
         }
         State::Awaiting { .. } | State::Preparing { .. } | State::Stopping { .. } | State::Closed => {
             unreachable!("a run's conversation ends only once the run has opened it")
@@ -1735,7 +1735,7 @@ fn unopened(
         }
     }
     conversations.retire(main);
-    answer(reply_to, terminal, run.inbox.fence(), out)
+    answer(reply_to, terminal, run.inbox.fence(), Box::default(), out)
 }
 
 /// Working in the ordinary or finishing phase: main called `finish` as
@@ -2124,8 +2124,14 @@ fn closing(peer: Token, out: &mut Queue<Request>) -> Phase {
 }
 
 /// Answers the host: the run is done.
-fn answer(reply_to: ReplyTo, answer: Answer, read: Option<Token>, out: &mut Queue<Request>) -> State {
-    out.push(Request::Answer { to: reply_to, answer, read });
+fn answer(
+    reply_to: ReplyTo,
+    answer: Answer,
+    read: Option<Token>,
+    detail: Box<[u8]>,
+    out: &mut Queue<Request>,
+) -> State {
+    out.push(Request::Answer { to: reply_to, answer, read, detail });
     State::Closed
 }
 

@@ -173,7 +173,7 @@ fn take(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Re
             run::priced(domain, conversation, own_spent, subtree_spent, out);
         }
         Event::Used { conversation, spend } => run::used(domain, conversation, spend, out),
-        Event::Ended { conversation, end, spend } => run::ended(domain, conversation, end, spend, out),
+        Event::Ended { conversation, end, spend, detail } => run::ended(domain, conversation, end, spend, detail, out),
         Event::Read { owner, read } => run::read(domain, env, owner, read, out),
         Event::Probed { owner, executable } => run::probed(domain, env, owner, executable, out),
         Event::Delegated { conversation, call, name, ask, deadline } => {

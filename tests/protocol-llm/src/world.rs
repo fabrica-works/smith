@@ -1046,7 +1046,7 @@ impl World {
                 assert!(self.admitted.replace(run).is_none(), "a start is admitted at most once");
                 self.messages_seen.push((self.now, crate::messages_referee::Seen::Admitted));
             }
-            Request::Answer { to, answer, read } => {
+            Request::Answer { to, answer, read, detail: _ } => {
                 if matches!(&answer, run::Answer::Failed { .. }) {
                     self.host_history.shutdown(self.now);
                 }

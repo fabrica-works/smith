@@ -190,6 +190,8 @@ pub enum Request {
         /// Sums of supplied counts for the parent's bookkeeping, absent until
         /// reported at least once. This is never a raw provider observation.
         reported: Usage,
+        /// Last bounded provider diagnostic; never part of the model history.
+        detail: Box<[u8]>,
     },
     /// Ask an LLM for its next message, ended by one completion or call terminal.
     Complete {

@@ -491,7 +491,7 @@ impl Partner {
         let full = self.talks.len() >= usize::try_from(self.script.conversations).expect("a u32 fits");
         if full || self.rng.chance(self.script.invalid) {
             let end = if full { End::Busy } else { End::Invalid };
-            out.push(Out::Event(Event::Ended { conversation, end, spend: Spend::ZERO }));
+            out.push(Out::Event(Event::Ended { conversation, end, spend: Spend::ZERO, detail: Box::default() }));
             self.tally.refused += 1;
             return;
         }
@@ -1032,7 +1032,12 @@ impl Partner {
         if end == End::Budget(Exhausted::Time) {
             self.tally.expired += 1;
         }
-        out.push(Out::Event(Event::Ended { conversation: talk.conversation, end, spend: talk.spent }));
+        out.push(Out::Event(Event::Ended {
+            conversation: talk.conversation,
+            end,
+            spend: talk.spent,
+            detail: Box::default(),
+        }));
     }
 
     /// Replaces `peer`'s wake with one at `at`.

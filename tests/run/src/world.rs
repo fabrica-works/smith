@@ -1028,7 +1028,7 @@ impl World {
                 current = Some(run);
                 self.send(Lane::Host, Delivery::Admitted { host_run, run });
             }
-            run::Request::Answer { to, answer, read } => {
+            run::Request::Answer { to, answer, read, detail: _ } => {
                 let owner = self.answer(to, answer);
                 if let Some(&run) = self.run_of_owner.get(&owner) {
                     assert_eq!(read, self.views[&run].read, "Answer keeps the last actual told fence");

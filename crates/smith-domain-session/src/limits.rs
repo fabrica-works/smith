@@ -152,7 +152,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let session = List::<Message>::worst_case(limits.history_messages)?
         .checked_add(List::<Box<[u8]>>::worst_case(calls)?)?
         .checked_add(slots)?
-        .checked_add(limits.history_bytes)?;
+        .checked_add(limits.history_bytes)?
+        .checked_add(u64::from(limits.failure_bytes))?;
     let held = u64::from(limits.sessions).checked_mul(session)?;
     // One parent handoff owns exactly one fixed boxed Opening node. Its
     // validated payload is charged by the session byte cap, and its restore

@@ -947,7 +947,7 @@ impl Counted {
                     assert_eq!(host_run, WORKER);
                     self.waiting = true;
                 }
-                Request::Answer { to, answer, read: _ } => {
+                Request::Answer { to, answer, read: _, detail: _ } => {
                     assert_eq!(to.into_token(), PARENT);
                     assert_eq!(self.long_open, 0, "provider work ended before the original Start terminal");
                     assert!(self.answer.replace(answer).is_none(), "one original Start terminal");

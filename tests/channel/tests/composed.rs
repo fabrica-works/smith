@@ -172,7 +172,7 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     assert!(wire.observations().contains(&Observation::HostLongDone));
     host_world.up(Up::LongDone);
     let answer = match out.pop().expect("real agent domain answers after provider settlement") {
-        AgentRequest::Answer { to, answer, read: _ } => {
+        AgentRequest::Answer { to, answer, read: _, detail: _ } => {
             assert_eq!(to, ReplyTo::new(Token::new(1)));
             answer
         }

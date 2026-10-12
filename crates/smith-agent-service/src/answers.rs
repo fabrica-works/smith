@@ -39,10 +39,11 @@ pub fn last(service: &crate::Service) -> Option<Last> {
             None => return Some(Last::Quiet),
         },
     };
-    Some(Last::Failed { failure: Box::new(failure), detail: Box::default() })
+    Some(Last::Failed { failure: Box::new(failure), detail: service.final_detail.clone() })
 }
 
-pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer) {
+pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer, detail: Box<[u8]>) {
+    service.final_detail = detail;
     match answer {
         run::Answer::Failed { failure, .. } => service.final_failure = Some(*failure),
         run::Answer::Refused(refusal) => service.final_refusal = Some(*refusal),

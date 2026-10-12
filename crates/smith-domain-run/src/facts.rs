@@ -294,7 +294,9 @@ pub(crate) fn tell(
             Request::Check { owner: _, program: _, deadline, tail: _ } => {
                 FactKind::CheckStarted { run, deadline: *deadline }
             }
-            Request::Answer { to: _, answer, read: _ } => FactKind::Answered { run, answer: answered(answer) },
+            Request::Answer { to: _, answer, read: _, detail: _ } => {
+                FactKind::Answered { run, answer: answered(answer) }
+            }
             Request::CompletionReady { .. }
             | Request::MessageRefused { .. }
             | Request::Waiting { .. }

@@ -248,3 +248,17 @@ fn a_host_that_hangs_up_mid_call_gets_one_cancelled_terminal_per_call() {
     );
     world.assert_agent_clean();
 }
+
+#[test]
+fn a_provider_refusal_ends_standard_error_with_its_clipped_text() {
+    let mut world = World::new(6815, &charter());
+    world.reject_provider();
+    assert!(world.settle());
+    let errors = String::from_utf8(world.errors()).expect("operator UTF-8");
+    let last = errors.lines().last().expect("failure line");
+    assert!(last.starts_with("smith: run failed: "));
+    assert!(last.ends_with(": context_length_exceeded"));
+    assert_eq!(errors.lines().filter(|line| line.starts_with("smith: run failed:")).count(), 1);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    world.assert_agent_clean();
+}

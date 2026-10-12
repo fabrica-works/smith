@@ -54,6 +54,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                     read: None,
                     to: reply_to,
                     answer: run::Answer::Refused(run::Refusal::Invalid(invalid)),
+                    detail: Box::default(),
                 });
                 return;
             }
@@ -62,6 +63,7 @@ pub(crate) fn event(domain: &mut Domain, env: &Env<Limits>, event: Event) {
                     read: None,
                     to: reply_to,
                     answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Grants)),
+                    detail: Box::default(),
                 });
                 return;
             }
@@ -259,6 +261,7 @@ fn start(
             read: None,
             to: reply_to,
             answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Window)),
+            detail: Box::default(),
         });
         return;
     }
@@ -267,6 +270,7 @@ fn start(
             read: None,
             to: reply_to,
             answer: run::Answer::Refused(run::Refusal::Busy),
+            detail: Box::default(),
         });
         return;
     }
@@ -283,6 +287,7 @@ fn start(
             read: None,
             to: reply_to,
             answer: run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Conversation)),
+            detail: Box::default(),
         });
         return;
     }
@@ -406,6 +411,30 @@ fn session_step(domain: &mut Domain, env: &Env<Limits>, event: session::Event) {
     crate::domain::gather(domain, &env.limits);
 }
 
+/// Release the settled peer and move its last diagnostic with the run terminal.
+fn ended_session(
+    domain: &mut Domain,
+    opener: Token,
+    end: session::End,
+    turns: u32,
+    reported: session::llm::Usage,
+    detail: Box<[u8]>,
+) -> run::Event {
+    let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
+    let id = peer(domain, opener);
+    let model = domain.peers.get(id).expect("session retains peer").model;
+    if domain.peers.get(id).expect("session retains peer").is_main() {
+        domain.pending.remove(&run);
+    }
+    free(domain, id);
+    run::Event::Ended {
+        conversation: opener,
+        end: translate::end(end, model),
+        spend: translate::spend(turns, reported),
+        detail,
+    }
+}
+
 /// One of the sessions' requests: out to the protocol layer, or to the run.
 fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Request, out: &mut Queue<Request>) {
     let event = match request {
@@ -479,19 +508,8 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         session::Request::Used { opener, usage } => {
             run::Event::Used { conversation: opener, spend: translate::spend(1, usage) }
         }
-        session::Request::Ended { opener, end, turns, usage: _, reported } => {
-            let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
-            let id = peer(domain, opener);
-            let model = domain.peers.get(id).expect("session retains peer").model;
-            if domain.peers.get(id).expect("session retains peer").is_main() {
-                domain.pending.remove(&run);
-            }
-            free(domain, id);
-            run::Event::Ended {
-                conversation: opener,
-                end: translate::end(end, model),
-                spend: translate::spend(turns, reported),
-            }
+        session::Request::Ended { opener, end, turns, usage: _, reported, detail } => {
+            ended_session(domain, opener, end, turns, reported, detail)
         }
         session::Request::Delegate { owner, opener, call, deadline, origin } => {
             delegated(domain, owner, opener, call, deadline, origin)
@@ -555,14 +573,14 @@ fn from_run(domain: &mut Domain, env: &Env<Limits>, request: run::Request, out: 
             return out.push(Request::MessageRefused { host_run, name, reason });
         }
         run::Request::Admitted { host_run, run } => return out.push(Request::Admitted { host_run, run }),
-        run::Request::Answer { to, answer, read } => {
+        run::Request::Answer { to, answer, read, detail } => {
             let id = Id::<StartContext>::from_token(to.into_token());
             let context = domain.starts.get_mut(id).expect("root issued the start reply binding");
             let to = context.reply_to.take().expect("one actual terminal consumes the parent right");
             context.transcript = None;
             context.answered = Box::default();
             domain.starts.retire(id);
-            return out.push(Request::Answer { to, answer, read });
+            return out.push(Request::Answer { to, answer, read, detail });
         }
         run::Request::Waiting { host_run, read } => return out.push(Request::Waiting { host_run, read }),
         run::Request::Turn { host_run, record, number, position, opens_window, read, spent } => {
@@ -834,6 +852,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
                             conversation,
                             end: run::End::TranscriptRefused { reason },
                             spend: Spend::ZERO,
+                            detail: Box::default(),
                         },
                     );
                 }
@@ -844,11 +863,16 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
     };
     let Some((mut spec, offered)) = translate::spec(opening, env.limits.session.budget, progress) else {
         // Refused at the conversations' entrance, in the run's terms.
-        let ended = run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO };
+        let ended =
+            run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO, detail: Box::default() };
         return run_step(domain, env, ended);
     };
     let Some(protocol_allowance) = spec.protocol_allowance.checked_add(allowance) else {
-        return run_step(domain, env, run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO });
+        return run_step(
+            domain,
+            env,
+            run::Event::Ended { conversation, end: run::End::Invalid, spend: Spend::ZERO, detail: Box::default() },
+        );
     };
     spec.protocol_allowance = protocol_allowance;
     if !answered.is_empty() {
@@ -860,6 +884,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
                     conversation,
                     end: run::End::TranscriptRefused { reason: run::TranscriptRefusal::TooLarge },
                     spend: Spend::ZERO,
+                    detail: Box::default(),
                 },
             );
         };

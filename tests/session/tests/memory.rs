@@ -750,6 +750,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
             turns: 0,
             usage: Usage::ZERO,
             reported: Usage::NONE,
+            detail: Box::default(),
         })
     );
     assert!(out.is_empty());

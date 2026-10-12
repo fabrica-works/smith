@@ -203,6 +203,8 @@ struct Conversation {
     kit: Token,
     recording: Recording,
     closing_tools: Option<Tools>,
+    /// Last failure text, bounded by `Limits::failure_bytes` and kept outside history.
+    detail: Box<[u8]>,
 }
 
 #[derive(Debug)]
@@ -416,7 +418,14 @@ fn open_admitted(
                 tools::Refusal::Busy => End::Busy,
                 tools::Refusal::Invalid => End::Invalid,
             };
-            out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::NONE });
+            out.push(Request::Ended {
+                opener,
+                end,
+                turns: 0,
+                usage: Usage::ZERO,
+                reported: Usage::NONE,
+                detail: Box::default(),
+            });
         }
         Some(News::Closed { .. }) | None => unreachable!("the tools answer an open with its kit, opened or refused"),
     }
@@ -767,7 +776,7 @@ pub(crate) fn failed(
         detail.len() <= usize::try_from(env.limits.failure_bytes).expect("receiving cap fits"),
         "actual adapter terminal obeys failure receiving cap"
     );
-    drop(detail);
+    session.conversation.detail = detail;
     release_provider(&mut session.conversation);
     let opener = session.conversation.opener;
     domain.facts.push_response(
@@ -1177,7 +1186,8 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Que
     let session = domain.sessions.get_mut(id).expect("looked up above");
     if waiting == SETTLED {
         let Conversation { opener, turns, usage, reported, .. } = session.conversation;
-        out.push(Request::Ended { opener, end, turns, usage, reported });
+        let detail = mem::replace(&mut session.conversation.detail, Box::new([]));
+        out.push(Request::Ended { opener, end, turns, usage, reported, detail });
         session.state = State::Closed;
     } else {
         session.state = State::Closing { end, waiting };
@@ -1956,7 +1966,14 @@ const OUT_OF_TIME: End = End::Budget { spent: Dimension::Time };
 /// Refuses an open at the entrance: the session ends without having opened.
 fn refuse(facts: &mut Facts, opener: Token, end: End, out: &mut Queue<Request>) {
     facts.push(FactKind::Ended { opener, end, turns: 0, usage: Usage::ZERO });
-    out.push(Request::Ended { opener, end, turns: 0, usage: Usage::ZERO, reported: Usage::NONE });
+    out.push(Request::Ended {
+        opener,
+        end,
+        turns: 0,
+        usage: Usage::ZERO,
+        reported: Usage::NONE,
+        detail: Box::default(),
+    });
 }
 
 /// The conversation for `spec`, and the authority its kit opens with; or
@@ -2023,6 +2040,7 @@ fn admit(
         kit: Token::new(0),
         recording,
         closing_tools: None,
+        detail: Box::default(),
     };
     Some((conversation, spec.authority))
 }

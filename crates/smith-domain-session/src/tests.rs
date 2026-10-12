@@ -580,7 +580,14 @@ fn ended(end: End, turns: u32) -> Request {
     for _ in 0..turns {
         usage = usage_sum(usage, USAGE).expect("bounded fixture usage");
     }
-    Request::Ended { opener: Token::new(1), end, turns, usage, reported: if turns == 0 { Usage::NONE } else { usage } }
+    Request::Ended {
+        opener: Token::new(1),
+        end,
+        turns,
+        usage,
+        reported: if turns == 0 { Usage::NONE } else { usage },
+        detail: Box::default(),
+    }
 }
 
 #[test]
@@ -1180,7 +1187,8 @@ fn opens_beyond_the_session_slots_are_refused_as_busy() {
             end: End::Busy,
             turns: 0,
             usage: Usage::ZERO,
-            reported: Usage::NONE
+            reported: Usage::NONE,
+            detail: Box::default()
         })
     );
 }
@@ -1678,7 +1686,17 @@ fn each_answer_may_take_no_more_than_the_output_budget_left() {
     let end = h.step(Event::Continue { session: owner, content: bytes(b"go on") });
     let spent = End::Budget { spent: Dimension::Output };
     let usage = usage_sum(USAGE, usage).expect("bounded fixture usage");
-    assert_eq!(end, Some(Request::Ended { opener: Token::new(1), end: spent, turns: 2, usage, reported: usage }));
+    assert_eq!(
+        end,
+        Some(Request::Ended {
+            opener: Token::new(1),
+            end: spent,
+            turns: 2,
+            usage,
+            reported: usage,
+            detail: Box::default()
+        })
+    );
 
     // A spec's own output stays the cap while more is left.
     let mut h = Harness::new(&LIMITS);
@@ -2106,7 +2124,8 @@ fn raw_overflow_ends_before_the_completion_is_charged_or_told() {
             end: End::UsageOverflow,
             turns: 1,
             usage: first,
-            reported: first
+            reported: first,
+            detail: Box::default()
         })
     );
     while let Some(fact) = harness.pop_fact() {

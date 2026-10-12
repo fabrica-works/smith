@@ -135,6 +135,8 @@ pub struct World {
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     pub end: Option<session::End>,
+    /// Last provider diagnostic carried by the settled session terminal.
+    pub detail: Box<[u8]>,
     /// Ordered deterministic boundary record renderings used for replay comparisons.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -172,6 +174,7 @@ impl World {
             terminal_usage: None,
             facts: vec![],
             end: None,
+            detail: Box::default(),
             trace: vec![],
         }
     }
@@ -259,10 +262,11 @@ impl World {
                 self.spend.push(spent);
                 self.own_spend.push(own_spent);
             }
-            session::Request::Ended { opener, end, turns, usage, .. } => {
+            session::Request::Ended { opener, end, turns, usage, detail, .. } => {
                 assert_eq!(opener, Token::new(31));
                 assert!(self.end.replace(end).is_none());
                 assert!(self.terminal_usage.replace((turns, usage)).is_none());
+                self.detail = detail;
             }
             session::Request::Used { opener, usage } => {
                 assert_eq!(opener, Token::new(31));
@@ -286,6 +290,14 @@ impl World {
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     pub fn open(&mut self, opening: record::Opening) {
         self.step(session::Event::Open { opener: Token::new(31), opening: Box::new(opening) });
+    }
+
+    /// Advance the injected clock to the next declared deadline and drain its requests.
+    pub fn fire(&mut self) {
+        self.env.now = self.domain.next_deadline().expect("a scripted retry is armed");
+        self.domain.reclaim();
+        session::fire(&mut self.domain, &self.env, &mut self.out);
+        self.collect_outputs();
     }
 
     /// Answers the pending provider completion with the supplied blocks and fixed usage.

@@ -358,10 +358,14 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 slot.inbox.fence(read);
                 out.push(Output::Parent(parent::Request::Waiting { client, read }));
             }
-            smith::Request::Answer { to, answer, read } => {
+            smith::Request::Answer { to, answer, read, detail } => {
                 assert_eq!(to.into_token(), client, "root output preserves its scoped identity and single right");
                 slot.inbox.fence(read);
-                out.push(Output::Parent(parent::Request::Answered { client, answer: self::answer(answer, read) }));
+                out.push(Output::Parent(parent::Request::Answered {
+                    client,
+                    answer: self::answer(answer, read),
+                    detail,
+                }));
                 if let Some(names) = slot.inbox.report() {
                     out.push(Output::Parent(parent::Request::Unread { client, names }));
                 }

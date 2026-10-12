@@ -938,7 +938,7 @@ fn heard_answer(agent: &mut Agent, answer: crate::Answer, env: &Env<Limits>, out
         report_fault(agent, Fault::WallTime, out);
     } else {
         agent.told = true;
-        out.push(Output::Parent(parent::Request::Answered { client: agent.client, answer }));
+        out.push(Output::Parent(parent::Request::Answered { client: agent.client, answer, detail: Box::default() }));
         report_unread(agent, out);
     }
     agent.owed = None;

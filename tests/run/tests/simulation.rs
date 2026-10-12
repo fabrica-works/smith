@@ -146,7 +146,12 @@ fn a_completion_whose_maximum_does_not_fit_is_not_made_and_the_run_ends_for_its_
         &mut domain,
         &env,
         &mut out,
-        run::Event::Ended { conversation: main, end: run::End::Budget(Exhausted::Spend), spend: run::Spend::ZERO },
+        run::Event::Ended {
+            conversation: main,
+            end: run::End::Budget(Exhausted::Spend),
+            spend: run::Spend::ZERO,
+            detail: Box::default(),
+        },
     );
     assert!(matches!(ended.as_slice(), [run::Request::Answer {
         answer: Answer::Failed { failure: Failure::Budget(Exhausted::Spend), spent, .. }, ..
@@ -220,7 +225,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
         &mut domain,
         &env,
         &mut out,
-        run::Event::Ended { conversation: child, end: run::End::Closed, spend: child_spend },
+        run::Event::Ended { conversation: child, end: run::End::Closed, spend: child_spend, detail: Box::default() },
     );
     assert!(matches!(returned.as_slice(), [run::Request::Return { spent: 30, .. }]));
     assert_eq!(run::reserve(&mut domain, main, Token::new(803), 51), Err(Exhausted::Spend));
@@ -232,6 +237,7 @@ fn sub_agents_reserve_from_the_runs_budget_and_spend_never_passes_it() {
             conversation: main,
             end: run::End::Budget(Exhausted::Spend),
             spend: run::Spend { turns: 1, units: 20, ..run::Spend::ZERO },
+            detail: Box::default(),
         },
     );
     assert!(matches!(ended.as_slice(), [run::Request::Answer {
