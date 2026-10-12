@@ -284,7 +284,10 @@ The interactive chat, the local host of domain/host.md, section 8:
   carried to the next activation. After a cancel, a failure or a
   refusal they are shown as not delivered and dropped, and nothing starts
   by itself after an interrupt.
-- **End of input** lets the run answer or park, then exits.
+- **End of input** lets the run answer or park. Lines it left unread,
+  after an accepted or parked answer, open one more activation, which
+  answers or parks in turn (domain/host.md, section 8, "Closing input
+  drains"); then the product exits.
 - **`--plain`** is a line pipe: no terminal modes and no status line; the
   run's text per turn and each tool by name. It is for scripts and the
   worlds' scripted person, and it is the mode when standard input is not
@@ -641,7 +644,7 @@ names (section 2.3):
 | `write_deadline` | 30 s for one write of the event stream | provisional |
 | `wrap_up` | 60 s, a child's final turn's allowance at most | provisional; the budget probe's `wrap-up` |
 | `cancel_grace` | 10 s | provisional |
-| `exit_grace` | derived: the agent's teardown bound, two `close`s and its cancels' settling, plus one more `close` as a margin (skein's `shell.md`, section 13); a setting below the bound is refused | decided as derived; the margin provisional |
+| `exit_grace` | derived: the agent's teardown bound, two `close`s, the event stream's `write_deadline` and its cancels' settling, plus one more `close` as a margin (skein's `shell.md`, section 13; protocol/limits.md, section 7); a setting below the bound is refused | decided as derived; the margin provisional |
 
 ## 7. Credentials
 

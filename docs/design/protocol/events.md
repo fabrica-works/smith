@@ -60,7 +60,10 @@ file is the same stream. Its records, their writer and their reader are
   a trace file when the configuration names one (agent.md, section 4;
   `docs/design/shell.md`). A process writing both writes the same records
   to each; each destination is a sink of its own, with its own count of
-  loss (5.2).
+  loss (5.2). When the product spawns its agent, the product's stream
+  goes to the configured trace file, and the agent process's own trace
+  to the same path with `.agent` appended, so that each file holds one
+  process's stream.
 - **One process, one stream.** A trace file appended across invocations
   holds one stream after another, each from its `session.started` to its
   `session.ended`.
@@ -93,7 +96,7 @@ file is the same stream. Its records, their writer and their reader are
 | Field | Type | What it names |
 |---|---|---|
 | `run` | integer | a run, by its activation number (domain/run.md, 3.2), unique within the stream |
-| `conversation` | integer | a conversation within its run, numbered in the order the run opened them; main's is 0 |
+| `conversation` | integer | a conversation within its run, numbered in the order the run opened them, compactions included; main's is 0 |
 | `response` | integer | one provider attempt within its run, numbered in order: its id in the stream, on each of its records |
 | `call` | string | a tool call, by the provider's id for it |
 | `name` | integer | a message, by the name its host gave it |
@@ -339,8 +342,10 @@ each with `start_refused`, before its `run.completed`.
 ### 3.8 Budget
 
 **`budget`,** a snapshot of the run's budget each time a completion is
-charged, and when its stage changes: the record that enters the
-wind-down is the one whose `stage` is `wind_down` first.
+charged, when its stage changes, and as a sub-agent's return writes its
+usage line (domain/run.md, 9.2): that record holds the values the line
+tells, and names the call. The record that enters the wind-down is the
+one whose `stage` is `wind_down` first.
 
 | Field | Type | What it is |
 |---|---|---|
@@ -348,6 +353,7 @@ wind-down is the one whose `stage` is `wind_down` first.
 | `stage` | string | `ordinary`, or `wind_down` once the ordinary pool is spent (domain/run.md, 9.1) |
 | `turns`, `spend`, `time_ms` | object | each `used` and `limit` |
 | `reserve` | object | `turns`, `time_ms` and `spend` |
+| `call` | string, optional | the `sub_agent` call whose return wrote the usage line this record tells; absent on every other `budget` record |
 
 ### 3.9 Notices
 

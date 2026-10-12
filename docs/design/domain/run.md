@@ -735,7 +735,9 @@ never when a sink takes it:
 - a message received, or refused with its reason, then read by a told
   turn or unread at the answer, so every message's terminal is a fact;
 - the budget, as it stands at each charge, and its stage, ordinary or
-  winding down, when it changes (9.1);
+  winding down, when it changes (9.1); and, as a sub-agent's return
+  writes its usage line, the values that line tells, with the call
+  (9.2);
 - text arriving from the LLM, counted, never carried.
 
 The protocol layer turns them into the event vocabulary

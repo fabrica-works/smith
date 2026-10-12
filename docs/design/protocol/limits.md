@@ -492,6 +492,7 @@ Anthropic's output within what its route accepts. smith checks the rest:
 | `ceilings-in-vocabulary` | the policy ceilings fit the charter's and the channel's schemas |
 | `deadlines` | every deadline is positive, and `shell_timeout` ≤ `tool_deadline`, so no command's deadline, asked for or not, passes what the session allows one tool call |
 | `memory` | the sum of every worst case, with the LLM pool at its size, fits `memory` |
+| `cancel-over-close` | `cancel_grace` is at least twice io's `close`: a cancelled call settles within one `close` against a peer that keeps its connection open (skein's `shell.md`, section 13), so a grace no longer than `close` drops a run whose cancel would have settled; the second `close` is the margin |
 
 Two more hold across processes, and the side that knows both checks
 them:
@@ -577,8 +578,9 @@ reserve against the budget.
   (skein's `shell.md`, section 13). After its answer the agent closes its
   components together, its LLM connections, its machine's roots and its
   channel, and then its event stream, after `session.ended` (agent.md,
-  section 6): two `close` deadlines in turn, and the moment its cancels
-  take to settle, which io's close deadlines already bound and which adds
+  section 6): two `close` deadlines in turn, the stream's
+  `write_deadline` for its last records, and the moment its cancels take
+  to settle, which io's close deadlines already bound and which adds
   nothing to them. That is its **teardown bound**, from which a host
   derives `exit_grace` (section 4).
 
@@ -604,8 +606,11 @@ The declared values, the policy values and every derived limit, each
 under its name in its unit, are the **effective limits**. The declared
 and policy values are named as section 2 names them; a derived limit is
 named by its layer and its field in that layer's `Limits`, such as
-`llm.request` or `session.history_bytes`, per endpoint or model where it
-is one. `smith check` prints them (`docs/design/shell.md`, 4.4), and the
+`llm.request` or `session.history_bytes`. A value per endpoint or per
+model adds them by their configured names, never by a number:
+`llm.request[endpoint=codex]`, `declared.head[endpoint=codex,model=gpt-6-luna]`,
+so a reader joins them to the names in `conversation.opened`. Sizes are
+in bytes or tokens as their names say; durations in whole milliseconds. `smith check` prints them (`docs/design/shell.md`, 4.4), and the
 event stream's header carries them (events.md, section 3.2). Their names
 and units are part of the event vocabulary, so a change to them is a new
 version of it (events.md, section 6).
