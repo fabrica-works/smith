@@ -139,6 +139,26 @@ do not already say.
    `~/.codex`, `~/.claude`, `$XDG_CONFIG_HOME/smith` or
    `$XDG_STATE_HOME/smith`; no agent signs in; no refresh token is
    copied (benchmarks.md, section 10).
+8. **Users the Files line misses** (decisions.md, 13.1). When an
+   increment changes a type, a variant or a signature in place, as its
+   Shape or its Removes line says, and the change breaks code outside its
+   Files and Users lines, the implementer updates that code in the same
+   increment, without asking, when each edit is one of these:
+   - a match arm for a new variant, doing what that match already does
+     for the variants it does not handle;
+   - a removed variant or type replaced by the one the Shape names;
+   - a test's expected value changed from the removed variant to what
+     the same story now produces, its name, steps and other assertions
+     unchanged;
+   - a call changed to a new signature, passing the value the story
+     already implies.
+
+   The commit body lists those files under "Users outside Files:". For
+   these edits, this rule replaces development.md 8.2's limits on an edit
+   outside Files (20 lines, the session's own files, no expected value
+   changed). Any other edit outside Files is still a question: new
+   behaviour, a test renamed, removed or with new steps, a limit or its
+   accounting. Applies to every session, until the run ends.
 
 ## Proving what landed
 

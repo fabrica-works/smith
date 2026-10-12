@@ -122,7 +122,13 @@ Users: `crates/smith-local-service/src/process.rs:829`,
 `tests/host/src/lib.rs:278, 314`, `tests/host/tests/memory.rs:177`,
 `tests/host/tests/fuzzy_simulation.rs:72`,
 `tests/host/tests/simulation/inline.rs:269`,
-`tests/agent/tests/host_delivery.rs:202, 279`.
+`tests/agent/tests/host_delivery.rs:202, 279`; and, found at the run's
+start (decisions.md, 13.1), `End::Stopped` in `tests/host/tests/referee.rs`
+(:18, :46, :83), `tests/agent/tests/host_messages.rs:160` and
+`tests/channel/tests/composed.rs:194`, and `cleanup`'s callers in
+`tests/host/tests/budget.rs`, `tests/host/tests/messages.rs`,
+`tests/channel/tests/composed.rs:188` and
+`tests/channel/tests/composed/long.rs:201`.
 Shape: `smith_host_domain::{Exit, Forced}`; `End::Exited { exit:
 Option<Exit>, forced }` and `End::Settled` (sketch);
 `process::Event::Exited { owner, exit: Option<Exit> }`;

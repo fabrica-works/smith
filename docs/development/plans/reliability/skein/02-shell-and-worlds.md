@@ -94,7 +94,8 @@ terminal; the simulator's answer to `Window`; the kit's
 Needs: nothing, from smith or elsewhere.
 Files: `crates/skein-io` (`src/kernel.rs` `Op`, `Done`, `Shape`;
 `src/records.rs`; `src/signals.rs`; `src/layer.rs`, `Window` beside
-`Request::Usage` at :516); users of `Done::ServiceSignal`:
+`Request::Usage` at :516; `src/limits.rs`, the operation table's room
+for `Window`, decisions.md 13.2); users of `Done::ServiceSignal`:
 `skein-io` (`file_layer/store.rs`, `listener.rs`, `pipe.rs`,
 `process.rs`, `stream.rs`, `tests/kernel.rs`, `tests/signals.rs`),
 `crates/skein-shell/src/ring.rs` (:939), `crates/skein-sim`

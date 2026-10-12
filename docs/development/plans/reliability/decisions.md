@@ -7,7 +7,8 @@ decided, unchanged from the first run's `QUESTIONS.md`; they keep their
 numbers, so "decisions.md, 5.8" is the first run's "QUESTIONS.md 5.8".
 Section 11 holds the first run's rulings that still bind the work left,
 and section 12 the decisions of the plan's port to skein's
-`docs/foundation/development.md` (2026-10-12).
+`docs/foundation/development.md` (2026-10-12), and section 13 the
+rulings of this run's supervisor.
 
 On 2026-10-09 the user decided language choices: Rust, unless a
 compelling reason goes through the user. The user delegated everything
@@ -691,3 +692,29 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
     session 12's suites): a suite's attempts cannot be split across
     calls. 00.21 runs after session 13, when few sessions are left to
     land.
+
+## 13. This run's rulings (from 2026-10-12)
+
+1. **Users the Files line misses are migrated in the increment** (blocks
+   of 2026-10-12T13:24:02Z, smith 06.1, and 13:24:43Z, skein 02.6). Both
+   sessions found that a type changed in place, as the plan asks (06.1's
+   `End::Stopped` to `End::Exited`, with `cleanup` taking the exit; 02.6's
+   new `io::Event` and `Request` variants), breaks code that the Files
+   line does not name: three expected values and four callers for 06.1,
+   exhaustive matches in about fifteen files for 02.6. code-organization.md,
+   section 7, already says "change the type in place, and its users in the
+   same increment"; development.md 8.2's limits on an edit outside Files
+   (20 lines, no expected value changed) made that a question. Ruling: a
+   plan defect, mine. README rule 8 lets the mechanical edits through,
+   named in the commit body, and keeps every other edit outside Files a
+   question. 06.1's Users line and 02.6's Files line name what was found.
+2. **skein 02.6 gives `Window` room in io's operation table** (block of
+   2026-10-12T13:24:43Z). `Window` is a request io submits as an
+   operation, as `Usage` is (kernel.md, 6.3; `skein-io/src/layer.rs`, the
+   `Request::Usage` arm), so io's bounds must count it: `limits.rs`'s
+   `operations`, and with it `flights` and `worst_case`. `limits.rs`
+   joins 02.6's Files. How it is counted, an independent slot as
+   `Usage` has or a place among the stream's `PER_ENTITY` operations, is
+   the implementer's choice, named in the commit body; the memory test
+   that attains `worst_case` stays green, with no new test of its own.
+
