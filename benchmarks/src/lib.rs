@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod bundle;
 mod check;
 mod formats;
 mod judgment;
@@ -57,7 +58,10 @@ pub use judgment::{Judgment, judge, judge_suite};
 
 pub use passive::{HeadroomOf, Passive};
 
-pub use check::{ManifestCounts, check_benchmark_tree, check_task, check_tree, seed_digest};
+pub use bundle::{BundleCheck, BundleManifest, Pin, check_bundle, read_bundle_manifest, seed_source};
+pub use check::{
+    ManifestCounts, check_benchmark_tree, check_benchmark_tree_with_bundles, check_task, check_tree, seed_digest,
+};
 pub use task::{
     Before, Budget, Calibration, Count, Estimate, EventCheck, Grade, Kind, OutcomeCheck, Refusal, Task, Variant,
     read_task,

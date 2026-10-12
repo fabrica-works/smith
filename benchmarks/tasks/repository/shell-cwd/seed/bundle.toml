@@ -1,0 +1,7 @@
+name = "shell-cwd-56c0c59"
+source = "56c0c59735f3a163753fdd43e20a7e87df369ce3"
+sha256 = "80e210183c73a5bf0ea64787493272ae4936443b77e1c1b5d8e325a2a8b352df"
+
+[[pins]]
+name = "skein"
+commit = "f5fca44f2c9ee92f2dc52d8dc845212ca692275f"

@@ -439,12 +439,13 @@ fn prepare(
                 return Err("supervision policy is outside the clock's range".into());
             }
         }
-        let private = crate::isolate::prepare(guard, &task_directory.join("seed"), &task.seed_sha256, root).map_err(
-            |refusal| {
-                step = refusal.step;
-                refusal.reason
-            },
-        )?;
+        step = SetupStep::Seed;
+        let bundles = crate::arm::state_root(guard)?.join("bundles");
+        let (seed, digest) = crate::seed_source(task, task_directory, &bundles).map_err(|refusal| refusal.reason)?;
+        let private = crate::isolate::prepare(guard, &seed, &digest, root).map_err(|refusal| {
+            step = refusal.step;
+            refusal.reason
+        })?;
         step = SetupStep::Space;
         free_space(clock, machine, &private, prepared)?;
         step = SetupStep::Configuration;

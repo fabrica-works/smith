@@ -101,10 +101,16 @@ fn candidate(
     reference: bool,
 ) -> Result<GradeEnd, String> {
     let task_root = entry.manifest.parent().ok_or("task has no directory")?;
-    let private: Private = crate::isolate::prepare(guard, &task_root.join("seed"), &entry.task.seed_sha256, root)
-        .map_err(|error| error.reason)?;
+    let bundles = crate::arm::state_root(guard)?.join("bundles");
+    let (seed, digest) = crate::seed_source(&entry.task, task_root, &bundles).map_err(|refusal| refusal.reason)?;
+    let private: Private = crate::isolate::prepare(guard, &seed, &digest, root).map_err(|error| error.reason)?;
     if reference {
-        overlay(guard, &task_root.join("reference"), &private.workspace)?;
+        let reference = task_root.join("reference");
+        if reference.join("solution.patch").is_file() {
+            apply_patch(clock, guard, machine, &private, &reference.join("solution.patch"))?;
+        } else {
+            overlay(guard, &reference, &private.workspace)?;
+        }
     }
     let grader = task_root.join("grader");
     if grader.exists() {
@@ -130,6 +136,15 @@ fn candidate(
             bounds,
             &entry.task.environment,
         )?;
+        if entry.task.kind == crate::Kind::Repository {
+            eprintln!(
+                "{} {} grade {index}:\n{}{}",
+                entry.name,
+                if reference { "reference" } else { "seed" },
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
         if reference && result.end != GradeEnd::Passed {
             eprintln!(
                 "{} reference grade {index}:\n{}{}",
@@ -145,6 +160,38 @@ fn candidate(
         }
     }
     Ok(end)
+}
+
+fn apply_patch(clock: &Clock, guard: &Guard, machine: &Machine, private: &Private, patch: &Path) -> Result<(), String> {
+    let target = private.root.join("solution.patch");
+    fs::copy(patch, guard.write_path(&target)?).map_err(|error| error.to_string())?;
+    let grade = crate::Grade {
+        command: vec!["git".into(), "apply".into(), "../solution.patch".into()],
+        deadline_seconds: 10,
+        max_output_bytes: 1024 * 1024,
+    };
+    let bounds = Bounds {
+        hard: Duration::ZERO,
+        teardown: Duration::ZERO,
+        grace: Duration::from_secs(1),
+        settlement: Duration::from_secs(3),
+        stdout: 0,
+        stderr: 0,
+        force_walk: true,
+    };
+    let result = crate::grade::command(
+        clock,
+        machine,
+        private,
+        &private.workspace,
+        &grade,
+        bounds,
+        &std::collections::BTreeMap::default(),
+    )?;
+    if result.end != GradeEnd::Passed {
+        return Err(format!("reference patch failed: {}", String::from_utf8_lossy(&result.stderr)));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

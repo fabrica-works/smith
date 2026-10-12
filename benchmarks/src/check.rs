@@ -36,7 +36,20 @@ pub struct ManifestCounts {
 
 /// Validate a benchmark tree's tasks, suites, model tiers and configuration pins.
 pub fn check_benchmark_tree(root: &Path, design: &Path) -> Result<ManifestCounts, Refusal> {
+    let guard = crate::guard::Guard::from_environment().map_err(|reason| Refusal::new(root, "bundle", reason))?;
+    let bundles =
+        crate::arm::state_root(&guard).map_err(|reason| Refusal::new(root, "bundle", reason))?.join("bundles");
+    check_benchmark_tree_with_bundles(root, design, &bundles)
+}
+
+/// Validate the tree with an explicit bundle directory for offline recorded inputs.
+pub fn check_benchmark_tree_with_bundles(
+    root: &Path,
+    design: &Path,
+    bundles: &Path,
+) -> Result<ManifestCounts, Refusal> {
     let tasks = crate::catalogue(&root.join("tasks"), design)?;
+    crate::bundle::check_repository_bundles(&tasks, bundles)?;
     let agents = root.join("agents");
     crate::read_prices(&agents.join("prices.toml"))?;
     let models = crate::read_model_tiers(&agents.join("models.toml"))?;

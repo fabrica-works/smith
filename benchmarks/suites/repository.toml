@@ -1,0 +1,18 @@
+name = "repository"
+tier = "working"
+design = "single"
+repetitions = 3
+rerun_failed = 0
+max_wall_seconds = 10800
+max_tokens = 50000000
+tasks = ["repository/shell-cwd"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "compare"
+
+[[agents]]
+agent = "codex"
+provider = "codex"
+config = "standard"

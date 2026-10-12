@@ -71,7 +71,8 @@ fn every_catalogue_manifest_is_checked_offline() {
 
 fn every_committed_suite_and_configuration_pin_is_checked_offline() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let counts = smith_bench::check_benchmark_tree(&root, &design()).expect("all benchmark manifests validate");
+    let counts = smith_bench::check_benchmark_tree_with_bundles(&root, &design(), &root.join("tests/recorded/bundles"))
+        .expect("all benchmark manifests validate");
     assert!(counts.configurations > 0, "committed pins are actually checked");
 }
 
@@ -185,12 +186,60 @@ fn a_summary_and_baseline_from_recorded_results_round_trip_offline() {
 
 #[test]
 fn recorded_catalogues_and_results() {
+    an_absent_bundle_is_skipped_and_said();
+    a_bundle_whose_digest_differs_is_refused();
+    a_present_bundle_matches_its_manifest();
+    a_repository_seed_comes_from_its_bundle();
     every_catalogue_manifest_is_checked_offline();
     every_committed_suite_and_configuration_pin_is_checked_offline();
     the_recorded_suite_resolves_its_frozen_task_and_pin();
     a_complete_recorded_task_is_accepted();
     a_recorded_attempt_round_trips_without_erasing_measurement_gaps();
     a_summary_and_baseline_from_recorded_results_round_trip_offline();
+}
+
+fn an_absent_bundle_is_skipped_and_said() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let manifest = smith_bench::read_bundle_manifest(&root.join("tasks/repository-seed/seed/bundle.toml"))
+        .expect("recorded manifest");
+    assert_eq!(smith_bench::check_bundle(&manifest, &root.join("bundles/none")), Ok(smith_bench::BundleCheck::Absent));
+}
+
+fn a_bundle_whose_digest_differs_is_refused() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let mut manifest = smith_bench::read_bundle_manifest(&root.join("tasks/repository-seed/seed/bundle.toml"))
+        .expect("recorded manifest");
+    manifest.sha256 = "0".repeat(64);
+    assert!(
+        smith_bench::check_bundle(&manifest, &root.join("bundles"))
+            .expect_err("digest differs")
+            .reason
+            .contains("digest")
+    );
+}
+
+fn a_present_bundle_matches_its_manifest() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let manifest = smith_bench::read_bundle_manifest(&root.join("tasks/repository-seed/seed/bundle.toml"))
+        .expect("recorded manifest");
+    assert_eq!(smith_bench::check_bundle(&manifest, &root.join("bundles")), Ok(smith_bench::BundleCheck::Matches));
+}
+
+fn a_repository_seed_comes_from_its_bundle() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded");
+    let task_directory = root.join("tasks/repository-seed");
+    let task = check_task(&task_directory.join("task.toml"), &design()).expect("recorded task");
+    let (source, digest) =
+        smith_bench::seed_source(&task, &task_directory, &root.join("bundles")).expect("present repository seed");
+    assert_eq!(source, root.join("bundles/tiny"));
+    assert_eq!(digest, smith_bench::seed_digest(&source).expect("recorded bytes"));
+    assert_ne!(digest, task.seed_sha256);
+    assert!(
+        smith_bench::seed_source(&task, &task_directory, &root.join("bundles/none"))
+            .expect_err("absent bundles refuse attempts")
+            .reason
+            .contains("absent")
+    );
 }
 
 #[test]

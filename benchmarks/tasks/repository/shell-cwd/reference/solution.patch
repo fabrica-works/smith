@@ -1,0 +1,658 @@
+diff --git a/crates/smith-domain-tools/src/authority.rs b/crates/smith-domain-tools/src/authority.rs
+index d87688a..6577a65 100644
+--- a/crates/smith-domain-tools/src/authority.rs
++++ b/crates/smith-domain-tools/src/authority.rs
+@@ -172,7 +172,7 @@ pub(crate) const fn granted(grants: Grants, call: &Call) -> bool {
+     match call {
+         Call::Read { .. } | Call::List { .. } | Call::Search { .. } => grants.inspect,
+         Call::Write { .. } | Call::Edit { .. } => grants.modify,
+-        Call::Shell { .. } => grants.shell,
++        Call::Shell { .. } | Call::ShellIn { .. } => grants.shell,
+     }
+ }
+ 
+diff --git a/crates/smith-domain-tools/src/call.rs b/crates/smith-domain-tools/src/call.rs
+index cd4332f..a2fc831 100644
+--- a/crates/smith-domain-tools/src/call.rs
++++ b/crates/smith-domain-tools/src/call.rs
+@@ -66,6 +66,13 @@ pub enum Call {
+         /// Maximum time allowed for this completion or contained command.
+         timeout: Option<Duration>,
+     },
++    /// Run the LLM's shell command in `cwd` for this call only, ending in the usual shell outcome.
++    ShellIn {
++        command: Box<[u8]>,
++        timeout: Option<Duration>,
++        /// Resolved from the kit's original working directory when relative.
++        cwd: Path,
++    },
+ }
+ 
+ /// Which tool a call is for, without its arguments.
+@@ -94,7 +101,7 @@ pub const fn tool(call: &Call) -> Tool {
+         Call::Search { .. } => Tool::Search,
+         Call::Write { .. } => Tool::Write,
+         Call::Edit { .. } => Tool::Edit,
+-        Call::Shell { .. } => Tool::Shell,
++        Call::Shell { .. } | Call::ShellIn { .. } => Tool::Shell,
+     }
+ }
+ 
+@@ -113,7 +120,7 @@ pub enum Effect {
+ pub const fn effect(call: &Call) -> Effect {
+     match call {
+         Call::Read { .. } | Call::List { .. } | Call::Search { .. } => Effect::Read,
+-        Call::Write { .. } | Call::Edit { .. } | Call::Shell { .. } => Effect::Write,
++        Call::Write { .. } | Call::Edit { .. } | Call::Shell { .. } | Call::ShellIn { .. } => Effect::Write,
+     }
+ }
+ 
+@@ -327,6 +334,7 @@ impl Call {
+                 owned_path(path)?.checked_add(owned_len(old)?)?.checked_add(owned_len(new)?)
+             }
+             Call::Shell { command, timeout: _ } => owned_len(command),
++            Call::ShellIn { command, timeout: _, cwd } => owned_len(command)?.checked_add(owned_path(cwd)?),
+         };
+         u64::try_from(size_of::<Self>()).ok()?.checked_add(payload?)
+     }
+diff --git a/crates/smith-domain-tools/src/kit.rs b/crates/smith-domain-tools/src/kit.rs
+index a16e4ed..784d915 100644
+--- a/crates/smith-domain-tools/src/kit.rs
++++ b/crates/smith-domain-tools/src/kit.rs
+@@ -28,7 +28,7 @@
+ 
+ use alloc::boxed::Box;
+ 
+-use skein_lib::{Env, Id, Queue, ReplyTo, Set, Slab, Time, Token};
++use skein_lib::{Duration, Env, Id, Queue, ReplyTo, Set, Slab, Time, Token};
+ 
+ use crate::authority::{self, Authority, Checkout, Located};
+ use crate::boundary::{Expect, Refusal, Request};
+@@ -228,16 +228,10 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Wor
+             Work::Edit { place: located.place, edit: Edit { old, new, all } }
+         }
+         Call::Shell { command, timeout } => {
+-            passable(&command)?;
+-            // Commands run in the working directory, which must be in the
+-            // checkout.
+             let here = Path { absolute: false, parts: Box::new([]) };
+-            let located = authority::locate(&kit.checkout, &here, limits.path_bytes)?;
+-            let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
+-            let env = kit.checkout.env.clone();
+-            let roots = kit.checkout.roots.clone();
+-            Work::Shell { cwd: located.place, command, timeout, env, roots }
++            shell(&kit.checkout, command, timeout, &here, limits)?
+         }
++        Call::ShellIn { command, timeout, cwd } => shell(&kit.checkout, command, timeout, &cwd, limits)?,
+     };
+     if deadline <= env.now {
+         return Err(Outcome::TimedOut);
+@@ -248,6 +242,22 @@ fn admit(kit: &Kit, call: Call, deadline: Time, env: &Env<Limits>) -> Result<Wor
+     Ok(work)
+ }
+ 
++/// Selects a call's directory without changing the kit's authority or relative base.
++fn shell(
++    checkout: &Checkout,
++    command: Box<[u8]>,
++    timeout: Option<Duration>,
++    cwd: &Path,
++    limits: &Limits,
++) -> Result<Work, Outcome> {
++    passable(&command)?;
++    let located = authority::locate(checkout, cwd, limits.path_bytes)?;
++    let timeout = timeout.unwrap_or(limits.shell_timeout).min(limits.shell_timeout_max);
++    let env = checkout.env.clone();
++    let roots = checkout.roots.clone();
++    Ok(Work::Shell { cwd: located.place, command, timeout, env, roots })
++}
++
+ /// Where `path` is, if the kit may write there: in a writable repository, and
+ /// not in its `.git`.
+ fn writable(checkout: &Checkout, path: &Path, limits: &Limits) -> Result<Located, Outcome> {
+diff --git a/crates/smith-domain-tools/src/limits.rs b/crates/smith-domain-tools/src/limits.rs
+index 2865805..e12cc91 100644
+--- a/crates/smith-domain-tools/src/limits.rs
++++ b/crates/smith-domain-tools/src/limits.rs
+@@ -53,7 +53,7 @@ pub struct Limits {
+     /// How long a command may run if its call does not say, and the longest
+     /// it may ask for; both within the call's deadline.
+     pub shell_timeout: Duration,
+-    /// Maximum accepted explicit shell timeout; larger requests are refused.
++    /// Maximum shell timeout; larger requests are clamped to this duration.
+     pub shell_timeout_max: Duration,
+     /// How much of a command's output is kept: its first bytes, and its last.
+     pub shell_head: u32,
+@@ -118,7 +118,9 @@ pub fn result_worst_case(call: &Call, limits: &Limits) -> Option<u64> {
+             let ambiguity_slot_bytes = u64::try_from(size_of::<u32>()).ok()?;
+             ambiguity_slot_bytes.checked_mul(u64::from(limits.match_lines))
+         }
+-        Call::Shell { .. } => u64::from(limits.shell_head).checked_add(u64::from(limits.shell_tail)),
++        Call::Shell { .. } | Call::ShellIn { .. } => {
++            u64::from(limits.shell_head).checked_add(u64::from(limits.shell_tail))
++        }
+     }
+ }
+ 
+diff --git a/crates/smith-domain-tools/src/tests.rs b/crates/smith-domain-tools/src/tests.rs
+index b9270bf..7fbf7c2 100644
+--- a/crates/smith-domain-tools/src/tests.rs
++++ b/crates/smith-domain-tools/src/tests.rs
+@@ -1042,6 +1042,117 @@ fn commands_need_the_shell_grant_and_a_working_directory_in_the_checkout() {
+     assert_eq!(h.call(outside, Call::Shell { command: bytes(b"ls"), timeout: None }), Outcome::Outside);
+ }
+ 
++#[test]
++fn shell_cwd_uses_workspace_resolution_without_changing_the_kit() {
++    let mut h = Harness::new(LIMITS);
++    let kit = h.open(1, authority(ALL));
++    let cases: &[(&[u8], u64, &[u8])] = &[
++        (b"src", 1, b"src"),
++        (b"./src//build/../", 1, b"src"),
++        (b"/work/temper/src", 1, b"src"),
++        (b"vendor/lib/tests", 2, b"tests"),
++        (b"/work/temper/vendor/lib", 2, b""),
++        (b"vendor/lib/../other", 1, b"vendor/other"),
++        (b"../docs", 3, b""),
++        (b"/work/docs/./guide", 3, b"guide"),
++        (b"", 1, b""),
++        (b".", 1, b""),
++    ];
++    for (cwd, root, relative) in cases {
++        let call = Call::ShellIn { command: bytes(b"pwd"), timeout: None, cwd: path(cwd) };
++        assert_eq!(crate::tool(&call), Tool::Shell);
++        assert_eq!(effect(&call), Effect::Write);
++        assert_eq!(crate::result_worst_case(&call, &LIMITS), Some(192));
++        let Some(Request::Io { owner, op: Op::Spawn { cwd: selected, command, env, roots, head, tail }, .. }) =
++            h.send(kit, 7, call)
++        else {
++            panic!("expected a shell spawn for {cwd:?}");
++        };
++        assert_eq!(selected, place(*root, relative), "{cwd:?}");
++        assert_eq!(command.as_ref(), b"pwd");
++        assert_eq!(env, authority(ALL).env);
++        assert_eq!(
++            roots.as_ref(),
++            &[
++                Root { root: Token::new(1), writable: true },
++                Root { root: Token::new(2), writable: false },
++                Root { root: Token::new(3), writable: false },
++            ]
++        );
++        assert_eq!((head, tail), (LIMITS.shell_head, LIMITS.shell_tail));
++        assert_eq!(h.end(owner, Done::Cancelled), (7, Outcome::Cancelled));
++        let (owner, op, _) = spawned(&mut h, kit, None);
++        let Op::Spawn { cwd, .. } = op else { panic!("expected a shell spawn") };
++        assert_eq!(cwd, place(1, b""), "omitting cwd always uses the original directory");
++        drop(h.end(owner, Done::Cancelled));
++        h.domain.reclaim();
++    }
++}
++
++#[test]
++fn shell_cwd_refuses_outside_and_overlong_paths_before_io() {
++    let mut h = Harness::new(LIMITS);
++    let kit = h.open(1, authority(ALL));
++    for cwd in [b"../../etc".as_slice(), b"/work/temper-other", b"/work", b"/"] {
++        let call = Call::ShellIn { command: bytes(b"pwd"), timeout: None, cwd: path(cwd) };
++        assert_eq!(h.call(kit, call), Outcome::Outside);
++    }
++    let dots = Path { absolute: false, parts: Box::new([const { Part::Current }; 33]) };
++    for cwd in [path(&[b'x'; 65]), dots, path(&[b'x'; 53])] {
++        let call = Call::ShellIn { command: bytes(b"pwd"), timeout: None, cwd };
++        assert_eq!(h.call(kit, call), Outcome::TooLong, "raw and resolved path bounds both apply");
++    }
++    let call = Call::ShellIn { command: bytes(b"p\0wd"), timeout: None, cwd: path(b"src") };
++    assert_eq!(h.call(kit, call), Outcome::NulByte);
++    assert_eq!(h.domain.jobs(), 0, "refused calls never become jobs");
++}
++
++#[test]
++fn shell_cwd_keeps_grants_timeout_clamping_and_cancellation() {
++    let mut h = Harness::new(LIMITS);
++    let grants = Grants { inspect: false, modify: false, shell: true };
++    let kit = h.open(1, authority(grants));
++    for (timeout, outer, expected) in [
++        (None, at(3600), at(60)),
++        (Some(Duration::from_secs(7200)), at(3600), at(600)),
++        (Some(Duration::from_secs(5)), at(2), at(2)),
++    ] {
++        let call = Call::ShellIn { command: bytes(b"sleep 9"), timeout, cwd: path(b"vendor/lib") };
++        let event = Event::Call { kit, reply_to: ReplyTo::new(Token::new(8)), call, deadline: outer };
++        let Some(Request::Io { owner, op: Op::Spawn { roots, .. }, deadline }) = h.step(event) else {
++            panic!("shell needs no inspect or modify grant");
++        };
++        assert_eq!(deadline, expected);
++        for root in &roots {
++            assert!(!root.writable, "cwd never adds write authority");
++        }
++        assert_eq!(h.end(owner, Done::Cancelled), (8, Outcome::Cancelled));
++        h.domain.reclaim();
++    }
++    let other = h.open(2, authority(Grants { inspect: true, modify: true, shell: false }));
++    let call = Call::ShellIn { command: bytes(b"pwd"), timeout: None, cwd: path(b"src") };
++    assert_eq!(h.call(other, call.clone()), Outcome::NotGranted);
++    let Some(Request::Io { owner, .. }) = h.send(kit, 9, call) else { panic!("shell starts") };
++    assert_eq!(h.step(Event::Close { kit }), Some(Request::CancelIo { owner }));
++    let ended = h.emit(Event::Done { owner, done: Done::Cancelled });
++    assert_eq!(
++        ended.as_ref(),
++        &[
++            Request::Answer { to: ReplyTo::new(Token::new(9)), outcome: Outcome::Cancelled },
++            Request::Closed { session: Token::new(1) },
++        ]
++    );
++    h.domain.reclaim();
++    assert_eq!(h.domain.jobs(), 0);
++}
++
++#[test]
++fn shell_cwd_ownership_counts_command_components_and_name_bytes() {
++    let call = Call::ShellIn { command: bytes(b"pwd"), timeout: None, cwd: path(b"src/.././build") };
++    let expected = size_of::<Call>() + 3 + 4 * size_of::<Part>() + 3 + 5;
++    assert_eq!(call.owned_bytes(), Some(u64::try_from(expected).expect("small fixture")));
++}
++
+ #[test]
+ fn an_environment_that_cannot_be_one_or_is_too_large_is_refused() {
+     let table = [var(b"", b"x"), var(b"A=B", b"x"), var(b"A\0", b"x"), var(b"A", b"x\0"), var(b"BIG", &[b'x'; 256])];
+diff --git a/crates/smith-protocol-llm/src/decode.rs b/crates/smith-protocol-llm/src/decode.rs
+index c8e14b4..a5f44a6 100644
+--- a/crates/smith-protocol-llm/src/decode.rs
++++ b/crates/smith-protocol-llm/src/decode.rs
+@@ -82,7 +82,7 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+     let result = match kind {
+         Kind::Read => llm::Decoded::Owned {
+             call: tools::Call::Read {
+-                path: path(&required_string(tokens, b"path")?)?,
++                path: path(&required_string(tokens, b"path")?, b"path")?,
+                 skip: match optional_u32(tokens, b"first_line")? {
+                     Some(first_line) => first_line.checked_sub(1).ok_or(bad_value(b"first_line"))?,
+                     None => 0,
+@@ -91,7 +91,7 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+             },
+         },
+         Kind::List => {
+-            llm::Decoded::Owned { call: tools::Call::List { path: path(&required_string(tokens, b"path")?)? } }
++            llm::Decoded::Owned { call: tools::Call::List { path: path(&required_string(tokens, b"path")?, b"path")? } }
+         }
+         Kind::Search => {
+             let spelling = match optional_string(tokens, b"path")? {
+@@ -100,7 +100,7 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+             };
+             llm::Decoded::Owned {
+                 call: tools::Call::Search {
+-                    path: path(&spelling)?,
++                    path: path(&spelling, b"path")?,
+                     pattern: required_string(tokens, b"pattern")?,
+                     glob: optional_string(tokens, b"glob")?,
+                 },
+@@ -108,13 +108,13 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+         }
+         Kind::Write => llm::Decoded::Owned {
+             call: tools::Call::Write {
+-                path: path(&required_string(tokens, b"path")?)?,
++                path: path(&required_string(tokens, b"path")?, b"path")?,
+                 content: required_string(tokens, b"content")?,
+             },
+         },
+         Kind::Edit => llm::Decoded::Owned {
+             call: tools::Call::Edit {
+-                path: path(&required_string(tokens, b"path")?)?,
++                path: path(&required_string(tokens, b"path")?, b"path")?,
+                 old: required_string(tokens, b"old")?,
+                 new: required_string(tokens, b"new")?,
+                 all: optional_bool(tokens, b"all")?.unwrap_or(false),
+@@ -126,7 +126,12 @@ fn call(kind: Kind, tokens: &[Token]) -> Result<llm::Decoded, llm::Problem> {
+                 Some(seconds) => Some(Duration::from_secs(u64::from(seconds))),
+                 None => None,
+             };
+-            llm::Decoded::Owned { call: tools::Call::Shell { command: required_string(tokens, b"command")?, timeout } }
++            let command = required_string(tokens, b"command")?;
++            let call = match optional_string(tokens, b"cwd")? {
++                Some(cwd) => tools::Call::ShellIn { command, timeout, cwd: path(&cwd, b"cwd")? },
++                None => tools::Call::Shell { command, timeout },
++            };
++            llm::Decoded::Owned { call }
+         }
+         Kind::Wait => llm::Decoded::Served { ask: run::Ask::Wait },
+         Kind::SubAgent => llm::Decoded::Served {
+@@ -240,25 +245,25 @@ fn decimal(text: &[u8]) -> Option<u32> {
+     Some(number)
+ }
+ 
+-fn path(text: &[u8]) -> Result<tools::Path, llm::Problem> {
++fn path(text: &[u8], field_name: &[u8]) -> Result<tools::Path, llm::Problem> {
+     let absolute = text.first() == Some(&b'/');
+     let capacity = u32::try_from(text.len()).or(Err(llm::Problem::TooLarge))?;
+     let mut parts = List::with_capacity(capacity);
+     let mut start = 0_usize;
+     for (index, byte) in text.iter().enumerate() {
+         if *byte == b'/' {
+-            append_part(&mut parts, text.get(start..index).ok_or(llm::Problem::TooLarge)?)?;
++            append_part(&mut parts, text.get(start..index).ok_or(llm::Problem::TooLarge)?, field_name)?;
+             start = index.checked_add(1).ok_or(llm::Problem::TooLarge)?;
+         }
+     }
+-    append_part(&mut parts, text.get(start..).ok_or(llm::Problem::TooLarge)?)?;
++    append_part(&mut parts, text.get(start..).ok_or(llm::Problem::TooLarge)?, field_name)?;
+     if parts.is_empty() && !absolute {
+-        return Err(bad_value(b"path"));
++        return Err(bad_value(field_name));
+     }
+     Ok(tools::Path { absolute, parts: parts.into_boxed() })
+ }
+ 
+-fn append_part(parts: &mut List<tools::Part>, piece: &[u8]) -> Result<(), llm::Problem> {
++fn append_part(parts: &mut List<tools::Part>, piece: &[u8], field_name: &[u8]) -> Result<(), llm::Problem> {
+     if piece.is_empty() {
+         return Ok(());
+     }
+@@ -266,7 +271,7 @@ fn append_part(parts: &mut List<tools::Part>, piece: &[u8]) -> Result<(), llm::P
+         b"." => tools::Part::Current,
+         b".." => tools::Part::Parent,
+         name => {
+-            let name = tools::Name::new(name.into()).ok_or(bad_value(b"path"))?;
++            let name = tools::Name::new(name.into()).ok_or(bad_value(field_name))?;
+             tools::Part::Name { name }
+         }
+     };
+diff --git a/crates/smith-protocol-llm/src/tools.rs b/crates/smith-protocol-llm/src/tools.rs
+index 8e16cb8..e8e14bd 100644
+--- a/crates/smith-protocol-llm/src/tools.rs
++++ b/crates/smith-protocol-llm/src/tools.rs
+@@ -58,8 +58,8 @@ pub fn schemas(prompt: &llm::Prompt) -> Box<[ToolSchema]> {
+         add(&mut descriptors, descriptor(
+             ToolKind::Owned(tools::Tool::Shell),
+             b"shell",
+-            b"Run a command in the workspace, within its deadline. It may change files and runs alone.",
+-            br#"{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","minimum":1}},"required":["command"]}"#,
++            b"Run a command in the workspace, within its deadline. Optional cwd selects a mounted workspace directory for this call; relative paths start at the original working directory. It may change files and runs alone.",
++            br#"{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout":{"type":"integer","minimum":1}},"required":["command"]}"#,
+         ));
+     }
+     for offered in &prompt.served {
+diff --git a/crates/smith-protocol-machine/src/tests.rs b/crates/smith-protocol-machine/src/tests.rs
+index 2087fb9..d80ac20 100644
+--- a/crates/smith-protocol-machine/src/tests.rs
++++ b/crates/smith-protocol-machine/src/tests.rs
+@@ -96,10 +96,160 @@ fn shell_inherits_configured_defaults_and_explicit_variables_override_them() {
+         &mut below,
+     );
+     assert!(to_domain.is_empty());
+-    let Some(Below::Spawn { spawn, .. }) = below.pop() else { panic!("shell is admitted") };
++    let Some(Below::Spawn { root, spawn, .. }) = below.pop() else { panic!("shell is admitted") };
++    assert_eq!(root, Token::new(10));
++    assert_eq!(spawn.dir.as_ref(), b".");
+     assert_eq!(spawn.env.as_ref(), [Box::from(&b"HOME=/home/operator"[..]), Box::from(&b"PATH=/custom/bin"[..])]);
+ }
+ 
++fn workspace_with_read_only_dependency() -> run::Workspace {
++    run::Workspace {
++        directories: Box::new([
++            run::Directory {
++                name: Box::from(&b"code"[..]),
++                root: Token::new(10),
++                writable: true,
++                git: true,
++                conflicts: Box::new([]),
++            },
++            run::Directory {
++                name: Box::from(&b"dependency"[..]),
++                root: Token::new(11),
++                writable: false,
++                git: true,
++                conflicts: Box::new([]),
++            },
++        ]),
++    }
++}
++
++#[test]
++fn shell_transports_selected_cwd_and_cancellation_waits_for_process_cleanup() {
++    use skein_io::{Event, Request};
++
++    let mut settings = env();
++    settings.limits.roots = 2;
++    let mut component = Component::new(&settings.limits);
++    component.workspace(&workspace_with_read_only_dependency());
++    component.configure_environment(Box::new([tools::Var {
++        name: Box::from(&b"PATH"[..]),
++        value: Box::from(&b"/usr/bin"[..]),
++    }]));
++    let mut to_domain = Queue::with_capacity(2);
++    let mut below = Queue::with_capacity(3);
++    let owner = Token::new(50);
++    component.from_domain(
++        &settings,
++        FromDomain::Op {
++            owner,
++            op: tools::Op::Spawn {
++                cwd: tools::Place { root: Token::new(11), path: Box::from(&b"src/tests"[..]) },
++                command: Box::from(&b"pwd"[..]),
++                env: Box::new([]),
++                roots: Box::new([]),
++                head: 32,
++                tail: 32,
++            },
++            deadline: Time::from_nanos(100),
++        },
++        &mut to_domain,
++        &mut below,
++    );
++    let Some(Below::Spawn { owner: spawned, root, spawn }) = below.pop() else {
++        panic!("selected mounted directory is admitted")
++    };
++    assert_eq!(spawned, owner);
++    assert_eq!(root, Token::new(11));
++    assert_eq!(spawn.dir.as_ref(), b"src/tests");
++    assert_eq!(spawn.env.as_ref(), [Box::from(&b"PATH=/usr/bin"[..])]);
++    component.from_domain(&settings, FromDomain::Cancel { owner }, &mut to_domain, &mut below);
++    assert!(to_domain.is_empty());
++    assert!(below.is_empty());
++    component.from_below(
++        &settings,
++        BelowEvent::Process(Event::Spawned {
++            owner,
++            child: Token::new(51),
++            pipes: Box::new([Token::new(52), Token::new(53)]),
++        }),
++        &mut to_domain,
++        &mut below,
++    );
++    for expected in [Token::new(52), Token::new(53)] {
++        let Some(Below::Process(Request::Stream { stream, .. })) = below.pop() else {
++            panic!("spawned output pipe is drained")
++        };
++        assert_eq!(stream, expected);
++    }
++    assert_eq!(
++        below.pop(),
++        Some(Below::Process(Request::Signal { child: Token::new(51), signal: kernel::Signal::Terminate }))
++    );
++    component.from_below(
++        &settings,
++        BelowEvent::Process(Event::Exited { owner, exit: kernel::Exit::Signal(15) }),
++        &mut to_domain,
++        &mut below,
++    );
++    for closed in [owner, Token::new(52)] {
++        component.from_below(
++            &settings,
++            BelowEvent::Process(Event::Closed { owner: closed }),
++            &mut to_domain,
++            &mut below,
++        );
++        assert!(to_domain.is_empty());
++    }
++    component.from_below(
++        &settings,
++        BelowEvent::Process(Event::Closed { owner: Token::new(53) }),
++        &mut to_domain,
++        &mut below,
++    );
++    assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
++    component.from_domain(&settings, FromDomain::Cancel { owner }, &mut to_domain, &mut below);
++    component.fire(&settings, &mut to_domain, &mut below);
++    assert!(to_domain.is_empty());
++    assert!(below.is_empty());
++    assert_eq!(component.next_deadline(), None);
++}
++
++#[test]
++fn shell_refuses_unknown_root_and_overlong_cwd_before_spawn() {
++    for (cwd, expected) in [
++        (tools::Place { root: Token::new(99), path: Box::from(&b"src"[..]) }, tools::Done::Escapes),
++        (
++            tools::Place { root: Token::new(10), path: Box::new([b'a'; 65]) },
++            tools::Done::Failed { fault: tools::Fault::Other },
++        ),
++    ] {
++        let mut component = component();
++        let mut to_domain = Queue::with_capacity(2);
++        let mut below = Queue::with_capacity(2);
++        component.from_domain(
++            &env(),
++            FromDomain::Op {
++                owner: Token::new(1),
++                op: tools::Op::Spawn {
++                    cwd,
++                    command: Box::from(&b"pwd"[..]),
++                    env: Box::new([]),
++                    roots: Box::new([]),
++                    head: 32,
++                    tail: 32,
++                },
++                deadline: Time::from_nanos(100),
++            },
++            &mut to_domain,
++            &mut below,
++        );
++        assert!(below.is_empty());
++        assert_eq!(to_domain.pop(), Some(ToDomain::Done { owner: Token::new(1), done: expected }));
++        assert!(to_domain.is_empty());
++        assert_eq!(component.next_deadline(), None);
++    }
++}
++
+ #[test]
+ fn shell_refuses_a_merged_environment_over_its_byte_limit() {
+     let mut component = component();
+diff --git a/docs/design/domain/tools.md b/docs/design/domain/tools.md
+index 972e4fb..64269f0 100644
+--- a/docs/design/domain/tools.md
++++ b/docs/design/domain/tools.md
+@@ -23,7 +23,7 @@ host's tools and MCP servers. What is still open is listed in section 8.
+ - **Directories side by side.** A workspace is one or more directories
+   (documents, data, notes, code), each mounted under the name the LLM
+   calls it, so what refers to a sibling by path works. Relative paths
+-  and commands start in the first directory; the others are its
++  and commands without an explicit `cwd` start in the first directory; the others are its
+   siblings. Each may be writable or not; its host decides which (run.md,
+   3.2).
+ - **Repositories are directories with git.** A directory that is a git
+@@ -88,6 +88,27 @@ modify (`write`, `edit`), shell.
+   command writes only the writable directories, and every git directory
+   is read-only to it, since the host commits the checked tree, merges in
+   progress included, and the LLM needs no git writes.
++- **Per-call working directory.** Shell accepts an optional string `cwd`.
++  Omission preserves the kit's original working directory (`Call::Shell {
++  command, timeout }`); an explicit path arrives as `Call::ShellIn` with a
++  typed `Path`. Relative paths, including `.`, start at that original
++  directory; absolute paths use the workspace's mounted names. An empty
++  string is malformed, as with other workspace tools' path arguments.
++  Both use the same lexical `.`/`..` normalization and deepest containing
++  mount selection as file tools. An explicit directory never changes the
++  kit's base for subsequent calls. Malformed or NUL-bearing paths are
++  rejected while decoding; overlong raw or normalized paths and paths
++  outside every mount are refused before a process starts. IO resolves the
++  resulting root and relative directory beneath that root, retaining its
++  confinement and directory checks.
++- **Unchanged command authority and lifecycle.** Selecting a directory does
++  not grant inspect or modify authority, change the environment or mounted
++  roots, or bypass git protections. A read-only mount can be the working
++  directory. The shell grant is required; requested timeouts are clamped to
++  the configured maximum and the call deadline. Cancellation and all other
++  outcomes retain exactly one terminal per call. Checked call ownership
++  counts the command and every explicit path component cell and name byte;
++  existing normalization scratch and resolved-place bounds apply.
+ 
+ ## 6. Below the domain
+ 
+diff --git a/docs/design/protocol/llm.md b/docs/design/protocol/llm.md
+index 8f855c6..3cf01ff 100644
+--- a/docs/design/protocol/llm.md
++++ b/docs/design/protocol/llm.md
+@@ -62,7 +62,7 @@ the dialect's cache markers go where skein's client puts them.
+ | `search` | a pattern; a path and a glob to search within, optionally |
+ | `write` | a path and the whole content |
+ | `edit` | a path, the text to replace and its replacement |
+-| `shell` | a command, and its deadline, optionally, within the charter's |
++| `shell` | a command; optional string `cwd` and deadline within the charter's |
+ | `finish` | the result contract's forms (below) |
+ | `deliver` | the change's required fields |
+ | `wait` | nothing |
+@@ -72,6 +72,10 @@ the dialect's cache markers go where skein's client puts them.
+ - **Descriptions are the protocol layer's words.** They tell the LLM what
+   the domain enforces: a file must be read before it is written, paths stay
+   within the workspace, a write runs alone.
++- **`shell`'s optional `cwd`** selects a directory for that call only. Relative
++  spellings start at the kit's original working directory; absolute spellings
++  use the same mounted-root authority and deepest-root selection as other
++  workspace tools. Omitting it preserves the original working directory.
+ - **`finish`'s schema is generated from the contract** (charter.md, 2.1).
+   It has:
+   - one branch per form allowed;
+@@ -100,6 +104,11 @@ the dialect's cache markers go where skein's client puts them.
+ 
+   The domain answers each as an error the LLM can fix. Unknown fields are
+   ignored.
++- **`shell`'s `cwd`** must be a string when present, including rejecting JSON
++  null. It decodes to the same typed path components as other workspace tools;
++  invalid components, including NUL, name `cwd` in the problem. The tools
++  domain bounds and resolves the path before a process may start. Omitted
++  `cwd` keeps the existing `Shell` call; an explicit path becomes `ShellIn`.
+ - **A host tool's input** is checked only to be a JSON object within its
+   bound, and is relayed as bytes (domain/run.md, 5.2).
+ - **A result for `finish`** is decoded into the domain's result: its form,
+@@ -159,7 +168,7 @@ the dialect's cache markers go where skein's client puts them.
+   - the request's bytes;
+   - the tools' schemas' bytes;
+   - a completion's bytes and blocks;
+-  - a decoded call's bytes;
++  - a decoded call's bytes, including explicit shell path component cells and names;
+   - a failure's detail.
+ - **The worst case:**
+   - skein's client's;
+diff --git a/tests/session/src/fixture.rs b/tests/session/src/fixture.rs
+index c9a2144..88fa49a 100644
+--- a/tests/session/src/fixture.rs
++++ b/tests/session/src/fixture.rs
+@@ -108,7 +108,7 @@ pub fn fits(call: &Call, outcome: &Outcome) -> bool {
+         | Call::Search { path, .. }
+         | Call::Write { path, .. }
+         | Call::Edit { path, .. } => path,
+-        Call::Shell { command, .. } => {
++        Call::Shell { command, .. } | Call::ShellIn { command, .. } => {
+             let Outcome::Exited { exit, head, .. } = outcome else {
+                 return false;
+             };
+diff --git a/tests/tools/tests/fuzzy_memory.rs b/tests/tools/tests/fuzzy_memory.rs
+index 86816d4..1c5ca89 100644
+--- a/tests/tools/tests/fuzzy_memory.rs
++++ b/tests/tools/tests/fuzzy_memory.rs
+@@ -117,7 +117,13 @@ fn random_call(limits: &Limits, rng: &mut Rng) -> Call {
+         0 => read(limits, file),
+         1 => Call::List { path: path(limits, file) },
+         2 => write(limits, file),
+-        3 => Call::Shell { command: b"cargo test"[..].into(), timeout: None },
++        3 => {
++            if rng.chance(500) {
++                Call::ShellIn { command: b"cargo test"[..].into(), timeout: None, cwd: path(limits, file) }
++            } else {
++                Call::Shell { command: b"cargo test"[..].into(), timeout: None }
++            }
++        }
+         _ => {
+             // Mostly small, so that most edits fit and are stored.
+             let len = if rng.chance(100) { u64::from(limits.file_bytes) } else { rng.below(8) };

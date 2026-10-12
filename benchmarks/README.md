@@ -123,3 +123,35 @@ observer is pinned to CLI 0.160.0; named-thread rollout collection retains
 root and child scopes. Known malformed records fail loudly; unknown
 record kinds are skipped. Typed recording controls exercise the same
 observers and supervision without running a real agent.
+
+The repository suite uses `shell-cwd` frozen at smith
+`56c0c59735f3a163753fdd43e20a7e87df369ce3`, with skein
+`f5fca44f2c9ee92f2dc52d8dc845212ca692275f` and registry dependencies
+vendored. Its manifest is `tasks/repository/shell-cwd/seed/bundle.toml`;
+the directory lives at
+`$XDG_STATE_HOME/smith-bench/bundles/shell-cwd-56c0c59/` on
+`debian-16gb-hel1-1`. An absent bundle is reported as skipped offline,
+and refuses an attempt. A present bundle must match its complete seed
+digest. The task's own seed digest binds the bundle manifest.
+
+To reproduce it with the two source commits available locally, export
+smith's frozen tree to that directory with `git archive`. From the
+exported directory run `heavy cargo vendor --locked vendor`, and save
+Cargo's printed source replacements in `.cargo/config.toml`, using
+`directory = "vendor"` so each copied workspace builds independently.
+Export skein's three `tests/tls/fixtures/{leaf.der,intermediate.der,leaf.key}`
+files at the frozen pin to those paths in the bundle; the vendored fake
+peers include them by their existing relative paths. Keep the frozen
+`Cargo.lock` and `.config/nextest.toml` unchanged. Build
+once with `heavy cargo build --offline --locked --workspace --all-targets
+--target-dir DIRECTORY_OUTSIDE_THE_BUNDLE`. The directory's digest,
+including the vendored sources and config, must match `bundle.toml`;
+never keep build output inside it.
+
+The repository reference is the spike's successful Codex solution as
+`reference/solution.patch`, excluding its dated workflow log. Validation
+applies that patch to a private bundle copy. It prints the repository
+oracle and every grade command's bounded output. The five grader
+command deadlines sum to 180 seconds; focused and fuzzy nextest still
+use the frozen seed's 15 and 60 second budgets. Both arms start from the
+same unbuilt copy, with no shared attempt cache.

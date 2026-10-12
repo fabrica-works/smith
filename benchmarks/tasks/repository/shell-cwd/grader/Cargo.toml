@@ -1,0 +1,18 @@
+[package]
+name = "smith-repository-cwd-oracle"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+smith-domain = { path = "../workspace/crates/smith-domain" }
+smith-protocol-llm = { path = "../workspace/crates/smith-protocol-llm" }
+smith-protocol-machine = { path = "../workspace/crates/smith-protocol-machine" }
+skein-lib = { git = "https://git.ekanayaka.io/ai/skein.git" }
+skein-llm-world = { git = "https://git.ekanayaka.io/ai/skein.git" }
+serde_json = "=1.0.151"
+
+[profile.dev]
+debug = 0
+overflow-checks = true
