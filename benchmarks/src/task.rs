@@ -53,7 +53,13 @@ pub enum OutcomeCheck {
 #[serde(tag = "check", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum EventCheck {
     /// A captured path call has its exact joined successful terminal.
-    ToolPath { tool: String, path: String, #[serde(default)] aliases: Vec<String>, verdict: String },
+    ToolPath {
+        tool: String,
+        path: String,
+        #[serde(default)]
+        aliases: Vec<String>,
+        verdict: String,
+    },
     /// One successful captured write supplies the exact settled file bytes.
     WrittenFile { path: PathBuf, content_bytes_at_least: u64 },
     /// Exactly one write is refused by the authored protocol or native payload bound.

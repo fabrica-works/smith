@@ -276,7 +276,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
     };
     let evidence = if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
         vec![format!("required {tool} path {path:?} or {aliases:?}, joined terminal {verdict}")]
-    } else { Vec::new() };
+    } else {
+        Vec::new()
+    };
     CheckVerdict { check: check.name().into(), passed, evidence }
 }
 

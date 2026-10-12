@@ -79,8 +79,11 @@ pub(super) fn checks(
         }
         match check {
             EventCheck::ToolPath { tool, path, aliases, verdict } => {
-                if tool.trim().is_empty() || path.is_empty() || path.contains('\0')
-                    || aliases.iter().any(|alias| alias.is_empty() || alias.contains('\0')) {
+                if tool.trim().is_empty()
+                    || path.is_empty()
+                    || path.contains('\0')
+                    || aliases.iter().any(|alias| alias.is_empty() || alias.contains('\0'))
+                {
                     return Err(Refusal::new(file, &key, "tool and path must be nonempty namespace text"));
                 }
                 named(file, &format!("{key}.verdict"), verdict, VERDICTS)?;
