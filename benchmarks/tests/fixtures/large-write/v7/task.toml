@@ -1,0 +1,109 @@
+id = "large-write"
+version = 7
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Write payload.txt in one write call with numbered lines from Line 0001 through Line 0643 inclusive. Each line is exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. This is 36008 bytes. Do not read, use shell, edit, or delegate. Finish with ALPHA after written.\n"
+seed_sha256 = "c66e8ecba8b9f92c36e311d567e911184107078ce03d8271266c3a8b3e717663"
+guards = ["domain/tools.md, section 3", "protocol/limits.md, section 6"]
+deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "written-file", "tool-call", "no-stop", "run-completed"]
+
+[budget]
+seconds = 300
+turns = 12
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "c79b7169a8f3806be73716a64974decc02385ce1769795997903a0bbd57aa94d"
+[[event]]
+check = "tool-call"
+tool = "write"
+count = { exactly = 1 }
+input_bytes_at_least = 32768
+verdict = "written"
+[[event]]
+check = "no-stop"
+stop = "max_tokens"
+
+[[outcome]]
+check = "file-size"
+path = "payload.txt"
+bytes_at_least = 32768
+[[event]]
+check = "written-file"
+path = "payload.txt"
+content_bytes_at_least = 32768
+
+[[variant]]
+name = "oversized"
+replace_checks = true
+prompt = "Generate numbered lines from Line 0001 through Line 0893 inclusive, each exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. This is 50008 bytes. First attempt one write of all lines to payload.txt, above the 40960-byte payload. After the oversized refusal, write the first piece and extend it with edit calls until the final file is above 40960 bytes. Do not read, use shell, or delegate. Finish with ALPHA after the pieces are accepted.\n"
+deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "file-pieces", "blocks", "no-stop", "run-completed"]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "answer"
+pattern = "ALPHA"
+[[variant.outcome]]
+check = "file-digest"
+path = "payload.txt"
+sha256 = "68a6dc3bc27d1c7731aa2c7211af828571df1cf56e0d19c1575d946937cd90ed"
+[[variant.event]]
+check = "blocks"
+oversized = { exactly = 1 }
+[[variant.outcome]]
+check = "file-size"
+path = "payload.txt"
+bytes_at_least = 40961
+[[variant.event]]
+check = "file-pieces"
+path = "payload.txt"
+bytes_above = 40960
+file_bytes = 1048576
+[[variant.event]]
+check = "no-stop"
+stop = "max_tokens"
+[[variant.event]]
+check = "run-completed"
+status = "accepted"

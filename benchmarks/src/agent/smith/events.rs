@@ -277,6 +277,17 @@ impl Observer {
         written_file::check(self, path, minimum, workspace)
     }
 
+    /// Judge one exact paired oversized write before any repair.
+    #[must_use]
+    pub fn oversized_write(
+        &self,
+        path: &std::path::Path,
+        above: u64,
+        workspace: &std::path::Path,
+    ) -> crate::CheckVerdict {
+        file_pieces::oversized_check(self, path, above, workspace)
+    }
+
     /// Apply successful captured pieces in order against the declared file bound.
     #[must_use]
     pub fn file_pieces(

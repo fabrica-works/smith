@@ -1,4 +1,7 @@
-//! Oversized-call identity precedes the successful first piece and edits.
+//! One immutable refusal identity precedes the successful first piece and edits.
+//! `oversized_check` and `check` join native payload TooLarge with captured content
+//! or preserve attested protocol Oversized blocks. They never infer an unrecorded
+//! argument or namespace, and never relabel the protocol block counter.
 //! Captured arguments reconstruct only reported successful mutations; a failed
 //! edit is retained as evidence and changes nothing. Missing content stays
 //! unavailable. Replay scratch is bounded by the task's unchanged file cap.
@@ -11,6 +14,35 @@ use smith_events::{Block, Event, Verdict};
 use crate::{CheckVerdict, Measure};
 
 use super::{Observer, Session};
+
+struct Refusal {
+    session: usize,
+    run: u64,
+    conversation: u64,
+    call: Box<[u8]>,
+    at: usize,
+}
+
+pub(super) fn oversized_check(observer: &Observer, path: &Path, above: u64, workspace: &Path) -> CheckVerdict {
+    let mut evidence = Vec::new();
+    let passed = if complete(observer) {
+        match refusal(observer, path, above, workspace, &mut evidence) {
+            Ok(_) => Measure::Observed { value: true },
+            Err(measure) => measure,
+        }
+    } else {
+        Measure::unavailable("incomplete event stream prevents oversized call pairing")
+    };
+    CheckVerdict { check: "oversized-write".into(), passed, evidence }
+}
+
+fn complete(observer: &Observer) -> bool {
+    observer.finished
+        && observer.fault.is_none()
+        && !observer.unknown
+        && !observer.sessions.is_empty()
+        && !observer.sessions.iter().any(|session| session.unknown || super::usage::incomplete(session).is_some())
+}
 
 pub(super) fn check(observer: &Observer, path: &Path, above: u64, maximum: u64, workspace: &Path) -> CheckVerdict {
     let mut evidence = Vec::new();
@@ -27,15 +59,10 @@ fn evaluate(
     evidence: &mut Vec<String>,
 ) -> Measure<bool> {
     let measured = |value| Measure::Observed { value };
-    if !observer.finished
-        || observer.fault.is_some()
-        || observer.unknown
-        || observer.sessions.is_empty()
-        || observer.sessions.iter().any(|session| session.unknown || super::usage::incomplete(session).is_some())
-    {
+    if !complete(observer) {
         return Measure::unavailable("incomplete event stream prevents a complete piece/file comparison");
     }
-    let (index, run, conversation, refused_at) = match refusal(observer, evidence) {
+    let refused = match refusal(observer, path, above, workspace, evidence) {
         Ok(scope) => scope,
         Err(measure) => return measure,
     };
@@ -57,10 +84,16 @@ fn evaluate(
             if start.tool.as_ref() == b"edit" && verdict != Verdict::Edited {
                 continue;
             }
-            if session_index != index || start.run != run || start.conversation != conversation {
+            if session_index != refused.session
+                || start.run != refused.run
+                || start.conversation != refused.conversation
+            {
                 return Measure::unavailable("piece mutations span independent call scopes");
             }
-            if at <= refused_at {
+            if at <= refused.at {
+                if start.call == refused.call && verdict == Verdict::TooLarge {
+                    continue;
+                }
                 return measured(false);
             }
             if let Err(measure) = apply(&mut content, &start.tool, &input, &verdict, maximum, &mut edits) {
@@ -90,8 +123,28 @@ fn evaluate(
     }
 }
 
-fn refusal(observer: &Observer, evidence: &mut Vec<String>) -> Result<(usize, u64, u64, usize), Measure<bool>> {
+fn refusal(
+    observer: &Observer,
+    path: &Path,
+    above: u64,
+    workspace: &Path,
+    evidence: &mut Vec<String>,
+) -> Result<Refusal, Measure<bool>> {
     let mut refusals = Vec::new();
+    protocol_refusals(observer, above, evidence, &mut refusals)?;
+    native_refusals(observer, path, above, workspace, evidence, &mut refusals)?;
+    if refusals.len() != 1 {
+        return Err(Measure::Observed { value: false });
+    }
+    Ok(refusals.remove(0))
+}
+
+fn protocol_refusals(
+    observer: &Observer,
+    above: u64,
+    evidence: &mut Vec<String>,
+    refusals: &mut Vec<Refusal>,
+) -> Result<(), Measure<bool>> {
     for (index, session) in observer.sessions.iter().enumerate() {
         for (at, record) in session.records.iter().enumerate() {
             let Event::ResponseCompleted(response) = &record.event else {
@@ -123,14 +176,77 @@ fn refusal(observer: &Observer, evidence: &mut Vec<String>) -> Result<(usize, u6
                     response.conversation,
                     String::from_utf8_lossy(call)
                 ));
-                refusals.push((index, response.run, response.conversation, at));
+                if *bytes <= above {
+                    return Err(Measure::Observed { value: false });
+                }
+                refusals.push(Refusal {
+                    session: index,
+                    run: response.run,
+                    conversation: response.conversation,
+                    call: call.clone(),
+                    at,
+                });
             }
         }
     }
-    if refusals.len() != 1 {
-        return Err(Measure::Observed { value: false });
+    Ok(())
+}
+
+fn native_refusals(
+    observer: &Observer,
+    path: &Path,
+    above: u64,
+    workspace: &Path,
+    evidence: &mut Vec<String>,
+    refusals: &mut Vec<Refusal>,
+) -> Result<(), Measure<bool>> {
+    for (index, session) in observer.sessions.iter().enumerate() {
+        for (at, record) in session.records.iter().enumerate() {
+            let Event::ToolCompleted(end) = &record.event else {
+                continue;
+            };
+            if end.tool.as_ref() != b"write" || end.verdict != Verdict::TooLarge {
+                continue;
+            }
+            let starts: Vec<_> = session
+                .records
+                .iter()
+                .enumerate()
+                .filter_map(|(before, record)| {
+                    let Event::ToolStarted(start) = &record.event else {
+                        return None;
+                    };
+                    (start.run == end.run
+                        && start.conversation == end.conversation
+                        && start.call == end.call
+                        && start.tool == end.tool)
+                        .then_some((before, start))
+                })
+                .collect();
+            if starts.len() != 1 || starts[0].0 >= at {
+                return Err(Measure::Observed { value: false });
+            }
+            let Some((input, Verdict::TooLarge)) = mutation(session, starts[0].1, path, workspace, evidence)? else {
+                return Err(Measure::Observed { value: false });
+            };
+            let Some(content) = input.get("content").and_then(serde_json::Value::as_str) else {
+                return Err(Measure::unavailable("oversized write content is unavailable"));
+            };
+            let bytes = u64::try_from(content.len()).expect("captured input fits");
+            if bytes <= above {
+                return Err(Measure::Observed { value: false });
+            }
+            evidence.push(format!("payload-refused session={index}/run={}/conversation={}/call={}; content_bytes={bytes}; payload={above}", end.run, end.conversation, String::from_utf8_lossy(&end.call)));
+            refusals.push(Refusal {
+                session: index,
+                run: end.run,
+                conversation: end.conversation,
+                call: end.call.clone(),
+                at,
+            });
+        }
     }
-    Ok(refusals[0])
+    Ok(())
 }
 
 fn mutation(

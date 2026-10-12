@@ -70,14 +70,17 @@ pub(super) fn checks(
     key: &str,
     checks: &[EventCheck],
     native_file_bytes: Option<u64>,
+    native_tool_payload: Option<u64>,
 ) -> Result<(), Refusal> {
     for (index, check) in checks.iter().enumerate() {
         let key = format!("{key}[{index}]");
-        if file_check(file, &key, check, native_file_bytes)? {
+        if file_check(file, &key, check, native_file_bytes, native_tool_payload)? {
             continue;
         }
         match check {
-            EventCheck::WrittenFile { .. } | EventCheck::FilePieces { .. } => unreachable!("file checks return above"),
+            EventCheck::WrittenFile { .. } | EventCheck::FilePieces { .. } | EventCheck::OversizedWrite { .. } => {
+                unreachable!("file checks return above")
+            }
             EventCheck::ToolCall { tool, verdict, .. } => {
                 if tool.trim().is_empty() {
                     return Err(Refusal::new(file, &format!("{key}.tool"), "tool name is empty"));
@@ -166,7 +169,24 @@ pub(super) fn checks(
     Ok(())
 }
 
-fn file_check(file: &Path, key: &str, check: &EventCheck, native_file_bytes: Option<u64>) -> Result<bool, Refusal> {
+fn file_check(
+    file: &Path,
+    key: &str,
+    check: &EventCheck,
+    native_file_bytes: Option<u64>,
+    native_tool_payload: Option<u64>,
+) -> Result<bool, Refusal> {
+    if let EventCheck::OversizedWrite { path, content_bytes_above } = check {
+        super::check_path(file, &format!("{key}.path"), path)?;
+        if *content_bytes_above == 0 || native_tool_payload != Some(*content_bytes_above) {
+            return Err(Refusal::new(
+                file,
+                key,
+                "oversized threshold must equal the positive authored native tool_payload",
+            ));
+        }
+        return Ok(true);
+    }
     if let EventCheck::WrittenFile { path, content_bytes_at_least } = check {
         super::check_path(file, &format!("{key}.path"), path)?;
         if *content_bytes_at_least == 0 {

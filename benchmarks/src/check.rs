@@ -127,7 +127,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
         check_path(file, "protected", path)?;
     }
     check_outcomes(file, "outcome", &task.outcome)?;
-    events::checks(file, "event", &task.event, declared_file_bytes(&task.smith, None))?;
+    event_checks(file, "event", &task.event, &task.smith, None)?;
     deciding(file, "deciding", &task.deciding, &task.outcome, &task.event)?;
     for (index, grade) in task.grade.iter().enumerate() {
         if grade.command.is_empty() || grade.deadline_seconds == 0 || grade.max_output_bytes == 0 {
@@ -156,12 +156,7 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
             check_budget(file, &format!("{key}.budget"), budget)?;
         }
         check_outcomes(file, &format!("{key}.outcome"), &variant.outcome)?;
-        events::checks(
-            file,
-            &format!("{key}.event"),
-            &variant.event,
-            declared_file_bytes(&task.smith, variant.smith.get("file_bytes")),
-        )?;
+        event_checks(file, &format!("{key}.event"), &variant.event, &task.smith, Some(&variant.smith))?;
         let outcomes = if variant.replace_checks {
             variant.outcome.clone()
         } else {
@@ -438,4 +433,30 @@ fn declared_file_bytes(
         .or_else(|| smith.get("file_bytes"))
         .and_then(toml::Value::as_integer)
         .and_then(|value| u64::try_from(value).ok())
+}
+
+fn declared_tool_payload(
+    smith: &std::collections::BTreeMap<String, toml::Value>,
+    override_value: Option<&toml::Value>,
+) -> Option<u64> {
+    override_value
+        .or_else(|| smith.get("tool_payload"))
+        .and_then(toml::Value::as_integer)
+        .and_then(|value| u64::try_from(value).ok())
+}
+
+fn event_checks(
+    file: &Path,
+    key: &str,
+    checks: &[crate::EventCheck],
+    smith: &std::collections::BTreeMap<String, toml::Value>,
+    overrides: Option<&std::collections::BTreeMap<String, toml::Value>>,
+) -> Result<(), Refusal> {
+    events::checks(
+        file,
+        key,
+        checks,
+        declared_file_bytes(smith, overrides.and_then(|values| values.get("file_bytes"))),
+        declared_tool_payload(smith, overrides.and_then(|values| values.get("tool_payload"))),
+    )
 }

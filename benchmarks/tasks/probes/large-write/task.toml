@@ -75,7 +75,7 @@ content_bytes_at_least = 32768
 name = "oversized"
 replace_checks = true
 prompt = "Generate numbered lines from Line 0001 through Line 0893 inclusive, each exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. This is 50008 bytes. First attempt one write of all lines to payload.txt, above the 40960-byte payload. After the oversized refusal, write the first piece and extend it with edit calls until the final file is above 40960 bytes. Do not read, use shell, or delegate. Finish with ALPHA after the pieces are accepted.\n"
-deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "file-pieces", "blocks", "no-stop", "run-completed"]
+deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "file-pieces", "oversized-write", "no-stop", "run-completed"]
 [[variant.outcome]]
 check = "end"
 end = "completed"
@@ -107,3 +107,8 @@ stop = "max_tokens"
 [[variant.event]]
 check = "run-completed"
 status = "accepted"
+
+[[variant.event]]
+check = "oversized-write"
+path = "payload.txt"
+content_bytes_above = 40960

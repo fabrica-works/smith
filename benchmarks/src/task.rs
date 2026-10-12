@@ -54,6 +54,8 @@ pub enum OutcomeCheck {
 pub enum EventCheck {
     /// One successful captured write supplies the exact settled file bytes.
     WrittenFile { path: PathBuf, content_bytes_at_least: u64 },
+    /// Exactly one write is refused by protocol size or joined native payload size.
+    OversizedWrite { path: PathBuf, content_bytes_above: u64 },
     /// An oversized write is repaired by a first write and captured extending edits.
     FilePieces {
         path: PathBuf,
@@ -127,6 +129,7 @@ impl EventCheck {
         match self {
             Self::WrittenFile { .. } => "written-file",
             Self::FilePieces { .. } => "file-pieces",
+            Self::OversizedWrite { .. } => "oversized-write",
             Self::ToolCall { .. } => "tool-call",
             Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",

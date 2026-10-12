@@ -261,6 +261,7 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
     let records = records(observer);
     match check {
         EventCheck::WrittenFile { .. } => unavailable("written file comparison requires the settled workspace"),
+        EventCheck::OversizedWrite { .. } => unavailable("oversized write pairing requires its workspace path"),
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
         EventCheck::UsageSums => super::usage_sums::check(observer),
         EventCheck::ToolCall { .. } => tool_call(observer, check),
