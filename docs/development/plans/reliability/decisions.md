@@ -1621,3 +1621,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    reasoning): llm.md section 2 bounds each item and the run by the same
    reasoning limit, at the item's and the completion's scale, and the
    bound says which; no new public `Cap` variant.
+80. **smith 10.18 lands whole, at up to 950 lines** (block of
+   2026-10-12T20:18:57Z). 10.18's candidate (`e3cfec84`) stands at 707
+   production lines with its budget checks, refusal mapping, check's
+   report and process Proof still to write, estimated at 850 to 950 in
+   all; its `resolve` calls the relationships it has not yet written, so
+   a split would land a part that cannot run or would need stubs. The
+   third size block in this chain (10.13 at 744, 10.17 at 728). Ruling:
+   10.18 stays one increment, at most 950 production lines, its commit
+   body giving the count by file, as 13.15 and 13.29 did for 10.1; past
+   950 it stops and asks. Rule 9 stands for the rest.
