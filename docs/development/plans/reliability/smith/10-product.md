@@ -377,23 +377,29 @@ Size: README rule 9's.
 Scope (shell.md, 8): `[environment]` `inherit` (the core list by default,
 names only) and `set`; `[build]` preset `rust` (`CARGO_HOME`,
 `RUSTUP_HOME`; `$CARGO_HOME/registry` and `$CARGO_HOME/git` as caches)
-and `caches`; `smith check` checks each cache, warns of a configured
+and `caches`; `smith check` checks each cache with skein's
+`directory_access` (skein's `shell.md`, 6.1; shell.md, 8, settled
+2026-10-12), a cache it cannot confirm a warning naming it and the
+kernel's answer, and warns of a configured
 wrapper whose cache is not among them, naming what configured it, and of
 a credential-like name. The result is the agent configuration's
 environment, smith 09's single owner.
-Needs: nothing.
+Needs: skein's `directory_access` landed and pinned (a skein step its
+supervisor names); the rest of 10.9 does not wait for it.
 Files: `smith-local-shell` (`settings/`, `presets.rs`, `check.rs`),
 `tests/end-to-end/end_to_end.rs`.
 Shape: `check::Warning::{WrapperCache, CredentialLikeName}`.
 Test shape: unit in `settings/tests.rs`:
 `inherit_takes_named_variables_never_a_pattern`,
 `the_rust_preset_adds_its_homes_and_caches`,
-`a_credential_like_name_is_warned`; end to end
+`a_credential_like_name_is_warned`,
+`an_unwritable_cache_is_warned_with_the_kernels_answer`; end to end
 `smith_check_json_warns_of_a_wrapper_cache_outside_the_caches`.
 Ceilings: 20 ms, 2 s.
 Proof: process, the end-to-end test: exit 0, the warning naming
 `RUSTC_WRAPPER`; once, under 2 s.
-Don't: `smith check` creates no cache.
+Don't: `smith check` creates no cache; read no mode bit or owner in
+place of `directory_access`.
 Size: at most 300. Removes: nothing.
 
 ### 10.5 `smith exec`
