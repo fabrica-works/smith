@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::guard::Guard;
 
@@ -85,6 +85,45 @@ pub struct Private {
     pub warm_target: PathBuf,
     pub config: PathBuf,
     pub state: PathBuf,
+}
+
+/// Resolve an authored seed-relative working directory before credentials.
+pub fn working_directory(guard: &Guard, private: &Private, task: &crate::Task) -> Result<PathBuf, String> {
+    let Some(path) = &task.working_directory else {
+        return Ok(private.workspace.clone());
+    };
+    if path.as_os_str().is_empty() || path.components().any(|part| !matches!(part, Component::Normal(_))) {
+        return Err("task working_directory must be a seed-relative path without traversal".into());
+    }
+    let workspace = private.workspace.canonicalize().map_err(|error| error.to_string())?;
+    let directory = guard.write_path(&workspace.join(path))?.canonicalize().map_err(|error| error.to_string())?;
+    if !directory.is_dir() || !directory.starts_with(&workspace) {
+        return Err("task working_directory must be an existing directory inside the private seed".into());
+    }
+    Ok(directory)
+}
+
+/// Delete settled owned scratch, restoring read-only directory modes without following links.
+pub fn remove_owned_tree(guard: &Guard, root: &Path) -> Result<(), String> {
+    fn writable(guard: &Guard, directory: &Path) -> Result<(), String> {
+        let metadata = fs::symlink_metadata(directory).map_err(|error| error.to_string())?;
+        if !metadata.is_dir() || metadata.is_symlink() {
+            return Err("owned scratch root must be an ordinary directory".into());
+        }
+        guard.write_path(directory)?;
+        fs::set_permissions(directory, fs::Permissions::from_mode(metadata.permissions().mode() | 0o700))
+            .map_err(|error| error.to_string())?;
+        for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            if entry.file_type().map_err(|error| error.to_string())?.is_dir() {
+                writable(guard, &entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    writable(guard, root)?;
+    guard.write_path(root)?;
+    fs::remove_dir_all(root).map_err(|error| error.to_string())
 }
 
 impl Private {
@@ -314,4 +353,32 @@ mod tests {
         assert!(refused.reason.contains("digest"));
         assert!(!fake_home.exists());
     }
+}
+
+#[cfg(test)]
+#[test]
+fn readonly_owned_cleanup_restores_directory_permissions_and_never_follows_links() {
+    let root = std::env::temp_dir().join(format!("smith-readonly-cleanup-{}", std::process::id()));
+    let guard = Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[]).expect("fixture guard");
+    let owned = root.join("owned");
+    let readonly = owned.join("spec");
+    let outside = root.join("outside");
+    fs::create_dir_all(&readonly).expect("owned layout");
+    fs::create_dir_all(&outside).expect("owned outside control");
+    fs::write(readonly.join("rules.txt"), "frozen").expect("readonly file");
+    fs::write(outside.join("sentinel.txt"), "unchanged").expect("outside sentinel");
+    std::os::unix::fs::symlink(&outside, owned.join("link")).expect("outside link");
+    fs::set_permissions(&outside, fs::Permissions::from_mode(0o500)).expect("outside mode control");
+    fs::set_permissions(&readonly, fs::Permissions::from_mode(0o500)).expect("readonly mode");
+    assert!(fs::remove_file(readonly.join("rules.txt")).is_err(), "ordinary unlink cannot delete readonly layout");
+    remove_owned_tree(&guard, &owned).expect("settled cleanup");
+    assert!(!owned.exists());
+    assert_eq!(fs::metadata(&outside).expect("outside unchanged").permissions().mode() & 0o777, 0o500);
+    assert_eq!(fs::read_to_string(outside.join("sentinel.txt")).expect("outside unchanged"), "unchanged");
+    let root_link = root.join("root-link");
+    std::os::unix::fs::symlink(&outside, &root_link).expect("nonordinary root");
+    assert!(remove_owned_tree(&guard, &root_link).is_err());
+    assert_eq!(fs::read_to_string(outside.join("sentinel.txt")).expect("outside still unchanged"), "unchanged");
+    fs::remove_file(root_link).expect("unlink fixture root link");
+    remove_owned_tree(&guard, &root).expect("owned fixture cleanup");
 }

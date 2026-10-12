@@ -1051,8 +1051,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
         result.outcome.end = if inference { End::HarnessError { what: error } } else { End::Refused { setup: error } };
     }
     if !existed && root.exists() {
-        let deletion =
-            guard.write_path(&root).and_then(|root| fs::remove_dir_all(root).map_err(|error| error.to_string()));
+        let deletion = crate::isolate::remove_owned_tree(guard, &root);
         if let Err(error) = deletion {
             result.outcome.end = End::HarnessError { what: format!("owned workspace deletion failed: {error}") };
         }

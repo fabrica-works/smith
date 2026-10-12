@@ -87,11 +87,11 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
             .filter(|(key, _)| key != "harness")
             .map(|(key, value)| (key, value.to_string()))
             .collect();
+        let workspace = crate::isolate::working_directory(context.guard, context.private, context.task)?;
         // Codex splits dotted override paths literally; quote the dynamic path
         // within a top-level TOML table value, including dots in the workspace.
         let project = toml::Table::from_iter([("trust_level".into(), toml::Value::String("trusted".into()))]);
-        let projects =
-            toml::Table::from_iter([(context.private.workspace.display().to_string(), toml::Value::Table(project))]);
+        let projects = toml::Table::from_iter([(workspace.display().to_string(), toml::Value::Table(project))]);
         overrides.push(("projects".into(), toml::Value::Table(projects).to_string()));
         overrides.push((
             "model_reasoning_effort".into(),
@@ -106,7 +106,7 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
             final_message: context.private.root.join("final.txt"),
             model: context.model.clone(),
             program,
-            workspace: context.private.workspace.clone(),
+            workspace,
             teardown,
         })
     })();

@@ -570,6 +570,19 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
         }
         std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
     }
+    let mut default_mount = task.clone();
+    default_mount.smith.remove("directories");
+    let default_context = Context { task: &default_mount, ..context };
+    let default_prepared = smith_bench::agent::smith::prepare(&default_context).expect("default task working mount");
+    assert_eq!(default_prepared.rendered["directories"].as_array().expect("default mount").len(), 1);
+    assert_eq!(default_prepared.rendered["directories"][0]["path"], serde_json::json!(private.workspace.join("app")));
+    match default_prepared.credential {
+        Credential::Record(Some(borrowed)) => {
+            assert!(borrowed.finish(&guard).expect("unused default mount").source_unchanged);
+        }
+        Credential::Record(None) => panic!("synthetic credential prepared"),
+    }
+    std::fs::remove_dir_all(private.root.join("smith")).expect("reset default mount");
     let outside = directory.join("outside");
     std::fs::create_dir(&outside).expect("owned outside fixture");
     std::os::unix::fs::symlink(&outside, private.workspace.join("escaped")).expect("owned symlink escape");
@@ -579,6 +592,7 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
         "[{ name = 'app', path = '/tmp', writable = true, git = false }]",
         "[{ name = 'app', path = 'escaped', writable = true, git = false }]",
         "[{ name = 'app', path = 'absent', writable = true, git = false }]",
+        "[{ name = 'app', path = 'spec', writable = true, git = false }]",
         "[{ name = 'app', path = 'app/input.txt', writable = true, git = false }]",
         "[{ name = '.', path = 'app', writable = true, git = false }]",
         "[{ name = 'a/b', path = 'app', writable = true, git = false }]",

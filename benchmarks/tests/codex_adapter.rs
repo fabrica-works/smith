@@ -448,3 +448,101 @@ fn pinned_adapters_usage_collection_and_private_credentials() {
     captured_native_child_headers_and_usage_keep_each_response_in_its_own_scope();
     smith_records_preserve_each_pinned_codec_without_copying_a_refresh_credential();
 }
+
+#[test]
+fn paths_use_the_declared_working_directory_and_refuse_escaped_paths_before_credentials() {
+    use smith_bench::agent::Context;
+    use smith_bench::arm::ArmRef;
+    use smith_bench::guard::Guard;
+    use smith_bench::isolate::SetupStep;
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = private("paths-prepare");
+    let home = root.join("user/.codex");
+    std::fs::create_dir_all(&home).expect("unissued source directory");
+    let auth = synthetic_auth(500);
+    std::fs::write(home.join("auth.json"), &auth).expect("unissued source record");
+    let guard = Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[]).expect("guard");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let task = smith_bench::check_task(&project.join("tasks/probes/paths/task.toml"), &project.join("../docs/design"))
+        .expect("frozen paths task");
+    let private = smith_bench::isolate::prepare(
+        &guard,
+        &project.join("tasks/probes/paths/seed"),
+        &task.seed_sha256,
+        &root.join("scratch"),
+    )
+    .expect("actual seed materialisation");
+    for command in &task.setup {
+        assert!(
+            std::process::Command::new(&command[0])
+                .args(&command[1..])
+                .current_dir(&private.workspace)
+                .status()
+                .expect("exact authored offline setup")
+                .success()
+        );
+    }
+    for path in [private.workspace.join("spec"), private.workspace.join("spec/rules.txt")] {
+        assert_eq!(std::fs::metadata(path).expect("read-only layout").permissions().mode() & 0o222, 0);
+    }
+    let pin_file = project.join("agents/codex/standard.pin.toml");
+    let pin = smith_bench::read_configuration(&pin_file).expect("committed Codex pin");
+    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+    let arm = ArmRef::Installed { program: "/bin/false".into() };
+    let context = Context {
+        environment: &[],
+        guard: &guard,
+        private: &private,
+        pin: &pin,
+        pin_file: &pin_file,
+        task: &task,
+        variant: None,
+        model: &model,
+        arm: &arm,
+        installed_version: "codex-cli 0.160.0",
+        home: &home,
+        wall: skein_lib::Wall::from_nanos(100_000_000_000),
+        lifetime: skein_lib::Duration::from_secs(20),
+    };
+    for task in [&task, &task.with_variant("single").expect("single task")] {
+        let context = Context { task, ..context };
+        let prepared = smith_bench::agent::codex::prepare(&context).expect("actual Codex preparation, no invocation");
+        assert_eq!(prepared.workspace, private.workspace.join("app"));
+        let invocation = prepared.command();
+        let index = invocation.arguments.iter().position(|argument| argument == "-C").expect("working directory flag");
+        assert_eq!(invocation.arguments[index + 1], private.workspace.join("app").as_os_str());
+        let (_, projects) = prepared.overrides.iter().find(|(name, _)| name == "projects").expect("trust table");
+        let parsed: toml::Value = toml::from_str(&format!("projects={projects}")).expect("TOML trust table");
+        assert_eq!(
+            parsed["projects"][private.workspace.join("app").to_str().expect("path")]["trust_level"].as_str(),
+            Some("trusted")
+        );
+        assert!(
+            prepared
+                .borrowed
+                .as_ref()
+                .expect("unissued conversion")
+                .finish(&guard)
+                .expect("unused cleanup")
+                .source_unchanged
+        );
+        std::fs::remove_dir_all(private.root.join("codex")).expect("reset unused adapter");
+    }
+    let outside = root.join("outside");
+    std::fs::create_dir(&outside).expect("owned outside fixture");
+    std::os::unix::fs::symlink(&outside, private.workspace.join("escaped")).expect("owned escape fixture");
+    for path in ["../outside", "/tmp", "absent", "app/input.txt", "escaped"] {
+        let mut refused_task = task.clone();
+        refused_task.working_directory = Some(path.into());
+        let context = Context { task: &refused_task, home: &root.join("missing-source-login"), ..context };
+        assert_eq!(
+            smith_bench::agent::codex::prepare(&context).expect_err("working directory refused before login").step,
+            SetupStep::Configuration
+        );
+        assert!(!private.root.join("codex/auth.json").exists());
+    }
+    assert_eq!(std::fs::read(home.join("auth.json")).expect("unissued source unchanged"), auth);
+    smith_bench::isolate::remove_owned_tree(&guard, &private.root).expect("read-only owned layout cleaned");
+    std::fs::remove_dir_all(root).expect("unissued source fixture cleaned");
+}

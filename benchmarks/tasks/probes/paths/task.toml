@@ -1,11 +1,13 @@
 id = "paths"
-version = 1
+version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
-prompt = "Read input.txt in the working directory and /spec/rules.txt in the read-only sibling, then follow those rules to write answer.txt in the working directory. Use those namespace spellings (a leading ./ on a relative path is fine). You have at most two provider completions before finish: request both reads together, then request the answer write and finish together. Do not modify either input. This message is the complete task; do not wait for more instructions.\n"
+prompt = "Read input.txt in the working directory and ../spec/rules.txt in the read-only sibling, then follow those rules to write answer.txt in the working directory. You have at most two provider completions before finish: request both reads together, then request the answer write and finish together. Do not modify either input. This message is the complete task; do not wait for more instructions.\n"
 seed_sha256 = "18289b27085aae9b99b964edb453ac5df42f0ff5ef463635c4ed2b4934a93ea7"
+working_directory = "app"
+setup = [["chmod", "-R", "a-w", "spec"]]
 protected = ["app/input.txt", "spec/rules.txt"]
 guards = ["domain/tools.md, section 2", "benchmarks.md, section 11.1"]
 deciding = ["end", "exit-code", "file-content:app/answer.txt", "tool-path", "tool-call", "no-verdict", "completions", "run-completed", "stream-whole", "paired", "nothing-lost", "tree-ended", "protected-unchanged"]
@@ -59,7 +61,8 @@ verdict = "read"
 [[event]]
 check = "tool-path"
 tool = "read"
-path = "/spec/rules.txt"
+path = "../spec/rules.txt"
+aliases = ["/spec/rules.txt"]
 verdict = "read"
 [[event]]
 check = "tool-path"

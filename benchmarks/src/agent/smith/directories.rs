@@ -28,7 +28,8 @@ pub(super) fn render(context: &Context<'_>, shape: Shape) -> Result<Value, Strin
         .and_then(|variant| variant.smith.get("directories"))
         .or_else(|| context.task.smith.get("directories"));
     let Some(requested) = requested else {
-        return Ok(json!([{"name":"repo","path":context.private.workspace,"writable":true,"git":true}]));
+        let working = crate::isolate::working_directory(context.guard, context.private, context.task)?;
+        return Ok(json!([{"name":"repo","path":working,"writable":true,"git":true}]));
     };
     if shape == Shape::LocalJson {
         return Err("the baseline cannot take task override directories".into());
@@ -66,6 +67,12 @@ pub(super) fn render(context: &Context<'_>, shape: Shape) -> Result<Value, Strin
             return Err("Smith seed directories must be mounted side by side".into());
         }
         rendered.push(json!({"name":directory.name,"path":host,"writable":directory.writable,"git":directory.git}));
+    }
+    if context.task.working_directory.is_some() {
+        let working = crate::isolate::working_directory(context.guard, context.private, context.task)?;
+        if rendered[0]["path"] != json!(working) {
+            return Err("the first Smith directory must be the task's working directory".into());
+        }
     }
     Ok(json!(rendered))
 }

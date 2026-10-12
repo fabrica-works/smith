@@ -11,7 +11,12 @@ mod common;
 use common::events::{LIMITS, balanced};
 
 fn path_check() -> EventCheck {
-    EventCheck::ToolPath { tool: "read".into(), path: "/spec/rules.txt".into(), verdict: "read".into() }
+    EventCheck::ToolPath {
+        tool: "read".into(),
+        path: "../spec/rules.txt".into(),
+        aliases: vec!["/spec/rules.txt".into()],
+        verdict: "read".into(),
+    }
 }
 
 fn calls() -> Vec<Record> {
@@ -72,7 +77,7 @@ fn a_path_requires_captured_input_and_its_exact_successful_terminal() {
         assert_eq!(observed(&records, &capture).check(&path_check(), "").passed, Measure::Observed { value: true });
     }
     assert!(matches!(observed(&records, &Capture::None).check(&path_check(), "").passed, Measure::Unavailable { .. }));
-    for path in ["/spec/./rules.txt", "/spec//rules.txt"] {
+    for path in ["/spec/./rules.txt", "/spec//rules.txt", "../spec/rules.txt", "./../spec/rules.txt"] {
         let mut records = records.clone();
         if let Event::ToolStarted(start) = &mut records[5].event {
             start.input = Some(serde_json::to_vec(&serde_json::json!({"path":path})).expect("JSON").into());
@@ -153,7 +158,8 @@ fn a_path_requires_captured_input_and_its_exact_successful_terminal() {
     if let Event::ToolStarted(start) = &mut relative[5].event {
         start.input = Some(Box::from(&b"{\"path\":\"./input.txt\"}"[..]));
     }
-    let relative_check = EventCheck::ToolPath { tool: "read".into(), path: "input.txt".into(), verdict: "read".into() };
+    let relative_check =
+        EventCheck::ToolPath { tool: "read".into(), path: "input.txt".into(), aliases: vec![], verdict: "read".into() };
     assert_eq!(
         observed(&relative, &Capture::Everything).check(&relative_check, "").passed,
         Measure::Observed { value: true }
@@ -168,12 +174,17 @@ fn the_frozen_path_tasks_keep_namespace_authority_and_two_completion_bounds() {
     let suite = smith_bench::read_suite(&project.join("suites/paths.toml")).expect("native suite");
     assert_eq!(suite.agents[0].config, "first-request");
     assert_eq!(task.protected.len(), 2);
+    assert_eq!(task.working_directory, Some(PathBuf::from("app")));
+    assert!(task.prompt.contains("../spec/rules.txt"));
+    assert!(!task.prompt.split_whitespace().any(|word| word.starts_with("/spec/")));
     assert_eq!(task.variant.len(), 1);
     assert_eq!(task.variant[0].name, "single");
     assert!(task.variant[0].replace_checks);
     assert!(!task.variant[0].prompt.as_ref().expect("single prompt").contains("app"));
     assert_eq!(task.smith["directories"].as_array().expect("mounts").len(), 2);
     assert_eq!(task.variant[0].smith["directories"].as_array().expect("single mount").len(), 1);
+    assert!(task.event.iter().any(|check| matches!(check, EventCheck::ToolPath { path, aliases, .. }
+        if path == "../spec/rules.txt" && aliases == &["/spec/rules.txt".to_owned()])));
     for checks in [&task.event, &task.variant[0].event] {
         assert!(checks.iter().any(|check| matches!(
             check,

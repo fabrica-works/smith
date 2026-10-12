@@ -123,6 +123,9 @@ pub fn check_task(file: &Path, design: &Path) -> Result<Task, Refusal> {
     }
     check_prompt(file, "prompt", &task.prompt)?;
     check_budget(file, "budget", &task.budget)?;
+    if let Some(path) = &task.working_directory {
+        check_path(file, "working_directory", path)?;
+    }
     for path in &task.protected {
         check_path(file, "protected", path)?;
     }

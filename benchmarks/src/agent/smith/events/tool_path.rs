@@ -13,14 +13,10 @@ use super::{Observer, names};
 
 fn namespace(path: &str) -> Option<Vec<Component<'_>>> {
     let components: Vec<_> = Path::new(path).components().filter(|part| *part != Component::CurDir).collect();
-    if components.is_empty() || components.contains(&Component::ParentDir) || path.contains('\0') {
-        None
-    } else {
-        Some(components)
-    }
+    if components.is_empty() || path.contains('\0') { None } else { Some(components) }
 }
 
-pub(super) fn check(observer: &Observer, tool: &str, path: &str, verdict: &str) -> Measure<bool> {
+pub(super) fn check(observer: &Observer, tool: &str, path: &str, aliases: &[String], verdict: &str) -> Measure<bool> {
     let mut missing = false;
     for session in &observer.sessions {
         for (index, record) in session.records.iter().enumerate() {
@@ -38,7 +34,10 @@ pub(super) fn check(observer: &Observer, tool: &str, path: &str, verdict: &str) 
                 let Some(requested) = input.get("path").and_then(serde_json::Value::as_str) else {
                     continue;
                 };
-                if namespace(requested).is_none() || namespace(requested) != namespace(path) {
+                if namespace(requested).is_none()
+                    || (namespace(requested) != namespace(path)
+                        && !aliases.iter().any(|alias| namespace(requested) == namespace(alias)))
+                {
                     continue;
                 }
                 let terminal = session.records[index + 1..].iter().find_map(|record| {
