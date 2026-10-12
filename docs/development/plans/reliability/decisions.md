@@ -1429,3 +1429,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    calibrated, with their counts (parallel-read 7/10, children 2/5,
    reviews 1/4: 8 model deviations, 1 smith defect), names reviews 03 as
    handed to 05.s1, and reruns nothing.
+63. **06.s1 waits for 05.s1's live diagnostic** (block of
+   2026-10-12T18:25:34Z, smith 06.s1). 06.s1's process story, a spawned
+   agent answering accepted after three reads, passes on the parent, as
+   05.s1's did: both live failures end "Agent process failed" and neither
+   reproduces in a world, so they likely need real timing or real io.
+   Fishing for the deterministic shape (06.s1's proposal, padded reads
+   and 54 deltas) costs more than one live diagnostic arm. Ruling: one
+   diagnostic arm, 05.s1's (13.53), also names each signal and channel
+   close the product sends its agent and why, and runs `history` once
+   beside `follow-up/chat`. 06.s1 keeps its story on its branch and waits
+   for that arm's findings; then it fixes what they show for its symptom,
+   or lands its story as coverage if the cause is 05.s1's.

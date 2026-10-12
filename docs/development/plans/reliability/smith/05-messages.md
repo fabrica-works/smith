@@ -353,7 +353,10 @@ A second live instance (decisions.md, 13.62): smith 13.4's
 turn that ends with text and no calls (`stop: end`) at 14,845 ms, owed a
 nudge (run.md, 7.2), then no `response.started` until the cancel at
 49,846 ms: the same 35 s silence with no person line, which a told turn
-held for its acknowledgement would also explain.
+held for its acknowledgement would also explain. Its diagnostic arm also
+names, on standard error, each signal and channel close the product
+sends its agent and why, and runs `history` once beside `follow-up/chat`,
+for 06.s1's accepted answer that ended as a failure (13.63).
 Needs: nothing.
 Files: the reproduction's world test file; then the crate, of those
 named, where the acknowledgement stops.

@@ -425,7 +425,8 @@ once it has answered, whatever the answer, and with failure only when
 it could not answer: startup, or a broken channel." Something broke the
 channel or signalled the agent at its answer. 05.s1's live stall also
 ends "Agent process failed"; read its findings first.
-Needs: nothing.
+Needs: 05.s1's live diagnostic (decisions.md, 13.63): no world
+reproduced it on the parent.
 Files: the reproduction's world test file; then the crate where the
 channel breaks or the signal comes from (the local host's agent handling,
 `smith-host-domain`, `smith-local-domain`, `smith-local-service`, or the
