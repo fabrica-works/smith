@@ -292,8 +292,13 @@ its name and docs); new `benchmarks/src/bin/test_peer.rs`;
 `build` writes once and never rewrites", and no synonym).
 Shape: `test-peer replay <recording> <settings>` copies the recording to
 the settings' `agent.trace.path`; `test-peer terminal <recording> <trace>`
-does what the terminal script does (default SIGHUP, read a line, copy,
-read a line, close stdin and stdout, write its stderr line, exit). Tests
+does what the terminal script does (read a line, copy, read a line,
+close stdin and stdout, write its stderr line, exit). In place of the
+script's "default SIGHUP" (decisions.md, 13.31): it first reads `SigIgn`
+from `/proc/self/status`, and if SIGHUP (bit 1, mask `0x1`) is ignored it
+writes "test-peer: SIGHUP is ignored; a hangup would pass unseen" to
+standard error and exits 3, so the test fails rather than passes blind.
+No `unsafe`, no dependency, no skein change. Tests
 name it by `env!("CARGO_BIN_EXE_test-peer")`.
 Test shape: the two tests keep their names, steps and assertions; only
 their program changes.

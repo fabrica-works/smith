@@ -983,4 +983,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    not one. A step not in the plan, 00.s1, makes both one Rust fixture
    binary, and drops 00.27's "immutable" from `benchmarks/README.md`. The
    Pulse's words gain `python3`, so a new one shows in the next check.
+31. **The Rust terminal peer refuses an ignored SIGHUP** (block of
+   2026-10-12T15:44:11Z, smith 00.s1). The Python peer set SIGHUP to its
+   default so a hangup could not pass unseen; `smith-bench` forbids
+   `unsafe`, 00.s1 adds no dependency, and skein's safe surface sets no
+   disposition. The peer reads `SigIgn` from `/proc/self/status` and exits
+   3 with its reason when SIGHUP is ignored: the test cannot pass while
+   blind to a hangup, and no skein function or repin is needed.
 
