@@ -1222,3 +1222,23 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    counts, and the two failures named as handed to 05.s1; its task,
    prompt, cues and checks stay. `follow-up`'s next task version goes
    to `later.md`.
+48. **03.10: an unobserved exit is `None`; the codec carries the forced
+   exit notice** (block of 2026-10-12T17:07:59Z, smith 03.10, sent as a
+   design gap). The design settles both; the plan's Shape and Files
+   missed them. (1) 03.10's Shape gives `EndCause::Agent { ended:
+   smith_events::AgentExit }`, while 06.1's `End::Exited { exit:
+   Option<Exit>, forced }` has no exit when io failed, 12.19 shows an
+   unobserved exit as "status unknown", and the codec's answer failure
+   already holds `ended: Option<AgentExit>` (`smith-events/src/records.rs:613`).
+   The field becomes `Option<smith_events::AgentExit>`: `None` until
+   `Gone`'s evidence names an exit, the first cause kept. (2) events.md,
+   3.9: "`forced_exit` | warning | `exit`, `forced` | a host's agent did
+   not exit on its own"; host.md, section 4: "`forced`, whether the kit
+   had to end it (no, terminated or killed)". `smith_events::Notice` has
+   neither field and `NoticeKind` no `ForcedExit` (`records.rs:369`,
+   `:971`), so 03.10 adds them, with the reader, the writer, a golden
+   under `golden/v1/` and `tests/codecs/tests/events.rs`, under events
+   version 1 (README rule 5), and the producer's notice function the
+   product's stream uses; `smith-bench`'s event reader follows as far
+   as it must to read them (README rule 4). Those files join 03.10's
+   Files; its Size is README rule 9's.
