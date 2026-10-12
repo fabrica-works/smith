@@ -83,6 +83,8 @@ pub enum EventCheck {
     ToolResultBytes { tool: String, at_least: u64 },
     /// A shell request times out at its emitted bound, with its exact clamp and grace.
     ToolTimeout { requested_seconds: u32, deadline_ms: u64, clamped: bool, grace_ms: u64, command: Option<String> },
+    /// A real provider call exceeds the exercise floor and retains its timing and opaque sizes.
+    SlowCompletion { longer_than_ms: u64, head_ms: u64, idle_ms: u64, reasoning_bytes: u64 },
     /// Response usage sums match each authoritative run total.
     UsageSums,
     /// No tool ends with any of these verdicts.
@@ -153,6 +155,7 @@ impl EventCheck {
             Self::ToolCall { .. } => "tool-call",
             Self::ToolResultBytes { .. } => "tool-result-bytes",
             Self::ToolTimeout { .. } => "tool-timeout",
+            Self::SlowCompletion { .. } => "slow-completion",
             Self::UsageSums => "usage-sums",
             Self::NoVerdict { .. } => "no-verdict",
             Self::Completions { .. } => "completions",

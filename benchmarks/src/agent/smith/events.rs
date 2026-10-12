@@ -45,6 +45,7 @@ mod spend;
 mod written_file;
 
 mod file_pieces;
+mod slow;
 
 /// A binary invocation selected by the event-era face registry.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

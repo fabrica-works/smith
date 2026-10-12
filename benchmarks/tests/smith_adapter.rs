@@ -784,3 +784,94 @@ fn process_tree_profile_renders_and_passes_the_actual_public_startup_derivation(
     }
     std::fs::remove_dir_all(directory).expect("private fixture cleanup");
 }
+
+#[test]
+fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivation() {
+    use smith_bench::agent::Context;
+    use smith_bench::arm::ArmRef;
+    let directory = root("slow-completion-settings");
+    let source = directory.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("synthetic source");
+    let mut auth: serde_json::Value = serde_json::from_slice(&unissued_auth()).expect("synthetic credential");
+    let claims = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, b"{\"exp\":5000}");
+    auth["tokens"]["access_token"] = serde_json::json!(format!("header.{claims}.signature"));
+    std::fs::write(source.join("auth.json"), serde_json::to_vec(&auth).expect("fixture"))
+        .expect("unissued credential lasts the authored offline lifetime");
+    let guard = smith_bench::guard::Guard::new(
+        &directory.join("user"),
+        &directory.join("config"),
+        &directory.join("state"),
+        &[],
+    )
+    .expect("fixture guard");
+    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let task = smith_bench::check_task(
+        &project.join("tasks/probes/slow-completion/task.toml"),
+        &project.join("../docs/design"),
+    )
+    .expect("frozen task");
+    let pin_file = project.join("agents/smith/first-request.pin.toml");
+    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
+    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
+    let installed_version = match &arm {
+        ArmRef::Built(build) => &build.arm.commit,
+        ArmRef::Installed { .. } => unreachable!("fixture arm"),
+    };
+    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("high".into()) };
+    {
+        let variant = None;
+        let context = Context {
+            guard: &guard,
+            private: &private,
+            pin: &pin,
+            pin_file: &pin_file,
+            task: &task,
+            variant,
+            model: &model,
+            arm: &arm,
+            installed_version,
+            home: &source,
+            wall: skein_lib::Wall::from_nanos(100_000_000),
+            lifetime: Duration::from_secs(1000),
+            environment: &[],
+        };
+        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
+        let settings_path = private.root.join("settings.json");
+        std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
+            .expect("private settings");
+        let local = smith_local_shell::local_settings::read(&settings_path, None).expect("public startup settings");
+        let document = smith_local_shell::local_settings::agent_document(&local).expect("actual agent translation");
+        let configured = smith_agent_shell::config::parse(&document).expect("native profile admitted");
+        assert_eq!(local.models[0].head, 60000);
+        assert_eq!(local.models[0].idle, 300_000);
+        assert_eq!(local.models[0].reasoning_item, 65536);
+        assert!(local.models[0].oversized_reasoning.is_none());
+        assert_eq!(prepared.rendered["agent"]["endpoints"][0]["reasoning_effort"], "high");
+        let allowances = configured
+            .service
+            .domain
+            .models
+            .iter()
+            .map(|model| model.protocol_allowance)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        assert_eq!(local.models.len(), 1);
+        assert_eq!(allowances.len(), 1);
+        smith_local_shell::local_settings::policy(
+            &local,
+            &configured.service.channel_endpoints,
+            configured.service.limits.domain,
+            allowances,
+        )
+        .expect("actual run policy admitted");
+        match prepared.credential {
+            Credential::Record(Some(borrowed)) => {
+                assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
+            }
+            Credential::Record(None) => panic!("synthetic credential prepared"),
+        }
+        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
+    }
+    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
+}

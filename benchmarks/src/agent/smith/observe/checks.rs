@@ -159,6 +159,9 @@ fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
         }
         EventCheck::ToolTimeout { .. } => missing("legacy tool terminal has no native deadline or exact input join"),
         EventCheck::ToolResultBytes { .. } => missing("legacy tool result has no authoritative payload byte count"),
+        EventCheck::SlowCompletion { .. } => {
+            missing("legacy trace has no native transport or reasoning-item measurements")
+        }
         EventCheck::UsageSums => missing("legacy raw run usage totals do not prove complete per-response sums"),
         EventCheck::NoRequest => missing("legacy CompletionStarted is logical intent, not an actual native HTTP start"),
         EventCheck::NoRun => missing("legacy trace cannot prove an empty native startup event capture"),

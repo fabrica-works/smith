@@ -269,6 +269,9 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         if let EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } = check {
             return tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref());
         }
+        if let EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } = check {
+            return super::slow::check(observer, *longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes);
+        }
         evaluate_complete(observer, check, task, currency)
     };
     let evidence = if let EventCheck::ToolPath { tool, path, aliases, verdict } = check {
@@ -284,6 +287,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::WrittenFile { .. } => unavailable("written file comparison requires the settled workspace"),
         EventCheck::OversizedWrite { .. } => unavailable("oversized write pairing requires its workspace path"),
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
+        EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } =>
+            super::slow::check(observer, *longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes).passed,
         EventCheck::UsageSums => super::usage_sums::check(observer),
         EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } =>
             tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref()).passed,

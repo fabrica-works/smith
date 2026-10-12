@@ -882,6 +882,7 @@ dependencies = [
  "sha2",
  "skein-io",
  "skein-lib",
+ "skein-llm",
  "skein-oauth",
  "skein-shell",
  "skein-world",

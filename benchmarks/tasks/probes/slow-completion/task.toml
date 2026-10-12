@@ -1,0 +1,60 @@
+id = "slow-completion"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "high"
+deadline_seconds = 900
+prompt = "Read problem.txt, then solve its constrained optimization problem by reasoning alone, without shell commands, code execution, delegation or file edits. Work through the combinatorial alternatives, establish and cross-check a tight optimum certificate, and verify the arithmetic and every constraint before answering. Do not simulate slowness or wait deliberately. Finish with the chosen item IDs, their totals, your optimum certificate, and the words REASONING COMPLETE.\n"
+seed_sha256 = "556ef0760d09467071091ccdca1ae02e0eeeed533747d1a2feb323aefb58fc68"
+guards = ["protocol/limits.md, section 7", "protocol/limits.md, section 2.1"]
+protected = ["problem.txt"]
+deciding = ["end", "exit-code", "answer", "run-completed", "slow-completion", "no-failure", "stream-whole", "paired", "nothing-lost", "tree-ended", "protected-unchanged"]
+[budget]
+seconds = 840
+turns = 8
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 1
+calls_per_response = 4
+tool_payload = 4096
+read_window = 4096
+file_bytes = 1048576
+guide = 16384
+shell_output = 16384
+shell_head = 8192
+shell_tail = 8192
+llm_pool = 134217728
+memory = 2147483648
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "REASONING COMPLETE"
+[[outcome]]
+check = "protected"
+path = "problem.txt"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[event]]
+check = "slow-completion"
+longer_than_ms = 60000
+head_ms = 60000
+idle_ms = 300000
+reasoning_bytes = 65536
+[[event]]
+check = "no-failure"
+class = "timed_out"
+[[event]]
+check = "no-failure"
+class = "limit"

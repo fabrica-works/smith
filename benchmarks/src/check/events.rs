@@ -173,6 +173,11 @@ pub(super) fn checks(
                     return Err(Refusal::new(file, &key, "cardinality must be positive"));
                 }
             }
+            EventCheck::SlowCompletion { longer_than_ms, head_ms, idle_ms, reasoning_bytes } => {
+                if [*longer_than_ms, *head_ms, *idle_ms, *reasoning_bytes].contains(&0) {
+                    return Err(Refusal::new(file, &key, "exercise floor and preset bounds must be positive"));
+                }
+            }
             EventCheck::UsageSums
             | EventCheck::Completions { .. }
             | EventCheck::FirstRequestHoldsTask
