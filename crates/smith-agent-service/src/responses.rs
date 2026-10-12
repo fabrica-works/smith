@@ -654,6 +654,14 @@ impl Book {
                 if let Some(record) = terminal(&mut conversation, origin, unknown_usage(), 0, None) {
                     records.push(record).expect("one pending terminal before end");
                 }
+                if let session::End::Failed {
+                    failure: llm::Failure::Limit { which: llm::Limit::History, .. },
+                    attempts,
+                    ..
+                } = end
+                {
+                    conversation.attempts = u64::from(attempts);
+                }
                 let (end, which, mut failure) = conversation_end(end);
                 if failure.is_some() {
                     if let Some(observed) = conversation.last_failure.take() {
@@ -968,6 +976,7 @@ fn end_failure(mut projected: CompletionFailure, observed: CompletionFailure) ->
             }
             projected
         }
+        Some(limit) if limit.which.as_ref() == b"history" => projected,
         Some(_) | None => observed,
     }
 }
@@ -992,9 +1001,7 @@ fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]
             };
             (ConversationEnd::Budget, Some(which), None)
         }
-        session::End::TranscriptFull | session::End::TranscriptRefused { .. } => {
-            (ConversationEnd::Transcript, None, None)
-        }
+        session::End::TranscriptRefused { .. } => (ConversationEnd::Transcript, None, None),
         session::End::PriceOverflow | session::End::UsageOverflow => (ConversationEnd::Overflow, None, None),
     }
 }
@@ -1122,6 +1129,34 @@ pub(crate) mod tests {
             panic!("summary request starts")
         };
         assert_eq!(started.response, 2);
+    }
+
+    #[test]
+    fn an_unsent_history_limit_keeps_no_earlier_attempt_or_failure() {
+        let mut book = Book::new(1);
+        let owner = Token::new(11);
+        book.opened(at(1), owner, &opened(11, 0));
+        intent(&mut book, owner, session::Choice::Auto, 0);
+        book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
+        let failed = session::FactKind::CompletionFailed {
+            opener: owner,
+            failure: llm::Failure::Overloaded,
+            evidence: llm::Evidence::Unknown,
+        };
+        book.fact(Time::ZERO, &fact(4, failed, 1, None));
+        let limit = session::End::Failed {
+            failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
+            evidence: llm::Evidence::Unsent,
+            attempts: 0,
+        };
+        let ended = session::FactKind::Ended { opener: owner, end: limit, turns: 0, usage: llm::Usage::ZERO };
+        book.fact(Time::ZERO, &fact(5, ended, 1, None));
+        let ended = book.main_failure.expect("the main history limit reaches its run");
+        assert_eq!(ended.attempts, 0);
+        assert_eq!(
+            ended.failure,
+            completion_failure(llm::Failure::Limit { which: llm::Limit::History, bound: 2 }, llm::Evidence::Unsent,)
+        );
     }
 
     #[test]

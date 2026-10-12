@@ -158,7 +158,6 @@ const fn model_fault(value: run::Fault) -> host::ModelFault {
         },
         run::Fault::Exhausted => host::ModelFault::Exhausted,
         run::Fault::Provider => host::ModelFault::Provider,
-        run::Fault::ContextFull => host::ModelFault::ContextFull,
         run::Fault::Refused => host::ModelFault::Refused,
         run::Fault::Truncated => host::ModelFault::Truncated,
         run::Fault::Malformed => host::ModelFault::Malformed,

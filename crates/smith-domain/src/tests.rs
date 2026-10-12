@@ -1242,55 +1242,10 @@ fn assert_no_provider_completion(emitted: &[Request]) {
 #[test]
 #[expect(clippy::disallowed_methods, reason = "test assembles an independent literal result golden")]
 fn full_history_reserves_every_child_answer_before_effect_and_keeps_late_bytes() {
-    // Find the exact receiving edge from admission/dispatch outputs.
-    // C bounds provider content; D bounds each complete canonical child result.
-    // A one-byte tighter transcript must refuse the entire adjacent read batch.
-    let mut lower = LIMITS.session.delegated_result_bytes.checked_mul(2).expect("two result caps");
-    let mut upper = LIMITS.session.history_bytes;
-    assert!(
-        children(
-            &side_by_side_with(
-                &Limits { session: session::Limits { history_bytes: lower, ..LIMITS.session }, ..LIMITS },
-                256
-            )
-            .2
-        )
-        .is_none()
-    );
-    assert!(children(&side_by_side_with(&LIMITS, 256).2).is_some());
-    for _ in 0_u32..32 {
-        if upper.checked_sub(lower).expect("ordered receiving edge") <= 1 {
-            break;
-        }
-        let distance = upper.checked_sub(lower).expect("ordered receiving edge");
-        let middle = lower.checked_add(distance.checked_div(2).expect("nonzero divisor")).expect("midpoint");
-        let limits = Limits { session: session::Limits { history_bytes: middle, ..LIMITS.session }, ..LIMITS };
-        if children(&side_by_side_with(&limits, 256).2).is_some() {
-            upper = middle;
-        } else {
-            lower = middle;
-        }
-    }
-    assert_eq!(upper, lower.checked_add(1).expect("adjacent receiving edge"));
-    let tight = Limits { session: session::Limits { history_bytes: lower, ..LIMITS.session }, ..LIMITS };
-    let (tight_world, _, refused) = side_by_side_with(&tight, 256);
-    assert!(children(&refused).is_none(), "all result credit precedes the first child effect");
-    let refused_turn = tight_world.turns.last().expect("actual assistant and unstarted result tail survive");
-    assert_eq!(
-        refused_turn.messages.last().expect("results").content.as_ref(),
-        &[
-            session::llm::Block::ToolResult {
-                id: bytes(b"a1"),
-                result: session::llm::Returned::NotRun { why: session::llm::NotRun::Stopped }
-            },
-            session::llm::Block::ToolResult {
-                id: bytes(b"a2"),
-                result: session::llm::Returned::NotRun { why: session::llm::NotRun::Stopped }
-            },
-        ]
-    );
-
-    let limits = Limits { session: session::Limits { history_bytes: upper, ..LIMITS.session }, ..LIMITS };
+    // At the old two-result-cap boundary every call now runs with its share.
+    // Actual child replies still survive cancellation before their deferred delivery.
+    let bound = LIMITS.session.delegated_result_bytes.checked_mul(2).expect("two result caps");
+    let limits = Limits { session: session::Limits { history_bytes: bound, ..LIMITS.session }, ..LIMITS };
     let (mut world, run, emitted) = side_by_side_with(&limits, 256);
     let [first, second] = children(&emitted).expect("the complete batch was reserved");
     let answer = filler(limits.run.answer_bytes);

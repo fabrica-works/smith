@@ -367,7 +367,19 @@ fn an_llm_that_fails_fails_its_run_with_the_fault() {
     let world = settled(&Settings { partner: Script { faults: 1000, ..calm.partner }, ..calm });
     for answer in answers(&world) {
         assert!(
-            [Failure::Model(Fault::Provider), Failure::Model(Fault::ContextFull)].contains(&failure(answer)),
+            [
+                Failure::Model(Fault::Provider),
+                Failure::Model(Fault::Completion {
+                    failure: smith_domain_run::CompletionFailure::Limit {
+                        which: smith_domain_run::Limit::History,
+                        bound: 65_536
+                    },
+                    evidence: smith_domain_run::CompletionEvidence::Unsent,
+                    model: 0,
+                    attempts: 0,
+                })
+            ]
+            .contains(&failure(answer)),
             "{answer:?}"
         );
     }

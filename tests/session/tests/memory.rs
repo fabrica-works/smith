@@ -142,17 +142,14 @@ fn pressure_limits(original: &Limits, route: Route, messages: u32) -> (Limits, u
         ..*original
     };
     let envelope = reservation_envelope(&limits).expect("checked provider and whole-batch bounds");
-    limits.history_bytes = pressure.checked_add(envelope).expect("bounded payload plus canonical credit");
+    let headroom = size(size_of::<Block>()) + 256 * u64::from(limits.completion_blocks);
+    limits.history_bytes = pressure.checked_add(envelope + headroom).expect("bounded payload and admission room");
     (limits, spec_cost, output, field)
 }
 
 /// Observe co-emitted boundary records without replacing an outstanding
 /// provider/IO request, then drop receiver-owned payload copies before metering.
-fn observe_fill(
-    out: &mut Queue<Request>,
-    observed: &mut [(bool, u32, u32, u32, bool)],
-    full_service: bool,
-) -> Option<Asked> {
+fn observe_fill(out: &mut Queue<Request>, observed: &mut [(bool, u32, u32, u32, bool)]) -> Option<Asked> {
     let mut asked = None;
     while let Some(request) = out.pop() {
         match request {
@@ -199,16 +196,7 @@ fn observe_fill(
                     asked = Some(Asked::Other);
                 }
             }
-            Request::Ended { opener, end, turns, usage, .. } => {
-                assert!(full_service, "admissible original payload must enter backoff");
-                assert_eq!((end, turns, usage), (smith_domain_session::End::TranscriptFull, 2, Usage::ZERO));
-                let row = &mut observed[usize::try_from(opener.raw()).expect("bounded opener")];
-                assert!(!row.4, "one exact-full terminal");
-                row.4 = true;
-                if asked.is_none() {
-                    asked = Some(Asked::Other);
-                }
-            }
+            Request::Ended { .. } => panic!("maximum payload is held for compaction, not ended"),
             Request::Cancel { .. } | Request::CancelIo { .. } | Request::Delegate { .. } | Request::Withdraw { .. } => {
                 panic!("the maximum-payload driver has no other terminal rights")
             }
@@ -245,7 +233,7 @@ fn fill(original: &Limits, route: Route, full_service: bool) {
         while domain.pop_fact().is_some() {}
         smith_domain_session::step(&mut domain, &env, event, &mut out);
         let measured = meter.end();
-        let mut asked = observe_fill(&mut out, &mut observed, full_service);
+        let mut asked = observe_fill(&mut out, &mut observed);
         meter.check(measured, bound, &limits);
         if may_rest {
             domain.reclaim();
@@ -255,7 +243,7 @@ fn fill(original: &Limits, route: Route, full_service: bool) {
             while domain.pop_fact().is_some() {}
             smith_domain_session::resume(&mut domain, &env, &mut out);
             let measured = meter.end();
-            asked = observe_fill(&mut out, &mut observed, full_service).or(asked);
+            asked = observe_fill(&mut out, &mut observed).or(asked);
             meter.check(measured, bound, &limits);
         }
         asked
@@ -324,7 +312,7 @@ fn fill(original: &Limits, route: Route, full_service: bool) {
         && used == turns
         && recorded == turns
         && priced >= turns
-        && ended == full_service));
+        && !ended));
     assert_retained_payload(&meter, &limits, route, full_service, pressure);
 }
 
@@ -359,8 +347,8 @@ fn fill_service_tail(
     // The original route's full pressure is retained, then an accepted
     // one-byte text answer yields. A final caller-owned continuation
     // fills every remaining byte of the provisioned service envelope.
-    // Its next effect is refused before work, independently of message
-    // room. This supplements rather than replaces the backoff maximum.
+    // The next request asks for a compaction, independently of message
+    // room. Its retry holds the full history beside the backoff maximum.
     let content = Box::new([Block::Text { text: bytes(1), replay: None }]);
     assert!(
         matches!(
@@ -384,15 +372,24 @@ fn fill_service_tail(
     let held_messages = 3_u32 + 1 + 1;
     assert!(
         limits.history_messages.checked_sub(held_messages).expect("counted actual held messages") >= 2,
-        "exact byte refusal has room for next assistant and result messages"
+        "exact byte pressure has room for next assistant and result messages"
     );
     let padding = limits
         .history_bytes
         .checked_sub(retained + block + 1 + block)
         .expect("full service can hold its final caller message");
     assert!(
-        matches!(step(Event::Continue { session: owner, content: bytes(padding) }), Some(Asked::Other)),
-        "the exact full service refuses its next provider effect"
+        matches!(step(Event::Continue { session: owner, content: bytes(padding) }), Some(Asked::Complete { .. })),
+        "the exact full service asks for a compaction"
+    );
+    assert!(
+        step(Event::Failed {
+            owner,
+            failure: Failure::Overloaded,
+            evidence: smith_domain_session::llm::Evidence::Unknown,
+            detail: Box::default()
+        })
+        .is_none()
     );
 }
 
@@ -435,13 +432,13 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
         for full_service in [false, true] {
             fill(&LIMITS, route, full_service);
-            fill(&Limits { sessions: 64, spend: 1, history_bytes: 65_536, ..LIMITS }, route, full_service);
+            fill(&Limits { sessions: 16, spend: 1, history_bytes: 65_536, ..LIMITS }, route, full_service);
             fill(
-                &Limits { sessions: 1000, spend: 1, history_messages: 8, history_bytes: 600, ..LIMITS },
+                &Limits { sessions: 64, spend: 1, history_messages: 8, history_bytes: 600, ..LIMITS },
                 route,
                 full_service,
             );
-            fill(&Limits { sessions: 64, spend: 1, parallel_tools: MAX_PARALLEL, ..LIMITS }, route, full_service);
+            fill(&Limits { sessions: 16, spend: 1, parallel_tools: MAX_PARALLEL, ..LIMITS }, route, full_service);
         }
     }
 }
@@ -451,7 +448,7 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
     clippy::too_many_lines,
     reason = "one metered fixture keeps delegated ownership and exact emitted copies together"
 )]
-fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
+fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
     use smith_domain_session::record;
     let block = size(size_of::<Block>());
     let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
@@ -553,12 +550,12 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
         error: false,
         spent: 0,
     });
-    assert!(owner.is_none(), "full actual result is retained; next provider reserve fails before work");
-    assert_eq!(ended, Some(smith_domain_session::End::TranscriptFull));
+    assert!(owner.is_some(), "bounded result leaves the next request for compaction");
+    assert_eq!(ended, None);
     assert_eq!(saved.len(), 1, "actual full-cap Turn was handed off before Ended");
     assert!(matches!(&saved[0].messages[2].content[0], Block::ToolResult {
         result: smith_domain_session::llm::Returned::Text { text, error: false, replay: None }, ..
-    } if text.len() == usize::try_from(output).expect("bounded cap")));
+    } if text.len() < usize::try_from(output).expect("bounded cap") && text.ends_with(b" bytes omitted]")));
     drop(saved);
     assert!(meter.held() >= limits.history_bytes);
 }
@@ -583,7 +580,8 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let block = size(size_of::<Block>());
     let charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
-    let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve;
+    let headroom = block + 256;
+    let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve - headroom;
     let spec = Spec {
         final_turn: None,
         window: u32::MAX,
@@ -653,7 +651,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     }
     assert!(completed, "maximum admitted history separately preserves complete provider receiving room");
     meter.check(measured, bound, &limits);
-    assert!(meter.held() >= limits.history_bytes - reserve);
+    assert!(meter.held() >= limits.history_bytes - reserve - headroom);
 }
 
 #[test]
@@ -933,55 +931,22 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
     let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
     let completion_bytes = block + 3 + size(size_of::<Part>()) + 1;
     let base = Limits { completion_bytes, completion_blocks: 1, failure_bytes: 0, history_messages: 5, ..LIMITS };
-    let reserve = smith_domain_session::completion_reserve(&base).expect("checked minimal actual provider terminal");
-    let exact = spec_cost.checked_add(reserve).expect("checked spec plus provider reserve");
+    let reserve = smith_domain_session::completion_reserve(&base).expect("checked provider terminal");
+    let exact = spec_cost + reserve + block + 256;
+    check_provider_admission(&base, exact);
+    let result = exact - spec_cost - completion_bytes - block - 1 - block;
+    for read_bytes in [result, result + 1, 1 << 20] {
+        check_capped_read(&base, exact, read_bytes, result);
+    }
+}
+
+fn check_provider_admission(base: &Limits, exact: u64) {
     for history_bytes in [exact - 1, exact] {
-        let limits = Limits { history_bytes, ..base };
+        let limits = Limits { history_bytes, ..*base };
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut out = Queue::with_capacity(max_out(&limits));
         let meter = Meter::new();
         let mut domain = Domain::new(&limits, 11);
-        let seen = measured_step(
-            &mut domain,
-            &env,
-            &mut out,
-            &meter,
-            worst_case(&limits).expect("checked limits"),
-            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
-        );
-        if history_bytes == exact {
-            assert!(seen.complete.is_some(), "exact provider reservation admits work");
-        } else {
-            assert!(seen.complete.is_none());
-            assert_eq!(
-                seen.end,
-                Some(smith_domain_session::End::TranscriptRefused {
-                    reason: smith_domain_session::record::Refusal::TooLarge
-                })
-            );
-            assert_eq!((domain.sessions(), domain.kits()), (0, 0), "one short refuses before any child effects");
-        }
-    }
-    let skeleton = spec_cost + completion_bytes + block + 1;
-    let exact_result = exact.checked_sub(skeleton).expect("minimal provider reserve leaves actual result room");
-    assert!(exact_result >= 3, "the normalized one-byte mount and one-byte file fit");
-    for read_bytes in [exact_result, exact_result + 1, 1 << 20] {
-        let limits = Limits {
-            history_bytes: exact,
-            tools: smith_domain_tools::Limits {
-                read_bytes: u32::try_from(read_bytes).expect("bounded read cap"),
-                // This control attains read payload credit; its possible failure
-                // path fits beneath that credit as well.
-                path_bytes: 3,
-                host_path_bytes: 4096,
-                ..base.tools
-            },
-            ..base
-        };
-        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
-        let mut out = Queue::with_capacity(max_out(&limits));
-        let meter = Meter::new();
-        let mut domain = Domain::new(&limits, 12);
         let bound = worst_case(&limits).expect("checked limits");
         let seen = measured_step(
             &mut domain,
@@ -991,42 +956,79 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
             bound,
             Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
         );
-        let owner = seen.complete.expect("spec plus exact provider credit admits");
-        let seen = measured_step(
-            &mut domain,
-            &env,
-            &mut out,
-            &meter,
-            bound,
-            Event::Completed { owner, completion: read_completion(1) },
-        );
-        if read_bytes == exact_result {
-            assert_eq!(seen.io_count, 1, "exact promised result space starts its IO effect");
-            let seen = measured_step(
-                &mut domain,
-                &env,
-                &mut out,
-                &meter,
-                bound,
-                Event::Done {
-                    owner: seen.io[0].expect("actual IO right"),
-                    done: Done::Loaded { content: bytes(exact_result), version: VERSION },
-                },
-            );
-            assert_eq!(
-                (seen.turns, seen.read),
-                (1, Some(exact_result)),
-                "actual exact-full result is emitted concretely"
-            );
-            assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
-            assert!(seen.complete.is_none(), "full actual terminal prevents the next provider effect");
-            assert!(meter.held() >= exact, "full concrete transcript remains retained before reclaim");
+        if history_bytes == exact {
+            let owner = seen.complete.expect("exact admission includes summary and receiving room");
+            measured_step(&mut domain, &env, &mut out, &meter, bound, Event::UnsentClosed { owner });
         } else {
-            assert_eq!(seen.io_count, 0, "one-short and former1MiB receiving promises refuse before IO");
-            assert_eq!((seen.turns, seen.not_run), (1, 1));
-            assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
+            assert!(seen.complete.is_none());
+            assert_eq!(
+                seen.end,
+                Some(smith_domain_session::End::Failed {
+                    failure: Failure::Limit { which: smith_domain_session::llm::Limit::History, bound: history_bytes },
+                    evidence: smith_domain_session::llm::Evidence::Unsent,
+                    attempts: 0
+                })
+            );
         }
     }
+}
+
+fn check_capped_read(base: &Limits, exact: u64, read_bytes: u64, result: u64) {
+    let limits = Limits {
+        history_bytes: exact,
+        tools: smith_domain_tools::Limits {
+            read_bytes: u32::try_from(read_bytes).expect("bounded read cap"),
+            path_bytes: 3,
+            ..base.tools
+        },
+        ..*base
+    };
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    let mut out = Queue::with_capacity(max_out(&limits));
+    let meter = Meter::new();
+    let mut domain = Domain::new(&limits, 12);
+    let bound = worst_case(&limits).expect("checked limits");
+    let seen = measured_step(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        bound,
+        Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
+    );
+    let owner = seen.complete.expect("initial admission");
+    let seen = measured_step(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        bound,
+        Event::Completed { owner, completion: read_completion(1) },
+    );
+    assert_eq!(seen.io_count, 1, "every requested call runs");
+    let seen = measured_step(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        bound,
+        Event::Done {
+            owner: seen.io[0].expect("IO right"),
+            done: Done::Loaded { content: bytes(read_bytes), version: VERSION },
+        },
+    );
+    assert_eq!((seen.turns, seen.read), (1, Some(result)));
+    assert_eq!(seen.not_run, 0);
+    assert!(seen.end.is_none());
+    assert!(meter.held() >= exact);
+    measured_step(
+        &mut domain,
+        &env,
+        &mut out,
+        &meter,
+        bound,
+        Event::UnsentClosed { owner: seen.complete.expect("compaction requested") },
+    );
 }
 
 #[test]
@@ -1034,7 +1036,9 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
     let original = Limits { sessions: 1, history_bytes: 600, history_messages: 8, ..LIMITS };
     let (limits, spec_cost, _, _) = pressure_limits(&original, Route::Talk, 3_u32 + 2);
     let reserve = smith_domain_session::completion_reserve(&limits).expect("checked credit");
-    let held = limits.history_bytes.checked_sub(reserve).expect("retained maximum leaves exact provider credit");
+    let headroom = size(size_of::<Block>()) + 256 * u64::from(limits.completion_blocks);
+    let held =
+        limits.history_bytes.checked_sub(reserve + headroom).expect("retained maximum leaves exact provider credit");
     let block = size(size_of::<Block>());
     let message = held.checked_sub(spec_cost + block + 1 + block).expect("maximum caller message fits");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1077,7 +1081,7 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
         Event::Continue { session: owner, content: bytes(message) },
     );
     assert_eq!(seen.complete, Some(owner), "held payload plus receiving credit exactly equals service cap");
-    assert_eq!(spec_cost + block + 1 + block + message + reserve, limits.history_bytes);
+    assert_eq!(spec_cost + block + 1 + block + message + reserve + headroom, limits.history_bytes);
     let seen = measured_step(
         &mut domain,
         &env,
@@ -1173,7 +1177,7 @@ fn missing_completion(field: u64) -> Completion {
 }
 
 #[test]
-fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
+fn the_four_message_cap_asks_for_compaction_before_provider_growth() {
     let original = Limits { history_messages: 4, ..LIMITS };
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
         let (mut limits, _, output, field) = pressure_limits(&original, route, original.history_messages);
@@ -1257,8 +1261,9 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
                 )
             }
         };
-        assert!(seen.complete.is_none(), "original one-cell remainder never starts another provider effect");
-        assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
+        assert_eq!(seen.complete, Some(owner), "one remaining message holds the summary instruction");
+        assert_eq!(seen.end, None);
+        measured_step(&mut domain, &env, &mut out, &meter, bound, Event::UnsentClosed { owner });
     }
 }
 
@@ -1279,7 +1284,8 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole next-completion credit");
-    let cap = spec_cost + block + choice_cost + note_bytes + credit;
+    let headroom = block + 256 * u64::from(original.completion_blocks);
+    let cap = spec_cost + block + choice_cost + note_bytes + credit + headroom;
     for extra in [0, 1] {
         let limits = Limits { history_bytes: cap, ..original };
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1315,7 +1321,17 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
             assert!(narrowed.end.is_none());
         } else {
             assert!(narrowed.complete.is_none(), "one byte beyond the admitted payload publishes no request");
-            assert_eq!(narrowed.end, Some(smith_domain_session::End::TranscriptFull));
+            assert_eq!(
+                narrowed.end,
+                Some(smith_domain_session::End::Failed {
+                    failure: smith_domain_session::llm::Failure::Limit {
+                        which: smith_domain_session::llm::Limit::History,
+                        bound: cap
+                    },
+                    evidence: smith_domain_session::llm::Evidence::Unsent,
+                    attempts: 0
+                })
+            );
         }
     }
 }
@@ -1356,7 +1372,17 @@ fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released()
             assert_eq!(closing.end, Some(smith_domain_session::End::Closed));
         } else {
             assert!(seen.complete.is_none(), "one byte beyond the cap publishes no provider request");
-            assert_eq!(seen.end, Some(smith_domain_session::End::TranscriptFull));
+            assert_eq!(
+                seen.end,
+                Some(smith_domain_session::End::Failed {
+                    failure: smith_domain_session::llm::Failure::Limit {
+                        which: smith_domain_session::llm::Limit::History,
+                        bound: cap
+                    },
+                    evidence: smith_domain_session::llm::Evidence::Unsent,
+                    attempts: 0
+                })
+            );
         }
         domain.reclaim();
         assert_eq!(domain.sessions(), 0, "final note is released with its session");

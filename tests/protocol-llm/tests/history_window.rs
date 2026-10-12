@@ -68,7 +68,7 @@ fn fixture(provider: skein_llm::Provider) -> Fixture {
 }
 
 fn history_edge(provider: skein_llm::Provider) {
-    let Fixture { declared, client, limits, decoded, allowance } = fixture(provider);
+    let Fixture { declared, client, mut limits, decoded, allowance } = fixture(provider);
     let tools = smith_protocol_llm_world::LIMITS.session.tools;
     let configuration = match provider {
         skein_llm::Provider::OpenAiCodex => 0,
@@ -76,6 +76,8 @@ fn history_edge(provider: skein_llm::Provider) {
     };
     let system = b"@history-window";
     let payload = payload_at_edge(&limits, system);
+    limits.history_bytes += u64::try_from(size_of::<session::llm::Block>()).expect("summary cell")
+        + u64::from(limits.tools.path_bytes) * u64::from(limits.completion_blocks);
     for extra in [0, 1] {
         let mut world = World::new(4800 + extra, 256);
         world.env.limits = limits;
@@ -92,7 +94,7 @@ fn history_edge(provider: skein_llm::Provider) {
         world.open(start);
         if extra == 1 {
             assert!(world.prompts.is_empty(), "past the history bound never sends a provider request");
-            assert_eq!(world.end, Some(session::End::TranscriptRefused { reason: session::record::Refusal::TooLarge }));
+            assert_eq!(world.end, Some(history_failure(limits.history_bytes)));
             world.domain.reclaim();
             assert_eq!(world.domain.sessions(), 0);
             assert_eq!(world.domain.kits(), 0);
@@ -174,6 +176,14 @@ fn scripts(system: &[u8]) -> Box<[Script]> {
             tokens: 1,
         }]),
     }])
+}
+
+fn history_failure(bound: u64) -> session::End {
+    session::End::Failed {
+        failure: session::llm::Failure::Limit { which: session::llm::Limit::History, bound },
+        evidence: session::llm::Evidence::Unsent,
+        attempts: 0,
+    }
 }
 
 fn payload_at_edge(limits: &session::Limits, system: &[u8]) -> u64 {

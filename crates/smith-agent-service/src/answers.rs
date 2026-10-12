@@ -202,7 +202,6 @@ fn failed(why: run::Failure) -> AnswerFailure {
             }
             run::Fault::Exhausted => failure(AnswerClass::Model, Some(b"exhausted")),
             run::Fault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            run::Fault::ContextFull => failure(AnswerClass::Model, Some(b"context_full")),
             run::Fault::Refused => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),

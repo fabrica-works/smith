@@ -228,7 +228,6 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
     for (fault, label) in [
         (run::Fault::Exhausted, "exhausted"),
         (run::Fault::Provider, "provider"),
-        (run::Fault::ContextFull, "context-full"),
         (run::Fault::Refused, "refused"),
         (run::Fault::Truncated, "truncated"),
         (run::Fault::Malformed, "malformed"),

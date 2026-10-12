@@ -875,9 +875,28 @@ fn what_an_end_counts_beyond_the_turns_used_is_charged() {
     let mut h = Harness::new(LIMITS);
     let (_, conversation) = h.running(1, 100);
     drop(h.step(Event::Used { conversation, spend: spend(10) }));
-    let end = End::Fault(Fault::ContextFull);
+    let end = End::Fault(Fault::Completion {
+        failure: crate::CompletionFailure::Limit { which: crate::Limit::History, bound: 65_536 },
+        evidence: crate::CompletionEvidence::Unsent,
+        model: 0,
+        attempts: 0,
+    });
     let emitted = h.step(Event::Ended { conversation, end, spend: spend(30), detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Model(Fault::ContextFull), Spend { units: 10, ..spend(30) })));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Model(Fault::Completion {
+                    failure: crate::CompletionFailure::Limit { which: crate::Limit::History, bound: 65_536 },
+                    evidence: crate::CompletionEvidence::Unsent,
+                    model: 0,
+                    attempts: 0,
+                }),
+                Spend { units: 10, ..spend(30) }
+            )
+        )
+    );
 }
 
 #[test]

@@ -68,6 +68,18 @@ pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
     Some(bytes)
 }
 
+pub(super) fn instruction_bytes(conversation: &Conversation) -> usize {
+    if !conversation.compaction.asking() {
+        return conversation.summary.len();
+    }
+    match conversation.transcript.last().expect("summary message").content.first().expect("summary block") {
+        Block::Text { text, .. } => text.len(),
+        Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } | Block::Opaque { .. } => {
+            unreachable!("summary instruction is text")
+        }
+    }
+}
+
 pub(super) fn window_limit(conversation: &Conversation, evidence: Evidence, attempts: u32) -> End {
     let failure = Failure::Limit { which: Limit::Window, bound: u64::from(conversation.model_window) };
     End::Failed { failure, evidence, attempts }
@@ -89,7 +101,7 @@ pub(super) fn start(
     for message in &conversation.transcript {
         blocks = blocks.checked_add(super::count(message.content.len())).expect("validated window block bound");
     }
-    let mut held = List::with_capacity(blocks);
+    let mut held = List::with_capacity(blocks.checked_add(1).expect("held offers fit u32"));
     let previous = mem::replace(&mut conversation.transcript, List::with_capacity(limits.history_messages));
     for (index, message) in previous.into_boxed().into_iter().enumerate() {
         if index < usize::try_from(conversation.window.following).expect("u32 fits") || message.role == Role::Assistant
@@ -101,6 +113,10 @@ pub(super) fn start(
         for block in message.content {
             match block {
                 Block::Text { text, .. } => {
+                    conversation.bytes = conversation
+                        .bytes
+                        .checked_sub(u64::try_from(size_of::<Block>()).expect("block cell fits"))
+                        .expect("held text releases its history block");
                     held.push(text).expect("one offer fits its history");
                 }
                 block @ (Block::ToolResult { .. }
@@ -118,10 +134,12 @@ pub(super) fn start(
                 .expect("one old message per slot");
         }
     }
-    let content: Box<[Block]> = Box::new([Block::Text { text: conversation.summary.clone(), replay: None }]);
-    if conversation.transcript.room() == 0 || !super::charge(conversation, content_cost(&content), limits) {
-        return Some(End::TranscriptFull);
-    }
+    // The instruction moves from the spec into history; its bytes were already charged.
+    let cell = u64::try_from(size_of::<Block>()).expect("summary cell fits");
+    assert!(conversation.transcript.room() > 0, "history admission leaves the summary a message");
+    assert!(super::charge(conversation, Some(cell), limits), "history admission leaves the summary a block");
+    let text = mem::replace(&mut conversation.summary, Box::new([]));
+    let content: Box<[Block]> = Box::new([Block::Text { text, replay: None }]);
     conversation.transcript.push(Message { role: Role::User, content }).expect("summary message slot checked");
     conversation.compaction = Compaction::Asking { held, announced: false };
     None
@@ -137,7 +155,7 @@ pub(super) fn open_window(
 ) -> Option<End> {
     release_provider(conversation);
     let Some(number) = conversation.window.number.checked_add(1) else {
-        return Some(End::TranscriptFull);
+        return Some(super::history::sequence_limit());
     };
     let asking = Compaction::Asking { held: List::with_capacity(0), announced: true };
     let held = match mem::replace(&mut conversation.compaction, asking) {
@@ -153,9 +171,22 @@ pub(super) fn open_window(
         content.push(Block::Text { text, replay: None }).expect("one held message per slot");
     }
     let content = content.into_boxed();
-    let Some(bytes) = new_bytes(conversation, &content) else { return Some(End::TranscriptFull) };
+    let last = conversation.transcript.len().checked_sub(1).expect("summary instruction is last");
+    let message = conversation.transcript.get_mut(last).expect("summary instruction is retained");
+    conversation.summary = match message.content.first_mut().expect("one summary text") {
+        Block::Text { text, .. } => mem::replace(text, Box::new([])),
+        Block::Refusal { .. } | Block::ToolCall { .. } | Block::ToolResult { .. } | Block::Opaque { .. } => {
+            unreachable!("a compaction asks with the summary text last")
+        }
+    };
+    let Some(bytes) = new_bytes(conversation, &content) else {
+        return Some(super::history::limit(limits.history_bytes));
+    };
+    if super::count(content.len()) > limits.history_blocks {
+        return Some(super::history::limit(u64::from(limits.history_blocks)));
+    }
     if bytes > limits.history_bytes {
-        return Some(End::TranscriptFull);
+        return Some(super::history::limit(limits.history_bytes));
     }
     conversation.compaction = Compaction::Idle;
     conversation.window_turn = true;
@@ -171,6 +202,7 @@ pub(super) fn open_window(
 fn new_bytes(conversation: &Conversation, content: &[Block]) -> Option<u64> {
     spec_cost(&conversation.model, &conversation.system, &conversation.delegated, content)?
         .checked_add(conversation.namespace.owned_bytes()?)?
+        .checked_add(super::choice_bytes(&conversation.choice))?
         .checked_add(conversation.final_turn.note_bytes()?)?
         .checked_add(u64::try_from(conversation.task.len()).ok()?)?
         .checked_add(u64::try_from(conversation.summary.len()).ok()?)
@@ -218,7 +250,7 @@ pub(super) fn accept(
                 && super::count(completion.content.len()) <= limits.completion_blocks => {}
         Some(_) | None => {
             release_provider(conversation);
-            return Some(End::TranscriptFull);
+            return Some(super::history::completion_limit(conversation, &completion.content, limits));
         }
     }
     let mut refused = completion.stop == Stop::Refusal;

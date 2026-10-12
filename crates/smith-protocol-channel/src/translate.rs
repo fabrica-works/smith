@@ -650,7 +650,6 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
         }
         run::Fault::Exhausted => channel::ModelFault::Exhausted,
         run::Fault::Provider => channel::ModelFault::Provider,
-        run::Fault::ContextFull => channel::ModelFault::ContextFull,
         run::Fault::Refused => channel::ModelFault::Refused,
         run::Fault::Truncated => channel::ModelFault::Truncated,
         run::Fault::Malformed => channel::ModelFault::Malformed,

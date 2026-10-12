@@ -126,7 +126,7 @@ record CompletionFault {
     attempts: u32
 }
 enum ModelFault {
-    completion: CompletionFault, exhausted, provider, context_full,
+    completion: CompletionFault, exhausted, provider,
     refused, truncated, malformed
 }
 enum TranscriptRefusal { version, endpoint, dialect, malformed, unresolved, too_large }

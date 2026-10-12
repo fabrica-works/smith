@@ -713,7 +713,19 @@ impl Partner {
         let delivering = hosting.saturating_add(deliveries);
         let waiting = delivering.saturating_add(waits);
         if roll < faults {
-            let fault = if self.rng.chance(500) { Fault::Provider } else { Fault::ContextFull };
+            let fault = if self.rng.chance(500) {
+                Fault::Provider
+            } else {
+                Fault::Completion {
+                    failure: smith_domain_run::CompletionFailure::Limit {
+                        which: smith_domain_run::Limit::History,
+                        bound: 65_536,
+                    },
+                    evidence: smith_domain_run::CompletionEvidence::Unsent,
+                    model: 0,
+                    attempts: 0,
+                }
+            };
             self.tally.faults += 1;
             self.end(peer, End::Fault(fault), out);
         } else if roll < finishing && finish {

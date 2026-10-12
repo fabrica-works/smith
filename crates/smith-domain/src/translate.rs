@@ -217,7 +217,6 @@ pub(crate) fn end(end: session::End, model: u32) -> run::End {
             session::NoSummary::Malformed => run::Fault::Malformed,
         }),
         session::End::Budget { spent } => exhausted(spent),
-        session::End::TranscriptFull => run::End::Fault(run::Fault::ContextFull),
     }
 }
 

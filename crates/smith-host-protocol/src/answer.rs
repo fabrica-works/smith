@@ -124,7 +124,6 @@ fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
         }
         wire::ModelFault::Exhausted => host::ModelFault::Exhausted,
         wire::ModelFault::Provider => host::ModelFault::Provider,
-        wire::ModelFault::ContextFull => host::ModelFault::ContextFull,
         wire::ModelFault::Refused => host::ModelFault::Refused,
         wire::ModelFault::Truncated => host::ModelFault::Truncated,
         wire::ModelFault::Malformed => host::ModelFault::Malformed,

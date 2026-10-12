@@ -11,20 +11,8 @@ const ITERATIONS: u32 = 100_000;
 
 /// Every original scheduled ending class remains mandatory across the full sweep.
 /// World contract: domain/session.md, sections 4, 6, 10 and 12.
-const EXPECTED_ENDS: [&str; 12] = [
-    "busy",
-    "invalid",
-    "closed",
-    "failed",
-    "timed out",
-    "transcript full",
-    "Turns",
-    "Input",
-    "Output",
-    "CacheRead",
-    "CacheWrite",
-    "Time",
-];
+const EXPECTED_ENDS: [&str; 11] =
+    ["busy", "invalid", "closed", "failed", "timed out", "Turns", "Input", "Output", "CacheRead", "CacheWrite", "Time"];
 
 /// A thousand worlds with random limits, faults, schedules and openers: each
 /// settles, with every session ended once and nothing left alive or in flight
@@ -90,7 +78,6 @@ fn random_worlds_settle_with_every_session_ended() {
                 End::TranscriptRefused { .. } | End::PriceOverflow | End::UsageOverflow => {
                     unreachable!("bounded scheduled peers neither restore nor overflow")
                 }
-                End::TranscriptFull => "transcript full".into(),
             };
             ends.insert(kind);
         }
@@ -145,6 +132,32 @@ fn drawn_small_windows_compact_within_them() {
         assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
         let prompt = world.prompts.last().expect("new window prompt");
         smith_session_world::assert_prompt_bound(prompt.input_bytes().expect("bounded") - 7 + 8 + 512, window);
+        world.close();
+    }
+}
+
+#[test]
+fn no_drawn_session_ends_because_its_history_grew() {
+    use smith_domain_session::{Event, llm, record};
+    use smith_session_world::recorded::{World, opening, written_calls};
+    let mut rng = skein_lib::Rng::new(4717);
+    for seed in 0..100 {
+        let mut world = World::new(seed, 256);
+        world.env.limits.history_bytes = rng.between(24_576, 32_768);
+        world.open(opening(None, world.env.limits.spend));
+        world.complete(written_calls(16), llm::Stop::ToolUse, llm::Usage::ZERO);
+        for _ in 0..16 {
+            let owner = *world.delegated.last().expect("every call runs");
+            let count = usize::try_from(rng.between(15_000, 16_384)).expect("bounded text");
+            world.step(Event::Answered { owner, text: vec![b'r'; count].into_boxed_slice(), error: false, spent: 0 });
+        }
+        assert!(world.end.is_none());
+        world.complete(
+            Box::new([llm::Block::Text { text: b"summary".as_slice().into(), replay: None }]),
+            llm::Stop::EndTurn,
+            llm::Usage::ZERO,
+        );
+        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
         world.close();
     }
 }

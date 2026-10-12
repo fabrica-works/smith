@@ -420,8 +420,6 @@ pub enum End {
     },
     /// The compaction produced no usable summary; no turn was told.
     NoSummary { fault: NoSummary },
-    /// The conversation outgrew the session's message or byte limit.
-    TranscriptFull,
     /// A transcript cannot be resumed. The next attempt must start fresh;
     /// this is a transient run failure.
     TranscriptRefused {

@@ -399,3 +399,24 @@ pub fn transcript(world: &World) -> record::Transcript {
         turns: world.turns.clone().into(),
     }
 }
+
+/// Builds independent run-tool writes, which the session must run in separate batches.
+/// Contract: domain/session.md, sections 5 and 8.1.
+#[must_use]
+pub fn written_calls(count: u32) -> Box<[llm::Block]> {
+    (0..count)
+        .map(|index| llm::Block::ToolCall {
+            id: format!("call-{index}").into_bytes().into_boxed_slice(),
+            name: b"finish".as_slice().into(),
+            input: b"{}".as_slice().into(),
+            call: llm::Decoded::Delegated {
+                source: session::ToolSource::Run,
+                ticket: Token::new(19),
+                effect: Effect::Write,
+                descriptor: Token::new(19),
+            },
+            replay: None,
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+}

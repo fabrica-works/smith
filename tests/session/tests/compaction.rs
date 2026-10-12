@@ -233,7 +233,14 @@ fn an_oversized_summary_is_charged_without_telling_a_turn() {
     world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
     continue_with(&mut world, b"go on");
     world.complete(said(&[b's'; 512]), llm::Stop::EndTurn, usage());
-    assert_eq!(world.end, Some(session::End::TranscriptFull));
+    assert_eq!(
+        world.end,
+        Some(session::End::Failed {
+            failure: llm::Failure::Limit { which: llm::Limit::Path(llm::Cap::Answer), bound: 256 },
+            evidence: llm::Evidence::Response { status: None },
+            attempts: 1
+        })
+    );
     assert_eq!(world.turns.len(), 1);
     assert_eq!(world.used.len(), 2);
     assert!(
@@ -242,4 +249,155 @@ fn an_oversized_summary_is_charged_without_telling_a_turn() {
             session::FactKind::CompactionEnded { end: session::Compacted::Failed, .. }
         ))
     );
+}
+
+#[test]
+fn a_history_at_its_message_bound_compacts_instead_of_ending() {
+    let mut world = World::new(4714, 256);
+    world.env.limits.history_messages = 4;
+    world.open(opening(None, world.env.limits.spend));
+    world.complete(said(b"answer"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    continue_with(&mut world, b"go on");
+    assert!(is_summary(&world));
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+    assert!(world.end.is_none());
+    let prompt = world.prompts.last().expect("ordinary prompt after compaction");
+    assert!(
+        prompt.messages[0]
+            .content
+            .iter()
+            .any(|block| matches!(block, llm::Block::Text { text, .. } if text.as_ref() == b"go on"))
+    );
+    world.close();
+}
+
+#[test]
+fn a_fresh_window_at_its_history_bound_fails_naming_history() {
+    let mut world = World::new(4715, 256);
+    world.env.limits.history_messages = 2;
+    world.open(opening(None, world.env.limits.spend));
+    assert!(world.prompts.is_empty());
+    assert_eq!(
+        world.end,
+        Some(session::End::Failed {
+            failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
+            evidence: llm::Evidence::Unsent,
+            attempts: 0
+        })
+    );
+}
+
+#[test]
+fn a_childs_final_answer_at_its_message_bound_names_that_bound() {
+    let mut world = World::new(4720, 256);
+    world.env.limits.history_messages = 2;
+    let mut start = opening(None, world.env.limits.spend);
+    start.spec.budget.turns = 1;
+    start.spec.final_turn = Some(session::FinalTurn {
+        note: b"answer now".as_slice().into(),
+        allowance: skein_lib::Duration::from_secs(1),
+    });
+    world.open(start);
+    assert!(world.prompts.is_empty());
+    assert_eq!(
+        world.end,
+        Some(session::End::Failed {
+            failure: llm::Failure::Limit { which: llm::Limit::History, bound: 2 },
+            evidence: llm::Evidence::Unsent,
+            attempts: 0,
+        })
+    );
+}
+
+#[test]
+fn a_later_batch_runs_within_what_is_left_of_the_history_then_compacts() {
+    let mut world = World::new(4716, 256);
+    world.env.limits.history_bytes = 32_768;
+    world.open(opening(None, world.env.limits.spend));
+    world.complete(smith_session_world::recorded::written_calls(3), llm::Stop::ToolUse, llm::Usage::ZERO);
+    for _ in 0..3 {
+        let owner = *world.delegated.last().expect("every call runs");
+        world.step(session::Event::Answered {
+            owner,
+            text: vec![b'r'; 16_384].into_boxed_slice(),
+            error: false,
+            spent: 0,
+        });
+    }
+    assert!(is_summary(&world));
+    let results = &world.prompts.last().expect("summary request").messages;
+    let returned = &results[results.len() - 2].content;
+    assert_eq!(returned.len(), 3);
+    assert!(returned.iter().any(|block| matches!(block, llm::Block::ToolResult { result: llm::Returned::Text { text, .. }, .. } if text.ends_with(b" bytes omitted]"))));
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert!(world.end.is_none());
+    world.close();
+}
+
+#[test]
+fn a_continue_past_the_byte_bound_keeps_its_message_and_answers_stopped_calls() {
+    let mut world = World::new(4718, 256);
+    world.env.limits.history_bytes = 16_384;
+    world.env.limits.completion_bytes = 1024;
+    world.env.limits.answer_bytes = 512;
+    world.env.limits.completion_blocks = 2;
+    world.open(opening(None, world.env.limits.spend));
+    for _ in 0..9 {
+        world.complete(said(&[b'a'; 600]), llm::Stop::EndTurn, llm::Usage::ZERO);
+        continue_with(&mut world, b"go on");
+    }
+    world.complete(smith_session_world::recorded::written_calls(1), llm::Stop::EndTurn, llm::Usage::ZERO);
+    continue_with(&mut world, &[b'h'; 7000]);
+    assert!(is_summary(&world));
+    let request = world.prompts.last().expect("compaction");
+    let results = &request.messages[request.messages.len() - 2].content;
+    assert_eq!(
+        results.as_ref(),
+        &[llm::Block::ToolResult {
+            id: b"call-0".as_slice().into(),
+            result: llm::Returned::NotRun { why: llm::NotRun::Stopped },
+        }]
+    );
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    let request = world.prompts.last().expect("new ordinary request");
+    assert_eq!(request.messages[0].content.last(), said(&[b'h'; 7000]).first());
+    assert!(world.end.is_none());
+    world.close();
+}
+
+#[test]
+fn a_final_note_due_during_a_compaction_retry_waits_for_the_new_window() {
+    let mut world = World::new(4719, 256);
+    let mut start = opening(None, world.env.limits.spend);
+    start.spec.window = 2_000;
+    start.spec.output = 512;
+    start.spec.budget.time = skein_lib::Duration::from_secs(4);
+    start.spec.final_turn = Some(session::FinalTurn {
+        note: b"Answer now.".as_slice().into(),
+        allowance: skein_lib::Duration::from_secs(1),
+    });
+    world.open(start);
+    world.complete(said(b"answer"), llm::Stop::EndTurn, usage());
+    continue_with(&mut world, b"go on");
+    assert!(is_summary(&world));
+    world.env.now = skein_lib::Time::ZERO.saturating_add(skein_lib::Duration::from_secs(2));
+    world.step(session::Event::Failed {
+        owner: world.completing.expect("compaction"),
+        failure: llm::Failure::Overloaded,
+        evidence: llm::Evidence::Response { status: None },
+        detail: Box::new([]),
+    });
+    world.env.now = world.domain.next_deadline().expect("retry due");
+    world.fire();
+    assert!(is_summary(&world));
+    let request = world.prompts.last().expect("retry");
+    assert!(!request.messages.iter().any(|message| message.content == said(b"Answer now.")));
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    let request = world.prompts.last().expect("final answer request");
+    assert_eq!(request.messages[0].content.last(), said(b"Answer now.").first());
+    assert_eq!(request.choice, llm::ToolChoice::None);
+    world.complete(said(b"done"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert_eq!(world.yielded.last().expect("final yield").0, session::Yield::Budget);
+    world.close();
 }

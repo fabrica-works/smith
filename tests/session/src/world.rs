@@ -1412,7 +1412,10 @@ impl World {
         assert!(Some(self.now) < session.expires, "session {opener} has time left");
         let messages = u32::try_from(prompt.messages.len()).expect("a small transcript");
         assert!(
-            messages < self.settings.agent.history_messages,
+            match prompt.purpose {
+                agent::llm::Purpose::Ordinary => messages < self.settings.agent.history_messages,
+                agent::llm::Purpose::Compaction { .. } => messages <= self.settings.agent.history_messages,
+            },
             "session {opener}'s transcript has room for the answer"
         );
         let left = budget.output - usage.output_tokens.unwrap_or(0);
@@ -1433,8 +1436,7 @@ impl World {
             agent::End::Closed
             | agent::End::NoSummary { .. }
             | agent::End::Failed { .. }
-            | agent::End::Budget { .. }
-            | agent::End::TranscriptFull => {
+            | agent::End::Budget { .. } => {
                 let name = session.session.expect("a session that ran had opened");
                 assert!(self.idle(name), "a session ends once nothing it asked for is in flight");
             }

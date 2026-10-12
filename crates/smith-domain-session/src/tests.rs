@@ -456,7 +456,18 @@ fn receiving_limits(pressure: u64, content: &[Block], result_credit: u64) -> Lim
         ..LIMITS
     };
     let envelope = crate::completion_reserve(&limits).expect("provider bounds fit").max(result_credit);
-    Limits { history_bytes: pressure.checked_add(envelope).expect("fixture envelope fits"), ..limits }
+    let cells = u64::try_from(size_of::<Block>())
+        .expect("block")
+        .checked_add(64_u64.checked_mul(u64::from(limits.completion_blocks)).expect("bounded calls"))
+        .expect("headroom");
+    Limits {
+        history_bytes: pressure
+            .checked_add(envelope)
+            .expect("fixture envelope")
+            .checked_add(cells)
+            .expect("summary and future results"),
+        ..limits
+    }
 }
 
 fn initial_bytes() -> u64 {
@@ -909,18 +920,8 @@ fn closing_a_session_with_a_batch_in_flight_closes_its_kit_and_waits_for_every_r
 }
 
 #[test]
-fn result_space_is_refused_before_any_batch_and_maximum_winners_fit() {
+fn maximum_owned_results_fit_when_they_win_cancellation() {
     let content = Box::new([tool_call(b"a", cat(b"a")), tool_call(b"b", cat(b"b"))]);
-    let refusal_limits = receiving_limits(2048, &content[..], 0);
-    let mut h = Harness::new(&refusal_limits);
-    let (owner, _) = h.open(1);
-    assert_eq!(
-        h.step(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) }),
-        Some(ended(End::TranscriptFull, 1)),
-        "no IO starts without the entire result batch's credit"
-    );
-    assert_eq!((h.domain.runs(), h.domain.jobs()), (0, 0));
-
     let batch_credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("two full read results fit");
     let mut h = Harness::new(&receiving_limits(2048, &content[..], batch_credit));
     let (owner, _) = h.open(1);
@@ -939,15 +940,6 @@ fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_
     let large = Box::new([tool_call(b"a", cat(b"main.rs")), tool_call(&[b'i'; 2100], away.clone())]);
     let credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("two read credits fit");
     let limits = receiving_limits(4096, &large[..], credit);
-    let mut h = Harness::new(&limits);
-    let (owner, _) = h.open(1);
-    assert_eq!(
-        h.step(Event::Completed { owner, completion: completion(large, Stop::ToolUse) }),
-        Some(ended(End::TranscriptFull, 1)),
-        "copied IDs plus both result rights refuse before any IO"
-    );
-    assert_eq!(h.domain.runs(), 0);
-
     let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     let id = [b'i'; 1500];
@@ -1091,17 +1083,8 @@ fn closing_withdraws_the_delegated_calls_in_flight_and_waits_for_their_terminals
 }
 
 #[test]
-fn delegated_result_space_is_refused_before_effects_and_answers_count() {
+fn maximum_delegated_results_fit_when_they_win_cancellation() {
     let content = Box::new([delegated(b"b", 9, Effect::Read), tool_call(b"a", cat(b"a"))]);
-    let mut h = Harness::new(&receiving_limits(2048, &content[..], 0));
-    let (owner, _) = h.open(1);
-    assert_eq!(
-        h.step(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) }),
-        Some(ended(End::TranscriptFull, 1)),
-        "neither delegate nor IO starts without both result rights"
-    );
-    assert_eq!((h.domain.runs(), h.domain.jobs()), (0, 0));
-
     let credit = LIMITS.delegated_result_bytes.checked_add(u64::from(TOOLS.read_bytes)).expect("mixed batch fits");
     for length in [4096, LIMITS.delegated_result_bytes] {
         let mut h = Harness::new(&receiving_limits(2048, &content[..], credit));
@@ -1730,41 +1713,22 @@ fn a_session_whose_time_is_up_starts_no_completion_even_before_its_alarm_fires()
 }
 
 #[test]
-fn a_conversation_that_outgrows_its_bytes_ends_the_session() {
-    let envelope = crate::completion_reserve(&LIMITS).expect("provider reservation fits");
-    let limits =
-        Limits { history_bytes: 1024_u64.checked_add(envelope).expect("pressure plus envelope fits"), ..LIMITS };
-    let mut h = Harness::new(&limits);
-    let (owner, _) = h.open(1);
-    let content = Box::new([tool_call(b"c1", cat(b"main.rs"))]);
-    let (run, _) = running(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }));
-    let huge = Box::from([b'x'; 2048].as_slice());
-    let end = h.step(Event::Done { owner: run, done: loaded(&huge) });
-    assert_eq!(end, Some(ended(End::TranscriptFull, 1)));
-
-    let session = h.yielded();
-    let huge = Box::from([b'x'; 2048].as_slice());
-    assert_eq!(h.step(Event::Continue { session, content: huge }), Some(ended(End::TranscriptFull, 1)));
-
-    h.domain.reclaim();
-    let (owner, _) = h.open(1);
-    let huge = Box::new([Block::Text { text: Box::from([b'x'; 2048].as_slice()), replay: None }]);
-    let end = h.step(Event::Completed { owner, completion: completion(huge, Stop::EndTurn) });
-    assert_eq!(yielded(end), (1, Yield::Done, bytes(&[b'x'; 2048])));
-    assert_eq!(
-        h.step(Event::Continue { session: owner, content: bytes(b"go on") }),
-        Some(ended(End::TranscriptFull, 1)),
-        "the accepted full answer is told before refusing another provider effect"
-    );
-}
-
-#[test]
 fn oversized_provider_completions_end_before_calls_or_turns() {
     let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let huge = Box::from([b'x'; 4097].as_slice());
     let oversized = completion(Box::new([text(&huge)]), Stop::EndTurn);
-    assert_eq!(h.step(Event::Completed { owner, completion: oversized }), Some(ended(End::TranscriptFull, 1)));
+    assert_eq!(
+        h.step(Event::Completed { owner, completion: oversized }),
+        Some(ended(
+            End::Failed {
+                failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
+                evidence: crate::llm::Evidence::Response { status: None },
+                attempts: 1
+            },
+            1
+        ))
+    );
     assert_eq!(h.turn_records.len(), 0);
 
     let mut h = Harness::new(&LIMITS);
@@ -1782,7 +1746,17 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
         replay: None,
     };
     let completion = completion(Box::new([call]), Stop::ToolUse);
-    assert_eq!(h.step(Event::Completed { owner, completion }), Some(ended(End::TranscriptFull, 1)));
+    assert_eq!(
+        h.step(Event::Completed { owner, completion }),
+        Some(ended(
+            End::Failed {
+                failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
+                evidence: crate::llm::Evidence::Response { status: None },
+                attempts: 1
+            },
+            1
+        ))
+    );
     assert_eq!((h.domain.runs(), h.turn_records.len()), (0, 0));
 }
 
@@ -1793,32 +1767,48 @@ fn late_oversized_completion_replaces_the_closing_reason() {
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     let huge = [b'x'; 4097];
     let completion = completion(Box::new([text(&huge)]), Stop::EndTurn);
-    assert_eq!(h.step(Event::Completed { owner, completion }), Some(ended(End::TranscriptFull, 1)));
+    assert_eq!(
+        h.step(Event::Completed { owner, completion }),
+        Some(ended(
+            End::Failed {
+                failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
+                evidence: crate::llm::Evidence::Response { status: None },
+                attempts: 1
+            },
+            1
+        ))
+    );
     assert_eq!(h.turn_records.len(), 0);
 }
 
 #[test]
-fn a_session_starts_no_completion_whose_answer_it_could_not_keep() {
-    // The prompt, the tools' call and their results: no room for an answer.
-    let mut h = Harness::new(&Limits { history_messages: 3, ..LIMITS });
+fn a_late_oversized_completion_keeps_its_retry_attempt_count() {
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
-    let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
-    assert_eq!(h.step(ran(run, b"main.rs")), Some(ended(End::TranscriptFull, 1)));
-    // Nor is a transcript too short to hold a prompt and its answer.
-    assert_eq!(worst_case(&Limits { history_messages: 1, ..LIMITS }), None);
-}
-
-#[test]
-fn a_transcript_with_no_room_for_another_message_ends_the_session() {
-    let mut h = Harness::new(&Limits { history_messages: 2, ..LIMITS });
-    let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec()) });
-    assert_eq!(refused, Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0)));
-    assert_eq!((h.domain.sessions(), h.domain.kits()), (0, 0), "two slots refuse before acquiring a kit");
-
-    let mut h = Harness::new(&Limits { history_messages: 3, ..LIMITS });
-    let session = h.yielded();
-    assert_eq!(h.step(Event::Continue { session, content: bytes(b"go on") }), Some(ended(End::TranscriptFull, 1)));
-    assert_eq!(h.turn_records.len(), 1, "the actual admitted completion is recorded");
+    assert!(
+        h.step(Event::Failed {
+            owner,
+            failure: Failure::Overloaded,
+            evidence: crate::llm::Evidence::Unknown,
+            detail: Box::default(),
+        })
+        .is_none()
+    );
+    h.env.now = h.domain.next_deadline().expect("retry is armed");
+    drop(calling(h.fire()));
+    assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
+    let completion = completion(Box::new([text(&[b'x'; 4097])]), Stop::EndTurn);
+    assert_eq!(
+        h.step(Event::Completed { owner, completion }),
+        Some(ended(
+            End::Failed {
+                failure: Failure::Limit { which: crate::llm::Limit::Path(crate::llm::Cap::Answer), bound: 4096 },
+                evidence: crate::llm::Evidence::Response { status: None },
+                attempts: 2,
+            },
+            1
+        ))
+    );
 }
 
 #[test]
@@ -2003,7 +1993,14 @@ fn completion_name_exhaustion_ends_before_any_owned_or_delegated_effect() {
                     assert_eq!((spent, own_spent), (0, 0));
                 }
                 Request::Ended { end, .. } => {
-                    assert_eq!(end, End::TranscriptFull);
+                    assert_eq!(
+                        end,
+                        End::Failed {
+                            failure: Failure::ApplicationLimit,
+                            evidence: crate::llm::Evidence::Unsent,
+                            attempts: 0
+                        }
+                    );
                     ended = true;
                 }
                 Request::Opened { .. }
@@ -2152,92 +2149,98 @@ fn unsent_close_releases_provider_credit_without_requesting_a_cancel() {
 #[test]
 fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
     let reservation = crate::completion_reserve(&LIMITS).expect("configured provider bounds fit");
-    let exact = initial_bytes().checked_add(reservation).expect("exact entrance fits");
+    let headroom = u64::try_from(size_of::<Block>()).expect("block") + 64 * u64::from(LIMITS.completion_blocks);
+    let exact = initial_bytes().checked_add(reservation + headroom).expect("exact entrance fits");
     let mut admitted = Harness::new(&Limits { history_bytes: exact, ..LIMITS });
     let (owner, _) = admitted.open(1);
     assert_eq!(crate::session::provider_credit_for_test(&admitted.domain, owner), (reservation, Some(reservation)));
     assert_eq!(admitted.step(Event::UnsentClosed { owner }), Some(ended(End::Closed, 0)));
     let mut refused = Harness::new(&Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..LIMITS });
-    assert_eq!(
-        refused.step(Event::Open { opener: Token::new(1), opening: opening(spec()) }),
-        Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0))
+    step(
+        &mut refused.domain,
+        &refused.env,
+        Event::Open { opener: Token::new(1), opening: opening(spec()) },
+        &mut refused.out,
     );
+    let Some(Request::Opened { .. }) = refused.next() else { panic!("the fresh window opens before its limit") };
+    assert_eq!(
+        refused.one(),
+        Some(ended(
+            End::Failed {
+                failure: Failure::Limit { which: crate::llm::Limit::History, bound: exact - 1 },
+                evidence: crate::llm::Evidence::Unsent,
+                attempts: 0
+            },
+            0
+        ))
+    );
+    assert_eq!((refused.domain.sessions(), refused.domain.kits(), refused.domain.runs()), (1, 1, 0));
+    refused.domain.reclaim();
     assert_eq!((refused.domain.sessions(), refused.domain.kits(), refused.domain.runs()), (0, 0, 0));
 }
 
 #[test]
-fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_nothing() {
-    for (window, bytes, clamp) in [
-        (tools::Budget::Default, TOOLS.read_bytes, tools::BytesClamp::Within),
-        (
-            tools::Budget::Asked(u32::MAX),
-            TOOLS.tool_payload,
-            tools::BytesClamp::Clamped { asked: u32::MAX, ceiling: TOOLS.tool_payload },
-        ),
-    ] {
-        let call = Call::Read { path: path(b"file"), offset: 1, window };
-        let content = Box::new([tool_call(b"a", call.clone()), tool_call(b"b", call)]);
-        let credit = u64::from(bytes).checked_mul(2).expect("both maximum read results fit");
-        let limits = receiving_limits(2048, &content[..], credit);
-        let mut held = crate::session::content_cost(&content[..]).expect("actual content fits");
-        for block in &content[..] {
-            let Block::ToolCall { id, .. } = block else { panic!("fixture contains only calls") };
-            let block = u64::try_from(size_of::<Block>()).expect("result block fits");
-            let copied_id = u64::try_from(id.len()).expect("copied ID fits");
-            held = held.checked_add(block).expect("actual result block fits");
-            held = held.checked_add(copied_id).expect("actual copied result ID fits");
-        }
-        let held_prefix = initial_bytes().checked_add(held).expect("batch prefix fits");
-        let exact = held_prefix.checked_add(credit).expect("batch fits");
-        let provider = crate::completion_reserve(&limits).expect("provider envelope fits");
-        let provider_entrance = initial_bytes().checked_add(provider).expect("provider entrance fits");
-        assert!(exact > provider_entrance);
-        let mut admitted = Harness::new(&Limits { history_bytes: exact, ..limits });
-        let (owner, _) = admitted.open(1);
-        let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
-        let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
-        assert_eq!(admitted.step(ran(second, &answer(u64::from(b'y'), u64::from(bytes)))), None);
-        assert_eq!(
-            admitted.step(ran(first, &answer(u64::from(b'x'), u64::from(bytes)))),
-            Some(ended(End::TranscriptFull, 1))
-        );
-        let expected = [
-            result(
-                b"a",
-                Outcome::Read {
-                    content: answer(u64::from(b'x'), u64::from(bytes)),
-                    first: 1,
-                    lines: 1,
-                    total: 1,
-                    next: tools::Next::End,
-                    cut: tools::Cut::Whole,
-                    window: clamp,
-                },
-            ),
-            result(
-                b"b",
-                Outcome::Read {
-                    content: answer(u64::from(b'y'), u64::from(bytes)),
-                    first: 1,
-                    lines: 1,
-                    total: 1,
-                    next: tools::Next::End,
-                    cut: tools::Cut::Whole,
-                    window: clamp,
-                },
-            ),
-        ];
-        assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
-
-        let mut refused =
-            Harness::new(&Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
-        let (owner, _) = refused.open(1);
-        assert_eq!(
-            refused.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }),
-            Some(ended(End::TranscriptFull, 1))
-        );
-        assert_eq!((refused.domain.runs(), refused.domain.jobs()), (0, 0), "no partial batch is published");
+fn a_full_owned_batch_leaves_a_summary_instruction_and_compacts() {
+    let content = Box::new([tool_call(b"a", cat(b"file")), tool_call(b"b", cat(b"file"))]);
+    let limits = exact_read_batch_limits(&content[..], false);
+    let mut h = Harness::new(&limits);
+    let (owner, _) = h.open(1);
+    let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
+    assert_eq!(runs.len(), 2);
+    assert_eq!(h.step(ran(runs.as_slice()[1], &[b'y'; 4096])), None);
+    let (_, prompt) = calling(h.step(ran(runs.as_slice()[0], &[b'x'; 4096])));
+    match prompt.purpose {
+        crate::llm::Purpose::Compaction { .. } => {}
+        crate::llm::Purpose::Ordinary => panic!("history compacts"),
     }
+    let expected = [result(b"a", read(&[b'x'; 4096])), result(b"b", read(&[b'y'; 4096]))];
+    assert_eq!(&*h.turn_records.get(0).expect("ordinary turn").messages[2].content, &expected);
+}
+
+#[test]
+fn a_batch_one_byte_short_runs_every_read_with_a_smaller_cap() {
+    let content = Box::new([tool_call(b"a", cat(b"file")), tool_call(b"b", cat(b"file"))]);
+    let limits = exact_read_batch_limits(&content[..], true);
+    let mut h = Harness::new(&limits);
+    let (owner, _) = h.open(1);
+    let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
+    assert_eq!(runs.len(), 2);
+    assert_eq!(h.batch(Event::Close { session: owner }).as_slice(), runs.as_slice());
+    assert_eq!(h.step(ran(runs.as_slice()[0], &[b'x'; 4096])), None);
+    assert_eq!(h.step(ran(runs.as_slice()[1], &[b'y'; 4096])), Some(ended(End::Closed, 1)));
+    for block in &h.turn_records.get(0).expect("ordinary turn").messages[2].content {
+        let Block::ToolResult {
+            result: Returned::Owned { outcome: Outcome::Read { content, window, cut, .. } }, ..
+        } = block
+        else {
+            panic!("read result")
+        };
+        assert_eq!(content.len(), 4095);
+        assert_eq!(*window, tools::BytesClamp::Clamped { asked: 4096, ceiling: 4095 });
+        assert_eq!(*cut, tools::Cut::Line);
+    }
+}
+
+fn exact_read_batch_limits(content: &[Block], short: bool) -> Limits {
+    let limits = receiving_limits(2048, content, 8192);
+    let mut held = crate::session::content_cost(content).expect("fixture content");
+    for block in content {
+        let Block::ToolCall { id, .. } = block else { panic!("fixture calls") };
+        held = held
+            .checked_add(
+                u64::try_from(size_of::<Block>().checked_add(id.len()).expect("result skeleton"))
+                    .expect("skeleton fits"),
+            )
+            .expect("both result skeletons");
+    }
+    let bytes = initial_bytes()
+        .checked_add(held)
+        .expect("prefix")
+        .checked_add(8192)
+        .expect("results")
+        .checked_add(u64::try_from(size_of::<Block>()).expect("summary block"))
+        .expect("instruction");
+    Limits { history_bytes: bytes.checked_sub(u64::from(short)).expect("one-short control"), ..limits }
 }
 
 #[test]
@@ -2895,4 +2898,55 @@ fn an_overflow_answers_compact() {
     window.last_prompt = Some(Tokens(u64::MAX));
     assert_eq!(check(&window, 0, 0, 1, u32::MAX, [4, 5]), Admission::Compact);
     assert_eq!(check(&Window::fresh(1, 0), u64::MAX, 1, 0, u32::MAX, [4, 5]), Admission::Compact);
+}
+
+fn later_owned_call(call: Call) -> (Harness, Token, Token, Op) {
+    let first = Call::Read { path: path(b"file"), offset: 1, window: tools::Budget::Asked(u32::MAX) };
+    let content = Box::new([tool_call(b"first", first), tool_call(b"later", call)]);
+    let limits = Limits { history_bytes: 16_384, parallel_tools: 1, ..receiving_limits(2048, &content[..], 0) };
+    let mut selected = spec();
+    selected.authority.grants.shell = true;
+    let mut h = Harness::new(&limits);
+    let (session, _) = h.open_with(1, selected);
+    let (first, _) =
+        running(h.step(Event::Completed { owner: session, completion: completion(content, Stop::ToolUse) }));
+    let (later, operation) = running(h.step(ran(first, &answer(u64::from(b'x'), 65_536))));
+    (h, session, later, operation)
+}
+
+fn close_later_call(h: &mut Harness, session: Token, owner: Token) {
+    assert_eq!(h.step(Event::Close { session }), Some(Request::CancelIo { owner }));
+    assert_eq!(h.step(Event::Done { owner, done: Done::Cancelled }), Some(ended(End::Closed, 1)));
+}
+
+#[test]
+fn a_later_listing_gets_its_share_as_the_lower_byte_cap() {
+    let (mut h, session, owner, operation) = later_owned_call(list());
+    let Op::List { max_bytes, .. } = operation else { panic!("listing") };
+    assert_eq!(max_bytes, 64);
+    close_later_call(&mut h, session, owner);
+}
+
+#[test]
+fn a_later_search_keeps_its_hit_cells_and_text_within_its_share() {
+    let call = Call::Search { path: path(b"file"), pattern: bytes(b"word"), glob: None };
+    let (mut h, session, owner, operation) = later_owned_call(call);
+    let Op::Search { hits, bytes, .. } = operation else { panic!("search") };
+    let cells = u64::try_from(size_of::<tools::Hit>()).expect("cell").checked_mul(u64::from(hits)).expect("cells");
+    assert!(cells.checked_add(u64::from(bytes)).expect("result") <= 64);
+    assert!(hits < TOOLS.search_hits && bytes < TOOLS.search_bytes);
+    close_later_call(&mut h, session, owner);
+}
+
+#[test]
+fn a_later_command_keeps_its_head_and_tail_within_its_share() {
+    let call = Call::Shell {
+        command: bytes(b"echo output"),
+        timeout: tools::Timeout::Default,
+        output: tools::Budget::Asked(u32::MAX),
+    };
+    let (mut h, session, owner, operation) = later_owned_call(call);
+    let Op::Spawn { head, tail, .. } = operation else { panic!("command") };
+    assert_eq!((head, tail), (32, 32));
+    close_later_call(&mut h, session, owner);
 }

@@ -962,13 +962,17 @@ impl Counted {
                     assert_eq!(host_run, WORKER);
                     self.long_open = self.long_open.checked_sub(1).expect("terminal belongs to actual provider work");
                 }
+                Request::Cancel { owner } => {
+                    let complete = self.complete.as_ref().expect("pending compaction is cancelled before native work");
+                    assert_eq!(complete.owner, owner);
+                    assert!(matches!(complete.prompt.purpose, llm::Purpose::Compaction { .. }));
+                }
                 Request::HostCall { .. }
                 | Request::WithdrawHost { .. }
                 | Request::Deliver { .. }
                 | Request::Rejected { .. }
                 | Request::Exhausted { .. }
                 | Request::MessageRefused { .. }
-                | Request::Cancel { .. }
                 | Request::Io { .. }
                 | Request::CancelIo { .. }
                 | Request::Check { .. }
@@ -1059,6 +1063,23 @@ impl Counted {
         assert!(self.complete.is_none());
         assert!(!self.domain.as_ref().expect("live root").is_ready());
         assert!(self.waiting || self.answer.is_some(), "bounded root loop reached an outside wait or actual terminal");
+    }
+
+    fn until_compaction(&mut self, configuration: &Configuration, cycles: u32) {
+        let complete = self.complete.take().expect("actual restored ordinary request");
+        assert_eq!(complete.prompt.purpose, llm::Purpose::Ordinary);
+        let event = self.native(complete, configuration, cycles);
+        self.step(event);
+        for _ in 0..100 {
+            if self.complete.is_some() {
+                break;
+            }
+            self.resume();
+        }
+        let complete = self.complete.as_ref().expect("the next request is the compaction");
+        assert!(matches!(complete.prompt.purpose, llm::Purpose::Compaction { .. }));
+        assert!(self.answer.is_none());
+        assert!(!self.domain.as_ref().expect("live root").is_ready());
     }
 
     fn wake(&mut self, name: Token, text: Box<[u8]>) {
@@ -1258,6 +1279,8 @@ fn cap(source: &Counted) -> u64 {
     opening
         + prefix
         + session::completion_reserve(&source.env.limits.session).expect("public required receiving credit")
+        + size::<session::llm::Block>()
+        + u64::from(source.env.limits.session.tools.path_bytes) * u64::from(source.env.limits.session.completion_blocks)
 }
 
 fn generate_prefix(counted: &mut Counted, configuration: &Configuration, messages: u32, cycles: u32) -> Limits {
@@ -1308,9 +1331,9 @@ fn generate_prefix(counted: &mut Counted, configuration: &Configuration, message
 fn restore_overlap(counted: &mut Counted, configuration: &Configuration, messages: u32, cycles: u32) {
     // The full prefix owns messages - 4 slots. Restored waking, the actual
     // Wait/result, the offered message and text, and the next nudge occupy six
-    // more. Two provider slots remain for the next held wait, so this overlap
-    // uses messages + 4. Payload/receiving caps retain the source contract.
-    let overlapping = bounds(messages.checked_add(4).expect("second actual receiving entrance's two slots"));
+    // more. Two provider slots and one summary slot remain for the next held
+    // wait, so this overlap uses messages + 5. Payload caps retain the source contract.
+    let overlapping = bounds(messages.checked_add(5).expect("second receiving entrance and its summary slot"));
     counted.replace_root(&overlapping);
     counted.start(counted.prefix.as_ref().map(copy_transcript), true);
     counted.discover();
@@ -1356,7 +1379,7 @@ fn restore_exact(counted: &mut Counted, configuration: &Configuration, messages:
     assert_rewritten(counted.prefix.as_ref().expect("original generated prefix"), &complete.prompt);
     counted.held_prompt = Some(copy_prompt(&complete.prompt));
     counted.prompt_copy = counted.held_prompt.as_ref().map(copy_prompt);
-    counted.cycle(configuration, cycles);
+    counted.until_compaction(configuration, cycles);
     let [turn] = counted.records.as_slice() else { panic!("one actual concrete restored Turn") };
     assert_eq!(turn.sequence, 2 * cycles + 1);
     assert_eq!(turn.messages.len(), 2);
@@ -1366,10 +1389,13 @@ fn restore_exact(counted: &mut Counted, configuration: &Configuration, messages:
     };
     assert_eq!(text.as_ref(), RESTORED);
     counted.turn_copy = Some(copy_turn(turn));
-    assert!(matches!(
-        counted.answer,
-        Some(run::Answer::Failed { failure: run::Failure::Model(run::Fault::ContextFull), turns: 1, .. })
-    ));
+    let owner = counted.complete.as_ref().expect("held compaction callback").owner;
+    let run = counted.admitted.expect("restored activation");
+    counted.step(Event::Cancel { run });
+    counted.resume();
+    drop(counted.complete.take());
+    counted.step(Event::Cancelled { owner });
+    assert!(matches!(counted.answer, Some(run::Answer::Failed { failure: run::Failure::Cancelled, turns: 1, .. })));
     counted.resume();
     counted.retire_native();
 }
@@ -1380,6 +1406,11 @@ fn refuse_one_over(counted: &mut Counted, configuration: &Configuration, cycles:
         if extra_message {
             negative.session.history_bytes += 16_384;
             assert!(size::<session::llm::Block>() + len(b"x") < 16_384, "count control has independent byte headroom");
+        } else {
+            // Pin the byte-only refusal to its prior receiving cap, independent
+            // of the new minimum-result and summary admission headroom.
+            negative.session.history_bytes -= size::<session::llm::Block>()
+                + u64::from(negative.session.tools.path_bytes) * u64::from(negative.session.completion_blocks);
         }
         counted.replace_root(&negative);
         let mut history = copy_transcript(counted.prefix.as_ref().expect("saved actual records"));

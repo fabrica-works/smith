@@ -57,7 +57,6 @@ pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) ->
                 smith_host_domain::ModelFault::Completion { .. }
                 | smith_host_domain::ModelFault::Exhausted
                 | smith_host_domain::ModelFault::Provider
-                | smith_host_domain::ModelFault::ContextFull
                 | smith_host_domain::ModelFault::Refused
                 | smith_host_domain::ModelFault::Truncated
                 | smith_host_domain::ModelFault::Malformed => ExitStatus::RunFailed,

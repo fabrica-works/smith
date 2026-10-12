@@ -456,7 +456,6 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
         }
         run::Fault::Exhausted => text.put(b"exhausted"),
         run::Fault::Provider => text.put(b"provider"),
-        run::Fault::ContextFull => text.put(b"context-full"),
         run::Fault::Refused => text.put(b"refused"),
         run::Fault::Truncated => text.put(b"truncated"),
         run::Fault::Malformed => text.put(b"malformed"),

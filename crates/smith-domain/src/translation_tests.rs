@@ -46,7 +46,6 @@ fn every_session_end_and_budget_dimension_keeps_its_class() {
         (session::End::Busy, run::End::Busy),
         (session::End::Invalid, run::End::Invalid),
         (session::End::Closed, run::End::Closed),
-        (session::End::TranscriptFull, run::End::Fault(run::Fault::ContextFull)),
         (session::End::Budget { spent: session::Dimension::Unit }, run::End::Budget(run::Exhausted::Spend)),
         (session::End::Budget { spent: session::Dimension::Turns }, run::End::Budget(run::Exhausted::Turns)),
         (session::End::Budget { spent: session::Dimension::Time }, run::End::Budget(run::Exhausted::Time)),

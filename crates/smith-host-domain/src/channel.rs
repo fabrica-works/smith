@@ -352,9 +352,6 @@ pub enum ModelFault {
     /// Its provider failed for good: unreachable, overloaded past the
     /// retries, or refusing the call or its credentials.
     Provider,
-    /// The conversation outgrew the model's context, or the bytes a
-    /// conversation may hold.
-    ContextFull,
     /// It kept declining to answer.
     Refused,
     /// It kept running out of tokens mid-answer.

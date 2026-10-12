@@ -142,7 +142,6 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
             }
             host::ModelFault::Exhausted => failure(AnswerClass::Model, Some(b"exhausted")),
             host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
-            host::ModelFault::ContextFull => failure(AnswerClass::Model, Some(b"context_full")),
             host::ModelFault::Refused => failure(AnswerClass::Model, Some(b"refused")),
             host::ModelFault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             host::ModelFault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),

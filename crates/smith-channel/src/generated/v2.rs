@@ -4540,8 +4540,6 @@ pub enum ModelFault {
     Exhausted,
     /// `provider` without a payload.
     Provider,
-    /// `context_full` without a payload.
-    ContextFull,
     /// `refused` without a payload.
     Refused,
     /// `truncated` without a payload.
@@ -4560,7 +4558,7 @@ impl ModelFault {
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         match self {
             Self::Completion(record) => CompletionFault::check(record, limits),
-            Self::Exhausted | Self::Provider | Self::ContextFull | Self::Refused | Self::Truncated | Self::Malformed => Ok(()),
+            Self::Exhausted | Self::Provider | Self::Refused | Self::Truncated | Self::Malformed => Ok(()),
         }?;
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
         if limits.directory_path > CEILINGS.directory_path { return Err(Problem { path: Path::DirectoryPath, reason: skein_codec::Reason::Bound }); }
@@ -8730,7 +8728,7 @@ impl ModelFault {
     pub fn measure(&self) -> u32 {
         match self {
             Self::Completion(record) => 1_u32.checked_add(CompletionFault::measure(record)).expect("schema ceilings fit u32"),
-            Self::Exhausted | Self::Provider | Self::ContextFull | Self::Refused | Self::Truncated | Self::Malformed => 1,
+            Self::Exhausted | Self::Provider | Self::Refused | Self::Truncated | Self::Malformed => 1,
         }
     }
 
@@ -8740,10 +8738,9 @@ impl ModelFault {
             Self::Completion(record) => { writer.put(&[0_u8])?; record.encode(writer)?; }
             Self::Exhausted => writer.put(&[1_u8])?,
             Self::Provider => writer.put(&[2_u8])?,
-            Self::ContextFull => writer.put(&[3_u8])?,
-            Self::Refused => writer.put(&[4_u8])?,
-            Self::Truncated => writer.put(&[5_u8])?,
-            Self::Malformed => writer.put(&[6_u8])?,
+            Self::Refused => writer.put(&[3_u8])?,
+            Self::Truncated => writer.put(&[4_u8])?,
+            Self::Malformed => writer.put(&[5_u8])?,
         }
         Ok(())
     }
@@ -8761,10 +8758,9 @@ impl ModelFault {
             0 => Self::Completion(CompletionFault::decode_from(limits, reader)?),
             1 => Self::Exhausted,
             2 => Self::Provider,
-            3 => Self::ContextFull,
-            4 => Self::Refused,
-            5 => Self::Truncated,
-            6 => Self::Malformed,
+            3 => Self::Refused,
+            4 => Self::Truncated,
+            5 => Self::Malformed,
             _ => return Err(Problem { path: Path::ModelFaultTag, reason: skein_codec::Reason::Tag }),
         };
         Self::new(limits, value)
@@ -14816,29 +14812,9 @@ mod golden_tests {
     }
 
     #[test]
-    fn enum_model_fault_context_full_smallest() {
-        let value = ModelFault::ContextFull;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ModelFault::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_model_fault_context_full_full() {
-        let value = ModelFault::ContextFull;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ModelFault::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
     fn enum_model_fault_refused_smallest() {
         let value = ModelFault::Refused;
-        let golden: &[u8] = &[4];
+        let golden: &[u8] = &[3];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14848,7 +14824,7 @@ mod golden_tests {
     #[test]
     fn enum_model_fault_refused_full() {
         let value = ModelFault::Refused;
-        let golden: &[u8] = &[4];
+        let golden: &[u8] = &[3];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14858,7 +14834,7 @@ mod golden_tests {
     #[test]
     fn enum_model_fault_truncated_smallest() {
         let value = ModelFault::Truncated;
-        let golden: &[u8] = &[5];
+        let golden: &[u8] = &[4];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14868,7 +14844,7 @@ mod golden_tests {
     #[test]
     fn enum_model_fault_truncated_full() {
         let value = ModelFault::Truncated;
-        let golden: &[u8] = &[5];
+        let golden: &[u8] = &[4];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14878,7 +14854,7 @@ mod golden_tests {
     #[test]
     fn enum_model_fault_malformed_smallest() {
         let value = ModelFault::Malformed;
-        let golden: &[u8] = &[6];
+        let golden: &[u8] = &[5];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14888,7 +14864,7 @@ mod golden_tests {
     #[test]
     fn enum_model_fault_malformed_full() {
         let value = ModelFault::Malformed;
-        let golden: &[u8] = &[6];
+        let golden: &[u8] = &[5];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
