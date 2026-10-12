@@ -352,3 +352,43 @@ fn an_accepted_answer_after_several_tools_reaches_the_host_before_teardown() {
         matches!(&records.last().expect("agent terminal").event, Event::SessionEnded(end) if end.answered && end.exit == 0)
     );
 }
+
+#[test]
+fn a_chat_writes_session_ended_after_its_last_word() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::traced(37, &files, placement, b"First answer");
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+        let records = world.records();
+        let answer = records.iter().position(|record| matches!(record.event, Event::RunCompleted(_))).expect("answer");
+        assert!(answer < records.len() - 1);
+        assert!(matches!(&records.last().expect("terminal").event,
+            Event::SessionEnded(end) if end.answered && end.exit == 0 && end.aborted == Some(false)));
+        assert_eq!(records.iter().filter(|record| matches!(record.event, Event::SessionEnded(_))).count(), 1);
+    }
+}
+
+#[test]
+fn a_termination_signal_while_closing_aborts_and_says_so() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::traced(37, &files, placement, b"First answer");
+        world.scenario.terminate_on_output_end = true;
+        world.settle();
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+        let records = world.records();
+        let notice = records
+            .iter()
+            .position(|record| {
+                matches!(&record.event,
+            Event::Notice(notice) if notice.kind == smith_events::NoticeKind::TeardownAborted)
+            })
+            .expect("abort notice");
+        assert!(notice < records.len() - 1);
+        assert!(matches!(&records.last().expect("terminal").event,
+            Event::SessionEnded(end) if end.answered && end.exit == 0 && end.aborted == Some(true)));
+        assert_eq!(records.iter().filter(|record| matches!(record.event, Event::SessionEnded(_))).count(), 1);
+        assert!(records.last().expect("terminal").t_ms - records[notice].t_ms < 5_000);
+    }
+}

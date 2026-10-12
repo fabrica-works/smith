@@ -227,6 +227,7 @@ pub(crate) struct Spawned {
     pub(crate) exit: Option<u8>,
     measuring: bool,
     answered: bool,
+    close: smith_agent_service::Close,
 }
 
 impl Spawned {
@@ -239,6 +240,7 @@ impl Spawned {
             exit: None,
             measuring: false,
             answered: true,
+            close: smith_agent_service::Close::Graceful,
         })
     }
 
@@ -288,6 +290,25 @@ impl Spawned {
         );
     }
 
+    pub(crate) fn abort(&mut self, now: skein_lib::Time) {
+        if self.close == smith_agent_service::Close::Graceful && (!self.measuring || self.exit.is_some()) {
+            self.close = smith_agent_service::Close::Aborted;
+            self.producer.notice(
+                now,
+                smith_events::Notice {
+                    level: smith_events::Level::Warning,
+                    kind: smith_events::NoticeKind::TeardownAborted,
+                    run: None,
+                    account: None,
+                    wait_ms: None,
+                    bytes: None,
+                    exit: None,
+                    forced: None,
+                },
+            );
+        }
+    }
+
     pub(crate) fn owns(&self, owner: skein_lib::Token) -> bool {
         owner == USAGE || self.producer.owns(owner)
     }
@@ -315,9 +336,9 @@ impl Spawned {
                     now,
                     origin,
                     &smith_agent_service::sinks::Ended {
-                        exit: self.exit.expect("product exited before usage"),
+                        exit: self.exit.take().expect("product exited before usage"),
                         answered: self.answered,
-                        aborted: false,
+                        aborted: self.close == smith_agent_service::Close::Aborted,
                         teardown,
                         usage,
                         channel: None,

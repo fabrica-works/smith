@@ -409,6 +409,17 @@ impl Effects {
         teardown::answered(&mut self.service);
     }
 
+    /// Lower components and roots have closed; the product terminal is still owed.
+    #[must_use]
+    pub fn components_closed(&self) -> bool {
+        teardown::components_closed(&self.service)
+    }
+
+    /// Turn the remaining lower closes into aborts after the product's last word.
+    pub fn abort(&mut self) {
+        teardown::shutdown(&mut self.service);
+    }
+
     /// Every lower child and adopted root has completed its close.
     #[must_use]
     pub fn closed(&self) -> bool {

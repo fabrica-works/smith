@@ -8,6 +8,10 @@ use core::mem::size_of;
 use skein_io::kernel;
 use skein_lib::{Env, List, Map, Queue, Time, Token, Wall};
 use smith_agent_service as agent_service;
+use smith_agent_service::{Close, Step};
+
+mod ending;
+use ending::Ending;
 use smith_domain as agent;
 use smith_host_domain as host;
 use smith_inline_agent as inline;
@@ -179,7 +183,7 @@ pub struct Service {
     plain_directories: List<u32>,
     capture_activation: Option<u64>,
     snapshot_state: SnapshotState,
-    pending_exit: Option<local::ExitStatus>,
+    ending: Ending,
     terminal: protocol::Terminal,
     terminal_events: Queue<protocol::TerminalEvent>,
     output: Queue<Box<[u8]>>,
@@ -266,7 +270,7 @@ impl Service {
             plain_directories,
             capture_activation: None,
             snapshot_state: SnapshotState::Idle,
-            pending_exit: None,
+            ending: Ending::Live { shell_closed: true },
             terminal,
             terminal_events: Queue::with_capacity(queue),
             output: Queue::with_capacity(queue),
@@ -440,7 +444,8 @@ impl Service {
                 None => true,
             },
         };
-        !self.completions.is_empty()
+        self.end_work()
+            || !self.completions.is_empty()
             || !self.submissions.is_empty()
             || (takes && (self.local.is_ready() || self.local.is_due(now)))
             || match self.below.inline() {
@@ -454,7 +459,14 @@ impl Service {
             || match &self.stream {
                 Some(stream) => {
                     stream.producer.has_work()
-                        || (stream.needs_measure() && self.below.process().settled(stream.producer.streams()))
+                        || (stream.needs_measure()
+                            && self.below.process().settled(
+                                stream
+                                    .producer
+                                    .streams()
+                                    .checked_add(self.below.process().signal_streams())
+                                    .expect("bounded retained streams"),
+                            ))
                 }
                 None => false,
             }
@@ -477,7 +489,9 @@ impl Service {
 
     /// Adopt terminal input and blocked termination signals into the IO pass.
     pub fn adopt_terminal(&mut self, input: kernel::Fd, signals: kernel::Fd) -> Result<(), kernel::Fd> {
-        self.below.process_mut().adopt_terminal(input, signals)
+        self.below.process_mut().adopt_terminal(input, signals)?;
+        self.ending = Ending::Live { shell_closed: false };
+        Ok(())
     }
 
     /// Adopt separate workspace descriptors for delivery IO and its explicit child environment.
@@ -561,20 +575,6 @@ impl Service {
         }
     }
 
-    fn finish_exit(&mut self) {
-        let lower_closed = match self.below.inline() {
-            Some(effects) => effects.closed(),
-            None => true,
-        };
-        if self.shell.room() > 0
-            && self.below.process().closed()
-            && lower_closed
-            && let Some(status) = self.pending_exit.take()
-        {
-            self.shell.push(local::Request::Exit { status });
-        }
-    }
-
     fn route_local(&mut self, now: Time, request: local::Request) {
         match request {
             local::Request::Process(request) => {
@@ -644,21 +644,20 @@ impl Service {
             local::Request::Unanswered { cause, turns, spent, read } => self.unanswered(now, cause, turns, spent, read),
             local::Request::ForcedExit { exit, forced } => self.forced_exit(now, exit, forced),
             local::Request::Exit { status } => {
-                if let Some(stream) = &mut self.stream {
-                    stream.exit = Some(crate::stream::exit(status));
-                }
-                self.pending_exit = Some(status);
+                let shell_closed = match self.ending {
+                    Ending::Live { shell_closed } => shell_closed,
+                    Ending::Closing { .. } | Ending::Closed { .. } => unreachable!("one local last word"),
+                };
+                self.ending = Ending::Closing {
+                    at: now,
+                    exit: status,
+                    close: Close::Graceful,
+                    step: Step::Components,
+                    shell_closed,
+                };
                 self.below.process_mut().close();
                 if let Some(effects) = self.below.inline_mut() {
-                    effects.end(match status {
-                        local::ExitStatus::Accepted => 0,
-                        local::ExitStatus::RunFailed => 1,
-                        local::ExitStatus::Refused => 2,
-                        local::ExitStatus::Credentials { .. } => 3,
-                        local::ExitStatus::Budget => 4,
-                        local::ExitStatus::NeedsInput => 5,
-                        local::ExitStatus::Interrupted => 130,
-                    });
+                    effects.close();
                 }
             }
             local::Request::SaveTurn { number, read, opens_window, turn } => self
@@ -827,6 +826,9 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
         &mut service.local_events,
         &mut service.stream,
     );
+    if service.below.process_mut().take_shutdown() {
+        service.shutdown();
+    }
     service.drain_terminal();
     service.start_captured();
     service.process_terminals();
@@ -843,7 +845,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
         effects.down();
     }
     service.flush_submissions();
-    service.finish_exit();
+    service.advance_end();
     service.local.reclaim();
 }
 

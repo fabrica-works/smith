@@ -406,6 +406,15 @@ impl Auth {
             out.push(io::Request::Close { entity: socket });
         }
     }
+    /// The stopped credential owner has no remaining protocol work or connection.
+    pub(crate) fn closed(&self) -> bool {
+        self.stopped
+            && !self.pending()
+            && self.listener.is_none()
+            && self.callback.is_none()
+            && self.post.as_ref().is_none_or(Post::closed)
+    }
+
     pub(crate) fn pending(&self) -> bool {
         !self.out.is_empty()
             || self.wants()

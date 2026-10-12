@@ -96,7 +96,7 @@ fn close_room(service: &Service) -> bool {
         && service.llm_below.room() >= llm::MAX_OUT.below
 }
 
-fn components_closed(service: &Service) -> bool {
+pub(super) fn components_closed(service: &Service) -> bool {
     let streams = match &service.events {
         Some(events) => events.sinks.open_streams(),
         None => 0,
@@ -188,7 +188,7 @@ pub(super) fn work_pending(service: &Service) -> bool {
         Teardown::Live | Teardown::Closed { .. } | Teardown::Closing { step: Step::Usage, .. } => false,
         Teardown::Answered { .. } => close_room(service),
         Teardown::Closing { step: Step::Components, .. } => {
-            (components_closed(service) && service.io_requests.room() > 0)
+            (components_closed(service) && owner_ended(service) && service.io_requests.room() > 0)
                 || (!service.roots.is_empty()
                     && service.owners.is_empty()
                     && service.pipe_routes.is_empty()
@@ -200,6 +200,10 @@ pub(super) fn work_pending(service: &Service) -> bool {
         Teardown::Closing { step: Step::Stream, .. } => stream_closed(service) && service.io_requests.room() > 0,
         Teardown::Closing { step: Step::Signals, .. } => service.signals.is_none() && stream_closed(service),
     }
+}
+
+fn owner_ended(service: &Service) -> bool {
+    service.domain.is_some() || service.product_exit.is_some() || service.events.is_none()
 }
 
 pub(super) fn advance(service: &mut Service) {
@@ -237,7 +241,7 @@ pub(super) fn advance(service: &mut Service) {
         }
         Teardown::Closing { at, answer, close, step: Step::Components } => {
             close_roots(service);
-            if components_closed(service) && service.io_requests.room() > 0 {
+            if components_closed(service) && owner_ended(service) && service.io_requests.room() > 0 {
                 let step = match &service.events {
                     Some(_) => {
                         service.io_requests.push(io::Request::Usage { owner: USAGE_OWNER });

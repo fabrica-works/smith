@@ -68,6 +68,12 @@ struct PlainScan {
 }
 
 #[derive(Debug)]
+struct Closing {
+    roots: u32,
+    shutdown_pending: bool,
+}
+
+#[derive(Debug)]
 pub(crate) struct ProcessAdapter {
     limits: ProcessLimits,
     launch: Launch,
@@ -106,7 +112,8 @@ pub(crate) struct ProcessAdapter {
     terminal_input: Option<Token>,
     terminal_reading: local::Reading,
     signals: Option<Token>,
-    closing: Option<u32>,
+    closing: Option<Closing>,
+    signal_operation: Option<Token>,
     close_root_pending: bool,
 }
 
@@ -162,6 +169,7 @@ impl ProcessAdapter {
             terminal_reading: local::Reading::Open,
             signals: None,
             closing: None,
+            signal_operation: None,
             close_root_pending: false,
         })
     }
@@ -297,12 +305,48 @@ impl ProcessAdapter {
         if self.closing.is_some() {
             return;
         }
-        self.closing = Some(u32::try_from(self.file_roots.len()).expect("admitted root count"));
+        self.closing = Some(Closing {
+            roots: u32::try_from(self.file_roots.len()).expect("admitted root count"),
+            shutdown_pending: false,
+        });
         if let Some(entity) = self.terminal_input {
             self.io_requests.push(io::Request::Close { entity });
         }
+    }
+
+    fn closing_roots(&self) -> u32 {
+        match &self.closing {
+            Some(closing) => closing.roots,
+            None => 0,
+        }
+    }
+
+    pub(crate) fn signal_streams(&self) -> u32 {
+        u32::from(self.signals.is_some())
+    }
+
+    pub(crate) fn close_signals(&mut self) {
         if let Some(entity) = self.signals {
             self.io_requests.push(io::Request::Close { entity });
+        }
+    }
+
+    pub(crate) fn take_shutdown(&mut self) -> bool {
+        match &mut self.closing {
+            Some(closing) => core::mem::replace(&mut closing.shutdown_pending, false),
+            None => false,
+        }
+    }
+
+    pub(crate) fn abort_stream(&mut self, trace: &mut Option<crate::stream::Spawned>) {
+        if let Some(trace) = trace {
+            trace.producer.sinks().abort(&mut self.io_requests);
+        }
+    }
+
+    pub(crate) fn abort(&mut self) {
+        if let Some(entity) = self.terminal_input {
+            self.io_requests.push(io::Request::Abort { entity });
         }
     }
 
@@ -311,14 +355,15 @@ impl ProcessAdapter {
     }
 
     pub(crate) fn settled(&self, streams: u32) -> bool {
-        self.closing == Some(0)
+        self.closing.is_some()
+            && self.closing_roots() == 0
             && self.io.sockets() == streams
             && self.store.is_none()
             && self.store_requests.is_empty()
             && self.store_actions.is_empty()
             && self.files.takes()
             && self.files.open_files() == 0
-            && self.operations.is_empty()
+            && self.operations.len() == u32::from(self.signal_operation.is_some())
             && self.file_requests.is_empty()
             && self.file_events.is_empty()
             && self.io_requests.is_empty()
@@ -542,7 +587,7 @@ impl ProcessAdapter {
             || !self.io_submissions.is_empty()
             || !self.file_submissions.is_empty()
             || self.files.is_due(now)
-            || (self.closing.unwrap_or(0) > 0 && self.files.takes() && !self.close_root_pending)
+            || (self.closing_roots() > 0 && self.files.takes() && !self.close_root_pending)
     }
 
     pub(crate) const fn failed(&self) -> bool {
@@ -563,6 +608,9 @@ impl ProcessAdapter {
                 break;
             }
             let Some(complete) = self.completions.pop() else { break };
+            if self.signal_operation == Some(complete.op) {
+                self.signal_operation = None;
+            }
             let route = self.operations.remove(&complete.op).expect("one route per submitted kernel operation");
             match route {
                 Operation::Io(op) => io::up(
@@ -668,7 +716,13 @@ impl ProcessAdapter {
             }
             match event {
                 io::Event::Resized | io::Event::Window { .. } => {}
-                io::Event::Shutdown { .. } => terminal.interrupt(terminal_events),
+                io::Event::Shutdown { .. } => {
+                    if let Some(closing) = &mut self.closing {
+                        closing.shutdown_pending = true;
+                    } else {
+                        terminal.interrupt(terminal_events);
+                    }
+                }
                 io::Event::Stream { owner, up } if Some(owner) == self.terminal_input => match up {
                     stream::Up::Bytes(bytes) => {
                         for byte in bytes {
@@ -684,7 +738,8 @@ impl ProcessAdapter {
                     stream::Up::End | stream::Up::Failed(_) => terminal.closed(terminal_events),
                     stream::Up::Room => unreachable!("read-only terminal asks for no output room"),
                 },
-                io::Event::Closed { owner } if Some(owner) == self.terminal_input || Some(owner) == self.signals => {}
+                io::Event::Closed { owner } if Some(owner) == self.terminal_input => self.terminal_input = None,
+                io::Event::Closed { owner } if Some(owner) == self.signals => self.signals = None,
                 other @ (io::Event::Listening { .. }
                 | io::Event::Accepted { .. }
                 | io::Event::Connecting { .. }
@@ -769,7 +824,8 @@ impl ProcessAdapter {
     ) {
         let now = env.now;
         if let Some(trace) = trace {
-            if self.settled(trace.producer.streams()) {
+            if self.settled(trace.producer.streams().checked_add(self.signal_streams()).expect("bounded signal stream"))
+            {
                 trace.measure(&mut self.io_requests);
             }
             trace.producer.sinks().down(&mut self.io_requests);
@@ -810,14 +866,14 @@ impl ProcessAdapter {
                 &mut self.file_submissions,
             );
         }
-        if self.closing.unwrap_or(0) > 0
+        if self.closing_roots() > 0
             && !self.close_root_pending
             && self.files.takes()
             && self.file_submissions.room() >= 2
             && self.file_events.room() > 0
         {
-            let position = self.closing.expect("closing roots").checked_sub(1).expect("positive roots to close");
-            self.closing = Some(position);
+            let position = self.closing_roots().checked_sub(1).expect("positive roots to close");
+            self.closing.as_mut().expect("closing roots").roots = position;
             let root =
                 *self.file_roots.get(usize::try_from(position).expect("root position fits")).expect("adopted root");
             self.close_root_pending = true;
@@ -871,6 +927,10 @@ impl ProcessAdapter {
             }
             other => other,
         };
+        if let kernel::Op::ReadSignal { .. } = &kind {
+            assert!(self.signal_operation.is_none(), "one retained signal read");
+            self.signal_operation = Some(global);
+        }
         let route = if file { Operation::File(submit.op) } else { Operation::Io(submit.op) };
         self.operations.insert(global, route).expect("reserved kernel route");
         self.submissions.push(kernel::Submit { op: global, kind });

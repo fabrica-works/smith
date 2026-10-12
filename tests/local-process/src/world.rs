@@ -352,6 +352,7 @@ pub struct Scenario {
     pub commands: Vec<Action>,
     pub ending: Ending,
     pub interrupt_on_query: bool,
+    pub terminate_on_output_end: bool,
     pub authentication: Option<Authentication>,
 }
 /// Simulated configuration and the settled shared-harness result.
@@ -613,6 +614,7 @@ impl World {
                 commands,
                 ending,
                 interrupt_on_query,
+                terminate_on_output_end: false,
                 authentication: None,
             },
             machine: Some(Machine {
@@ -752,7 +754,11 @@ impl World {
         );
         // The terminal owns a fresh handle, never the machine's master.
         world.spawn_root(skein_sim::Handle::new(terminal_root.raw()), |root| {
-            Proc::Terminal(Box::new(Terminal::configured(root, self.scenario.commands.clone(), launch.arguments())))
+            let mut terminal = Terminal::configured(root, self.scenario.commands.clone(), launch.arguments());
+            if self.scenario.terminate_on_output_end {
+                terminal.terminate_when_output_ends();
+            }
+            Proc::Terminal(Box::new(terminal))
         });
         world.spawn(|| Proc::Peer(Box::new(self.scenario.provider())));
         if launch.authenticated {

@@ -32,6 +32,13 @@ enum Route {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum Terminal {
+    Live,
+    Closing(agent::Close),
+    Closed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Announcement {
     BeforeStart,
     Running,
@@ -75,7 +82,7 @@ pub struct Local {
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     exit: Option<domain::ExitStatus>,
-    closing: bool,
+    terminal: Terminal,
     error: Option<String>,
     errors: Box<dyn Write>,
     announcement: Announcement,
@@ -224,7 +231,7 @@ impl Local {
             completions: Queue::with_capacity(outer_queue),
             submissions: Queue::with_capacity(outer_queue),
             exit: None,
-            closing: false,
+            terminal: Terminal::Live,
             error: None,
             errors,
             announcement: Announcement::BeforeStart,
@@ -342,7 +349,7 @@ impl Local {
     )]
     fn authentication(&mut self) {
         for auth in &mut self.accounts {
-            if self.exit.is_some() {
+            if self.service.closing() {
                 auth.close(self.env.now, self.env.wall, &mut self.requests);
             }
             auth.due(self.env.now);
@@ -440,7 +447,11 @@ impl Local {
                 io::Event::Failed { .. } | io::Event::Stream { up: skein_lib::stream::Up::Failed(_), .. } => {
                     self.write_failed();
                 }
-                io::Event::Closed { .. } => {}
+                io::Event::Closed { owner } => {
+                    if owner == self.output {
+                        self.terminal = Terminal::Closed;
+                    }
+                }
                 other @ (io::Event::Listening { .. }
                 | io::Event::Accepted { .. }
                 | io::Event::Connecting { .. }
@@ -464,7 +475,7 @@ impl Local {
 
     fn writer_down(&mut self) {
         if self.pending.is_none()
-            && !self.closing
+            && self.terminal == Terminal::Live
             && let Some(text) = self.service.output().pop()
         {
             let right = Token::new(self.right);
@@ -476,12 +487,23 @@ impl Local {
                     .push(io::Request::Output { stream: self.output, down: OutputDown::Room { right, bytes } });
             }
         }
-        if self.exit.is_some() && !self.closing && self.pending.is_none() && self.service.output().is_empty() {
-            self.closing = true;
+        if self.service.closing()
+            && self.terminal == Terminal::Live
+            && self.pending.is_none()
+            && self.service.output().is_empty()
+        {
+            self.terminal = Terminal::Closing(agent::Close::Graceful);
             self.requests.push(io::Request::Close { entity: self.output });
             let fd = self.launch_root.take().expect("one launch root");
             self.launch_closing = true;
             self.submit(kernel::Submit { op: Token::new(0), kind: kernel::Op::Close { fd } }, Route::Launch);
+        }
+        match self.terminal {
+            Terminal::Closing(agent::Close::Graceful) if self.service.aborted() => {
+                self.terminal = Terminal::Closing(agent::Close::Aborted);
+                self.requests.push(io::Request::Abort { entity: self.output });
+            }
+            Terminal::Live | Terminal::Closing(_) | Terminal::Closed => {}
         }
         while self.writer.takes() {
             let Some(request) = self.requests.pop() else { break };
@@ -616,6 +638,18 @@ impl Host for Local {
         self.files();
         self.authentication();
         self.writer_down();
+        if self.service.closing()
+            && self.terminal == Terminal::Closed
+            && self.writer.is_empty()
+            && self.accounts.iter().all(Auth::closed)
+            && self.launch_root.is_none()
+            && !self.launch_closing
+            && self.pending.is_none()
+            && self.store_submissions.is_empty()
+            && self.requests.is_empty()
+        {
+            self.service.shell_closed();
+        }
         while let Some(submit) = self.service.submissions().pop() {
             let op = submit.op;
             self.submit(submit, Route::Service(op));
@@ -657,7 +691,7 @@ impl Host for Local {
     }
     fn is_empty(&self) -> bool {
         self.exit.is_some()
-            && self.closing
+            && self.terminal == Terminal::Closed
             && self.writer.is_empty()
             && self.pending.is_none()
             && self.routes.is_empty()

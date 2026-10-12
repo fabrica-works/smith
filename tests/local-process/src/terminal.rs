@@ -47,6 +47,7 @@ pub struct Terminal {
     exit: Option<kernel::Exit>,
     right: u64,
     interrupt: bool,
+    terminate_on_end: bool,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     events: Queue<io::Event>,
@@ -123,6 +124,7 @@ impl Terminal {
             exit: None,
             right: 1,
             interrupt: false,
+            terminate_on_end: false,
             completions: Queue::with_capacity(128),
             submissions: Queue::with_capacity(128),
             events: Queue::with_capacity(128),
@@ -266,6 +268,11 @@ impl Terminal {
         self.exit
     }
 
+    /// Signal the product after its terminal writer reports end of output.
+    pub fn terminate_when_output_ends(&mut self) {
+        self.terminate_on_end = true;
+    }
+
     /// A story schedules the person's signal from a peer observation.
     pub fn interrupt(&mut self) {
         self.interrupt = true;
@@ -309,6 +316,10 @@ impl Terminal {
                 self.read(owner);
             }
             io::Event::Stream { owner, up: Up::End | Up::Failed(_) } => {
+                if Some(owner) == self.output && self.terminate_on_end {
+                    self.interrupt = true;
+                    self.terminate_on_end = false;
+                }
                 self.requests.push(io::Request::Close { entity: owner });
             }
             io::Event::Exited { exit, .. } => {

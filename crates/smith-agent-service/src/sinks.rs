@@ -556,7 +556,8 @@ impl Sinks {
     }
 
     /// Abort each stream that still owes its terminal after the authoritative end.
-    pub(crate) fn abort(&mut self, out: &mut Queue<io::Request>) {
+    /// Abort the remaining destination closes after the process terminal.
+    pub fn abort(&mut self, out: &mut Queue<io::Request>) {
         for index in 0..self.writers.len() {
             let writer = self.writers.get_mut(index).expect("bounded destinations");
             match writer.stream {
