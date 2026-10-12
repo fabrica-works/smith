@@ -288,7 +288,9 @@ Scope: io's `Shutdown` in `Answered` or `Closing` aborts the LLM
 component (skein's owner abort) and turns io's closes in progress into
 `io::Request::Abort`; in `Live` it stays the run's cancel; a second
 means the same. `session.ended` says `aborted`, with a
-`teardown_aborted` notice (events.md, 3.2 and 3.9).
+`teardown_aborted` notice (events.md, 3.2 and 3.9). A signal in
+`Closing`'s stream step, after `session.ended` is written, aborts the
+stream's closes and writes nothing more (decisions.md, 13.34).
 Needs: 06.4.
 Files: `crates/smith-agent-service/src/teardown.rs`, `service.rs:999`,
 `sinks.rs` (:107, :501), `events.rs:184`;

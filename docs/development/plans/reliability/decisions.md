@@ -1023,3 +1023,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    profile inherits: no dependency, every check kept. Not a stripped
    fixture, which would need a tool and a preparation step. The table
    joins 00.s1's Files, for that table only.
+34. **A signal after `session.ended` is written changes no record**
+   (block of 2026-10-12T15:54:32Z, smith 06.5, sent as a design gap).
+   The design settles it, so it is not one. agent.md, section 6:
+   "When all have, it writes `session.ended` and closes the event
+   stream", and "A termination signal after the answer turns every close
+   still in progress into an abort"; events.md, 3.2: "`session.ended`,
+   authoritative, last", "written, once". A signal in `Closing`'s
+   `Components` or `Usage` step comes before the terminal: it says
+   `aborted`, after a `teardown_aborted` notice. A signal in its `Stream`
+   step finds only the stream's closes in progress: they become
+   `io::Request::Abort`, `session.ended` stands as written, and no
+   record follows it, as `sinks.rs:457` asserts. Signals stay read
+   through every `Closing` step, as 06.5's Scope says ("`Answered` or
+   `Closing`"), and no test is added beyond its Test shape.
