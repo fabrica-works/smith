@@ -332,7 +332,17 @@ One run, then exit:
   - **`-o FILE`** also writes the result's text to `FILE`;
   - standard error carries a human status: the chat's name, each tool
     call and its verdict, notices, and a failure in words, with provider
-    text clipped.
+    text clipped;
+  - **the product reads none of its own records.** The result and the
+    status are rendered from what the local host hears of the run, its
+    told turns, its notices and its answer, as a chat's lines are, in
+    either placement of its agent (domain/host.md, section 8). The event
+    stream is only written;
+  - **standard output under `--json`** is the event sink's destination
+    of its own (protocol/events.md, 5.2), adopted by what it is: a
+    regular file as an append stream, a pipe or a terminal as a write
+    stream, each under the stream's write deadline (skein's `io.md`,
+    5.1).
 - **`--chat NAME`** resumes or starts that chat. Without it, the run
   starts a new chat, named in `session.started` and on standard error.
 - **`--ephemeral`** keeps no chat: its files live in a private temporary
