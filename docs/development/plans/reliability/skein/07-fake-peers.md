@@ -68,7 +68,7 @@ items. Codex's decoder takes a provider item index past the blocks it
 holds without an `opened` entry per item (`response.rs:325-330` requires
 `index == self.opened.len()` today).
 Needs: nothing.
-Files: `crates/skein-llm/src/openai/{response.rs,request.rs}`, `crates/skein-llm/src/translate.rs` (13.79),
+Files: `crates/skein-llm/src/openai/{response.rs,request.rs}`, `crates/skein-llm/src/translate.rs` (13.79), new `crates/skein-llm/src/openai/response/reasoning.rs` (13.81),
 `crates/skein-llm/src/anthropic/` (its decoder and encoder); their tests.
 Shape: no new type beyond the block's ordered items.
 Test shape: llm.md section 5's "Reasoning runs" story, both dialects,

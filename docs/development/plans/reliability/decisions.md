@@ -1631,3 +1631,10 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    10.18 stays one increment, at most 950 production lines, its commit
    body giving the count by file, as 13.15 and 13.29 did for 10.1; past
    950 it stops and asks. Rule 9 stands for the rest.
+81. **07.s4's reasoning runs in a module of their own** (block of
+   2026-10-12T20:27:44Z, skein 07.s4). `crates/skein-llm/src/openai/response.rs`
+   is past 800 lines and 07.s4 grows it by about 170; code-organization.md
+   section 8: an increment that needs more "moves its concern into a module
+   of its own". A new `crates/skein-llm/src/openai/response/reasoning.rs`,
+   the ordered items' walk and append and the share's charge for both
+   dialects, joins 07.s4's Files; `Replay` and `Json` stay.
