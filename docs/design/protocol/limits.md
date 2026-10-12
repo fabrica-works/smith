@@ -281,7 +281,10 @@ declarations:
   - its answer once, for its text and its calls' encoded arguments;
   - once more for the decoded arguments and the identifiers copied from
     it, unescaped and at most the answer's bytes in all;
-  - its reasoning items at the dialect's reasoning bound;
+  - its reasoning at skein's share for it, output items × the reasoning
+    bound, each item within that bound. A run of consecutive reasoning
+    items is one block (skein's `llm.md`, section 2), so one block may
+    hold the whole share;
   - a cell per block.
 
   Its reserve is the completion's bytes plus one answer's bytes for the
@@ -316,7 +319,9 @@ them (transcript.md, section 7):
   So one declared number bounds both the completion and the message of
   its results, in the transcript's third version;
 - **a turn's bytes:** from a completion's answer, its calls' inputs, its
-  results at their render bounds and its reasoning items;
+  results at their render bounds and its reasoning, one reasoning block
+  holding at most the completion's share (3.2), which the schema's
+  opaque block holds by rule 6;
 - **a transcript's,** the resume limit: at least one window's turns, as
   a session holds them, and their bytes, since a transcript carries only
   the current window (transcript.md, section 7). Its turns are counted
