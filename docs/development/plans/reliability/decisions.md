@@ -1745,3 +1745,20 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    reproducible by one command; each suite is summarized once, whole, and
    each baseline cut from it. The baseline command's files join 00.21's
    Files; no schema change.
+92. **00.21 removes the legacy teardown helper with its branch** (block
+   of 2026-10-12T21:45:48Z, smith 00.21). Removing `src/run.rs`'s legacy
+   teardown branch leaves `benchmarks/src/run/passive.rs::teardown` (17
+   production lines) used by nothing but one mixed test. development.md
+   8.2: "Removing a mechanism removes all of it". The helper and that
+   test's four teardown assertions go; the test's name and its protected
+   assertions stay; `passive.rs` joins 00.21's Files for that.
+93. **06.s2's story may take 160 world-library lines** (block of
+   2026-10-12T21:45:48Z, smith 06.s2). The diagnostic arm reproduced the
+   silence twice (`probes-slow-completion-c1dab295-20261012T212114Z/03`
+   and `/04`: response 2 `stop: end`, no call, then nothing until the
+   host's cancel). The story of that order needs 144 lines in the world
+   library (a native reasoning and text stop, finishing only if nudged,
+   the reasoning item's admission, and the parent's real turn
+   acknowledgements with one turn outstanding), past README rule 8's 100.
+   Ruling: up to 160 for this one story; it runs once on the parent, and
+   then the fix where it fails.
