@@ -10,29 +10,38 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
-fn version_two_copies_prose_in_one_and_two_read_windows() {
+fn version_three_copies_all_prose_lines_before_finishing() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let file = root.join("tasks/probes/large-write/task.toml");
     let task = smith_bench::check_task(&file, &root.join("../docs/design")).expect("frozen task and seed");
     let oversized = task.with_variant("oversized").expect("oversized variant");
-    assert_eq!(task.version, 2);
+    assert_eq!(task.version, 3);
     assert_eq!(task.budget, oversized.budget);
     assert_eq!(task.smith, oversized.smith);
     assert_eq!(task.budget.seconds, Some(300));
     assert_eq!(task.deadline_seconds, 330);
     assert_eq!(task.smith["read_window"].as_integer(), Some(32768));
     assert_eq!(task.smith["tool_payload"].as_integer(), Some(40960));
-    for (name, expected, windows) in [("source.txt", 32768, 1), ("oversized-source.txt", 50000, 2)] {
+    for (name, expected, windows, lines, prompt) in
+        [("source.txt", 32768, 1, 552, &task.prompt), ("oversized-source.txt", 50000, 2, 827, &oversized.prompt)]
+    {
         let bytes =
             std::fs::read(file.parent().expect("task file has a parent").join("seed").join(name)).expect("seed prose");
         assert_eq!(bytes.len(), expected);
         assert!(bytes.is_ascii());
         assert!(bytes.ends_with(b"This is the end of the source report.\n"));
         assert_eq!(bytes.len().div_ceil(32768), windows);
+        assert_eq!(bytes.iter().filter(|byte| **byte == b'\n').count(), lines);
         assert!(bytes.split(|byte| *byte == b'\n').all(|line| line.len() <= 76));
+        assert!(prompt.contains(&format!("ALL {lines} source lines")));
+        assert!(prompt.contains("remove only those display additions"));
+        assert!(prompt.contains("do not skip or deduplicate any"));
+        assert!(prompt.contains("The final source line is This is the end of the source report."));
     }
     assert!(task.prompt.contains("source.txt") && task.prompt.contains("exactly one write"));
     assert!(oversized.prompt.contains("oversized-source.txt") && oversized.prompt.contains("two read"));
+    assert!(task.prompt.contains("finish with ALPHA only after the write reports written"));
+    assert!(oversized.prompt.contains("finish before both repair tools report success"));
     assert!(task.event.contains(&EventCheck::ToolCall {
         tool: "write".into(),
         count: Some(Count::Exactly(1)),
