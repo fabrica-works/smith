@@ -192,6 +192,13 @@ do not already say.
     work (development.md 8.6: "After a landing, send the report and go
     on"), and the step is `landed`. This replaces 7.3's third check for
     this run.
+11. **Diagnostics never committed** (decisions.md, 13.25). To find the
+    cause of a failure in its own increment, an implementer may add a
+    print or an assertion message in any file of its worktree, run the
+    failing test at most three times in all for that failure, and remove
+    every such line before it commits; `git diff origin/main` shows none of
+    them at `land`. Nothing else is wanted: no scripts, no repeated runs,
+    no observers (development.md 8.2). Past three runs, it stops and asks.
 
 ## Proving what landed
 

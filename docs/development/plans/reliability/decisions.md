@@ -936,4 +936,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `tests/local-process/src/{process.rs,world.rs}` for the second trace
    and its reader, past README rule 8's 60; the second time a world
    library needed more (13.4 was 43), so rule 8's allowance becomes 100.
+25. **Diagnostics in a worktree, never committed** (block of
+   2026-10-12T15:16:15Z, smith 10.1). After the one-off of 13.23 named
+   the leftover child (`smith agent .../agent.json`), 10.1 asked again for
+   a second print, the product's buffered stderr, before the kit's
+   cleanup. Each such print is a question under development.md 8.2, and
+   none of them lands. README rule 11 lets an implementer add them in its
+   worktree, for at most three runs per failure, and remove them before
+   its commit.
 
