@@ -717,4 +717,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `Usage` has or a place among the stream's `PER_ENTITY` operations, is
    the implementer's choice, named in the commit body; the memory test
    that attains `worst_case` stays green, with no new test of its own.
+3. **A lookup the Shape needs, in another crate** (block of
+   2026-10-12T13:26:20Z, smith 04.7). 04.7's Shape gives `header(&[Limit],
+   &channel::Endpoints, &Configuration)`, but `channel::Endpoints` finds a
+   name only by number and dialect (`name_of`, `translate.rs:260`), and
+   the configuration's endpoint has no dialect. Endpoint numbers are
+   unique: the agent's configuration refuses a duplicate
+   (`smith-agent-shell/src/config.rs:368`, "duplicate endpoint name or
+   number"). Ruling: 04.7 adds `Endpoints::name_for(number) ->
+   Option<&[u8]>` beside `name_of`, and keeps the Shape's signature. The
+   third block of the run's first ten minutes on an edit outside Files:
+   README rule 8 gains this case, a lookup or accessor of at most 20 lines
+   that the Shape's signatures need.
 

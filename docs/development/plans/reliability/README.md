@@ -151,9 +151,13 @@ do not already say.
      the same story now produces, its name, steps and other assertions
      unchanged;
    - a call changed to a new signature, passing the value the story
-     already implies.
+     already implies;
+   - a lookup or accessor of at most 20 lines added to a type of another
+     crate of the same repository, when the Shape's signatures need it,
+     the type's fields and other methods unchanged (decisions.md, 13.3).
 
-   The commit body lists those files under "Users outside Files:". For
+   The commit body lists those files and lookups under "Users outside
+   Files:". For
    these edits, this rule replaces development.md 8.2's limits on an edit
    outside Files (20 lines, the session's own files, no expected value
    changed). Any other edit outside Files is still a question: new
