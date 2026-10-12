@@ -114,3 +114,40 @@ fn a_change_is_committed_in_place_with_its_fields_as_the_message() {
         assert!(!world.git_commands().iter().any(|args| args[0].as_ref() == b"push"));
     }
 }
+
+#[test]
+fn a_follow_up_sent_as_the_run_finishes_is_read_once_in_both_placements() {
+    use skein_lib::Token;
+    use smith_local_domain::Fact;
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::finishing(19, &files, placement);
+        world.settle();
+        review(&world.seen(), &world, Ending::Report(b"Second answer".to_vec())).assert_passed(19);
+        let reads = world
+            .facts()
+            .iter()
+            .filter(|fact| matches!(fact, Fact::Answered { read: Some(name), .. } if *name == Token::new(2)))
+            .count();
+        assert_eq!(reads, 1, "the follow-up ends read once");
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+    }
+}
+
+#[test]
+fn an_interrupt_with_a_line_unread_starts_nothing_in_both_placements() {
+    use smith_local_domain::Fact;
+    use smith_local_process_world::terminal::Action;
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::interrupted(21, &files, placement);
+        world.scenario.commands = vec![
+            Action::Send(b"hello\nfollow-up\n".as_slice().into()),
+            Action::Wait(b"Run cancelled".as_slice().into()),
+            Action::Eof,
+        ];
+        world.settle();
+        review(&world.seen(), &world, Ending::Cancelled).assert_passed(21);
+        assert_eq!(world.facts().iter().filter(|fact| matches!(fact, Fact::Started { .. })).count(), 1);
+    }
+}

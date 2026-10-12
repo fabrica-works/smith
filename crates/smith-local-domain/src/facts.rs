@@ -13,7 +13,9 @@ pub enum Fact {
     /// The agent told a turn for the active activation.
     Turn { number: u32 },
     /// The active activation reached one answer.
-    Answered { activation: u64 },
+    Answered { activation: u64, read: Option<Token> },
+    /// The kit reported this named line unread at the answer.
+    Unread { name: Token },
     /// That answer was shown after the durable turn acknowledgements.
     Shown { activation: u64 },
     /// A saved delivery answer was handed to the child run.

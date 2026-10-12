@@ -126,7 +126,7 @@ fn an_answer_shown_before_its_turn_is_durable_is_rejected() {
             Seen::Activation { number: 1, message: 1 },
             Seen::Turn { number: 1 },
             Seen::SaveTurn { number: 1, read: None },
-            Seen::Answered { activation: 1 },
+            Seen::Answered { activation: 1, read: None },
             Seen::Shown { activation: 1 },
         ],
         "the answer is shown after all turns are saved",
@@ -162,8 +162,8 @@ fn a_duplicate_answer_is_rejected() {
     broken(
         vec![
             Seen::Activation { number: 1, message: 1 },
-            Seen::Answered { activation: 1 },
-            Seen::Answered { activation: 1 },
+            Seen::Answered { activation: 1, read: None },
+            Seen::Answered { activation: 1, read: None },
         ],
         "one answer per run",
     );
@@ -174,7 +174,7 @@ fn a_turn_saved_after_the_result_was_shown_is_rejected() {
     broken(
         vec![
             Seen::Activation { number: 1, message: 1 },
-            Seen::Answered { activation: 1 },
+            Seen::Answered { activation: 1, read: None },
             Seen::Shown { activation: 1 },
             Seen::Turn { number: 1 },
         ],
@@ -233,7 +233,7 @@ fn an_unread_line_can_be_relayed_in_the_next_activation() {
     for seen in [
         Seen::Activation { number: 1, message: 1 },
         Seen::Message { name: Token::new(1) },
-        Seen::Answered { activation: 1 },
+        Seen::Answered { activation: 1, read: None },
         Seen::Shown { activation: 1 },
         Seen::Activation { number: 2, message: 1 },
         Seen::Message { name: Token::new(1) },
@@ -241,4 +241,26 @@ fn an_unread_line_can_be_relayed_in_the_next_activation() {
         observe(&mut referee, seen);
     }
     assert!(!matches!(referee.verdict(), Verdict::Failed(_)));
+}
+
+#[test]
+fn a_duplicate_unread_report_is_rejected() {
+    let name = Token::new(1);
+    broken(
+        vec![
+            Seen::Activation { number: 1, message: 1 },
+            Seen::Message { name },
+            Seen::Unread { name },
+            Seen::Unread { name },
+        ],
+        "the unread report comes once",
+    );
+}
+
+#[test]
+fn a_named_line_with_no_terminal_is_rejected_when_its_deadline_expires() {
+    let mut referee = Referee::new(Meeting::default());
+    observe(&mut referee, Seen::Activation { number: 1, message: 1 });
+    referee.fire(Time::from_nanos(skein_lib::Duration::from_secs(3601).as_nanos()), &mut Vec::new());
+    assert!(matches!(referee.verdict(), Verdict::Failed(_)));
 }

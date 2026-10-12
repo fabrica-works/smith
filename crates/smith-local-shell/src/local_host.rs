@@ -298,7 +298,8 @@ impl Local {
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
                 | domain::Request::Lower { .. }
-                | domain::Request::Process(_) => unreachable!("service owns lower effects"),
+                | domain::Request::Process(_)
+                | domain::Request::Input { .. } => unreachable!("service owns lower effects"),
             };
             self.service.local_event(match event {
                 Ok(event) => event,

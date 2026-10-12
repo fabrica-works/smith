@@ -459,3 +459,103 @@ fn closing_input_during_a_refused_start_exits_after_the_notice() {
     let Some(Request::Exit { status: crate::ExitStatus::Accepted }) = out.pop() else { panic!("closed input exits") };
     assert!(out.is_empty());
 }
+
+fn answer_with_a_late_state_save(gone_first: bool) {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    domain.chat.state_pending = true;
+    domain.lines.receive(Box::from(&b"follow-up"[..])).expect("room");
+    domain.lines.name(Token::new(1));
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Answered {
+            client: Token::new(1),
+            answer: host::Answer { read: None, turns: 0, spent: 0, result: host::RunResult::Parked },
+        },
+        &mut out,
+    );
+    assert_eq!(domain.chat.phase, Phase::Answered { gone: super::Gone::Owed });
+    let gone = parent::Request::Gone {
+        client: Token::new(1),
+        end: host::End::Exited { exit: Some(host::Exit::Code(0)), forced: host::Forced::No },
+        detail: Box::new([]),
+    };
+    if gone_first {
+        parent_request(&mut domain, &env, gone, &mut out);
+        assert_eq!(domain.chat.phase, Phase::Answered { gone: super::Gone::Heard });
+        super::state_saved(&mut domain, &env, &mut out);
+    } else {
+        super::state_saved(&mut domain, &env, &mut out);
+        assert_eq!(domain.chat.phase, Phase::Answered { gone: super::Gone::Owed });
+        parent_request(&mut domain, &env, gone, &mut out);
+    }
+    assert_eq!(domain.chat.phase, Phase::Loading);
+    assert_eq!(domain.lines.carry()[0].name, Token::new(1));
+    assert!(!domain.chat.state_pending);
+}
+
+#[test]
+fn a_late_state_save_after_the_answer_is_handled_before_gone() {
+    answer_with_a_late_state_save(false);
+}
+
+#[test]
+fn gone_before_a_late_state_save_keeps_the_line_until_its_save_finishes() {
+    answer_with_a_late_state_save(true);
+}
+
+#[test]
+fn gone_after_a_late_turn_save_shows_the_answer_once() {
+    let (mut domain, env, mut out) = running(crate::tests::config());
+    domain.turns.unsaved.push((1, 1));
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Answered {
+            client: Token::new(1),
+            answer: host::Answer { read: None, turns: 1, spent: 0, result: host::RunResult::Parked },
+        },
+        &mut out,
+    );
+    domain.run = None;
+    super::turn_saved(&mut domain, &env, 1, &mut out);
+    assert_eq!(domain.chat.phase, Phase::Answered { gone: super::Gone::Owed });
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Exited { exit: Some(host::Exit::Code(0)), forced: host::Forced::No },
+            detail: Box::new([]),
+        },
+        &mut out,
+    );
+    assert_eq!(domain.chat.phase, Phase::Loading);
+    assert_eq!(shown_requests(&mut out), 1);
+}
+
+fn shown_requests(out: &mut Queue<Request>) -> u32 {
+    let mut shown = 0_u32;
+    for _ in 0..out.capacity() {
+        match out.pop() {
+            Some(Request::Show { .. }) => shown = shown.checked_add(1).expect("bounded output"),
+            Some(
+                Request::Input { .. }
+                | Request::Notice { .. }
+                | Request::Answered { .. }
+                | Request::Load
+                | Request::SaveState { .. }
+                | Request::SaveTurn { .. }
+                | Request::SaveDelivery { .. }
+                | Request::Git { .. }
+                | Request::PlainStatus { .. }
+                | Request::Credential { .. }
+                | Request::Exit { .. }
+                | Request::Lower { .. }
+                | Request::Process(_),
+            ) => {}
+            None => break,
+        }
+    }
+    shown
+}

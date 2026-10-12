@@ -24,7 +24,6 @@ pub(super) fn config() -> Config {
         models: 1,
         line_bytes: 256,
         show_bytes: 1024,
-        lines: 8,
         unsaved: 2,
         facts: 16,
     };

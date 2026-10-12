@@ -509,7 +509,7 @@ fn a_crash_before_a_turn_is_saved_resumes_from_the_turn_before_with_a_new_activa
     let stored = first.into_store();
     assert_eq!(stored.turns(), 1, "the second turn did not reach durable storage");
     let identity = stored.identity().expect("first activation identity durable");
-    assert!(stored.read().is_none(), "the first turn did not yet read the person's line");
+    assert_eq!(stored.read(), Some(skein_lib::Token::new(1)), "the first turn read the carried person line");
 
     let mut second = World::with_store(26, stored);
     second.line(b"Continue");

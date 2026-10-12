@@ -14,25 +14,25 @@ use crate::boundary::{
     ChatState, DeliveryIntent, DeliveryRecord, DeliveryState, Event, ExitStatus, GitOp, GitResult, Request,
     StoreFailure,
 };
-use crate::chat::{Chat, Phase};
+use crate::chat::{Chat, Gone, Phase};
 use crate::credentials::Grants;
 use crate::delivery::{InPlace, Stage, Step, commit_message};
-use crate::person::Line;
+use crate::person::Lines;
 use crate::turns::Turns;
 use crate::{AgentLimits, Config, Fact, Invalid, Limits, charter};
 
 /// Upper bound on local output from one event or ready child step.
 #[must_use]
 pub fn max_out(limits: &Limits) -> u32 {
-    limits.agent.max_out().saturating_mul(4).saturating_add(limits.lines).saturating_add(8)
+    limits.agent.max_out().saturating_mul(4).saturating_add(limits.smith.run.messages).saturating_add(8)
 }
 
 /// One local chat and its inline or spawned agent behind the parent face.
 #[derive(Debug)]
 pub struct Domain {
-    config: Config,
+    pub(crate) config: Config,
     agent: Agent,
-    chat: Chat,
+    pub(crate) chat: Chat,
     transcript: Option<agent::Transcript>,
     records: Map<agent::run::CallName, DeliveryRecord>,
     delivery: Option<InPlace>,
@@ -43,22 +43,21 @@ pub struct Domain {
     heads: Map<u32, Box<[u8]>>,
     own_heads: Map<u32, Box<[u8]>>,
     head_survey: HeadSurvey,
-    raw_lines: Queue<Box<[u8]>>,
-    line: Option<Line>,
-    run_message: Option<host::Message>,
+    pub(crate) lines: Lines,
+    run_messages: Queue<host::Message>,
     grants: Grants,
     grant_failed: Option<u32>,
-    run: Option<Token>,
-    turns: Turns,
+    pub(crate) run: Option<Token>,
+    pub(crate) turns: Turns,
     held: Queue<Held>,
-    stop_failed: bool,
-    end_cause: Option<crate::EndCause>,
-    cancel_requested: Option<Time>,
+    pub(crate) stop_failed: bool,
+    pub(crate) end_cause: Option<crate::EndCause>,
+    pub(crate) cancel_requested: Option<Time>,
     agent_failed: bool,
-    agent_life: AgentLife,
-    show_bytes: u32,
+    pub(crate) agent_life: AgentLife,
+    pub(crate) show_bytes: u32,
     long: crate::long::Long,
-    wall_deadline: Option<Time>,
+    pub(crate) wall_deadline: Option<Time>,
     facts: Queue<Fact>,
     facts_lost: u64,
 }
@@ -71,7 +70,7 @@ pub(crate) struct Held {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum AgentLife {
+pub(crate) enum AgentLife {
     Starting,
     Gone,
 }
@@ -154,9 +153,9 @@ impl Domain {
                 AgentLimits::Spawned(child)
             }
         };
-        let mut raw_lines = Queue::with_capacity(limits.lines);
+        let mut lines = Lines::new(limits.smith.run.messages);
         match &mut config.mode {
-            crate::Mode::Headless { prompt } => raw_lines.push(mem::replace(prompt, Box::new([]))),
+            crate::Mode::Headless { prompt } => lines.receive(mem::replace(prompt, Box::new([]))).expect("one prompt"),
             crate::Mode::Chat { .. } => {}
         }
         Ok(Domain {
@@ -173,9 +172,8 @@ impl Domain {
             heads: Map::with_capacity(limits.smith.run.directories),
             own_heads: Map::with_capacity(limits.smith.run.directories),
             head_survey: HeadSurvey::NotStarted,
-            raw_lines,
-            line: None,
-            run_message: None,
+            lines,
+            run_messages: Queue::with_capacity(limits.smith.run.messages.saturating_add(1)),
             grants: Grants::new(limits.smith.accounts),
             grant_failed: None,
             run: None,
@@ -253,17 +251,13 @@ impl Domain {
 
     /// The actual inline parent message, before its run receipt reaches the service.
     pub fn pop_run_message(&mut self) -> Option<host::Message> {
-        self.run_message.take()
+        self.run_messages.pop()
     }
 
     /// Current run policy for its service's event producer.
     #[must_use]
     pub fn charter(&self) -> (agent::run::Charter, u64) {
-        let messages = match self.config.mode {
-            crate::Mode::Chat { .. } => 0,
-            crate::Mode::Headless { .. } => u64::from(self.line.is_some()),
-        };
-        (charter(&self.config), messages)
+        (charter(&self.config), self.lines.named_count())
     }
 
     fn pressured(&self) -> bool {
@@ -273,6 +267,7 @@ impl Domain {
 
 /// Handle one typed event and its immediate child handoffs.
 pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
+    let reading = domain.lines.reading();
     drain_agent_content(domain, env);
     match event {
         Event::Line { text } => receive_line(domain, env, text, out),
@@ -293,6 +288,9 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     }
     route_agent(domain, env, out);
     release_held(domain, env, out);
+    if reading != domain.lines.reading() {
+        out.push(Request::Input { reading: domain.lines.reading() });
+    }
 }
 
 /// Release duplicate capture content and inline lifecycle observations.
@@ -387,28 +385,28 @@ fn receive_line(domain: &mut Domain, env: &Env<Limits>, text: Box<[u8]>, out: &m
         out.push(Request::Notice { notice: Notice::NotDelivered { line: None, why: Undelivered::TooLong } });
         return;
     }
-    if domain.raw_lines.try_push(text).is_err() {
-        out.push(Request::Notice { notice: Notice::NotDelivered { line: None, why: Undelivered::Full } });
-        return;
-    }
+    domain.lines.receive(text).expect("input is held at the inbox plus the completed line");
     dispatch_line(domain, env, out);
 }
 
 fn dispatch_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    if domain.line.is_some() || domain.chat.state_pending || domain.chat.closed {
+    if domain.chat.state_pending || domain.lines.is_empty() {
         return;
     }
     match domain.chat.phase {
         Phase::Idle | Phase::Running => {}
-        Phase::Loading | Phase::Starting | Phase::Ending | Phase::Done => return,
+        Phase::Loading | Phase::Starting | Phase::Ending | Phase::Answered { .. } | Phase::Done => return,
     }
-    let Some(text) = domain.raw_lines.pop() else { return };
-    let Some(next_message) = domain.chat.state.next_message.checked_add(1) else {
-        stop_names(domain, out);
+    if domain.lines.received() {
+        let Some(next_message) = domain.chat.state.next_message.checked_add(1) else {
+            stop_names(domain, out);
+            return;
+        };
+        domain.chat.state.next_message = next_message;
+        domain.lines.name(Token::new(next_message));
+    } else if domain.chat.phase == Phase::Running {
         return;
-    };
-    domain.chat.state.next_message = next_message;
-    domain.line = Some(Line { name: Token::new(next_message), text });
+    }
     if domain.chat.phase == Phase::Idle {
         let Some(activation) = domain.chat.state.activation.checked_add(1) else {
             stop_names(domain, out);
@@ -491,7 +489,7 @@ fn resume_loading(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Reques
     }
     domain.chat.phase = Phase::Idle;
     domain.chat.load_requested = false;
-    if domain.chat.closed {
+    if domain.chat.closed && domain.lines.is_empty() {
         domain.chat.phase = Phase::Done;
         let status = match domain.config.mode {
             crate::Mode::Headless { .. } => crate::end::exit_status(domain.end_cause),
@@ -506,6 +504,7 @@ fn resume_loading(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Reques
 fn state_saved(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     assert!(domain.chat.state_pending, "StateSaved answers one SaveState");
     domain.chat.state_pending = false;
+    domain.lines.saved();
     match domain.chat.phase {
         Phase::Starting => {
             domain.chat.start_saved = true;
@@ -515,9 +514,8 @@ fn state_saved(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             send_line(domain, env, out);
             dispatch_line(domain, env, out);
         }
-        Phase::Loading | Phase::Idle | Phase::Ending | Phase::Done => {
-            unreachable!("SaveState is emitted only while starting or running");
-        }
+        Phase::Answered { .. } => crate::person::finish_answer(domain, out),
+        Phase::Ending | Phase::Loading | Phase::Idle | Phase::Done => {}
     }
 }
 
@@ -543,6 +541,7 @@ fn credential(domain: &mut Domain, env: &Env<Limits>, grant: agent::Grant, out: 
                 },
             },
         ),
+        Phase::Answered { .. } => {}
         Phase::Loading | Phase::Idle | Phase::Done => unreachable!("grant answers a live account request"),
     }
 }
@@ -558,12 +557,19 @@ fn no_credential(domain: &mut Domain, env: &Env<Limits>, account: u32, out: &mut
         Phase::Running | Phase::Ending => {
             out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::NotRefreshed)) });
         }
+        Phase::Answered { .. } => {}
         Phase::Loading | Phase::Idle | Phase::Done => unreachable!("missing grant answers a live account request"),
     }
 }
 
 fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     if domain.chat.phase != Phase::Starting || !domain.chat.start_saved || domain.grants.awaiting > 0 {
+        return;
+    }
+    if domain.cancel_requested.is_some() {
+        crate::person::show_dropped(&mut domain.lines, out);
+        domain.chat.phase = Phase::Done;
+        out.push(Request::Exit { status: ExitStatus::Interrupted });
         return;
     }
     if domain.chat.closed {
@@ -578,7 +584,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     }
     if let Some(account) = domain.grant_failed {
         domain.chat.phase = Phase::Idle;
-        domain.line = None;
+        crate::person::show_dropped(&mut domain.lines, out);
         out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Unavailable)) });
         match domain.config.mode {
             crate::Mode::Headless { .. } => {
@@ -623,18 +629,10 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.agent_failed = false;
     domain.end_cause = None;
     domain.cancel_requested = None;
-    let messages = match domain.config.mode {
-        crate::Mode::Headless { .. } => match domain.line.take() {
-            Some(line) => {
-                Box::from([host::Message { name: line.name, label: Box::from(crate::person::LABEL), text: line.text }])
-            }
-            None => Box::<[host::Message]>::default(),
-        },
-        crate::Mode::Chat { .. } => Box::<[host::Message]>::default(),
-    };
-    let mut initial = None;
+    let messages = domain.lines.carry();
+    let mut initial = List::with_capacity(env.limits.smith.run.messages.saturating_add(1));
     for message in &messages {
-        initial = Some(message.name);
+        initial.push(message.name).expect("bounded carried lines");
         observe_initial_message(domain, message);
     }
     let source = RunStart {
@@ -654,14 +652,15 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
         Err(_) => {
             domain.agent_failed = true;
             domain.agent_life = AgentLife::Gone;
+            crate::person::show_dropped(&mut domain.lines, out);
             out.push(Request::Notice { notice: Notice::Failure(Failure::NotStarted) });
             out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         }
     }
     domain.chat.phase = Phase::Running;
     observe(domain, Fact::Started { activation: domain.chat.state.activation });
-    if let Some(name) = initial {
-        observe(domain, Fact::Message { name });
+    for name in &initial {
+        observe(domain, Fact::Message { name: *name });
     }
 }
 
@@ -673,7 +672,7 @@ fn finish_failed_start(domain: &mut Domain, out: &mut Queue<Request>) {
 
 fn observe_initial_message(domain: &mut Domain, message: &host::Message) {
     match &domain.agent {
-        Agent::Inline { .. } => domain.run_message = Some(message.clone()),
+        Agent::Inline { .. } => domain.run_messages.push(message.clone()),
         Agent::Spawned { .. } => {}
     }
 }
@@ -718,8 +717,9 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
         }
         GitResult::Head { .. } | GitResult::Failed { .. } => {
             domain.chat.phase = Phase::Idle;
-            domain.line = None;
+            crate::person::show_dropped(&mut domain.lines, out);
             out.push(Request::Notice { notice: Notice::Failure(Failure::HeadUnavailable) });
+            finish_failed_start(domain, out);
         }
         GitResult::Status { .. }
         | GitResult::Inspected { .. }
@@ -733,26 +733,21 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
 }
 
 fn send_line(domain: &mut Domain, env: &Env<Limits>, _out: &mut Queue<Request>) {
-    let Some(run) = domain.run else { return };
-    let Some(line) = domain.line.take() else { return };
-    match &domain.agent {
-        Agent::Inline { .. } => {
-            assert!(domain.run_message.is_none(), "the service drains between local entrances");
-            domain.run_message = Some(host::Message {
-                name: line.name,
-                label: Box::from(crate::person::LABEL),
-                text: line.text.clone(),
-            });
-        }
-        Agent::Spawned { .. } => {}
+    if domain.chat.phase != Phase::Running {
+        return;
     }
-    command(
-        &mut domain.agent,
-        env.now,
-        env.wall,
-        parent::Event::Message { agent: run, name: line.name, label: Box::from(crate::person::LABEL), text: line.text },
-    );
-    observe(domain, Fact::Message { name: line.name });
+    let Some(run) = domain.run else { return };
+    for message in domain.lines.relay(false) {
+        let name = message.name;
+        observe_initial_message(domain, &message);
+        command(
+            &mut domain.agent,
+            env.now,
+            env.wall,
+            parent::Event::Message { agent: run, name, label: message.label, text: message.text },
+        );
+        observe(domain, Fact::Message { name });
+    }
 }
 
 fn turn_saved(domain: &mut Domain, env: &Env<Limits>, number: u32, out: &mut Queue<Request>) {
@@ -782,7 +777,7 @@ fn turn_saved(domain: &mut Domain, env: &Env<Limits>, number: u32, out: &mut Que
             domain.chat.phase = Phase::Done;
             out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         } else {
-            finish_answer(domain, out);
+            crate::person::finish_answer(domain, out);
         }
     }
 }
@@ -805,7 +800,11 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
                 command(&mut domain.agent, env.now, env.wall, parent::Event::Stop { agent: run });
             }
         }
-        Phase::Loading | Phase::Starting | Phase::Ending | Phase::Done => domain.chat.closed = true,
+        Phase::Starting => {
+            domain.chat.closed = true;
+            domain.cancel_requested = Some(env.now);
+        }
+        Phase::Loading | Phase::Ending | Phase::Answered { .. } | Phase::Done => domain.chat.closed = true,
     }
 }
 
@@ -815,7 +814,7 @@ fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
         crate::Mode::Chat { .. } => {}
     }
     domain.chat.closed = true;
-    if domain.chat.phase == Phase::Idle {
+    if domain.chat.phase == Phase::Idle && domain.lines.is_empty() {
         domain.chat.phase = Phase::Done;
         out.push(Request::Exit { status: ExitStatus::Accepted });
     }
@@ -832,6 +831,7 @@ fn drop_run(domain: &mut Domain, env: &Env<Limits>) {
         return;
     }
     if let Some(run) = domain.run {
+        domain.cancel_requested = Some(env.now);
         record_cause(domain, crate::EndCause::Cancelled);
         domain.chat.phase = Phase::Ending;
         domain.wall_deadline = None;
@@ -851,8 +851,8 @@ fn store_failed(
     }
     record_cause(domain, crate::EndCause::Host { turn, reason });
     domain.stop_failed = true;
+    crate::person::show_dropped(&mut domain.lines, out);
     domain.chat.closed = true;
-    domain.wall_deadline = None;
     domain.turns.unsaved = Queue::with_capacity(env.limits.unsaved);
     out.push(Request::Notice { notice: Notice::Failure(Failure::Store { turn, reason }) });
     if let Some(record) = domain.saving.take() {
@@ -928,6 +928,7 @@ fn accept_turn(
     assert!(domain.turns.unsaved.room() > 0, "store backpressure bounds unsaved turns");
     let shown = crate::person::turn_text(&turn, env.limits.show_bytes);
     domain.turns.unsaved.push((number, turn.sequence));
+    domain.lines.fence(read);
     domain.chat.state.read = read;
     observe(domain, Fact::Turn { number });
     out.push(Request::SaveTurn { number, read, opens_window, turn });
@@ -948,13 +949,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
         parent::Request::Turn { turn, .. } => {
             accept_turn(domain, env, turn.number, turn.read, turn.opens_window, turn.body.into_value(), out);
         }
-        parent::Request::Answered { answer, .. } => {
-            observe(domain, Fact::Answered { activation: domain.chat.state.activation });
-            domain.turns.answer = Some(answer);
-            if domain.turns.unsaved.is_empty() {
-                finish_answer(domain, out);
-            }
-        }
+        parent::Request::Answered { answer, .. } => crate::person::answered(domain, answer, out),
         parent::Request::Waiting { .. } => out.push(Request::Notice { notice: Notice::Waiting }),
         parent::Request::Long { operation, .. } => {
             if domain.long.begin(operation) {
@@ -995,7 +990,12 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                 },
             ),
         },
-        parent::Request::Withdrawn { .. } | parent::Request::Told { .. } | parent::Request::Unread { .. } => {}
+        parent::Request::Withdrawn { .. } | parent::Request::Told { .. } => {}
+        parent::Request::Unread { names, .. } => {
+            for name in names {
+                observe(domain, Fact::Unread { name });
+            }
+        }
         parent::Request::Faulted { fault, .. } => {
             let dropped = match fault {
                 host::Fault::Exited => match env.limits.agent {
@@ -1009,16 +1009,22 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             failed_child(domain, out);
         }
         parent::Request::MessageRefused { name, reason, .. } => {
+            domain.lines.refused(name);
             out.push(Request::Notice {
                 notice: Notice::NotDelivered { line: Some(name), why: Undelivered::Refused(reason) },
             });
         }
         parent::Request::Gone { .. } => {
             domain.agent_life = AgentLife::Gone;
+            match domain.chat.phase {
+                Phase::Answered { .. } => domain.chat.phase = Phase::Answered { gone: Gone::Heard },
+                Phase::Loading | Phase::Idle | Phase::Starting | Phase::Running | Phase::Ending | Phase::Done => {}
+            }
             domain.run = None;
             if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
                 record_cause(domain, crate::EndCause::Agent);
                 domain.agent_failed = true;
+                crate::person::show_dropped(&mut domain.lines, out);
                 out.push(Request::Notice { notice: Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)) });
             }
             if domain.turns.unsaved.is_empty() {
@@ -1026,7 +1032,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
                     domain.chat.phase = Phase::Done;
                     out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
                 } else if domain.turns.answer.is_some() {
-                    finish_answer(domain, out);
+                    crate::person::finish_answer(domain, out);
                 }
             }
         }
@@ -1035,6 +1041,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
 
 fn failed_child(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.agent_failed = true;
+    crate::person::show_dropped(&mut domain.lines, out);
     if !domain.stop_failed {
         let end = match domain.end_cause {
             Some(crate::EndCause::Cancelled) => AgentEnd::Dropped,
@@ -1045,44 +1052,6 @@ fn failed_child(domain: &mut Domain, out: &mut Queue<Request>) {
     if domain.turns.unsaved.is_empty() && domain.agent_life == AgentLife::Gone {
         domain.chat.phase = Phase::Done;
         out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
-    }
-}
-
-fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
-    if domain.agent_life != AgentLife::Gone {
-        return;
-    }
-    let Some(answer) = domain.turns.answer.take() else { return };
-    if domain.stop_failed {
-        domain.run = None;
-        domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
-        return;
-    }
-    observe(domain, Fact::Shown { activation: domain.chat.state.activation });
-    let status = match domain.config.mode {
-        crate::Mode::Headless { .. } => {
-            crate::end::answer_status(&answer, domain.config.models.first().expect("configured main").account)
-        }
-        crate::Mode::Chat { .. } => ExitStatus::Accepted,
-    };
-    let text = crate::agent::answer_text(&answer);
-    out.push(Request::Show { text: crate::person::bounded_text(&text, domain.show_bytes) });
-    out.push(Request::Answered { answer });
-    domain.run = None;
-    domain.wall_deadline = None;
-    domain.line = None;
-    let headless = match domain.config.mode {
-        crate::Mode::Headless { .. } => true,
-        crate::Mode::Chat { .. } => false,
-    };
-    if domain.chat.closed || headless {
-        domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status });
-    } else {
-        domain.chat.phase = Phase::Loading;
-        domain.chat.load_requested = true;
-        out.push(Request::Load);
     }
 }
 
@@ -1105,7 +1074,7 @@ fn held_completion(domain: &Domain, owner: Token) -> bool {
     false
 }
 
-fn observe(domain: &mut Domain, fact: Fact) {
+pub(crate) fn observe(domain: &mut Domain, fact: Fact) {
     if domain.facts.try_push(fact).is_err() {
         domain.facts_lost = domain.facts_lost.saturating_add(1);
     }
@@ -1835,6 +1804,7 @@ fn reconcile_git(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: G
 
 fn recovery_unknown(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.stop_failed = true;
+    crate::person::show_dropped(&mut domain.lines, out);
     domain.chat.phase = Phase::Done;
     out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
 }

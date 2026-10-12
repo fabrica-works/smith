@@ -95,7 +95,8 @@ impl Expectations for Meeting {
                     );
                     self.next_turn += 1;
                 }
-                Fact::Answered { activation } => {
+                Fact::Unread { .. } => {}
+                Fact::Answered { activation, .. } => {
                     judge
                         .check(self.activation == Some(activation) && !self.answered, "one answer for this activation");
                     self.answered = true;

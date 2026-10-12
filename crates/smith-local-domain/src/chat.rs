@@ -19,8 +19,16 @@ pub(crate) enum Phase {
     Running,
     /// A cancellation was sent; the child's answer is still owed.
     Ending,
+    /// The answer arrived; saves and the child end may still be owed.
+    Answered { gone: Gone },
     /// Final exit was emitted.
     Done,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Gone {
+    Owed,
+    Heard,
 }
 
 /// Durable metadata and one invocation's phase.

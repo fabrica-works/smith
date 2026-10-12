@@ -26,7 +26,6 @@ pub(super) fn limits() -> Limits {
         models: 2,
         line_bytes: 256,
         show_bytes: 1024,
-        lines: 8,
         unsaved: 2,
         facts: 16,
     }
@@ -336,6 +335,9 @@ pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Req
     };
     assert_eq!(window.turns, limits.unsaved, "advertised credit fits the durable save queue");
     assert_eq!(start.activation, 1);
+    assert_eq!(start.messages[0].name, Token::new(1));
+    assert_eq!(start.messages[0].label.as_ref(), b"person");
+    assert_eq!(start.messages[0].text.as_ref(), b"hello");
     assert_eq!(start.grants.len(), 1);
     assert_eq!(start.charter.into_value().instructions.as_ref(), b"Assist the person");
     assert!(match out.pop() {
@@ -358,20 +360,10 @@ pub(super) fn spawned_chat_with_saved_hello() -> (Domain, Env<Limits>, Queue<Req
         &mut out,
     );
     let outputs = drain_requests(&mut out);
-    let message = outputs
-        .iter()
-        .find_map(|request| match request {
-            Request::Process(process::Request::Send { message: host::Down::Message { name, label, text }, .. }) => {
-                Some((name, label, text))
-            }
-            _ => None,
-        })
-        .expect("first named person line");
-    assert_eq!(*message.0, Token::new(1));
-    assert_eq!(message.1.as_ref(), b"person");
-    assert_eq!(message.2.as_ref(), b"hello");
-    crate::step(&mut domain, &env, Event::Process(process::Event::Sent { owner }), &mut out);
-    drain_requests(&mut out);
+    assert!(!outputs.iter().any(|request| match request {
+        Request::Process(process::Request::Send { message: host::Down::Message { .. }, .. }) => true,
+        _ => false,
+    }));
     (domain, env, out, owner)
 }
 

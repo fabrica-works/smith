@@ -13,7 +13,7 @@ fn observations_pass_and_duplicate_or_early_answers_fail() {
     let seen = world.seen();
     review(&seen, &world, Ending::Report(b"First answer".to_vec())).assert_passed(7);
     let mut duplicate = seen.clone();
-    duplicate.facts.push(Fact::Answered { activation: 1 });
+    duplicate.facts.push(Fact::Answered { activation: 1, read: None });
     assert!(matches!(
         review(&duplicate, &world, Ending::Report(b"First answer".to_vec())).verdict(),
         Verdict::Failed(_)
@@ -53,7 +53,7 @@ fn commit_fields_and_files_are_checked_through_the_checkout_interface() {
         facts: vec![
             Fact::Started { activation: 1 },
             Fact::Turn { number: 1 },
-            Fact::Answered { activation: 1 },
+            Fact::Answered { activation: 1, read: None },
             Fact::Shown { activation: 1 },
         ],
         shown: b"Change delivered".to_vec(),

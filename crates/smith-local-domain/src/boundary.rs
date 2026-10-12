@@ -192,6 +192,15 @@ pub enum Event {
     Process(smith_host_domain::process::Event),
 }
 
+/// Whether the terminal may demand more person input.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Reading {
+    /// There is room to receive another line.
+    Open,
+    /// Retained lines must be read before input resumes.
+    Held,
+}
+
 /// A local host notice rendered by the terminal (protocol/hosts.md, section 5.1).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Notice {
@@ -219,8 +228,8 @@ pub enum Checks {
 pub enum Undelivered {
     /// The line exceeds the terminal bound and has no name.
     TooLong,
-    /// The local queue is full and the line has no name.
-    Full,
+    /// The run ended without reading this line.
+    Dropped,
     /// The kit or run refused the named line at admission.
     Refused(smith_host_domain::MessageRefusal),
 }
@@ -273,6 +282,8 @@ pub enum AgentEnd {
     reason = "typed process payloads are owned directly and priced by the request queue"
 )]
 pub enum Request {
+    /// Open or hold the terminal input demand.
+    Input { reading: Reading },
     /// Bounded text shown to the person.
     Show { text: Box<[u8]> },
     /// A typed local host notice for the terminal to render.

@@ -3,7 +3,7 @@
 
 use alloc::boxed::Box;
 use core::mem::size_of;
-use skein_lib::{Map, Queue, Token};
+use skein_lib::{Map, Queue};
 use smith_domain::{self as agent, run};
 
 use crate::{DeliveryRecord, Fact, IntentDirectory, Request};
@@ -27,8 +27,6 @@ pub struct Limits {
     pub line_bytes: u32,
     /// Maximum rendered text bytes per notice.
     pub show_bytes: u32,
-    /// Maximum queued person lines.
-    pub lines: u32,
     /// Maximum turns awaiting durable acknowledgement.
     pub unsaved: u32,
     /// Maximum content-free observations.
@@ -94,11 +92,7 @@ pub fn max_line_bytes(message_bytes: u32) -> Option<u32> {
 /// Bound on owned local state, including the child domain.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    if limits.models == 0
-        || limits.lines == 0
-        || limits.unsaved == 0
-        || limits.show_bytes < limits.chat_bytes.checked_add(52)?.max(64)
-    {
+    if limits.models == 0 || limits.unsaved == 0 || limits.show_bytes < limits.chat_bytes.checked_add(52)?.max(64) {
         return None;
     }
     agent::worst_case(&limits.smith)?;
@@ -116,8 +110,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(accounts)?
         .checked_add(targets)?
         .checked_add(limits.smith.run.run_bytes)?;
-    let lines = Queue::<Token>::worst_case(limits.lines)?
-        .checked_add(u64::from(limits.lines).checked_mul(u64::from(limits.line_bytes))?)?;
+    let inbox = limits.smith.run.messages.checked_add(1)?;
+    let lines = Queue::<crate::person::Line>::worst_case(inbox)?
+        .checked_add(u64::from(inbox).checked_mul(u64::from(limits.line_bytes))?.checked_mul(2)?)?;
     let record = limits.smith.session.history_bytes.checked_add(
         u64::from(limits.smith.session.history_messages).checked_mul(u64::try_from(size_of::<agent::Turn>()).ok()?)?,
     )?;
@@ -150,8 +145,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     agent
         .checked_add(configuration)?
         .checked_add(lines)?
-        .checked_add(u64::from(limits.line_bytes))?
-        .checked_add(u64::try_from(crate::person::LABEL.len()).ok()?)?
+        .checked_add(Queue::<smith_host_domain::Message>::worst_case(inbox)?)?
+        .checked_add(u64::from(inbox).checked_mul(u64::try_from(crate::person::LABEL.len()).ok()?)?)?
         .checked_add(unsaved)?
         .checked_add(out)?
         .checked_add(child_out)?

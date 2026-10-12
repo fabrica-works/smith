@@ -139,6 +139,7 @@ enum Goal {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Scenario {
     Chat,
+    Finishing,
     Workspace,
     Delegating,
     PlainChange,
@@ -219,6 +220,7 @@ pub struct World {
     last_delivery: Option<run::Delivery>,
     shown: Vec<Box<[u8]>>,
     notices: Vec<smith_local_domain::Notice>,
+    readings: Vec<local::Reading>,
     person: Option<crate::person::Person>,
     reached: BTreeSet<Goal>,
     exit: Option<ExitStatus>,
@@ -252,6 +254,12 @@ impl World {
     #[must_use]
     pub fn new(seed: u64) -> World {
         Self::with_store(seed, Store::default())
+    }
+
+    /// A chat whose first provider turn finishes before reading the follow-up.
+    #[must_use]
+    pub fn finishing(seed: u64) -> World {
+        Self::with_capacity(seed, Store::default(), true, 2, 64, Scenario::Finishing)
     }
 
     /// A workspace chat whose main conversation may delegate a read-only reading.
@@ -459,7 +467,7 @@ impl World {
         let meeting = Meeting::after(store.activation(), store.state.map_or(0, |state| state.next_message))
             .prior_delivery(store.deliveries.values(), &store.commits);
         let meeting = match scenario {
-            Scenario::Chat => meeting,
+            Scenario::Chat | Scenario::Finishing => meeting,
             Scenario::SecondFails => meeting.writable(&[0, 1], &[1, 2]),
             Scenario::Workspace
             | Scenario::Delegating
@@ -483,7 +491,6 @@ impl World {
             models: 1,
             line_bytes: 1024,
             show_bytes: 4096,
-            lines: 8,
             unsaved,
             facts,
         };
@@ -493,7 +500,7 @@ impl World {
         let mut history = store.history.take();
         let mut git_head = store.git_head.take();
         let git_expected = store.git_expected.take().or(git_head).or(Some(1));
-        let workspace = if scenario == Scenario::Chat {
+        let workspace = if matches!(scenario, Scenario::Chat | Scenario::Finishing) {
             None
         } else {
             if matches!(
@@ -600,7 +607,11 @@ impl World {
                 | Scenario::PushLands
                 | Scenario::PushStale
         );
-        let instructions: &[u8] = if scenario == Scenario::Delegating {
+        let instructions: &[u8] = if matches!(mode, local::Mode::Chat { .. }) && scenario == Scenario::Chat {
+            b"@local-chat Assist the person."
+        } else if scenario == Scenario::Finishing {
+            b"@local-finish"
+        } else if scenario == Scenario::Delegating {
             b"@local-delegate Delegate a reading, then answer."
         } else if scenario == Scenario::TwoDeliveries {
             b"@local-two-deliveries Deliver twice, then report."
@@ -713,6 +724,7 @@ impl World {
             store,
             shown: Vec::new(),
             notices: Vec::new(),
+            readings: Vec::new(),
             person: None,
             reached: BTreeSet::new(),
             exit: None,
@@ -888,6 +900,11 @@ impl World {
     }
 
     /// Notices shown to the person by kind.
+    #[must_use]
+    pub fn readings(&self) -> &[local::Reading] {
+        &self.readings
+    }
+
     #[must_use]
     pub fn notices(&self) -> &[smith_local_domain::Notice] {
         &self.notices
@@ -1069,8 +1086,14 @@ impl World {
             {
                 panic!("seed {}: {failure}; trace: {:?}", self.seed, self.trace.lines());
             }
-            let reached = self.reached.contains(&goal) && (goal != Goal::Waiting || self.saved_turns() > 0);
+            let reached = self.reached.contains(&goal)
+                && (goal != Goal::Waiting
+                    || (self.activation_turns > 0
+                        && !self.events.iter().any(|event| matches!(event, Event::TurnSaved { .. }))));
             if reached {
+                if goal == Goal::Exit && self.collect_facts {
+                    self.referee.assert_passed(self.seed);
+                }
                 return true;
             }
             if !self.domain.is_ready() && self.events.is_empty() && self.out.is_empty() {
@@ -1101,9 +1124,13 @@ impl World {
     #[expect(clippy::too_many_lines, reason = "the test adapter settles each local request beside its terminal")]
     fn request(&mut self, request: Request) {
         match request {
+            Request::Input { reading } => self.readings.push(reading),
             Request::Notice { notice } => {
                 if notice == smith_local_domain::Notice::Waiting {
                     self.reached.insert(Goal::Waiting);
+                }
+                if let local::Notice::NotDelivered { line: Some(name), .. } = notice {
+                    self.observe(Seen::NotDelivered { name });
                 }
                 self.notices.push(notice);
                 self.saw(crate::person::Shown::Notice(notice));
@@ -1464,7 +1491,8 @@ impl World {
                     self.saw(crate::person::Shown::Turn);
                     Some(Seen::Turn { number })
                 }
-                local::Fact::Answered { activation } => Some(Seen::Answered { activation }),
+                local::Fact::Answered { activation, read } => Some(Seen::Answered { activation, read }),
+                local::Fact::Unread { name } => Some(Seen::Unread { name }),
                 local::Fact::Shown { activation } => {
                     self.saw(crate::person::Shown::Answer);
                     Some(Seen::Shown { activation })

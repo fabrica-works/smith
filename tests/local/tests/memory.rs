@@ -25,7 +25,6 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
         models: 1,
         line_bytes: 1024,
         show_bytes: 4096,
-        lines: 8,
         unsaved: 2,
         facts: 64,
     };
@@ -67,7 +66,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
     meter.start();
     let mut domain = local::Domain::new(config, &env.limits, 83).expect("valid local domain");
     meter.check(meter.end(), bound, &env.limits);
-    for _ in 0..env.limits.lines {
+    for _ in 0..env.limits.smith.run.messages {
         meter.start();
         local::step(
             &mut domain,
@@ -77,6 +76,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
         );
         meter.check(meter.end(), bound, &env.limits);
     }
-    assert!(meter.held() >= u64::from(env.limits.lines) * u64::from(env.limits.line_bytes));
+    assert!(meter.held() >= u64::from(env.limits.smith.run.messages) * u64::from(env.limits.line_bytes));
+    assert!(matches!(out.pop(), Some(Request::Input { reading: local::Reading::Held })));
     assert!(out.is_empty(), "loading retains all lines until the store answers");
 }

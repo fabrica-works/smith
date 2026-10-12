@@ -25,7 +25,11 @@ pub enum Seen {
     /// The store acknowledged a turn.
     TurnSaved { number: u32 },
     /// The agent produced one answer.
-    Answered { activation: u64 },
+    Answered { activation: u64, read: Option<Token> },
+    /// The kit reported a line unread once for this activation.
+    Unread { name: Token },
+    /// The terminal showed a named line not delivered.
+    NotDelivered { name: Token },
     /// The host showed that answer to the person.
     Shown { activation: u64 },
     /// A provider request was forwarded to the scripted provider.
@@ -62,6 +66,7 @@ pub struct Meeting {
     has_activation: bool,
     last_message: u64,
     relayed_here: BTreeSet<Token>,
+    unread_here: BTreeSet<Token>,
     last_read: u64,
     next_turn: u32,
     told: BTreeSet<u32>,
@@ -143,11 +148,15 @@ impl Expectations for Meeting {
                     self.last_activation = number;
                     self.next_turn = 0;
                     self.relayed_here.clear();
+                    self.unread_here.clear();
                     self.told.clear();
                     self.pending_turns.clear();
                     self.saved.clear();
                 }
                 self.has_activation = true;
+                for raw in self.last_message + 1..=message {
+                    judge.expect(Pending::Line(Token::new(raw)), skein_lib::Duration::from_secs(3600));
+                }
                 self.last_message = message;
             }
             Seen::Message { name } => {
@@ -155,6 +164,7 @@ impl Expectations for Meeting {
                 judge.check(name.raw() > self.last_read, "a read line is never relayed again");
                 judge.check(name.raw() <= self.last_message, "a relayed line was saved first");
                 self.relayed.insert(name);
+                judge.rearm(Pending::Line(name), skein_lib::Duration::from_secs(3600));
             }
             Seen::Turn { number } => {
                 judge.check(!self.shown.contains(&self.last_activation), "nothing is told after the shown answer");
@@ -169,6 +179,9 @@ impl Expectations for Meeting {
                 if let Some(read) = read {
                     judge.check(self.relayed.contains(&read), "a read fence names a relayed person line");
                     judge.check(read.raw() >= self.last_read, "the read fence never moves backwards");
+                    for raw in self.last_read + 1..=read.raw() {
+                        judge.meet(&Pending::Line(Token::new(raw)));
+                    }
                     self.last_read = read.raw();
                 }
             }
@@ -186,7 +199,25 @@ impl Expectations for Meeting {
                 );
                 self.saved.insert(number);
             }
-            Seen::Answered { activation } => {
+            Seen::Unread { name } => {
+                judge.check(self.unread_here.insert(name), "the unread report comes once");
+                judge.check(
+                    self.relayed_here.contains(&name) && name.raw() > self.last_read,
+                    "an unread line was relayed and not read",
+                );
+            }
+            Seen::NotDelivered { name } => {
+                judge.meet(&Pending::Line(name));
+            }
+            Seen::Answered { activation, read } => {
+                if let Some(read) = read {
+                    judge.check(self.relayed.contains(&read), "a read fence names a relayed person line");
+                    judge.check(read.raw() >= self.last_read, "the read fence never moves backwards");
+                    for raw in self.last_read + 1..=read.raw() {
+                        judge.meet(&Pending::Line(Token::new(raw)));
+                    }
+                    self.last_read = read.raw();
+                }
                 judge.check(activation == self.last_activation, "the answer names the active run");
                 judge.check(self.answered.insert(activation, self.next_turn).is_none(), "one answer per run");
             }

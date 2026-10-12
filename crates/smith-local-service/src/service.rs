@@ -297,7 +297,11 @@ impl Service {
 
     fn drain_run_facts(&mut self) -> bool {
         let Some(effects) = self.below.inline_mut() else { return true };
-        if let Some(message) = self.local.pop_run_message() {
+        for _ in 0..self.limits.queue {
+            if !effects.takes() {
+                return false;
+            }
+            let Some(message) = self.local.pop_run_message() else { break };
             effects.message(message.name, &message.label, &message.text);
         }
         for _ in 0..self.limits.queue {
@@ -553,6 +557,7 @@ impl Service {
                 }
                 self.below.inline_mut().expect("native IO belongs to inline mode").request(to_root_request(request));
             }
+            local::Request::Input { reading } => self.below.process_mut().input(reading),
             local::Request::Notice { notice } => {
                 self.terminal.notice(notice, self.local.chat_name(), &mut self.terminal_events);
             }

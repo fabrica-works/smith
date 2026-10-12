@@ -122,7 +122,7 @@ impl Terminal {
                     &mut text,
                     match why {
                         local::Undelivered::TooLong => b"Line is too long",
-                        local::Undelivered::Full => b"Too many lines waiting",
+                        local::Undelivered::Dropped => b"the run ended without reading it",
                         local::Undelivered::Refused(reason) => match reason {
                             smith_host_domain::MessageRefusal::TooLarge => b"it is too large",
                             smith_host_domain::MessageRefusal::Full => b"the inbox is full",
@@ -319,7 +319,7 @@ mod tests {
     fn unnamed_lines_show_the_local_admission_reason() {
         for (why, expected) in [
             (local::Undelivered::TooLong, b"Line is too long\n".as_slice()),
-            (local::Undelivered::Full, b"Too many lines waiting\n".as_slice()),
+            (local::Undelivered::Dropped, b"the run ended without reading it\n".as_slice()),
         ] {
             assert_eq!(rendered(local::Notice::NotDelivered { line: None, why }).as_ref(), expected);
         }

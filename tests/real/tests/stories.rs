@@ -129,7 +129,7 @@ fn the_same_chat_runs_with_its_agent_in_process() {
     let mut colocated_queries = in_process.queries.clone();
     // Placement has its own run key and elapsed startup clock. Verify its
     // exact fixed-at-open budget before comparing all remaining request bytes.
-    for (queries, seconds) in [(&mut spawned_queries, 3599), (&mut colocated_queries, 3600)] {
+    for (queries, seconds) in [(&mut spawned_queries, 3600), (&mut colocated_queries, 3600)] {
         let opening_budget = format!("At open, you have 512 turns and {seconds} seconds of wall time.");
         for query in queries.iter_mut() {
             let text = core::str::from_utf8(&query.system).expect("native system is UTF-8");

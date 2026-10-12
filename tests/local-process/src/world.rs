@@ -72,10 +72,15 @@ fn scripts() -> Box<[api::Script]> {
     let mut turns = Vec::new();
     for answer in ["First answer", "Second answer", "Third answer"] {
         turns.push(api::Turn {
-            lines: Box::new([api::Line::Call {
-                name: b"finish".as_slice().into(),
-                arguments: format!("{{\"form\":\"report\",\"text\":\"{answer}\",\"fields\":{{}}}}").into_bytes().into(),
-            }]),
+            lines: Box::new([
+                api::Line::Text { text: b"Finishing now".as_slice().into() },
+                api::Line::Call {
+                    name: b"finish".as_slice().into(),
+                    arguments: format!("{{\"form\":\"report\",\"text\":\"{answer}\",\"fields\":{{}}}}")
+                        .into_bytes()
+                        .into(),
+                },
+            ]),
             finish: api::Finish::ToolCalls,
             tokens: 1,
         });
@@ -86,6 +91,14 @@ fn scripts() -> Box<[api::Script]> {
 fn change_scripts() -> Box<[api::Script]> {
     let turns = [
         ("write", "{\"path\":\"result.txt\",\"content\":\"new\\n\"}"),
+        (
+            "finish",
+            "{\"form\":\"change\",\"text\":\"\",\"fields\":{\"title\":\"Updated result\",\"body\":\"Created the result file\"}}",
+        ),
+        (
+            "finish",
+            "{\"form\":\"change\",\"text\":\"\",\"fields\":{\"title\":\"Updated result\",\"body\":\"Created the result file\"}}",
+        ),
         (
             "finish",
             "{\"form\":\"change\",\"text\":\"\",\"fields\":{\"title\":\"Updated result\",\"body\":\"Created the result file\"}}",
@@ -349,6 +362,24 @@ impl World {
         )
         .expect("trace limits");
         smith_agent_process_world::events::read(&bytes, &events)
+    }
+
+    #[must_use]
+    pub fn finishing(seed: u64, files: &Files, placement: Placement) -> Self {
+        Self::configured(
+            seed,
+            files,
+            placement,
+            vec![
+                Action::Send(b"hello\n".as_slice().into()),
+                Action::Wait(b"Finishing now".as_slice().into()),
+                Action::Send(b"follow-up\n".as_slice().into()),
+                Action::Wait(b"Second answer".as_slice().into()),
+                Action::Eof,
+            ],
+            Ending::Report(b"Second answer".to_vec()),
+            (false, true, false),
+        )
     }
 
     #[must_use]

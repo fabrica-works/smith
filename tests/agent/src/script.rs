@@ -112,6 +112,29 @@ pub const fn cue(job: Job) -> Option<&'static [u8]> {
 pub fn all() -> Box<[Script]> {
     Box::new([
         script(
+            b"@local-finish",
+            vec![
+                calls(vec![
+                    Line::Text { text: b"Finishing now".as_slice().into() },
+                    call("finish", r#"{"report":"First answer"}"#),
+                ]),
+                calls(vec![call("finish", r#"{"report":"Second answer"}"#)]),
+                calls(vec![call("wait", "{}")]),
+            ],
+        ),
+        script(
+            b"@local-chat",
+            vec![
+                Turn { lines: Box::new([text("Hello from the agent.")]), finish: Finish::Stop, tokens: 20 },
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+                calls(vec![Line::Text { text: b"Welcome back.".as_slice().into() }, call("wait", "{}")]),
+            ],
+        ),
+        script(
             b"@chat",
             vec![
                 calls(vec![Line::Text { text: b"Hello from the agent.".as_slice().into() }, call("wait", "{}")]),

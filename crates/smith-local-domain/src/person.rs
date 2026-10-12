@@ -1,16 +1,209 @@
 //! Lines, names and text shown to one terminal (domain/host.md, section 8).
 
+use crate::chat::{Gone, Phase};
+use crate::domain::AgentLife;
+use crate::{Domain, ExitStatus, Fact, Reading, Request};
 use alloc::boxed::Box;
-use skein_lib::{List, Token};
+use skein_lib::{List, Queue, Token};
 use smith_domain::{self as agent, session, tools};
+use smith_host_domain as host;
 
 pub(crate) const LABEL: &[u8] = b"person";
 
-/// One person line whose saved name precedes delivery to the agent.
+/// Lines received and retained until read or shown not delivered.
+#[derive(Debug)]
+pub(crate) struct Lines {
+    held: Queue<Line>,
+    inbox: u32,
+}
+
+/// One owned line, including its durable naming and relay stage.
 #[derive(Debug)]
 pub(crate) struct Line {
-    pub(crate) name: Token,
-    pub(crate) text: Box<[u8]>,
+    text: Box<[u8]>,
+    stage: Stage,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Stage {
+    Received,
+    Naming { name: Token },
+    Named { name: Token },
+    Relayed { name: Token },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnreadPolicy {
+    Carry,
+    Drop,
+}
+
+pub(crate) fn policy(result: Option<&host::RunResult>, cancel_asked: bool) -> UnreadPolicy {
+    if cancel_asked {
+        return UnreadPolicy::Drop;
+    }
+    match result {
+        Some(host::RunResult::Accepted { .. } | host::RunResult::Parked) => UnreadPolicy::Carry,
+        Some(host::RunResult::Refused { .. } | host::RunResult::Failed { .. }) | None => UnreadPolicy::Drop,
+    }
+}
+
+impl Lines {
+    pub(crate) fn new(inbox: u32) -> Self {
+        Self { held: Queue::with_capacity(inbox.checked_add(1).expect("validated inbox")), inbox }
+    }
+
+    pub(crate) fn receive(&mut self, text: Box<[u8]>) -> Result<(), Box<[u8]>> {
+        match self.held.try_push(Line { text, stage: Stage::Received }) {
+            Ok(()) => Ok(()),
+            Err(line) => Err(line.text),
+        }
+    }
+
+    pub(crate) fn named_count(&self) -> u64 {
+        let mut count = 0_u64;
+        for line in &self.held {
+            match line.stage {
+                Stage::Received => {}
+                Stage::Naming { .. } | Stage::Named { .. } | Stage::Relayed { .. } => {
+                    count = count.checked_add(1).expect("bounded line count");
+                }
+            }
+        }
+        count
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.held.is_empty()
+    }
+
+    pub(crate) fn received(&self) -> bool {
+        for line in &self.held {
+            match line.stage {
+                Stage::Received => return true,
+                Stage::Naming { .. } | Stage::Named { .. } | Stage::Relayed { .. } => {}
+            }
+        }
+        false
+    }
+
+    pub(crate) fn name(&mut self, name: Token) {
+        let mut named = false;
+        for _ in 0..self.held.len() {
+            let mut line = self.held.pop().expect("bounded line count");
+            match line.stage {
+                Stage::Received if !named => {
+                    line.stage = Stage::Naming { name };
+                    named = true;
+                }
+                Stage::Received | Stage::Naming { .. } | Stage::Named { .. } | Stage::Relayed { .. } => {}
+            }
+            self.held.push(line);
+        }
+    }
+
+    pub(crate) fn saved(&mut self) {
+        for _ in 0..self.held.len() {
+            let mut line = self.held.pop().expect("bounded line count");
+            match line.stage {
+                Stage::Naming { name } => line.stage = Stage::Named { name },
+                Stage::Received | Stage::Named { .. } | Stage::Relayed { .. } => {}
+            }
+            self.held.push(line);
+        }
+    }
+
+    pub(crate) fn fence(&mut self, read: Option<Token>) -> u32 {
+        let mut count = 0_u32;
+        for _ in 0..self.held.len() {
+            let line = self.held.pop().expect("bounded line count");
+            let covered = match line.stage {
+                Stage::Relayed { name } => match read {
+                    Some(read) => name.raw() <= read.raw(),
+                    None => false,
+                },
+                Stage::Received | Stage::Naming { .. } | Stage::Named { .. } => false,
+            };
+            if covered {
+                count = count.checked_add(1).expect("bounded lines");
+            } else {
+                self.held.push(line);
+            }
+        }
+        count
+    }
+
+    pub(crate) fn refused(&mut self, name: Token) -> bool {
+        let mut removed = false;
+        for _ in 0..self.held.len() {
+            let line = self.held.pop().expect("bounded line count");
+            let same = match line.stage {
+                Stage::Naming { name: held } | Stage::Named { name: held } | Stage::Relayed { name: held } => {
+                    held == name
+                }
+                Stage::Received => false,
+            };
+            if same {
+                removed = true;
+            } else {
+                self.held.push(line);
+            }
+        }
+        removed
+    }
+
+    pub(crate) fn all_read(&self) -> bool {
+        for line in &self.held {
+            match line.stage {
+                Stage::Relayed { .. } => return false,
+                Stage::Received | Stage::Naming { .. } | Stage::Named { .. } => {}
+            }
+        }
+        true
+    }
+
+    pub(crate) fn reading(&self) -> Reading {
+        if self.held.len() >= self.inbox { Reading::Held } else { Reading::Open }
+    }
+
+    pub(crate) fn relay(&mut self, carried: bool) -> Box<[host::Message]> {
+        let mut messages = List::with_capacity(self.held.capacity());
+        for _ in 0..self.held.len() {
+            let mut line = self.held.pop().expect("bounded line count");
+            let name = match line.stage {
+                Stage::Named { name } => Some(name),
+                Stage::Relayed { name } if carried => Some(name),
+                Stage::Received | Stage::Naming { .. } | Stage::Relayed { .. } => None,
+            };
+            if let Some(name) = name {
+                messages
+                    .push(host::Message { name, label: Box::from(LABEL), text: line.text.clone() })
+                    .expect("one message per held line");
+                line.stage = Stage::Relayed { name };
+            }
+            self.held.push(line);
+        }
+        messages.into_boxed()
+    }
+
+    pub(crate) fn carry(&mut self) -> Box<[host::Message]> {
+        let messages = self.relay(true);
+        assert!(messages.is_empty() || !self.all_read(), "carried lines await their first fence");
+        messages
+    }
+
+    pub(crate) fn drop_unread(&mut self) -> Box<[Option<Token>]> {
+        let mut names = List::with_capacity(self.held.capacity());
+        for _ in 0..self.held.len() {
+            let line = self.held.pop().expect("bounded line count");
+            let name = match line.stage {
+                Stage::Received => None,
+                Stage::Naming { name } | Stage::Named { name } | Stage::Relayed { name } => Some(name),
+            };
+            names.push(name).expect("one name per held line");
+        }
+        names.into_boxed()
+    }
 }
 
 /// Render assistant text blocks up to a UTF-8 boundary under the display cap.
@@ -150,5 +343,151 @@ mod tests {
             }]),
         };
         assert_eq!(turn_text(&turn, 128).as_ref(), b"Working\nTool: inspect\nTool finished\n");
+    }
+}
+
+pub(crate) fn show_dropped(lines: &mut Lines, out: &mut Queue<Request>) {
+    for name in lines.drop_unread() {
+        out.push(Request::Notice {
+            notice: crate::Notice::NotDelivered { line: name, why: crate::Undelivered::Dropped },
+        });
+    }
+}
+
+pub(crate) fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
+    if domain.agent_life != AgentLife::Gone || domain.chat.state_pending {
+        return;
+    }
+    let Some(answer) = domain.turns.answer.take() else { return };
+    if domain.stop_failed {
+        domain.run = None;
+        domain.chat.phase = Phase::Done;
+        out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
+        return;
+    }
+    crate::domain::observe(domain, Fact::Shown { activation: domain.chat.state.activation });
+    let status = match domain.config.mode {
+        crate::Mode::Headless { .. } => {
+            crate::end::answer_status(&answer, domain.config.models.first().expect("configured main").account)
+        }
+        crate::Mode::Chat { .. } => ExitStatus::Accepted,
+    };
+    let text = crate::agent::answer_text(&answer);
+    out.push(Request::Show { text: bounded_text(&text, domain.show_bytes) });
+    out.push(Request::Answered { answer });
+    domain.run = None;
+    domain.wall_deadline = None;
+
+    let headless = match domain.config.mode {
+        crate::Mode::Headless { .. } => true,
+        crate::Mode::Chat { .. } => false,
+    };
+    if (domain.chat.closed && domain.lines.is_empty()) || headless {
+        domain.chat.phase = Phase::Done;
+        out.push(Request::Exit { status });
+    } else {
+        domain.chat.phase = Phase::Loading;
+        domain.chat.load_requested = true;
+        out.push(Request::Load);
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    use super::*;
+    fn named() -> Lines {
+        let mut lines = Lines::new(2);
+        lines.receive(Box::from(&b"one"[..])).expect("room");
+        lines.name(Token::new(1));
+        lines.saved();
+        lines
+    }
+    #[test]
+    fn a_received_line_waits_for_its_name_and_store_terminal() {
+        let mut lines = Lines::new(2);
+        lines.receive(Box::from(&b"one"[..])).expect("room");
+        assert!(lines.carry().is_empty());
+        lines.name(Token::new(1));
+        assert!(lines.carry().is_empty());
+        lines.saved();
+        assert_eq!(lines.carry()[0].name, Token::new(1));
+    }
+    #[test]
+    fn a_relayed_line_is_not_sent_twice_before_the_answer() {
+        let mut lines = named();
+        assert_eq!(lines.relay(false).len(), 1);
+        assert!(lines.relay(false).is_empty());
+        assert_eq!(lines.carry()[0].text.as_ref(), b"one");
+    }
+    #[test]
+    fn a_fence_pops_only_relayed_lines_it_covers() {
+        let mut lines = named();
+        assert_eq!(lines.fence(Some(Token::new(1))), 0);
+        lines.carry();
+        assert!(!lines.all_read());
+        assert_eq!(lines.fence(None), 0);
+        assert_eq!(lines.fence(Some(Token::new(1))), 1);
+        assert!(lines.all_read());
+        assert!(lines.is_empty());
+    }
+    #[test]
+    fn a_refused_named_line_releases_its_cell_once() {
+        let mut lines = named();
+        lines.carry();
+        assert!(lines.refused(Token::new(1)));
+        assert!(!lines.refused(Token::new(1)));
+        assert!(lines.is_empty());
+    }
+    #[test]
+    fn input_holds_at_the_inbox_with_one_completed_line_cell() {
+        let mut lines = Lines::new(1);
+        lines.receive(Box::from(&b"one"[..])).expect("inbox");
+        assert_eq!(lines.reading(), Reading::Held);
+        lines.receive(Box::from(&b"two"[..])).expect("completed line");
+        assert!(lines.receive(Box::from(&b"three"[..])).is_err());
+        assert_eq!(lines.drop_unread().as_ref(), &[None, None]);
+        assert_eq!(lines.reading(), Reading::Open);
+    }
+    #[test]
+    fn dropping_retained_lines_keeps_names_in_order() {
+        let mut lines = named();
+        lines.carry();
+        lines.receive(Box::from(&b"two"[..])).expect("room");
+        lines.name(Token::new(2));
+        assert_eq!(lines.drop_unread().as_ref(), &[Some(Token::new(1)), Some(Token::new(2))]);
+        assert!(lines.is_empty());
+    }
+    #[test]
+    fn a_cancel_asked_drops_unread_lines_after_a_parked_answer() {
+        assert_eq!(policy(Some(&host::RunResult::Parked), true), UnreadPolicy::Drop);
+    }
+    #[test]
+    fn a_parked_answer_without_cancel_carries_unread_lines() {
+        assert_eq!(policy(Some(&host::RunResult::Parked), false), UnreadPolicy::Carry);
+    }
+    #[test]
+    fn an_end_without_an_answer_drops_unread_lines() {
+        assert_eq!(policy(None, false), UnreadPolicy::Drop);
+    }
+    #[test]
+    fn a_failed_answer_drops_unread_lines() {
+        let result = host::RunResult::Failed { failure: host::RunFailure::Cancelled };
+        assert_eq!(policy(Some(&result), false), UnreadPolicy::Drop);
+    }
+}
+
+pub(crate) fn answered(domain: &mut Domain, answer: host::Answer, out: &mut Queue<Request>) {
+    domain.lines.fence(answer.read);
+    domain.chat.state.read = answer.read;
+    crate::domain::observe(domain, Fact::Answered { activation: domain.chat.state.activation, read: answer.read });
+    domain.chat.phase =
+        Phase::Answered { gone: if domain.agent_life == AgentLife::Gone { Gone::Heard } else { Gone::Owed } };
+    match policy(Some(&answer.result), domain.cancel_requested.is_some()) {
+        UnreadPolicy::Carry => {}
+        UnreadPolicy::Drop => show_dropped(&mut domain.lines, out),
+    }
+    domain.turns.answer = Some(answer);
+    if domain.turns.unsaved.is_empty() {
+        finish_answer(domain, out);
     }
 }

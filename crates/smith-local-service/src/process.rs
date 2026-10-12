@@ -101,6 +101,7 @@ pub(crate) struct ProcessAdapter {
     reading: bool,
     failed: bool,
     terminal_input: Option<Token>,
+    terminal_reading: local::Reading,
     signals: Option<Token>,
     closing: Option<u32>,
     close_root_pending: bool,
@@ -148,6 +149,7 @@ impl ProcessAdapter {
             reading: false,
             failed: false,
             terminal_input: None,
+            terminal_reading: local::Reading::Open,
             signals: None,
             closing: None,
             close_root_pending: false,
@@ -193,6 +195,22 @@ impl ProcessAdapter {
         self.io_requests
             .push(io::Request::Stream { stream, down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 } });
         Ok(())
+    }
+
+    pub(crate) fn input(&mut self, reading: local::Reading) {
+        if self.terminal_reading == reading {
+            return;
+        }
+        self.terminal_reading = reading;
+        if self.closing.is_none()
+            && let Some(stream) = self.terminal_input
+        {
+            let read = match reading {
+                local::Reading::Open => stream::Read::Fill(1),
+                local::Reading::Held => stream::Read::Nothing,
+            };
+            self.io_requests.push(io::Request::Stream { stream, down: stream::Down::Demand { read, room: 0 } });
+        }
     }
 
     pub(crate) fn adopt_delivery_roots(&mut self, roots: Box<[kernel::Fd]>, environment: Box<[Box<[u8]>]>) {
@@ -564,7 +582,7 @@ impl ProcessAdapter {
                         for byte in bytes {
                             terminal.feed(byte, terminal_events);
                         }
-                        if self.closing.is_none() {
+                        if self.closing.is_none() && self.terminal_reading == local::Reading::Open {
                             self.io_requests.push(io::Request::Stream {
                                 stream: owner,
                                 down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },

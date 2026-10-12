@@ -359,7 +359,6 @@ pub fn policy(
         line_bytes: local::max_line_bytes(agent_limits.run.message_bytes)
             .ok_or("local message bound cannot hold its label")?,
         show_bytes: 8192,
-        lines: 8,
         unsaved: 2,
         facts: 1024,
     };
