@@ -855,4 +855,28 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (code-organization.md, section 7). Ruling: 10.1 stays one increment,
    at most 1,000 production lines, its commit body giving the count by
    file. The exception is 10.1's; rule 9 stands for the rest.
+16. **skein 02.6's pinned operation counts move by `Window`'s slot**
+   (block of 2026-10-12T14:23:43Z). 13.2 let `Window` take an independent
+   slot, as `Usage` has; the tests that pin `operations()`
+   (`examples/echo/service/src/tests.rs:316`, `Some(17)`;
+   `crates/skein-io/src/tests/layer.rs:81`, `Some(9)`) move by exactly
+   one, and nothing else in them changes.
+17. **smith 00.13 pins the working tier** (block of 2026-10-12T14:34:22Z).
+   00.13's `compare.toml` names tier `working`, and the offline check
+   validates every suite's agent through `models.lookup`, which refuses
+   the empty `[working.codex]`; 12.1 was to pin it, and 12.1 needs 00.13.
+   The tier is decided (12.17: `gpt-6-astra` at `high`), so 00.13 pins it,
+   and the admission code stays as it is. Pinning spends nothing: only
+   session 12 runs that tier, and the user's veto (section 10, item 6)
+   stays open until then.
+18. **smith 06.4 fixes the local adapter's read admission** (block of
+   2026-10-12T14:34:22Z). 06.4 finishes the channel at the answer
+   (agent.md, section 6), and the earlier close shows that
+   `smith-local-service/src/process.rs` ignores the host's `Read`
+   (:814-816) and hands it every record it receives (:611-617); the host
+   domain asserts "record ends one requested read"
+   (`smith-host-domain/src/domain.rs:325`), and `a_first_run_signs_in_and_ends_with_a_commit_in_place`
+   panics in the gate. A plain defect, in session 06's crates; fixed in
+   06.4 with a regression test, at most 80 production lines. The
+   assertion stays: it is the host's protocol, and the adapter broke it.
 

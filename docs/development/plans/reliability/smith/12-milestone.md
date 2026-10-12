@@ -215,7 +215,8 @@ Scope: `fixtures/03-planner` (benchmarks.md, 5.2 and 11.4), ported as
   `--include` (5.3); `suites/compare.toml` lists 03 under `when_asked`,
   with 12.4's bound as its `max_wall_seconds` and `max_tokens`.
   `agents/models.toml` pins the working tier, `gpt-6-astra` at `high`
-  (decisions.md, 12.17), which `validate_suite` requires (models.rs:27).
+  (decisions.md, 12.17), which `validate_suite` requires (models.rs:27);
+  smith 00.13 pins it (decisions.md, 13.17), and 12.1 leaves it as it is.
 Needs: smith 00's fixtures 01 and 02 [00.13]: their layout, the grader
   crate's form, `validate` and `suites/compare.toml`; smith 00's one
   command per probe run [00.27], whose `suite` this gives `--include`.

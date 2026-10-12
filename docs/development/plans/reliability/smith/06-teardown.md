@@ -234,6 +234,14 @@ closed it reads usage, writes `session.ended` with `answered` and
 cancels the run, which then closes the same way and exits 1. A start the
 closed pool refuses cannot reach a session (O2).
 Needs: nothing (skein's owner close is in smith's pin).
+Also (decisions.md, 13.18): the local process adapter's read admission,
+which 06.4's earlier close of the agent's input exposes:
+`crates/smith-local-service/src/process.rs` hands the host a record only
+for a `host::process::Request::Read` it holds (today `Read` is ignored at
+:814-816 and every record is pushed at :611-617), with one regression test
+at the lowest tier that shows the host's "record ends one requested read"
+assertion on the parent; at most 80 production lines, in 06.4's landing,
+named in its commit body. The host domain's assertion stays.
 Files: `crates/smith-agent-service/src/service.rs` (hotspot: fields
 :151-164, `Ending` :169, `Effects::close` :332, `cleanup` :891,
 `record_usage` :937, the answer :1714, `work_pending` :2119, `done`
