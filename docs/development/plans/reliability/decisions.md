@@ -1139,3 +1139,28 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    rule 7). Not a re-pin to 0.162.1, which would need the observer
    checked against that version's recorded shapes, and would break again
    at the next update. The README's "Live services" says so.
+42. **A run dropped before its answer hears no answer** (block of
+   2026-10-12T16:32:06Z, smith 03.8). host.md, 9.2: a dropped run's
+   "domain hears nothing more", and "its failure is that it went without
+   answering"; "A drop after an answer ... the answer stands". 03.8's
+   diagnostic shows both interrupts reach the local domain before the
+   parent's answer (`Failed { Cancelled }` at 50 ms), and
+   `smith-host-domain` hears it: `drop_run` (`domain.rs:1175`) moves the
+   agent to `Terminating`, and `discarded_work` (`domain.rs:899`) admits
+   `Up::Answer` there. A defect in the parent face's drop that 03.8's
+   first part landed (1a1e8a39), so 03.8 fixes it: the host domain
+   remembers a drop asked before an answer and discards a later answer
+   of that run, an answer heard before the drop standing; at most 40
+   production lines, with a host-domain regression that fails on the
+   parent. `domain.rs` joins 03.8's Files for that.
+43. **04.14's frozen control keeps its historic `host_tools`** (block of
+   2026-10-12T16:32:06Z, smith 04.14).
+   `benchmarks/tests/smith_producer.rs`'s
+   `the_published_face_preserves_the_native_control_producers_joint_bounds`
+   compares the frozen control's writer against its published face, and
+   its input inherits the standard profile's policy, whose `host_tools`
+   04.14 moves from 2 to 128 (shell.md's values), so its derived items
+   rose from 52,754 to 52,880. The input gains `"host_tools":2`, the
+   face and every assertion unchanged. The second block of 13.40's kind,
+   a fixture's input that the Scope changed under it: README rule 8
+   gains that case.

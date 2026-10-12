@@ -219,7 +219,9 @@ Files: `crates/smith-local-service/src/stream.rs`, `src/service.rs`;
 the turns told handed to the service), `src/boundary.rs`;
 `tests/local-process/src/world.rs` (two interrupts through skein-world's
 controls, decisions.md 13.39), `src/referee.rs` (`Ending::Dropped`, exit 130 and the
-stderr line), `tests/local-process/tests/simulation.rs`.
+stderr line), `tests/local-process/tests/simulation.rs`;
+`crates/smith-host-domain/src/domain.rs`, a dropped run's late answer
+(decisions.md, 13.42).
 Shape: the local domain's `Request::Unanswered { cause: EndCause, turns:
 u32, spent: u64, read: Option<Token> }`, once, when its agent is `Gone`
 without an answer; `stream::unanswered(&Request::Unanswered) -> Answered`.

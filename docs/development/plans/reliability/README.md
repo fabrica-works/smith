@@ -174,7 +174,14 @@ do not already say.
      next thing the same story shows, only where the withheld one can no
      longer come; in a generator, only those draws change, its seeds,
      counts and other branches unchanged; the commit body quotes the
-     Scope's or Shape's words beside it (decisions.md, 13.32 and 13.36).
+     Scope's or Shape's words beside it (decisions.md, 13.32 and 13.36);
+   - a test fixture's input set so the story keeps testing what it
+     tested, where the Scope or Shape changes what that input meant: a
+     default the fixture inherited, pinned to its value before; or a
+     limit raised to the least value the story fits under a check the
+     Scope or Shape adds; the test's name, steps and assertions
+     unchanged, the commit body quoting the Scope's or Shape's words
+     beside it (decisions.md, 13.40 and 13.43).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For
