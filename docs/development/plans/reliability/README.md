@@ -274,7 +274,7 @@ repin skein when they need a skein change (development.md, section 5.3).
 ## Pulse
 
 ```
-words: actually|genuine|immutable|canonical|verified|qualified|robust|properly
+words: actually|genuine|immutable|canonical|verified|qualified|robust|properly|python3
 types: ^(Legacy|New|Old|Owner)[A-Z]|V[0-9]+$
 file-lines: 800
 budgets: 15 60

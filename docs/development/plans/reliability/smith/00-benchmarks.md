@@ -277,6 +277,30 @@ Don't: keep a type or a file for pre-events binaries; drop the terminal's one-li
 Size: at most 150 lines added; about 3,000 removed.
 Removes: `legacy.rs`, `observe/checks.rs`, `observe/health.rs` and the Debug usage code in `observe.rs`; `Face::Legacy`, `Observer::Legacy`, `FactShape`, `TokenShape`, `guard::UNUSABLE_REFRESH`, `SmithFace::Legacy`; the settings shapes `LocalJson`, `LocalDeclared`, `LocalPriced`, `LocalDelegating`; `faces.toml`'s eight `legacy` entries; `tests/legacy.rs`, `tests/recorded/smith-legacy/`, `tests/recorded/smith-current/`, `tests/recorded/tasks/smith-legacy/` and the legacy cases of the tests above; the README's legacy paragraphs.
 
+### 00.s1 The harness's test programs in Rust
+Added during the run (decisions.md, 13.30). Scope: the two programs
+`smith-bench`'s tests spawn as a fake agent are written in Python
+(`benchmarks/tests/probe_command.rs:149`, the replay arm, added by 00.27;
+`benchmarks/tests/smith_adapter.rs:101`, the terminal peer, from before
+this plan), and the user's ruling is Rust unless a language goes through
+them (decisions.md, the preamble). Both become one Rust fixture binary.
+Needs: nothing; it follows the increment smith 00 is on.
+Files: `benchmarks/Cargo.toml` (one `[[bin]]`, `test-peer`, test-only by
+its name and docs); new `benchmarks/src/bin/test_peer.rs`;
+`benchmarks/tests/{probe_command.rs,smith_adapter.rs}`; `benchmarks/README.md`
+(its "immutable `arms/`": say what the code does, "`arms/`, which
+`build` writes once and never rewrites", and no synonym).
+Shape: `test-peer replay <recording> <settings>` copies the recording to
+the settings' `agent.trace.path`; `test-peer terminal <recording> <trace>`
+does what the terminal script does (default SIGHUP, read a line, copy,
+read a line, close stdin and stdout, write its stderr line, exit). Tests
+name it by `env!("CARGO_BIN_EXE_test-peer")`.
+Test shape: the two tests keep their names, steps and assertions; only
+their program changes.
+Proof: unit, `heavy cargo nextest run -p smith-bench -E 'test(a_replay_arm_runs_through_the_probe_command_and_prints_one_line) | test(a_terminal_peer_can_close_its_stdio_before_the_leader_exits_without_hangup)'`, once; and `git grep -n python origin/main -- benchmarks crates tests src` prints nothing once it lands.
+Don't: add a dependency; change what either test checks.
+Size: at most 80 lines of production code.
+
 ## Interface sketches
 
 `benchmarks/src/probe.rs` (00.27) owns preparation and printing; dispatch

@@ -975,4 +975,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    lines against 13.15's 1,000; folding a module into another to fit a
    count is code bent to a number (development.md 4.5), so the bound
    becomes 1,050.
+30. **smith-00.s1: the harness's test programs in Rust** (the check of
+   2026-10-12T15:32:00Z). 00.27 (5a3bc557) added a replay arm whose
+   program is a Python script, beside an older Python terminal peer in
+   `smith_adapter.rs`; the user's ruling of 2026-10-09 is Rust, unless a
+   compelling reason goes through the user, and a test's fake agent is
+   not one. A step not in the plan, 00.s1, makes both one Rust fixture
+   binary, and drops 00.27's "immutable" from `benchmarks/README.md`. The
+   Pulse's words gain `python3`, so a new one shows in the next check.
 
