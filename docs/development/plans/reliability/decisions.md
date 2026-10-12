@@ -1647,3 +1647,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    what 08.6's Removes asked was the production `window: 1`, which is
    gone (production takes the fact's window). Both read so at the run's
    end; session 08 is done.
+83. **The run's model count is derived from the configuration** (block
+   of 2026-10-12T20:30:12Z, smith 10.18). With `sub_agents` on, 13.69's
+   rule can select five models, but `smith-domain-run/src/limits.rs`
+   fixes the run's `models` at 2 and `Config::validate` allows that plus
+   main, so 10.18's composition story fails `Invalid::Models`.
+   limits.md: "Every limit is derived, layer by layer". Ruling: the
+   implementer's repair: `crates/smith-agent-service/src/profile.rs`'s
+   `derive_domain` sets the run's `models` to the selected configuration's
+   model count less main, with checked arithmetic and a typed overflow;
+   no new declaration, override or standard value. The file joins 10.18's
+   Files, within 13.80's 950 lines. If the larger count breaks the memory
+   check of the standard profile, 10.18 stops and asks.
