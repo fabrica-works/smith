@@ -14,14 +14,10 @@ use crate::fixture;
 use crate::tickets::{SERVED, Ticketed, Tickets};
 use crate::translate;
 
-/// Check two actual requests of one window (domain/session.md, sections 3 and 10).
-pub fn assert_prompt_extends(previous: &Prompt, current: &Prompt) {
-    assert_eq!(current.affinity, previous.affinity, "a window keeps its affinity");
-    assert_eq!(current.system, previous.system, "a window keeps its system text");
-    assert_eq!(current.tools, previous.tools, "a window keeps its tool grants");
-    assert_eq!(current.delegated, previous.delegated, "a window keeps its tool descriptors");
-    assert!(current.messages.starts_with(&previous.messages), "a window extends its history");
-}
+#[path = "window_referee.rs"]
+mod window_referee;
+
+pub use window_referee::{assert_prompt_bound, assert_prompt_boundary, assert_prompt_extends};
 
 /// Room in each domain's output queue beyond what one step may emit. Small, so
 /// the loop's flow control (take an event only while there is room for what
@@ -205,6 +201,7 @@ impl Settings {
             progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
             seed,
             agent: agent::Limits {
+                threshold: [4, 5],
                 sessions: 4,
                 spend: 1,
                 protocol_allowance: 0,
@@ -284,6 +281,8 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
         final_turn: None,
+        window: 65_536,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: agent::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -525,6 +524,12 @@ pub struct Told {
 #[derive(Debug)]
 pub struct Session {
     previous_prompt: Option<Prompt>,
+    compacting: Option<u32>,
+    opening: Option<Box<[agent::llm::Message]>>,
+    window: u32,
+    ordinary: Option<(Usage, usize)>,
+    summary: Option<(u64, u64)>,
+    summary_instruction: Box<[u8]>,
     /// The session's name, once it opened.
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
@@ -1150,11 +1155,7 @@ impl World {
             }
             agent::Request::Complete { owner, prompt, deadlines, .. } => {
                 let opener = self.openers[&owner];
-                let session = self.sessions.get_mut(&opener).expect("actual request names an open session");
-                if let Some(previous) = &session.previous_prompt {
-                    assert_prompt_extends(previous, &prompt);
-                }
-                session.previous_prompt = Some(prompt.clone());
+                window_referee::prompt(self.sessions.get_mut(&opener).expect("known session"), &prompt);
                 self.affordable(owner, &prompt);
                 in_call_order(&prompt);
                 self.check_results(owner, &prompt);
@@ -1286,6 +1287,11 @@ impl World {
         session.accepted_content.push(content);
         session.accepted_stop.push(stop);
         session.accepted_late.push(late);
+        if session.compacting.is_none() {
+            session.ordinary =
+                Some((usage, session.previous_prompt.as_ref().expect("accepted request").messages.len() + 1));
+            session.summary = None;
+        }
     }
 
     /// Check every concrete handoff against accepted usage and its historical representation.
@@ -1298,6 +1304,11 @@ impl World {
         assert_eq!(turn.sequence, u32::try_from(index + 1).expect("bounded sequence"));
         assert_eq!(turn.usage, session.accepted[index], "each Turn records its actual accepted provider usage");
         assert_eq!(turn.spent, 0, "zero-price exact bill");
+        if matches!(turn.kind, agent::record::Kind::Window { .. }) {
+            window_referee::recorded_window(session, &turn, index);
+            session.records.push(turn);
+            return;
+        }
         let assistant_index = turn
             .messages
             .iter()
@@ -1419,7 +1430,11 @@ impl World {
             agent::End::Busy | agent::End::Invalid => {
                 assert!(session.session.is_none(), "a session refused at the entrance never opened");
             }
-            agent::End::Closed | agent::End::Failed { .. } | agent::End::Budget { .. } | agent::End::TranscriptFull => {
+            agent::End::Closed
+            | agent::End::NoSummary { .. }
+            | agent::End::Failed { .. }
+            | agent::End::Budget { .. }
+            | agent::End::TranscriptFull => {
                 let name = session.session.expect("a session that ran had opened");
                 assert!(self.idle(name), "a session ends once nothing it asked for is in flight");
             }
@@ -1816,6 +1831,12 @@ impl World {
         let abandon = self.rng.chance(self.settings.abandon);
         let session = Session {
             previous_prompt: None,
+            compacting: None,
+            opening: None,
+            window: spec.window,
+            ordinary: None,
+            summary: None,
+            summary_instruction: spec.summary.clone(),
             session: None,
             budget: spec.budget,
             max_tokens: spec.output,
@@ -1907,6 +1928,11 @@ impl World {
             told.invalid_calls += invalid;
         }
         let count = match fact {
+            agent::FactKind::CompactionStarted { opener, window } => {
+                self.sessions.get_mut(&opener.raw()).expect("known opener").compacting = Some(window);
+                return;
+            }
+            agent::FactKind::CompactionEnded { .. } => return,
             agent::FactKind::Opened { .. } => &mut told.opened,
             agent::FactKind::ReasoningDropped { .. } => &mut told.reasoning_dropped,
             agent::FactKind::CompletionStarted { .. } => &mut told.completions_started,
@@ -1982,8 +2008,12 @@ impl World {
             assert!(session.ended.is_some(), "session {opener} has ended");
             assert_eq!(
                 session.records.len(),
-                session.accepted.len(),
-                "every accepted completion emits concrete history"
+                session.accepted.len()
+                    - usize::from(matches!(
+                        session.ended.as_ref().map(|ended| ended.end),
+                        Some(agent::End::NoSummary { .. })
+                    )),
+                "every accepted completion except a failed summary emits concrete history"
             );
             if session.session.is_some() {
                 assert!(session.priced >= session.turns, "every actual usage and final terminal is priced");

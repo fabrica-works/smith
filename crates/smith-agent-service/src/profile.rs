@@ -473,7 +473,7 @@ fn derive_domain(
     let policy = profile.policy;
     let tools = derive_tools(profile)?;
     let own = room::own_part(&tools, path.client.input, path.framing).ok_or(derived(Layer::Service, "own_part"))?;
-    let parts = room::room(profile, configuration, own, 0)?;
+    let parts = room::room(profile, configuration, own, run::summary_bytes())?;
     let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
     let run = match run::derive(&run::Derivation {
         conversations: declared.conversations,

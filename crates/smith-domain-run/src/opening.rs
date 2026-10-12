@@ -57,6 +57,7 @@ pub(crate) fn main(
         llm: charter.llm.clone(),
         system: prompt::system(charter, workspace, found, charter.budget.remainder(spent, left)),
         prompt: copy_of(prompt::BEGIN),
+        summary: copy_of(prompt::SUMMARY),
         tools: workspace::families(workspace, Families::of(&charter.grants)).tools,
         workspace: workspace.cloned(),
         budget: charter.budget.remainder(spent, left),

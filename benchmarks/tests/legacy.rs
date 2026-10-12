@@ -479,6 +479,7 @@ fn choice_intents_are_ancestry_selected_and_never_provider_attempt_counts() {
     let mut observer = Observer::new(FactShape::Choices);
     for choice in [Choice::Auto, Choice::Only, Choice::None] {
         let native = FactKind::CompletionStarted {
+            window: 1,
             opener: skein_lib::Token::new(0),
             attempt: 0,
             messages: 1,
@@ -494,6 +495,10 @@ fn choice_intents_are_ancestry_selected_and_never_provider_attempt_counts() {
                 ..
             })
         ));
+        assert!(
+            parse_line_for(&line.replace("window: 1", "window: 0"), FactShape::Choices).is_err(),
+            "the new window field is a positive u32"
+        );
         assert!(parse_line_for(&line, FactShape::Kinds).is_err(), "frozen kind layout rejects choice");
         assert!(parse_line(&line).is_err(), "frozen flag layout rejects choice");
     }

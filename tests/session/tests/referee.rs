@@ -45,3 +45,18 @@ fn changed_window_affinity_is_rejected() {
     changed.affinity.thread = 1;
     assert_prompt_extends(&previous, &changed);
 }
+
+#[test]
+#[should_panic(expected = "a window extends its history")]
+fn a_window_boundary_without_a_compaction_is_rejected() {
+    let previous = prompt();
+    let mut changed = prompt();
+    changed.messages[0].content = Box::new([Block::Text { text: b"summary".as_slice().into(), replay: None }]);
+    smith_session_world::assert_prompt_boundary(&previous, &changed, None);
+}
+
+#[test]
+#[should_panic(expected = "no prompt whose bound exceeds its window")]
+fn a_prompt_past_its_window_is_rejected() {
+    smith_session_world::assert_prompt_bound(1_001, 1_000);
+}

@@ -523,6 +523,12 @@ impl Book {
                     None => unreachable!("a component failure follows an actual hand-off"),
                 }
             }
+            session::FactKind::CompactionStarted { opener, .. } => {
+                let conversation = self.conversations.get_mut(&opener).expect("compaction follows opening");
+                if let Some(record) = terminal(conversation, origin, unknown_usage(), 0, None) {
+                    records.push(record).expect("the prior failed response settles before the summary request");
+                }
+            }
             session::FactKind::CompletionRetried { opener, delay, .. } => {
                 let conversation = self.conversations.get_mut(&opener).expect("retry follows opening");
                 let record = terminal(conversation, origin, unknown_usage(), 0, Some(delay.as_nanos() / 1_000_000))
@@ -548,7 +554,7 @@ impl Book {
                 let (end, which, mut failure) = conversation_end(end);
                 if failure.is_some() {
                     if let Some(observed) = conversation.last_failure.take() {
-                        failure = Some(observed);
+                        failure = Some(end_failure(failure.expect("typed failed terminal"), observed));
                     }
                     if conversation.main {
                         self.main_failure = match &failure {
@@ -582,7 +588,8 @@ impl Book {
                     })
                     .expect("one conversation terminal");
             }
-            session::FactKind::ReasoningDropped { .. }
+            session::FactKind::CompactionEnded { .. }
+            | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
@@ -805,6 +812,7 @@ fn limit_name(which: llm::Limit) -> &'static [u8] {
     match which {
         llm::Limit::Pool { .. } => b"pool",
         llm::Limit::History => b"history",
+        llm::Limit::Window => b"window",
         llm::Limit::Call => b"call",
         llm::Limit::Message => b"message",
         llm::Limit::Path(which) => match which {
@@ -833,9 +841,32 @@ fn limit_name(which: llm::Limit) -> &'static [u8] {
     }
 }
 
+/// A derived window limit keeps the native failure that caused it (protocol/events.md, 3.10).
+fn end_failure(mut projected: CompletionFailure, observed: CompletionFailure) -> CompletionFailure {
+    match &projected.limit {
+        Some(limit) if limit.which.as_ref() == b"window" => {
+            let request_limit = match &observed.limit {
+                Some(limit) => limit.which.as_ref() == b"request",
+                None => false,
+            };
+            if projected.evidence == observed.evidence
+                && (observed.class == smith_events::FailureClass::ContextTooLong
+                    || observed.class == smith_events::FailureClass::Limit && request_limit)
+            {
+                projected.evidence = observed.evidence;
+                projected.status = observed.status;
+                projected.detail = observed.detail;
+            }
+            projected
+        }
+        Some(_) | None => observed,
+    }
+}
+
 fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]>, Option<CompletionFailure>) {
     match end {
         session::End::Closed => (ConversationEnd::Closed, None, None),
+        session::End::NoSummary { .. } => (ConversationEnd::Failed, None, None),
         session::End::Busy | session::End::Invalid => (ConversationEnd::Refused, None, None),
         session::End::Failed { failure, evidence } => {
             (ConversationEnd::Failed, None, Some(completion_failure(failure, evidence)))
@@ -938,6 +969,7 @@ pub(crate) mod tests {
             &fact(
                 2,
                 session::FactKind::CompletionStarted {
+                    window: 1,
                     opener: owner,
                     attempt: retry,
                     messages: 0,
@@ -949,6 +981,37 @@ pub(crate) mod tests {
             ),
         );
         assert!(records.is_empty());
+    }
+
+    #[test]
+    fn a_compaction_settles_the_prior_failed_response_before_its_request() {
+        let mut book = Book::new(1);
+        let owner = Token::new(11);
+        book.opened(at(1), owner, &opened(11, 0));
+        intent(&mut book, owner, session::Choice::Auto, 0);
+        book.request(at(3), Time::ZERO, Token::new(99), &prompt(0));
+        let failed = fact(
+            5,
+            session::FactKind::CompletionFailed {
+                opener: owner,
+                failure: llm::Failure::ContextTooLong,
+                evidence: llm::Evidence::Response,
+            },
+            1,
+            None,
+        );
+        assert!(book.fact(Time::ZERO, &failed).is_empty());
+        let records =
+            book.fact(Time::ZERO, &fact(6, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 1, None));
+        let Event::ResponseCompleted(ended) = &records.get(0).expect("failure terminal").event else {
+            panic!("response closes")
+        };
+        assert_eq!(ended.failure.as_ref().expect("failed request").class, smith_events::FailureClass::ContextTooLong);
+        intent(&mut book, owner, session::Choice::Auto, 0);
+        let Event::ResponseStarted(started) = book.request(at(7), Time::ZERO, Token::new(100), &prompt(0)).event else {
+            panic!("summary request starts")
+        };
+        assert_eq!(started.response, 2);
     }
 
     #[test]
@@ -1537,5 +1600,34 @@ pub(crate) mod tests {
             Some(smith_events::FailureLimit { which: b"response_head".as_slice().into(), bound: 1935 })
         );
         assert_eq!(failure.status, None);
+    }
+}
+
+#[cfg(test)]
+mod window_failure_tests {
+    use super::end_failure;
+    use smith_events::{CompletionFailure, Evidence, FailureClass, FailureLimit};
+
+    #[test]
+    fn an_unsent_window_check_does_not_take_an_earlier_transient_failure_as_its_cause() {
+        let projected = CompletionFailure {
+            class: FailureClass::Limit,
+            evidence: Evidence::Unsent,
+            limit: Some(FailureLimit { which: b"window".as_slice().into(), bound: 6_144 }),
+            status: None,
+            detail: None,
+            phase: None,
+            retry_after_ms: None,
+        };
+        let observed = CompletionFailure {
+            class: FailureClass::RateLimited,
+            evidence: Evidence::Response,
+            limit: None,
+            status: Some(429),
+            detail: Some(b"retry later".as_slice().into()),
+            phase: None,
+            retry_after_ms: Some(1),
+        };
+        assert_eq!(end_failure(projected.clone(), observed), projected);
     }
 }

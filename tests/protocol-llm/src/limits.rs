@@ -74,6 +74,7 @@ pub const LIMITS: Limits = Limits {
         waiting: skein_lib::Duration::from_secs(300),
     },
     session: session::Limits {
+        threshold: [4, 5],
         sessions: 6,
         spend: 10_000,
         protocol_allowance: 4096,
@@ -139,6 +140,7 @@ pub const TIGHT: Limits = Limits {
         ..LIMITS.run
     },
     session: session::Limits {
+        threshold: [4, 5],
         sessions: 4,
         spend: 10_000,
         protocol_allowance: 4096,

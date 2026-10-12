@@ -286,6 +286,7 @@ fn run(inventory: &mut Inventory, limits: &smith_domain::run::Limits) -> Option<
 
 fn session(inventory: &mut Inventory, limits: &smith_domain::session::Limits) -> Option<()> {
     let smith_domain::session::Limits {
+        threshold: _,
         sessions,
         spend,
         protocol_allowance,

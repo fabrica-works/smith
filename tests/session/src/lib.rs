@@ -31,7 +31,7 @@ mod world;
 pub use noisy::{noisy, submit_noisily};
 pub use skein_world::domain::Span;
 pub use world::{
-    BUDGET, Count, Ended, Session, Settings, Stats, TOOLS, Told, World, assert_prompt_extends, reservation_envelope,
-    spec,
+    BUDGET, Count, Ended, Session, Settings, Stats, TOOLS, Told, World, assert_prompt_bound, assert_prompt_boundary,
+    assert_prompt_extends, reservation_envelope, spec,
 };
 pub mod recorded;

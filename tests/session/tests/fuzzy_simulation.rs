@@ -74,11 +74,7 @@ fn random_worlds_settle_with_every_session_ended() {
         }
         for (_, session) in world.sessions() {
             concrete_turns += session.records.len();
-            if let Some(Ended {
-                end: End::Failed { failure, evidence: smith_domain_session::llm::Evidence::Unknown },
-                ..
-            }) = session.ended
-            {
+            if let Some(Ended { end: End::Failed { failure, .. }, .. }) = session.ended {
                 failures.insert(format!("{failure:?}"));
             }
             for (stop, _) in &session.yields {
@@ -89,7 +85,7 @@ fn random_worlds_settle_with_every_session_ended() {
                 End::Invalid => "invalid".into(),
                 End::Closed => "closed".into(),
                 End::Failed { failure: Failure::TimedOut { .. }, .. } => "timed out".into(),
-                End::Failed { .. } => "failed".into(),
+                End::Failed { .. } | End::NoSummary { .. } => "failed".into(),
                 End::Budget { spent } => format!("{spent:?}"),
                 End::TranscriptRefused { .. } | End::PriceOverflow | End::UsageOverflow => {
                     unreachable!("bounded scheduled peers neither restore nor overflow")
@@ -116,7 +112,7 @@ fn random_worlds_settle_with_every_session_ended() {
         races.iter().all(|&count| count > 0),
         "calls, failures and runs won races with cancels, and closes came twice: {races:?}"
     );
-    for failure in ["Overloaded", "Unavailable", "ContextTooLong", "Unauthorized"] {
+    for failure in ["Overloaded", "Unavailable", "Limit { which: Window, bound: 65536 }", "Unauthorized"] {
         assert!(failures.contains(failure), "some session failed as {failure}: {failures:?}");
     }
     assert!(op_timeouts > 0, "some operations of the tools ran out of time");
@@ -124,4 +120,31 @@ fn random_worlds_settle_with_every_session_ended() {
         invalid > 0 && not_run > 0,
         "some calls were malformed, and some were cut short and not run: {invalid} {not_run}"
     );
+}
+
+#[test]
+fn drawn_small_windows_compact_within_them() {
+    use smith_domain_session::{Event, llm, record};
+    use smith_session_world::recorded::{World, opening};
+    let mut rng = skein_lib::Rng::new(4712);
+    for seed in 0..100 {
+        let mut world = World::new(seed, 256);
+        world.env.limits.spend = 10_000;
+        let mut start = opening(None, world.env.limits.spend);
+        start.spec.window = u32::try_from(rng.between(2_000, 3_000)).expect("small window");
+        start.spec.output = 512;
+        let window = start.spec.window;
+        world.open(start);
+        let text =
+            |bytes: &[u8]| Box::new([llm::Block::Text { text: bytes.into(), replay: None }]) as Box<[llm::Block]>;
+        let usage =
+            llm::Usage { input_tokens: Some(u64::from(window) * 4 / 5), output_tokens: Some(32), ..llm::Usage::ZERO };
+        world.complete(text(b"answer"), llm::Stop::EndTurn, usage);
+        world.step(Event::Continue { session: world.session.expect("opened"), content: b"continue".as_slice().into() });
+        world.complete(text(b"summary"), llm::Stop::EndTurn, llm::Usage { output_tokens: Some(8), ..usage });
+        assert!(matches!(world.turns.last().expect("window turn").kind, record::Kind::Window { .. }));
+        let prompt = world.prompts.last().expect("new window prompt");
+        smith_session_world::assert_prompt_bound(prompt.input_bytes().expect("bounded") - 7 + 8 + 512, window);
+        world.close();
+    }
 }

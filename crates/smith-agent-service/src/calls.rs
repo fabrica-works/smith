@@ -187,7 +187,9 @@ impl Book {
                 self.inputs.ended(opener);
                 return;
             }
-            session::FactKind::Opened { .. }
+            session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
             | session::FactKind::CompletionFailed { .. }
@@ -243,20 +245,13 @@ impl Book {
                 ));
             }
             session::FactKind::DelegateCancelled { .. } | session::FactKind::DelegateWithheld { .. } => {
-                sinks.record(&self.completed(
-                    origin,
-                    fact.at,
-                    metadata,
-                    Terminal {
-                        verdict: smith_events::Verdict::Withdrawn,
-                        exit: None,
-                        bytes: 0,
-                        omitted_bytes: 0,
-                        clamped: false,
-                    },
-                ));
+                let verdict = smith_events::Verdict::Withdrawn;
+                let terminal = Terminal { verdict, exit: None, bytes: 0, omitted_bytes: 0, clamped: false };
+                sinks.record(&self.completed(origin, fact.at, metadata, terminal));
             }
-            session::FactKind::Opened { .. }
+            session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
             | session::FactKind::CompletionFailed { .. }

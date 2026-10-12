@@ -674,6 +674,7 @@ mod tests {
                     &fact(
                         2,
                         session::FactKind::CompletionStarted {
+                            window: 1,
                             opener: owner,
                             attempt: 0,
                             messages: 0,

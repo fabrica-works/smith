@@ -271,6 +271,10 @@ pub struct Spec {
     pub delegated: Box<[Descriptor]>,
     /// The first user message.
     pub prompt: Box<[u8]>,
+    /// The model's usable context window in tokens.
+    pub window: u32,
+    /// Run-owned instruction supplied to each compaction completion.
+    pub summary: Box<[u8]>,
     /// The most tokens each answer may take, and fewer once the output budget
     /// has less left.
     pub output: u32,
@@ -377,6 +381,17 @@ pub enum Yield {
     Malformed,
 }
 
+/// Why a compaction answer cannot open a new window (domain/session.md, 8.2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum NoSummary {
+    /// The provider refused the summary, with or without accompanying text.
+    Refused,
+    /// The output limit was reached before any summary text was produced.
+    Truncated,
+    /// The answer contained no non-whitespace summary text.
+    Malformed,
+}
+
 /// How a session ended.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum End {
@@ -400,6 +415,8 @@ pub enum End {
         /// parent only after all started provider, tool and child work settles.
         spent: Dimension,
     },
+    /// The compaction produced no usable summary; no turn was told.
+    NoSummary { fault: NoSummary },
     /// The conversation outgrew the session's message or byte limit.
     TranscriptFull,
     /// A transcript cannot be resumed. The next attempt must start fresh;

@@ -372,6 +372,8 @@ pub enum Limit {
     Path(Cap),
     /// The session's retained window refused its history bound.
     History,
+    /// The usable model window could not make its first ordinary completion.
+    Window,
     /// One received tool call refused its argument bound.
     Call,
     /// One injected message refused its receiving bound.

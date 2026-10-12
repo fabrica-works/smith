@@ -49,15 +49,15 @@ impl Final {
         }
     }
 
-    pub(crate) fn take_note(&mut self, turns: u32, time: Duration) -> Option<Box<[u8]>> {
+    pub(crate) fn take_note(&mut self, turns: u32, time: Duration, compaction: bool) -> Option<Box<[u8]>> {
         let starts = match self {
-            Final::Pending(final_turn) => final_turn.due(turns, time, false),
+            Final::Pending(final_turn) => final_turn.due(turns, time, compaction),
             Final::Absent | Final::Answering { .. } => false,
         };
         if !starts {
             return None;
         }
-        let spent = if turns <= 1 { Dimension::Turns } else { Dimension::Time };
+        let spent = if turns <= if compaction { 2 } else { 1 } { Dimension::Turns } else { Dimension::Time };
         match mem::replace(self, Final::Answering { spent }) {
             Final::Pending(final_turn) => Some(final_turn.note),
             Final::Absent | Final::Answering { .. } => unreachable!("only a pending final turn supplies its note"),

@@ -44,6 +44,8 @@ pub(crate) fn project(fact: &domain::Fact) -> Option<(FactKind, u64)> {
                 | tools::FactKind::Closed { .. } => None,
             },
             session::FactKind::ReasoningDropped { .. }
+            | session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
             | session::FactKind::Opened { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }

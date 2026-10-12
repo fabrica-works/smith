@@ -131,6 +131,9 @@
 //! and [`tell`] of the requests the transition made, in one place; the tools
 //! tell of their own calls, and the session passes their facts on.
 
+#[path = "compaction.rs"]
+mod compaction;
+
 use alloc::boxed::Box;
 use core::mem::{self, size_of};
 
@@ -172,6 +175,12 @@ struct Conversation {
     choice: ToolChoice,
     final_turn: crate::final_turn::Final,
     output: u32,
+    model_window: u32,
+    window: crate::window::Window,
+    compaction: compaction::Compaction,
+    task: Box<[u8]>,
+    summary: Box<[u8]>,
+    window_turn: bool,
     /// The conversation so far, oldest first, starting with the spec's prompt.
     transcript: List<Message>,
     /// Bytes held, counted against `Limits::history_bytes`.
@@ -587,6 +596,7 @@ pub(crate) fn overflowed(domain: &mut Domain, env: &Env<Limits>, owner: Token, e
         | End::TranscriptFull
         | End::TranscriptRefused { .. }
         | End::Failed { .. }
+        | End::NoSummary { .. }
         | End::Budget { .. } => unreachable!("run-wide arithmetic rejects only overflow"),
     }
     let mark = out.len();
@@ -768,7 +778,14 @@ pub(crate) fn failed(
     let state = mem::replace(&mut session.state, State::Closed);
     session.state = match state {
         State::Calling { attempt } => {
-            call_failed(attempt, failure, evidence, session.conversation.expires, &mut domain.rng, env)
+            if compaction::context_failure(failure) {
+                match compaction::start(&mut session.conversation, &env.limits, evidence) {
+                    Some(end) => finish(end),
+                    None => call(&mut session.conversation, id, 0, env, out),
+                }
+            } else {
+                call_failed(attempt, failure, evidence, session.conversation.expires, &mut domain.rng, env)
+            }
         }
         State::Closing { end, waiting: waiting @ Waiting { call: true, .. } } => {
             State::Closing { end, waiting: Waiting { call: false, ..waiting } }
@@ -1093,6 +1110,9 @@ fn conclude(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Q
     match session.state {
         State::Closing { waiting: Waiting { call: false, runs: 0, .. }, .. } | State::Yielded => {
             finish_closing(&mut session.conversation);
+            if session.conversation.compaction.asking() {
+                clear_pending(&mut session.conversation);
+            }
             if let Some(end) = tell_turn(&mut session.conversation, out) {
                 match &mut session.state {
                     State::Closing { end: current, .. } => *current = end,
@@ -1113,7 +1133,7 @@ fn conclude(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Q
         | State::Closed => {}
     }
     settle(domain, env, id, out);
-    let session = domain.sessions.get(id).expect("a session lives until it is retired");
+    let session = domain.sessions.get_mut(id).expect("a session lives until it is retired");
     tell(&mut domain.facts, &domain.calls.runs, session, out, mark);
     follow(&mut domain.sessions, &mut domain.alarms, &mut domain.ready, id);
 }
@@ -1170,10 +1190,11 @@ fn choice_kind(choice: &ToolChoice) -> crate::facts::Choice {
 
 /// What a transition tells, derived from the requests it made: a fact for
 /// each but the cancels and the tools' operations, which the tools tell.
-fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Request>, mark: u32) {
+fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<Request>, mark: u32) {
     let opener = session.conversation.opener;
     let made = usize::try_from(mark).expect("a u32 fits in a usize");
     for request in out.iter().skip(made) {
+        compaction::tell(&mut session.conversation, facts, request);
         let fact = match request {
             Request::Opened { opener, session: _ } => FactKind::Opened { opener: *opener },
             Request::Yielded { opener, stop, text: _ } => FactKind::Yielded { opener: *opener, stop: *stop },
@@ -1193,6 +1214,7 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &Session, out: &Queue<Requ
                 let (messages, max_tokens) = (count(prompt.messages.len()), prompt.max_tokens);
                 FactKind::CompletionStarted {
                     opener,
+                    window: session.conversation.window.number,
                     attempt: name.retry,
                     messages,
                     max_tokens,
@@ -1281,6 +1303,9 @@ fn answered(
         release_provider(conversation);
         return finish(end);
     }
+    if conversation.compaction.asking() {
+        return compaction::answered(conversation, id, completion, env, out);
+    }
     if !origin_fits {
         release_provider(conversation);
         clear_pending(conversation);
@@ -1328,6 +1353,10 @@ fn answered_late(
     if let Err(overflow) = used(conversation, completion.usage, out) {
         release_provider(conversation);
         return State::Closing { end: overflow, waiting: Waiting { call: false, ..waiting } };
+    }
+    if conversation.compaction.asking() {
+        let end = compaction::accept(conversation, completion, limits, out).unwrap_or(end);
+        return State::Closing { end, waiting: Waiting { call: false, ..waiting } };
     }
     if conversation.transcript.room() == 0
         || !receive_completion(conversation, &completion.content, tally(&completion.content).0, limits)
@@ -1756,6 +1785,12 @@ fn call(
     if let Some(end) = final_prompt(conversation, env) {
         return finish(end);
     }
+    if !conversation.compaction.asking()
+        && compaction::due(conversation, &env.limits)
+        && let Some(end) = compaction::start(conversation, &env.limits, crate::llm::Evidence::Unsent)
+    {
+        return finish(end);
+    }
     {
         let Recording { sequence, .. } = conversation.recording;
 
@@ -1771,7 +1806,8 @@ fn call(
 fn final_prompt(conversation: &mut Conversation, env: &Env<Limits>) -> Option<End> {
     let turns = conversation.budget.turns.checked_sub(conversation.turns).expect("unspent turns checked");
     let time = conversation.expires.saturating_since(env.now);
-    let note = conversation.final_turn.take_note(turns, time)?;
+    let due = compaction::due(conversation, &env.limits);
+    let note = conversation.final_turn.take_note(turns, time, due)?;
     let cost = u64::try_from(size_of::<Block>()).expect("one block cell fits");
     if conversation.transcript.room() == 0 || !charge(conversation, Some(cost), &env.limits) {
         return Some(End::TranscriptFull);
@@ -1931,11 +1967,14 @@ fn admit(
     {
         return None;
     }
+    let task = spec.prompt.clone();
     let content: Box<[Block]> = Box::new([Block::Text { text: spec.prompt, replay: None }]);
     let final_turn = crate::final_turn::Final::new(spec.final_turn);
     let bytes = spec_cost(&spec.model, &spec.system, &spec.delegated, &content)?
         .checked_add(spec.authority.namespace_bytes()?)?
-        .checked_add(final_turn.note_bytes()?)?;
+        .checked_add(final_turn.note_bytes()?)?
+        .checked_add(len(&task)?)?
+        .checked_add(len(&spec.summary)?)?;
     if bytes > limits.history_bytes || limits.history_blocks == 0 {
         return None;
     }
@@ -1955,6 +1994,12 @@ fn admit(
         choice: ToolChoice::Auto,
         final_turn,
         output: spec.output,
+        model_window: spec.window,
+        window: crate::window::Window::fresh(1, 0),
+        compaction: compaction::Compaction::Idle,
+        task,
+        summary: spec.summary,
+        window_turn: false,
         transcript,
         bytes,
         reserved: 0,
@@ -2329,6 +2374,11 @@ fn receive_completion(conversation: &mut Conversation, content: &[Block], calls:
     };
     assert!(cost <= credit, "complete content and result skeleton obey reserved caps");
     let fits = charge(conversation, Some(cost), limits);
+    conversation.window.completed(
+        conversation.recording.pending.expect("ordinary completion usage retained"),
+        conversation.output,
+        conversation.transcript.len().checked_add(1).expect("reserved assistant slot"),
+    );
     assert!(fits, "valid actual completion consumes space reserved before provider work");
     true
 }
@@ -2889,6 +2939,7 @@ fn restore(
 ) -> Result<u32, crate::record::Refusal> {
     use crate::record::Refusal;
     let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
+    compaction::restore(conversation, &transcript, &mut bytes)?;
     conversation.affinity = match transcript.turns.first().expect("validated nonempty history").kind {
         crate::record::Kind::First { affinity } | crate::record::Kind::Window { affinity } => affinity,
         crate::record::Kind::Ordinary => unreachable!("validated opening kind"),
@@ -3070,7 +3121,10 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
     *told = conversation.transcript.len();
     let turn = crate::record::Turn {
         version: crate::record::VERSION,
-        kind: if next == 1 {
+        kind: if conversation.window_turn {
+            conversation.window_turn = false;
+            crate::record::Kind::Window { affinity: conversation.affinity }
+        } else if next == 1 {
             crate::record::Kind::First { affinity: conversation.affinity }
         } else {
             crate::record::Kind::Ordinary

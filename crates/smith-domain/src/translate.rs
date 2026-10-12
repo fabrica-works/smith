@@ -64,6 +64,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         llm,
         system,
         prompt,
+        summary,
         tools,
         workspace,
         budget,
@@ -115,6 +116,8 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         delegated: delegated.into_boxed(),
         prompt,
         output: llm.output,
+        window: llm.window,
+        summary,
         budget: Budget { turns, time, ..receiving },
     };
     Some((spec, offered))
@@ -205,6 +208,11 @@ pub(crate) fn end(end: session::End) -> run::End {
         session::End::Failed { failure, evidence } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
+        }),
+        session::End::NoSummary { fault } => run::End::Fault(match fault {
+            session::NoSummary::Refused => run::Fault::Refused,
+            session::NoSummary::Truncated => run::Fault::Truncated,
+            session::NoSummary::Malformed => run::Fault::Malformed,
         }),
         session::End::Budget { spent } => exhausted(spent),
         session::End::TranscriptFull => run::End::Fault(run::Fault::ContextFull),

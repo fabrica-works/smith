@@ -35,6 +35,8 @@ pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::O
     record::Opening {
         spec: session::Spec {
             final_turn: None,
+            window: 65_536,
+            summary: b"Summarise the work so far.".as_slice().into(),
             affinity: llm::Affinity { key: [0; 16], thread: 0 },
             protocol_allowance: 0,
             progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },

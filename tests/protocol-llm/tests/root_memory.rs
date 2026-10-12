@@ -765,6 +765,10 @@ struct Counted {
 
 impl Counted {
     fn new(limits: &Limits) -> Self {
+        Self::with_window(limits, 16_384)
+    }
+
+    fn with_window(limits: &Limits, window: u32) -> Self {
         let meter = Meter::new();
         meter.start();
         let out = Queue::with_capacity(root::max_out(limits));
@@ -776,7 +780,7 @@ impl Counted {
                     protocol_allowance: 0,
                     endpoint: smith_domain::run::charter::Endpoint(0),
                     model: Box::from(&b"fixture-model"[..]),
-                    window: 16_384,
+                    window,
                     output: 4096,
                     head: Duration::from_secs(60),
                     idle: Duration::from_secs(30),
@@ -1239,7 +1243,8 @@ fn cap(source: &Counted) -> u64 {
         + len(&first.system)
         + 2 * size::<session::llm::Descriptor>()
         + size::<session::llm::Block>()
-        + len(text);
+        + 2 * len(text)
+        + 181; // Retained summary instruction beside the task and history.
     let prefix = source
         .prefix
         .as_ref()
@@ -1590,7 +1595,7 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     receiving.session.delegated_result_bytes = root::feedback_worst_case(&receiving.run)
         .expect("maximum path charter has a finite exact receiving feedback bound")
         .max(receiving.session.delegated_result_bytes);
-    let mut counted = Counted::new(&receiving);
+    let mut counted = Counted::with_window(&receiving, 65_536);
     // This combined fixture's actual system contains both maximum convention
     // labels plus full nested workspace metadata. Select explicit native input
     // string cap for that new prompt: 32,768 rather than the default 16,384.
@@ -1600,6 +1605,7 @@ fn a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients() {
     counted.native_limits.client.strings = 32_768;
     let configuration = counted.configuration();
     let mut caller = maximum_convention_charter();
+    caller.llm.window = 65_536;
     let mounted = Some(maximum_workspace(&receiving.run));
     fill_main_context(&mut caller, mounted.as_ref(), &receiving.run);
     let caller_bytes = charter_bytes(&caller);
@@ -1694,6 +1700,7 @@ fn maximum_caller_start(caller: &run::Charter) -> run::Charter {
         conventions: caller.conventions.clone(),
         outcome: caller.outcome.clone(),
         reserve: caller.reserve,
+        llm: caller.llm.clone(),
         ..charter(false)
     }
 }

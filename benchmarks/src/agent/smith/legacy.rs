@@ -555,6 +555,9 @@ fn validate_fact(domain: &str, fact: &Value, shape: FactShape) -> Result<(), Par
         ("Run", "Delivered") => &["run", "status"],
         ("Run", "Answered") => &["run", "answer"],
         ("Session", "Opened" | "CompletionCancelled" | "DelegateCancelled") => &["opener"],
+        ("Session", "CompletionStarted") if shape.choices() && fact.field("window").is_ok() => {
+            &["opener", "attempt", "messages", "max_tokens", "choice", "window"]
+        }
         ("Session", "CompletionStarted") if shape.choices() => {
             &["opener", "attempt", "messages", "max_tokens", "choice"]
         }
@@ -588,10 +591,10 @@ fn validate_fact(domain: &str, fact: &Value, shape: FactShape) -> Result<(), Par
             | "bytes" | "turns" | "running" => {
                 fact.field(field)?.number(field)?;
             }
-            "turn" => {
+            "turn" | "window" => {
                 let turn = fact.field(field)?.number(field)?;
                 if turn == 0 || u32::try_from(turn).is_err() {
-                    return Err(bad(field, "expected positive u32 turn"));
+                    return Err(bad(field, &format!("expected positive u32 {field}")));
                 }
             }
             "read" => validate_read(fact.field(field)?)?,

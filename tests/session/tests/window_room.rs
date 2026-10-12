@@ -54,6 +54,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         start.spec.delegated = Box::new([]);
         start.spec.budget = world.env.limits.budget;
         start.spec.output = 512;
+        start.spec.window = window;
         start.spec.protocol_allowance = allowance;
         // The entire host part and fixed text are present. The initial task
         // holds both offers' bytes, covering the summary and held-back offer
@@ -80,6 +81,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
         let mut final_start = opening(None, final_world.env.limits.spend);
         final_start.spec.budget = final_world.env.limits.budget;
         final_start.spec.budget.turns = 1;
+        final_start.spec.window = window;
         final_start.spec.final_turn =
             Some(session::FinalTurn { note: b"Answer now.".as_slice().into(), allowance: Duration::from_secs(1) });
         final_world.open(final_start);

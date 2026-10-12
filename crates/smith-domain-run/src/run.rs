@@ -1997,6 +1997,7 @@ fn child_opening(
             answer_bytes,
         ),
         prompt: copy_of(prompt::BEGIN),
+        summary: copy_of(prompt::SUMMARY),
         tools: plan.families.tools,
         workspace: run.workspace.clone(),
         budget: plan.budget,

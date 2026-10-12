@@ -67,7 +67,9 @@ impl Book {
             session::FactKind::Yielded { opener, .. }
             | session::FactKind::Used { opener, .. }
             | session::FactKind::Ended { opener, .. } => opener,
-            session::FactKind::Opened { .. }
+            session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
             | session::FactKind::CompletionFailed { .. }
@@ -103,7 +105,9 @@ impl Book {
                 child.spent = child.spent.checked_add(spent).expect("source child bill fits");
             }
             session::FactKind::Ended { turns, .. } => child.turns = turns,
-            session::FactKind::Opened { .. }
+            session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
             | session::FactKind::CompletionFailed { .. }

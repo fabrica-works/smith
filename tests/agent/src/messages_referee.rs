@@ -333,7 +333,7 @@ pub fn completion_parts(content: &[llm::Said]) -> Vec<Part> {
         .collect()
 }
 
-fn recorded_parts(content: &[session::llm::Block]) -> Vec<Part> {
+pub(crate) fn recorded_parts(content: &[session::llm::Block]) -> Vec<Part> {
     content
         .iter()
         .map(|part| match part {

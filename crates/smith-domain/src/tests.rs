@@ -102,6 +102,7 @@ const LIMITS: Limits = Limits {
         waiting: Duration::from_secs(300),
     },
     session: session::Limits {
+        threshold: [4, 5],
         sessions: 4,
         spend: 10_000,
         protocol_allowance: 4096,
@@ -1961,7 +1962,13 @@ fn scalar_reservation_denies_before_any_provider_call_or_credential_lookup() {
     let [Request::Answer { answer: run::Answer::Failed { failure, spent, turns }, .. }] = emitted.as_ref() else {
         panic!("unaffordable maximum must settle locally: {emitted:?}")
     };
-    assert_eq!(*failure, run::Failure::Budget(run::Exhausted::Spend));
+    assert_eq!(
+        *failure,
+        run::Failure::Model(run::Fault::Completion {
+            failure: run::CompletionFailure::Limit,
+            evidence: run::CompletionEvidence::Unsent
+        })
+    );
     assert_eq!((spent.units, spent.turns, *turns), (0, 0, 0));
     assert!(harness.turns.is_empty());
     harness.domain.reclaim();

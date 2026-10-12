@@ -89,6 +89,8 @@ impl HostReply {
 /// Contract: domain/run.md, sections 8 and 13; testing-strategy.md, section 7.
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
+    /// Usable context window shared by the model declaration and charter.
+    pub window: u32,
     /// Host selects supplied history explicitly; false starts fresh even if present.
     /// Contract: domain/run.md, sections 3 and 13.
     pub resume: bool,
@@ -156,6 +158,7 @@ impl Settings {
     pub fn calm(seed: u64) -> Settings {
         let provider = smith_session_world::Settings::calm(seed).provider;
         Settings {
+            window: 65_536,
             resume: false,
             waiting: Duration::from_secs(30),
             seed,
@@ -655,7 +658,7 @@ impl World {
             settings: *settings,
             now: Time::ZERO,
             rng: Rng::new(settings.seed ^ 0x0b),
-            agent: agent::Domain::new(&settings.limits, configuration(), settings.seed ^ 0x17),
+            agent: agent::Domain::new(&settings.limits, configuration(settings.window), settings.seed ^ 0x17),
             stage,
             backend,
             parent_deliveries: false,
@@ -1120,6 +1123,19 @@ impl World {
                 assert_eq!(usize::try_from(number).expect("bounded output number"), self.turns.len() + 1);
                 assert_eq!(position, turn.sequence);
                 self.observe(Seen::Turn { number });
+                if let smith_domain::session::record::Kind::Window { affinity } = turn.kind {
+                    self.observe(Seen::Window {
+                        caching: skein_fake_llm_domain::api::Caching::Scope(affinity.key),
+                        messages: turn
+                            .messages
+                            .iter()
+                            .map(|message| skein_fake_llm_domain::api::Message {
+                                role: skein_fake_llm_domain::api::Role::User,
+                                parts: crate::messages_referee::recorded_parts(&message.content).into(),
+                            })
+                            .collect(),
+                    });
+                }
                 self.messages_seen.push((
                     self.now,
                     crate::messages_referee::Seen::Turn { number, read, spent, opens_window, turn: turn.clone() },
@@ -1976,7 +1992,7 @@ pub fn charter(settings: &Settings) -> run::Charter {
             }]),
         },
     };
-    let llm = main_model();
+    let llm = main_model(settings.window);
     run::Charter {
         reserve: finishing_reserve(settings, change),
         instructions: Box::new([]),
@@ -2131,7 +2147,7 @@ fn opening_observations(
     messages_seen
 }
 
-fn configuration() -> agent::Config {
+fn configuration(window: u32) -> agent::Config {
     agent::Config {
         endpoints: Box::new([run::charter::Endpoint(0)]),
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
@@ -2140,7 +2156,7 @@ fn configuration() -> agent::Config {
                 protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: (*name).into(),
-                window: 65_536,
+                window,
                 output: 4096,
                 head: Duration::from_secs(60),
                 idle: Duration::from_secs(30),
@@ -2149,14 +2165,14 @@ fn configuration() -> agent::Config {
     }
 }
 
-fn main_model() -> run::charter::Llm {
+fn main_model(window: u32) -> run::charter::Llm {
     use run::charter::{Endpoint, Llm};
     Llm {
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(0),
         model: b"fake-1".as_slice().into(),
-        window: 65_536,
+        window,
         output: 4096,
         dialect: 1,
     }

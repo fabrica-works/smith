@@ -47,6 +47,7 @@ fn size(of: usize) -> u64 {
 }
 
 const LIMITS: Limits = Limits {
+    threshold: [4, 5],
     sessions: 1,
     spend: 1,
     protocol_allowance: 0,
@@ -104,11 +105,11 @@ enum Route {
 
 /// Source-derived caps for original payload generation; explicit credit and
 /// message-cell envelopes replace V1's ignored receiving provisions.
-fn pressure_limits(original: Limits, route: Route, messages: u32) -> (Limits, u64, u64, u64) {
+fn pressure_limits(original: &Limits, route: Route, messages: u32) -> (Limits, u64, u64, u64) {
     let pressure = original.history_bytes;
     let block = size(size_of::<Block>());
     let part = size(size_of::<Part>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
     let tooling_cost = block + 3 + part + 1 + block + 1;
     let output = pressure.checked_sub(spec_cost + tooling_cost).expect("original full Tool payload fits");
     let field =
@@ -138,7 +139,7 @@ fn pressure_limits(original: Limits, route: Route, messages: u32) -> (Limits, u6
         // A second provider turn may contain calls: its assistant and results
         // need two message cells even when the old V1 driver expected one.
         history_messages: original.history_messages.max(messages),
-        ..original
+        ..*original
     };
     let envelope = reservation_envelope(&limits).expect("checked provider and whole-batch bounds");
     limits.history_bytes = pressure.checked_add(envelope).expect("bounded payload plus canonical credit");
@@ -222,7 +223,7 @@ fn observe_fill(
 /// fills the maximum payload that can still fund the next provider credit. Credits reserve
 /// space without allocating; emitted concrete Turn/prompt/yield copies belong to
 /// their receivers and are dropped under the shared meter's handoff convention.
-fn fill(original: Limits, route: Route, full_service: bool) {
+fn fill(original: &Limits, route: Route, full_service: bool) {
     let pressure = original.history_bytes;
     let block = size(size_of::<Block>());
     // Each original route reaches three held messages; the full-service
@@ -261,7 +262,7 @@ fn fill(original: Limits, route: Route, full_service: bool) {
     };
     for opener in 0..limits.sessions {
         let opener = Token::new(u64::from(opener));
-        let Some(Asked::Complete { owner }) = step(Event::Open { opener, opening: zero_opening(fill_spec(limits)) })
+        let Some(Asked::Complete { owner }) = step(Event::Open { opener, opening: zero_opening(fill_spec(&limits)) })
         else {
             panic!("the original spec and explicit canonical credit fit");
         };
@@ -407,9 +408,11 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 }
 
 /// Caller-owned input with the same exact byte charge in every fill route.
-fn fill_spec(limits: Limits) -> Spec {
+fn fill_spec(limits: &Limits) -> Spec {
     Spec {
         final_turn: None,
+        window: u32::MAX,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -431,14 +434,14 @@ fn fill_spec(limits: Limits) -> Spec {
 fn a_domain_with_every_session_full_stays_within_its_worst_case() {
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
         for full_service in [false, true] {
-            fill(LIMITS, route, full_service);
-            fill(Limits { sessions: 64, spend: 1, history_bytes: 65_536, ..LIMITS }, route, full_service);
+            fill(&LIMITS, route, full_service);
+            fill(&Limits { sessions: 64, spend: 1, history_bytes: 65_536, ..LIMITS }, route, full_service);
             fill(
-                Limits { sessions: 1000, spend: 1, history_messages: 8, history_bytes: 600, ..LIMITS },
+                &Limits { sessions: 1000, spend: 1, history_messages: 8, history_bytes: 600, ..LIMITS },
                 route,
                 full_service,
             );
-            fill(Limits { sessions: 64, spend: 1, parallel_tools: MAX_PARALLEL, ..LIMITS }, route, full_service);
+            fill(&Limits { sessions: 64, spend: 1, parallel_tools: MAX_PARALLEL, ..LIMITS }, route, full_service);
         }
     }
 }
@@ -451,7 +454,7 @@ fn a_domain_with_every_session_full_stays_within_its_worst_case() {
 fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     use smith_domain_session::record;
     let block = size(size_of::<Block>());
-    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 1;
+    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
     let turn_charge = block + 1 + block + 3 + block + 1;
     let output = 16_384 - spec_charge - turn_charge;
     let limits = Limits {
@@ -501,6 +504,8 @@ fn recorded_delegated_turns_hold_exactly_the_byte_cap_and_count_their_copies() {
     };
     let spec = Spec {
         final_turn: None,
+        window: u32::MAX,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -576,11 +581,13 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let meter = Meter::new();
     let mut domain = Domain::new(&limits, 78);
     let block = size(size_of::<Block>());
-    let charge = 2 + size(size_of::<Descriptor>()) + block + 1;
+    let charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
     let reserve = smith_domain_session::completion_reserve(&limits).expect("complete receiving credit");
     let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve;
     let spec = Spec {
         final_turn: None,
+        window: u32::MAX,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -659,7 +666,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     let calls = 128_u32;
     let id_bytes = 8192_u64;
     let block = size(size_of::<Block>());
-    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 1;
+    let spec_charge = 2 + size(size_of::<Descriptor>()) + block + 2 + 26;
     let original = block + 1 + u64::from(calls) * (block + id_bytes + 2);
     let limits =
         Limits { history_messages: 4, history_bytes: spec_charge + original, spend: u64::MAX, tools, ..LIMITS };
@@ -702,6 +709,8 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     };
     let spec = Spec {
         final_turn: None,
+        window: u32::MAX,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: smith_domain_session::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -920,7 +929,7 @@ fn read_completion(width: u32) -> Completion {
 #[test]
 fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
     let completion_bytes = block + 3 + size(size_of::<Part>()) + 1;
     let base = Limits { completion_bytes, completion_blocks: 1, failure_bytes: 0, history_messages: 5, ..LIMITS };
     let reserve = smith_domain_session::completion_reserve(&base).expect("checked minimal actual provider terminal");
@@ -937,7 +946,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
             &mut out,
             &meter,
             worst_case(&limits).expect("checked limits"),
-            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
         );
         if history_bytes == exact {
             assert!(seen.complete.is_some(), "exact provider reservation admits work");
@@ -979,7 +988,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
             &mut out,
             &meter,
             bound,
-            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
         );
         let owner = seen.complete.expect("spec plus exact provider credit admits");
         let seen = measured_step(
@@ -1022,7 +1031,7 @@ fn provider_admission_and_owned_result_space_have_exact_and_one_short_controls()
 #[test]
 fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
     let original = Limits { sessions: 1, history_bytes: 600, history_messages: 8, ..LIMITS };
-    let (limits, spec_cost, _, _) = pressure_limits(original, Route::Talk, 3_u32 + 2);
+    let (limits, spec_cost, _, _) = pressure_limits(&original, Route::Talk, 3_u32 + 2);
     let reserve = smith_domain_session::completion_reserve(&limits).expect("checked credit");
     let held = limits.history_bytes.checked_sub(reserve).expect("retained maximum leaves exact provider credit");
     let block = size(size_of::<Block>());
@@ -1038,7 +1047,7 @@ fn maximum_admissible_backoff_preserves_the_exact_next_provider_credit() {
         &mut out,
         &meter,
         bound,
-        Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+        Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
     );
     let owner = seen.complete.expect("initial provider credit fits");
     let seen = measured_step(
@@ -1114,7 +1123,7 @@ fn the_original_maximum_parallel_width_has_live_result_rights() {
         &mut out,
         &meter,
         bound,
-        Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+        Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
     );
     let owner = seen.complete.expect("widest provider credit fits");
     let seen = measured_step(
@@ -1166,7 +1175,7 @@ fn missing_completion(field: u64) -> Completion {
 fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
     let original = Limits { history_messages: 4, ..LIMITS };
     for route in [Route::Tool, Route::Invalid, Route::Talk] {
-        let (mut limits, _, output, field) = pressure_limits(original, route, original.history_messages);
+        let (mut limits, _, output, field) = pressure_limits(&original, route, original.history_messages);
         limits.history_messages = original.history_messages;
         assert_eq!(limits.history_messages - 3, 1, "one cell cannot hold an assistant and its results");
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
@@ -1180,7 +1189,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
             &mut out,
             &meter,
             bound,
-            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
         );
         let owner = seen.complete.expect("initial original message count admits");
         let seen = match route {
@@ -1218,7 +1227,7 @@ fn the_original_four_message_cap_refuses_the_next_provider_before_work() {
             }
             Route::Talk => {
                 let block = size(size_of::<Block>());
-                let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+                let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
                 let message = original.history_bytes - spec_cost - block - 1 - block;
                 let seen = measured_step(
                     &mut domain,
@@ -1264,7 +1273,7 @@ fn run_call(ticket: u64, effect: Effect) -> Decoded {
 #[test]
 fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
     let choice_cost = 2 * size(size_of::<Token>());
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
@@ -1283,7 +1292,7 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
             &mut out,
             &meter,
             bound,
-            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(limits)) },
+            Event::Open { opener: Token::new(1), opening: zero_opening(fill_spec(&limits)) },
         );
         let narrowed = measured_step(
             &mut domain,
@@ -1313,7 +1322,7 @@ fn the_largest_fitting_note_and_all_offered_choices_obey_the_session_byte_cap() 
 #[test]
 fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released() {
     let block = size(size_of::<Block>());
-    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 1;
+    let spec_cost = 2 + 2 * size(size_of::<Descriptor>()) + block + 2 + 26;
     let note_bytes = 8192;
     let original = Limits { history_messages: 5, ..LIMITS };
     let credit = smith_domain_session::completion_reserve(&original).expect("whole provider credit");
@@ -1325,7 +1334,7 @@ fn a_maximum_child_final_note_is_charged_before_its_first_request_and_released()
         let meter = Meter::new();
         let mut domain = Domain::new(&limits, 32);
         let bound = worst_case(&limits).expect("checked final note bound");
-        let mut selected = fill_spec(limits);
+        let mut selected = fill_spec(&limits);
         selected.budget.turns = 1;
         selected.final_turn = Some(smith_domain_session::FinalTurn {
             note: bytes(note_bytes + extra),

@@ -38,15 +38,30 @@ pub enum Choice {
     Only,
 }
 
+/// Whether a summarised window was replaced or its compaction failed.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Compacted {
+    /// The compaction told a window turn and opened the next window.
+    Opened,
+    /// The compaction ended without opening a window.
+    Failed,
+}
+
 /// Something that happened in the session opened for `opener`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FactKind {
     /// The session was admitted.
     Opened { opener: Token },
+    /// A summary completion is replacing this conversation's current window.
+    CompactionStarted { opener: Token, window: u32 },
+    /// The one compaction of this window has settled.
+    CompactionEnded { opener: Token, window: u32, end: Compacted },
     /// A completion was asked for, after `attempt` retries, with `messages`
     /// messages and room for `max_tokens` in its answer.
     CompletionStarted {
         opener: Token,
+        /// Current context window, numbered from one.
+        window: u32,
         /// Retry number for the pending provider completion.
         attempt: u32,
         /// Oldest-first conversation messages, with provider call/result pairing preserved.

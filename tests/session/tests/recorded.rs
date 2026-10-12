@@ -467,7 +467,8 @@ fn repeated_provider_ids_keep_distinct_origins_and_restore_includes_history_pref
 // rather than supplied answers as evidence. Contract: domain/session.md, 3/5.
 fn initial_owned(opening: &record::Opening) -> u64 {
     let spec = &opening.spec;
-    u64::try_from(spec.model.len() + spec.system.len() + spec.prompt.len()).expect("small fixture")
+    u64::try_from(spec.model.len() + spec.system.len() + 2 * spec.prompt.len() + spec.summary.len())
+        .expect("small fixture")
         + u64::try_from(core::mem::size_of::<llm::Block>()).expect("block size")
         + u64::try_from(spec.delegated.len() * core::mem::size_of::<llm::Descriptor>()).expect("descriptors")
 }
@@ -908,7 +909,9 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
                 assert!(fact.response.is_some());
                 Some(bytes)
             }
-            session::FactKind::Opened { .. }
+            session::FactKind::CompactionStarted { .. }
+            | session::FactKind::CompactionEnded { .. }
+            | session::FactKind::Opened { .. }
             | session::FactKind::CompletionStarted { .. }
             | session::FactKind::CompletionAnswered { .. }
             | session::FactKind::CompletionFailed { .. }

@@ -24,6 +24,8 @@ use smith_domain::run::{
 pub enum Seen {
     /// Exact typed fake-provider request observed for one conversation.
     Prompt { owner: Token, query: skein_fake_llm_domain::api::Query },
+    /// The actual replacement opening authorises one matching prompt boundary.
+    Window { caching: skein_fake_llm_domain::api::Caching, messages: Vec<skein_fake_llm_domain::api::Message> },
     /// Actual root Turn output; final count must match this observed chronology.
     /// Contract: domain/run.md, section 13.
     Turn {
@@ -171,6 +173,7 @@ enum Phase {
 #[derive(Debug)]
 pub struct Meeting {
     prompts: std::collections::BTreeMap<Token, skein_fake_llm_domain::api::Query>,
+    windows: Vec<(skein_fake_llm_domain::api::Caching, Vec<skein_fake_llm_domain::api::Message>)>,
     turns: u32,
     phase: Phase,
     contract: Option<OutcomeSpec>,
@@ -191,6 +194,7 @@ impl Default for Meeting {
     fn default() -> Self {
         Self {
             prompts: std::collections::BTreeMap::new(),
+            windows: Vec::new(),
             turns: 0,
             phase: Phase::Waiting,
             contract: None,
@@ -218,13 +222,21 @@ impl Expectations for Meeting {
 
     fn observe(&mut self, seen: Seen, judge: &mut Judge<Self::Name, Self::Stimulus>) {
         match seen {
+            Seen::Window { caching, messages } => self.windows.push((caching, messages)),
             Seen::Prompt { owner, query } => {
+                let window = self
+                    .windows
+                    .iter()
+                    .position(|(caching, messages)| *caching == query.caching && query.messages.starts_with(messages));
+                if let Some(index) = window {
+                    self.windows.remove(index);
+                }
                 if let Some(previous) = self.prompts.get(&owner) {
                     judge.check(previous.caching == query.caching, "a session keeps its affinity");
                     judge.check(previous.system == query.system, "a session keeps its system text");
                     judge.check(previous.tools == query.tools, "a session keeps its offered tools");
                     judge.check(
-                        query.messages.starts_with(&previous.messages),
+                        window.is_some() || query.messages.starts_with(&previous.messages),
                         "a session extends its history within a window",
                     );
                 }

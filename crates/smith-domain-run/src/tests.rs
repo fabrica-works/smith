@@ -397,6 +397,7 @@ fn an_admitted_run_reads_its_checkout_then_opens_main_with_the_whole_budget() {
         llm: charter().llm,
         system: super::prompt::system(&charter(), Some(&workspace()), &found, BUDGET),
         prompt: bytes(super::prompt::BEGIN),
+        summary: bytes(super::prompt::SUMMARY),
         tools: charter().grants.tools,
         workspace: Some(workspace()),
         budget: BUDGET,

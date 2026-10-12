@@ -54,6 +54,7 @@ const TOOLS: tools::Limits = tools::Limits {
 };
 
 const LIMITS: Limits = Limits {
+    threshold: [4, 5],
     sessions: 2,
     spend: 100,
     protocol_allowance: 0,
@@ -104,12 +105,12 @@ impl Harness {
         }
     }
 
-    fn new(limits: Limits) -> Harness {
+    fn new(limits: &Limits) -> Harness {
         Harness {
             observed: Queue::with_capacity(4096),
-            domain: Domain::new(&limits, 1),
-            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
-            out: Queue::with_capacity(max_out(&limits)),
+            domain: Domain::new(limits, 1),
+            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits },
+            out: Queue::with_capacity(max_out(limits)),
             turns: 0,
             usage: Usage::ZERO,
 
@@ -292,6 +293,8 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 fn spec() -> Spec {
     Spec {
         final_turn: None,
+        window: 65_536,
+        summary: b"Summarise the work so far.".as_slice().into(),
         affinity: crate::llm::Affinity { key: [0; 16], thread: 0 },
         protocol_allowance: 0,
         progress: crate::Progress { head: Duration::from_secs(30), idle: Duration::from_secs(30) },
@@ -467,7 +470,15 @@ fn initial_bytes() -> u64 {
         .expect("descriptors fit");
     let block = u64::try_from(size_of::<Block>()).expect("block fits");
     let names = model.checked_add(system).expect("fixture names fit");
-    let payload = names.checked_add(prompt).expect("fixture opening payload fits");
+    let payload = names
+        .checked_add(
+            prompt
+                .checked_mul(2)
+                .expect("task copied")
+                .checked_add(u64::try_from(spec.summary.len()).expect("summary fits"))
+                .expect("retained instructions fit"),
+        )
+        .expect("fixture opening payload fits");
     let described = payload.checked_add(descriptors).expect("fixture descriptors fit");
     described.checked_add(block).expect("fixture initial block fits")
 }
@@ -574,7 +585,7 @@ fn ended(end: End, turns: u32) -> Request {
 
 #[test]
 fn a_session_runs_the_tools_it_is_asked_for_and_yields_once_the_llm_is_done() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, prompt) = h.open(1);
     assert_eq!(prompt.messages.len(), 1);
     assert_eq!(prompt.tools, spec().authority.grants);
@@ -614,7 +625,7 @@ fn a_session_runs_the_tools_it_is_asked_for_and_yields_once_the_llm_is_done() {
 
 #[test]
 fn a_yielded_session_goes_on_with_the_openers_message() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let session = h.yielded();
     let (owner, prompt) = calling(h.step(Event::Continue { session, content: bytes(b"you have not finished") }));
     assert_eq!(owner, session);
@@ -632,14 +643,14 @@ fn a_yielded_session_goes_on_with_the_openers_message() {
 /// Opens a session whose LLM answers `content` with `stop`, and returns how it
 /// yielded.
 fn yield_on(stop: Stop, content: Box<[Block]>) -> (u64, Yield, Box<[u8]>) {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     yielded(h.step(Event::Completed { owner, completion: completion(content, stop) }))
 }
 
 #[test]
 fn an_invalid_call_is_answered_with_its_problem_and_nothing_runs_for_it() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let missing = Problem::Missing { field: bytes(b"path") };
     let content = Box::new([
@@ -659,6 +670,7 @@ fn an_invalid_call_is_answered_with_its_problem_and_nothing_runs_for_it() {
 
     let opener = Token::new(1);
     let started = Fact::CompletionStarted {
+        window: 1,
         opener,
         attempt: 0,
         messages: 1,
@@ -674,7 +686,7 @@ fn an_invalid_call_is_answered_with_its_problem_and_nothing_runs_for_it() {
 
 #[test]
 fn a_message_of_invalid_calls_waits_on_the_ready_list() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([invalid(b"c1", Problem::UnknownTool)]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
@@ -687,7 +699,7 @@ fn a_message_of_invalid_calls_waits_on_the_ready_list() {
 
 #[test]
 fn a_call_too_large_for_the_agent_is_answered_so_like_any_invalid_call() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([invalid(b"c1", Problem::TooLarge)]);
     assert_eq!(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }), None);
@@ -699,7 +711,7 @@ fn a_call_too_large_for_the_agent_is_answered_so_like_any_invalid_call() {
 
 #[test]
 fn the_calls_a_yield_leaves_are_answered_when_the_opener_continues() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let cut = completion(Box::new([text(b"let me"), invalid(b"c1", Problem::NotAnObject)]), Stop::MaxTokens);
     let session = h.yielded_with(spec(), cut);
     let (_, prompt) = calling(h.step(Event::Continue { session, content: bytes(b"go on") }));
@@ -711,7 +723,7 @@ fn the_calls_a_yield_leaves_are_answered_when_the_opener_continues() {
     assert_eq!((last.role, &*last.content), (Role::User, &content[..]));
 
     // A turn that ended with a call it did not wait for: the call does not run.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let ended = completion(Box::new([tool_call(b"c1", list())]), Stop::EndTurn);
     let session = h.yielded_with(spec(), ended);
     let (_, prompt) = calling(h.step(Event::Continue { session, content: bytes(b"go on") }));
@@ -724,7 +736,7 @@ fn the_calls_a_yield_leaves_are_answered_when_the_opener_continues() {
 
 #[test]
 fn a_tool_call_carries_its_deadline_and_one_that_runs_out_of_time_goes_back_to_the_llm() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     h.after(Duration::from_secs(1));
     step(&mut h.domain, &h.env, Event::Completed { owner, completion: reading() }, &mut h.out);
@@ -746,7 +758,7 @@ fn a_tool_call_carries_its_deadline_and_one_that_runs_out_of_time_goes_back_to_t
 
 #[test]
 fn adjacent_reads_run_together_and_a_write_runs_alone_and_results_go_back_in_order() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([
         tool_call(b"a", cat(b"a")),
@@ -779,7 +791,7 @@ fn adjacent_reads_run_together_and_a_write_runs_alone_and_results_go_back_in_ord
 
 #[test]
 fn a_batch_the_tools_answer_at_once_goes_on_from_the_ready_list_after_the_reclaim_point() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     // Outside the checkout: the tools answer these at their entrance.
     let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
@@ -809,7 +821,7 @@ fn a_batch_the_tools_answer_at_once_goes_on_from_the_ready_list_after_the_reclai
 
 #[test]
 fn a_session_closed_while_it_rests_leaves_the_ready_list() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let over = Call::Write { path: outside(), content: bytes(b"x") };
@@ -822,7 +834,7 @@ fn a_session_closed_while_it_rests_leaves_the_ready_list() {
 
 #[test]
 fn time_expires_while_a_session_rests_between_batches() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let away = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
     let next = Call::Write { path: outside(), content: bytes(b"x") };
@@ -837,7 +849,7 @@ fn time_expires_while_a_session_rests_between_batches() {
 #[test]
 fn a_batch_as_wide_as_the_most_a_step_emits_fits() {
     let limits = Limits { parallel_tools: MAX_PARALLEL, ..LIMITS };
-    let mut h = Harness::new(limits);
+    let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     let mut content = List::with_capacity(MAX_PARALLEL);
     for _ in 0..MAX_PARALLEL {
@@ -859,7 +871,7 @@ fn the_minimum_fact_reserve_keeps_a_maximum_batch_answered_at_the_tools_entrance
     let base = Limits { parallel_tools: MAX_PARALLEL, ..LIMITS };
     let required = crate::max_facts(&base);
     let tools = tools::Limits { facts: (MAX_PARALLEL + 2) * tools::max_facts(&TOOLS), ..TOOLS };
-    let mut h = Harness::new(Limits { facts: required, tools, ..base });
+    let mut h = Harness::new(&Limits { facts: required, tools, ..base });
     let (owner, _) = h.open(1);
     let mut content = List::with_capacity(MAX_PARALLEL);
     for _ in 0..MAX_PARALLEL {
@@ -875,7 +887,7 @@ fn the_minimum_fact_reserve_keeps_a_maximum_batch_answered_at_the_tools_entrance
 
 #[test]
 fn closing_a_session_with_a_batch_in_flight_closes_its_kit_and_waits_for_every_run() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"a", cat(b"a")), tool_call(b"b", cat(b"b"))]);
     let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
@@ -893,7 +905,7 @@ fn closing_a_session_with_a_batch_in_flight_closes_its_kit_and_waits_for_every_r
 fn result_space_is_refused_before_any_batch_and_maximum_winners_fit() {
     let content = Box::new([tool_call(b"a", cat(b"a")), tool_call(b"b", cat(b"b"))]);
     let refusal_limits = receiving_limits(2048, &content[..], 0);
-    let mut h = Harness::new(refusal_limits);
+    let mut h = Harness::new(&refusal_limits);
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) }),
@@ -903,7 +915,7 @@ fn result_space_is_refused_before_any_batch_and_maximum_winners_fit() {
     assert_eq!((h.domain.runs(), h.domain.jobs()), (0, 0));
 
     let batch_credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("two full read results fit");
-    let mut h = Harness::new(receiving_limits(2048, &content[..], batch_credit));
+    let mut h = Harness::new(&receiving_limits(2048, &content[..], batch_credit));
     let (owner, _) = h.open(1);
     let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
     let &[a, b] = runs.as_slice() else { panic!("two reads, not {runs:?}") };
@@ -920,7 +932,7 @@ fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_
     let large = Box::new([tool_call(b"a", cat(b"main.rs")), tool_call(&[b'i'; 2100], away.clone())]);
     let credit = u64::from(TOOLS.read_bytes).checked_mul(2).expect("two read credits fit");
     let limits = receiving_limits(4096, &large[..], credit);
-    let mut h = Harness::new(limits);
+    let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Completed { owner, completion: completion(large, Stop::ToolUse) }),
@@ -929,7 +941,7 @@ fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_
     );
     assert_eq!(h.domain.runs(), 0);
 
-    let mut h = Harness::new(limits);
+    let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     let id = [b'i'; 1500];
     let content = Box::new([tool_call(b"a", cat(b"main.rs")), tool_call(&id, away)]);
@@ -950,7 +962,7 @@ fn a_result_is_charged_its_id_with_its_call_so_a_refusal_at_the_entrance_always_
 
 #[test]
 fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let opener = Token::new(1);
     let (owner, _) = h.open(1);
     let content = Box::new([text(b"two"), tool_call(b"a", cat(b"a")), tool_call(b"b", cat(b"b"))]);
@@ -960,6 +972,7 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted {
+            window: 1,
             opener,
             attempt: 0,
             messages: 1,
@@ -987,7 +1000,7 @@ fn the_tools_tell_of_each_call_and_the_session_passes_it_on() {
 
 #[test]
 fn a_delegated_call_goes_to_the_opener_and_its_answer_goes_back_to_the_llm() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, prompt) = h.open(1);
     assert_eq!(&*prompt.delegated, &[FINISH], "the prompt offers what the opener serves");
     let content = Box::new([delegated(b"c1", 9, Effect::Write)]);
@@ -1008,7 +1021,7 @@ fn a_delegated_call_goes_to_the_opener_and_its_answer_goes_back_to_the_llm() {
 
 #[test]
 fn owned_and_delegated_calls_run_in_one_order_of_batches() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([
         tool_call(b"a", cat(b"a")),
@@ -1047,7 +1060,7 @@ fn owned_and_delegated_calls_run_in_one_order_of_batches() {
 
 #[test]
 fn closing_withdraws_the_delegated_calls_in_flight_and_waits_for_their_terminals() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"a", cat(b"a")), delegated(b"b", 9, Effect::Read)]);
     let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
@@ -1073,7 +1086,7 @@ fn closing_withdraws_the_delegated_calls_in_flight_and_waits_for_their_terminals
 #[test]
 fn delegated_result_space_is_refused_before_effects_and_answers_count() {
     let content = Box::new([delegated(b"b", 9, Effect::Read), tool_call(b"a", cat(b"a"))]);
-    let mut h = Harness::new(receiving_limits(2048, &content[..], 0));
+    let mut h = Harness::new(&receiving_limits(2048, &content[..], 0));
     let (owner, _) = h.open(1);
     assert_eq!(
         h.step(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) }),
@@ -1084,7 +1097,7 @@ fn delegated_result_space_is_refused_before_effects_and_answers_count() {
 
     let credit = LIMITS.delegated_result_bytes.checked_add(u64::from(TOOLS.read_bytes)).expect("mixed batch fits");
     for length in [4096, LIMITS.delegated_result_bytes] {
-        let mut h = Harness::new(receiving_limits(2048, &content[..], credit));
+        let mut h = Harness::new(&receiving_limits(2048, &content[..], credit));
         let (owner, _) = h.open(1);
         let runs = h.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
         let &[read_b, read_a] = runs.as_slice() else { panic!("two runs, not {runs:?}") };
@@ -1104,7 +1117,7 @@ fn delegated_result_space_is_refused_before_effects_and_answers_count() {
 
 #[test]
 fn the_turn_that_crosses_a_budget_still_has_its_delegated_calls_answered() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open_with(1, budget(Budget { input: 9, ..BUDGET }));
     let content = Box::new([delegated(b"f", 9, Effect::Write)]);
     let runs = h.batch(Event::Completed { owner, completion: completion(content, Stop::ToolUse) });
@@ -1114,7 +1127,7 @@ fn the_turn_that_crosses_a_budget_still_has_its_delegated_calls_answered() {
 
 #[test]
 fn delegated_calls_are_told_as_they_start_and_end() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let opener = Token::new(1);
     let (owner, _) = h.open(1);
     let content = Box::new([delegated(b"a", 9, Effect::Read), delegated(b"b", 10, Effect::Read)]);
@@ -1125,6 +1138,7 @@ fn delegated_calls_are_told_as_they_start_and_end() {
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted {
+            window: 1,
             opener,
             attempt: 0,
             messages: 1,
@@ -1156,7 +1170,7 @@ fn the_llm_yields_whenever_it_stops_calling_tools() {
 
 #[test]
 fn opens_beyond_the_session_slots_are_refused_as_busy() {
-    let mut h = Harness::new(Limits { sessions: 1, ..LIMITS });
+    let mut h = Harness::new(&Limits { sessions: 1, ..LIMITS });
     drop(h.open(1));
     let refused = h.step(Event::Open { opener: Token::new(2), opening: opening(spec()) });
     assert_eq!(
@@ -1174,7 +1188,7 @@ fn opens_beyond_the_session_slots_are_refused_as_busy() {
 #[test]
 fn specs_beyond_the_limits_are_refused_as_invalid() {
     for (limits, spec) in [(Limits { history_bytes: 16, ..LIMITS }, spec()), (LIMITS, Spec { output: 0, ..spec() })] {
-        let mut h = Harness::new(limits);
+        let mut h = Harness::new(&limits);
         let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec) });
         assert_eq!(refused, Some(ended(End::Invalid, 0)));
         assert_eq!(h.domain.sessions(), 0);
@@ -1184,7 +1198,7 @@ fn specs_beyond_the_limits_are_refused_as_invalid() {
 #[test]
 fn a_spec_whose_authority_the_tools_refuse_is_refused_as_invalid() {
     // More repositories than the tools' limits let a kit name.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let refused =
         h.step(Event::Open { opener: Token::new(1), opening: opening(Spec { authority: authority(3), ..spec() }) });
     assert_eq!(refused, Some(ended(End::Invalid, 0)));
@@ -1194,7 +1208,7 @@ fn a_spec_whose_authority_the_tools_refuse_is_refused_as_invalid() {
 
 #[test]
 fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     for _ in 0..LIMITS.retries {
         assert_eq!(
@@ -1225,7 +1239,7 @@ fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
 
 #[test]
 fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(2);
     let failure = Failure::RateLimited { retry_after: Duration::from_secs(5) };
     assert_eq!(
@@ -1246,7 +1260,7 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
 
 #[test]
 fn closing_a_calling_session_cancels_its_call_and_ends_once_the_call_has_ended() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     assert_eq!(h.domain.next_deadline(), None, "a closing session waits for nothing but its call");
@@ -1255,7 +1269,7 @@ fn closing_a_calling_session_cancels_its_call_and_ends_once_the_call_has_ended()
 
 #[test]
 fn each_attempt_keeps_model_progress_and_the_same_session_expiry() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     h.after(Duration::from_secs(7));
     let progress = crate::Progress { head: Duration::from_secs(11), idle: Duration::from_secs(13) };
     let request = Spec { progress, budget: Budget { time: Duration::from_secs(90), ..BUDGET }, ..spec() };
@@ -1292,7 +1306,7 @@ fn each_attempt_keeps_model_progress_and_the_same_session_expiry() {
 
 #[test]
 fn a_timeout_at_session_expiry_ends_for_time_once_without_retry() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     h.after(BUDGET.time);
     assert_eq!(
@@ -1313,7 +1327,7 @@ fn each_transient_timeout_phase_retries_with_the_same_absolute_expiry() {
     for phase in
         [crate::llm::Phase::Connect, crate::llm::Phase::Handshake, crate::llm::Phase::Head, crate::llm::Phase::Idle]
     {
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         let (owner, _) = h.open(1);
         assert_eq!(
             h.step(Event::Failed {
@@ -1351,7 +1365,7 @@ fn whole_expiry_or_elapsed_session_time_ends_once_even_with_no_retries() {
         crate::llm::Phase::Idle,
         crate::llm::Phase::Whole,
     ] {
-        let mut h = Harness::new(Limits { retries: 0, ..LIMITS });
+        let mut h = Harness::new(&Limits { retries: 0, ..LIMITS });
         let (owner, _) = h.open(1);
         if phase != crate::llm::Phase::Whole {
             h.after(BUDGET.time);
@@ -1372,7 +1386,7 @@ fn whole_expiry_or_elapsed_session_time_ends_once_even_with_no_retries() {
 
 #[test]
 fn a_completion_that_wins_the_race_with_a_close_still_ends_the_session() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     // Its tokens were spent all the same.
@@ -1394,7 +1408,7 @@ fn a_completion_that_wins_the_race_with_a_close_still_ends_the_session() {
 
 #[test]
 fn closing_a_tooling_session_cancels_its_tool() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"c1", cat(b"main.rs"))]);
     let (run, _) = running(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }));
@@ -1411,7 +1425,7 @@ fn closing_a_tooling_session_cancels_its_tool() {
 
 #[test]
 fn closing_a_session_with_nothing_in_flight_ends_it_at_once() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let session = h.yielded();
     assert_eq!(h.step(Event::Close { session }), Some(ended(End::Closed, 1)));
     assert_eq!(h.domain.next_deadline(), None);
@@ -1432,7 +1446,7 @@ fn closing_a_session_with_nothing_in_flight_ends_it_at_once() {
 
 #[test]
 fn closing_a_session_that_is_already_closing_changes_nothing() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     h.after(BUDGET.time);
     assert_eq!(h.fire(), Some(Request::Cancel { owner }));
@@ -1442,7 +1456,7 @@ fn closing_a_session_that_is_already_closing_changes_nothing() {
 
 #[test]
 fn a_handle_to_a_session_that_has_ended_is_dropped() {
-    let mut h = Harness::new(Limits { sessions: 1, ..LIMITS });
+    let mut h = Harness::new(&Limits { sessions: 1, ..LIMITS });
     let session = h.yielded();
     assert_eq!(h.step(Event::Close { session }), Some(ended(End::Closed, 1)));
     // Ended, and not yet reclaimed.
@@ -1459,7 +1473,7 @@ fn a_handle_to_a_session_that_has_ended_is_dropped() {
 
 #[test]
 fn an_expiring_session_cancels_its_call_and_ends_once_the_call_has_ended() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     h.after(BUDGET.time);
     assert_eq!(h.fire(), Some(Request::Cancel { owner }));
@@ -1470,7 +1484,7 @@ fn an_expiring_session_cancels_its_call_and_ends_once_the_call_has_ended() {
 
 #[test]
 fn an_expiring_session_cancels_its_tool() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"c1", cat(b"main.rs"))]);
     let (run, _) = running(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }));
@@ -1481,7 +1495,7 @@ fn an_expiring_session_cancels_its_tool() {
 
 #[test]
 fn an_expiring_session_in_backoff_or_yielded_ends_at_once() {
-    let mut h = Harness::new(Limits {
+    let mut h = Harness::new(&Limits {
         backoff_base: Duration::from_secs(3600),
         backoff_max: Duration::from_secs(3600),
         ..LIMITS
@@ -1500,7 +1514,7 @@ fn an_expiring_session_in_backoff_or_yielded_ends_at_once() {
     assert_eq!(h.fire(), Some(ended(OUT_OF_TIME, 0)));
     assert_eq!(h.domain.next_deadline(), None);
 
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let _session: Token = h.yielded();
     h.after(BUDGET.time);
     assert_eq!(h.fire(), Some(ended(OUT_OF_TIME, 1)));
@@ -1509,7 +1523,7 @@ fn an_expiring_session_in_backoff_or_yielded_ends_at_once() {
 
 #[test]
 fn every_completion_is_reported_before_what_follows_it() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     step(&mut h.domain, &h.env, Event::Completed { owner, completion: reading() }, &mut h.out);
     assert_eq!(h.next(), Some(Request::Used { opener: Token::new(1), usage: USAGE }));
@@ -1533,7 +1547,7 @@ fn a_spec_whose_budget_is_beyond_the_limits_is_refused() {
         Budget { time: over, ..BUDGET },
     ];
     for asked in budgets {
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(budget(asked)) });
         assert_eq!(refused, Some(ended(End::Invalid, 0)), "{asked:?}");
     }
@@ -1548,7 +1562,7 @@ fn a_session_whose_budget_leaves_no_room_for_a_completion_ends_as_it_opens() {
         (Budget { time: Duration::ZERO, ..BUDGET }, Dimension::Time),
     ];
     for (asked, spent) in cases {
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         step(&mut h.domain, &h.env, Event::Open { opener: Token::new(1), opening: opening(budget(asked)) }, &mut h.out);
         let Some(Request::Opened { .. }) = h.next() else {
             panic!("{asked:?}: the session opens");
@@ -1559,7 +1573,7 @@ fn a_session_whose_budget_leaves_no_room_for_a_completion_ends_as_it_opens() {
 
 #[test]
 fn the_llm_gets_as_many_turns_as_the_budget_allows() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open_with(1, budget(Budget { turns: 1, ..BUDGET }));
     // The tools of the last turn still run; their results do not go back.
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
@@ -1577,13 +1591,13 @@ fn a_session_starts_no_completion_once_its_input_or_output_reach_their_budget() 
     let cases =
         [(Budget { input: 10, ..BUDGET }, Dimension::Input), (Budget { output: 5, ..BUDGET }, Dimension::Output)];
     for (asked, spent) in cases {
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         let session = h.yielded_with(budget(asked), done());
         let end = h.step(Event::Continue { session, content: bytes(b"go on") });
         assert_eq!(end, Some(ended(End::Budget { spent }, 1)), "{asked:?}");
     }
     // Cache tokens that reach their budget, and go no further, stop nothing.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let session =
         h.yielded_with(budget(Budget { input: 11, output: 6, cache_read: 3, cache_write: 2, ..BUDGET }), done());
     drop(calling(h.step(Event::Continue { session, content: bytes(b"go on") })));
@@ -1600,20 +1614,20 @@ fn the_turn_that_takes_tokens_past_their_budget_runs_its_tools_and_ends_the_sess
     ];
     for (asked, spent) in cases {
         // The tools run, and their results are kept, but do not go back.
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         let (owner, _) = h.open_with(1, budget(asked));
         let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
         let end = h.step(ran(run, b"main.rs"));
         assert_eq!(end, Some(ended(End::Budget { spent }, 1)), "{asked:?}");
 
         // A yield still yields; the next message ends it.
-        let mut h = Harness::new(LIMITS);
+        let mut h = Harness::new(&LIMITS);
         let session = h.yielded_with(budget(asked), done());
         let end = h.step(Event::Continue { session, content: bytes(b"go on") });
         assert_eq!(end, Some(ended(End::Budget { spent }, 1)), "{asked:?}");
     }
     // An answer past its output budget, which a provider should not give.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, prompt) = h.open_with(1, budget(Budget { output: 4, ..BUDGET }));
     assert_eq!(prompt.max_tokens, 4);
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
@@ -1621,7 +1635,7 @@ fn the_turn_that_takes_tokens_past_their_budget_runs_its_tools_and_ends_the_sess
     assert_eq!(end, Some(ended(End::Budget { spent: Dimension::Output }, 1)));
 
     // Without the cache, a zero cache budget stops nothing.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let uncached =
         Completion { usage: Usage { cache_read_tokens: Some(0), cache_write_tokens: Some(0), ..USAGE }, ..done() };
     let session = h.yielded_with(budget(Budget { cache_read: 0, cache_write: 0, ..BUDGET }), uncached);
@@ -1631,7 +1645,7 @@ fn the_turn_that_takes_tokens_past_their_budget_runs_its_tools_and_ends_the_sess
 #[test]
 fn time_does_not_wait_for_the_turn_that_crossed_a_budget() {
     let time = Duration::from_secs(60);
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open_with(1, budget(Budget { input: 9, time, ..BUDGET }));
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     h.after(time);
@@ -1641,7 +1655,7 @@ fn time_does_not_wait_for_the_turn_that_crossed_a_budget() {
 
 #[test]
 fn each_answer_may_take_no_more_than_the_output_budget_left() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, prompt) = h.open_with(1, budget(Budget { output: 12, ..BUDGET }));
     assert_eq!(prompt.max_tokens, 12);
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
@@ -1657,7 +1671,7 @@ fn each_answer_may_take_no_more_than_the_output_budget_left() {
     assert_eq!(end, Some(Request::Ended { opener: Token::new(1), end: spent, turns: 2, usage, reported: usage }));
 
     // A spec's own output stays the cap while more is left.
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (_, prompt) = h.open_with(1, Spec { output: 100, ..budget(Budget { output: 1000, ..BUDGET }) });
     assert_eq!(prompt.max_tokens, 100);
 }
@@ -1665,7 +1679,7 @@ fn each_answer_may_take_no_more_than_the_output_budget_left() {
 #[test]
 fn the_time_budget_ends_a_session_whatever_it_is_doing() {
     let time = Duration::from_secs(60);
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open_with(1, budget(Budget { time, ..BUDGET }));
     assert_eq!(h.domain.next_deadline(), Some(Time::ZERO.saturating_add(time)));
     h.after(time);
@@ -1676,7 +1690,7 @@ fn the_time_budget_ends_a_session_whatever_it_is_doing() {
 #[test]
 fn a_session_whose_time_is_up_starts_no_completion_even_before_its_alarm_fires() {
     let time = Duration::from_secs(60);
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open_with(1, budget(Budget { time, ..BUDGET }));
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     // The tool's result and the alarm fall due in the same iteration: the
@@ -1692,7 +1706,7 @@ fn a_conversation_that_outgrows_its_bytes_ends_the_session() {
     let envelope = crate::completion_reserve(&LIMITS).expect("provider reservation fits");
     let limits =
         Limits { history_bytes: 1024_u64.checked_add(envelope).expect("pressure plus envelope fits"), ..LIMITS };
-    let mut h = Harness::new(limits);
+    let mut h = Harness::new(&limits);
     let (owner, _) = h.open(1);
     let content = Box::new([tool_call(b"c1", cat(b"main.rs"))]);
     let (run, _) = running(h.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }));
@@ -1718,14 +1732,14 @@ fn a_conversation_that_outgrows_its_bytes_ends_the_session() {
 
 #[test]
 fn oversized_provider_completions_end_before_calls_or_turns() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let huge = Box::from([b'x'; 4097].as_slice());
     let oversized = completion(Box::new([text(&huge)]), Stop::EndTurn);
     assert_eq!(h.step(Event::Completed { owner, completion: oversized }), Some(ended(End::TranscriptFull, 1)));
     assert_eq!(h.turn_records.len(), 0);
 
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let call = Block::ToolCall {
         id: bytes(b"oversized"),
@@ -1746,7 +1760,7 @@ fn oversized_provider_completions_end_before_calls_or_turns() {
 
 #[test]
 fn late_oversized_completion_replaces_the_closing_reason() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     assert_eq!(h.step(Event::Close { session: owner }), Some(Request::Cancel { owner }));
     let huge = [b'x'; 4097];
@@ -1758,7 +1772,7 @@ fn late_oversized_completion_replaces_the_closing_reason() {
 #[test]
 fn a_session_starts_no_completion_whose_answer_it_could_not_keep() {
     // The prompt, the tools' call and their results: no room for an answer.
-    let mut h = Harness::new(Limits { history_messages: 3, ..LIMITS });
+    let mut h = Harness::new(&Limits { history_messages: 3, ..LIMITS });
     let (owner, _) = h.open(1);
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     assert_eq!(h.step(ran(run, b"main.rs")), Some(ended(End::TranscriptFull, 1)));
@@ -1768,12 +1782,12 @@ fn a_session_starts_no_completion_whose_answer_it_could_not_keep() {
 
 #[test]
 fn a_transcript_with_no_room_for_another_message_ends_the_session() {
-    let mut h = Harness::new(Limits { history_messages: 2, ..LIMITS });
+    let mut h = Harness::new(&Limits { history_messages: 2, ..LIMITS });
     let refused = h.step(Event::Open { opener: Token::new(1), opening: opening(spec()) });
     assert_eq!(refused, Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0)));
     assert_eq!((h.domain.sessions(), h.domain.kits()), (0, 0), "two slots refuse before acquiring a kit");
 
-    let mut h = Harness::new(Limits { history_messages: 3, ..LIMITS });
+    let mut h = Harness::new(&Limits { history_messages: 3, ..LIMITS });
     let session = h.yielded();
     assert_eq!(h.step(Event::Continue { session, content: bytes(b"go on") }), Some(ended(End::TranscriptFull, 1)));
     assert_eq!(h.turn_records.len(), 1, "the actual admitted completion is recorded");
@@ -1781,12 +1795,13 @@ fn a_transcript_with_no_room_for_another_message_ends_the_session() {
 
 #[test]
 fn a_session_tells_what_happens_as_facts() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let opener = Token::new(1);
     let (owner, _) = h.open(1);
     h.told(&[
         Fact::Opened { opener },
         Fact::CompletionStarted {
+            window: 1,
             opener,
             attempt: 0,
             messages: 1,
@@ -1806,6 +1821,7 @@ fn a_session_tells_what_happens_as_facts() {
     let verdict = tools::Verdict::Read;
     h.told(&[
         Fact::CompletionStarted {
+            window: 1,
             opener,
             attempt: 0,
             messages: 3,
@@ -1839,7 +1855,7 @@ fn a_session_tells_what_happens_as_facts() {
 
 #[test]
 fn retries_cancels_and_refusals_are_told_too() {
-    let mut h = Harness::new(Limits { sessions: 1, ..LIMITS });
+    let mut h = Harness::new(&Limits { sessions: 1, ..LIMITS });
     let opener = Token::new(1);
     let (owner, _) = h.open(1);
     assert_eq!(
@@ -1853,6 +1869,7 @@ fn retries_cancels_and_refusals_are_told_too() {
     );
     let retry = h.domain.next_deadline().expect("a retry is armed");
     let started = Fact::CompletionStarted {
+        window: 1,
         opener,
         attempt: 0,
         messages: 1,
@@ -1870,6 +1887,7 @@ fn retries_cancels_and_refusals_are_told_too() {
     h.env.now = retry;
     drop(calling(h.fire()));
     h.told(&[Fact::CompletionStarted {
+        window: 1,
         opener,
         attempt: 1,
         messages: 1,
@@ -1904,8 +1922,8 @@ fn drive(h: &mut Harness) -> (Token, Prompt, Option<Request>, Option<Request>) {
 fn the_minimum_fact_reserve_keeps_the_same_complete_native_call_history() {
     let required = crate::max_facts(&LIMITS);
     assert!(worst_case(&Limits { facts: required - 1, ..LIMITS }).is_none());
-    let mut bounded = Harness::new(Limits { facts: required, ..LIMITS });
-    let mut roomy = Harness::new(LIMITS);
+    let mut bounded = Harness::new(&Limits { facts: required, ..LIMITS });
+    let mut roomy = Harness::new(&LIMITS);
     assert_eq!(drive(&mut bounded), drive(&mut roomy));
     bounded.keep_facts();
     roomy.keep_facts();
@@ -1929,7 +1947,7 @@ fn the_worst_case_is_bounded_or_refused() {
 #[test]
 fn completion_name_exhaustion_ends_before_any_owned_or_delegated_effect() {
     {
-        let mut harness = Harness::new(LIMITS);
+        let mut harness = Harness::new(&LIMITS);
         let (session, _) = harness.open_with(1, spec());
         crate::session::exhaust_origin_for_test(&mut harness.domain, session);
         let answer = completion(
@@ -2005,7 +2023,7 @@ fn reserved_recorded_call(harness: &mut Harness) -> Token {
 
 #[test]
 fn reservation_prices_input_bytes_allowance_and_maximum_output_once() {
-    let mut harness = Harness::new(LIMITS);
+    let mut harness = Harness::new(&LIMITS);
     let mut opening = opening(spec());
     opening.prices = crate::record::Prices { input: 2, cached: 1, cache_write: None, output: 3, unit: 10 };
     opening.budget = 4;
@@ -2028,7 +2046,7 @@ fn unsent_denial_releases_reserved_provider_credit_before_kit_settlement() {
         (crate::BudgetDenial::Spend, Dimension::Unit),
         (crate::BudgetDenial::Time, Dimension::Time),
     ] {
-        let mut harness = Harness::new(Limits { spend: 100, ..LIMITS });
+        let mut harness = Harness::new(&Limits { spend: 100, ..LIMITS });
         let owner = reserved_recorded_call(&mut harness);
         let (reserved, credit) = crate::session::provider_credit_for_test(&harness.domain, owner);
         assert!(reserved > 0);
@@ -2050,7 +2068,7 @@ fn unsent_denial_releases_reserved_provider_credit_before_kit_settlement() {
 #[test]
 fn raw_overflow_ends_before_the_completion_is_charged_or_told() {
     let budget = Budget { input: u64::MAX, output: u64::MAX, cache_read: u64::MAX, cache_write: u64::MAX, ..BUDGET };
-    let mut harness = Harness::new(Limits { budget, ..LIMITS });
+    let mut harness = Harness::new(&Limits { budget, ..LIMITS });
     let (owner, _) = harness.open_with(1, Spec { budget, ..spec() });
     let first = Usage {
         input_tokens: Some(u64::MAX - 1),
@@ -2090,7 +2108,7 @@ fn raw_overflow_ends_before_the_completion_is_charged_or_told() {
 
 #[test]
 fn unsent_close_releases_provider_credit_without_requesting_a_cancel() {
-    let mut harness = Harness::new(Limits { spend: 100, ..LIMITS });
+    let mut harness = Harness::new(&Limits { spend: 100, ..LIMITS });
     let owner = reserved_recorded_call(&mut harness);
     let (reserved, credit) = crate::session::provider_credit_for_test(&harness.domain, owner);
     assert!(reserved > 0 && credit == Some(reserved));
@@ -2106,11 +2124,11 @@ fn unsent_close_releases_provider_credit_without_requesting_a_cancel() {
 fn exact_provider_envelope_admits_and_one_byte_short_refuses_before_effects() {
     let reservation = crate::completion_reserve(&LIMITS).expect("configured provider bounds fit");
     let exact = initial_bytes().checked_add(reservation).expect("exact entrance fits");
-    let mut admitted = Harness::new(Limits { history_bytes: exact, ..LIMITS });
+    let mut admitted = Harness::new(&Limits { history_bytes: exact, ..LIMITS });
     let (owner, _) = admitted.open(1);
     assert_eq!(crate::session::provider_credit_for_test(&admitted.domain, owner), (reservation, Some(reservation)));
     assert_eq!(admitted.step(Event::UnsentClosed { owner }), Some(ended(End::Closed, 0)));
-    let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..LIMITS });
+    let mut refused = Harness::new(&Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..LIMITS });
     assert_eq!(
         refused.step(Event::Open { opener: Token::new(1), opening: opening(spec()) }),
         Some(ended(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge }, 0))
@@ -2145,7 +2163,7 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
         let provider = crate::completion_reserve(&limits).expect("provider envelope fits");
         let provider_entrance = initial_bytes().checked_add(provider).expect("provider entrance fits");
         assert!(exact > provider_entrance);
-        let mut admitted = Harness::new(Limits { history_bytes: exact, ..limits });
+        let mut admitted = Harness::new(&Limits { history_bytes: exact, ..limits });
         let (owner, _) = admitted.open(1);
         let runs = admitted.batch(Event::Completed { owner, completion: completion(content.clone(), Stop::ToolUse) });
         let &[first, second] = runs.as_slice() else { panic!("both reads are admitted") };
@@ -2182,7 +2200,8 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
         ];
         assert_eq!(&*admitted.turn_records.get(0).expect("actual observed turn").messages[2].content, &expected);
 
-        let mut refused = Harness::new(Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
+        let mut refused =
+            Harness::new(&Limits { history_bytes: exact.checked_sub(1).expect("positive cap"), ..limits });
         let (owner, _) = refused.open(1);
         assert_eq!(
             refused.step(Event::Completed { owner, completion: completion(content, Stop::ToolUse) }),
@@ -2194,7 +2213,7 @@ fn exact_batch_envelope_keeps_both_maximum_results_and_one_byte_short_starts_not
 
 #[test]
 fn delayed_facts_keep_their_times_completion_numbers_and_exact_call_measurements() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     h.env.now = Time::from_nanos(7);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
@@ -2231,7 +2250,7 @@ fn delayed_facts_keep_their_times_completion_numbers_and_exact_call_measurements
 
 #[test]
 fn delegated_facts_keep_identity_source_and_time_at_both_terminals() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     h.env.now = Time::from_nanos(7);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
@@ -2267,7 +2286,7 @@ fn delegated_facts_keep_identity_source_and_time_at_both_terminals() {
 
 #[test]
 fn failed_retried_and_cancelled_facts_keep_one_response_number_and_step_times() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     h.env.now = Time::from_nanos(7);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
@@ -2309,7 +2328,7 @@ fn failed_retried_and_cancelled_facts_keep_one_response_number_and_step_times() 
 
 #[test]
 fn usage_fact_carries_the_exact_accepted_host_unit_charge() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let mut opened = opening(spec());
     opened.prices = crate::record::Prices { input: 7, cached: 3, cache_write: None, output: 11, unit: 5 };
     let expected = opened.prices.price(USAGE).expect("price fits");
@@ -2351,7 +2370,7 @@ fn pop_kind(harness: &mut Harness) -> Option<Fact> {
 
 #[test]
 fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
     let call = Call::Read { path: outside(), offset: 1, window: tools::Budget::Default };
@@ -2383,7 +2402,7 @@ fn a_workspace_refusal_keeps_its_provider_identity_without_starting_work() {
 
 #[test]
 fn the_openers_output_cap_replaces_the_old_fixed_token_ceiling() {
-    let mut harness = Harness::new(LIMITS);
+    let mut harness = Harness::new(&LIMITS);
     let (_, prompt) = harness.open_with(1, Spec { output: 4097, ..spec() });
     assert_eq!(prompt.max_tokens, 4097);
 }
@@ -2426,7 +2445,7 @@ fn completion_reservation_uses_the_highest_rate_for_every_input_kind() {
     for (cached, cache_write, expected) in
         [(1, None, 4), (1, Some(1), 4), (1, Some(11), 15), (11, Some(1), 15), (11, None, 15)]
     {
-        let mut harness = Harness::new(LIMITS);
+        let mut harness = Harness::new(&LIMITS);
         let mut opening = opening(spec());
         opening.prices = crate::record::Prices { input: 2, cached, cache_write, output: 3, unit: 10 };
         opening.budget = 15;
@@ -2441,7 +2460,7 @@ fn completion_reservation_uses_the_highest_rate_for_every_input_kind() {
 
 #[test]
 fn narrowing_an_unsent_completion_appends_its_note_and_preserves_definitions() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, original) = h.open(1);
     assert_eq!(original.choice, crate::llm::ToolChoice::Auto);
     let note = bytes(b"The ordinary budget is spent. Finish now.");
@@ -2463,7 +2482,7 @@ fn narrowing_an_unsent_completion_appends_its_note_and_preserves_definitions() {
 
 #[test]
 fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     drop(calling(h.step(Event::Narrowed {
         owner,
@@ -2503,7 +2522,7 @@ fn a_call_outside_the_choice_is_not_run_and_needs_no_result_credit() {
 
 #[test]
 fn a_selected_descriptor_can_have_a_distinct_live_call_ticket() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     drop(calling(h.step(Event::Narrowed {
         owner,
@@ -2523,7 +2542,7 @@ fn a_selected_descriptor_can_have_a_distinct_live_call_ticket() {
 
 #[test]
 fn a_narrowing_note_follows_the_latest_settled_results() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     let (run, _) = running(h.step(Event::Completed { owner, completion: reading() }));
     let Some(Request::Complete { prompt: before, .. }) = h.step(ran(run, b"main.rs")) else {
@@ -2543,7 +2562,7 @@ fn a_narrowing_note_follows_the_latest_settled_results() {
 
 #[test]
 fn a_narrowing_note_follows_a_yielded_session_waking_message() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     drop(yielded(
         h.step(Event::Completed { owner, completion: completion(Box::new([text(b"done for now")]), Stop::EndTurn) }),
@@ -2567,7 +2586,7 @@ fn a_narrowing_note_follows_a_yielded_session_waking_message() {
 
 #[test]
 fn an_allowed_descriptor_keeps_its_argument_problem_during_narrowing() {
-    let mut h = Harness::new(LIMITS);
+    let mut h = Harness::new(&LIMITS);
     let (owner, _) = h.open(1);
     drop(calling(h.step(Event::Narrowed {
         owner,
@@ -2595,7 +2614,7 @@ fn an_allowed_descriptor_keeps_its_argument_problem_during_narrowing() {
 #[test]
 fn a_childs_last_turn_has_one_note_no_effects_and_yields_its_answer_for_budget() {
     for stop in [Stop::ToolUse, Stop::EndTurn, Stop::MaxTokens, Stop::Refusal] {
-        let mut harness = Harness::new(LIMITS);
+        let mut harness = Harness::new(&LIMITS);
         let mut selected = spec();
         selected.budget.turns = 1;
         selected.final_turn = Some(crate::FinalTurn { note: bytes(b"Answer now."), allowance: Duration::from_secs(1) });
@@ -2624,7 +2643,7 @@ fn a_childs_last_turn_has_one_note_no_effects_and_yields_its_answer_for_budget()
 #[test]
 fn an_exact_quarter_allowance_keeps_187_point_6ms_ordinary_and_187_point_5ms_final() {
     for (left, final_now) in [(187_600_000, false), (187_500_000, true), (187_250_000, true)] {
-        let mut harness = Harness::new(LIMITS);
+        let mut harness = Harness::new(&LIMITS);
         let mut selected = spec();
         selected.budget.time = Duration::from_millis(750);
         selected.final_turn =
@@ -2657,7 +2676,7 @@ fn a_due_compaction_counts_two_turns_and_twice_the_final_allowance() {
 
 #[test]
 fn a_childs_final_note_follows_settled_results_and_is_not_repeated_on_retry() {
-    let mut harness = Harness::new(LIMITS);
+    let mut harness = Harness::new(&LIMITS);
     let mut selected = spec();
     selected.budget.turns = 2;
     selected.final_turn = Some(crate::FinalTurn { note: bytes(b"Answer now."), allowance: Duration::from_secs(1) });
@@ -2738,10 +2757,11 @@ fn derived_history_secures_threshold_and_full_receiving_before_effects() {
 fn a_native_request_limit_is_context_too_long_without_retry() {
     use crate::llm::{Cap, Limit};
     for cap in [Cap::Request, Cap::Retained] {
-        let mut harness = Harness::new(LIMITS);
+        let mut harness = Harness::new(&LIMITS);
         let (owner, _) = harness.open(1);
         let failure = Failure::Limit { which: Limit::Path(cap), bound: 8123 };
-        let expected = if cap == Cap::Request { Failure::ContextTooLong } else { failure };
+        let expected =
+            if cap == Cap::Request { Failure::Limit { which: Limit::Window, bound: 65_536 } } else { failure };
         assert_eq!(
             harness.step(Event::Failed {
                 owner,
@@ -2758,7 +2778,7 @@ fn a_native_request_limit_is_context_too_long_without_retry() {
 #[test]
 fn delayed_workspace_terminal_facts_keep_tool_caps_before_any_render() {
     let tools = tools::Limits { read_bytes: 4, tool_payload: 8, ..TOOLS };
-    let mut h = Harness::new(Limits { tools, ..LIMITS });
+    let mut h = Harness::new(&Limits { tools, ..LIMITS });
     h.env.now = Time::from_nanos(7);
     let (owner, _) = h.open(1);
     h.env.now = Time::from_nanos(11);
@@ -2808,4 +2828,42 @@ fn delayed_workspace_terminal_facts_keep_tool_caps_before_any_render() {
     assert_eq!(terminal.call, started.call, "the parent call identity survives terminal settlement");
     assert_eq!(metadata.source, crate::ToolSource::Workspace);
     assert_eq!(metadata.effect, Effect::Read);
+}
+
+#[test]
+fn the_check_counts_reported_usage() {
+    use crate::window::{Admission, Tokens, Window, check};
+    let mut window = Window::fresh(1, 0);
+    window.completed(
+        Usage {
+            input_tokens: Some(900),
+            output_tokens: Some(100),
+            cache_read_tokens: Some(200),
+            cache_write_tokens: Some(300),
+            reasoning_tokens: None,
+        },
+        512,
+        2,
+    );
+    window.appended = Tokens(100);
+    assert_eq!(check(&window, 1, 0, 400, 2_500, [4, 5]), Admission::Fits);
+    assert_eq!(check(&window, 1, 0, 401, 2_500, [4, 5]), Admission::Compact);
+}
+
+#[test]
+fn the_check_counts_bytes_without_usage() {
+    use crate::window::{Admission, Window, check};
+    let mut window = Window::fresh(1, 0);
+    window.completed(Usage::NONE, 512, 2);
+    assert_eq!(check(&window, 800, 100, 100, 1_250, [4, 5]), Admission::Fits);
+    assert_eq!(check(&window, 801, 100, 100, 1_250, [4, 5]), Admission::Compact);
+}
+
+#[test]
+fn an_overflow_answers_compact() {
+    use crate::window::{Admission, Tokens, Window, check};
+    let mut window = Window::fresh(1, 0);
+    window.last_prompt = Some(Tokens(u64::MAX));
+    assert_eq!(check(&window, 0, 0, 1, u32::MAX, [4, 5]), Admission::Compact);
+    assert_eq!(check(&Window::fresh(1, 0), u64::MAX, 1, 0, u32::MAX, [4, 5]), Admission::Compact);
 }

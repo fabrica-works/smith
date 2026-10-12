@@ -292,10 +292,13 @@ fn native_provider_failure_keeps_status_and_capture_selected_detail_in_every_ter
         assert_eq!(failure.class, smith_events::FailureClass::ContextTooLong);
         assert_eq!(failure.evidence, smith_events::Evidence::Response);
         assert_eq!(failure.status, Some(400));
-        assert_eq!(conversation, Some(failure));
+        let mut window = failure.clone();
+        window.class = smith_events::FailureClass::Limit;
+        window.limit = Some(smith_events::FailureLimit { which: b"window".as_slice().into(), bound: 1_048_576 });
+        assert_eq!(conversation, Some(&window));
         let run = run.expect("actual failed run");
         assert_eq!(run.class, smith_events::AnswerClass::Model);
-        assert_eq!(run.completion.as_ref(), Some(failure));
+        assert_eq!(run.completion.as_ref(), Some(&window));
         let model = &started.expect("actual request").model;
         assert_eq!(run.endpoint.as_deref(), Some(model.endpoint.as_ref()));
         assert_eq!(run.model.as_deref(), Some(model.model.as_ref()));

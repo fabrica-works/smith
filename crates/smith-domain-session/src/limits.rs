@@ -3,6 +3,8 @@
 //!
 //! Contract: domain/session.md, sections 3 and 6; programming-model.md, sections 4.4, 4.5 and 6.3.
 
+use alloc::boxed::Box;
+
 use skein_lib::{Deadlines, Duration, List, Queue, Slab};
 use smith_domain_tools as tools;
 
@@ -20,6 +22,8 @@ pub const MAX_PARALLEL: u32 = 8;
 /// step read-only.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
+    /// Fraction of the model window admitted before compaction.
+    pub threshold: [u32; 2],
     /// Sessions at once. An `Open` beyond them is refused as busy.
     pub sessions: u32,
     /// Largest deployment-unit budget admitted by the parent opening.
@@ -145,8 +149,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .min(limits.history_blocks)
         .max(limits.completion_blocks);
     let slots = List::<Slot>::worst_case(calls)?;
-    let session =
-        List::<Message>::worst_case(limits.history_messages)?.checked_add(slots)?.checked_add(limits.history_bytes)?;
+    let session = List::<Message>::worst_case(limits.history_messages)?
+        .checked_add(List::<Box<[u8]>>::worst_case(calls)?)?
+        .checked_add(slots)?
+        .checked_add(limits.history_bytes)?;
     let held = u64::from(limits.sessions).checked_mul(session)?;
     // One parent handoff owns exactly one fixed boxed Opening node. Its
     // validated payload is charged by the session byte cap, and its restore
@@ -252,6 +258,7 @@ pub fn derive(inputs: &Derivation) -> Result<Limits, Field> {
         return Err(Field::CompletionBlocks);
     }
     let mut limits = Limits {
+        threshold: inputs.threshold,
         sessions: inputs.conversations,
         spend: inputs.max_spend,
         protocol_allowance: inputs.protocol_allowance,
