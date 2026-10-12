@@ -1715,3 +1715,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    confirm is a warning. skein has no such call: a step not in the plan,
    skein-07.s5, adds `directory_access`; smith 10.9 repins skein at it,
    in its own commit first, and the rest of 10.9 goes on meanwhile.
+89. **10.14's harness part moves to 10.15** (block of
+   2026-10-12T21:38:49Z, smith 10.14). 10.14's Scope has the harness read
+   an exec or chat arm's teardown bound from `smith check`, but
+   `benchmarks/src/agent/smith/prepare.rs:84-86` refuses those faces
+   until the product's invocation ships (10.5, 10.8, 10.15), which 10.14's
+   Needs (04.7) did not name. Ruling: 10.14 lands `smith check`'s report
+   and a decoder of its bound in `smith-bench`, unit-tested and used by no
+   arm yet, with its process Proof; the reading for exec and chat arms and
+   `an_exec_arms_teardown_bound_comes_from_check` move to 10.15, which
+   brings the harness onto `smith exec`. No face or front end invented.

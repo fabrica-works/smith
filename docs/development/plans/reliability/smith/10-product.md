@@ -456,6 +456,7 @@ classifies by the exit code held against `run.completed`. The live
 suite runs through `smith exec --json`, borrowing the file its caller
 names (testing.md, 2.3). It adds the variant `probes/first-request/headless`,
 the task in the start, to the task and `suites/probes.toml` (decisions.md, 12.21).
+Gains (decisions.md, 13.89): the harness reads an exec or chat arm's teardown bound from `smith check`, through 10.14's decoder, with `an_exec_arms_teardown_bound_comes_from_check`.
 Needs: session 00's one command per probe run [00.27], for its proof.
 Files: `benchmarks/src/agent/smith/` (`prepare.rs:84`, `settings.rs`,
 `faces.rs`, `events.rs`, `events/classify.rs`),
@@ -587,6 +588,7 @@ Scope (shell.md, 4.4; limits.md, 9): `smith check` and its JSON print
 the effective limits under limits.md's names and units, as
 `session.started` does; the harness reads an exec or chat arm's teardown
 bound from them (benchmarks.md, 10).
+Moved (decisions.md, 13.89): the harness reading an exec or chat arm's teardown bound, and `an_exec_arms_teardown_bound_comes_from_check`, go to 10.15; 10.14 lands `smith check`'s report and a decoder of its bound in `smith-bench`, unit-tested, used by no arm yet.
 Needs: smith 04's effective limits by name [04.7].
 Files: `smith-local-shell/src/check.rs`;
 `benchmarks/src/agent/smith/{prepare.rs,settings.rs:209}`;
