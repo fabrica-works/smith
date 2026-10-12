@@ -1394,3 +1394,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (events.md, 3.5; `smith-events/src/records.rs:845`), not
    `response.started`'s: 00.16 reads it there, and reports a null where
    it finds one.
+60. **One land retry after skein-world's tree supervision failed**
+   (block of 2026-10-12T18:21:15Z, smith 04.s1). 04.s1's gate failed in
+   `benchmarks/tests/pipeline.rs:83`, a story it did not touch: the child
+   panicked at "opening supervised tree member 426970: Other(22)", from
+   skein-world's tree supervision at smith's pin
+   (`testing/skein-world/src/tree.rs:249`), which skips `ESRCH` (3) from
+   `pidfd_open` and fails on any other error; `EINVAL` (22) is what
+   `pidfd_open` returns for a PID that names a thread rather than a
+   process. The first occurrence in this run's gate logs. Ruling: one
+   retry of `land`, as development.md 8.5 allows for a timeout. A second
+   occurrence in any session's gate makes it a skein step (skein-world
+   treating `EINVAL` as it treats `ESRCH`) and a repin.
