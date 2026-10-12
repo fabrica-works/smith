@@ -57,11 +57,11 @@ impl Referee<Process> for Judge {
             {
                 assert_eq!(exit, Exit::Code(0), "live Smith must exit successfully; diagnostic bytes are withheld");
                 assert!(
-                    std::str::from_utf8(binary.stderr()).is_ok_and(|text| text
-                        .lines()
-                        .all(|line| line.starts_with("smith: local host started; worst case ")
-                            || line.starts_with("smith: agent started; worst case ")
-                            || line == "smith: commands run in process groups and are not contained")),
+                    std::str::from_utf8(binary.stderr()).is_ok_and(|text| text.lines().all(|line| line
+                        .starts_with("smith: local host started; worst case ")
+                        || line.starts_with("smith: agent started; worst case ")
+                        || line == "smith: commands run in process groups and are not contained"
+                        || trust_notice(line))),
                     "live Smith emitted an unexpected diagnostic; credential-bearing bytes are withheld"
                 );
             }
@@ -205,4 +205,16 @@ fn run_with_peer(
     let outcome = world.run(&clock, budget.saturating_add(Duration::from_secs(1)));
     assert!(outcome.procs.iter().all(Host::is_empty), "live binary and terminal fully drained");
     assert_no_children();
+}
+
+// Startup's content-free root counts (skein shell.md, section 6.2).
+fn trust_notice(line: &str) -> bool {
+    line.strip_prefix("smith: trust roots: ").is_some_and(|counts| {
+        let fields: Vec<_> = counts.split(", ").collect();
+        fields.len() == 4
+            && fields
+                .iter()
+                .zip([" taken", " skipped", " malformed blocks", " other blocks"])
+                .all(|(field, suffix)| field.strip_suffix(suffix).is_some_and(|count| count.parse::<u32>().is_ok()))
+    })
 }

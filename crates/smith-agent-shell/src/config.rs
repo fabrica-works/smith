@@ -3,10 +3,7 @@
 //! and future trace settings; no credential is read here.
 //! Durations in JSON are milliseconds. Contract: protocol/agent.md, sections 4 and 6.
 
-use std::fs;
-use std::io::Read;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -185,14 +182,15 @@ struct Variable {
 /// Read one JSON document and reject unknown keys, oversized input and
 /// invalid transport settings before any channel byte is read.
 pub fn read(path: &Path) -> Result<Configuration, String> {
-    let size = fs::metadata(path).map_err(|error| format!("configuration metadata: {error}"))?.len();
-    if size > CONFIG_BYTES {
-        return Err(format!("configuration is larger than {CONFIG_BYTES} bytes"));
-    }
-    let bytes = fs::read(path).map_err(|error| format!("configuration read: {error}"))?;
-    if u64::try_from(bytes.len()).expect("byte length fits u64") > CONFIG_BYTES {
-        return Err(format!("configuration is larger than {CONFIG_BYTES} bytes"));
-    }
+    let bytes = skein_shell::read_file(path, u32::try_from(CONFIG_BYTES).expect("configuration bound fits u32"))
+        .map_err(|why| match why {
+            skein_shell::Unread::Absent => format!("configuration metadata: {}: file absent", path.display()),
+            skein_shell::Unread::NotAFile => format!("configuration {}: not a regular file", path.display()),
+            skein_shell::Unread::TooLarge { max } => {
+                format!("configuration {} is larger than {max} bytes", path.display())
+            }
+            skein_shell::Unread::Kernel(error) => format!("configuration read {}: {error:?}", path.display()),
+        })?;
     parse(&bytes)
 }
 
@@ -769,34 +767,39 @@ pub const TRUST_BYTES: u64 = 16_777_216;
 
 /// Load the bounded startup trust roots used by agent and local endpoints.
 pub fn trust(der: Option<&str>) -> Result<tls::Config, String> {
-    let mut roots = tls::RootCertStore::empty();
-    if let Some(path) = der {
-        #[expect(clippy::disallowed_types, reason = "10-product uses skein startup reads and trust roots")]
-        let file: fs::File = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-            .map_err(|error| format!("trust certificate {path:?}: {error}"))?;
-        let metadata = file.metadata().map_err(|error| format!("trust certificate metadata: {error}"))?;
-        if !metadata.is_file() || metadata.len() > 65_536 {
-            return Err("trust certificate must be a regular file of at most 65536 bytes".into());
+    let source = match der {
+        Some(path) => skein_shell::Trust::Der(path.into()),
+        None => skein_shell::Trust::Machine { ssl_cert_file: std::env::var_os("SSL_CERT_FILE").map(Into::into) },
+    };
+    trust_source(&source)
+}
+
+fn trust_source(source: &skein_shell::Trust) -> Result<tls::Config, String> {
+    let bounds = skein_shell::RootBounds {
+        bundle_bytes: u32::try_from(TRUST_BYTES).expect("trust bound fits u32"),
+        certificates: 512,
+        certificate_bytes: match source {
+            skein_shell::Trust::Der(_) => 65_536,
+            skein_shell::Trust::Machine { .. } => 8192,
+        },
+    };
+    let roots = skein_shell::read_trust_roots(source, &bounds).map_err(|why| match why {
+        skein_shell::RootsRefusal::NoBundle => "machine trust roots: no certificate bundle found".into(),
+        skein_shell::RootsRefusal::Unread { path, why } => {
+            format!("trust certificate {}: {why:?}", path.display())
         }
-        let mut bytes = Vec::new();
-        file.take(65_537).read_to_end(&mut bytes).map_err(|error| format!("trust certificate read: {error}"))?;
-        if bytes.len() > 65_536 {
-            return Err("trust certificate exceeds 65536 bytes".into());
+        skein_shell::RootsRefusal::TooMany { bound } => format!("trust roots exceed {bound} certificates"),
+        skein_shell::RootsRefusal::TooLong { index, bound } => {
+            format!("trust certificate {index} exceeds {bound} bytes")
         }
-        roots.add(tls::CertificateDer::from(bytes)).map_err(|error| format!("trust certificate: {error}"))?;
-    } else {
-        let native = rustls_native_certs::load_native_certs();
-        if native.certs.len() > 512 || native.certs.iter().any(|cert| cert.len() > 8192) {
-            return Err("native trust store exceeds its certificate bounds".into());
-        }
-        for cert in native.certs {
-            roots.add(cert).map_err(|error| format!("native trust certificate: {error}"))?;
-        }
-    }
-    tls::Config::new(roots, &[]).map_err(|error| format!("TLS trust: {error:?}"))
+    })?;
+    let (config, parsed) = tls::Config::from_der(&roots.certificates, &[])
+        .map_err(|why| format!("TLS trust {}: {why:?}", roots.path.display()))?;
+    eprintln!(
+        "smith: trust roots: {} taken, {} skipped, {} malformed blocks, {} other blocks",
+        parsed.taken, parsed.skipped, roots.malformed, roots.other_blocks
+    );
+    Ok(config)
 }
 
 pub(crate) fn profile_refusal(error: Refusal) -> String {
@@ -860,6 +863,25 @@ mod tests {
         let configuration = build(document).expect("valid environment");
         assert_eq!(configuration.declarations.environment_bytes, 15);
         assert_eq!(configuration.service.limits.machine.env_bytes, 15);
+    }
+
+    #[test]
+    fn a_trust_file_that_is_not_a_regular_file_is_refused_naming_it() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let error = trust(path.to_str()).expect_err("directory is not a certificate file");
+        assert!(error.contains(path.to_str().expect("fixture path")), "refusal names the path");
+        assert!(error.contains("NotAFile"), "refusal names the non-file");
+    }
+
+    #[test]
+    fn a_machine_bundle_past_its_certificate_bound_is_refused_naming_the_bound() {
+        let path = std::env::temp_dir().join(format!("smith-trust-bundle-{}.pem", std::process::id()));
+        std::fs::write(&path, b"-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n".repeat(513))
+            .expect("bounded PEM fixture");
+        let error = trust_source(&skein_shell::Trust::Machine { ssl_cert_file: Some(path.clone()) })
+            .expect_err("too many certificates");
+        std::fs::remove_file(path).expect("remove fixture");
+        assert_eq!(error, "trust roots exceed 512 certificates");
     }
 
     #[test]

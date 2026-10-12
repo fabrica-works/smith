@@ -3,6 +3,7 @@
 //! override. Neither file is a transcript or a credential store. The merged
 //! agent object is written as the child agent's configuration at startup.
 
+#[cfg(test)]
 use std::fs;
 use std::path::Path;
 
@@ -525,14 +526,14 @@ pub fn agent_document(settings: &Settings) -> Result<Vec<u8>, String> {
 }
 
 fn read_document(path: &Path) -> Result<Value, String> {
-    let size = fs::metadata(path).map_err(|error| format!("settings metadata {}: {error}", path.display()))?.len();
-    if size > SETTINGS_BYTES {
-        return Err(format!("settings {} exceed {SETTINGS_BYTES} bytes", path.display()));
-    }
-    let bytes = fs::read(path).map_err(|error| format!("settings read {}: {error}", path.display()))?;
-    if u64::try_from(bytes.len()).expect("length fits u64") > SETTINGS_BYTES {
-        return Err(format!("settings {} exceed {SETTINGS_BYTES} bytes", path.display()));
-    }
+    let bytes = skein_shell::read_file(path, u32::try_from(SETTINGS_BYTES).expect("settings bound fits u32")).map_err(
+        |why| match why {
+            skein_shell::Unread::Absent => format!("settings metadata {}: file absent", path.display()),
+            skein_shell::Unread::NotAFile => format!("settings {}: not a regular file", path.display()),
+            skein_shell::Unread::TooLarge { max } => format!("settings {} exceed {max} bytes", path.display()),
+            skein_shell::Unread::Kernel(error) => format!("settings read {}: {error:?}", path.display()),
+        },
+    )?;
     serde_json::from_slice(&bytes).map_err(|error| format!("settings JSON {}: {error}", path.display()))
 }
 
