@@ -420,6 +420,26 @@ batch), its counts in the commit body.
 Don't: change the rendered result, the clamp or the checker.
 Size: at most 40 production lines.
 
+### 04.s3 A completion's reasoning in one block, at skein's share
+Added during the run (decisions.md, 13.78), from the designer's answer of
+2026-10-12T20:13:31Z (smith a55b0681, limits.md 3.2 and 3.3). Scope:
+smith repins skein at skein-07.s4's commit or later; transcript 3's
+`Opaque.bytes` rises to hold the derived share (2,228,224 bytes for the
+standard profile; the generator accepts up to 3 MiB, as the designer
+measured); a turn's reasoning is derived as limits.md 3.3 now says.
+Needs: skein-07.s4.
+Files: `Cargo.toml`, `Cargo.lock`; the transcript schema and its
+generated code and goldens; the derivation (`smith-agent-service/src/profile.rs`);
+what the repin breaks (README rule 8).
+Shape: no new type.
+Test shape: a unit test, `a_turn_holds_a_reasoning_block_at_the_completions_share`,
+failing on the parent. Under 20 ms.
+Proof: that test once; then smith 13.6's `probes/slow-completion` once,
+live, its count in the commit body.
+Don't: change `output_items` or its formula; bump transcript 3's version
+(README rule 5).
+Size: README rule 9's.
+
 ## Interface sketches
 
 **04.7.** The types on `main` stay: `LimitName`, `Layer`, `Per`, `Value`,

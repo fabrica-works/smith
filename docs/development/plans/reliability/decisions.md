@@ -1598,3 +1598,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `delegated_result_bytes`), and its name and every later check (child
    answers, cancel, late records, tickets, uncharged bytes) stay; the
    commit body quotes the Scope beside it.
+78. **skein-07.s4 and smith-04.s3: a run of reasoning items is one block**
+   (block of 2026-10-12T20:06:20Z, smith 13.6; the designer's answer of
+   20:13:31Z, skein d03b84f2, smith a55b0681). With 07.s3's part-index
+   fix in place, `slow-completion` failed `output_items` 10 again: Codex
+   writes a reasoning item per reasoning segment (up to 32 in one
+   response, the designer measured on this machine's rollouts), and the
+   formula counts each as a block. The designer: "A run of consecutive
+   reasoning items is one block"; the formula stands. Two steps not in
+   the plan: skein-07.s4 (the decoders coalesce the run, the encoder
+   replays it), then smith-04.s3 (repin, transcript 3's `Opaque.bytes`
+   at the derived share, the turn's reasoning per limits.md 3.3), whose
+   live proof is 13.6's `slow-completion`. 13.6 lands after 04.s3.

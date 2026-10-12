@@ -55,3 +55,26 @@ smith-10.10's repin takes it.
 Don't: change `output_items` or its formula, the item checks at :329 and
 :498, or the Anthropic decoder's block index check.
 Size: at most 20 production lines.
+
+### 07.s4 A run of consecutive reasoning items is one block
+Added during the run (decisions.md, 13.78), from the designer's answer of
+2026-10-12T20:13:31Z (skein d03b84f2, llm.md sections 2, 4.2 and 5).
+Scope: both decoders keep a run of consecutive reasoning items (Codex's
+reasoning segments, Anthropic's back-to-back thinking) as one block, its
+items in order, each within the reasoning limit, together within the
+completion's share (output items x reasoning) and one block's retained
+tokens; the encoder replays them byte for byte as consecutive input
+items. Codex's decoder takes a provider item index past the blocks it
+holds without an `opened` entry per item (`response.rs:325-330` requires
+`index == self.opened.len()` today).
+Needs: nothing.
+Files: `crates/skein-llm/src/openai/{response.rs,request.rs}`,
+`crates/skein-llm/src/anthropic/` (its decoder and encoder); their tests.
+Shape: no new type beyond the block's ordered items.
+Test shape: llm.md section 5's "Reasoning runs" story, both dialects,
+and a run past the share failing as `Limit`, naming it; it fails on the
+parent. Under 20 ms each.
+Proof: those tests, once.
+Don't: change `output_items` or its formula, or add a count; change the
+reasoning limit per item, its opt-in drop, or the receiving reservation.
+Size: README rule 9's.
