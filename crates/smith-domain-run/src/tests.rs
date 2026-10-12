@@ -1,5 +1,7 @@
 //! Feed the domain events, inspect the requests that come out.
 
+mod guide_room;
+
 use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, List, Queue, ReplyTo, Time, Token, Wall};
@@ -2921,7 +2923,7 @@ fn host_unknown_is_conveyed_after_withdrawn_terminal_when_shutdown_disallows_rec
 #[test]
 fn host_declarations_are_admitted_as_bounded_unique_contracts_before_io() {
     let baseline = charter();
-    assert_eq!(crate::charter::check(&baseline, Some(&workspace()), &LIMITS), Ok(()));
+    assert_eq!(crate::charter::check(&baseline, Some(&workspace()), &LIMITS), Ok(LIMITS.guide_bytes));
     for invalid in 0_u32..5 {
         let mut declared = charter();
         match invalid {
@@ -3380,7 +3382,7 @@ fn initial_conflicts_require_git_unique_relative_paths_and_independent_caps() {
     let path = Box::new([b'p'; crate::Marker::CAPACITY]);
     let mounted =
         Workspace { directories: Box::new([workspace_directory(b"git", 1, false, true, &[path.as_slice()])]) };
-    assert_eq!(crate::charter::check(&charter(), Some(&mounted), &limits), Ok(()));
+    assert_eq!(crate::charter::check(&charter(), Some(&mounted), &limits), Ok(limits.guide_bytes));
     let over = Box::new([b'p'; crate::Marker::CAPACITY + 1]);
     refuse_workspace(
         Some(Workspace { directories: Box::new([workspace_directory(b"git", 1, false, true, &[over.as_slice()])]) }),
@@ -3404,7 +3406,7 @@ fn exact_workspace_limits_and_aggregate_price_include_every_owner() {
     let policy = charter();
     let exact = crate::charter::cost(&policy).unwrap() + owned;
     let exact_limits = Limits { run_bytes: exact, ..limits };
-    assert_eq!(crate::charter::check(&policy, Some(&mounted), &exact_limits), Ok(()));
+    assert_eq!(crate::charter::check(&policy, Some(&mounted), &exact_limits), Ok(exact_limits.guide_bytes));
     refuse_workspace(Some(mounted.clone()), Limits { run_bytes: exact - 1, ..limits }, Invalid::TooLarge);
     // Aggregate ownership refuses before quadratic semantic duplicate scans.
     let mut duplicate = mounted;
@@ -3488,7 +3490,7 @@ fn instructions_and_ordered_section_cells_titles_and_text_attain_the_exact_aggre
         expected
     );
     let limits = Limits { run_bytes: expected, brief_sections: 3, ..LIMITS };
-    assert_eq!(crate::charter::check(&selected, Some(&workspace()), &limits), Ok(()));
+    assert_eq!(crate::charter::check(&selected, Some(&workspace()), &limits), Ok(limits.guide_bytes));
     assert_eq!(
         crate::charter::check(&selected, Some(&workspace()), &Limits { run_bytes: expected - 1, ..limits }),
         Err(Invalid::TooLarge)
@@ -3508,7 +3510,10 @@ fn instructions_and_ordered_section_cells_titles_and_text_attain_the_exact_aggre
 #[test]
 fn empty_main_instructions_and_brief_are_valid_even_with_zero_section_limit() {
     let selected = Charter { instructions: Box::new([]), brief: crate::Brief { sections: Box::new([]) }, ..charter() };
-    assert_eq!(crate::charter::check(&selected, Some(&workspace()), &Limits { brief_sections: 0, ..LIMITS }), Ok(()));
+    assert_eq!(
+        crate::charter::check(&selected, Some(&workspace()), &Limits { brief_sections: 0, ..LIMITS }),
+        Ok(LIMITS.guide_bytes)
+    );
 }
 
 fn priced(conversation: Token, own_spent: u64, subtree_spent: u64) -> Event {

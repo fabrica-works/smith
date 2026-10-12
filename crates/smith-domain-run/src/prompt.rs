@@ -167,7 +167,7 @@ fn render_wind_down(text: &mut Text, reserve: Reserve) {
     text.put(b" to finish. Use only finish, or deliver when offered.");
 }
 
-/// Count every charter-dependent system byte, with the largest permitted guides.
+/// Count every charter-dependent system byte, with the selected guide bound.
 /// This pass renders into a counter and retains no text or filesystem state.
 pub(crate) fn host_bytes(charter: &Charter, mounted: Option<&Workspace>, guide_bytes: u32) -> Option<u64> {
     let repositories = workspace::directories(mounted);

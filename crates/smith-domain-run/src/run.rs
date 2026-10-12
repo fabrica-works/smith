@@ -117,6 +117,8 @@ pub(crate) struct Run {
     pub(crate) workspace: Option<Workspace>,
     /// What it found in its checkout as it prepared.
     pub(crate) found: Found,
+    /// Each directory's guide bound after the charter's host bytes are measured.
+    guide_bytes: u32,
     /// The host's name for it.
     pub(crate) host_name: Token,
     /// Host-supplied number that distinguishes this activation's call names.
@@ -281,10 +283,13 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         });
         return;
     }
-    if let Err(invalid) = charter::check(&charter, workspace.as_ref(), &env.limits) {
-        out.push(Request::Answer { to: reply_to, answer: Answer::Refused(Refusal::Invalid(invalid)), read: None });
-        return;
-    }
+    let guide_bytes = match charter::check(&charter, workspace.as_ref(), &env.limits) {
+        Ok(guide_bytes) => guide_bytes,
+        Err(invalid) => {
+            out.push(Request::Answer { to: reply_to, answer: Answer::Refused(Refusal::Invalid(invalid)), read: None });
+            return;
+        }
+    };
     if !inbox::messages_valid(&messages, &env.limits) {
         out.push(Request::Answer {
             to: reply_to,
@@ -315,6 +320,7 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Limits>, start: Start, out: &
         charter,
         workspace,
         found,
+        guide_bytes,
         host_name: host_run,
         activation,
         window,
@@ -503,7 +509,7 @@ pub(crate) fn read(domain: &mut Domain, env: &Env<Limits>, owner: Token, read: R
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
         State::Preparing { reply_to, main, step } => {
-            prepare::guide(&mut run.found, step, read, &env.limits);
+            prepare::guide(&mut run.found, step, read, run.guide_bytes);
             prepared(run, conversations, id, reply_to, main, step, env, facts, out)
         }
         State::Stopping { reply_to, main, failure } => stop(run, conversations, reply_to, main, failure, out),
@@ -1611,7 +1617,15 @@ fn look(
     env: &Env<Limits>,
     out: &mut Queue<Request>,
 ) -> State {
-    out.push(prepare::request(&run.charter, run.workspace.as_ref(), step, id.token(), env.now, &env.limits));
+    out.push(prepare::request(
+        &run.charter,
+        run.workspace.as_ref(),
+        step,
+        id.token(),
+        env.now,
+        &env.limits,
+        run.guide_bytes,
+    ));
     State::Preparing { reply_to, main, step }
 }
 

@@ -90,13 +90,14 @@ pub(crate) fn request(
     owner: Token,
     now: Time,
     limits: &Limits,
+    guide_bytes: u32,
 ) -> Request {
     let root = repository(mounted, step.repository).root;
     let deadline = now.saturating_add(limits.io_timeout);
     match step.look {
         Look::Guide => {
             let at = Place { root, path: copy_of(conventions::guide(charter)) };
-            Request::Read { owner, at, max: limits.guide_bytes, deadline }
+            Request::Read { owner, at, max: guide_bytes, deadline }
         }
         Look::Checks => {
             Request::Probe { owner, at: Place { root, path: copy_of(conventions::checks(charter)) }, deadline }
@@ -105,11 +106,11 @@ pub(crate) fn request(
 }
 
 /// Keeps what reading the guide of `step` found.
-pub(crate) fn guide(found: &mut Found, step: Step, read: Read, limits: &Limits) {
+pub(crate) fn guide(found: &mut Found, step: Step, read: Read, guide_bytes: u32) {
     assert!(step.look == Look::Guide, "a read answers a guide's step");
     match read {
         Read::Text { text, whole } => {
-            assert!(count(text.len()) <= limits.guide_bytes, "io reads no more than it is asked for");
+            assert!(count(text.len()) <= guide_bytes, "io reads no more than it is asked for");
             let guide = Guide { repository: step.repository, text, whole };
             found.guides.push(guide).expect("room for a guide per repository");
         }

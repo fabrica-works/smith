@@ -475,7 +475,7 @@ fn derive_domain(
     let own = room::own_part(&tools, path.client.input, path.framing).ok_or(derived(Layer::Service, "own_part"))?;
     let parts = room::room(profile, configuration, own, run::summary_bytes())?;
     let schema_costs = llm::schema_costs().or(Err(derived(Layer::Run, "schema_costs")))?;
-    let run = match run::derive(&run::Derivation {
+    let mut run = match run::derive(&run::Derivation {
         conversations: declared.conversations,
         calls_per_response: declared.calls_per_response,
         inbox: policy.inbox,
@@ -502,6 +502,11 @@ fn derive_domain(
         Ok(limits) => limits,
         Err(field) => return Err(derived(Layer::Run, field.name())),
     };
+    // Each directory's guide shares the host's part. Entrance admission
+    // also accounts for the charter's exact text and generated schemas.
+    let guide = parts.host.checked_div(u64::from(run.directories)).ok_or(derived(Layer::Run, "guide_bytes"))?;
+    run.guide_bytes =
+        u32::try_from(guide.min(u64::from(declared.guide))).or(Err(derived(Layer::Run, "guide_bytes")))?;
     let delegated = domain::feedback_worst_case(&run).ok_or(derived(Layer::Session, "delegated_result_bytes"))?;
     let parallel = declared.calls_per_response.min(4);
     let owned = tools::batch_result_worst_case(&tools, parallel).ok_or(derived(Layer::Session, "batch_results"))?;

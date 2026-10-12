@@ -201,10 +201,9 @@ pub struct Endpoint(
     pub u32,
 );
 
-/// Whether a run may start on `charter` under `limits`, or what about it does
-/// not fit them. Counts are checked before anything that compares names in
-/// pairs.
-pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<(), Invalid> {
+/// Admit the charter and derive its guide bound from the host bytes left.
+/// Counts are checked before anything that compares names in pairs.
+pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<u32, Invalid> {
     let Charter {
         instructions: _,
         brief,
@@ -298,12 +297,16 @@ pub(crate) fn check(charter: &Charter, workspace: Option<&crate::Workspace>, lim
     check_window_parts(charter, workspace, limits)
 }
 
-fn check_window_parts(charter: &Charter, workspace: Option<&crate::Workspace>, limits: &Limits) -> Result<(), Invalid> {
+fn check_window_parts(
+    charter: &Charter,
+    workspace: Option<&crate::Workspace>,
+    limits: &Limits,
+) -> Result<u32, Invalid> {
     let outcome = &charter.outcome;
     let grants = &charter.grants;
     let llm = &charter.llm;
     let models = &charter.models;
-    let mut host = crate::prompt::host_bytes(charter, workspace, limits.guide_bytes);
+    let mut host = crate::prompt::host_bytes(charter, workspace, 0);
     host = match host {
         Some(bytes) => match limits.schema_costs.finish(outcome) {
             Some(schema) => match bytes.checked_add(schema) {
@@ -337,10 +340,10 @@ fn check_window_parts(charter: &Charter, workspace: Option<&crate::Workspace>, l
             };
         }
     }
-    match host {
-        Some(bytes) if bytes <= limits.host_part => {}
+    let remaining = match host {
+        Some(bytes) if bytes <= limits.host_part => limits.host_part.checked_sub(bytes).expect("host fits"),
         Some(_) | None => return Err(Invalid::HostPart { bound: limits.host_part }),
-    }
+    };
     if !has_room(llm, limits) {
         return Err(Invalid::Room { bound: limits.room });
     }
@@ -349,7 +352,17 @@ fn check_window_parts(charter: &Charter, workspace: Option<&crate::Workspace>, l
             return Err(Invalid::Room { bound: limits.room });
         }
     }
-    Ok(())
+    let directories = u64::from(count(crate::workspace::directories(workspace).len()));
+    let guide = if directories == 0 {
+        limits.guide_bytes
+    } else {
+        // A nonempty guide adds its bytes and at most two paragraph separators
+        // beyond the empty guide's already measured heading and cut marker.
+        let per_directory = remaining.checked_div(directories).expect("present directories");
+        u32::try_from(per_directory.saturating_sub(2).min(u64::from(limits.guide_bytes)))
+            .expect("guide capped within u32")
+    };
+    Ok(guide)
 }
 
 fn has_writable(workspace: Option<&crate::Workspace>) -> bool {
