@@ -383,8 +383,10 @@ material bound the opening reserves) so that the opening fits
 `host_part`; a run is refused only where no material bound can fit.
 Needs: nothing.
 Files: `crates/smith-agent-service/src/profile.rs` (the derivation, `:173`,
-`:272`, `:559`) and the file that reserves `guide` in the charter's host
-bytes; their unit tests.
+`:272`, `:559`); `crates/smith-domain-run/src/prompt.rs` (`host_bytes`,
+:172), `charter.rs` (`check_window_parts`, :297), `run.rs` and
+`prepare.rs` (the run's private guide bound, decisions.md 13.57); their
+unit tests.
 Shape: no new type.
 Test shape: a unit test, `a_small_window_lowers_the_guide_bound_and_admits_the_run`,
 at small-window's declared window: the derived `guide` fits `host_part`

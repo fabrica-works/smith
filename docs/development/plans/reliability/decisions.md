@@ -1354,3 +1354,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    writer refuses `None`, so the wire stays events.md 3.2's `aborted`
    bool. The producers' and tests' constructors wrap `Some` (README
    rule 8). Not a harness rewrite of the bytes.
+57. **04.s1 derives each run's guide bound at admission** (block of
+   2026-10-12T17:53:11Z, smith 04.s1). The only opening material bound
+   that can be lowered is `guide`, reserved in `prompt::host_bytes`
+   (`smith-domain-run/src/prompt.rs:172`) through
+   `charter::check_window_parts` (:297); a static cap in the profile alone
+   still refuses charters that would fit with a smaller guide, against
+   04.s1's "a run is refused only where no material bound can fit".
+   Ruling: the implementer's proposal: the profile caps `guide` at its
+   host share, and admission derives a per-run guide bound from the
+   charter's measured bytes left in `host_part`, kept private in `Run`
+   and used at `prepare::request` and in the guide's retention.
+   `run.rs` (a hotspot, README rule 6) and `prepare.rs` join 04.s1's
+   Files, with their unit stories; its Size is README rule 9's.
