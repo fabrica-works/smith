@@ -582,12 +582,28 @@ Don't: no list of names beside smith 04's.
 Size: at most 150.
 Removes: `settings::teardown` for event faces.
 
+### 10.s1 skein repinned at its `main`
+Split from 10.10 (decisions.md, 13.75). Scope: 10.10's first commit,
+landed on its own: smith's skein pin moves from 26502c96 to skein
+`origin/main`, which holds 02.6's terminal modes, 07.s2 (skein-world
+skips `EINVAL`) and 07.s3 (a summary's parts are not output items);
+smith's code takes what the new pin changes under README rule 8, and
+nothing of 10.10's interactive work.
+Needs: nothing.
+Files: `Cargo.toml`, `Cargo.lock`, and what the repin breaks (README rule 8).
+Shape: no new type.
+Test shape: none new.
+Proof: the gate and the smoke, once; then 13.6's `slow-completion` once,
+as 13.70 says.
+Don't: implement 10.10's raw terminal input here.
+Size: README rule 9's.
+
 ### 10.10 Raw terminal input
 Scope (shell.md, 4.1; skein shell.md, 6.3): with a terminal and without
 `--plain`, raw input at startup with the interrupt key kept as a signal;
 the modes restored once `drive` returns, on every path, before the last
 line; `Resized` heard and `Window` read for the status line's width.
-Needs: skein's terminal modes (skein 02.6): `raw_input`,
+Needs: smith 10.8's interactive owner (`front/interactive.rs`, the status line, `--plain`) and 10.s1's repin (decisions.md, 13.75); skein's terminal modes (skein 02.6): `raw_input`,
 `Kept::restore`, `open_signals(Watch::TerminationAndWindow)`, io's
 `Resized` and `Window`. Repin skein in its own commit first.
 Files: `smith-local-shell` (`compose.rs`, `front/interactive.rs`,
