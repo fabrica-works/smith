@@ -1461,3 +1461,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    diagnostics point to, failing on the parent, then both probes once
    live. 06.s1 needs nothing; session 06's implementer takes it after
    06.12. 13.62's and 13.63's instructions to 05.s1 lapse.
+65. **smith-04.s2: a timed-out command's terminal says `timed_out`**
+   (block of 2026-10-12T18:45:57Z, smith 13.5). 13.5's `tool-output`
+   batches calibrated (test-output, quote, utf-8, each 10 of 10), and
+   `timeout` failed 3 of 3 on a smith defect: the rendered result says
+   "command timed out" while each `tool.completed` says `exited` with no
+   exit (`calls.rs:426`, `verdict_kind`; `:391`, `command_exit`), against
+   events.md 3.6. A step not in the plan, 04.s2, in session 04's file,
+   with `timeout` once as its live Proof; 13.5 counts its timeout batch
+   as that defect, reruns none, and runs `paths`, `paths/single` and the
+   Codex calls meanwhile; `process-tree`, which shares the criterion,
+   runs after 04.s2 lands.

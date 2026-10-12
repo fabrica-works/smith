@@ -398,6 +398,28 @@ probe's settings to pass. If the refusal comes from elsewhere, stop and
 ask with where.
 Size: README rule 9's.
 
+### 04.s2 A timed-out command's terminal says `timed_out`
+Added during the run (decisions.md, 13.65). Scope: smith 13.5's live
+`tool-output/timeout` (3 of 3 attempts): a `sleep 600` under
+`timeout_seconds` 1, then 9,999 (clamped), renders "command timed out" to
+the model, but each `tool.completed` says `exited`, with no exit.
+events.md, 3.6: "A tool's terminal tells what the tool observed when it
+ended", and its verdicts include `timed_out`. `verdict_kind`
+(`smith-agent-service/src/calls.rs:426`) maps every `Exited` to `exited`,
+and `command_exit` (:391) drops `Exit::TimedOut` to none. A command
+whose exit is `TimedOut` is projected as `timed_out`; every other case
+stays.
+Needs: nothing.
+Files: `crates/smith-agent-service/src/calls.rs`; its unit tests.
+Shape: no new type.
+Test shape: a projector unit test,
+`a_timed_out_command_is_projected_as_timed_out_with_its_bound`, failing on
+the parent. Under 20 ms.
+Proof: that test, once; then `tool-output/timeout` once, live (one
+batch), its counts in the commit body.
+Don't: change the rendered result, the clamp or the checker.
+Size: at most 40 production lines.
+
 ## Interface sketches
 
 **04.7.** The types on `main` stay: `LimitName`, `Layer`, `Per`, `Value`,
