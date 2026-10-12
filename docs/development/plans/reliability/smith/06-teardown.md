@@ -53,7 +53,9 @@ O1, O5, O13 to O16).
 - **Words, never debug text:** the agent's one line on standard error
   for a failed answer (agent.md, section 6); the local host's failure
   notices, "none … shown as a fixed 'run failed'", a forced exit after
-  an accepted answer "shown as a warning" (host.md, section 8).
+  the run answered, "whatever its answer, … shown as a warning beside
+  the answer's words, which it leaves as they are" (host.md, section 8;
+  settled 2026-10-12).
 - **The product's end** (shell.md, section 9): it "exits once each has
   reported closed and io is empty"; a signal while closing aborts.
 - **Shipped times** (testing.md, section 6): "No world shortens the LLM
@@ -543,8 +545,9 @@ Scope: the local domain matches exhaustively what its agent hands it and
 shows each as a failure notice, in its words, then its detail: a run's
 typed failure, a refused start saying what, the kit's refusal before an
 agent existed, an agent's failure with how it ended, a credential that
-needs the person; a forced exit after an accepted answer is a warning
-(host.md, section 8; hosts.md, 5.1). The same words go to the operator's
+needs the person; a forced exit after any answer, accepted, failed,
+parked or cancelled, is a warning, its code and last line the answer's
+(host.md, section 8; shell.md, 4.3; hosts.md, 5.1). The same words go to the operator's
 error output; none enters a turn or a prompt.
 Needs: 06.1, 06.2, 06.7, 06.13 and 06.12; smith 05's typed notices (05.11).
 Files: `crates/smith-local-domain/src/agent.rs:332`, `domain.rs:909-960`,
@@ -565,7 +568,8 @@ world `tests/local/tests/simulation.rs`, after
 `a_provider_refusal_is_shown_with_its_class_and_text`; referee
 `no_failure_words_enter_a_turn_or_a_prompt` (`tests/local/tests/referee.rs`);
 `tests/local-process/tests/simulation.rs`, both placements:
-`a_forced_exit_after_an_accepted_answer_is_shown_as_a_warning`.
+`a_forced_exit_after_an_accepted_answer_is_shown_as_a_warning`,
+`a_forced_exit_after_a_failed_answer_keeps_its_code_and_last_line`.
 Ceilings: 20 ms unit, 0.5 s world.
 Proof: world, `a_budget_failure_is_shown_naming_what_ran_out`, once:
 the person sees `run failed: out of turns`; the parent shows "Run
@@ -734,9 +738,10 @@ pub enum Warning { ForcedExit { exit: Option<host::Exit>, forced: host::Forced }
 
 ## Questions to raise when reached
 
-- **A forced exit after a failed answer** (06.9). The design makes one
-  after an accepted answer a warning. Proposed: the same warning, after
-  the failure's words.
+- ~~**A forced exit after a failed answer** (06.9)~~: settled by the
+  designer on 2026-10-12 (shell.md, 4.3; host.md, sections 4 and 8): the
+  same warning after any answer, before the last line, which stays the
+  answer's, as does the code.
 
 ## Done when
 
