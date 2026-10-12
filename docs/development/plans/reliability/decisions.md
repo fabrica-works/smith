@@ -1472,3 +1472,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    as that defect, reruns none, and runs `paths`, `paths/single` and the
    Codex calls meanwhile; `process-tree`, which shares the criterion,
    runs after 04.s2 lands.
+66. **smith 10.13 splits; 10.17 takes the resolver and `smith check`'s
+   relationships** (block of 2026-10-12T18:49:12Z). 10.13's candidate
+   (`6e64b9d9`) holds 744 production lines before its resolver entry,
+   check reporting and tests, past README rule 9's 700: presets 107,
+   models 127, the configuration document 121, the local part 185, and
+   the rest. Ruling: the implementer's split. 10.13 lands the presets and
+   the native agent value with its typed refusals, the golden and the
+   Haiku test (unit Proof); 10.17, the next unused number of session 10
+   (10.11 and 10.12 landed in the first run), takes the full run's
+   resolution, the relationship report, trust arrays and custom presets,
+   with the end-to-end budget test and its process Proof.

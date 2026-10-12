@@ -249,16 +249,39 @@ Files: `smith-local-shell` (`presets.rs`, `settings/resolve.rs`,
 Shape: `presets::{Preset, built_in}`; `resolve(settings: &Settings,
 command: &Command) -> Result<Resolved, Refusal>`, `Resolved { agent,
 local, accounts }`.
+Split (decisions.md, 13.66): 10.13 lands the presets and the native
+agent value and typed refusals they build, with the golden and the Haiku
+test; 10.17 takes `resolve`'s full run, accounts and limits, the
+relationship report in `smith check`, trust arrays and custom presets'
+inheritance, with the end-to-end test and the process Proof below.
 Test shape: unit in `settings/tests.rs`: the built-in layer against a
-byte-stable golden, one refusal per relationship,
+byte-stable golden, one refusal per relationship the presets check,
 `haiku_takes_its_long_prompt_rates_only_past_a_100000_token_window`
-(the preset's 200,000 and a declared 100,000). End to end
+(the preset's 200,000 and a declared 100,000). Ceilings: 20 ms.
+Proof: unit, the golden and the Haiku test; once.
+Don't: the profile's values stay the service crates' `standard()`.
+Size: README rule 9's. Removes: nothing.
+
+### 10.17 The run resolved from settings, and `smith check`'s relationships
+Split from 10.13 (decisions.md, 13.66). Scope: 10.13's Scope from
+"`resolve` builds the agent configuration" to its end: the agent's
+`Profile` and the local `Config` as values, accounts and limits
+assembled, each relationship checked by name, `smith check` naming a
+relationship with both sides and their layers, trust arrays and custom
+presets' inheritance. Its candidate's resolver parts start from
+10.13's (`6e64b9d9`).
+Needs: 10.13.
+Files: 10.13's.
+Shape: `resolve(settings: &Settings, command: &Command) ->
+Result<Resolved, Refusal>`, `Resolved { agent, local, accounts }`.
+Test shape: end to end
 `smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling`,
 expecting 5.3's line `smith: budget.turns = 5000 (from -c) exceeds the
-standard profile's ceiling of 4096 turns`. Ceilings: 20 ms, 2 s.
+standard profile's ceiling of 4096 turns`; unit refusals for the
+relationships `resolve` checks. Ceilings: 20 ms, 2 s.
 Proof: process, that test; once, under 2 s.
 Don't: the profile's values stay the service crates' `standard()`.
-Size: at most 500. Removes: nothing.
+Size: README rule 9's. Removes: nothing.
 
 ### 10.7 `borrow` and `env`
 Scope (shell.md, 7; hosts.md, 5.4): `smith-local-protocol` decodes
