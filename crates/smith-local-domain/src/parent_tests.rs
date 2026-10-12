@@ -77,7 +77,10 @@ fn the_first_drop_cause_survives_store_failure_and_the_childs_later_fault() {
                 status = Some(value);
             }
         }
-        assert_eq!(status, Some(if store_first { crate::ExitStatus::Failed } else { crate::ExitStatus::Interrupted }));
+        assert_eq!(
+            status,
+            Some(if store_first { crate::ExitStatus::RunFailed } else { crate::ExitStatus::Interrupted })
+        );
     }
 }
 
@@ -350,7 +353,7 @@ fn gone_without_an_answer_fails_after_retained_turns_are_saved() {
     );
     let Some(Request::Notice { notice }) = out.pop() else { panic!("missing answer notice") };
     assert_eq!(notice, Notice::Failure(Failure::Agent(AgentEnd::NoAnswer)));
-    let Some(Request::Exit { status: crate::ExitStatus::Failed }) = out.pop() else { panic!("failed invocation") };
+    let Some(Request::Exit { status: crate::ExitStatus::RunFailed }) = out.pop() else { panic!("failed invocation") };
 }
 
 #[test]

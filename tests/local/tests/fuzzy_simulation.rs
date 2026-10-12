@@ -51,7 +51,7 @@ fn random_local_chats_settle_against_the_boundary_referee() {
             }
             5..=7 => {
                 world.drive(300);
-                assert_eq!(world.exit(), Some(ExitStatus::Failed), "seed {seed}: store failure stops");
+                assert_eq!(world.exit(), Some(ExitStatus::RunFailed), "seed {seed}: store failure stops");
             }
             2 => {
                 world.drive(300);

@@ -29,6 +29,26 @@ pub struct PushTarget {
     pub branch: Box<[u8]>,
 }
 
+/// Whether the local host accepts person lines or carries one prompt in Start.
+#[derive(Debug)]
+pub enum Mode {
+    /// A chat's run waits for the person for this duration before parking.
+    Chat { waiting: skein_lib::Duration },
+    /// One prompt starts one run; its answer ends the invocation.
+    Headless { prompt: Box<[u8]> },
+}
+
+impl Mode {
+    /// The charter's waiting allowance; a headless wait parks immediately.
+    #[must_use]
+    pub const fn waiting(&self) -> skein_lib::Duration {
+        match self {
+            Self::Chat { waiting } => *waiting,
+            Self::Headless { .. } => skein_lib::Duration::ZERO,
+        }
+    }
+}
+
 /// One configured chat and the policy for each activation.
 #[derive(Debug)]
 pub struct Config {
@@ -58,8 +78,8 @@ pub struct Config {
     pub deliver: Option<outcome::ChangeSpec>,
     /// Required change field used as the first commit-message paragraph.
     pub title_field: Box<[u8]>,
-    /// Duration a waiting run stays live before parking.
-    pub waiting: skein_lib::Duration,
+    /// Interactive waiting policy or the headless prompt carried at startup.
+    pub mode: Mode,
     /// Whether a saved transcript is supplied on start.
     pub resume: bool,
     /// Accounts for which grants must be fetched before a start.
@@ -99,6 +119,7 @@ impl Config {
     /// Validate owned local policy before constructing the agent.
     pub fn validate(&self, limits: &Limits) -> Result<(), Invalid> {
         self.check_budget(limits)?;
+        self.check_mode(limits)?;
         if self.chat.is_empty() || self.chat.len() > usize::try_from(limits.chat_bytes).expect("u32 fits usize") {
             return Err(Invalid::Chat);
         }
@@ -195,6 +216,17 @@ impl Config {
         Ok(())
     }
 
+    fn check_mode(&self, limits: &Limits) -> Result<(), Invalid> {
+        match &self.mode {
+            Mode::Headless { prompt }
+                if prompt.len() > usize::try_from(limits.line_bytes).expect("line bound fits") =>
+            {
+                Err(Invalid::Text)
+            }
+            Mode::Chat { .. } | Mode::Headless { .. } => Ok(()),
+        }
+    }
+
     fn check_budget(&self, limits: &Limits) -> Result<(), Invalid> {
         let checks = match &self.contract {
             Contract::Change(_) => Some(limits.smith.run.check_timeout),
@@ -235,7 +267,7 @@ impl Config {
                 | run::BudgetRefusal::Checks { .. } => return Err(Invalid::Budget(reason)),
             },
         }
-        if self.waiting > limits.smith.run.waiting {
+        if self.mode.waiting() > limits.smith.run.waiting {
             return Err(Invalid::Budget(run::BudgetRefusal::Ceiling(run::Ceiling::Time(limits.smith.run.waiting))));
         }
         Ok(())
@@ -326,7 +358,7 @@ pub fn charter(config: &Config) -> charter::Charter {
     }
     charter::Charter {
         resume: config.resume,
-        waiting: config.waiting,
+        waiting: config.mode.waiting(),
         instructions: config.instructions.clone(),
         brief: charter::Brief { sections: sections.into_boxed() },
         conventions: config.conventions.clone(),

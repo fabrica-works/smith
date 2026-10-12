@@ -63,7 +63,7 @@ pub(super) fn config() -> Config {
         contract: Contract::Report(outcome::TextSpec { max: 256, fields: Box::new([]) }),
         deliver: None,
         title_field: Box::from(&b"title"[..]),
-        waiting: Duration::from_secs(30),
+        mode: crate::Mode::Chat { waiting: Duration::from_secs(30) },
         resume: true,
         accounts: Box::new([7]),
         workspace: None,
@@ -94,7 +94,7 @@ fn report_charter_copies_every_local_choice_without_workspace_tools() {
     assert_eq!(config.validate(&limits), Ok(()));
     let charter = charter(&config);
     assert!(charter.resume, "configured resume is retained");
-    assert_eq!(charter.waiting, config.waiting);
+    assert_eq!(charter.waiting, config.mode.waiting());
     assert_eq!(charter.instructions, config.instructions);
     assert_eq!(charter.brief.sections, config.brief.sections);
     assert_eq!(charter.conventions, config.conventions);
@@ -119,7 +119,7 @@ fn change_and_second_model_map_to_distinct_charter_choices() {
     config.contract = Contract::Change(outcome::ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
     config.sub_agents = true;
     config.resume = false;
-    config.waiting = Duration::ZERO;
+    config.mode = crate::Mode::Chat { waiting: Duration::ZERO };
     let charter = charter(&config);
     assert_eq!(charter.models.as_ref(), &[second]);
     assert!(charter.grants.agents, "the configured grant permits native sub-agent calls");

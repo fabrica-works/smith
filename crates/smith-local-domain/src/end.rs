@@ -18,6 +18,37 @@ pub enum EndCause {
 pub(crate) const fn exit_status(cause: Option<EndCause>) -> ExitStatus {
     match cause {
         Some(EndCause::Cancelled) => ExitStatus::Interrupted,
-        Some(EndCause::Host { .. } | EndCause::Agent) | None => ExitStatus::Failed,
+        Some(EndCause::Host { .. } | EndCause::Agent) | None => ExitStatus::RunFailed,
+    }
+}
+
+/// Classify the actual answer before rendering moves its concrete result.
+pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) -> ExitStatus {
+    use smith_host_domain::{Refusal, RunFailure, RunResult};
+    match &answer.result {
+        RunResult::Accepted { .. } => ExitStatus::Accepted,
+        RunResult::Parked => ExitStatus::NeedsInput,
+        RunResult::Refused { refusal } => match refusal {
+            Refusal::Busy => ExitStatus::RunFailed,
+            Refusal::Invalid(_) => ExitStatus::Refused,
+        },
+        RunResult::Failed { failure } => match failure {
+            RunFailure::Budget(_) => ExitStatus::Budget,
+            RunFailure::Cancelled => ExitStatus::Interrupted,
+            RunFailure::Model(fault) => match fault {
+                smith_host_domain::ModelFault::Completion {
+                    failure: smith_host_domain::CompletionFailure::Unauthorized,
+                    ..
+                } => ExitStatus::Credentials { account },
+                smith_host_domain::ModelFault::Completion { .. }
+                | smith_host_domain::ModelFault::Exhausted
+                | smith_host_domain::ModelFault::Provider
+                | smith_host_domain::ModelFault::ContextFull
+                | smith_host_domain::ModelFault::Refused
+                | smith_host_domain::ModelFault::Truncated
+                | smith_host_domain::ModelFault::Malformed => ExitStatus::RunFailed,
+            },
+            RunFailure::Transcript(_) | RunFailure::Policy(_) | RunFailure::Stale => ExitStatus::RunFailed,
+        },
     }
 }

@@ -137,10 +137,18 @@ pub enum CredentialFailure {
 /// How this invocation ended.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExitStatus {
-    /// The person left an idle chat.
-    Success,
-    /// A required store or account operation failed.
-    Failed,
+    /// The run accepted its result, or the person left an idle chat.
+    Accepted,
+    /// The run or a required host operation failed.
+    RunFailed,
+    /// The run exhausted its admitted allowance.
+    Budget,
+    /// This account needs a usable credential before work can continue.
+    Credentials { account: u32 },
+    /// The run's settings or start were refused as invalid.
+    Refused,
+    /// The headless run parked because it needed the person's input.
+    NeedsInput,
     /// The run was dropped before answering at the person's ask or after cancellation grace.
     Interrupted,
 }

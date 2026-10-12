@@ -46,7 +46,7 @@ pub struct Domain {
     raw_lines: Queue<Box<[u8]>>,
     line: Option<Line>,
     grants: Grants,
-    grant_failed: bool,
+    grant_failed: Option<u32>,
     run: Option<Token>,
     turns: Turns,
     held: Queue<Held>,
@@ -119,7 +119,7 @@ impl Reconcile {
 
 impl Domain {
     /// Validate local choices and build the agent with the configured endpoints.
-    pub fn new(config: Config, limits: &Limits, seed: u64) -> Result<Domain, Invalid> {
+    pub fn new(mut config: Config, limits: &Limits, seed: u64) -> Result<Domain, Invalid> {
         config.validate(limits)?;
         let mut models = List::with_capacity(u32::try_from(config.models.len()).expect("validated models count"));
         for (index, model) in config.models.iter().enumerate() {
@@ -154,6 +154,11 @@ impl Domain {
                 AgentLimits::Spawned(child)
             }
         };
+        let mut raw_lines = Queue::with_capacity(limits.lines);
+        match &mut config.mode {
+            crate::Mode::Headless { prompt } => raw_lines.push(mem::replace(prompt, Box::new([]))),
+            crate::Mode::Chat { .. } => {}
+        }
         Ok(Domain {
             config,
             agent: Agent::new(&child_limits, agent_config, seed, max_out(limits))?,
@@ -168,10 +173,10 @@ impl Domain {
             heads: Map::with_capacity(limits.smith.run.directories),
             own_heads: Map::with_capacity(limits.smith.run.directories),
             head_survey: HeadSurvey::NotStarted,
-            raw_lines: Queue::with_capacity(limits.lines),
+            raw_lines,
             line: None,
             grants: Grants::new(limits.smith.accounts),
-            grant_failed: false,
+            grant_failed: None,
             run: None,
             turns: Turns::new(limits.unsaved),
             held: Queue::with_capacity(1),
@@ -265,7 +270,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::PlainStatus { owner, changed } => plain_status(domain, env, owner, changed, out),
         Event::StoreFailed { turn, reason } => store_failed(domain, env, turn, reason, out),
         Event::Credential { grant } => credential(domain, env, grant, out),
-        Event::NoCredential { account: _, reason: _ } => no_credential(domain, env, out),
+        Event::NoCredential { account, reason: _ } => no_credential(domain, env, account, out),
         Event::Below { agent, terminal } => agent_terminal(domain, env, agent, terminal),
         Event::Process(event) => domain.agent.process(env.now, env.wall, event),
     }
@@ -362,6 +367,10 @@ pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) 
 }
 
 fn receive_line(domain: &mut Domain, env: &Env<Limits>, text: Box<[u8]>, out: &mut Queue<Request>) {
+    match domain.config.mode {
+        crate::Mode::Headless { .. } => return,
+        crate::Mode::Chat { .. } => {}
+    }
     if text.len() > usize::try_from(env.limits.line_bytes).expect("u32 fits usize") {
         out.push(Request::Notice { notice: Notice::NotDelivered { line: None, why: Undelivered::TooLong } });
         return;
@@ -399,7 +408,7 @@ fn dispatch_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request
         domain.heads = Map::with_capacity(env.limits.smith.run.directories);
         domain.own_heads = Map::with_capacity(env.limits.smith.run.directories);
         domain.chat.start_saved = false;
-        domain.grant_failed = false;
+        domain.grant_failed = None;
         domain.grants.values = List::with_capacity(env.limits.smith.accounts);
         domain.grants.awaiting = u32::try_from(domain.config.accounts.len()).expect("validated account count");
         for account in &domain.config.accounts {
@@ -472,7 +481,11 @@ fn resume_loading(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Reques
     domain.chat.load_requested = false;
     if domain.chat.closed {
         domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status: ExitStatus::Success });
+        let status = match domain.config.mode {
+            crate::Mode::Headless { .. } => crate::end::exit_status(domain.end_cause),
+            crate::Mode::Chat { .. } => ExitStatus::Accepted,
+        };
+        out.push(Request::Exit { status });
     } else {
         dispatch_line(domain, env, out);
     }
@@ -522,12 +535,12 @@ fn credential(domain: &mut Domain, env: &Env<Limits>, grant: agent::Grant, out: 
     }
 }
 
-fn no_credential(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+fn no_credential(domain: &mut Domain, env: &Env<Limits>, account: u32, out: &mut Queue<Request>) {
     match domain.chat.phase {
         Phase::Starting => {
             assert!(domain.grants.awaiting > 0, "one terminal per account request");
             domain.grants.awaiting = domain.grants.awaiting.checked_sub(1).expect("pending account");
-            domain.grant_failed = true;
+            domain.grant_failed = Some(account);
             maybe_start(domain, env, out);
         }
         Phase::Running | Phase::Ending => {
@@ -541,10 +554,27 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     if domain.chat.phase != Phase::Starting || !domain.chat.start_saved || domain.grants.awaiting > 0 {
         return;
     }
-    if domain.grant_failed {
+    if domain.chat.closed {
+        match domain.config.mode {
+            crate::Mode::Headless { .. } => {
+                domain.chat.phase = Phase::Done;
+                out.push(Request::Exit { status: ExitStatus::Interrupted });
+                return;
+            }
+            crate::Mode::Chat { .. } => {}
+        }
+    }
+    if let Some(account) = domain.grant_failed {
         domain.chat.phase = Phase::Idle;
         domain.line = None;
         out.push(Request::Notice { notice: Notice::Failure(Failure::Account(AccountFailure::Unavailable)) });
+        match domain.config.mode {
+            crate::Mode::Headless { .. } => {
+                domain.chat.phase = Phase::Done;
+                out.push(Request::Exit { status: ExitStatus::Credentials { account } });
+            }
+            crate::Mode::Chat { .. } => {}
+        }
         return;
     }
     match domain.head_survey {
@@ -580,7 +610,21 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.agent_failed = false;
     domain.end_cause = None;
     domain.cancel_requested = None;
+    let messages = match domain.config.mode {
+        crate::Mode::Headless { .. } => match domain.line.take() {
+            Some(line) => {
+                Box::from([host::Message { name: line.name, label: Box::from(crate::person::LABEL), text: line.text }])
+            }
+            None => Box::<[host::Message]>::default(),
+        },
+        crate::Mode::Chat { .. } => Box::<[host::Message]>::default(),
+    };
+    let mut initial = None;
+    for message in &messages {
+        initial = Some(message.name);
+    }
     let source = RunStart {
+        messages,
         identity: domain.chat.state.identity,
         activation: domain.chat.state.activation,
         charter: charter(&domain.config),
@@ -602,6 +646,9 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     }
     domain.chat.phase = Phase::Running;
     observe(domain, Fact::Started { activation: domain.chat.state.activation });
+    if let Some(name) = initial {
+        observe(domain, Fact::Message { name });
+    }
 }
 
 fn survey_heads(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
@@ -703,10 +750,14 @@ fn turn_saved(domain: &mut Domain, env: &Env<Limits>, number: u32, out: &mut Que
 }
 
 fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
+    match domain.config.mode {
+        crate::Mode::Headless { .. } => record_cause(domain, crate::EndCause::Cancelled),
+        crate::Mode::Chat { .. } => {}
+    }
     match domain.chat.phase {
         Phase::Idle => {
             domain.chat.phase = Phase::Done;
-            out.push(Request::Exit { status: ExitStatus::Success });
+            out.push(Request::Exit { status: ExitStatus::Accepted });
         }
         Phase::Running => {
             domain.cancel_requested = Some(env.now);
@@ -721,10 +772,14 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
 }
 
 fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
+    match domain.config.mode {
+        crate::Mode::Headless { .. } => return,
+        crate::Mode::Chat { .. } => {}
+    }
     domain.chat.closed = true;
     if domain.chat.phase == Phase::Idle {
         domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status: ExitStatus::Success });
+        out.push(Request::Exit { status: ExitStatus::Accepted });
     }
 }
 
@@ -967,14 +1022,23 @@ fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
         return;
     }
     observe(domain, Fact::Shown { activation: domain.chat.state.activation });
+    let status = match domain.config.mode {
+        crate::Mode::Headless { .. } => {
+            crate::end::answer_status(&answer, domain.config.models.first().expect("configured main").account)
+        }
+        crate::Mode::Chat { .. } => ExitStatus::Accepted,
+    };
     let text = crate::agent::answer_text(answer);
     out.push(Request::Show { text: crate::person::bounded_text(&text, domain.show_bytes) });
     domain.run = None;
     domain.wall_deadline = None;
     domain.line = None;
-    if domain.chat.closed {
+    let headless = match domain.config.mode {
+        crate::Mode::Headless { .. } => true,
+        crate::Mode::Chat { .. } => false,
+    };
+    if domain.chat.closed || headless {
         domain.chat.phase = Phase::Done;
-        let status = if domain.stop_failed { ExitStatus::Failed } else { ExitStatus::Success };
         out.push(Request::Exit { status });
     } else {
         domain.chat.phase = Phase::Loading;

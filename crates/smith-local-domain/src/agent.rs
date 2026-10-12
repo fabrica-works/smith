@@ -86,7 +86,7 @@ pub(crate) fn prepare_start(
         }
     }
     Ok(host::Start {
-        messages: Box::default(),
+        messages: source.messages,
         logical_run: skein_lib::Token::new(1),
         identity: Some(source.identity),
         activation: source.activation,
@@ -319,6 +319,7 @@ pub(crate) fn command(agent: &mut Agent, now: Time, wall: skein_lib::Wall, event
 /// The local policy's owned run values before sealing at the typed parent face.
 #[derive(Debug)]
 pub(crate) struct RunStart {
+    pub(crate) messages: Box<[host::Message]>,
     pub(crate) identity: run::Identity,
     pub(crate) activation: u64,
     pub(crate) charter: run::charter::Charter,

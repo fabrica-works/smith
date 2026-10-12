@@ -182,7 +182,7 @@ impl Invocation {
             }
         }
         assert!(
-            matches!(self.local.result(), Some(Ok(local::ExitStatus::Success))),
+            matches!(self.local.result(), Some(Ok(local::ExitStatus::Accepted))),
             "local invocation finishes successfully"
         );
         self.sim.assert_quiescent(self.pid);

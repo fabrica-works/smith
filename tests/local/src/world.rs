@@ -1,6 +1,8 @@
 //! A typed local host over a durable fake store and the shared scripted
 //! agent-provider translation (domain/host.md, sections 8–10).
 
+mod headless;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use skein_fake_checkout::git::Remote;
@@ -235,6 +237,7 @@ pub struct World {
     held_git: VecDeque<(Token, GitResult)>,
     first_failure: FirstFailure,
     credential_requests: u32,
+    missing_credential: Option<u32>,
     referee: Referee<Meeting>,
     trace: Trace,
     seed: u64,
@@ -425,11 +428,32 @@ impl World {
         &self.disk
     }
 
+    fn with_capacity(seed: u64, store: Store, resume: bool, unsaved: u32, facts: u32, scenario: Scenario) -> World {
+        Self::with_mode(
+            seed,
+            store,
+            resume,
+            (unsaved, facts),
+            scenario,
+            local::Mode::Chat { waiting: Duration::from_secs(30) },
+            None,
+        )
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one constructor keeps scenario fixtures and their typed configuration together"
     )]
-    fn with_capacity(seed: u64, mut store: Store, resume: bool, unsaved: u32, facts: u32, scenario: Scenario) -> World {
+    fn with_mode(
+        seed: u64,
+        mut store: Store,
+        resume: bool,
+        capacities: (u32, u32),
+        scenario: Scenario,
+        mode: local::Mode,
+        budget: Option<run::Budget>,
+    ) -> World {
+        let (unsaved, facts) = capacities;
         let meeting = Meeting::after(store.activation(), store.state.map_or(0, |state| state.next_message))
             .prior_delivery(store.deliveries.values(), &store.commits);
         let meeting = match scenario {
@@ -629,7 +653,7 @@ impl World {
                 output: 256,
             }]),
             sub_agents: scenario == Scenario::Delegating,
-            budget: agent_world::BUDGET,
+            budget: budget.unwrap_or(agent_world::BUDGET),
             conventions: None,
             contract,
             deliver: if matches!(scenario, Scenario::MidReport | Scenario::TwoDeliveries) {
@@ -645,7 +669,7 @@ impl World {
             } else {
                 b"title".as_slice().into()
             },
-            waiting: Duration::from_secs(30),
+            mode,
             resume,
             accounts: Box::new([0]),
             workspace,
@@ -706,6 +730,7 @@ impl World {
             held_git: VecDeque::new(),
             first_failure: FirstFailure::None,
             credential_requests: 0,
+            missing_credential: None,
             referee,
             trace: Trace::default(),
             seed,
@@ -1132,6 +1157,10 @@ impl World {
             }
             Request::Credential { account } => {
                 self.credential_requests = self.credential_requests.saturating_add(1);
+                if self.missing_credential == Some(account) {
+                    self.events.push_back(Event::NoCredential { account, reason: local::CredentialFailure::Missing });
+                    return;
+                }
                 self.events.push_back(Event::Credential {
                     grant: agent::Grant {
                         name: agent::GrantName { account, generation: u64::from(self.credential_requests) },

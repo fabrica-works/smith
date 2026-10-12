@@ -508,7 +508,13 @@ impl Host for Local {
             self.announcement = Announcement::Ended;
             let failure = match self.result() {
                 Some(Err(why)) => Some(why.to_owned()),
-                Some(Ok(domain::ExitStatus::Failed)) => Some(match self.service.end_cause() {
+                Some(Ok(
+                    domain::ExitStatus::RunFailed
+                    | domain::ExitStatus::Budget
+                    | domain::ExitStatus::Credentials { .. }
+                    | domain::ExitStatus::Refused
+                    | domain::ExitStatus::NeedsInput,
+                )) => Some(match self.service.end_cause() {
                     Some(domain::EndCause::Host { turn: Some(turn), reason }) => {
                         let reason = match reason {
                             domain::StoreFailure::Read => "read failed",
@@ -529,7 +535,7 @@ impl Host for Local {
                 Some(Ok(domain::ExitStatus::Interrupted)) => {
                     Some("interrupted: the run was dropped before it answered".into())
                 }
-                Some(Ok(domain::ExitStatus::Success)) | None => None,
+                Some(Ok(domain::ExitStatus::Accepted)) | None => None,
             };
             if let Some(why) = failure {
                 drop(writeln!(self.errors, "smith: {why}"));
@@ -620,8 +626,12 @@ impl Host for Local {
     fn exit(&self) -> Option<kernel::Exit> {
         self.result().map(|result| {
             kernel::Exit::Code(match result {
-                Ok(domain::ExitStatus::Success) => 0,
-                Ok(domain::ExitStatus::Failed) | Err(_) => 1,
+                Ok(domain::ExitStatus::Accepted) => 0,
+                Ok(domain::ExitStatus::RunFailed) | Err(_) => 1,
+                Ok(domain::ExitStatus::Refused) => 2,
+                Ok(domain::ExitStatus::Credentials { .. }) => 3,
+                Ok(domain::ExitStatus::Budget) => 4,
+                Ok(domain::ExitStatus::NeedsInput) => 5,
                 Ok(domain::ExitStatus::Interrupted) => 130,
             })
         })

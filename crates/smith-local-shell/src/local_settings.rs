@@ -317,7 +317,7 @@ pub fn policy(
         contract,
         deliver,
         title_field: settings.title_field.as_bytes().into(),
-        waiting: Duration::from_secs(settings.waiting_seconds),
+        mode: smith_local_domain::Mode::Chat { waiting: Duration::from_secs(settings.waiting_seconds) },
         resume: true,
         accounts: accounts.into(),
         workspace,

@@ -28,6 +28,7 @@ fn a_local_start_keeps_its_concrete_charter_and_run_identity() {
     let charter = smith_agent_world::scripted_charter(&settings);
     let identity = run::Identity::new([0x83; 16]);
     let source = RunStart {
+        messages: Box::new([]),
         identity,
         activation: 7,
         charter: smith_agent_world::scripted_charter(&settings),

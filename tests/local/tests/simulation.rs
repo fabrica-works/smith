@@ -680,7 +680,7 @@ fn a_store_failure_stops_the_chat_and_tells_the_person() {
         world.fail_store(fault);
         world.line(b"Hello");
         world.drive(300);
-        assert_eq!(world.exit(), Some(ExitStatus::Failed), "{fault:?} failure exits");
+        assert_eq!(world.exit(), Some(ExitStatus::RunFailed), "{fault:?} failure exits");
         assert!(world.notices().iter().any(|notice| matches!(
             notice,
             smith_local_domain::Notice::Failure(smith_local_domain::Failure::Store { .. })
@@ -734,4 +734,75 @@ fn an_absent_delivery_trailer_and_unchanged_head_prove_no_effect() {
     assert_eq!(world.delivery_commits(), 0);
     let Some(smith_domain::run::Delivery::Failed(failure)) = world.delivery() else { panic!("original failure") };
     assert_eq!(failure.reason, smith_domain::run::DeliveryReason::TimedOut);
+}
+
+#[test]
+fn a_headless_run_that_would_wait_parks_at_once_and_needs_input() {
+    let mut world = World::headless(710, b"What can you do?");
+    assert!(world.drive_to_park(400));
+    assert_eq!(world.exit(), Some(ExitStatus::NeedsInput));
+    assert_eq!(world.saved_turns(), 1);
+    assert_eq!(world.completions(), 1, "zero waiting admits no follow-up completion");
+}
+
+#[test]
+fn a_headless_prompt_opens_the_run_and_its_answer_ends_the_host() {
+    let mut world = World::headless_workspace(711, b"Change the answer in work");
+    world.line(b"This follow-up must not be relayed");
+    world.drive(400);
+    assert_eq!(world.exit(), Some(ExitStatus::Accepted));
+    assert_eq!(world.activation(), 1);
+    let prompt = String::from_utf8_lossy(&world.prompt_texts()[0]);
+    assert!(prompt.contains("person") && prompt.contains("Change the answer in work"));
+    assert!(
+        !world
+            .prompt_texts()
+            .iter()
+            .any(|text| text.windows(b"This follow-up".len()).any(|bytes| bytes == b"This follow-up"))
+    );
+}
+
+#[test]
+fn a_headless_run_out_of_turns_ends_with_the_budget_status() {
+    let mut world = World::headless_budget(712, b"Change the answer in work");
+    world.drive(500);
+    assert_eq!(world.exit(), Some(ExitStatus::Budget));
+}
+
+#[test]
+fn a_headless_run_whose_model_fails_ends_run_failed() {
+    let mut world = World::headless(713, b"What can you do?");
+    world.fail_model();
+    world.drive(500);
+    assert_eq!(world.exit(), Some(ExitStatus::RunFailed));
+}
+
+#[test]
+fn a_headless_run_without_a_credential_starts_nothing() {
+    let mut world = World::headless(714, b"What can you do?");
+    world.without_credential();
+    world.drive(100);
+    assert_eq!(world.exit(), Some(ExitStatus::Credentials { account: 0 }));
+    assert_eq!(world.completions(), 0);
+    assert_eq!(world.credential_requests(), 1);
+}
+
+#[test]
+fn an_interrupt_ends_a_headless_run_interrupted() {
+    let mut world = World::headless(715, b"What can you do?");
+    world.interrupt();
+    world.drive(100);
+    assert_eq!(world.exit(), Some(ExitStatus::Interrupted));
+    assert_eq!(world.completions(), 0);
+}
+
+#[test]
+fn a_headless_delivery_commits_in_place() {
+    let mut world = World::headless_delivery(716, b"Make the answer 43");
+    world.drive(500);
+    assert_eq!(world.exit(), Some(ExitStatus::Accepted));
+    assert_eq!(world.delivery_commits(), 1);
+    assert!(world.commit_message().is_some_and(|message| message.starts_with(b"Make the answer 43")));
+    let (content, _) = world.disk().load(1, b"src/lib.rs", 4096).expect("committed source");
+    assert_eq!(content, b"pub fn answer() -> u32 { 43 }\n");
 }
