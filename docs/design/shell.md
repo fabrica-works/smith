@@ -376,8 +376,10 @@ the typed values:
 | 5 | needs input | ``smith: needs input: answer with `smith exec --chat <name>` `` |
 | 130 | interrupted | `smith: interrupted: the run was cancelled`; for a dropped run, `smith: interrupted: the run was dropped before it answered` |
 
-A forced exit after an accepted answer adds a warning line before the
-last; the code stays 0.
+A forced exit after the run answered, whatever its answer, adds a
+warning line before the last; the code and the last line stay the
+answer's. An agent that ended without answering is not this: it is the
+spawned agent's failure above.
 
 ### 4.4 `smith check`
 

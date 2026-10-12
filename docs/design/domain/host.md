@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-05, revised 2026-10-09. The other side of a run:
+Provisional, 2026-10-05, revised 2026-10-12. The other side of a run:
 what a host owes an agent and is owed, the channel between them, and the
 domains smith ships for hosts: `smith-host-domain`, which a host embeds
 to start and supervise agent processes; `smith-inline-agent`, its twin,
@@ -186,8 +186,8 @@ policy.
 - **How the agent ended** is evidence, not a guess: its end carries
   `exit`, the code it exited with or the signal that ended it, and
   `forced`, whether the kit had to end it (no, terminated or killed). A
-  forced exit after an accepted answer is a warning for operators, never
-  the run's failure.
+  forced exit after the run answered, whatever its answer, is a warning
+  for operators, never the run's failure or a change to its outcome.
 - **Messages' terminals.** The kit refuses, typed, at its entrance a
   message the run could not take: too large as the run reads it (its
   label, a colon and a space, then its text), more unread messages than
@@ -336,7 +336,9 @@ the inline agent it is the `smith` product:
   person. Each kind has its own words, matched exhaustively, so a new
   kind has none until it is given some, and none is shown as a fixed
   "run failed". These lines are the operator's, and never enter turns or
-  prompts. A forced exit after an accepted answer is shown as a warning.
+  prompts. A forced exit after the run answered, whatever its answer, is
+  shown as a warning beside the answer's words, which it leaves as they
+  are.
 - **Charters from configuration:** instructions, models, prices, a
   budget, conventions, and a result contract (a report, by default, or a
   change), with the shell's presets as defaults (`docs/design/shell.md`).
