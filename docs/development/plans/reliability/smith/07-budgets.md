@@ -216,7 +216,9 @@ Proof: process layer, `tests/agent-process`:
 Don't: join by `t_ms` or by the nearest record; change what any other
   snapshot holds or when it is pushed; change the usage line's words
   (`crates/smith-domain/src/feedback.rs:280`); touch `benchmarks/src/`
-  (smith 00's told check).
+  (smith 00's told check), except `"call"` in the `("Run", "Budget")`
+  field list of `benchmarks/src/agent/smith/legacy.rs` (:544), which
+  README rule 4 asks for (decisions.md, 13.6).
 Size: at most 120 lines of production code.
 Removes: the line's "left" computed beside the snapshot in `ended`
   (the `budget::ordinary` call at 1320-1327; `ordinary` stays for

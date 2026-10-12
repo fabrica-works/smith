@@ -755,4 +755,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    shown state and expects its own terminal; its other checks stay.
    Confining the scripts to one line, the alternative, would leave the
    design's drain untested at the process layer.
+6. **The harness's adapter follows 07.14's `call`** (block of
+   2026-10-12T13:41:01Z, smith 07.14). `FactKind::Budget` gains `call`,
+   and `smith-bench`'s legacy reader refuses a field it does not list
+   (`benchmarks/src/agent/smith/legacy.rs:544`), so the gate fails on
+   `legacy_recordings_terminals_and_emission_metadata`. 07.14's Don't
+   forbids `benchmarks/src/`, for smith 00's told check; README rule 4
+   asks for the opposite here: "An increment that changes how smith is
+   invoked, configured or observed changes `smith-bench`'s smith adapter
+   in the same increment, so probes keep running." Rule 4 wins for the
+   adapter: 07.14 adds `"call"` to that field list, and touches nothing
+   else under `benchmarks/src/`.
 
