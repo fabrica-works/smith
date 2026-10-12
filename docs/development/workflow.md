@@ -1,8 +1,9 @@
 # Development workflow
 
-How work reaches main. Work happens on local branches; main moves only by
-merging a branch that passed every check below, or that changes only
-documentation.
+How work reaches main. Work happens on branches; main moves only by
+landing a branch that passed every check below, or that changes only
+documentation, with `land` (skein's `docs/foundation/development.md`,
+section 9).
 
 For the executable's local mode, see [local-host settings and commands](local-host.md).
 The root package builds `src/main.rs`; its end-to-end and live targets live
@@ -12,26 +13,22 @@ the binary with `cargo install --path .`.
 
 ## 1. Before merging to main
 
-On the branch's tip, rebased on main, so that what is checked is what main
-becomes:
+`scripts/check.sh` is the gate. It runs these four checks, in this order:
 
 ```sh
-cargo fmt --check
+cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace
 cargo nextest run --workspace --profile fuzzy
 ```
 
-Then, once all four pass:
-
-```sh
-git checkout main
-git merge --ff-only <branch>
-```
+`land` runs it through `heavy --gate` on the branch's tip, rebased on
+`origin/main`, so that what is checked is what main becomes, then pushes
+the tip to `origin`'s `main` (development.md, section 9.1).
 
 A branch that changes only Markdown files (the documents under `docs/`,
 `AGENTS.md`) skips the four checks, since nothing it touches is built or
-tested, and is merged the same way. Doc comments in `.rs` files are not
+tested, and lands with `land --docs`. Doc comments in `.rs` files are not
 documentation in this sense: they are code, and clippy checks them.
 
 ## 2. The two test suites
@@ -152,24 +149,16 @@ it is complete,** by the kind of proof its kind of change needs:
 
   Tests show that a mechanism works. Only a real model shows that it helps.
   A fix without a probe adds one in the same change.
-- **Every smith merge runs `smoke-tools` live** on the tip that becomes
-  `main`, with the cheapest model and effort, whatever the change touched.
-  It takes about ten seconds and ten thousand tokens. A red smoke stops the
-  line: nothing else merges until it is green again.
+- **Every smith landing that changes code runs `smoke-tools` live,**
+  with the cheapest model and effort, whatever the change touched: once,
+  through `heavy --gate`, on the branch rebased on `origin/main` just
+  before `land`, and once more only if it fails (`benchmarks.md`, section
+  11.5). A rebase inside `land` does not run it again. A Markdown-only
+  landing skips it. It takes about ten seconds and ten thousand tokens. A
+  red smoke stops the line: nothing else lands until it is green again.
 
 The commit body records the proof: the test's name, or the probe's run
 identifiers and verdicts, and the smoke's, with the binary it ran. Evidence
 is never "pending" at merge (`docs/design/benchmarks.md`, section 4.2). A
 skein change is proven by its tests, and then by its smith consumer's smoke
 when smith pins it.
-
-Independent reliability inline 3.8 work was measured through the serial heavy
-queue on 2026-10-09, with `measure -j 1`: the affected inline, host, local,
-machine and event-codec packages passed 206 focused tests in 3.356 seconds,
-with no skips. Their six fuzzy stories passed in 3.001 seconds. Native
-controls cover cancellation grace, dropped-root settlement, active guide
-cleanup, first-cause retention and late scheduled inputs after Gone. Frozen
-end records retain all three capture policies. This is a partial checkpoint:
-the stream producer, actual agent exit evidence and the required two-interrupt
-process story remain pending. These deterministic controls supply no live
-smoke evidence. Workspace budgets are unchanged.

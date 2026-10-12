@@ -1,9 +1,10 @@
 # Agent guidance for smith
 
-- Before merging to main, run every check in
-  `docs/development/workflow.md` on the final rebased tip. Main moves only
-  after they pass; a Markdown-only change skips the checks as that
-  document specifies. Rust doc comments do not skip them.
+- Land on main with `land` (skein's `docs/foundation/development.md`,
+  section 9): it rebases on `origin/main`, runs `scripts/check.sh`, the
+  checks in `docs/development/workflow.md`, section 1, and pushes. A
+  Markdown-only change lands with `land --docs`, as that document
+  specifies. Rust doc comments do not skip the checks.
 - The focused suite takes at most 15 seconds and the fuzzy suite at most
   60 seconds. Measure worlds on an idle machine with the workflow's
   serial profile; keep additions within those budgets.
@@ -29,5 +30,5 @@
 - Reuse skein's generic test kit. Do not make smith a second owner of
   generic schedules, replay, referee plumbing or counting allocators.
   A missing shared mechanism belongs in skein before its smith consumer.
-- Work locally in isolated branches and merge with `--ff-only`. Do not
-  publish or push unless the session explicitly authorizes it.
+- Work in a branch of your own worktree, never in the primary checkout.
+  `land` is the only way to `main`, and the only push.

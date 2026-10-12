@@ -130,7 +130,7 @@ adapter's among that adapter's tests.
 
 - **Proof comes before the merge.** A change merges, and counts as done,
   only with its proof in its commit body (`docs/development/workflow.md`,
-  section 6). Evidence is never left "pending".
+  section 5). Evidence is never left "pending".
 - **Every improvement names the probe that guards it** in its commit
   body, with the runs the harness prints ready for it:
   - **after,** on the change, passing;
@@ -141,8 +141,10 @@ adapter's among that adapter's tests.
   defect no probe can force, such as a race or a rare provider stall, is
   guarded by a passive check or an event check on the closest probe, and
   the commit says which.
-- **Every smith merge runs `smoke-tools` live** on the tip that becomes
-  `main`. A red smoke stops the line until it is green again.
+- **Every smith landing that changes code runs `smoke-tools` live,**
+  once, on its branch rebased on `origin/main` just before `land`
+  (`docs/development/workflow.md`, section 5). A red smoke stops the line
+  until it is green again.
 - **A parent that cannot run live.** When a parent fails the probe for a
   reason unrelated to the change (for example, its limits refuse what the
   provider sends today), the before is the closest evidence that exists:
