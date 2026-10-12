@@ -1089,3 +1089,19 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    fixture on the world's `changed` workspace story whose scripted calls
    read `original.txt`, is its implementation choice, within rule 8's
    100 world-library lines.
+39. **03.8's interrupts go through skein-world's controls** (block of
+   2026-10-12T16:15:38Z, smith 03.8). Reverses 13.35's means, not its
+   aim. 13.37's diagnostic found the terminal's second
+   `io::Request::Signal` dropped by skein-io (`process.rs:241`, a child
+   whose `signalling` is not `Idle`), which skein's io.md, 3.4 bounds:
+   "a child waits and may have one signal in flight". The kit keeps its
+   design; queuing a second would change io's operation counts, a skein
+   design question for no gain here. The person's interrupts are signals
+   the product receives, and skein-world delivers them in order:
+   `Controls::signal(host, ServiceSignal::Interrupt)`
+   (`testing/skein-world/src/referee.rs:173`, at smith's pin 26502c96),
+   from a world built with `World::new_controlled`, as skein's
+   `tests/world/tests/signals.rs:22-23` sends two in one step.
+   `World::dropped` does so, within README rule 8's 100 world-library
+   lines; no skein change, no repin, no timing. For the retrospective:
+   io drops a second child signal in flight without telling its owner.
