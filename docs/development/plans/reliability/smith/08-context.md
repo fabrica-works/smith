@@ -46,6 +46,17 @@ smith 00's `history` probe waits for it.
   compacted once": *context too long* on the compaction, or a failed
   check or *context too long* before a window's first ordinary
   completion, "fails the session with a limit naming the window".
+- **No summary, no window** (session.md, 8.2, settled 2026-10-12): "A
+  summary cut at the output limit opens the window as written, with no
+  marker". "An answer that is a refusal (its completion stopped for
+  refusal, or it holds a refusal block), or whose text blocks hold
+  nothing but ASCII whitespace, opens no window. The session fails at
+  once, with the fault of the model's answer": *refused*, "whatever text
+  came with it"; *truncated*, "for no text and a stop at the output
+  limit"; *malformed*, "for no text otherwise". It is "neither retried
+  nor nudged", charged like any completion, and "told as no turn"; "The
+  messages held back for the new window are not read." Main's fails the
+  run with that fault (run.md, section 10).
 - **The results owed to a compaction** (limits.md, 3.9) "are rendered
   within what the window leaves after the history before them, the
   summary instruction and one `output` …; each is cut with its marker".
@@ -219,7 +230,15 @@ conversation, its thread and model kept, its number the next among the
 run's conversations (events.md, 3.1); the compaction's responses
 carry its number; on `CompactionEnded` it writes `conversation.closed`,
 `end` `closed` or `failed`. `profile.rs:320` passes
-`run::summary_bytes()` as `summary_bytes`.
+`run::summary_bytes()` as `summary_bytes`. An answer with no summary:
+`session::End` gains `NoSummary { fault: NoSummary }`, with `enum
+NoSummary { Refused, Truncated, Malformed }`; `translate::end`
+(`smith-domain/src/translate.rs:195`) maps it to `run::End::Fault` of
+`Fault::Refused`, `Truncated` or `Malformed`, which the run already
+answers as `Failure::Model` (`run.rs:2097`); `responses.rs:831` maps it
+to `ConversationEnd::Failed` with no completion failure, and the
+compaction's own `conversation.closed` is `failed` with none. No format
+changes: the channel and the stream already carry the three faults.
 Test shape: a new file, `tests/session/tests/compaction.rs`, on the
 step-level world (`tests/session/src/recorded.rs`: `World` `:65`, `step`
 `:180`, `open` `:285`, `complete` `:292`, `opening` `:34`, which gains a
@@ -264,6 +283,10 @@ Also in that file: `a_context_too_long_compacts_a_used_window`,
 `context_too_long_on_the_compaction_fails_naming_the_window`,
 `a_fresh_window_that_fails_its_check_fails_naming_the_window`,
 `calls_in_a_compactions_answer_are_not_run`,
+`a_cut_summary_opens_its_window_as_written`,
+`a_refused_compaction_fails_as_refused_and_tells_no_turn`,
+`a_compaction_with_no_text_fails_as_truncated_or_malformed` (whitespace
+text counts as none),
 `a_resumed_window_that_fails_its_check_compacts_first`,
 `a_budget_with_no_room_for_a_compaction_ends_the_session`,
 `a_child_at_its_threshold_with_two_turns_left_compacts_then_answers`.
@@ -275,8 +298,9 @@ bound exceeds its window"; negatives in `tests/session/tests/referee.rs`:
 `a_window_boundary_without_a_compaction_is_rejected`, `a_prompt_past_its_window_is_rejected`.
 Fuzzy (`tests/session/tests/fuzzy_simulation.rs`): `drawn_small_windows_compact_within_them`. Agent world (new file `tests/agent/tests/compaction.rs`;
 `Settings` gains `window`, which `main_model` and `configuration` use):
-the proof's test, and
-`a_message_held_back_by_a_compaction_is_read_by_the_window_turn`. Events
+the proof's test,
+`a_message_held_back_by_a_compaction_is_read_by_the_window_turn`, and
+`a_refused_compaction_fails_the_run_as_refused_its_message_unread`. Events
 (`smith-agent-service/src/tests.rs`):
 `a_compaction_is_a_conversation_of_kind_compaction_in_the_stream`.
 Ceilings: unit 20 ms, world 0.5 s, fuzzy 5 s.
@@ -445,7 +469,10 @@ window  compaction  event                                     next              
 Fresh   Idle        ordinary completion made                  Used                      -
 Used    Idle        check fails, or context too long          Used, Asking              Complete (the summary instruction last)
 Fresh   Idle        check fails, or context too long          -                         Ended: Limit { Window, window }
-Used    Asking      answer with text                          Fresh (number + 1), Idle  Turn { kind: Window }; old history released
+Used    Asking      answer with text, cut or not; no refusal  Fresh (number + 1), Idle  Turn { kind: Window }; old history released
+Used    Asking      a refusal: its stop, or a refusal block   -                         Ended: NoSummary { Refused }; no turn told
+Used    Asking      no text, a stop at the output limit       -                         Ended: NoSummary { Truncated }; no turn told
+Used    Asking      no text, any other stop                   -                         Ended: NoSummary { Malformed }; no turn told
 Used    Asking      context too long                          -                         Ended: Limit { Window, window }
 Used    Asking      another failure, past its retries         -                         Ended: Failed, as any completion
 Used    Asking      no room in a budget for it                -                         Ended: Budget
@@ -453,9 +480,9 @@ Used    Asking      no room in a budget for it                -                 
 
 ## Questions to raise when reached
 
-- **A compaction cut short or refused** (session.md, section 11), at 08.6.
-  Proposed, as the design proposes: "a cut summary opens it as written; a
-  refusal or an answer with no text fails the session".
+None. A compaction cut short or refused, raised at 08.6, was settled by
+the designer on 2026-10-12 (session.md, 8.2, `0f1d72ba`): "What the
+design asks" quotes it, and 08.6 carries it.
 
 ## Done when
 
