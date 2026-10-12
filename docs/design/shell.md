@@ -405,7 +405,7 @@ What a run would start with, resolved and checked without starting one:
 `--json` prints one versioned JSON document with the same content, for
 scripts and the benchmark harness. It exits 0 when everything holds,
 warnings included; 2 on a configuration problem; 3 when the only
-problems are credentials. Startup runs the same checks (5.3).
+problems are the credentials of accounts the run needs (5.2). Startup runs the same checks (5.3).
 
 ### 4.5 `smith login`
 
@@ -503,6 +503,23 @@ source = "borrow"
   account of that name, and their known models' declared values
   (section 6). A model a preset does not know declares its `window`,
   `output` and prices in settings.
+- **The run's models and accounts.** A run's charter lists main's model
+  and, with `sub_agents` on, every model a preset knows or settings
+  declare whose endpoint's account names a source; the asking LLM names
+  one of them, or gets main's (domain/run.md, 5.3). An account with no
+  source is one the person has not set up, so its models stay out: a
+  first run with one account's source needs no other credential.
+  - **Needed accounts** are the accounts of the run's models. Main's
+    must name a source, or the settings are refused, naming the key
+    (exit 2). Each needed account's credential must be usable (exit 3,
+    4.3). An account no model of the run needs is reported, and
+    its problems are warnings.
+  - **The agent's configuration holds the run's models only,** so the
+    derivation and every relationship (protocol/limits.md) are those of
+    the models the run may name. A model outside the run is still
+    checked as values: priced above zero at every rate, and its output
+    below its window. `smith check` names each model outside the run and
+    why.
 - **Prices.** A preset model carries notional prices, the provider's list
   prices, so that spend is real (domain/run.md, section 9). A
   subscription account's spend is shown as notional, never as a charge.
@@ -535,7 +552,8 @@ source = "borrow"
     a run starts (domain/run.md, section 9);
   - each model known to a preset or declared, and priced above zero at
     every rate;
-  - each endpoint's address resolved, and each account's source usable;
+  - each endpoint of the run's models resolved, and each needed
+    account's source usable (5.2);
   - the tools' paths.
 - **A refusal names the relationship:** the keys on each side, their
   values and their layers, and the relationship's name, for example:
