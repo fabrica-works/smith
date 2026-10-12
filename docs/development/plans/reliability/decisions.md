@@ -1048,3 +1048,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    pass while the provider holds its response open; no skein change. If
    the two arrive as one `Shutdown`, the implementer stops and asks,
    adding no delay or timing to separate them.
+36. **A drawn person's later Waiting cue moves to the answer** (block of
+   2026-10-12T16:03:59Z, smith 05.14). The fuzzy sweep
+   `drawn_people_settle_against_the_message_rules` failed at seed 45,
+   "person closes and chat exits": `Person::drawn`
+   (`tests/local/src/person.rs:94`) can cue the third line on
+   `Notice(Waiting)` after the second line crossed a wait, and with 05.14
+   that notice no longer shows ("a wait whose fence is behind is a
+   crossing, and shows nothing"), so the cues after it, `Close` among
+   them, never come. Ruling: draw 1 stays `Trigger::Notice(Kind::Waiting)`
+   for the second line, where the first line has been read, and becomes
+   `Trigger::Answer` for the third; the draws, seeds, counts and other
+   branches stay. The second block of 13.32's kind: README rule 8 gains
+   that case, a scripted cue that waits for what the Scope or Shape now
+   withholds.

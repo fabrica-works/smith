@@ -168,7 +168,13 @@ do not already say.
      other checks unchanged (decisions.md, 13.8); and a test that asserts
      a sequence of requests, events or records gaining one assertion for
      each that the Shape newly requires, where the story now produces it,
-     its other steps and assertions unchanged (decisions.md, 13.19).
+     its other steps and assertions unchanged (decisions.md, 13.19);
+   - a cue of a test's scripted person or peer that waits for what the
+     Scope or Shape now withholds, a notice or an event, moved to the
+     next thing the same story shows, only where the withheld one can no
+     longer come; in a generator, only those draws change, its seeds,
+     counts and other branches unchanged; the commit body quotes the
+     Scope's or Shape's words beside it (decisions.md, 13.32 and 13.36).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For

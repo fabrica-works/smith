@@ -311,7 +311,8 @@ Needs: smith 05's typed notices and its lines carried and held.
 Files: `smith-local-domain/src/domain.rs:868`, handing to `person.rs`;
   `tests/local/src/referee.rs`; `tests/local/tests/{messages.rs,
   referee.rs}`; `tests/local-process/tests/simulation.rs`;
-  `tests/local/tests/person.rs`, one cue only (decisions.md, 13.32).
+  `tests/local/tests/person.rs`, one cue only (decisions.md, 13.32);
+  `tests/local/src/person.rs`, `drawn`'s third-line draw (13.36).
 Shape: no new type: `parent::Request::Waiting { read }` fences `Lines`,
   then asks for the notice when `all_read()`.
 Test shape: in `tests/local/tests/messages.rs`, written like 05.13's
