@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-12. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -448,6 +448,24 @@ before, key by key:
   trust, inherited environment names, writable caches, the trace, the
   deployment's values, or a budget above the user's. A key it may not
   set is refused, naming the file.
+  - **The line.** What the layer may set is what the repository's own
+    files already do to a run: its guide is read into the system text,
+    its checks are its own executable (domain/run.md, 3.3 and 8.1), and
+    the agent's commands build and test its code with the person's
+    authority. Its environment values are constants it writes, as its
+    own scripts may export: they shape the commands and checks, and widen
+    nothing a command can reach (section 8). What it may not set reaches
+    past the repository: where requests go and on which credential
+    (endpoints, accounts, trust), what is taken from smith's own
+    environment (inherited names), what is written outside the workspace
+    (writable caches, the trace), and what the person pays for or
+    reserves (the deployment's values, a budget above the user's).
+  - **No approval.** A person never approves a repository's settings,
+    and smith keeps no record of trusted repositories: an approval would
+    guard nothing the repository's own files cannot already do, and
+    `smith exec` and a host's runs, which no person watches, would need
+    a way around it. The refusal is the boundary, checked at every
+    start.
 - **State** lives under `$XDG_STATE_HOME/smith`: chats by workspace,
   sign-in records, temporary chats.
 
@@ -795,9 +813,6 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
   spend is never under-counted.
 - **Kept traces:** a default place for traces, their rotation and how
   long they are kept.
-- **Repository trust:** whether refusing authority keys in the repository
-  layer is enough, or a person should approve a repository's settings
-  once.
 - **`smith-agent`'s life:** whether it outlives temper's decision on how
   its worker runs agents.
 - **An `isolate` option,** once contained trees make spawning contain
