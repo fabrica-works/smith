@@ -5,6 +5,111 @@ use std::path::PathBuf;
 
 pub mod common;
 
+fn history() -> smith_bench::Task {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    smith_bench::check_task(&root.join("tasks/probes/history/task.toml"), &root.join("../docs/design"))
+        .expect("frozen history task")
+}
+
+#[test]
+fn history_reads_one_file_per_completion_to_its_sum() {
+    let task = history();
+    let seed = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks/probes/history/seed");
+    let mut next = "node-93e158a7.txt".to_owned();
+    let mut sum = 0_u32;
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..32 {
+        assert!(visited.insert(next.clone()));
+        let text = std::fs::read_to_string(seed.join(&next)).expect("next file");
+        assert_eq!(text.len(), 8192);
+        let mut lines = text.lines();
+        sum += lines.next().expect("value").strip_prefix("value: ").expect("field").parse::<u32>().expect("integer");
+        next = lines.next().expect("next").strip_prefix("next: ").expect("field").to_owned();
+    }
+    assert_eq!(next, "END");
+    assert_eq!(sum, 528);
+    assert_eq!(std::fs::read_dir(seed).expect("seed").count(), 32);
+    assert!(task.outcome.contains(&smith_bench::OutcomeCheck::Answer { pattern: "^ALPHA 528$".into() }));
+    assert!(task.event.contains(&smith_bench::EventCheck::ToolCall {
+        tool: "read".into(),
+        count: Some(smith_bench::Count::Exactly(32)),
+        input_bytes_at_least: None,
+        verdict: Some("read".into()),
+        exit: None,
+        clamped: None,
+    }));
+    assert!(task.event.contains(&smith_bench::EventCheck::CallsPerResponse { tool: "read".into(), at_most: 1 }));
+    assert_eq!(task.smith["calls_per_response"].as_integer(), Some(1));
+}
+
+fn history_observer(records: &mut [smith_events::Record]) -> smith_bench::agent::smith::events::Observer {
+    for (position, record) in records.iter_mut().enumerate() {
+        record.t_ms = u64::try_from(position).expect("small fixture");
+    }
+    let bytes = common::events::bytes(records);
+    let ceiling = u32::try_from(bytes.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("records"))
+        .expect("bounded fixture");
+    let mut observer = smith_bench::agent::smith::events::Observer::with_ceiling(&common::events::LIMITS, ceiling)
+        .expect("reader with the fixture's encoded ceiling");
+    observer.feed(&bytes).expect("outside records");
+    observer.finish().expect("whole stream");
+    observer
+}
+
+#[test]
+fn small_window_requires_a_compaction_and_no_prompt_past_its_window() {
+    let base = history();
+    let task = base.with_variant("small-window").expect("small window");
+    assert_eq!(task.smith.len(), base.smith.len());
+    assert_eq!(task.smith["window"].as_integer(), Some(65536));
+    for (key, value) in &base.smith {
+        if key != "window" {
+            assert_eq!(&task.smith[key], value);
+        }
+    }
+    assert_eq!(task.prompt, base.prompt);
+    assert!(32 * 8192 >= 4 * task.smith["window"].as_integer().expect("window"));
+    let compacted = smith_bench::EventCheck::ConversationOpened {
+        kind: "compaction".into(),
+        count: smith_bench::Count::AtLeast(1),
+    };
+    assert!(task.event.contains(&compacted));
+    assert!(task.event.contains(&smith_bench::EventCheck::PromptWithinWindow));
+    let mut records = common::events::balanced();
+    assert_eq!(history_observer(&mut records).check(&compacted, "task").passed, Measure::Observed { value: false });
+    let mut summary = records[2..6].to_vec();
+    for record in &mut summary {
+        if let smith_events::Event::ConversationOpened(value) = &mut record.event {
+            value.kind = smith_events::ConversationKind::Compaction;
+            value.conversation = 1;
+            value.parent = Some(0);
+        }
+        if let smith_events::Event::ResponseStarted(value) = &mut record.event {
+            value.conversation = 1;
+        }
+        if let smith_events::Event::ResponseCompleted(value) = &mut record.event {
+            value.conversation = 1;
+        }
+        if let smith_events::Event::ConversationClosed(value) = &mut record.event {
+            value.conversation = 1;
+        }
+    }
+    records.splice(5..5, summary);
+    let observer = history_observer(&mut records);
+    assert_eq!(observer.check(&compacted, "task").passed, Measure::Observed { value: true });
+    assert_eq!(
+        observer.check(&smith_bench::EventCheck::PromptWithinWindow, "task").passed,
+        Measure::Observed { value: true }
+    );
+    if let smith_events::Event::ResponseCompleted(value) = &mut records[4].event {
+        value.usage.input_tokens = Some(10_000);
+    }
+    assert_eq!(
+        history_observer(&mut records).check(&smith_bench::EventCheck::PromptWithinWindow, "task").passed,
+        Measure::Observed { value: false }
+    );
+}
+
 fn result() -> smith_bench::AttemptResult {
     smith_bench::read_result(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json"))
         .expect("unchanged recorded result")

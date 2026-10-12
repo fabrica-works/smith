@@ -52,7 +52,7 @@ fn a_termination_signal_after_the_answer_aborts_a_peer_that_ignores_the_close() 
     let smith_events::Event::SessionEnded(end) = &world.records().last().expect("authoritative end").event else {
         panic!("session end is last")
     };
-    assert!(end.aborted);
+    assert_eq!(end.aborted, Some(true));
     assert!(end.teardown_ms.expect("answered teardown") < 5000);
     assert_eq!(world.signals(), 1);
     world.assert_agent_clean();
@@ -73,7 +73,7 @@ fn a_second_signal_after_the_answer_changes_nothing() {
     let smith_events::Event::SessionEnded(end) = &world.records().last().expect("one terminal").event else {
         panic!("session end is last")
     };
-    assert!(end.aborted);
+    assert_eq!(end.aborted, Some(true));
     world.assert_agent_clean();
 }
 

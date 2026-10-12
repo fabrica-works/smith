@@ -1248,6 +1248,7 @@ fn validate_effective_limits(values: &List<EffectiveLimit>, limits: &Limits) -> 
 }
 
 fn validate_session_ended(value: &SessionEnded, limits: &Limits) -> Result<(), Error> {
+    value.aborted.ok_or(Error::Shape)?;
     validate_list_count(&value.emitted, limits)?;
     Ok(())
 }
@@ -1557,7 +1558,7 @@ fn encode_session_ended(json: &mut Encoder, value: &SessionEnded, capture: &Capt
     json.key(b"answered");
     json.boolean(value.answered);
     json.key(b"aborted");
-    json.boolean(value.aborted);
+    json.boolean(value.aborted.expect("current terminal has its aborted field"));
     json.key(b"teardown_ms");
     match &value.teardown_ms {
         Some(item) => {

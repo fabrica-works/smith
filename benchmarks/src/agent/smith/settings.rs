@@ -410,6 +410,22 @@ mod tests {
         }
     }
     fn native_parallel_profiles(directory: &Path, root: &Path, render: &impl Fn(&Task, Shape) -> Result<Value, Setup>) {
+        let history = crate::read_task(&directory.join("tasks/probes/history/task.toml")).expect("history task");
+        for task in [history.clone(), history.with_variant("small-window").expect("small window")] {
+            let rendered = render(&task, Shape::LocalReserved).expect("history settings");
+            let path = root.join("history.json");
+            std::fs::write(&path, serde_json::to_vec(&rendered).expect("native JSON")).expect("private fixture");
+            let local = smith_local_shell::local_settings::read(&path, None).expect("native settings reader");
+            let configured = native_agent_configuration(&local);
+            smith_local_shell::local_settings::policy(
+                &local,
+                &configured.service.channel_endpoints,
+                configured.service.limits.domain,
+                vec![0; local.models.len()].into(),
+            )
+            .expect("native policy admits its finishing reserve");
+            assert_eq!(configured.profile.declared.calls_per_response, 1);
+        }
         for name in ["parallel-read", "parallel-children"] {
             let parallel = crate::read_task(&directory.join(format!("tasks/probes/{name}/task.toml")))
                 .expect("authored parallel profile");

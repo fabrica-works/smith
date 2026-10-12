@@ -139,6 +139,7 @@ fn observing(trace: &Path) -> Observing {
             face,
             credential: CredentialShape::Converted(TokenShape::Legacy),
             facts: smith_bench::agent::smith::legacy::FactShape::Flags,
+            session_ended_aborted: true,
             receiving: None,
         },
         rendered: serde_json::json!({"models":[{"input_price":10,"cached_price":1,"output_price":80,"price_unit":8_000_000}]}),
@@ -180,6 +181,7 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
             face,
             credential: CredentialShape::Converted(TokenShape::AccessOnly),
             facts: smith_bench::agent::smith::legacy::FactShape::Kinds,
+            session_ended_aborted: true,
             receiving: Some(serde_json::from_value(serde_json::json!({
                 "string":524_288,"content":4096,"items":32,
                 "encoded_line":records.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("record lines")
@@ -236,6 +238,58 @@ fn the_selected_event_face_observes_the_answer_and_drains_its_native_boundaries(
     assert_eq!(spend.basis, smith_bench::SpendBasis::Notional);
     assert_eq!(spend.usd, Measure::Observed { value: 0.000_003 });
     std::fs::remove_dir_all(directory).expect("replay fixture removed");
+}
+
+#[test]
+fn an_earlier_event_face_keeps_the_absent_teardown_field_unknown() {
+    use smith_bench::agent::smith::Observer;
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let faces = smith_bench::agent::smith::read_faces(&directory.join("agents/smith/faces.toml"))
+        .expect("frozen face registry");
+    let before =
+        faces.iter().find(|face| face.commit == "b86b022a83c16194cf716015fe0dff4db9569163").expect("pre-aborted face");
+    let current = faces
+        .iter()
+        .find(|face| face.commit == "8d2ec9b878ae85240575788809c44fe0028e6a4a")
+        .expect("aborted field's first writer");
+    assert!(!before.session_ended_aborted);
+    assert!(current.session_ended_aborted);
+    let recording = include_str!("recorded/smith-before-aborted/terminal.jsonl");
+    assert!(!recording.contains("\"aborted\""));
+    let mut prepared = observing(Path::new("/unused-before-aborted")).prepared;
+    prepared.face = before.face;
+    prepared.registry = before.clone();
+    let mut historical = Observing::new(prepared).expect("historical layout");
+    for line in recording.lines() {
+        historical.feed_line(line).expect("old writer's recording");
+    }
+    if let Observer::Events(observer) = &historical.observer {
+        let records = &observer.sessions().last().expect("recorded session").records;
+        let smith_events::Event::SessionEnded(ended) = &records.last().expect("recorded terminal").event else {
+            panic!("recording ends its stream")
+        };
+        assert_eq!(ended.aborted, None);
+        assert_eq!(
+            smith_events::write_with_ceiling(
+                records.last().expect("terminal"),
+                &smith_events::Capture::Everything,
+                &before.receiving.expect("event bounds").limits().expect("semantic caps"),
+                before.receiving.expect("event bounds").encoded_line,
+            ),
+            Err(smith_events::Error::Shape)
+        );
+    } else {
+        panic!("selected event face")
+    }
+    historical.restart_trace().expect("restart retains the arm's layout");
+    for line in recording.lines() {
+        historical.feed_line(line).expect("same historical layout after restart");
+    }
+    historical.prepared.registry = current.clone();
+    historical.restart_trace().expect("current layout");
+    let mut lines = recording.lines();
+    historical.feed_line(lines.next().expect("startup")).expect("current startup");
+    assert!(historical.feed_line(lines.next().expect("terminal")).is_err());
 }
 
 #[test]

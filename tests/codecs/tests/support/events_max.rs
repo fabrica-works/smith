@@ -162,7 +162,7 @@ fn max_session_ended(limits: &smith_events::Limits) -> SessionEnded {
     SessionEnded {
         exit: i64::MIN,
         answered: false,
-        aborted: false,
+        aborted: Some(false),
         teardown_ms: Some(u64::MAX),
         emitted: max_list_count(limits),
         loss: max_loss(limits),

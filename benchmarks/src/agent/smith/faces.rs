@@ -63,6 +63,8 @@ pub struct FaceSince {
 
     pub facts: FactShape,
     pub receiving: Option<Receiving>,
+    /// This writer's session terminal carries the teardown-aborted field.
+    pub session_ended_aborted: bool,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +99,8 @@ struct Entry {
     facts: FactShape,
     #[serde(default)]
     receiving: Option<Receiving>,
+    #[serde(default)]
+    session_ended_aborted: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -125,7 +129,9 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
             }
         }
         let mut faces = Vec::new();
+        let mut session_ended_aborted = false;
         for entry in registry.face {
+            session_ended_aborted = entry.session_ended_aborted.unwrap_or(session_ended_aborted);
             let face = match entry.face {
                 FaceKind::Legacy => match entry.shape {
                     EntryShape::Legacy(shape) => {
@@ -152,6 +158,7 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
                 },
                 facts: entry.facts,
                 receiving: entry.receiving,
+                session_ended_aborted,
             });
         }
         Ok(faces)

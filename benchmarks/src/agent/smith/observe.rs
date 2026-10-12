@@ -102,7 +102,11 @@ impl Observing {
                     .receiving
                     .ok_or_else(|| HarnessFault { what: "event face lacks its immutable receiving bounds".into() })?;
                 let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
-                Observer::Events(super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?)
+                Observer::Events(super::events::Observer::with_session_ended_aborted(
+                    &limits,
+                    receiving.encoded_line,
+                    prepared.registry.session_ended_aborted,
+                )?)
             }
         };
         Ok(Self { prepared, observer, records: Vec::new() })
@@ -117,7 +121,11 @@ impl Observing {
             .receiving
             .ok_or_else(|| HarnessFault { what: "event face lacks receiving bounds".into() })?;
         let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
-        self.observer = Observer::Events(super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?);
+        self.observer = Observer::Events(super::events::Observer::with_session_ended_aborted(
+            &limits,
+            receiving.encoded_line,
+            self.prepared.registry.session_ended_aborted,
+        )?);
         self.records.clear();
         Ok(())
     }

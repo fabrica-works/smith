@@ -90,3 +90,14 @@ credential = "converted"
 record = "access-only"
 facts = "choices"
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
+
+# The writer added the required teardown-aborted field at this commit.
+[[face]]
+commit = "8d2ec9b878ae85240575788809c44fe0028e6a4a"
+face = "events"
+shape = "local-agent-trace"
+credential = "converted"
+record = "access-only"
+facts = "choices"
+session_ended_aborted = true
+receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }

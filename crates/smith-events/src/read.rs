@@ -22,6 +22,7 @@ pub struct Reader {
     limits: Limits,
     encoded_line: u32,
     line: List<u8>,
+    session_ended_aborted: bool,
 }
 
 /// One read's consumed bytes and optional record; unknown records still complete a line.
@@ -42,8 +43,18 @@ impl Reader {
     /// Reserve the writer's encoded-line ceiling, including its final newline.
     /// Field and list caps remain independent semantic checks; zero refuses.
     pub fn with_ceiling(limits: &Limits, encoded_line: u32) -> Result<Reader, Error> {
+        Self::with_session_ended_aborted(limits, encoded_line, true)
+    }
+
+    /// Select whether this writer's session terminal carries the `aborted` field.
+    /// Only historical benchmark faces select its absence; current readers require it.
+    pub fn with_session_ended_aborted(
+        limits: &Limits,
+        encoded_line: u32,
+        session_ended_aborted: bool,
+    ) -> Result<Reader, Error> {
         let capacity = encoded_line.checked_sub(1).ok_or(Error::Limits)?;
-        Ok(Reader { limits: *limits, encoded_line, line: List::with_capacity(capacity) })
+        Ok(Reader { limits: *limits, encoded_line, line: List::with_capacity(capacity), session_ended_aborted })
     }
 
     /// Consume through at most one newline, preserving a partial line between calls.
@@ -52,7 +63,12 @@ impl Reader {
         for byte in input {
             consumed = consumed.checked_add(1).ok_or(Error::Limits)?;
             if *byte == b'\n' {
-                let result = read_with_ceiling(self.line.as_slice(), &self.limits, self.encoded_line);
+                let result = read_for_session_ended(
+                    self.line.as_slice(),
+                    &self.limits,
+                    self.encoded_line,
+                    self.session_ended_aborted,
+                );
                 self.line.clear();
                 return Ok(Line { consumed, complete: true, record: result? });
             }
@@ -83,6 +99,15 @@ pub fn read(line: &[u8], limits: &Limits) -> Result<Option<Record>, Error> {
 /// Decode within a writer-derived encoded byte ceiling and the supplied semantic caps.
 /// The byte ceiling includes a newline when the supplied line has one; zero refuses.
 pub fn read_with_ceiling(line: &[u8], limits: &Limits, encoded_line: u32) -> Result<Option<Record>, Error> {
+    read_for_session_ended(line, limits, encoded_line, true)
+}
+
+fn read_for_session_ended(
+    line: &[u8],
+    limits: &Limits,
+    encoded_line: u32,
+    session_ended_aborted: bool,
+) -> Result<Option<Record>, Error> {
     let tokens = tokenize(line, limits, encoded_line)?;
     let tokens = tokens.as_slice();
     object(tokens)?;
@@ -95,7 +120,7 @@ pub fn read_with_ceiling(line: &[u8], limits: &Limits, encoded_line: u32) -> Res
     let event = match kind.as_ref() {
         b"budget" => Event::Budget(read_budget_standing(tokens, limits)?),
         b"session.started" => Event::SessionStarted(read_session_started(tokens, limits)?),
-        b"session.ended" => Event::SessionEnded(read_session_ended(tokens, limits)?),
+        b"session.ended" => Event::SessionEnded(read_session_ended(tokens, limits, session_ended_aborted)?),
         b"run.started" => Event::RunStarted(read_run_started(tokens, limits)?),
         b"run.completed" => Event::RunCompleted(read_run_completed(tokens, limits)?),
         b"conversation.opened" => Event::ConversationOpened(read_conversation_opened(tokens, limits)?),
@@ -1082,12 +1107,12 @@ fn read_effective_limits(tokens: &[Token], limits: &Limits) -> Result<List<Effec
     Ok(values)
 }
 
-fn read_session_ended(tokens: &[Token], limits: &Limits) -> Result<SessionEnded, Error> {
+fn read_session_ended(tokens: &[Token], limits: &Limits, session_ended_aborted: bool) -> Result<SessionEnded, Error> {
     object(tokens)?;
     Ok(SessionEnded {
         exit: signed(required(tokens, b"exit")?)?,
         answered: boolean(required(tokens, b"answered")?)?,
-        aborted: boolean(required(tokens, b"aborted")?)?,
+        aborted: if session_ended_aborted { Some(boolean(required(tokens, b"aborted")?)?) } else { None },
         teardown_ms: match required(tokens, b"teardown_ms")? {
             [Token::Null] => None,
             item => Some(unsigned(item)?),

@@ -443,7 +443,7 @@ fn value_session_ended(name: &str, spelling: &str) -> SessionEnded {
     SessionEnded {
         exit: i64::MIN,
         answered: true,
-        aborted: false,
+        aborted: Some(false),
         teardown_ms: Some(u64::MAX),
         emitted: list_count(name, spelling),
         loss: value_loss(name, spelling),
@@ -1946,7 +1946,7 @@ fn end_samples() -> Vec<(&'static str, Record, Capture)> {
         ));
     }
     let mut aborted = value_session_ended("", "");
-    aborted.aborted = true;
+    aborted.aborted = Some(true);
     samples.push((
         "session_ended_aborted",
         Record { t_ms: u64::MAX, event: Event::SessionEnded(aborted) },

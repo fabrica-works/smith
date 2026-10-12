@@ -113,8 +113,17 @@ impl Observer {
     /// Reserve the arm's writer-derived byte ceiling, including the final newline.
     /// Semantic field and list caps remain checked by the codec independently.
     pub fn with_ceiling(limits: &smith_events::Limits, encoded_line: u32) -> Result<Self, HarnessFault> {
+        Self::with_session_ended_aborted(limits, encoded_line, true)
+    }
+
+    /// Read the session terminal in the layout selected by the arm's face entry.
+    pub fn with_session_ended_aborted(
+        limits: &smith_events::Limits,
+        encoded_line: u32,
+        session_ended_aborted: bool,
+    ) -> Result<Self, HarnessFault> {
         Ok(Self {
-            reader: Reader::with_ceiling(limits, encoded_line).map_err(codec)?,
+            reader: Reader::with_session_ended_aborted(limits, encoded_line, session_ended_aborted).map_err(codec)?,
             sessions: Vec::new(),
             fault: None,
             unknown: false,
