@@ -1105,3 +1105,19 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `World::dropped` does so, within README rule 8's 100 world-library
    lines; no skein change, no repin, no timing. For the retrospective:
    io drops a second child signal in flight without telling its owner.
+40. **08.6's maximum-context story gets a window its system text fits**
+   (block of 2026-10-12T16:19:01Z, smith 08.6). 08.6's Scope: "The
+   window check before each completion" (session.md, 8.1).
+   `tests/protocol-llm/tests/root_memory.rs:1579`'s
+   `a_restored_run_keeps_full_brief_and_custom_paths_with_two_clients`
+   builds a system text past 16,384 bytes, by design, under a charter and
+   configured model of 16,384 tokens, so its system alone fails the
+   check and the first `Complete` is withheld. The story is about root
+   memory with a maximum brief and paths, not about the window. Ruling:
+   the implementer's option A, a plan defect of the kind 13.20 met in
+   an expected value, here in a fixture's input: that story alone takes
+   a 65,536-token charter and configured-model window, through a
+   constructor parameter or helper; its history, wire, output and
+   receiving caps, steps and assertions stay. Not option B, which would
+   lose its memory coverage. A second block of this kind adds it to
+   README rule 8.
