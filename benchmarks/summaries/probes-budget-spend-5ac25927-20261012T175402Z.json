@@ -1,0 +1,342 @@
+{
+  "version": 2,
+  "result_version": 2,
+  "run": "probes-budget-spend-5ac25927-20261012T175402Z",
+  "suite": "calibrate",
+  "tier": "small",
+  "design": "single",
+  "seed": 1791827642251662043,
+  "date": "2026-10-12T17:54:02.891930844Z",
+  "groups": [
+    {
+      "task": "probes/budget/spend",
+      "task_version": 1,
+      "seed_sha256": "e0c90592e3e1e61142c5e7493c84a33b4d39f6a0d38e3ff3227f61da6922198f",
+      "prompt_sha256": "201f7852c76f40f3c31abd0fc585e38d2e962ca740d5fbcf1c95371e165a0c8d",
+      "arm": "smith-budget-a8b716cd",
+      "agent": "smith",
+      "agent_version": "5ac259273c271f8bae5b40a7039cc8decd79e0dd",
+      "binary_sha256": "a8b716cd133f28157f88c0a70fd833883a791a9bdfe0bbb589fd79dfd65dd804",
+      "smith_face": "events",
+      "configuration_sha256": "6f73b8df1128ce90d6a5d4a831c056b8cc331ff29c26e0e33dce0df9ce0fec6a",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6-luna",
+        "requested_effort": "low",
+        "resolved_model": {
+          "state": "unavailable",
+          "reason": "not run"
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "01"
+      ],
+      "counts_by_end": {
+        "harness-error": 1
+      },
+      "passes": {
+        "passed": 0,
+        "failed": 1,
+        "unavailable": 0,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "observed",
+          "value": {
+            "lower": 0.0,
+            "upper": 0.9750000000000001
+          }
+        }
+      },
+      "metrics": {
+        "cpu_ms/pidfd-walk": {
+          "observed": 1,
+          "total_attempts": 1,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 4.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 4.0,
+              "upper": 4.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "delegation/children": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: incomplete or lost event stream prevents exact delegation"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: incomplete or lost event stream prevents exact delegation"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: incomplete or lost event stream prevents exact delegation"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "delegation/turns": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: incomplete or lost event stream prevents exact delegation"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: no grader ran"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 1,
+          "total_attempts": 1,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 6.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 6.0,
+              "upper": 6.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "spend_usd/notional": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: no authoritative run spend was reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: total tokens not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "task_wall_ms": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: inference did not start"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "teardown_ms": {
+          "observed": 0,
+          "total_attempts": 1,
+          "missing": [
+            "01: inference did not start"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        }
+      }
+    }
+  ],
+  "comparisons": [],
+  "audits": [
+    "01"
+  ],
+  "drift_notices": []
+}
