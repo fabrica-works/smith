@@ -10,12 +10,12 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
-fn version_three_copies_all_prose_lines_before_finishing() {
+fn version_four_copies_all_prose_lines_and_exact_tail() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let file = root.join("tasks/probes/large-write/task.toml");
     let task = smith_bench::check_task(&file, &root.join("../docs/design")).expect("frozen task and seed");
     let oversized = task.with_variant("oversized").expect("oversized variant");
-    assert_eq!(task.version, 3);
+    assert_eq!(task.version, 4);
     assert_eq!(task.budget, oversized.budget);
     assert_eq!(task.smith, oversized.smith);
     assert_eq!(task.budget.seconds, Some(300));
@@ -42,6 +42,10 @@ fn version_three_copies_all_prose_lines_before_finishing() {
     assert!(oversized.prompt.contains("oversized-source.txt") && oversized.prompt.contains("two read"));
     assert!(task.prompt.contains("finish with ALPHA only after the write reports written"));
     assert!(oversized.prompt.contains("finish before both repair tools report success"));
+    assert!(task.prompt.contains("TWENTY-TWO consecutive lines"));
+    assert!(oversized.prompt.contains("NINE consecutive lines"));
+    assert_eq!(tail_repetitions(&root.join("tasks/probes/large-write/seed/source.txt")), 22);
+    assert_eq!(tail_repetitions(&root.join("tasks/probes/large-write/seed/oversized-source.txt")), 9);
     assert!(task.event.contains(&EventCheck::ToolCall {
         tool: "write".into(),
         count: Some(Count::Exactly(1)),
@@ -123,4 +127,9 @@ fn observe(records: &[smith_events::Record]) -> Observer {
     observer.feed(&common::events::bytes(records)).expect("synthetic codec records");
     observer.finish().expect("complete framing");
     observer
+}
+
+fn tail_repetitions(file: &std::path::Path) -> usize {
+    let content = std::fs::read_to_string(file).expect("ASCII prose seed");
+    content.lines().rev().skip(1).take_while(|line| *line == "The work continued.").count()
 }
