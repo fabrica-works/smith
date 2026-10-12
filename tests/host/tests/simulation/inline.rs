@@ -459,7 +459,10 @@ fn an_inline_run_cancels_its_child_command_and_is_gone_once_it_settles() {
 #[test]
 fn a_real_completion_stretches_the_spawned_watchdog_past_no_progress() {
     use skein_lib::{Duration, Time};
-    let mut native = World::new(95, inline::limits());
+    let mut native_limits = inline::limits();
+    // This watchdog control waits for the held completion, before the separate grace control may drop it.
+    native_limits.cancel_grace = Duration::from_secs(30);
+    let mut native = World::new(95, native_limits);
     native.provider_latency(Duration::from_secs(20));
     spawn(&mut native, 1, Job::HostTools);
     let [(_, Some((operation, span)))] = native.long_notices.as_slice() else {
