@@ -5,11 +5,16 @@ use serde::Serialize;
 use std::{collections::BTreeMap, path::PathBuf};
 
 mod layers;
+pub mod resolve;
 mod schema;
 #[cfg(test)]
 mod tests;
 
 pub use layers::read;
+
+pub(crate) fn name(part: &str) -> String {
+    if part.contains('.') { serde_json::to_string(part).expect("setting name") } else { part.into() }
+}
 
 /// One file's precedence below command overrides and flags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

@@ -115,13 +115,7 @@ fn leaves(
 ) -> Result<(), Refusal> {
     for (key, spanned) in table {
         path.push(key.get_ref().to_string());
-        let named = path
-            .iter()
-            .map(
-                |part| if part.contains('.') { serde_json::to_string(part).expect("key string") } else { part.clone() },
-            )
-            .collect::<Vec<_>>()
-            .join(".");
+        let named = path.iter().map(|part| super::name(part)).collect::<Vec<_>>().join(".");
         let location = at(origin, text, key.span().start);
         if let Origin::File { layer: Layer::Repository, .. } = &location
             && schema::authority(path)

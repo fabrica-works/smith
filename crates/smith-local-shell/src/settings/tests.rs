@@ -142,3 +142,107 @@ fn codex_takes_long_prompt_rates_only_past_272000_tokens() {
     assert_eq!(decoded.values["models.codex/gpt-6-astra.input_price"].value.as_float(), Some(20.0));
     assert_eq!(decoded.values["models.codex/gpt-6-astra.output_price"].value.as_float(), Some(75.0));
 }
+
+fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
+    let settings = settings(&[source(Layer::User, text)])?;
+    super::resolve::select(&settings)
+}
+
+#[test]
+fn a_codex_only_first_run_needs_no_anthropic_credential() {
+    let selected =
+        selection("model='codex/gpt-6-astra'\n[accounts.codex]\nsource='borrow'\n").expect("one account's run");
+    assert_eq!(selected.models, ["codex/gpt-6-astra"]);
+    assert_eq!(selected.accounts.len(), 1);
+    assert_eq!(selected.accounts[0].name, "codex");
+    assert_eq!(selected.accounts[0].fields["source"].value.as_str(), Some("borrow"));
+    assert!(!selected.settings.values.contains_key("accounts.anthropic.source"));
+}
+
+#[test]
+fn sub_agents_on_adds_the_models_of_every_account_with_a_source() {
+    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n[accounts.anthropic]\nsource='env'\n")
+        .expect("accounts with sources");
+    assert_eq!(
+        selected.models,
+        [
+            "codex/gpt-6-astra",
+            "anthropic/claude-haiku-5-5",
+            "anthropic/claude-opus-5-5",
+            "anthropic/claude-sonnet-5-5",
+            "codex/gpt-6-luna"
+        ]
+    );
+    assert_eq!(
+        selected.accounts.iter().map(|account| (account.name.as_str(), account.number)).collect::<Vec<_>>(),
+        [("codex", 0), ("anthropic", 1)]
+    );
+}
+
+#[test]
+fn mains_account_without_a_source_is_refused_naming_the_key() {
+    let refusal = selection("model='codex/gpt-6-astra'\n").expect_err("main account has no source");
+    assert_eq!(refusal.key, "accounts.codex.source");
+    assert_eq!(refusal.line(), "smith: built-in settings: accounts.codex.source: required value is absent");
+}
+
+#[test]
+fn sub_agents_on_keeps_an_unset_accounts_models_out() {
+    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n")
+        .expect("codex delegation");
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna"]);
+    assert_eq!(selected.accounts.len(), 1);
+}
+
+#[test]
+fn a_custom_endpoint_inherits_its_preset_and_keeps_supplied_values() {
+    let selected = selection("model='custom/gpt-6-astra'\n[endpoints.custom]\npreset='codex'\naddress='example.test:443'\n[models.'custom/gpt-6-astra']\nwindow=100000\ninput_price=1.0\n[accounts.codex]\nsource='borrow'\n")
+        .expect("custom preset");
+    let values = selected.settings.values;
+    assert_eq!(values["endpoints.custom.address"].value.as_str(), Some("example.test:443"));
+    assert!(matches!(values["endpoints.custom.address"].origin, Origin::File { layer: Layer::User, .. }));
+    assert_eq!(values["endpoints.custom.server_name"].value.as_str(), Some("chatgpt.com"));
+    assert_eq!(values["endpoints.custom.server_name"].origin, Origin::BuiltIn);
+    assert_eq!(values["models.custom/gpt-6-astra.window"].value.as_integer(), Some(100_000));
+    assert_eq!(values["models.custom/gpt-6-astra.output"].value.as_integer(), Some(32_000));
+    assert_eq!(values["models.custom/gpt-6-astra.input_price"].value.as_float(), Some(1.0));
+    assert_eq!(values["models.custom/gpt-6-astra.output_price"].value.as_float(), Some(50.0));
+}
+
+#[test]
+fn dotted_custom_names_keep_their_account_and_model_bindings() {
+    let selected = selection("model='custom.endpoint/gpt-6-luna'\n[endpoints.'custom.endpoint']\npreset='codex'\naccount='named.account'\n[accounts.'named.account']\nsource='env'\nvariable='TEST_CREDENTIAL'\n")
+        .expect("dotted names");
+    assert_eq!(selected.models, ["custom.endpoint/gpt-6-luna"]);
+    assert_eq!(selected.accounts[0].name, "named.account");
+    assert_eq!(
+        selected.settings.values["models.\"custom.endpoint/gpt-6-luna\".window"].value.as_integer(),
+        Some(272_000)
+    );
+}
+
+#[test]
+fn an_unknown_endpoint_preset_is_refused_at_its_source() {
+    let refusal =
+        selection("model='custom/model'\n[endpoints.custom]\npreset='unknown'\n").expect_err("unknown preset");
+    assert_eq!(refusal.key, "endpoints.custom.preset");
+    assert_eq!(refusal.origin, Origin::File { layer: Layer::User, path: "fixture.toml".into(), line: 3 });
+}
+
+#[test]
+fn a_declared_model_with_a_source_is_available_to_sub_agents() {
+    let selected = selection("model='codex/gpt-6-astra'\nsub_agents=true\n[accounts.codex]\nsource='borrow'\n[models.'codex/declared']\nwindow=100000\noutput=1000\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n")
+        .expect("declared child model");
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/declared", "codex/gpt-6-luna"]);
+    assert_eq!(selected.accounts.len(), 1);
+}
+
+#[test]
+fn choosing_another_preset_replaces_only_the_endpoints_default_values() {
+    let selected = selection("model='codex/claude-haiku-5-5'\n[endpoints.codex]\npreset='anthropic'\naddress='proxy.test:443'\n[accounts.anthropic]\nsource='env'\n")
+        .expect("preset over defaults");
+    assert_eq!(selected.accounts[0].name, "anthropic");
+    assert_eq!(selected.settings.values["endpoints.codex.server_name"].value.as_str(), Some("api.anthropic.com"));
+    assert_eq!(selected.settings.values["endpoints.codex.address"].value.as_str(), Some("proxy.test:443"));
+    assert_eq!(selected.settings.values["models.codex/claude-haiku-5-5.window"].value.as_integer(), Some(200_000));
+}

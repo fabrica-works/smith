@@ -12,12 +12,12 @@ const MODELS: [&str; 5] = [
     "anthropic/claude-haiku-5-5",
 ];
 
-/// One provider's built-in endpoint, account source and known models.
+/// One provider's built-in endpoint, account metadata and known models.
 #[derive(Clone, Copy, Debug)]
 pub enum Preset {
-    /// Codex's endpoint and borrowed account, with its known model declarations.
+    /// Codex's endpoint, account metadata and known model declarations.
     Codex,
-    /// Anthropic's endpoint and environment account, with its known models.
+    /// Anthropic's endpoint, account metadata and known model declarations.
     Anthropic,
 }
 
@@ -37,7 +37,6 @@ account = 'codex'
 connect = 10
 handshake = 10
 [accounts.codex]
-source = 'borrow'
 format = 'codex'
 program = 'codex'
 [models.'codex/gpt-6-astra']
@@ -68,7 +67,6 @@ account = 'anthropic'
 connect = 10
 handshake = 10
 [accounts.anthropic]
-source = 'env'
 variable = 'ANTHROPIC_API_KEY'
 [models.'anthropic/claude-opus-5-5']
 window = 200000
@@ -117,25 +115,29 @@ pub(crate) fn prices(model: &str, window: u32) -> Option<Prices> {
 /// Fill preset rates after all window and unit overrides, preserving supplied rates.
 pub(crate) fn apply_prices(settings: &mut Settings) {
     for model in MODELS {
-        let prefix = format!("models.{model}");
-        let window = settings.values.get(&format!("{prefix}.window")).expect("preset window");
-        let window = u32::try_from(window.value.as_integer().expect("validated window")).expect("window fits");
-        let unit = settings.values.get(&format!("{prefix}.price_unit")).expect("preset price unit");
-        let unit = u32::try_from(unit.value.as_integer().expect("validated unit")).expect("unit fits");
-        let rates = prices(model, window).expect("preset rates");
-        for (field, rate) in [
-            ("input_price", rates.input),
-            ("cached_price", rates.cached),
-            ("cache_write_price", rates.cache_write.expect("preset write rate")),
-            ("output_price", rates.output),
-        ] {
-            let key = format!("{prefix}.{field}");
-            if settings.values.get(&key).is_some_and(|value| value.origin != Origin::BuiltIn) {
-                continue;
-            }
-            let rate = f64::from(u32::try_from(rate).expect("list rate fits u32"));
-            let value = toml::Value::Float(rate / 1_000_000.0 * f64::from(unit) / 1_000_000.0);
-            settings.values.insert(key, Sourced { value, origin: Origin::BuiltIn });
+        fill_prices(settings, model, model);
+    }
+}
+
+pub(crate) fn fill_prices(settings: &mut Settings, model: &str, preset_model: &str) {
+    let prefix = format!("models.{}", crate::settings::name(model));
+    let window = settings.values.get(&format!("{prefix}.window")).expect("preset window");
+    let window = u32::try_from(window.value.as_integer().expect("validated window")).expect("window fits");
+    let unit = settings.values.get(&format!("{prefix}.price_unit")).expect("preset price unit");
+    let unit = u32::try_from(unit.value.as_integer().expect("validated unit")).expect("unit fits");
+    let Some(rates) = prices(preset_model, window) else { return };
+    for (field, rate) in [
+        ("input_price", rates.input),
+        ("cached_price", rates.cached),
+        ("cache_write_price", rates.cache_write.expect("preset write rate")),
+        ("output_price", rates.output),
+    ] {
+        let key = format!("{prefix}.{field}");
+        if settings.values.get(&key).is_some_and(|value| value.origin != Origin::BuiltIn) {
+            continue;
         }
+        let rate = f64::from(u32::try_from(rate).expect("list rate fits u32"));
+        let value = toml::Value::Float(rate / 1_000_000.0 * f64::from(unit) / 1_000_000.0);
+        settings.values.insert(key, Sourced { value, origin: Origin::BuiltIn });
     }
 }

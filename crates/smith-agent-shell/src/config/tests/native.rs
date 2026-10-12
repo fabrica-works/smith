@@ -49,3 +49,57 @@ fn profile_values_take_check_and_wrap_up_durations() {
     assert_eq!(profile.policy.check_timeout.as_nanos(), 1_234_000_000);
     assert_eq!(profile.policy.wrap_up.as_nanos(), 5_678_000_000);
 }
+
+#[test]
+fn trust_arrays_accept_der_and_pem_with_system_roots_disabled() {
+    use skein_lib::{
+        Writer,
+        base64::{self, Alphabet},
+    };
+    let der = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der"));
+    let encoded = base64::encoded_len(Alphabet::Standard, u32::try_from(der.len()).expect("root bytes"))
+        .expect("encoded root length");
+    let mut writer = Writer::new(usize::try_from(encoded).expect("encoded root fits"));
+    base64::encode(Alphabet::Standard, der, &mut writer).expect("root encoding");
+    let pem = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+        String::from_utf8(writer.finish().into_vec()).expect("base64 text")
+    );
+    let path = std::env::temp_dir().join(format!("smith-native-trust-{}.pem", std::process::id()));
+    std::fs::write(&path, pem).expect("PEM fixture");
+    let mut document = shaped_document();
+    document["endpoints"][0]["transport"] = serde_json::json!("tls");
+    document["endpoints"][0]["server_name"] = serde_json::json!("example.test");
+    document["endpoints"][0]["trust"] = serde_json::json!({"system":false,
+        "der":[concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der")],
+        "pem":[path]});
+    let built = from_value(document);
+    std::fs::remove_file(path).expect("remove PEM fixture");
+    assert!(built.is_ok(), "mixed explicit trust roots accepted");
+}
+
+#[test]
+fn trust_arrays_with_system_off_and_no_roots_are_refused() {
+    let mut document = shaped_document();
+    document["endpoints"][0]["transport"] = serde_json::json!("tls");
+    document["endpoints"][0]["server_name"] = serde_json::json!("example.test");
+    document["endpoints"][0]["trust"] = serde_json::json!({"system":false,"der":[],"pem":[]});
+    let refusal = from_value(document).err().expect("no trusted roots").detail();
+    assert_eq!(refusal, "TLS trust : Roots");
+}
+
+#[test]
+fn trust_arrays_keep_one_combined_certificate_bound() {
+    let path = std::env::temp_dir().join(format!("smith-combined-trust-{}.pem", std::process::id()));
+    std::fs::write(&path, b"-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n".repeat(256))
+        .expect("bounded PEM fixture");
+    let mut document = shaped_document();
+    document["endpoints"][0]["transport"] = serde_json::json!("tls");
+    document["endpoints"][0]["server_name"] = serde_json::json!("example.test");
+    document["endpoints"][0]["trust"] = serde_json::json!({"system":false,
+        "der":[concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der")],
+        "pem":[path,path]});
+    let built = from_value(document);
+    std::fs::remove_file(path).expect("remove PEM fixture");
+    assert_eq!(built.err().expect("combined root bound").detail(), "trust roots exceed their combined bound");
+}
