@@ -1417,3 +1417,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `failure_bytes` per session, and at most 3 in the root's include it in
    the run-output payload's maximum; no limit, derivation or ceiling
    changes. Both files join 06.12's Files.
+62. **13.4's silent unfinished turn is 05.s1's** (block of
+   2026-10-12T18:25:15Z, smith 13.4). `parallel-children/reviews` attempt
+   03 ended its main turn with text and no calls at 14,845 ms, was owed a
+   nudge (run.md, 7.2: "An LLM that stops without finishing is nudged,
+   within the budget"), and requested nothing until the host's watchdog
+   cancelled it at 49,846 ms. The third live run of an agent going silent
+   after a told turn (05.s1's chat attempts 01 and 06 were the first),
+   and the simplest, with no person line crossing: 05.s1 takes it as a
+   second reproduction source. 13.4 lands its three batches not
+   calibrated, with their counts (parallel-read 7/10, children 2/5,
+   reviews 1/4: 8 model deviations, 1 smith defect), names reviews 03 as
+   handed to 05.s1, and reruns nothing.

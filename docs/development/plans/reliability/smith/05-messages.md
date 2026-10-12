@@ -348,6 +348,12 @@ and the acknowledgement does not arrive: `smith-local-domain/src/domain.rs`
 (`accept_turn` :916, `turn_saved` :753), `smith-local-protocol/src/store/`,
 `smith-host-domain/src/domain.rs` (`acknowledge_turn` :726),
 `smith-domain/src/route.rs:183`.
+A second live instance (decisions.md, 13.62): smith 13.4's
+`probes-parallel-children-reviews-3f15308c-20261012T181923Z/03`, a main
+turn that ends with text and no calls (`stop: end`) at 14,845 ms, owed a
+nudge (run.md, 7.2), then no `response.started` until the cancel at
+49,846 ms: the same 35 s silence with no person line, which a told turn
+held for its acknowledgement would also explain.
 Needs: nothing.
 Files: the reproduction's world test file; then the crate, of those
 named, where the acknowledgement stops.
