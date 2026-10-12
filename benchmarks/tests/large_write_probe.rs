@@ -27,6 +27,21 @@ fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
     assert_eq!(task.prompt, normal.prompt);
     assert_eq!(task.budget, normal.budget);
     let variant = task.with_variant("oversized").expect("small-payload variant");
+    let medium = smith_bench::check_task(
+        &root.join("tasks/probes/large-write/v9/oversized-v9-medium.toml"),
+        &root.join("../docs/design"),
+    )
+    .expect("named medium document");
+    assert_eq!(medium.version, 9);
+    assert_eq!(medium.effort.as_deref(), Some("medium"));
+    let medium = medium.with_variant("oversized").expect("same medium variant");
+    assert_eq!(medium.prompt, variant.prompt);
+    assert_eq!(medium.budget, variant.budget);
+    assert_eq!(medium.smith, variant.smith);
+    assert_eq!(medium.seed_sha256, variant.seed_sha256);
+    assert_eq!(medium.event, variant.event);
+    assert_eq!(medium.outcome, variant.outcome);
+    assert_eq!(medium.deciding, variant.deciding);
     assert_eq!(variant.smith["tool_payload"].as_integer(), Some(2048));
     assert_eq!(variant.smith["read_window"].as_integer(), Some(2048));
     assert!(variant.prompt.contains("MEANT TO BE REFUSED"));
