@@ -4,6 +4,7 @@
 //! and the event stream. Contract: protocol/agent.md, section 6.
 
 use skein_lib::Time;
+use smith_domain as domain;
 use smith_protocol_llm as llm;
 
 use super::{Failure, Service, USAGE_OWNER, close_roots, settled};
@@ -58,6 +59,8 @@ pub enum Step {
     Usage,
     /// Event destinations still owe their close reports.
     Stream,
+    /// The retained signal reader still owes its close report.
+    Signals,
 }
 
 pub(super) fn answered(service: &mut Service) {
@@ -98,6 +101,7 @@ fn components_closed(service: &Service) -> bool {
         Some(events) => events.sinks.open_streams(),
         None => 0,
     };
+    let streams = streams.checked_add(u32::from(service.signals.is_some())).expect("bounded live signals");
     service.llm.closed() && settled(service, streams)
 }
 
@@ -106,7 +110,65 @@ fn stream_closed(service: &Service) -> bool {
         Some(events) => events.sinks.closed(),
         None => true,
     };
-    destinations && settled(service, 0) && service.io.is_empty()
+    destinations
+        && settled(service, u32::from(service.signals.is_some()))
+        && (service.signals.is_some() || service.io.is_empty())
+}
+
+pub(super) fn shutdown_room(service: &Service) -> bool {
+    let streams = match service.teardown {
+        Teardown::Closing { step: Step::Stream, .. } => match &service.events {
+            Some(events) => events.sinks.open_streams(),
+            None => 0,
+        },
+        Teardown::Live | Teardown::Answered { .. } | Teardown::Closing { .. } | Teardown::Closed { .. } => 0,
+    };
+    service.io_requests.room() >= streams.max(2)
+}
+
+pub(super) fn shutdown(service: &mut Service) {
+    let before_terminal = match service.teardown {
+        Teardown::Live => {
+            if let Some(run) = service.admitted {
+                service.domain_events.push(domain::Event::Cancel { run });
+            } else {
+                service.cancel_pending = true;
+            }
+            return;
+        }
+        Teardown::Answered { at, answer, close: Close::Graceful } => {
+            service.teardown = Teardown::Answered { at, answer, close: Close::Aborted };
+            true
+        }
+        Teardown::Closing { at, answer, step: step @ (Step::Stream | Step::Signals), .. } => {
+            service.teardown = Teardown::Closing { at, answer, close: Close::Aborted, step };
+            if let Some(events) = &mut service.events {
+                events.sinks.abort(&mut service.io_requests);
+            }
+            return;
+        }
+        Teardown::Closing { at, answer, close: Close::Graceful, step } => {
+            service.teardown = Teardown::Closing { at, answer, close: Close::Aborted, step };
+            true
+        }
+        Teardown::Answered { close: Close::Aborted, .. }
+        | Teardown::Closing { close: Close::Aborted, .. }
+        | Teardown::Closed { .. } => false,
+    };
+    if before_terminal {
+        if !service.llm.closed() {
+            service.llm.abort(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
+        }
+        if let Some(entity) = service.input {
+            service.io_requests.push(io::Request::Abort { entity });
+        }
+        if let Some(entity) = service.output {
+            service.io_requests.push(io::Request::Abort { entity });
+        }
+        if let Some(events) = &mut service.events {
+            events.notice(service.io_env.now, smith_events::NoticeKind::TeardownAborted, None, None, None);
+        }
+    }
 }
 
 pub(super) fn work_pending(service: &Service) -> bool {
@@ -123,7 +185,8 @@ pub(super) fn work_pending(service: &Service) -> bool {
                     && service.file_events.room() > 0
                     && service.file_submissions.room() >= 2)
         }
-        Teardown::Closing { step: Step::Stream, .. } => stream_closed(service),
+        Teardown::Closing { step: Step::Stream, .. } => stream_closed(service) && service.io_requests.room() > 0,
+        Teardown::Closing { step: Step::Signals, .. } => service.signals.is_none() && stream_closed(service),
     }
 }
 
@@ -132,8 +195,15 @@ pub(super) fn advance(service: &mut Service) {
         Teardown::Live | Teardown::Closed { .. } | Teardown::Closing { step: Step::Usage, .. } => {}
         Teardown::Answered { at, answer, close } => {
             if close_room(service) {
-                service.llm.close(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
-                if let Some(entity) = service.input {
+                match close {
+                    Close::Graceful => {
+                        service.llm.close(&service.llm_env, &mut service.llm_events, &mut service.llm_below);
+                    }
+                    Close::Aborted => {}
+                }
+                if close == Close::Graceful
+                    && let Some(entity) = service.input
+                {
                     service.io_requests.push(io::Request::Close { entity });
                 }
                 // A sent answer already finishes the channel's output after its
@@ -142,13 +212,12 @@ pub(super) fn advance(service: &mut Service) {
                 match answer {
                     Answer::Sent => {}
                     Answer::Unsent(_) => {
-                        if let Some(entity) = service.output {
+                        if close == Close::Graceful
+                            && let Some(entity) = service.output
+                        {
                             service.io_requests.push(io::Request::Close { entity });
                         }
                     }
-                }
-                if let Some(entity) = service.signals {
-                    service.io_requests.push(io::Request::Close { entity });
                 }
                 close_roots(service);
                 service.teardown = Teardown::Closing { at, answer, close, step: Step::Components };
@@ -167,8 +236,19 @@ pub(super) fn advance(service: &mut Service) {
                 service.teardown = Teardown::Closing { at, answer, close, step };
             }
         }
-        Teardown::Closing { answer, close, step: Step::Stream, .. } => {
-            if stream_closed(service) {
+        Teardown::Closing { at, answer, close, step: Step::Stream } => {
+            if stream_closed(service) && service.io_requests.room() > 0 {
+                match service.signals {
+                    Some(entity) => {
+                        service.io_requests.push(io::Request::Close { entity });
+                        service.teardown = Teardown::Closing { at, answer, close, step: Step::Signals };
+                    }
+                    None => service.teardown = Teardown::Closed { answer, close },
+                }
+            }
+        }
+        Teardown::Closing { answer, close, step: Step::Signals, .. } => {
+            if service.signals.is_none() && stream_closed(service) {
                 service.teardown = Teardown::Closed { answer, close };
             }
         }

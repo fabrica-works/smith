@@ -373,6 +373,8 @@ pub enum NoticeKind {
     CredentialRejected,
     /// The `account_exhausted` classification.
     AccountExhausted,
+    /// A termination signal interrupted the service's teardown after its answer.
+    TeardownAborted,
     /// A value this reader does not know, retained as UTF-8.
     Unknown(Box<[u8]>),
 }
@@ -726,6 +728,7 @@ pub struct SessionStarted {
 pub struct SessionEnded {
     pub exit: i64,
     pub answered: bool,
+    pub aborted: bool,
     pub teardown_ms: Option<u64>,
     pub emitted: List<Count>,
     pub loss: Loss,

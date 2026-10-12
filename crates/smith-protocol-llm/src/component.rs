@@ -317,6 +317,14 @@ impl Component {
         self.route(env.now, to_domain);
     }
 
+    /// The owner interrupts teardown; abort every retained call and physical connection.
+    pub fn abort(&mut self, env: &Env<ComponentLimits>, to_domain: &mut Queue<ToDomain>, io: &mut Queue<IoRequest>) {
+        assert!(self.measures.is_empty(), "the owner drains observations before another entrance");
+        let child_env = self.child_env(env);
+        self.connection.down(&child_env, connection::Request::Abort, &mut self.events, io);
+        self.route(env.now, to_domain);
+    }
+
     /// The pool reported that every call and socket has settled.
     #[must_use]
     pub const fn closed(&self) -> bool {

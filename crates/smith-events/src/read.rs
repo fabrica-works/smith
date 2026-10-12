@@ -668,6 +668,7 @@ fn read_notice_kind(tokens: &[Token], limits: &Limits) -> Result<NoticeKind, Err
         b"reasoning_dropped" => NoticeKind::ReasoningDropped,
         b"credential_rejected" => NoticeKind::CredentialRejected,
         b"account_exhausted" => NoticeKind::AccountExhausted,
+        b"teardown_aborted" => NoticeKind::TeardownAborted,
         _ => {
             if value.len() > usize::try_from(limits.string).expect("u32 fits") {
                 return Err(Error::Limits);
@@ -1085,6 +1086,7 @@ fn read_session_ended(tokens: &[Token], limits: &Limits) -> Result<SessionEnded,
     Ok(SessionEnded {
         exit: signed(required(tokens, b"exit")?)?,
         answered: boolean(required(tokens, b"answered")?)?,
+        aborted: boolean(required(tokens, b"aborted")?)?,
         teardown_ms: match required(tokens, b"teardown_ms")? {
             [Token::Null] => None,
             item => Some(unsigned(item)?),
@@ -1439,6 +1441,7 @@ fn read_notice(tokens: &[Token], limits: &Limits) -> Result<Notice, Error> {
         NoticeKind::ReasoningDropped
         | NoticeKind::CredentialRejected
         | NoticeKind::AccountExhausted
+        | NoticeKind::TeardownAborted
         | NoticeKind::Unknown(_) => Ok(notice),
     }
 }

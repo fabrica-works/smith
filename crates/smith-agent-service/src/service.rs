@@ -106,6 +106,7 @@ enum Owner {
 #[derive(Clone, Copy, Debug)]
 enum Operation {
     Io(Token),
+    Signals(Token),
     File(Token),
 }
 
@@ -890,7 +891,7 @@ fn io_up(service: &mut Service) {
         };
         let route = service.operations.remove(&complete.op).expect("one route per submitted operation");
         match route {
-            Operation::Io(original) => {
+            Operation::Io(original) | Operation::Signals(original) => {
                 let complete = kernel::Complete { op: original, kind: complete.kind, result: complete.result };
                 io::up(&mut service.io, &service.io_env, complete, &mut service.io_events, &mut service.io_submissions);
             }
@@ -930,6 +931,24 @@ fn lower_events(service: &mut Service) {
             Some(event) => event,
             None => break,
         };
+        let signal_ready = match &event {
+            io::Event::Shutdown { .. } => service.llm.measures_drained() && teardown::shutdown_room(service),
+            io::Event::Listening { .. }
+            | io::Event::Accepted { .. }
+            | io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Stream { .. }
+            | io::Event::Output { .. }
+            | io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Failed { .. }
+            | io::Event::Closed { .. } => true,
+        };
+        if !signal_ready {
+            service.io_events.push(event);
+            continue;
+        }
         if !service.llm.measures_drained() && llm_io(service, &event) {
             service.io_events.push(event);
             continue;
@@ -1014,6 +1033,10 @@ fn record_usage(service: &mut Service, usage: io::Measured) {
                 Some(_) => events.answer_at().is_some(),
                 None => answer.sent(),
             },
+            aborted: match close {
+                teardown::Close::Graceful => false,
+                teardown::Close::Aborted => true,
+            },
             teardown,
             usage,
             channel,
@@ -1051,13 +1074,7 @@ fn route_io_event(service: &mut Service, event: io::Event) {
         }
     }
     match event {
-        io::Event::Shutdown { signal: _ } => {
-            if let Some(run) = service.admitted {
-                service.domain_events.push(domain::Event::Cancel { run });
-            } else {
-                service.cancel_pending = true;
-            }
-        }
+        io::Event::Shutdown { signal: _ } => teardown::shutdown(service),
         io::Event::Stream { owner, up } if Some(owner) == service.input => {
             service.channel.as_mut().expect("framed agent owns its channel").from_below(
                 ChannelLowerEvent::Read(up),
@@ -1081,13 +1098,15 @@ fn route_io_event(service: &mut Service, event: io::Event) {
             stream::Up::Bytes(_) | stream::Up::Room | stream::Up::End => {}
         },
         io::Event::Closed { owner } if Some(owner) == service.input => {
+            service.input = None;
             service.channel.as_mut().expect("framed agent owns its channel").from_below(
                 ChannelLowerEvent::Read(stream::Up::End),
                 &mut service.channel_events,
                 &mut service.channel_below,
             );
         }
-        io::Event::Closed { owner } if Some(owner) == service.output || Some(owner) == service.signals => {}
+        io::Event::Closed { owner } if Some(owner) == service.output => service.output = None,
+        io::Event::Closed { owner } if Some(owner) == service.signals => service.signals = None,
         event @ (io::Event::Listening { .. }
         | io::Event::Accepted { .. }
         | io::Event::Connecting { .. }
@@ -1964,16 +1983,19 @@ fn component_down(service: &mut Service) {
         };
         match request {
             ChannelLower::Read(down) => {
-                let input = service.input.expect("the shell adopts the read pipe before iterating");
-                service.io_requests.push(io::Request::Stream { stream: input, down });
+                if let Some(input) = service.input {
+                    service.io_requests.push(io::Request::Stream { stream: input, down });
+                }
             }
             ChannelLower::Write(down) => {
-                let output = service.output.expect("the shell adopts the write pipe before iterating");
-                service.io_requests.push(io::Request::Output { stream: output, down });
+                if let Some(output) = service.output {
+                    service.io_requests.push(io::Request::Output { stream: output, down });
+                }
             }
             ChannelLower::FinishWrite => {
-                let output = service.output.expect("the shell adopts the write pipe before iterating");
-                service.io_requests.push(io::Request::Stream { stream: output, down: stream::Down::Finish });
+                if let Some(output) = service.output {
+                    service.io_requests.push(io::Request::Stream { stream: output, down: stream::Down::Finish });
+                }
             }
         }
     }
@@ -2118,15 +2140,24 @@ fn route_submission(service: &mut Service, submit: kernel::Submit, file: bool) {
             for (global, route) in &service.operations {
                 match route {
                     Operation::File(original) if file && *original == target => found = Some(*global),
-                    Operation::Io(original) if !file && *original == target => found = Some(*global),
-                    Operation::File(_) | Operation::Io(_) => {}
+                    Operation::Io(original) | Operation::Signals(original) if !file && *original == target => {
+                        found = Some(*global);
+                    }
+                    Operation::File(_) | Operation::Io(_) | Operation::Signals(_) => {}
                 }
             }
             kernel::Op::Cancel { target: found.unwrap_or(Token::new(u64::MAX)) }
         }
         other => other,
     };
-    let route = if file { Operation::File(submit.op) } else { Operation::Io(submit.op) };
+    let route = if file {
+        Operation::File(submit.op)
+    } else {
+        match kind {
+            kernel::Op::ReadSignal { .. } => Operation::Signals(submit.op),
+            _ => Operation::Io(submit.op),
+        }
+    };
     service.operations.insert(global, route).expect("reserved operation route");
     service.submissions.push(kernel::Submit { op: global, kind });
 }
@@ -2225,6 +2256,16 @@ pub fn done(service: &Service) -> Option<bool> {
 }
 
 /// All non-destination children have reported closed; only these streams may remain.
+fn operations_settled(service: &Service) -> bool {
+    for (_, operation) in &service.operations {
+        match operation {
+            Operation::Signals(_) if service.signals.is_some() => {}
+            Operation::Signals(_) | Operation::Io(_) | Operation::File(_) => return false,
+        }
+    }
+    true
+}
+
 fn settled(service: &Service, streams: u32) -> bool {
     (match &service.channel {
         Some(channel) => channel.ended(),
@@ -2254,7 +2295,7 @@ fn settled(service: &Service, streams: u32) -> bool {
         && service.roots.is_empty()
         && service.owners.is_empty()
         && service.pipe_routes.is_empty()
-        && service.operations.is_empty()
+        && operations_settled(service)
         && service.submissions.is_empty()
 }
 
@@ -2602,7 +2643,7 @@ mod tests {
         assert!(!service.llm.closed());
         teardown::advance(&mut service);
         assert!(service.llm.closed(), "an empty pool reports its close immediately");
-        for expected in [11, 12, 13] {
+        for expected in [11, 12] {
             match service.io_requests.pop() {
                 Some(io::Request::Close { entity }) => assert_eq!(entity, Token::new(expected)),
                 unexpected => panic!("one close per descriptor: {unexpected:?}"),

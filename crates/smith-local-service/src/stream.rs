@@ -287,6 +287,7 @@ impl Spawned {
                     &smith_agent_service::sinks::Ended {
                         exit: self.exit.expect("product exited before usage"),
                         answered: self.answered,
+                        aborted: false,
                         teardown,
                         usage,
                         channel: None,

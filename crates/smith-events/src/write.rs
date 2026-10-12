@@ -362,6 +362,7 @@ fn write_notice_kind(json: &mut Encoder, value: &NoticeKind, _capture: &Capture)
         NoticeKind::ReasoningDropped => json.string(b"reasoning_dropped"),
         NoticeKind::CredentialRejected => json.string(b"credential_rejected"),
         NoticeKind::AccountExhausted => json.string(b"account_exhausted"),
+        NoticeKind::TeardownAborted => json.string(b"teardown_aborted"),
         NoticeKind::Unknown(text) => json.string(text),
     }
 }
@@ -1081,7 +1082,10 @@ fn validate_level(value: &Level, limits: &Limits) -> Result<(), Error> {
 
 fn validate_notice_kind(value: &NoticeKind, limits: &Limits) -> Result<(), Error> {
     match value {
-        NoticeKind::ReasoningDropped | NoticeKind::CredentialRejected | NoticeKind::AccountExhausted => Ok(()),
+        NoticeKind::ReasoningDropped
+        | NoticeKind::CredentialRejected
+        | NoticeKind::AccountExhausted
+        | NoticeKind::TeardownAborted => Ok(()),
         NoticeKind::Unknown(text) => check_text(text, limits.string),
     }
 }
@@ -1395,6 +1399,7 @@ fn validate_notice(value: &Notice, limits: &Limits) -> Result<(), Error> {
         NoticeKind::ReasoningDropped
         | NoticeKind::CredentialRejected
         | NoticeKind::AccountExhausted
+        | NoticeKind::TeardownAborted
         | NoticeKind::Unknown(_) => Ok(()),
     }
 }
@@ -1554,6 +1559,8 @@ fn encode_session_ended(json: &mut Encoder, value: &SessionEnded, capture: &Capt
     json.signed(value.exit);
     json.key(b"answered");
     json.boolean(value.answered);
+    json.key(b"aborted");
+    json.boolean(value.aborted);
     json.key(b"teardown_ms");
     match &value.teardown_ms {
         Some(item) => {

@@ -95,7 +95,7 @@ fn another_version_is_named() {
     assert_eq!(read(b"{\"v\":2,\"type\":\"future\",\"t_ms\":0}\n", &limits), Err(Error::Version(2)));
 }
 
-const END_WITH_UNREAD_USAGE: &[u8] = b"{\"v\":1,\"type\":\"session.ended\",\"t_ms\":7,\"exit\":0,\"answered\":true,\"teardown_ms\":2,\"emitted\":{\"session.ended\":1},\"loss\":{\"events\":0,\"channel\":null},\"cpu_ms\":null,\"peak_rss_bytes\":null}\n";
+const END_WITH_UNREAD_USAGE: &[u8] = b"{\"v\":1,\"type\":\"session.ended\",\"t_ms\":7,\"exit\":0,\"answered\":true,\"aborted\":false,\"teardown_ms\":2,\"emitted\":{\"session.ended\":1},\"loss\":{\"events\":0,\"channel\":null},\"cpu_ms\":null,\"peak_rss_bytes\":null}\n";
 
 #[test]
 fn joint_writer_ceiling_round_trips_and_never_weakens_semantic_caps() {

@@ -43,6 +43,41 @@ fn a_termination_signal_in_the_middle_of_a_turn_answers_cancelled() {
 }
 
 #[test]
+fn a_termination_signal_after_the_answer_aborts_a_peer_that_ignores_the_close() {
+    let mut world = World::new(17, &charter());
+    world.signal_after_answer();
+    assert!(world.settle());
+    assert!(world.answer().is_some());
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    let smith_events::Event::SessionEnded(end) = &world.records().last().expect("authoritative end").event else {
+        panic!("session end is last")
+    };
+    assert!(end.aborted);
+    assert!(end.teardown_ms.expect("answered teardown") < 5000);
+    assert_eq!(world.signals(), 1);
+    world.assert_agent_clean();
+}
+
+#[test]
+fn a_second_signal_after_the_answer_changes_nothing() {
+    let mut world = World::new(19, &charter());
+    world.signal_after_answer();
+    world.signal_after_answer();
+    assert!(world.settle());
+    assert_eq!(world.signals(), 2);
+    assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
+    let notices = world.records().iter().filter(|record| {
+        matches!(&record.event, smith_events::Event::Notice(notice) if notice.kind == smith_events::NoticeKind::TeardownAborted)
+    });
+    assert_eq!(notices.count(), 1);
+    let smith_events::Event::SessionEnded(end) = &world.records().last().expect("one terminal").event else {
+        panic!("session end is last")
+    };
+    assert!(end.aborted);
+    world.assert_agent_clean();
+}
+
+#[test]
 fn full_kernel_replay_leaves_the_same_answer() {
     for cancel in [false, true] {
         skein_world::domain::assert_replays(7, 8, |seed| {

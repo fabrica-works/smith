@@ -107,6 +107,7 @@ impl SinkLimits {
 pub struct Ended {
     pub exit: u8,
     pub answered: bool,
+    pub aborted: bool,
     pub teardown: Option<Duration>,
     pub usage: io::Measured,
     pub channel: Option<u64>,
@@ -175,9 +176,9 @@ pub struct Sinks {
 }
 
 const TYPES: usize = 18;
-const AUTHORITATIVE: u32 = 3;
-// Three authoritative records and the two-record fact hand-off have separate slots.
-const LINE_SLOTS: u32 = 5;
+const AUTHORITATIVE: u32 = 4;
+// The three authoritative records, teardown notice and two-record fact hand-off have separate slots.
+const LINE_SLOTS: u32 = 6;
 
 impl Sinks {
     /// Construct the destinations with a checked bound and the actual adopted IO output cap.
@@ -555,6 +556,20 @@ impl Sinks {
         }
     }
 
+    /// Abort each stream that still owes its terminal after the authoritative end.
+    pub(crate) fn abort(&mut self, out: &mut Queue<io::Request>) {
+        for index in 0..self.writers.len() {
+            let writer = self.writers.get_mut(index).expect("bounded destinations");
+            match writer.stream {
+                Stream::Closed => {}
+                Stream::Waiting | Stream::Ready | Stream::Demanding | Stream::Closing | Stream::GivenUp => {
+                    abandon(writer);
+                    out.push(io::Request::Abort { entity: writer.token });
+                }
+            }
+        }
+    }
+
     /// Whether an IO token belongs to a destination retained until Closed.
     #[must_use]
     pub fn owns(&self, token: Token) -> bool {
@@ -676,6 +691,7 @@ fn ended_record(now: Time, started: Time, ended: &Ended, emitted: List<smith_eve
         event: Event::SessionEnded(smith_events::SessionEnded {
             exit: i64::from(ended.exit),
             answered: ended.answered,
+            aborted: ended.aborted,
             teardown_ms: match ended.teardown {
                 Some(duration) => Some(duration.as_nanos() / 1_000_000),
                 None => None,
@@ -822,8 +838,14 @@ fn authoritative(event: &Event) -> bool {
         | Event::CheckCompleted(_)
         | Event::MessageReceived(_)
         | Event::MessageRead(_)
-        | Event::MessageUnread(_)
-        | Event::Notice(_) => false,
+        | Event::MessageUnread(_) => false,
+        Event::Notice(notice) => match notice.kind {
+            smith_events::NoticeKind::TeardownAborted => true,
+            smith_events::NoticeKind::ReasoningDropped
+            | smith_events::NoticeKind::CredentialRejected
+            | smith_events::NoticeKind::AccountExhausted
+            | smith_events::NoticeKind::Unknown(_) => false,
+        },
     }
 }
 
@@ -965,7 +987,7 @@ fn emitted_names_bytes() -> Option<u64> {
 }
 
 fn authoritative_credit(limits: &SinkLimits, capture: Capture) -> Option<u32> {
-    // These three records never contain a provider call id/name or a prompt.
+    // The three authoritative records and teardown notice contain no provider call id/name or prompt.
     // The accepted answer is the only captured payload they can retain.
     let metadata = smith_events::Limits {
         string: limits.metadata_string,
@@ -1009,7 +1031,7 @@ pub(crate) mod tests {
         let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
         SinkLimits {
             destinations,
-            output: line.checked_mul(5).unwrap(),
+            output: line.checked_mul(6).unwrap(),
             records,
             answer_bytes: records.content,
             metadata_string: records.string,
@@ -1033,8 +1055,8 @@ pub(crate) mod tests {
             limits.metadata_string,
         )
         .unwrap();
-        limits.output = authoritative.checked_mul(3).unwrap().checked_add(line.checked_mul(2).unwrap()).unwrap();
-        assert!(limits.output < line.checked_mul(5).unwrap(), "ordinary identities do not enter authoritative records");
+        limits.output = authoritative.checked_mul(4).unwrap().checked_add(line.checked_mul(2).unwrap()).unwrap();
+        assert!(limits.output < line.checked_mul(6).unwrap(), "ordinary identities do not enter authoritative records");
         assert!(sinks_worst_case(&limits, Capture::Everything).is_some());
         let mut sinks = Sinks::new(&limits, Capture::Everything, 1);
         sinks.add(Destination::Trace, Token::new(1), Delivery::Complete).unwrap();
@@ -1062,7 +1084,7 @@ pub(crate) mod tests {
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
             let mut limits = limits(1);
             limits.output =
-                largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string).unwrap() * 5;
+                largest_line(&limits.records, capture, limits.answer_bytes, limits.metadata_string).unwrap() * 6;
             let token = Token::new(11);
             let mut sinks = Sinks::new(&limits, capture, 7);
             sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
@@ -1150,6 +1172,7 @@ pub(crate) mod tests {
                 let ended = Ended {
                     exit,
                     answered: exit == 0,
+                    aborted: false,
                     teardown: if exit == 0 { Some(Duration::from_nanos(3_000_000)) } else { None },
                     usage,
                     channel: Some(7),
@@ -1199,7 +1222,14 @@ pub(crate) mod tests {
         for name in 0..10_000 {
             sinks.record(&counted(name));
         }
-        let ended = Ended { exit: 0, answered: true, teardown: None, usage: io::Measured::Unread, channel: None };
+        let ended = Ended {
+            exit: 0,
+            answered: true,
+            aborted: false,
+            teardown: None,
+            usage: io::Measured::Unread,
+            channel: None,
+        };
         sinks.ended(Time::ZERO, Time::ZERO, &ended);
         let records = drain(&mut sinks, token);
         let Event::SessionEnded(end) = &records.last().unwrap().event else { panic!("end is last") };

@@ -600,6 +600,7 @@ mod tests {
                     &Ended {
                         exit: 0,
                         answered: true,
+                        aborted: false,
                         teardown: Some(Duration::from_millis(6)),
                         usage: skein_io::Measured::Unread,
                         channel: None,
@@ -793,6 +794,7 @@ mod tests {
                     &Ended {
                         exit: 0,
                         answered: true,
+                        aborted: false,
                         teardown: Some(Duration::ZERO),
                         usage: skein_io::Measured::Unread,
                         channel: None,
@@ -878,6 +880,7 @@ mod tests {
                         &Ended {
                             exit: 0,
                             answered: true,
+                            aborted: false,
                             teardown: Some(Duration::ZERO),
                             usage: skein_io::Measured::Unread,
                             channel: None,

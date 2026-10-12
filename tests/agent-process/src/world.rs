@@ -23,8 +23,8 @@ struct Parent {
     writing: bool,
     pending: Option<(Box<[u8]>, u32)>,
     status: Option<kernel::Exit>,
-    signal: bool,
-    signalled: bool,
+    signal: u32,
+    signalled: u32,
     hang_up: bool,
     hold_channel: bool,
     errors: Vec<u8>,
@@ -63,8 +63,8 @@ impl Parent {
             writing: false,
             pending: None,
             status: None,
-            signal: false,
-            signalled: false,
+            signal: 0,
+            signalled: 0,
             hang_up,
             hold_channel: false,
             errors: Vec::new(),
@@ -219,8 +219,8 @@ impl Host for Parent {
         while let Some(complete) = self.completions.pop() {
             self.completed(complete);
         }
-        if self.signal && !self.signalled {
-            self.signalled = true;
+        for _ in self.signalled..self.signal {
+            self.signalled = self.signalled.checked_add(1).expect("finite requested signals");
             self.submit(Op::Signal {
                 pidfd: self.pidfd.expect("admitted child"),
                 to: kernel::Target::Child,
@@ -265,7 +265,7 @@ impl Host for Parent {
     fn work_pending(&self, _now: Time) -> bool {
         !self.completions.is_empty()
             || !self.submissions.is_empty()
-            || (self.signal && !self.signalled)
+            || (self.signal > self.signalled)
             || (self.output.is_some() && !self.reading)
             || (self.error.is_some() && !self.error_reading)
             || (self.pending.is_some() && !self.writing)
@@ -502,6 +502,7 @@ enum HangUp {
 
 struct Referee {
     cancel: bool,
+    after_answer: u32,
     hang_up: HangUp,
     reviewed: usize,
     admitted_facts: usize,
@@ -526,7 +527,10 @@ impl skein_world::Referee<Proc> for Referee {
                         parent.close(input);
                     }
                     if self.cancel && admitted {
-                        parent.signal = true;
+                        parent.signal = parent.signal.max(1);
+                    }
+                    if parent.answered() && parent.status.is_none() {
+                        parent.signal = parent.signal.max(self.after_answer);
                     }
                 }
                 Proc::Peer(peer) => {
@@ -814,6 +818,7 @@ pub struct World {
     seed: u64,
     charter: Box<[u8]>,
     cancel: bool,
+    after_answer: u32,
     hang_up: bool,
     hold_channel: bool,
     hang_up_mid_call: bool,
@@ -838,6 +843,7 @@ impl World {
             seed,
             charter: charter.into(),
             cancel: false,
+            after_answer: 0,
             hang_up: false,
             hold_channel: false,
             hang_up_mid_call: false,
@@ -1012,6 +1018,18 @@ impl World {
     pub fn signal(&mut self) {
         self.cancel = true;
     }
+    /// Request one more actual termination signal after the parent's channel answer.
+    pub fn signal_after_answer(&mut self) {
+        self.after_answer = self.after_answer.checked_add(1).expect("bounded signal scenario");
+        self.tracing = Some((TraceCase::Failed, 8));
+    }
+
+    /// The parent's actual submitted signal count.
+    #[must_use]
+    pub fn signals(&self) -> u32 {
+        self.parent().signalled
+    }
+
     /// Close the channel before Start, without signalling the process.
     pub fn hang_up(&mut self) {
         self.hang_up = true;
@@ -1025,6 +1043,13 @@ impl World {
     /// Meter every process iteration and drop with the shared allocator.
     pub fn check_memory(&mut self) {
         self.memory = Memory::Checked;
+    }
+
+    fn hold_peer(&self, mut peer: skein_fake_peers::llm::Peer) -> skein_fake_peers::llm::Peer {
+        if self.after_answer > 0 {
+            peer.ignore_half_close();
+        }
+        peer
     }
 
     fn maximum_queries(&self) -> usize {
@@ -1054,6 +1079,7 @@ impl World {
         let root = machine.lay(&[]);
         let referee = Referee {
             cancel: self.cancel,
+            after_answer: self.after_answer,
             hang_up: self.hang_up_case(),
             reviewed: 0,
             admitted_facts: 0,
@@ -1098,7 +1124,7 @@ impl World {
             Proc::Parent(Box::new(parent))
         });
         world.spawn(|| {
-            Proc::Peer(Box::new(if self.environment {
+            let peer = if self.environment {
                 environment_peer()
             } else if self.full_completion {
                 fake::configured(
@@ -1141,7 +1167,8 @@ impl World {
                 case.peer(self.anthropic, self.private_grant)
             } else {
                 fake::peer()
-            }))
+            };
+            Proc::Peer(Box::new(self.hold_peer(peer)))
         });
 
         let mut outcome = world.run();
@@ -1264,7 +1291,7 @@ impl World {
     /// Whether the scripted host sent a termination signal.
     #[must_use]
     pub fn signalled(&self) -> bool {
-        self.parent().signalled
+        self.parent().signalled > 0
     }
 
     /// Complete kernel trace for the generic replay assertion.
