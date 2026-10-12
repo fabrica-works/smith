@@ -283,9 +283,10 @@ impl Observer {
         &self,
         path: &std::path::Path,
         above: u64,
+        protocol_input_bytes_above: Option<u64>,
         workspace: &std::path::Path,
     ) -> crate::CheckVerdict {
-        file_pieces::oversized_check(self, path, above, workspace)
+        file_pieces::oversized_check(self, path, above, protocol_input_bytes_above, workspace)
     }
 
     /// Apply successful captured pieces in order against the declared file bound.

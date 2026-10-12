@@ -54,8 +54,13 @@ pub enum OutcomeCheck {
 pub enum EventCheck {
     /// One successful captured write supplies the exact settled file bytes.
     WrittenFile { path: PathBuf, content_bytes_at_least: u64 },
-    /// Exactly one write is refused by protocol size or joined native payload size.
-    OversizedWrite { path: PathBuf, content_bytes_above: u64 },
+    /// Exactly one write is refused by the authored protocol or native payload bound.
+    OversizedWrite {
+        path: PathBuf,
+        content_bytes_above: u64,
+        /// Select protocol-only refusal against the actual stated call-input bound.
+        protocol_input_bytes_above: Option<u64>,
+    },
     /// An oversized write is repaired by a first write and captured extending edits.
     FilePieces {
         path: PathBuf,

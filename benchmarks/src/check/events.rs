@@ -176,7 +176,7 @@ fn file_check(
     native_file_bytes: Option<u64>,
     native_tool_payload: Option<u64>,
 ) -> Result<bool, Refusal> {
-    if let EventCheck::OversizedWrite { path, content_bytes_above } = check {
+    if let EventCheck::OversizedWrite { path, content_bytes_above, protocol_input_bytes_above } = check {
         super::check_path(file, &format!("{key}.path"), path)?;
         if *content_bytes_above == 0 || native_tool_payload != Some(*content_bytes_above) {
             return Err(Refusal::new(
@@ -184,6 +184,9 @@ fn file_check(
                 key,
                 "oversized threshold must equal the positive authored native tool_payload",
             ));
+        }
+        if protocol_input_bytes_above.is_some_and(|bound| bound <= *content_bytes_above) {
+            return Err(Refusal::new(file, key, "protocol call bound must exceed the authored payload"));
         }
         return Ok(true);
     }

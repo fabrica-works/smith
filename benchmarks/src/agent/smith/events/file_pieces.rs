@@ -2,6 +2,8 @@
 //! `oversized_check` and `check` join native payload `TooLarge` with captured content
 //! or preserve attested protocol Oversized blocks. They never infer an unrecorded
 //! argument or namespace, and never relabel the protocol block counter.
+//! Protocol-only judgments use the authored actual call-input bound; the elided
+//! refusal path is never known. Accepted piece paths remain independently judged.
 //! Captured arguments reconstruct only reported successful mutations; a failed
 //! edit is retained as evidence and changes nothing. Missing content stays
 //! unavailable. Replay scratch is bounded by the task's unchanged file cap.
@@ -23,12 +25,27 @@ struct Refusal {
     at: usize,
 }
 
-pub(super) fn oversized_check(observer: &Observer, path: &Path, above: u64, workspace: &Path) -> CheckVerdict {
+pub(super) fn oversized_check(
+    observer: &Observer,
+    path: &Path,
+    above: u64,
+    protocol_input_bytes_above: Option<u64>,
+    workspace: &Path,
+) -> CheckVerdict {
     let mut evidence = Vec::new();
     let passed = if complete(observer) {
-        match refusal(observer, path, above, workspace, &mut evidence) {
-            Ok(_) => Measure::Observed { value: true },
-            Err(measure) => measure,
+        if let Some(bound) = protocol_input_bytes_above {
+            let mut refused = Vec::new();
+            evidence.push(format!("refusal_path=protocol_oversized; stated_call_input={bound}; path=not carried (arguments elided by design)"));
+            match protocol_refusals(observer, bound, &mut evidence, &mut refused) {
+                Ok(()) => Measure::Observed { value: refused.len() == 1 },
+                Err(measure) => measure,
+            }
+        } else {
+            match refusal(observer, path, above, workspace, &mut evidence) {
+                Ok(_) => Measure::Observed { value: true },
+                Err(measure) => measure,
+            }
         }
     } else {
         Measure::unavailable("incomplete event stream prevents oversized call pairing")

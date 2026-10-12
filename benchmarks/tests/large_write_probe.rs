@@ -12,6 +12,121 @@ use smith_events::{Effect, Event, Source, Verdict};
 mod common;
 
 #[test]
+fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let normal =
+        smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &root.join("../docs/design"))
+            .expect("unchanged normal v7");
+    let task =
+        smith_bench::check_task(&root.join("tasks/probes/large-write/v9/task.toml"), &root.join("../docs/design"))
+            .expect("new adjacent v9");
+    assert_eq!(task.version, 9);
+    assert_eq!(task.effort.as_deref(), Some("low"));
+    assert_eq!(task.prompt, normal.prompt);
+    assert_eq!(task.budget, normal.budget);
+    let variant = task.with_variant("oversized").expect("small-payload variant");
+    assert_eq!(variant.smith["tool_payload"].as_integer(), Some(2048));
+    assert_eq!(variant.smith["read_window"].as_integer(), Some(2048));
+    assert!(variant.prompt.contains("MEANT TO BE REFUSED"));
+    assert!(!variant.prompt.contains("Do not read"));
+    assert!(variant.event.contains(&EventCheck::OversizedWrite {
+        path: "payload.txt".into(),
+        content_bytes_above: 2048,
+        protocol_input_bytes_above: Some(13848),
+    }));
+    let lines = |first, last| {
+        let mut result = String::new();
+        for index in first..=last {
+            writeln!(&mut result, "Line {index:04}: The quick brown fox jumps over the lazy dog.").expect("line");
+        }
+        result
+    };
+    let first = lines(1, 280);
+    let input =
+        serde_json::to_vec(&serde_json::json!({"path":"payload.txt","content":first})).expect("actual JSON framing");
+    assert_eq!(input.len(), 15995);
+    assert!(input.len() * 100 >= 13848 * 115);
+    assert_eq!(lines(1, 60).len(), 3360);
+    assert_eq!(lines(1, 30).len(), 1680);
+    assert!(lines(30, 60).len() <= 2048);
+    assert!(!variant.deciding.iter().any(|name| name == "file-digest:payload.txt"));
+}
+
+#[test]
+fn protocol_only_oversized_write_records_identity_and_elided_path() {
+    let directory = std::env::temp_dir().join(format!("smith-protocol-oversized-{}", std::process::id()));
+    fs::create_dir(&directory).expect("fresh workspace");
+    let mut records = common::events::balanced();
+    if let Event::ResponseCompleted(value) = &mut records[4].event {
+        value.oversized = 1;
+        let mut blocks = skein_lib::List::with_capacity(1);
+        blocks
+            .push(smith_events::Block::Oversized {
+                call: b"refused".as_slice().into(),
+                tool: b"write".as_slice().into(),
+                bytes: 15995,
+            })
+            .expect("one protocol block");
+        value.completion = Some(smith_events::Completion { blocks });
+    }
+    let checked = |records: &[smith_events::Record]| {
+        observe(records).oversized_write(std::path::Path::new("payload.txt"), 2048, Some(13848), &directory)
+    };
+    let positive = checked(&records);
+    assert_eq!(positive.passed, Measure::Observed { value: true });
+    assert!(positive.evidence.iter().any(|item| item.contains("not carried (arguments elided by design)")));
+    assert!(positive.evidence.iter().any(|item| item.contains("call=refused")));
+    let original = records.clone();
+    for case in ["at-bound", "wrong-tool", "absent-content", "counter", "loss"] {
+        records = original.clone();
+        if case == "loss" {
+            if let Event::SessionEnded(end) = &mut records.last_mut().expect("ended").event {
+                end.loss.events = 1;
+            }
+        } else if let Event::ResponseCompleted(response) = &mut records[4].event {
+            match case {
+                "absent-content" => response.completion = None,
+                "counter" => response.oversized = 2,
+                "at-bound" | "wrong-tool" => {
+                    if let smith_events::Block::Oversized { bytes, tool, .. } =
+                        response.completion.as_mut().expect("captured").blocks.get_mut(0).expect("one block")
+                    {
+                        if case == "at-bound" {
+                            *bytes = 13848;
+                        } else {
+                            *tool = b"edit".as_slice().into();
+                        }
+                    }
+                }
+                _ => unreachable!("named negative"),
+            }
+        }
+        if case == "absent-content" || case == "loss" {
+            assert!(matches!(checked(&records).passed, Measure::Unavailable { .. }));
+        } else {
+            assert_eq!(checked(&records).passed, Measure::Observed { value: false });
+        }
+    }
+    records = common::events::balanced();
+    piece(
+        &mut records,
+        "write",
+        "native",
+        &serde_json::json!({"path":"payload.txt","content":"x".repeat(20)}),
+        Verdict::TooLarge,
+    );
+    assert_eq!(
+        observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, None, &directory).passed,
+        Measure::Observed { value: true }
+    );
+    assert_eq!(
+        observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, Some(13848), &directory).passed,
+        Measure::Observed { value: false }
+    );
+    fs::remove_dir(directory).expect("cleanup");
+}
+
+#[test]
 fn version_seven_generates_visible_numbered_lines_at_low_with_unchanged_deciders() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let design = root.join("../docs/design");
@@ -508,7 +623,7 @@ fn native_oversized_refusal_rejects_wrong_pairs_small_content_loss_and_absent_ca
         Verdict::TooLarge,
     );
     let checked = |rows: &[smith_events::Record]| {
-        observe(rows).oversized_write(std::path::Path::new("payload.txt"), 10, &directory).passed
+        observe(rows).oversized_write(std::path::Path::new("payload.txt"), 10, None, &directory).passed
     };
     assert_eq!(checked(&records), Measure::Observed { value: true });
     let original = records.clone();

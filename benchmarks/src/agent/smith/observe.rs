@@ -176,9 +176,10 @@ impl Observing {
                 (crate::EventCheck::WrittenFile { path, content_bytes_at_least }, Observer::Events(observer)) => {
                     observer.written_file(path, *content_bytes_at_least, workspace)
                 }
-                (crate::EventCheck::OversizedWrite { path, content_bytes_above }, Observer::Events(observer)) => {
-                    observer.oversized_write(path, *content_bytes_above, workspace)
-                }
+                (
+                    crate::EventCheck::OversizedWrite { path, content_bytes_above, protocol_input_bytes_above },
+                    Observer::Events(observer),
+                ) => observer.oversized_write(path, *content_bytes_above, *protocol_input_bytes_above, workspace),
                 (crate::EventCheck::FilePieces { path, bytes_above, file_bytes }, Observer::Events(observer)) => {
                     observer.file_pieces(path, *bytes_above, *file_bytes, workspace)
                 }
