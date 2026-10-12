@@ -333,6 +333,39 @@ Don't: delay or reword the notice.
 Size: at most 40 lines of production code.
 Removes: nothing.
 
+### 05.s1 A turn acknowledged while a line crosses a wait
+Added during the run (decisions.md, 13.47). Scope: smith 00.14's live
+`follow-up/chat` stalled in 2 of 12 attempts
+(`probes-follow-up-chat-ed6af1e8-20261012T164423Z/01`, `/06`): `wait`
+started at 1392 ms, the person's line 2 was received at 1400 ms and ended
+it, `message.read` named line 1, and no `response.started` followed
+until the cancel at 36 s. run.md, 6: the wait's "result and the messages
+then go to the model in one request". The reading to test first: the
+next `Complete` is held for turn 1's acknowledgement
+(`smith-domain-run/src/run.rs:900`, `completion_held`; the spawned host's
+`unacknowledged_bytes: largest_turn`, `smith-local-service/src/profile.rs:67`),
+and the acknowledgement does not arrive: `smith-local-domain/src/domain.rs`
+(`accept_turn` :916, `turn_saved` :753), `smith-local-protocol/src/store/`,
+`smith-host-domain/src/domain.rs` (`acknowledge_turn` :726),
+`smith-domain/src/route.rs:183`.
+Needs: nothing.
+Files: the reproduction's world test file; then the crate, of those
+named, where the acknowledgement stops.
+Shape: no new type; find with README rule 11 where turn 1's
+acknowledgement stops, and fix it there.
+Test shape: one story at the lowest world that reproduces the trace, a
+scripted model calling `wait` and a person line received as it starts,
+turn 1's save in flight; it fails on `main` (no completion follows).
+Start from `tests/host/tests/simulation.rs:704` or
+`tests/agent/tests/brief.rs:484`. Under 0.5 s.
+Proof: that story, once, failing on the parent and passing on the step;
+then `follow-up/chat` once, 12 attempts, on the step's arm through `heavy
+--gate` (README rules 1 and 3), its counts in the commit body.
+Don't: widen `unacknowledged_bytes` or drop the hold; add a timeout,
+retry or delay; change 00.14's task, prompt, cues or checks. If the
+reproduction shows the hold is not the cause, stop and ask with it.
+Size: at most 100 production lines.
+
 ## Interface sketches
 
 `smith-local-domain` owns `Notice` and its kinds, `smith-local-protocol`

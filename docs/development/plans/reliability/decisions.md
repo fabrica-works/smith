@@ -1202,3 +1202,23 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    without asking, its commit body giving the count by file; past 700,
    the plan splits it. Folding or compressing code to fit a count stays
    forbidden (13.29). 10.3 completes its Scope within 700.
+47. **smith-05.s1: the turn acknowledged while a line crosses a wait;
+   00.14 lands not calibrated** (block of 2026-10-12T16:50:44Z, smith
+   00.14). 00.14's batches ran once each: `follow-up` and `eof` 10 of 10,
+   `chat` 10 of 12, and every control passed, so none calibrates. The
+   two chat failures are smith's: the model called `wait` as asked, the
+   person's next line was received 8 ms later and ended it, and no next
+   completion started before the cancel at 36 s. A read-only trace
+   through `main` (supervisor's sub-agent, 16:57Z) finds no branch in
+   the run or the session that skips the call without ending the
+   session, and reads the stall as the next `Complete` held for turn 1's
+   acknowledgement (the spawned host holds at one unacknowledged turn),
+   which does not arrive; the acknowledgement's path runs through the
+   local domain, the store and the host domain, which 05.13, 05.14 and
+   10.1 changed after the control's commit (27ead2e7). Ruling: a step
+   not in the plan, 05.s1, in session 05's file, reproduces it at the
+   lowest world and fixes it where the acknowledgement stops; its Proof
+   reruns `chat` once. 00.14 lands now with `Calibrated: none`, its
+   counts, and the two failures named as handed to 05.s1; its task,
+   prompt, cues and checks stay. `follow-up`'s next task version goes
+   to `later.md`.
