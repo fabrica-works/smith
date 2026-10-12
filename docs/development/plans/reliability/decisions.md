@@ -1733,3 +1733,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the owner gains one row, `service.teardown`, from that function; no
    second list, and the harness reads that row, not its inputs. The file
    joins 10.14's Files for that row.
+91. **00.21's baselines are cut by the baseline command, one per
+   configuration** (block of 2026-10-12T21:44:04Z, smith 00.21).
+   benchmarks.md section 9: a baseline is a suite's results for one agent
+   configuration and tier; the probes suite holds six smith pins, other
+   efforts and Codex, and `baseline` refuses a summary whose groups
+   differ. The implementer proposed filtering the summary's JSON by hand
+   in its logs. Ruling: the alternative: `smith-bench baseline` gains a
+   selector of one group (agent, configuration digest, model), at most 40
+   production lines with a unit test, so each committed baseline is
+   reproducible by one command; each suite is summarized once, whole, and
+   each baseline cut from it. The baseline command's files join 00.21's
+   Files; no schema change.
