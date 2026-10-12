@@ -22,6 +22,8 @@ mod classify;
 
 mod checks;
 
+mod tool_path;
+
 mod names;
 
 mod messages;

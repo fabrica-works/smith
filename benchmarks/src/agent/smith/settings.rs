@@ -63,6 +63,9 @@ fn overrides(
     fields: &std::collections::BTreeMap<String, toml::Value>,
 ) -> Result<(), String> {
     for (name, value) in fields {
+        if name == "directories" {
+            continue;
+        }
         let value = serde_json::to_value(value).map_err(|error| error.to_string())?;
         if name == "model" {
             if value.as_str().is_none_or(|name| name.trim().is_empty()) {
@@ -140,7 +143,7 @@ pub fn settings(
         settings["models"][0]["name"] = json!(model);
         settings["agent"]["endpoints"][0]["reasoning_effort"] = json!(effort);
         settings["agent"]["trace"] = json!({"path":trace,"capture":"everything"});
-        settings["directories"] = json!([{"name":"repo","path":context.private.workspace,"writable":true,"git":true}]);
+        settings["directories"] = super::directories::render(context, shape)?;
         settings["accounts"] = json!([{"number":0,"account_id":account_id}]);
         settings["token_directory"] = json!(tokens);
         settings["budget"] = budget(shape, context.task, context.variant)?;

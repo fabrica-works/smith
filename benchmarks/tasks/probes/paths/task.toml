@@ -1,0 +1,120 @@
+id = "paths"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 330
+prompt = "Read input.txt in the working directory and /spec/rules.txt in the read-only sibling, then follow those rules to write answer.txt in the working directory. Use those namespace spellings (a leading ./ on a relative path is fine). You have at most two provider completions before finish: request both reads together, then request the answer write and finish together. Do not modify either input. This message is the complete task; do not wait for more instructions.\n"
+seed_sha256 = "18289b27085aae9b99b964edb453ac5df42f0ff5ef463635c4ed2b4934a93ea7"
+protected = ["app/input.txt", "spec/rules.txt"]
+guards = ["domain/tools.md, section 2", "benchmarks.md, section 11.1"]
+deciding = ["end", "exit-code", "file-content:app/answer.txt", "tool-path", "tool-call", "no-verdict", "completions", "run-completed", "stream-whole", "paired", "nothing-lost", "tree-ended", "protected-unchanged"]
+
+[budget]
+seconds = 300
+turns = 8
+
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 6
+tool_payload = 40960
+file_bytes = 1048576
+calls_per_response = 16
+read_window = 32768
+guide = 16384
+shell_output = 16384
+shell_head = 16384
+shell_tail = 49152
+search_hits = 100
+search_bytes = 16384
+list_entries = 512
+llm_pool = 134217728
+memory = 2147483648
+directories = [{ name = "app", path = "app", writable = true, git = false }, { name = "spec", path = "spec", writable = false, git = false }]
+
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "file-content"
+path = "app/answer.txt"
+content = "42\n"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[event]]
+check = "tool-path"
+tool = "read"
+path = "input.txt"
+verdict = "read"
+[[event]]
+check = "tool-path"
+tool = "read"
+path = "/spec/rules.txt"
+verdict = "read"
+[[event]]
+check = "tool-path"
+tool = "write"
+path = "answer.txt"
+verdict = "written"
+[[event]]
+check = "tool-call"
+tool = "finish"
+count = { at-least = 1 }
+[[event]]
+check = "no-verdict"
+verdicts = ["missing", "not_found", "outside"]
+[[event]]
+check = "completions"
+count = { at-most = 2 }
+before = "finish"
+
+[[variant]]
+name = "single"
+replace_checks = true
+prompt = "Read input.txt in the working directory, then copy its integer followed by a newline to answer.txt in the working directory. Use relative paths; no directory name is needed (a leading ./ is fine). Request the read first, then the answer write and finish together, using at most two provider completions before finish. Do not modify input.txt. This message is the complete task; do not wait for more instructions.\n"
+[variant.smith]
+directories = [{ name = "app", path = "app", writable = true, git = false }]
+[[variant.outcome]]
+check = "end"
+end = "completed"
+[[variant.outcome]]
+check = "exit-code"
+code = 0
+[[variant.outcome]]
+check = "file-content"
+path = "app/answer.txt"
+content = "37\n"
+[[variant.event]]
+check = "run-completed"
+status = "accepted"
+[[variant.event]]
+check = "tool-path"
+tool = "read"
+path = "input.txt"
+verdict = "read"
+[[variant.event]]
+check = "tool-path"
+tool = "write"
+path = "answer.txt"
+verdict = "written"
+[[variant.event]]
+check = "tool-call"
+tool = "finish"
+count = { at-least = 1 }
+[[variant.event]]
+check = "no-verdict"
+verdicts = ["missing", "not_found", "outside"]
+[[variant.event]]
+check = "completions"
+count = { at-most = 2 }
+before = "finish"

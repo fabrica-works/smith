@@ -478,3 +478,126 @@ fn native_kind_parent_links_keep_child_response_usage_in_its_actual_scope() {
     let total = records.iter().find(|record| record.role == ScopeKind::Total).expect("total");
     assert!(matches!(total.usage.output, Measure::LowerBound { value: 16, .. }));
 }
+
+#[test]
+#[expect(clippy::too_many_lines, reason = "one bounded native mount admission and refusal matrix")]
+fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials() {
+    use smith_bench::agent::Context;
+    use smith_bench::arm::ArmRef;
+    let directory = root("path-settings");
+    let source = directory.join("user/.codex");
+    std::fs::create_dir_all(&source).expect("synthetic source");
+    let auth = unissued_auth();
+    std::fs::write(source.join("auth.json"), &auth).expect("unissued credential");
+    let guard = smith_bench::guard::Guard::new(
+        &directory.join("user"),
+        &directory.join("config"),
+        &directory.join("state"),
+        &[],
+    )
+    .expect("fixture guard");
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let task = smith_bench::check_task(&project.join("tasks/probes/paths/task.toml"), &project.join("../docs/design"))
+        .expect("frozen task");
+    let private = smith_bench::isolate::prepare(
+        &guard,
+        &project.join("tasks/probes/paths/seed"),
+        &task.seed_sha256,
+        &directory.join("scratch"),
+    )
+    .expect("actual frozen seed materialisation");
+    let pin_file = project.join("agents/smith/first-request.pin.toml");
+    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
+    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
+    let installed_version = match &arm {
+        ArmRef::Built(build) => &build.arm.commit,
+        ArmRef::Installed { .. } => unreachable!("fixture arm"),
+    };
+    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+    let context = Context {
+        guard: &guard,
+        private: &private,
+        pin: &pin,
+        pin_file: &pin_file,
+        task: &task,
+        variant: None,
+        model: &model,
+        arm: &arm,
+        installed_version,
+        home: &source,
+        wall: skein_lib::Wall::from_nanos(100_000_000),
+        lifetime: Duration::from_secs(200),
+        environment: &[],
+    };
+    for variant in [None, Some(&task.variant[0])] {
+        let context = Context { variant, ..context };
+        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
+        assert_eq!(prepared.rendered["instructions"], "");
+        let local = smith_local_shell::local_settings::read(&prepared.settings, None).expect("public startup settings");
+        let document = smith_local_shell::local_settings::agent_document(&local).expect("native translation");
+        let configured = smith_agent_shell::config::parse(&document).expect("native profile admission");
+        let allowances = configured
+            .service
+            .domain
+            .models
+            .iter()
+            .map(|model| model.protocol_allowance)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let policy = smith_local_shell::local_settings::policy(
+            &local,
+            &configured.service.channel_endpoints,
+            configured.service.limits.domain,
+            allowances,
+        )
+        .expect("actual mounted run policy");
+        let mounts = &policy.config.workspace.as_ref().expect("workspace").directories;
+        assert_eq!(mounts.len(), if variant.is_some() { 1 } else { 2 });
+        assert_eq!(mounts[0].name.as_ref(), b"app");
+        assert!(mounts[0].writable);
+        assert!(!mounts[0].git);
+        assert_eq!(mounts[0].host.as_ref(), private.workspace.join("app").as_os_str().as_encoded_bytes());
+        if variant.is_none() {
+            assert_eq!(mounts[1].name.as_ref(), b"spec");
+            assert!(!mounts[1].writable);
+            assert_eq!(mounts[1].host.as_ref(), private.workspace.join("spec").as_os_str().as_encoded_bytes());
+        }
+        match prepared.credential {
+            Credential::Record(Some(borrowed)) => {
+                assert!(borrowed.finish(&guard).expect("unused arm").source_unchanged);
+            }
+            Credential::Record(None) => panic!("synthetic credential prepared"),
+        }
+        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
+    }
+    let outside = directory.join("outside");
+    std::fs::create_dir(&outside).expect("owned outside fixture");
+    std::os::unix::fs::symlink(&outside, private.workspace.join("escaped")).expect("owned symlink escape");
+    let refusals = [
+        "[]",
+        "[{ name = 'app', path = '../outside', writable = true, git = false }]",
+        "[{ name = 'app', path = '/tmp', writable = true, git = false }]",
+        "[{ name = 'app', path = 'escaped', writable = true, git = false }]",
+        "[{ name = 'app', path = 'absent', writable = true, git = false }]",
+        "[{ name = 'app', path = 'app/input.txt', writable = true, git = false }]",
+        "[{ name = '.', path = 'app', writable = true, git = false }]",
+        "[{ name = 'a/b', path = 'app', writable = true, git = false }]",
+        "[{ name = 'app', path = 'app', writable = true, git = false }, { name = 'app', path = 'spec', writable = false, git = false }]",
+        "[{ name = 'app', path = 'app', writable = true, git = false }, { name = 'alias', path = './app', writable = false, git = false }]",
+        "[{ name = 'root', path = '.', writable = true, git = false }, { name = 'app', path = 'app', writable = true, git = false }]",
+        "[{ name = 'app', path = 'app', writable = true, git = false, extra = 1 }]",
+        "[{ name = 'app', path = 'app', git = false }]",
+    ];
+    for refusal in refusals {
+        let mut refused_task = task.clone();
+        let value: toml::Value = toml::from_str(&format!("directories = {refusal}")).expect("authored TOML");
+        refused_task.smith.insert("directories".into(), value["directories"].clone());
+        let context = Context { task: &refused_task, home: &directory.join("missing-login"), ..context };
+        let refusal = smith_bench::agent::smith::prepare(&context).expect_err("refusal before source login lookup");
+        assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration);
+        assert!(!private.root.join("smith/tokens").exists(), "no credential conversion");
+        std::fs::remove_dir_all(private.root.join("smith")).expect("reset refused dry rendering");
+    }
+    assert_eq!(std::fs::read(source.join("auth.json")).expect("synthetic source"), auth);
+    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
+}

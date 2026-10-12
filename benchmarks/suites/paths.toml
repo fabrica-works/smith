@@ -1,0 +1,13 @@
+name = "paths"
+tier = "small"
+design = "single"
+repetitions = 1
+rerun_failed = 1
+max_wall_seconds = 7200
+max_tokens = 3000000
+tasks = ["probes/paths"]
+
+[[agents]]
+agent = "smith"
+provider = "codex"
+config = "first-request"

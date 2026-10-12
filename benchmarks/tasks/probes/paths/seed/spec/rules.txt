@@ -1,0 +1,1 @@
+Read the working directory input.txt as an integer. Add 5 and write the resulting integer followed by a newline to answer.txt in the working directory.

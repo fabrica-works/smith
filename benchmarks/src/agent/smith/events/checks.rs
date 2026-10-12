@@ -254,7 +254,12 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         }
         evaluate_complete(observer, check, task, currency)
     };
-    CheckVerdict { check: check.name().into(), passed, evidence: Vec::new() }
+    let evidence = if let EventCheck::ToolPath { tool, path, verdict } = check {
+        vec![format!("required {tool} path {path:?}, joined terminal {verdict}")]
+    } else {
+        Vec::new()
+    };
+    CheckVerdict { check: check.name().into(), passed, evidence }
 }
 
 fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, currency: Option<u64>) -> Measure<bool> {
@@ -263,115 +268,4 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::WrittenFile { .. } => unavailable("written file comparison requires the settled workspace"),
         EventCheck::OversizedWrite { .. } => unavailable("oversized write pairing requires its workspace path"),
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
-        EventCheck::UsageSums => super::usage_sums::check(observer),
-        EventCheck::ToolCall { .. } => tool_call(observer, check),
-        EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
-            Event::ToolCompleted(value) if verdicts.iter().any(|verdict| verdict.as_bytes() == names::verdict(&value.verdict))))),
-        EventCheck::Completions { count, before } => measured(count.holds(u64::try_from(observer.sessions.iter()
-            .map(|session| completions(session, *before)).sum::<usize>()).expect("completions fit"))),
-        EventCheck::FirstRequestHoldsTask => first_prompt(observer, task),
-        EventCheck::NoStop { stop } => measured(!records.iter().any(|record| matches!(&record.event,
-            Event::ResponseCompleted(value) if value.stop.as_ref().is_some_and(|value| names::stop(value) == stop.as_bytes())))),
-        EventCheck::ConversationOpened { kind, count } => measured(count.holds(u64::try_from(records.iter().filter(|record|
-            matches!(&record.event, Event::ConversationOpened(value) if names::kind(&value.kind) == kind.as_bytes())).count()).expect("scopes fit"))),
-        EventCheck::CallsInOneResponse { tool, at_least } => calls_one_response(observer, tool, *at_least),
-        EventCheck::ChildrenOverlap { at_least } => children_overlap(observer, *at_least),
-        EventCheck::NoFailure { class } => measured(!records.iter().any(|record| matches!(&record.event,
-            Event::ResponseCompleted(value) if value.failure.as_ref().is_some_and(|value| names::failure(&value.class) == class.as_bytes())))),
-        EventCheck::RunCompleted { status, class, which, reason } => {
-            let terminals: Vec<_> = records.iter().filter_map(|record| match &record.event {
-                Event::RunCompleted(value) => Some(value),
-                Event::MessageReceived(_) | Event::MessageRead(_) | Event::MessageUnread(_) | Event::Budget(_) | Event::SessionStarted(_) | Event::SessionEnded(_) | Event::RunStarted(_)
-                | Event::ConversationOpened(_) | Event::ConversationClosed(_) | Event::ResponseStarted(_) | Event::ResponseCompleted(_)
-                | Event::TextDelta(_) | Event::ToolStarted(_) | Event::ToolCompleted(_) | Event::CheckStarted(_)
-                | Event::CheckCompleted(_) | Event::Notice(_) => None,
-            }).collect();
-            if let Some(expected) = which {
-                for value in &terminals {
-                    let Some(actual) = value.failure.as_ref().and_then(|failure| failure.which.as_ref()) else {
-                        return unavailable("run failure typed identity was not retained");
-                    };
-                    if actual.as_ref() != expected.as_bytes() { return measured(false); }
-                }
-            }
-            if let Some(pattern) = reason {
-                let pattern = regex::Regex::new(pattern).expect("manifest regex checked");
-                for value in &terminals {
-                    let Some(reason) = value.failure.as_ref().and_then(|failure| failure.reason.as_ref()) else {
-                        return unavailable("run failure reason was not captured");
-                    };
-                    let Ok(text) = std::str::from_utf8(reason) else {
-                        return unavailable("run failure reason is not UTF-8");
-                    };
-                    if !pattern.is_match(text) { return measured(false); }
-                }
-            }
-            measured(!terminals.is_empty() && terminals.iter().all(|value| names::status(&value.status) == status.as_bytes()
-                && class.as_ref().is_none_or(|class| value.failure.as_ref().is_some_and(|value| names::answer(&value.class) == class.as_bytes()))))
-        }
-        EventCheck::ProviderFailure { status_at_least, status_at_most, detail_bytes_at_most } =>
-            provider_failure(observer, *status_at_least, *status_at_most, *detail_bytes_at_most).passed,
-        EventCheck::NoRequest => measured(!records.iter().any(|record| matches!(record.event, Event::ResponseStarted(_)))),
-        EventCheck::NoRun => measured(false),
-        EventCheck::NothingBeforeTask => super::messages::before_task(observer, task),
-        EventCheck::HandledOnce => measured(records.iter().any(|record| matches!(record.event, Event::MessageReceived(_)))
-            && observer.sessions.iter().all(|session| super::messages::terminals(session, true).is_empty())),
-        EventCheck::CompletionPerExchange => super::messages::per_exchange(observer),
-        EventCheck::Blocks { oversized, cut } => block_counts(observer, *oversized, *cut),
-        EventCheck::PromptWithinWindow => super::scopes::prompt_within_window(observer),
-        EventCheck::CacheReuse { median_at_least, full_misses_per_ten_at_most } =>
-            super::cache::check(observer, *median_at_least, *full_misses_per_ten_at_most).passed,
-        EventCheck::FinalTurn => super::final_turn::check(observer),
-        EventCheck::BudgetVisible => super::budget::check(observer),
-        EventCheck::MainAfterChild => super::scopes::main_after_child(observer),
-        EventCheck::ChildShare { turns_at_most } => super::scopes::child_share(observer, *turns_at_most),
-        EventCheck::SpendWithin { ceiling_usd } => match currency {
-            Some(currency) => super::spend::check(observer, currency, *ceiling_usd),
-            None => unavailable("dollar conversion requires the prepared arm's exact notional currency"),
-        },
-    }
-}
-
-// Consume the authoritative terminal; never infer a status from diagnostic text.
-fn provider_failure(observer: &Observer, minimum: u16, maximum: u16, detail_bound: u32) -> CheckVerdict {
-    let mut evidence = Vec::new();
-    let mut found_terminal = false;
-    let mut passed = true;
-    for record in records(observer) {
-        if let Event::RunCompleted(run) = &record.event {
-            let Some(failure) = run.failure.as_ref().and_then(|value| value.completion.as_ref()) else {
-                return CheckVerdict {
-                    check: "provider-failure".into(),
-                    passed: unavailable("typed completion failure was not retained"),
-                    evidence,
-                };
-            };
-            let (Some(status), Some(detail)) = (failure.status, failure.detail.as_ref()) else {
-                return CheckVerdict {
-                    check: "provider-failure".into(),
-                    passed: unavailable("actual HTTP status or provider diagnostic was not captured"),
-                    evidence,
-                };
-            };
-            found_terminal = true;
-            // The retired client fallback contains no provider text (benchmarks.md 11.1).
-            let generated_detail = detail
-                .strip_prefix(b"provider HTTP error ")
-                .is_some_and(|digits| !digits.is_empty() && digits.iter().all(u8::is_ascii_digit));
-            passed &= (u64::from(minimum)..=u64::from(maximum)).contains(&status)
-                && !detail.is_empty()
-                && detail.len() <= usize::try_from(detail_bound).expect("bound fits")
-                && !generated_detail;
-            let retained = &detail[..detail.len().min(usize::try_from(detail_bound).expect("bound fits"))];
-            evidence.push(format!(
-                "run={} HTTP={} detail_bytes={} bound={} detail={}",
-                run.run,
-                status,
-                detail.len(),
-                detail_bound,
-                String::from_utf8_lossy(retained)
-            ));
-        }
-    }
-    CheckVerdict { check: "provider-failure".into(), passed: measured(found_terminal && passed), evidence }
-}
+        EventCheck::ToolPath { tool, path, verdict } => super::tool_path::check(observer, tool, path, verdict),

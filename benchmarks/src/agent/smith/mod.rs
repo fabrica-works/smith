@@ -9,6 +9,8 @@ mod faces;
 
 mod settings;
 
+mod directories;
+
 mod prepare;
 
 mod observe;

@@ -99,6 +99,7 @@ fn terminal(records: &[Observation], status: &str, class: Option<&str>) -> Measu
 
 fn evaluate_one(records: &[Observation], check: &EventCheck) -> Measure<bool> {
     match check {
+        EventCheck::ToolPath { .. } => missing("legacy content has no authoritative path-to-terminal identity"),
         EventCheck::ToolCall { .. } => tool(records, check),
         EventCheck::WrittenFile { .. } => missing("legacy facts omit exact captured write content"),
         EventCheck::OversizedWrite { .. } => missing("legacy facts omit paired oversized write content"),
