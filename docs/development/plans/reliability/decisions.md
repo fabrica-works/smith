@@ -1380,3 +1380,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    retrospective: the harness reports an entrance refusal as
    `HarnessError(no event session was observed)` rather than a setup
    refusal.
+59. **smith-06.s1: an accepted answer ended as the agent's failure**
+   (block of 2026-10-12T18:12:42Z, smith 00.16). 00.16's live `history`
+   attempt 01 answered (`run.completed` `accepted` at 5,311 ms) and its
+   agent at once wrote `teardown_aborted` and `session.ended` with
+   `exit: 1`, `answered: false`, `aborted: true`; the product showed
+   "Agent process failed". agent.md, section 6 has an agent that answered
+   exit with success. A smith defect, outside 00.16: a step not in the
+   plan, 06.s1, reproduces and fixes it; its live Proof is `history`
+   once. 00.16 counts attempt 01 as that defect, handed to 06.s1, and
+   its rerun's pass as the base probe's evidence; it does not rerun
+   `history` for it. `request_bytes` is `response.completed`'s field
+   (events.md, 3.5; `smith-events/src/records.rs:845`), not
+   `response.started`'s: 00.16 reads it there, and reports a null where
+   it finds one.

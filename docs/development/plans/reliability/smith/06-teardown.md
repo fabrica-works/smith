@@ -413,6 +413,33 @@ answer. Under 1 s.
 Don't: carry a model as text; change retry policy.
 Size: README rule 9's.
 
+### 06.s1 An accepted answer reaches the host before the agent's teardown
+Added during the run (decisions.md, 13.59). Scope: smith 00.16's live
+`history` (`probes-history-b26d2c8c-20261012T180834Z/01`): the agent's
+stream has `tool.started` `finish` and `run.completed` `accepted` at
+5,311 ms, then at once a `teardown_aborted` notice and `session.ended`
+with `exit: 1`, `answered: false`, `aborted: true`, `teardown_ms: 0`;
+the product shows "Agent process failed" and ends "local chat ended
+with a failure". agent.md, section 6: "The process exits with success
+once it has answered, whatever the answer, and with failure only when
+it could not answer: startup, or a broken channel." Something broke the
+channel or signalled the agent at its answer. 05.s1's live stall also
+ends "Agent process failed"; read its findings first.
+Needs: nothing.
+Files: the reproduction's world test file; then the crate where the
+channel breaks or the signal comes from (the local host's agent handling,
+`smith-host-domain`, `smith-local-domain`, `smith-local-service`, or the
+agent service's teardown).
+Shape: no new type; README rule 11 finds where.
+Test shape: one process-world story of a spawned agent that answers
+accepted after several tool calls; it fails on `main` (exit 1 or a
+failure shown). Under 0.5 s.
+Proof: that story, once, failing on the parent; then `history` once,
+live, through `heavy --gate`, its count in the commit body.
+Don't: widen a grace or a deadline to hide it; add a retry or delay. If
+no world reproduces it, stop and ask with the diagnostics.
+Size: README rule 9's.
+
 ### 06.12 The last failure's kept detail
 Scope: the session keeps the detail of the last failure it met, within
 `failure_bytes`, each later failure replacing it, and hands it up with
