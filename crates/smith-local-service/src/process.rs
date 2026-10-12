@@ -225,6 +225,14 @@ impl ProcessAdapter {
         self.git_environment = environment;
     }
 
+    pub(crate) fn at(&self, now: Time, wall: Wall) -> Env<io::Limits> {
+        Env { now, wall, limits: self.limits.io }
+    }
+
+    pub(crate) fn adopt_trace(&mut self, fd: kernel::Fd) -> Result<Token, kernel::Fd> {
+        self.io.adopt_append(fd, skein_lib::Duration::from_secs(30))
+    }
+
     pub(crate) fn close(&mut self) {
         if self.closing.is_some() {
             return;
@@ -239,8 +247,12 @@ impl ProcessAdapter {
     }
 
     pub(crate) fn closed(&self) -> bool {
-        self.closing.is_some()
-            && self.io.is_empty()
+        self.settled(0) && self.io.is_empty()
+    }
+
+    pub(crate) fn settled(&self, streams: u32) -> bool {
+        self.closing == Some(0)
+            && self.io.sockets() == streams
             && self.files.takes()
             && self.files.open_files() == 0
             && self.operations.is_empty()
@@ -531,28 +543,28 @@ impl ProcessAdapter {
 
     pub(crate) fn up(
         &mut self,
-        now: Time,
-        wall: Wall,
+        env: &Env<io::Limits>,
         host_events: &mut Queue<host::Input>,
         terminal: &mut local_protocol::Terminal,
         terminal_events: &mut Queue<local_protocol::TerminalEvent>,
         local_events: &mut Queue<smith_local_domain::Event>,
+        trace: &mut Option<crate::stream::Spawned>,
     ) {
-        let env = Env { now, wall, limits: self.limits.io };
-        self.reap(&env);
+        let now = env.now;
+        self.reap(env);
         for _ in 0..self.limits.io.sockets {
             if self.io_events.room() < io::MAX_OUT_UP.events || self.io_submissions.room() < io::MAX_OUT_UP.submissions
             {
                 break;
             }
             if self.io.is_ready() {
-                io::resume(&mut self.io, &env, &mut self.io_events, &mut self.io_submissions);
+                io::resume(&mut self.io, env, &mut self.io_events, &mut self.io_submissions);
             }
             if self.io.is_due(now)
                 && self.io_events.room() >= io::MAX_OUT_UP.events
                 && self.io_submissions.room() >= io::MAX_OUT_UP.submissions
             {
-                io::fire(&mut self.io, &env, &mut self.io_events, &mut self.io_submissions);
+                io::fire(&mut self.io, env, &mut self.io_events, &mut self.io_submissions);
             }
         }
         self.markers_up(now, local_events);
@@ -564,6 +576,7 @@ impl ProcessAdapter {
                 break;
             }
             let Some(event) = self.io_events.pop() else { break };
+            let Some(event) = trace_up(trace, now, event) else { continue };
             let git_owned = match &self.git {
                 Some(git) => match io_owner(&event) {
                     Some(owner) => git.owns(owner),
@@ -668,13 +681,20 @@ impl ProcessAdapter {
 
     pub(crate) fn down(
         &mut self,
-        now: Time,
-        wall: Wall,
+        env: &Env<io::Limits>,
         requests: &mut Queue<host::process::Request>,
         start_values: &mut Option<StartValues>,
         grant_values: &Map<u32, Box<[u8]>>,
         host_events: &mut Queue<host::Input>,
+        trace: &mut Option<crate::stream::Spawned>,
     ) {
+        let now = env.now;
+        if let Some(trace) = trace {
+            if self.settled(trace.producer.streams()) {
+                trace.measure(&mut self.io_requests);
+            }
+            trace.producer.sinks().down(&mut self.io_requests);
+        }
         for _ in 0..requests.capacity() {
             if !self.output_room() || host_events.room() == 0 {
                 break;
@@ -691,13 +711,12 @@ impl ProcessAdapter {
                 process.channel_down(request, &mut self.io_requests);
             }
         }
-        let env = Env { now, wall, limits: self.limits.io };
         for _ in 0..self.io_requests.capacity() {
             if self.io_submissions.room() < io::MAX_OUT_DOWN.submissions || !self.io.takes() {
                 break;
             }
             let Some(request) = self.io_requests.pop() else { break };
-            io::down(&mut self.io, &env, request, &mut self.io_submissions);
+            io::down(&mut self.io, env, request, &mut self.io_submissions);
         }
         if self.files.takes()
             && self.file_submissions.room() >= 2
@@ -1006,6 +1025,19 @@ fn io_owner(event: &io::Event) -> Option<Token> {
 
 fn plain_limits() -> local_protocol::PlainLimits {
     local_protocol::PlainLimits { entries: 256, path_bytes: 4096, file_bytes: 65_536 }
+}
+
+fn trace_up(trace: &mut Option<crate::stream::Spawned>, now: Time, event: io::Event) -> Option<io::Event> {
+    if let Some(trace) = trace {
+        match io_owner(&event) {
+            Some(owner) if trace.owns(owner) => {
+                trace.up(now, event);
+                return None;
+            }
+            Some(_) | None => {}
+        }
+    }
+    Some(event)
 }
 
 #[cfg(test)]

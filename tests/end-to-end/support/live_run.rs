@@ -181,7 +181,7 @@ fn run_with_peer(
         checkout: scratch.checkout(),
         expectation,
         directory: scratch.path().into(),
-        trace_prefix: std::fs::read(scratch.path().join("agent-trace.jsonl")).unwrap_or_default(),
+        trace_prefix: std::fs::read(super::trace_path(scratch.path(), false)).unwrap_or_default(),
         reviewed: false,
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));

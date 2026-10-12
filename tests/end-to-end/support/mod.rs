@@ -295,7 +295,8 @@ pub fn run_with_provider(
     assert_no_children();
     scenario.launch.tls = true;
     settings(scratch, &scenario);
-    let old_trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).unwrap_or_default();
+    let path = trace_path(scratch.path(), scenario.launch.in_process);
+    let old_trace = std::fs::read(&path).unwrap_or_default();
     let before = Before::new(scratch.path());
     let clock = Clock::new();
     let now = clock.now().now;
@@ -340,7 +341,7 @@ pub fn run_with_provider(
             smith_events::Event::ToolStarted(started) if started.tool.as_ref() == b"finish")),
         "agent actually called finish"
     );
-    let trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).expect("agent trace");
+    let trace = std::fs::read(path).expect("agent trace");
     for credential in [b"access-new".as_slice(), b"refresh-new".as_slice()] {
         assert!(!trace.windows(credential.len()).any(|bytes| bytes == credential), "trace excludes credentials");
     }
@@ -357,7 +358,8 @@ pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> 
     let events = configuration.service.limits.events.expect("configured event producer");
     let limits = events.sinks.records;
     let ceiling = events.sinks.line_ceiling(events.capture).expect("actual writer-derived line ceiling");
-    let bytes = std::fs::read(directory.join("agent-trace.jsonl")).expect("actual append trace");
+    let bytes =
+        std::fs::read(configuration.trace.expect("configured agent destination").path).expect("actual append trace");
     assert!(bytes.starts_with(prefix), "durable trace prefix stays unchanged");
     let mut reader = smith_events::Reader::with_ceiling(&limits, ceiling)
         .unwrap_or_else(|why| panic!("configured receiving bounds {limits:?}: {why:?}"));
@@ -532,4 +534,10 @@ pub fn refused_run(scratch: &Scratch) -> Vec<smith_events::Record> {
     let records = read_trace(scratch.path(), &[]);
     assert_no_children();
     records
+}
+
+/// The agent's expected destination from the story's selected placement.
+#[must_use]
+pub fn trace_path(directory: &Path, in_process: bool) -> std::path::PathBuf {
+    directory.join(if in_process { "agent-trace.jsonl" } else { "agent-trace.jsonl.agent" })
 }

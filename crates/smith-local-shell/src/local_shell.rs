@@ -125,9 +125,11 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let signals = skein_shell::open_termination_signals()
         .map_err(|error| host_failure(format!("local signals failed (errno {error})")))?;
     let oauth_entropy = oauth_entropy().map_err(host_failure)?;
-    let trace = settings.in_process.then_some(agent_config.trace).flatten();
+    let trace = product_trace(&settings, agent_config.trace);
+    let trace_memory = agent_config.memory;
     let chat = settings.chat.as_bytes().to_vec().into_boxed_slice();
-    let lower = settings.in_process.then_some(agent_config.service);
+    let (lower, spawned_trace) =
+        if settings.in_process { (Some(agent_config.service), None) } else { (None, Some(agent_config.service)) };
     let mut local_service = Local::within_memory(
         local_config,
         lower,
@@ -147,6 +149,11 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         Box::new(std::io::stderr()),
         agent_config.memory,
     )?;
+    if let Some(configuration) = spawned_trace
+        && trace.is_some()
+    {
+        local_service.prepare_trace(&configuration, trace_memory)?;
+    }
     adopt_trace(&mut local_service, trace, chat)?;
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
         .map_err(|error| host_failure(format!("local kernel: {error}")))?;
@@ -164,6 +171,24 @@ fn open_effect_roots(settings: &local_settings::Settings) -> Result<Vec<Fd>, Fai
         }
     }
     Ok(effect_roots)
+}
+
+fn product_trace(
+    settings: &local_settings::Settings,
+    mut trace: Option<smith_agent_shell::trace::TraceConfig>,
+) -> Option<smith_agent_shell::trace::TraceConfig> {
+    if !settings.in_process
+        && let Some(trace) = &mut trace
+    {
+        let path = settings
+            .agent
+            .get("trace")
+            .and_then(|trace| trace.get("path"))
+            .and_then(serde_json::Value::as_str)
+            .expect("validated product trace");
+        trace.path = std::path::PathBuf::from(path);
+    }
+    trace
 }
 
 fn adopt_trace(

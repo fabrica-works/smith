@@ -54,6 +54,8 @@ mod slow;
 pub enum Shape {
     /// The local front end writes its stream to the configured trace.
     LocalTrace,
+    /// Split product/agent traces, with the unsplit path for pre-split ancestors.
+    LocalAgentTrace,
     /// The checked headless front end writes JSON records to stdout.
     Exec,
     /// The interactive front end writes records to a named trace.

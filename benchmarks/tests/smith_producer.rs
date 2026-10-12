@@ -32,7 +32,7 @@ fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
     let registry: toml::Value = toml::from_str(include_str!("../agents/smith/faces.toml")).expect("published registry");
     let entry = registry["face"].as_array().expect("face inventory").last().expect("writing face");
     assert_eq!(entry["face"].as_str(), Some("events"));
-    assert_eq!(entry["shape"].as_str(), Some("local-trace"));
+    assert_eq!(entry["shape"].as_str(), Some("local-agent-trace"));
     let receiving: Receiving = entry["receiving"].clone().try_into().expect("required receiving values");
     assert_eq!(receiving.limits().expect("semantic caps"), producer.sinks.records);
     assert_eq!(receiving.encoded_line, producer.sinks.line_ceiling(producer.capture).expect("joint writer ceiling"));

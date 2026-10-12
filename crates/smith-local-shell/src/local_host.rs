@@ -226,6 +226,22 @@ impl Local {
         Ok(local)
     }
 
+    /// Price and configure the spawned product's bounded trace producer.
+    pub fn prepare_trace(
+        &mut self,
+        configuration: &agent::Config,
+        available: u64,
+    ) -> Result<(), crate::local_shell::Failure> {
+        let bytes = agent::events::worst_case(&configuration.limits)
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;
+        let worst =
+            self.worst.checked_add(bytes).ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;
+        agent::profile::validate::memory(worst, available).map_err(profile_refusal).map_err(configuration_failure)?;
+        self.service.prepare_trace(configuration);
+        self.worst = worst;
+        Ok(())
+    }
+
     /// Adopt an opened product trace before the first loop pass.
     pub fn adopt_trace(
         &mut self,

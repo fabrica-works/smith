@@ -108,6 +108,20 @@ impl Observing {
         Ok(Self { prepared, observer, records: Vec::new() })
     }
 
+    /// Switch the new split face to its agent stream once that file exists.
+    /// Startup-only product records are replaced, so one observer reads one stream.
+    pub fn restart_trace(&mut self) -> Result<(), HarnessFault> {
+        let receiving = self
+            .prepared
+            .registry
+            .receiving
+            .ok_or_else(|| HarnessFault { what: "event face lacks receiving bounds".into() })?;
+        let limits = receiving.limits().map_err(|what| HarnessFault { what })?;
+        self.observer = Observer::Events(super::events::Observer::with_ceiling(&limits, receiving.encoded_line)?);
+        self.records.clear();
+        Ok(())
+    }
+
     /// Consume one complete native line and report only observed script cues.
     pub fn feed_line(&mut self, line: &str) -> Result<Vec<Seen>, HarnessFault> {
         let observer = match &mut self.observer {

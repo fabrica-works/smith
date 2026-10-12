@@ -80,7 +80,9 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
     let registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
     let shape = match registry.face {
         Face::Legacy(shape) => shape,
-        Face::Events(super::events::Shape::LocalTrace) => super::legacy::Shape::LocalReserved,
+        Face::Events(super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace) => {
+            super::legacy::Shape::LocalReserved
+        }
         Face::Events(super::events::Shape::Exec | super::events::Shape::Chat) => {
             return Err(configuration("this event front end awaits its shipped product invocation"));
         }

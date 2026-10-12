@@ -190,8 +190,22 @@ fn original_conflict_files_are_read_through_the_services_kernel_routes() {
     );
     for _ in 0_u32..100 {
         sim.reap(pid, process.completions());
-        process.up(sim.now(), sim.wall(), &mut host_events, &mut terminal, &mut terminal_events, &mut local_events);
-        process.down(sim.now(), sim.wall(), &mut host_requests, &mut None, &Map::with_capacity(1), &mut host_events);
+        process.up(
+            &process.at(sim.now(), sim.wall()),
+            &mut host_events,
+            &mut terminal,
+            &mut terminal_events,
+            &mut local_events,
+            &mut None,
+        );
+        process.down(
+            &process.at(sim.now(), sim.wall()),
+            &mut host_requests,
+            &mut None,
+            &Map::with_capacity(1),
+            &mut host_events,
+            &mut None,
+        );
         sim.submit(pid, process.submissions());
         let mut calls = Queue::with_capacity(256);
         let mut answers = Queue::with_capacity(256);
@@ -232,14 +246,21 @@ fn settle_file_io(
             .unwrap();
     for _ in 0_u32..400 {
         sim.reap(pid, process.completions());
-        process.up(sim.now(), sim.wall(), &mut host_events, &mut terminal, &mut terminal_events, local_events);
+        process.up(
+            &process.at(sim.now(), sim.wall()),
+            &mut host_events,
+            &mut terminal,
+            &mut terminal_events,
+            local_events,
+            &mut None,
+        );
         process.down(
-            sim.now(),
-            sim.wall(),
+            &process.at(sim.now(), sim.wall()),
             &mut host_requests,
             &mut None,
             &skein_lib::Map::with_capacity(1),
             &mut host_events,
+            &mut None,
         );
         sim.submit(pid, process.submissions());
         let mut calls = skein_lib::Queue::with_capacity(256);

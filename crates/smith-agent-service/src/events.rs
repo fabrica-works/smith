@@ -116,7 +116,7 @@ struct Start {
 
 /// One invocation's typed records, supplied to its bounded destination drain.
 #[derive(Debug)]
-pub(crate) struct Producer {
+pub struct Producer {
     pub(crate) sinks: Sinks,
     names: channel::Endpoints,
     efforts: Map<u32, Box<[u8]>>,
@@ -136,7 +136,37 @@ pub(crate) struct Producer {
 }
 
 impl Producer {
-    pub(crate) fn configured(config: &crate::Config) -> Option<Producer> {
+    /// The bounded destinations driven by the owning process's IO.
+    pub fn sinks(&mut self) -> &mut Sinks {
+        &mut self.sinks
+    }
+
+    /// Whether a complete destination can take another parent observation.
+    #[must_use]
+    pub fn takes(&self) -> bool {
+        self.sinks.takes()
+    }
+
+    /// Live destination streams, for lower settlement excluding the trace itself.
+    #[must_use]
+    pub fn streams(&self) -> u32 {
+        self.sinks.open_streams()
+    }
+
+    /// Whether a destination can send or close in the next bounded pass.
+    #[must_use]
+    pub fn has_work(&self) -> bool {
+        self.sinks.has_work()
+    }
+
+    /// Whether this IO owner belongs to one of the destinations.
+    #[must_use]
+    pub fn owns(&self, owner: Token) -> bool {
+        self.sinks.owns(owner)
+    }
+
+    #[must_use]
+    pub fn configured(config: &crate::Config) -> Option<Producer> {
         match config.limits.events {
             Some(_) => Some(Producer::new(
                 &config.limits,
@@ -187,7 +217,7 @@ impl Producer {
         }
     }
 
-    pub(crate) fn started(&mut self, now: Time, header: smith_events::SessionStarted) {
+    pub fn started(&mut self, now: Time, header: smith_events::SessionStarted) {
         assert!(self.origin.is_none(), "one process startup before its first pass");
         self.origin = Some(now);
         self.sinks.record(&Record { t_ms: 0, event: Event::SessionStarted(header) });
@@ -198,7 +228,7 @@ impl Producer {
         self.messages.received(name, label, text);
     }
 
-    pub(crate) fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
+    pub fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
         assert!(self.activation.is_none() || self.answer_at.is_some(), "prior run has answered");
         self.sinks.starting();
         self.activation = Some(activation);
@@ -264,11 +294,13 @@ impl Producer {
         self.overflow_notice.take()
     }
 
-    pub(crate) fn answer_at(&self) -> Option<Time> {
+    #[must_use]
+    pub fn answer_at(&self) -> Option<Time> {
         self.answer_at
     }
 
-    pub(crate) fn origin(&self) -> Time {
+    #[must_use]
+    pub fn origin(&self) -> Time {
         self.origin.expect("session.started precedes the first service pass")
     }
 
@@ -499,7 +531,7 @@ impl Producer {
         });
     }
 
-    pub(crate) fn answered(&mut self, now: Time, started: Time, answer: crate::Answered) {
+    pub fn answered(&mut self, now: Time, started: Time, answer: crate::Answered) {
         self.messages.clear();
         assert!(self.answer_at.is_none(), "one actual answer per run");
         self.answer_at = Some(now);
@@ -523,7 +555,7 @@ impl Producer {
         });
     }
 
-    pub(crate) fn notice(
+    pub fn notice(
         &mut self,
         now: Time,
         kind: smith_events::NoticeKind,
@@ -554,7 +586,8 @@ fn message_refusal(reason: run::MessageRefusal) -> smith_events::MessageRefusal 
     }
 }
 
-pub(crate) fn worst_case(limits: &crate::Limits) -> Option<u64> {
+#[must_use]
+pub fn worst_case(limits: &crate::Limits) -> Option<u64> {
     let events = limits.events?;
     // The component moves each observed completion into the response join.
     // It stays there until the corresponding accounting/terminal fact, and

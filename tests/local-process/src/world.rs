@@ -346,8 +346,18 @@ impl World {
     /// Read the settled append bytes independently of the local service.
     #[must_use]
     pub fn records(&mut self) -> Vec<smith_events::Record> {
+        self.trace_records(b"events.jsonl")
+    }
+
+    /// The agent process's own stream, not its host's product observations.
+    #[must_use]
+    pub fn agent_records(&mut self) -> Vec<smith_events::Record> {
+        self.trace_records(b"events.jsonl.agent")
+    }
+
+    fn trace_records(&mut self, path: &[u8]) -> Vec<smith_events::Record> {
         let machine = &mut self.outcome.as_mut().expect("settled world").machine;
-        let trace = machine.files.open(machine.master, b"events.jsonl", How::Read).expect("trace file");
+        let trace = machine.files.open(machine.master, path, How::Read).expect("trace file");
         let size = u32::try_from(machine.files.stat(trace).size).expect("finite trace size");
         let bytes = machine.files.read(trace, 0, size).expect("trace bytes");
         machine.files.close(trace);
@@ -589,7 +599,7 @@ impl World {
             process::local_roots,
             process::local_appends,
         );
-        world.host_roots(
+        world.host_startup(
             HostedProgram {
                 program: b"smith-agent".as_slice().into(),
                 make: process::make_agent,
@@ -597,6 +607,7 @@ impl World {
                 operations: process::lower_configuration().limits.routes + 3,
             },
             process::agent_roots,
+            process::agent_appends,
         );
         world.host_roots(
             HostedProgram {

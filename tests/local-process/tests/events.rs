@@ -31,3 +31,28 @@ fn one_response_completed_per_provider_response_of_an_inline_chat() {
     assert_eq!(responses, world.queries().len());
     assert!(responses > 0);
 }
+
+#[test]
+fn a_spawned_chat_writes_its_answer_and_end_to_the_product_stream() {
+    let files = Files::new();
+    let mut world = World::traced(17, &files, Placement::Spawned, b"First answer");
+    world.settle();
+    let records = world.records();
+    assert!(matches!(records.first().map(|r| &r.event), Some(Event::SessionStarted(_))));
+    assert!(matches!(records.last().map(|r| &r.event), Some(Event::SessionEnded(_))));
+    assert_eq!(records.iter().filter(|r| matches!(r.event, Event::RunCompleted(_))).count(), 1);
+    assert_eq!(records.iter().filter(|r| matches!(r.event, Event::SessionEnded(_))).count(), 1);
+}
+
+#[test]
+fn the_spawned_agents_records_stay_in_its_own_trace() {
+    let files = Files::new();
+    let mut world = World::traced(19, &files, Placement::Spawned, b"First answer");
+    world.settle();
+    let product = world.records();
+    let agent = world.agent_records();
+    events::check(&agent);
+    assert!(agent.iter().any(|r| matches!(r.event, Event::RunStarted(_))));
+    assert!(agent.iter().any(|r| matches!(r.event, Event::ResponseCompleted(_))));
+    assert!(!product.iter().any(|r| matches!(r.event, Event::RunStarted(_) | Event::ResponseCompleted(_))));
+}

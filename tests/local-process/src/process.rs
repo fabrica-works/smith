@@ -664,9 +664,10 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     }
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
+    let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
     let mut local = Local::new(
         config,
-        launch.in_process.then_some(lower),
+        lower,
         Resources {
             state_directory: launch.state_directory,
             token_directory: launch.token_directory,
@@ -687,6 +688,11 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         Box::new(writer),
     )
     .expect("actual shared local shell");
+    if let Some(configuration) = &spawned
+        && launch.traced
+    {
+        local.prepare_trace(configuration, u64::MAX).expect("priced trace");
+    }
     if launch.traced {
         let fd = inherited.appends.iter().find(|(name, _)| name.as_ref() == b"product-trace").expect("trace fd").1;
         let delivery = smith_agent_service::sinks::Delivery::Complete;
@@ -717,15 +723,50 @@ pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (errors, capture) = smith_agent_process_world::AgentErrors::pipe(fd);
-    Proc::Agent(
-        Box::new(capture.host(smith_agent_process_world::configured(
-            lower_configuration_with(launch.tls),
-            launch.seed,
-            inherited,
-            errors.clone(),
-        ))),
-        errors,
+    let mut configuration = lower_configuration_with(launch.tls);
+    let trace = if launch.traced {
+        configuration.limits.events = Some(
+            agent::EventLimits::derive(
+                &configuration.limits,
+                agent::sinks::Capture::Everything,
+                1,
+                0,
+                &[],
+                Duration::from_secs(1),
+            )
+            .expect("trace limits"),
+        );
+        Some(smith_agent_shell::trace::TraceConfig {
+            path: launch.root_path.join("events.jsonl.agent"),
+            capture: agent::sinks::Capture::Everything,
+            delivery: agent::sinks::Delivery::Complete,
+        })
+    } else {
+        None
+    };
+    let environment_bytes = configuration.limits.machine.env_bytes;
+    let agent = smith_agent_shell::Agent::new(
+        smith_agent_shell::config::Configuration {
+            service: configuration,
+            memory: smith_agent_process_world::profile().declared.memory,
+            trace,
+            profile: smith_agent_process_world::profile(),
+            declarations: smith_agent_process_world::declarations(environment_bytes),
+        },
+        smith_agent_shell::Resources {
+            input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
+            output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,
+            error: Some(fd),
+            signals: inherited.signal,
+            seed: launch.seed,
+            pid: 102,
+            trace: inherited.appends.first().map(|(_, fd)| *fd),
+            roots: Some(inherited.roots.iter().map(|(_, fd)| *fd).collect()),
+        },
+        Box::new(errors.clone()),
     )
+    .expect("configured agent trace");
+    Proc::Agent(Box::new(capture.host(agent)), errors)
 }
 
 /// The product trace selected by the same launch document as its agent kind.
@@ -742,4 +783,14 @@ pub fn local_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
     } else {
         Vec::new()
     }
+}
+
+/// The spawned agent's own stream, distinct from the product's append.
+#[must_use]
+pub fn agent_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
+    let mut appends = local_appends(spawn);
+    if let Some(append) = appends.first_mut() {
+        append.path = b"events.jsonl.agent".as_slice().into();
+    }
+    appends
 }

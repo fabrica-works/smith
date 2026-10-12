@@ -192,6 +192,7 @@ pub struct Service {
     paths: Box<[Box<[u8]>]>,
     start_values: Option<StartValues>,
     failed: bool,
+    stream: Option<crate::stream::Spawned>,
 }
 
 /// Ordered lower values paired with the host kit's opaque Start names.
@@ -278,10 +279,17 @@ impl Service {
             paths: config.paths,
             start_values: None,
             failed: false,
+            stream: None,
         })
     }
 
-    /// Adopt an inline product trace and record its startup before the first pass.
+    /// Configure the spawned product's producer before adopting its destination.
+    pub fn prepare_trace(&mut self, configuration: &agent_service::Config) {
+        assert!(self.below.inline().is_none(), "inline effects already own their producer");
+        self.stream = crate::stream::Spawned::configured(configuration);
+    }
+
+    /// Adopt a product trace and record its startup before the first pass.
     pub fn adopt_trace(
         &mut self,
         fd: kernel::Fd,
@@ -289,6 +297,16 @@ impl Service {
         header: smith_events::SessionStarted,
         delivery: agent_service::sinks::Delivery,
     ) -> Result<(), kernel::Fd> {
+        if let Some(stream) = &mut self.stream {
+            let token = self.below.process_mut().adopt_trace(fd)?;
+            stream
+                .producer
+                .sinks()
+                .add(agent_service::Destination::Trace, token, delivery)
+                .expect("one configured product destination");
+            stream.producer.started(now, header);
+            return Ok(());
+        }
         let Some(effects) = self.below.inline_mut() else { return Err(fd) };
         effects.adopt_destination(fd, agent_service::Destination::Trace, delivery)?;
         effects.start_session(now, header);
@@ -296,7 +314,12 @@ impl Service {
     }
 
     fn drain_run_facts(&mut self) -> bool {
-        let Some(effects) = self.below.inline_mut() else { return true };
+        let Some(effects) = self.below.inline_mut() else {
+            return match &self.stream {
+                Some(stream) => stream.producer.takes(),
+                None => true,
+            };
+        };
         for _ in 0..self.limits.queue {
             if !effects.takes() {
                 return false;
@@ -407,7 +430,10 @@ impl Service {
     pub fn work_pending(&self, now: Time) -> bool {
         let takes = match self.below.inline() {
             Some(effects) => effects.takes(),
-            None => true,
+            None => match &self.stream {
+                Some(stream) => stream.producer.takes(),
+                None => true,
+            },
         };
         !self.completions.is_empty()
             || !self.submissions.is_empty()
@@ -420,6 +446,13 @@ impl Service {
             || !self.host_events.is_empty()
             || !self.terminal_events.is_empty()
             || self.below.process().work_pending(now)
+            || match &self.stream {
+                Some(stream) => {
+                    stream.producer.has_work()
+                        || (stream.needs_measure() && self.below.process().settled(stream.producer.streams()))
+                }
+                None => false,
+            }
     }
 
     #[must_use]
@@ -577,6 +610,9 @@ impl Service {
                     if let Some(effects) = self.below.inline_mut() {
                         effects.starting(state.activation, messages, &charter);
                     }
+                    if let Some(stream) = &mut self.stream {
+                        stream.starting(now, state.activation, messages, &charter);
+                    }
                     self.snapshot_state = SnapshotState::Capturing { saved: false };
                     self.below
                         .process_mut()
@@ -588,8 +624,14 @@ impl Service {
                 if let Some(effects) = self.below.inline_mut() {
                     effects.answered(now, crate::stream::answered(&answer, effects.capture()));
                 }
+                if let Some(stream) = &mut self.stream {
+                    stream.answered(now, &answer);
+                }
             }
             local::Request::Exit { status } => {
+                if let Some(stream) = &mut self.stream {
+                    stream.exit = Some(crate::stream::exit(status));
+                }
                 self.pending_exit = Some(status);
                 self.below.process_mut().close();
                 if let Some(effects) = self.below.inline_mut() {
@@ -740,25 +782,26 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
             });
         }
     }
+    let process_env = service.below.process().at(now, wall);
     service.below.process_mut().up(
-        now,
-        wall,
+        &process_env,
         &mut service.host_events,
         &mut service.terminal,
         &mut service.terminal_events,
         &mut service.local_events,
+        &mut service.stream,
     );
     service.drain_terminal();
     service.start_captured();
     service.process_terminals();
     local_pass(service, now, wall);
     service.below.process_mut().down(
-        now,
-        wall,
+        &process_env,
         &mut service.lower,
         &mut service.start_values,
         &service.values,
         &mut service.host_events,
+        &mut service.stream,
     );
     if let Some(effects) = service.below.inline_mut() {
         effects.down();

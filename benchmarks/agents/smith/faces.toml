@@ -79,3 +79,14 @@ credential = "converted"
 record = "access-only"
 facts = "choices"
 receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }
+
+# Before the split writer, this base's descendants keep their unsplit trace.
+# When the writer creates .agent, the reader selects that process's run records.
+[[face]]
+commit = "b86b022a83c16194cf716015fe0dff4db9569163"
+face = "events"
+shape = "local-agent-trace"
+credential = "converted"
+record = "access-only"
+facts = "choices"
+receiving = { string = 256000, content = 13056000, items = 52754, encoded_line = 19814400 }

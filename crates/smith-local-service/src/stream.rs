@@ -171,3 +171,109 @@ fn completion(why: host::CompletionFailure, evidence: host::CompletionEvidence) 
     };
     CompletionFailure { class, evidence, retry_after_ms, phase: None, limit: None, status: None, detail: None }
 }
+
+const USAGE: skein_lib::Token = skein_lib::Token::new(u64::MAX - 1);
+
+/// The spawned product's producer takes parent answers, never channel facts.
+#[derive(Debug)]
+pub(crate) struct Spawned {
+    pub(crate) producer: smith_agent_service::events::Producer,
+    capture: Capture,
+    start: skein_lib::Time,
+    pub(crate) exit: Option<u8>,
+    measuring: bool,
+    answered: bool,
+}
+
+impl Spawned {
+    pub(crate) fn configured(config: &smith_agent_service::Config) -> Option<Self> {
+        let producer = smith_agent_service::events::Producer::configured(config)?;
+        Some(Self {
+            producer,
+            capture: config.limits.events?.capture,
+            start: skein_lib::Time::ZERO,
+            exit: None,
+            measuring: false,
+            answered: true,
+        })
+    }
+
+    pub(crate) fn starting(
+        &mut self,
+        now: skein_lib::Time,
+        activation: u64,
+        messages: u64,
+        charter: &smith_domain::run::Charter,
+    ) {
+        self.start = now;
+        self.answered = false;
+        self.producer.starting(activation, messages, charter);
+    }
+
+    pub(crate) fn answered(&mut self, now: skein_lib::Time, answer: &host::Answer) {
+        self.producer.answered(now, self.start, answered(answer, self.capture));
+        self.answered = true;
+    }
+
+    pub(crate) fn owns(&self, owner: skein_lib::Token) -> bool {
+        owner == USAGE || self.producer.owns(owner)
+    }
+
+    pub(crate) fn needs_measure(&self) -> bool {
+        self.exit.is_some() && !self.measuring
+    }
+
+    pub(crate) fn measure(&mut self, requests: &mut skein_lib::Queue<skein_io::Request>) {
+        if self.exit.is_some() && !self.measuring && requests.room() > 0 {
+            requests.push(skein_io::Request::Usage { owner: USAGE });
+            self.measuring = true;
+        }
+    }
+
+    pub(crate) fn up(&mut self, now: skein_lib::Time, event: skein_io::Event) {
+        match event {
+            skein_io::Event::Usage { owner, usage } if owner == USAGE => {
+                let origin = self.producer.origin();
+                let teardown = match self.producer.answer_at() {
+                    Some(at) => Some(now.saturating_since(at)),
+                    None => None,
+                };
+                self.producer.sinks().ended(
+                    now,
+                    origin,
+                    &smith_agent_service::sinks::Ended {
+                        exit: self.exit.expect("product exited before usage"),
+                        answered: self.answered,
+                        teardown,
+                        usage,
+                        channel: None,
+                    },
+                );
+            }
+            other @ (skein_io::Event::Listening { .. }
+            | skein_io::Event::Accepted { .. }
+            | skein_io::Event::Connecting { .. }
+            | skein_io::Event::Connected { .. }
+            | skein_io::Event::Stream { .. }
+            | skein_io::Event::Output { .. }
+            | skein_io::Event::Spawned { .. }
+            | skein_io::Event::Exited { .. }
+            | skein_io::Event::Usage { .. }
+            | skein_io::Event::Failed { .. }
+            | skein_io::Event::Closed { .. }
+            | skein_io::Event::Shutdown { .. }) => self.producer.sinks().up(other),
+        }
+    }
+}
+
+pub(crate) fn exit(status: smith_local_domain::ExitStatus) -> u8 {
+    match status {
+        smith_local_domain::ExitStatus::Accepted => 0,
+        smith_local_domain::ExitStatus::RunFailed => 1,
+        smith_local_domain::ExitStatus::Refused => 2,
+        smith_local_domain::ExitStatus::Credentials { .. } => 3,
+        smith_local_domain::ExitStatus::Budget => 4,
+        smith_local_domain::ExitStatus::NeedsInput => 5,
+        smith_local_domain::ExitStatus::Interrupted => 130,
+    }
+}

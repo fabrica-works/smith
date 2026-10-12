@@ -62,6 +62,9 @@ impl Before {
         let mut expected = BTreeSet::from([PathBuf::from("chat/state")]);
         if binary {
             expected.extend([PathBuf::from("agent.json"), PathBuf::from("agent-trace.jsonl")]);
+            if !scenario.launch.in_process {
+                expected.insert(PathBuf::from("agent-trace.jsonl.agent"));
+            }
         }
         let endpoints = if binary {
             smith_agent_shell::config::read(&root.join("agent.json"))

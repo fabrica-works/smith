@@ -495,6 +495,12 @@ pub fn read(global: &Path, workspace: Option<&Path>) -> Result<Settings, String>
 /// Progress durations are milliseconds in this generated JSON.
 pub fn agent_document(settings: &Settings) -> Result<Vec<u8>, String> {
     let mut agent = settings.agent.clone();
+    if !settings.in_process
+        && let Some(path) = agent.get_mut("trace").and_then(|trace| trace.get_mut("path"))
+    {
+        let configured = path.as_str().ok_or("agent trace path must be a string")?;
+        *path = Value::String(format!("{configured}.agent"));
+    }
     let endpoints = agent.get_mut("endpoints").and_then(Value::as_array_mut).ok_or("agent endpoints must be a list")?;
     let mut declared = std::collections::BTreeSet::new();
     for endpoint in endpoints {
