@@ -6,7 +6,7 @@ use smith_bench::agent::smith::events::Observer;
 use smith_bench::{EventCheck, Measure};
 use smith_events::{Capture, Effect, Event, Record, Source, ToolCompleted, ToolStarted, Verdict};
 
-mod common;
+pub mod common;
 
 use common::events::{LIMITS, balanced};
 

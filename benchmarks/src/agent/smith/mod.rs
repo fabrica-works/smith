@@ -15,7 +15,7 @@ mod prepare;
 
 mod observe;
 
-pub use faces::{CredentialShape, Face, FaceSince, Receiving, face};
+pub use faces::{CredentialShape, Face, FaceSince, Receiving, face, read as read_faces};
 
 pub use prepare::{Credential, Prepared, prepare};
 

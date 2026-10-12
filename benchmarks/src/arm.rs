@@ -96,6 +96,11 @@ pub fn resolve_commit(repository: &Path, reference: &str) -> Result<String, Stri
     if !dirty.is_empty() {
         return Err("source repository is dirty; commit or isolate changes before building an arm".into());
     }
+    commit(repository, reference)
+}
+
+/// Read one committed source identity without inspecting the working tree.
+pub(crate) fn commit(repository: &Path, reference: &str) -> Result<String, String> {
     let commit = output(
         git(repository).args(["rev-parse", "--verify", "--end-of-options", &format!("{reference}^{{commit}}")]),
         "resolve commit",
@@ -338,6 +343,14 @@ fn archive(guard: &Guard, arms: &Path, executables: &[PathBuf], arm: &BuiltArm) 
     result
 }
 
+fn build_lock(guard: &Guard, root: &Path) -> Result<fs::File, String> {
+    let mut options = OpenOptions::new();
+    options.append(true).create(true).mode(0o600);
+    let file = options.open(guard.write_path(&root.join("build.lock"))?).map_err(|error| error.to_string())?;
+    file.lock().map_err(|error| error.to_string())?;
+    Ok(file)
+}
+
 /// Build and archive a clean local commit, called only inside a `heavy` task.
 /// The source is read-only; every persistent destination passes the shared guard.
 pub fn build(repository: &Path, reference: &str) -> Result<Build, String> {
@@ -345,6 +358,7 @@ pub fn build(repository: &Path, reference: &str) -> Result<Build, String> {
     let commit = resolve_commit(&repository, reference)?;
     let guard = Guard::from_environment()?;
     let root = private_directory(&guard, &state_root(&guard)?)?;
+    let _build_lock = build_lock(&guard, &root)?;
     let clone = prepare_clone(&guard, &root, &repository, &commit)?;
     let target = private_directory(&guard, &root.join("build-target"))?;
     let arms = private_directory(&guard, &root.join("arms"))?;
@@ -359,6 +373,21 @@ pub fn build(repository: &Path, reference: &str) -> Result<Build, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_build_waits_while_another_holds_the_build_lock() {
+        let root = std::env::temp_dir().join(format!("smith-build-lock-{}", std::process::id()));
+        fs::create_dir(&root).expect("isolated fixture");
+        let guard = Guard::new(&root.join("home"), &root.join("config"), &root.join("state"), &[]).expect("guard");
+        let owner = build_lock(&guard, &root).expect("first build owns its lock");
+        let contender = OpenOptions::new().write(true).open(root.join("build.lock")).expect("second build's file");
+        assert!(matches!(contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        assert!(!root.join("clone").exists());
+        owner.unlock().expect("first build ends");
+        contender.try_lock().expect("second build can now start");
+        contender.unlock().expect("second build ends");
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
 
     #[test]
     fn arm_names_refuse_ambiguous_or_unsafe_identities() {

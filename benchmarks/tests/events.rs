@@ -2,7 +2,7 @@ use smith_bench::agent::smith::events::Observer;
 use smith_bench::{Convention, End, Exit, Forced, Measure, ScopeKind};
 use smith_events::{Event, Limits, Record};
 
-mod common;
+pub mod common;
 
 use common::events::{LIMITS, balanced, bytes, record};
 

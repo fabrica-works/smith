@@ -9,7 +9,7 @@ use smith_bench::agent::smith::events::Observer;
 use smith_bench::{Count, EventCheck, Measure, OutcomeCheck};
 use smith_events::{Effect, Event, Source, Verdict};
 
-mod common;
+pub mod common;
 
 #[test]
 fn protocol_probe_judges_accepted_pieces_without_inventing_a_refusal() {

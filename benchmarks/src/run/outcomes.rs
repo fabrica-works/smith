@@ -36,9 +36,7 @@ impl Neutral {
         self.checks = task.outcome.iter().filter(|check| neutral(check)).cloned().collect();
         self.waived.clone_from(&task.waives);
         self.deciding.clone_from(&task.deciding);
-        if agent != crate::Agent::Smith
-            && task.event.iter().any(|check| matches!(check, crate::EventCheck::CacheReuse { .. }))
-        {
+        if agent != crate::Agent::Smith {
             self.deciding
                 .retain(|name| !task.event.iter().any(|check| check.name() == name && check.name() != "cache-reuse"));
         }
@@ -93,6 +91,16 @@ impl Neutral {
 #[cfg(test)]
 mod cache_pair_tests {
     use super::*;
+
+    #[test]
+    fn a_codex_outcome_half_keeps_only_outcome_checks_deciding() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let task = crate::read_task(&root.join("tasks/probes/smoke-tools/task.toml")).expect("task");
+        let mut neutral = Neutral::default();
+        neutral.task(&task, crate::Agent::Codex);
+        assert!(!neutral.deciding.contains(&"tool-call".into()));
+        assert!(neutral.deciding.contains(&"pattern:smoke-env.txt".into()));
+    }
 
     #[test]
     fn codex_cache_pair_keeps_neutral_outcomes_and_triplet_statistics() {

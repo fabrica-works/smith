@@ -300,7 +300,7 @@ fn dispatch(
 /// Requests are immutable JSON documents; agent adapters add them when ready.
 pub fn run(suite_file: &Path, prepared_directory: &Path, seed: u64) -> Result<Batch, String> {
     let suite = crate::read_suite(suite_file).map_err(|error| error.to_string())?;
-    run_suite(suite_file, &suite, prepared_directory, seed, false)
+    run_suite(suite_file, &suite, prepared_directory, seed, false, None)
 }
 
 /// Run one authored probe with explicit repetitions, retaining the common suite supervisor.
@@ -312,7 +312,21 @@ pub fn run_probe(
     repetitions: u32,
 ) -> Result<Batch, String> {
     let suite = probe_suite(suite_file, probe, repetitions)?;
-    run_suite(suite_file, &suite, prepared_directory, seed, true)
+    run_suite(suite_file, &suite, prepared_directory, seed, true, None)
+}
+
+/// Dispatch calibration with the common aggregate budgets and stop at enough passes or impossibility.
+pub fn run_calibration(
+    suite_file: &Path,
+    prepared_directory: &Path,
+    seed: u64,
+    probe: &str,
+    required: u32,
+    ceiling: u32,
+) -> Result<Batch, String> {
+    let mut suite = probe_suite(suite_file, probe, ceiling)?;
+    suite.rerun_failed = 0;
+    run_suite(suite_file, &suite, prepared_directory, seed, true, Some((required, ceiling)))
 }
 
 fn probe_suite(suite_file: &Path, probe: &str, repetitions: u32) -> Result<Suite, String> {
@@ -345,10 +359,16 @@ fn run_suite(
     prepared_directory: &Path,
     seed: u64,
     logical: bool,
+    calibration: Option<(u32, u32)>,
 ) -> Result<Batch, String> {
     let requests = requests(prepared_directory)?;
     check_requests(suite_file, suite, &requests)?;
     let ordered = if logical { order(suite, requests, seed, true)? } else { ordered(suite, requests, seed)? };
+    let physical = ordered.first().map_or(Ok(1), |request| {
+        crate::read_task(&request.task)
+            .map(|task| usize::try_from(task.repetitions.unwrap_or(1)).expect("u32 fits usize"))
+            .map_err(|error| error.to_string())
+    })?;
     let mut requests: VecDeque<_> = ordered.into();
     if requests.iter().any(|request| {
         requests.iter().any(|candidate| {
@@ -384,6 +404,14 @@ fn run_suite(
     let mut probes = BTreeMap::new();
     let mut reruns = BTreeMap::new();
     while let Some(request) = requests.pop_front() {
+        if let Some((required, ceiling)) = calibration
+            && results.len() % physical == 0
+        {
+            let count = crate::probe::count(&results, required, ceiling);
+            if count.calibrated() || !count.reachable() {
+                break;
+            }
+        }
         let remaining = deadline.as_nanos().checked_sub(clock.now().now.as_nanos());
         let Some(remaining) = remaining.filter(|span| *span > 0) else {
             incomplete = true;
@@ -416,6 +444,7 @@ fn run_suite(
         }
         let tokens = known_tokens(&result);
         let no_request = observed_no_request(&result);
+        println!("{}", crate::probe::line(&result));
         results.push(result);
         if let Some(count) = tokens {
             used = used.checked_add(count).ok_or("suite token count overflow")?;

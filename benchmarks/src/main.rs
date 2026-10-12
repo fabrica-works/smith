@@ -8,20 +8,15 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.as_slice() {
-        [command, suite, flag, prepared, seed] if command == "run" && flag == "--prepared" => {
-            run_command(Path::new(suite), Path::new(prepared), seed)
-        }
         [command, request] if command == "attempt" => attempt_command(Path::new(request)),
-        [command, probe, parent, fix, flag] if command == "fix" && flag == "--build-only" => {
-            fix_build_command(probe, parent, fix)
-        }
-        [command, probe, parent, fix, flag, prepared, seed] if command == "fix" && flag == "--prepared" => {
-            fix_command(probe, parent, fix, Path::new(prepared), seed)
-        }
-        [command, probe, flag, changed, control_flag, control, seed]
-            if command == "calibrate" && flag == "--prepared" && control_flag == "--control" =>
-        {
-            calibrate_command(probe, Path::new(changed), Path::new(control), seed)
+        [command, rest @ ..] if matches!(command.as_str(), "probe" | "calibrate" | "fix" | "suite") => {
+            match smith_bench::probe::command(command, rest) {
+                Ok(verdict) => ExitCode::from(verdict.code()),
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
         }
         [command, commit] if command == "build" => build_command(commit, None),
         [command, commit, flag, repository] if command == "build" && flag == "--repository" => {
@@ -45,7 +40,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench run SUITE --prepared REQUEST_DIRECTORY SEED\n       smith-bench fix PROBE PARENT FIX --build-only\n       smith-bench fix PROBE PARENT FIX --prepared REQUEST_DIRECTORY SEED\n       smith-bench calibrate PROBE --prepared FIX_REQUEST_DIRECTORY --control CONTROL_REQUEST_DIRECTORY SEED"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -201,90 +196,6 @@ fn attempt_command(request: &Path) -> ExitCode {
         Ok(recorded) => {
             println!("{}", recorded.directory.join("result.json").display());
             ExitCode::from(smith_bench::judge(&recorded.result).code())
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn run_command(suite: &Path, prepared: &Path, seed: &str) -> ExitCode {
-    match seed
-        .parse::<u64>()
-        .map_err(|error| error.to_string())
-        .and_then(|seed| smith_bench::batch::run(suite, prepared, seed))
-    {
-        Ok(batch) => {
-            println!("{} attempts; incomplete={}", batch.results.len(), batch.incomplete);
-            for (probe, verdict) in &batch.probes {
-                println!("{probe}: {verdict:?}");
-            }
-            ExitCode::from(smith_bench::judge_suite(&batch.results, batch.incomplete).code())
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn fix_build_command(probe: &str, parent: &str, fix: &str) -> ExitCode {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let result = (|| {
-        let catalogue = smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design"))
-            .map_err(|error| error.to_string())?;
-        if !catalogue.iter().any(|task| {
-            probe == task.name
-                || task.task.variant.iter().any(|variant| probe == format!("{}/{}", task.name, variant.name))
-        }) {
-            return Err("unknown probe selector".into());
-        }
-        let (before, after) = smith_bench::fix::build(root.parent().expect("workspace"), parent, fix)?;
-        println!("Built before: {} sha256={} {}", before.arm.commit, before.arm.sha256, before.directory.display());
-        println!("Built after: {} sha256={} {}", after.arm.commit, after.arm.sha256, after.directory.display());
-        println!("No probe run: supply verified prepared requests with --prepared for the live step.");
-        Ok::<_, String>(())
-    })();
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn fix_command(probe: &str, parent: &str, fix: &str, prepared: &Path, seed: &str) -> ExitCode {
-    let result = seed
-        .parse::<u64>()
-        .map_err(|error| error.to_string())
-        .and_then(|seed| smith_bench::fix::run(probe, parent, fix, prepared, seed));
-    match result {
-        Ok(report) => {
-            print!("{}", smith_bench::fix::body(&report));
-            ExitCode::from(match report.shown {
-                smith_bench::fix::Shown::Effect => 0,
-                smith_bench::fix::Shown::PassesBefore | smith_bench::fix::Shown::FailsAfter => 1,
-                smith_bench::fix::Shown::BeforeRefused | smith_bench::fix::Shown::Unjudged => 2,
-            })
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn calibrate_command(probe: &str, changed: &Path, control: &Path, seed: &str) -> ExitCode {
-    let result = seed
-        .parse::<u64>()
-        .map_err(|error| error.to_string())
-        .and_then(|seed| smith_bench::fix::calibrate(probe, changed, control, seed));
-    match result {
-        Ok((verdict, body)) => {
-            print!("{body}");
-            ExitCode::from(verdict.code())
         }
         Err(error) => {
             eprintln!("{error}");

@@ -1,5 +1,8 @@
 //! Native preparation and trace replay use unissued credentials and immutable fixtures.
 
+pub mod common;
+use common::{unexecuted_arm, unissued_auth};
+
 use std::path::{Path, PathBuf};
 
 use skein_lib::Duration;
@@ -10,8 +13,6 @@ use smith_bench::agent::smith::{Credential, CredentialShape, Face, FaceSince, Ob
 use smith_bench::credential::TokenShape;
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced, Measure, ScopeKind};
-
-mod common;
 
 #[test]
 fn the_first_request_pin_renders_only_the_probes_empty_instructions() {
@@ -86,40 +87,6 @@ fn the_first_request_pin_renders_only_the_probes_empty_instructions() {
     }
     assert_eq!(std::fs::read(source.join("auth.json")).expect("source unchanged"), auth);
     std::fs::remove_dir_all(directory).expect("remove fixture");
-}
-
-fn unissued_auth() -> Vec<u8> {
-    use base64::Engine;
-    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"exp\":500}");
-    serde_json::to_vec(&serde_json::json!({"auth_mode":"chatgpt","last_refresh":"2000-01-01T00:00:00Z",
-        "tokens":{"id_token":"UNISSUED_ID","access_token":format!("header.{claims}.signature"),
-        "account_id":"UNISSUED_ACCOUNT","refresh_token":"UNISSUED_REFRESH_MUST_NOT_COPY"}}))
-    .expect("fixture")
-}
-
-fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::Build {
-    use sha2::{Digest, Sha256};
-    use smith_bench::arm::{ArmBinary, BuiltArm};
-    let commit = std::process::Command::new("git")
-        .args(["-C", repository.to_str().expect("path"), "rev-parse", "HEAD"])
-        .output()
-        .expect("source identity");
-    assert!(commit.status.success());
-    let commit = String::from_utf8(commit.stdout).expect("hexadecimal").trim().to_owned();
-    let executable = b"unexecuted rendering fixture\n";
-    let digest = format!("{:x}", Sha256::digest(executable));
-    let path = directory.join(smith_bench::arm::arm_name(&commit, &digest).expect("fixture identity"));
-    std::fs::create_dir(&path).expect("unexecuted arm directory");
-    std::fs::write(path.join("smith"), executable).expect("unexecuted bytes");
-    let arm = BuiltArm {
-        version: 1,
-        commit,
-        sha256: digest.clone(),
-        toolchain: "unexecuted test fixture".into(),
-        binaries: vec![ArmBinary { name: "smith".into(), sha256: digest }],
-    };
-    std::fs::write(path.join("arm.json"), serde_json::to_vec(&arm).expect("manifest")).expect("fixture manifest");
-    smith_bench::arm::read_build(&path.join("smith")).expect("actual manifest verification")
 }
 
 #[test]

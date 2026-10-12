@@ -3,7 +3,7 @@
 use smith_bench::{EventCheck, Measure};
 use smith_events::{Event, Record};
 
-mod common;
+pub mod common;
 
 fn records() -> Vec<Record> {
     let baseline = common::events::balanced();

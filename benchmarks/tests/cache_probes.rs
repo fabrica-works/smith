@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use smith_bench::{CacheObservation, CheckVerdict, End, EventCheck, Judgment, Measure};
 use smith_events::{Block, Event};
 
-mod common;
+pub mod common;
 
 fn repetition(position: u32, read: u64, misses: u64) -> smith_bench::AttemptResult {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

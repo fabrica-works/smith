@@ -2,11 +2,11 @@
 //! Builds are an explicit heavy preparation step; live dispatch never builds or
 //! reads agent credentials itself (benchmarks.md sections4.2/10; 00.12 sketches).
 
-use std::fmt::Write;
 use std::path::Path;
 
 use crate::arm::{ArmRef, Build};
-use crate::{AttemptResult, End, Judgment, judge, judge_suite};
+use crate::batch::Batch;
+use crate::{AttemptResult, End, Judgment, judge_suite};
 
 mod prepare;
 
@@ -106,12 +106,13 @@ pub fn body(report: &FixReport) -> String {
     )
 }
 
-/// Build both frozen arms only during the caller's heavy preparation step.
-pub fn build(repository: &Path, parent: &str, fix: &str) -> Result<(Build, Build), String> {
-    Ok((crate::arm::build(repository, parent)?, crate::arm::build(repository, fix)?))
+/// Admit one complete prepared arm before either comparison phase dispatches.
+pub(crate) fn prepared(suite: &Path, requests: &Path, seed: u64, probe: &str, attempts: u32) -> Result<Build, String> {
+    let prepared = crate::batch::probe_requests(suite, requests, seed, probe, attempts)?;
+    prepare::one_arm(&prepared, prepared.len())
 }
 
-fn actual(build: &Build, results: &[AttemptResult], batch: &crate::batch::Batch) -> Result<ProbeRun, String> {
+pub(crate) fn actual(build: &Build, results: &[AttemptResult], batch: &Batch) -> Result<ProbeRun, String> {
     if results.is_empty() {
         return Err("probe arm produced no results".into());
     }
@@ -134,109 +135,18 @@ fn actual(build: &Build, results: &[AttemptResult], batch: &crate::batch::Batch)
     Ok(ProbeRun {
         arm: ArmRef::Built(build.clone()),
         run,
-        verdict: if quarantined { Judgment::Incomplete } else { judge_suite(results, false) },
+        verdict: if quarantined
+            || results.iter().any(|result| matches!(result.outcome.end, End::HarnessError { .. } | End::Refused { .. }))
+        {
+            Judgment::Incomplete
+        } else {
+            judge_suite(results, false)
+        },
         setup_refused: results.iter().any(|result| {
             matches!(result.outcome.end, End::Refused { .. })
                 && matches!(result.timing.process_wall_ms, crate::Measure::Unavailable { .. })
         }),
     })
-}
-
-/// Run prepared before/after requests on verified arms; never prepare an unstated invocation.
-pub fn run(probe: &str, parent: &str, fix: &str, prepared: &Path, seed: u64) -> Result<FixReport, String> {
-    let suite = calibration_suite(probe);
-    let requests = crate::batch::probe_requests(&suite, prepared, seed, probe, 1)?;
-    prepare::inputs(&requests)?;
-    let mut before = None;
-    let mut after = None;
-    for request in &requests {
-        let build = prepare::build(request)?;
-        if build.arm.commit == parent {
-            before = Some(build);
-        } else if build.arm.commit == fix {
-            after = Some(build);
-        } else {
-            return Err("prepared fix has an arm outside the stated before/after".into());
-        }
-    }
-    let before = before.ok_or("prepared fix lacks the parent arm")?;
-    let after = after.ok_or("prepared fix lacks the changed arm")?;
-    if parent == fix {
-        return Err("fix before and after require distinct commits".into());
-    }
-    let batch = crate::batch::run_probe(&suite, prepared, seed, probe, 1)?;
-    let before_results =
-        batch.results.iter().filter(|result| result.identity.agent_version == parent).cloned().collect::<Vec<_>>();
-    let after_results =
-        batch.results.iter().filter(|result| result.identity.agent_version == fix).cloned().collect::<Vec<_>>();
-    let mut report =
-        report(probe.into(), actual(&before, &before_results, &batch)?, actual(&after, &after_results, &batch)?);
-    if batch.incomplete && report.shown == Shown::Effect {
-        report.shown = Shown::Unjudged;
-    }
-    Ok(report)
-}
-
-/// Judge ten changed-arm repetitions and a failing control without claiming calibration from unavailable.
-pub fn calibrate(probe: &str, changed: &Path, control: &Path, seed: u64) -> Result<(Judgment, String), String> {
-    let suite = calibration_suite(probe);
-    let after_requests = crate::batch::probe_requests(&suite, changed, seed, probe, 10)?;
-    let before_requests = crate::batch::probe_requests(&suite, control, seed, probe, 1)?;
-    let physical =
-        crate::read_task(&after_requests[0].task).map_err(|error| error.to_string())?.repetitions.unwrap_or(1);
-    let count = 10_u32.checked_mul(physical).ok_or("calibration repetitions overflow")?;
-    let after_arm = prepare::one_arm(&after_requests, usize::try_from(count).expect("u32 fits usize"))?;
-    let before_arm = prepare::one_arm(&before_requests, usize::try_from(physical).expect("u32 fits usize"))?;
-    if !prepare::same_input(&after_requests[0].identity, &before_requests[0].identity) {
-        return Err("calibration control changes frozen task inputs".into());
-    }
-    if after_arm.arm == before_arm.arm {
-        return Err("calibration control must differ from the changed arm".into());
-    }
-    let before = crate::batch::run_probe(&suite, control, seed, probe, 1)?;
-    let before_verdict = actual(&before_arm, &before.results, &before)?.verdict;
-    if before.results.iter().any(crate::cache::selected) && !crate::cache::control_failure(&before.results) {
-        let verdict = if before_verdict == Judgment::Pass { Judgment::Fail } else { Judgment::Incomplete };
-        return Ok((
-            verdict,
-            format!(
-                "Finding: cache control did not establish a failing cache criterion; improvement unshown.\n{}",
-                crate::cache::notes(&before.results)
-            ),
-        ));
-    }
-    let after = crate::batch::run_probe(&suite, changed, seed, probe, 10)?;
-    let after_verdict = actual(&after_arm, &after.results, &after)?.verdict;
-    let verdict = match (after_verdict, before_verdict) {
-        (Judgment::Pass, Judgment::Fail)
-            if after.results.len() == usize::try_from(count).expect("u32 fits usize")
-                && !after.incomplete
-                && !before.incomplete =>
-        {
-            Judgment::Pass
-        }
-        (Judgment::Incomplete, _) | (_, Judgment::Incomplete) => Judgment::Incomplete,
-        (_, _) => Judgment::Fail,
-    };
-    let mut text = format!("Calibration: {probe} {verdict:?}\n");
-    for (phase, batch) in [("after", after), ("control", before)] {
-        if batch.results.iter().any(crate::cache::selected) {
-            text.push_str(&crate::cache::notes(&batch.results));
-        }
-        for result in batch.results {
-            writeln!(
-                text,
-                "{phase}: {} sha256={} run={}/{} {:?}",
-                result.identity.agent_version,
-                result.identity.binary_sha256,
-                result.identity.run,
-                result.identity.attempt,
-                judge(&result)
-            )
-            .expect("string formatting");
-        }
-    }
-    Ok((verdict, text))
 }
 
 #[cfg(test)]

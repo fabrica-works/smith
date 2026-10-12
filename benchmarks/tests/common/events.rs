@@ -4,6 +4,7 @@ use smith_events::{Capture, Event, Limits, Record};
 
 pub const LIMITS: Limits = Limits { string: 128, content: 1024, items: 16 };
 
+#[must_use]
 pub fn record(source: &str) -> Record {
     let line = source.trim_end().as_bytes();
     // The committed codec golden is the outside line. Retain every semantic
@@ -53,6 +54,7 @@ std::thread_local! {
     static ENCODED: std::cell::RefCell<EncodedLines> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
+#[must_use]
 pub fn bytes(records: &[Record]) -> Vec<u8> {
     ENCODED.with(|cache| {
         let mut cache = cache.borrow_mut();

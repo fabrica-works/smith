@@ -5,7 +5,7 @@ use smith_bench::{EventCheck, Measure};
 use smith_events::{Capture, Event, Record};
 use std::path::PathBuf;
 
-mod common;
+pub mod common;
 
 const COMMAND: &str = "sh -c 'sleep 600 & wait'";
 

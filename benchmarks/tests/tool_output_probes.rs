@@ -5,7 +5,7 @@ use smith_bench::{EventCheck, Measure};
 use smith_events::{Event, Record};
 use std::path::PathBuf;
 
-mod common;
+pub mod common;
 
 #[test]
 fn tool_output_inputs_and_deciders_match_the_authored_cases() {

@@ -163,7 +163,7 @@ pub fn read(path: &Path) -> Result<Vec<FaceSince>, Setup> {
 pub fn face(arm: &BuiltArm, faces: &[FaceSince], repository: &Path) -> Result<FaceSince, Setup> {
     let select: Result<FaceSince, String> = (|| {
         let mut selected = None;
-        for entry in faces {
+        for entry in faces.iter().rev() {
             let result = std::process::Command::new("git")
                 .args(["-c", "core.hooksPath=/dev/null", "-C"])
                 .arg(repository)
@@ -179,7 +179,10 @@ pub fn face(arm: &BuiltArm, faces: &[FaceSince], repository: &Path) -> Result<Fa
                 .output()
                 .map_err(|error| error.to_string())?;
             match result.status.code() {
-                Some(0) => selected = Some(entry.clone()),
+                Some(0) => {
+                    selected = Some(entry.clone());
+                    break;
+                }
                 Some(1) => {}
                 Some(_) | None => return Err("cannot establish Smith arm source ancestry".into()),
             }

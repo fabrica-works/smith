@@ -5,7 +5,7 @@ use smith_bench::{CheckVerdict, EventCheck, Measure};
 use smith_events::{Block, Capture, Event, Record};
 use std::path::PathBuf;
 
-mod common;
+pub mod common;
 
 fn check() -> EventCheck {
     EventCheck::SlowCompletion { longer_than_ms: 60000, head_ms: 60000, idle_ms: 300_000, reasoning_bytes: 65536 }

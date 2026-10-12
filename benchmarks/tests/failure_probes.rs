@@ -6,7 +6,7 @@ use smith_bench::agent::smith::events::Observer;
 use smith_bench::{End, EventCheck, Exit, Forced, Measure, OutcomeCheck};
 use smith_events::{AnswerClass, AnswerFailure, Event, Status};
 
-mod common;
+pub mod common;
 
 #[test]
 fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals() {
