@@ -3,7 +3,7 @@
 //! exact terminals. It knows no parent policy or credential values; Reaped
 //! proves the contained tree is empty after Exited.
 
-use crate::{Down, Signal, Up};
+use crate::{Down, Exit, Signal, Up};
 use alloc::boxed::Box;
 use skein_lib::{Time, Token};
 
@@ -35,7 +35,7 @@ pub enum Event {
     /// Terminal of Signal, whether or not signal reached process.
     Signalled { owner: Token },
     /// Terminal of Wait; descendants may still run.
-    Exited { owner: Token },
+    Exited { owner: Token, exit: Option<Exit> },
     /// Terminal of Reap after Exited; proves `TreeEmpty`.
     Reaped {
         owner: Token,

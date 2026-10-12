@@ -199,7 +199,10 @@ fn finish_host(host: &mut Host) {
     assert!(host.seen.turns.is_empty());
     assert!(host.lower.contains(Lower::Send));
     assert!(matches!(host.seen.down.last(), Some(Down::Acknowledge { turn: 2 })));
-    host.event(Input::Process(process::Event::Exited { owner: host.owner() }));
+    host.event(Input::Process(process::Event::Exited {
+        owner: host.owner(),
+        exit: Some(smith_host_domain::Exit::Code(0)),
+    }));
     host.event(Input::Process(process::Event::Reaped {
         owner: host.owner(),
         detail: b"actual empty tree".as_slice().into(),
@@ -208,7 +211,10 @@ fn finish_host(host: &mut Host) {
     assert!(host.seen.exited && host.seen.empty && host.seen.eof);
     assert!(host.seen.gone.is_none(), "the final ACK Send terminal is still owed");
     host.sent();
-    assert_eq!(host.seen.gone, Some(host::End::Stopped));
+    assert_eq!(
+        host.seen.gone,
+        Some(host::End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No })
+    );
     host.settled();
 }
 
@@ -276,7 +282,10 @@ fn root_submission_parent_right_outlives_exit_tree_eof_without_fabricated_return
     let submission = submitted(&mut agent, &mut host, &mut next);
     cancel(&mut agent, &mut host, &submission, &mut next);
     let turns = agent.turns().len();
-    host.event(Input::Process(process::Event::Exited { owner: host.owner() }));
+    host.event(Input::Process(process::Event::Exited {
+        owner: host.owner(),
+        exit: Some(smith_host_domain::Exit::Code(0)),
+    }));
     // The simulated root is deliberately never driven again after this actual
     // process exit. This branch claims no root terminal or post-EOF Turn.
     assert!(host.seen.withdrawals.contains(&submission.owner));
@@ -301,6 +310,9 @@ fn root_submission_parent_right_outlives_exit_tree_eof_without_fabricated_return
     );
     assert_eq!(agent.turns().len(), turns);
     assert!(agent.pushes().is_empty(), "no post-exit root receipt was invented");
-    assert_eq!(host.seen.gone, Some(host::End::Stopped));
+    assert_eq!(
+        host.seen.gone,
+        Some(host::End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No })
+    );
     host.settled();
 }

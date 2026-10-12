@@ -11,7 +11,10 @@ mod tests {
         assert!(seen.started);
         assert!(seen.admitted);
         assert!(seen.answered.is_some(), "the actual agent service supplied its last word");
-        assert_eq!(seen.gone, Some(End::Stopped));
+        assert_eq!(
+            seen.gone,
+            Some(End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No })
+        );
         assert_eq!(seen.exits, 1);
         assert_eq!(seen.reaps, 1);
         assert!(world.peer_replied(), "the fake LLM served the child");
@@ -51,7 +54,13 @@ mod tests {
         world.ignore_cancel();
         world.settle();
         let seen = world.seen();
-        assert_eq!(seen.gone, Some(End::Stopped));
+        assert_eq!(
+            seen.gone,
+            Some(End::Exited {
+                exit: Some(smith_host_domain::Exit::Signal(9)),
+                forced: smith_host_domain::Forced::Killed
+            })
+        );
         assert_eq!(seen.signals, [smith_host_domain::Signal::Terminate, smith_host_domain::Signal::Kill]);
         assert_eq!(seen.exits, 1);
         assert_eq!(seen.reaps, 1);

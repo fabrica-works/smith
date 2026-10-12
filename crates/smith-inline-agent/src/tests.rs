@@ -199,7 +199,7 @@ fn cancel_fire_resume_terminal_and_reclaim_settle_exactly_once() {
         out.pop(),
         Some(Output::Parent(parent::Request::Gone {
             client: Token::new(1),
-            end: host::End::Stopped,
+            end: host::End::Settled,
             detail: Box::default()
         }))
     );

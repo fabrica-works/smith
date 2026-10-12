@@ -38,7 +38,7 @@ mod values;
 #[cfg(test)]
 mod tests;
 
-pub use boundary::{End, Fault, Input, Invalid, MessageRefusal, Output, Signal};
+pub use boundary::{End, Exit, Fault, Forced, Input, Invalid, MessageRefusal, Output, Signal};
 
 pub use channel::{
     Answer, AnsweredCall, Ask, BudgetRefusal, CallName, Ceiling, CompletionEvidence, CompletionFailure, Directory,

@@ -59,7 +59,14 @@ fn the_first_drop_cause_survives_store_failure_and_the_childs_later_fault() {
         parent_request(
             &mut domain,
             &env,
-            parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() },
+            parent::Request::Gone {
+                client: Token::new(1),
+                end: host::End::Exited {
+                    exit: Some(smith_host_domain::Exit::Code(0)),
+                    forced: smith_host_domain::Forced::No,
+                },
+                detail: Box::default(),
+            },
             &mut out,
         );
         assert_eq!(domain.end_cause(), Some(cause), "later child terminals cannot replace the cause");
@@ -207,7 +214,14 @@ fn the_parent_answer_keeps_its_host_spend_until_gone() {
     parent_request(
         &mut domain,
         &env,
-        parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() },
+        parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Exited {
+                exit: Some(smith_host_domain::Exit::Code(0)),
+                forced: smith_host_domain::Forced::No,
+            },
+            detail: Box::default(),
+        },
         &mut out,
     );
     let Some(Request::Show { text }) = out.pop() else { panic!("answer shown after Gone") };
@@ -288,7 +302,14 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
     parent_request(
         &mut domain,
         &env,
-        parent::Request::Gone { client: Token::new(1), end: host::End::Stopped, detail: Box::default() },
+        parent::Request::Gone {
+            client: Token::new(1),
+            end: host::End::Exited {
+                exit: Some(smith_host_domain::Exit::Code(0)),
+                forced: smith_host_domain::Forced::No,
+            },
+            detail: Box::default(),
+        },
         &mut out,
     );
     parent_request(

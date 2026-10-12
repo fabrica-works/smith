@@ -269,13 +269,13 @@ impl World {
 
     /// Settle physical exit, empty tree and EOF in that order. Pending sends,
     /// signals, calls and turns deliberately remain owed to their owners.
-    pub fn cleanup(&mut self) {
+    pub fn cleanup(&mut self, exit: Option<smith_host_domain::Exit>) {
         if self.lower.contains(Lower::Send) {
             self.sent();
         }
         let owner = self.owner();
         if self.lower.contains(Lower::Wait) {
-            self.event(Input::Process(process::Event::Exited { owner }));
+            self.event(Input::Process(process::Event::Exited { owner, exit }));
         }
         if self.lower.contains(Lower::Reap) {
             self.event(Input::Process(process::Event::Reaped {
@@ -578,7 +578,7 @@ impl Seen {
                 assert!(self.fault.replace(fault).is_none());
             }
             parent::Request::Gone { end, detail, .. } => {
-                if end == End::Stopped {
+                if matches!(end, End::Exited { .. } | End::Settled) {
                     assert!(contained, "Gone needs the kind's actual containment proof");
                     assert!(lower_settled, "Gone retains every lower terminal");
                     assert!(self.calls.is_empty(), "Gone retains every parent call");
@@ -588,7 +588,7 @@ impl Seen {
                     assert!(self.unread.is_some(), "the unread report precedes Gone");
                     assert!(self.messages.is_empty(), "every accepted message ended before Gone");
                 }
-                if self.agent.is_none() && end != End::Stopped {
+                if self.agent.is_none() && !matches!(end, End::Exited { .. } | End::Settled) {
                     self.messages.clear(); // Start refusal refuses its carried messages with it.
                 }
                 assert!(self.gone.replace(end).is_none());

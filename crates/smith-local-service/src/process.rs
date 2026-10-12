@@ -826,11 +826,23 @@ fn to_host_event(event: protocol::ProcessEvent) -> host::Input {
         protocol::ProcessEvent::Unspawned { agent, detail } => {
             host::Input::Process(host::process::Event::Unspawned { owner: agent, detail })
         }
-        protocol::ProcessEvent::Exited { agent } => host::Input::Process(host::process::Event::Exited { owner: agent }),
+        protocol::ProcessEvent::Exited { agent, exit } => {
+            host::Input::Process(host::process::Event::Exited { owner: agent, exit: to_host_exit(exit) })
+        }
         protocol::ProcessEvent::Reaped { agent, detail } => {
             host::Input::Process(host::process::Event::Reaped { owner: agent, detail })
         }
         protocol::ProcessEvent::Channel { agent, event } => channel_event(agent, event),
+    }
+}
+
+/// Preserve io's observed exit without inferring it from the signals sent.
+#[must_use]
+pub const fn to_host_exit(exit: Option<kernel::Exit>) -> Option<host::Exit> {
+    match exit {
+        Some(kernel::Exit::Code(code)) => Some(host::Exit::Code(code)),
+        Some(kernel::Exit::Signal(signal)) => Some(host::Exit::Signal(signal)),
+        None => None,
     }
 }
 

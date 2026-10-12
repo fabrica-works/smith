@@ -20,5 +20,5 @@ pub mod profile;
 #[cfg(test)]
 mod tests;
 
-pub use process::{Launch, ProcessLimits};
+pub use process::{Launch, ProcessLimits, to_host_exit};
 pub use service::{AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, worst_case};

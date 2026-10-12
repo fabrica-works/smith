@@ -292,10 +292,13 @@ impl HostService {
                 self.observations.push(Observation::Unspawned);
                 self.domain_events.push(host::Input::Process(host::process::Event::Unspawned { owner: agent, detail }));
             }
-            protocol::ProcessEvent::Exited { agent } => {
+            protocol::ProcessEvent::Exited { agent, exit } => {
                 self.observations.push(Observation::Exited);
                 self.seen.exits = self.seen.exits.checked_add(1).expect("bounded observed exits");
-                self.domain_events.push(host::Input::Process(host::process::Event::Exited { owner: agent }));
+                self.domain_events.push(host::Input::Process(host::process::Event::Exited {
+                    owner: agent,
+                    exit: smith_local_service::to_host_exit(exit),
+                }));
             }
             protocol::ProcessEvent::Reaped { agent, detail } => {
                 self.observations.push(Observation::Reaped);

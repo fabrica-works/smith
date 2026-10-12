@@ -29,7 +29,7 @@ fn an_answer_reports_sent_and_queued_names_and_later_ingress_has_its_own_refusal
     message(&mut world, 3);
     assert_eq!(world.seen.refused_messages, [(Token::new(3), MessageRefusal::Ending)]);
     assert_eq!(world.seen.fault, None);
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }
 
@@ -49,7 +49,7 @@ fn an_actual_turn_fence_covers_a_prefix_and_the_report_includes_a_queued_suffix(
     answer(&mut world, 1);
     assert_eq!(world.seen.read_messages, [Token::new(1)]);
     assert_eq!(world.seen.unread, Some(vec![Token::new(2), Token::new(3)]));
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }
 
@@ -64,7 +64,7 @@ fn an_actual_waiting_fence_covers_only_the_names_before_it() {
     answer(&mut world, 0);
     assert_eq!(world.seen.read_messages, [Token::new(1)]);
     assert_eq!(world.seen.unread, Some(vec![Token::new(2)]));
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }
 
@@ -77,7 +77,7 @@ fn malformed_channel_reports_all_accepted_names_before_fault_and_retains_lower_t
     world.event(Input::Process(process::Event::Malformed { owner: world.owner() }));
     assert_eq!(world.seen.unread, Some(vec![Token::new(1), Token::new(2)]));
     assert_eq!(world.seen.fault, Some(Fault::Rules));
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }
 

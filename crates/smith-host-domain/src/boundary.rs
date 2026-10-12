@@ -85,6 +85,26 @@ pub enum Invalid {
     Limits,
 }
 
+/// How a spawned agent's process ended, as io told the kit (domain/host.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Exit {
+    /// The process exited with this code.
+    Code(u8),
+    /// This signal ended the process.
+    Signal(u32),
+}
+
+/// The last step the kit took to end the agent's tree (domain/host.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Forced {
+    /// The kit sent no tree signal.
+    No,
+    /// The kit sent a termination signal.
+    Terminated,
+    /// The kit sent a kill signal.
+    Killed,
+}
+
 /// Terminal disposition of one parent Spawn.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum End {
@@ -98,5 +118,7 @@ pub enum End {
     /// Lower could not spawn; no resources remain.
     Unspawned,
     /// Process exited, tree empty, EOF and all rights settled.
-    Stopped,
+    Exited { exit: Option<Exit>, forced: Forced },
+    /// An inline run and everything below it settled (domain/host.md, section 9.3).
+    Settled,
 }

@@ -110,8 +110,8 @@ pub(crate) fn settle(agent: &mut Domain, now: Time, id: Id<Slot>, out: &mut Queu
             if let Some(names) = slot.inbox.report() {
                 out.push(Output::Parent(parent::Request::Unread { client, names }));
             }
-            out.push(Output::Parent(parent::Request::Gone { client, end: End::Stopped, detail: Box::default() }));
-            observe(agent, now, FactKind::Gone { client, end: End::Stopped });
+            out.push(Output::Parent(parent::Request::Gone { client, end: End::Settled, detail: Box::default() }));
+            observe(agent, now, FactKind::Gone { client, end: End::Settled });
         }
         Stage::Live | Stage::Cancelling { .. } | Stage::Gone => {}
     }

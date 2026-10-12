@@ -32,7 +32,7 @@ pub enum ProcessEvent {
     /// Spawn or opening failed and all owned process resources were released.
     Unspawned { agent: Token, detail: Box<[u8]> },
     /// The main child process exited; pipe contents may still be unread.
-    Exited { agent: Token },
+    Exited { agent: Token, exit: Option<kernel::Exit> },
     /// The child, its pipes and its bounded error tail settled.
     Reaped { agent: Token, detail: Box<[u8]> },
     /// One event from the opened channel, for the host-domain translation.
@@ -67,6 +67,7 @@ pub struct Process {
     error_closed: bool,
     child_closed: bool,
     exited: bool,
+    exit: Option<kernel::Exit>,
     channel_ended: bool,
     stderr_demanded: bool,
     tail: List<u8>,
@@ -108,6 +109,7 @@ impl Process {
             error_closed: false,
             child_closed: false,
             exited: false,
+            exit: None,
             channel_ended: false,
             stderr_demanded: false,
             tail: List::with_capacity(detail_bytes),
@@ -300,7 +302,7 @@ impl Process {
                 }
                 self.exited = true;
                 if self.phase == Phase::Ready {
-                    above.push(ProcessEvent::Exited { agent: self.agent });
+                    above.push(ProcessEvent::Exited { agent: self.agent, exit: None });
                 }
                 if let Some(input) = self.input {
                     below.push(IoRequest::Close { entity: input });
@@ -313,10 +315,11 @@ impl Process {
                 self.child_closed = true;
                 self.finish(above);
             }
-            IoEvent::Exited { owner, .. } if owner == self.io_owner => {
+            IoEvent::Exited { owner, exit } if owner == self.io_owner => {
                 self.exited = true;
+                self.exit = Some(exit);
                 if self.phase == Phase::Ready {
-                    above.push(ProcessEvent::Exited { agent: self.agent });
+                    above.push(ProcessEvent::Exited { agent: self.agent, exit: self.exit });
                 }
                 if let Some(input) = self.input {
                     below.push(IoRequest::Close { entity: input });
@@ -423,7 +426,7 @@ impl Process {
                         process: self.child.expect("opening belongs to child"),
                     });
                     if self.exited {
-                        above.push(ProcessEvent::Exited { agent: self.agent });
+                        above.push(ProcessEvent::Exited { agent: self.agent, exit: self.exit });
                     }
                 }
                 OpenEvent::Hangup { .. } if self.phase == Phase::Opening => {

@@ -266,7 +266,12 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
     }
     drain_requests(&mut out);
     crate::step(&mut domain, &env, Event::Process(process::Event::Hangup { owner }), &mut out);
-    crate::step(&mut domain, &env, Event::Process(process::Event::Exited { owner }), &mut out);
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Process(process::Event::Exited { owner, exit: Some(smith_host_domain::Exit::Code(0)) }),
+        &mut out,
+    );
     crate::step(&mut domain, &env, Event::Process(process::Event::Reaped { owner, detail: Box::default() }), &mut out);
     let outputs = drain_requests(&mut out);
     assert!(outputs.iter().any(|request| match request {

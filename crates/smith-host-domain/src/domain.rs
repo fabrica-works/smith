@@ -4,8 +4,8 @@
 //! The kit knows channel send order, not private agent stop
 //! decisions; policy and durable decisions remain in the parent.
 use crate::{
-    AnsweredCall, Ask, CallName, Delivery, Down, End, Fact, Fault, Grant, Input, Invalid, Limits, MessageRefusal,
-    Output, Reply, RunFailure, RunResult, Signal, Start, Up,
+    AnsweredCall, Ask, CallName, Delivery, Down, End, Exit, Fact, Fault, Forced, Grant, Input, Invalid, Limits,
+    MessageRefusal, Output, Reply, RunFailure, RunResult, Signal, Start, Up,
 };
 use crate::{parent, process};
 use alloc::boxed::Box;
@@ -103,6 +103,8 @@ pub(crate) struct Agent {
     sending: Option<Sent>,
     signals: u32,
     exited: bool,
+    exit: Option<Exit>,
+    forced: Forced,
     reaped: Option<Box<[u8]>>,
     outbox: Queue<Down>,
     busy: Queue<Sent>,
@@ -223,7 +225,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
             | process::Event::Malformed { owner }
             | process::Event::Hangup { owner }
             | process::Event::Signalled { owner }
-            | process::Event::Exited { owner }
+            | process::Event::Exited { owner, .. }
             | process::Event::Reaped { owner, .. },
         ) => *owner,
     };
@@ -350,9 +352,10 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queu
         Input::Process(process::Event::Signalled { .. }) => {
             agent.signals = agent.signals.checked_sub(1).expect("one terminal per signal");
         }
-        Input::Process(process::Event::Exited { .. }) => {
+        Input::Process(process::Event::Exited { exit, .. }) => {
             assert!(!agent.exited, "one terminal per Wait");
             agent.exited = true;
+            agent.exit = exit;
             if !agent.last_word {
                 draining(agent, env);
             }
@@ -478,6 +481,8 @@ fn spawn(domain: &mut Domain, env: &Env<Limits>, event: Input, out: &mut Queue<O
         sending: None,
         signals: 0,
         exited: false,
+        exit: None,
+        forced: Forced::No,
         reaped: None,
         outbox: Queue::with_capacity(crate::limits::outbox(&env.limits).expect("validated outbox")),
         busy: Queue::with_capacity(2),
@@ -1193,6 +1198,10 @@ fn terminate(agent: &mut Agent, owner: Token, env: &Env<Limits>, out: &mut Queue
 }
 
 fn signal(agent: &mut Agent, owner: Token, signal: Signal, out: &mut Queue<Output>) {
+    agent.forced = match signal {
+        Signal::Terminate => Forced::Terminated,
+        Signal::Kill => Forced::Killed,
+    };
     agent.signals = agent.signals.checked_add(1).expect("two bounded tree signals at most");
     out.push(Output::Process(process::Request::Signal {
         owner,
@@ -1388,7 +1397,7 @@ fn follow(domain: &mut Domain, env: &Env<Limits>, id: Id<Agent>, out: &mut Queue
             }
             out.push(Output::Parent(parent::Request::Gone {
                 client: agent.client,
-                end: End::Stopped,
+                end: End::Exited { exit: agent.exit, forced: agent.forced },
                 detail: agent.reaped.take().expect("empty tree proof"),
             }));
         }

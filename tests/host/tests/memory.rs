@@ -174,7 +174,10 @@ impl Measured {
         if pending_send {
             self.step(Input::Process(process::Event::Sent { owner }), false);
         }
-        self.step(Input::Process(process::Event::Exited { owner }), false);
+        self.step(
+            Input::Process(process::Event::Exited { owner, exit: Some(smith_host_domain::Exit::Code(0)) }),
+            false,
+        );
         self.step(
             Input::Process(process::Event::Reaped { owner, detail: bytes(u64::from(self.env.limits.detail_bytes)) }),
             false,

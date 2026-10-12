@@ -40,7 +40,7 @@ fn charged_prefix_reaches_parent_with_typed_failure() {
     let answer = world.seen.answer.as_ref().expect("final word reaches parent");
     assert_eq!((answer.turns, answer.spent), (1, 42));
     assert_eq!(world.seen.fault, None);
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }
 
@@ -55,7 +55,7 @@ fn committed_spend_cannot_regress_in_turn_or_answer() {
         assert_eq!(world.seen.fault, Some(Fault::Rules));
         assert!(world.seen.answer.is_none());
         assert_eq!(world.seen.turn_metadata.len(), 1);
-        world.cleanup();
+        world.cleanup(Some(smith_host_domain::Exit::Code(0)));
         world.settled();
     }
 }
@@ -67,6 +67,6 @@ fn exact_maximum_spend_is_forwarded() {
     world.up(ended(0, u64::MAX));
     assert_eq!(world.seen.answer.as_ref().expect("answer").spent, u64::MAX);
     assert_eq!(world.seen.fault, None);
-    world.cleanup();
+    world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();
 }

@@ -185,13 +185,16 @@ fn the_host_start_enters_the_agent_domain_and_its_answer_returns_to_the_host_dom
     let translated = wire.take_host_answer().expect("host protocol decoded final answer");
     assert!(matches!(translated.result, host::RunResult::Failed { failure: host::RunFailure::Cancelled }));
     host_world.up(Up::Answer { answer: translated });
-    host_world.cleanup();
+    host_world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     host_world.settled();
     assert!(matches!(
         host_world.seen.answer.as_ref().map(|answer| &answer.result),
         Some(host::RunResult::Failed { failure: host::RunFailure::Cancelled })
     ));
-    assert_eq!(host_world.seen.gone, Some(host::End::Stopped));
+    assert_eq!(
+        host_world.seen.gone,
+        Some(host::End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No })
+    );
 }
 
 fn composed_charter() -> host::Charter {

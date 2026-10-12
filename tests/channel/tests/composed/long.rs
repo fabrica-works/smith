@@ -198,7 +198,7 @@ fn an_actual_command_crosses_the_channel_and_outlasts_no_progress_until_its_term
         world.host.seen.answer.as_ref().map(|answer| &answer.result),
         Some(host::RunResult::Failed { failure: host::RunFailure::Cancelled })
     ));
-    world.host.cleanup();
+    world.host.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.host.settled();
     world.domain.reclaim();
     assert_eq!((world.domain.peers(), world.domain.flights(), world.domain.tickets()), (0, 0, 0));

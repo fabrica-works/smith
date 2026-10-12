@@ -15,7 +15,7 @@ fn spawn(world: &mut World, client: u64, job: Job) {
 #[should_panic(expected = "Gone retains every lower terminal")]
 fn the_common_parent_referee_rejects_a_gone_with_an_open_inline_completion() {
     Seen::default().observe_parent(
-        parent::Request::Gone { client: Token::new(1), end: End::Stopped, detail: Box::default() },
+        parent::Request::Gone { client: Token::new(1), end: End::Settled, detail: Box::default() },
         true,
         false,
     );
@@ -43,7 +43,7 @@ fn the_common_parent_referee_rejects_a_gone_with_an_unanswered_parent_call() {
     let mut seen = Seen::default();
     seen.calls.insert(Token::new(2));
     seen.observe_parent(
-        parent::Request::Gone { client: Token::new(1), end: End::Stopped, detail: Box::default() },
+        parent::Request::Gone { client: Token::new(1), end: End::Settled, detail: Box::default() },
         true,
         true,
     );
@@ -80,7 +80,7 @@ fn the_common_parent_referee_rejects_a_gone_with_an_actual_machine_right() {
     world.event(parent::Event::Spawn { client: Token::new(1), start: inline::workspace_start(84, Job::Reporting) });
     assert_eq!(world.pending_machine.len(), 1);
     world.seen.get_mut(&Token::new(1)).expect("Started slot").observe_parent(
-        parent::Request::Gone { client: Token::new(1), end: End::Stopped, detail: Box::default() },
+        parent::Request::Gone { client: Token::new(1), end: End::Settled, detail: Box::default() },
         true,
         false,
     );

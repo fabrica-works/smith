@@ -141,7 +141,7 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
     assert_eq!(host.seen.turns[&1].value(), &agent.turns()[0], "parent retains the complete actual record");
 
     let owner = host.owner();
-    host.event(Input::Process(process::Event::Exited { owner }));
+    host.event(Input::Process(process::Event::Exited { owner, exit: Some(smith_host_domain::Exit::Code(0)) }));
     assert!(host.seen.gone.is_none());
     host.event(Input::Process(process::Event::Reaped { owner, detail: b"actual tree empty".as_slice().into() }));
     assert!(host.seen.gone.is_none());
@@ -157,7 +157,10 @@ fn host_turn_ack_and_send_rights_survive_root_parking_and_exit_tree_empty_eof() 
         }
         host.sent();
     }
-    assert_eq!(host.seen.gone, Some(host::End::Stopped));
+    assert_eq!(
+        host.seen.gone,
+        Some(host::End::Exited { exit: Some(smith_host_domain::Exit::Code(0)), forced: smith_host_domain::Forced::No })
+    );
     host.settled();
 }
 
@@ -247,7 +250,7 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
     assert_accounting(host.seen.answer.as_ref().expect("actual global final reaches host parent"), turns, spent);
     assert_eq!(host.seen.fault, None);
     assert!(host.seen.turns.is_empty());
-    host.cleanup();
+    host.cleanup(Some(smith_host_domain::Exit::Code(0)));
     host.settled();
 }
 

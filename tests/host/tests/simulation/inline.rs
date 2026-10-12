@@ -74,7 +74,7 @@ fn a_drop_after_an_answer_releases_held_turns_without_replacing_the_answer() {
     let answer = host::Answer { read: None, turns: 1, spent: 0, result: RunResult::Parked };
     spawned.up(host::Up::Answer { answer });
     spawned.event(host::Input::Parent(parent::Event::Drop { agent: spawned.agent() }));
-    spawned.cleanup();
+    spawned.cleanup(Some(smith_host_domain::Exit::Code(0)));
     assert_eq!(spawned.seen.answer, Some(host::Answer { read: None, turns: 1, spent: 0, result: RunResult::Parked }));
     assert_eq!(spawned.seen.fault, None);
     assert!(!spawned.seen.down.iter().any(|message| matches!(message, host::Down::Acknowledge { .. })));
@@ -266,7 +266,7 @@ fn an_inline_runs_facts_are_drained_every_pass() {
         world
             .observations
             .iter()
-            .any(|fact| matches!(fact.kind, smith_inline_agent::FactKind::Gone { client: _, end: End::Stopped }))
+            .any(|fact| matches!(fact.kind, smith_inline_agent::FactKind::Gone { client: _, end: End::Settled }))
     );
 }
 
@@ -488,6 +488,6 @@ fn a_real_completion_stretches_the_spawned_watchdog_past_no_progress() {
     spawned.up(host::Up::LongDone);
     assert_eq!(spawned.seen.fault, None);
     spawned.up(host::Up::Answer { answer: host::Answer { read: None, turns: 0, spent: 0, result: RunResult::Parked } });
-    spawned.cleanup();
+    spawned.cleanup(Some(smith_host_domain::Exit::Code(0)));
     spawned.settled();
 }
