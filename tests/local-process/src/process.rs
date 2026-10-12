@@ -57,9 +57,6 @@ pub fn lower_configuration() -> agent::Config {
     for model in &mut lower.domain.models {
         model.head = Duration::from_secs(10);
     }
-    lower.limits.io.close_timeout = Duration::from_millis(50);
-    lower.limits.llm.connection.idle_keep = Duration::from_millis(5);
-    lower.limits.llm.connection.io.close_timeout = Duration::from_millis(50);
     lower.limits.domain.session.tools.file_bytes = 4096;
     lower.limits.domain.session.tools.list_entries = 32;
     lower.limits.domain.session.tools.list_bytes = 512;
@@ -122,6 +119,7 @@ pub fn configuration_with_tools(
     let mut policy =
         local_settings::policy(&settings, &endpoints, lower.limits.domain, allowances).expect("host charter policy");
     let mut host = smith_host_world::limits();
+    host.cancel_grace = agent::profile::standard().policy.cancel_grace;
     host.accounts = 1;
     host.charter_bytes = 65_536;
     host.transcript_bytes = 1_048_576;

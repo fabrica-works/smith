@@ -34,7 +34,7 @@ fn limits() -> ComponentLimits {
             connections: 1,
             calls: 1,
             per_endpoint: 1,
-            idle_keep: Duration::from_secs(10),
+            idle_keep: smith_agent_service::profile::standard().policy.connection_keep,
             io: skein_io::Limits {
                 sockets: 1,
                 names: 0,

@@ -118,8 +118,8 @@ fn a_forced_exit_is_a_host_notice_in_the_product_stream() {
         .collect();
     assert_eq!(notices.len(), 1);
     assert_eq!(notices[0].level, smith_events::Level::Warning);
-    assert_eq!(notices[0].forced, Some(smith_events::Forced::Terminated));
-    assert_eq!(notices[0].exit, Some(smith_events::AgentExit::Code(0)));
+    assert_eq!(notices[0].forced, Some(smith_events::Forced::Killed));
+    assert_eq!(notices[0].exit, Some(smith_events::AgentExit::Signal(9)));
     assert_eq!(notices[0].run, Some(1));
     assert!(matches!(records.last().map(|r| &r.event), Some(Event::SessionEnded(_))));
 }

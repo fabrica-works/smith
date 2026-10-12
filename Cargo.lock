@@ -1216,6 +1216,7 @@ dependencies = [
  "skein-tls",
  "skein-tls-world",
  "skein-world",
+ "smith-agent-service",
  "smith-domain",
  "smith-domain-tools",
  "smith-events",
