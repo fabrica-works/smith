@@ -430,7 +430,10 @@ fn verdict_kind(verdict: tools::Verdict) -> smith_events::Verdict {
         tools::Verdict::Found => smith_events::Verdict::Found,
         tools::Verdict::Written { .. } => smith_events::Verdict::Written,
         tools::Verdict::Edited { .. } => smith_events::Verdict::Edited,
-        tools::Verdict::Exited { .. } => smith_events::Verdict::Exited,
+        tools::Verdict::Exited { exit } => match exit {
+            tools::Exit::Code { .. } | tools::Exit::Signal { .. } => smith_events::Verdict::Exited,
+            tools::Exit::TimedOut => smith_events::Verdict::TimedOut,
+        },
         tools::Verdict::NotGranted => smith_events::Verdict::NotGranted,
         tools::Verdict::Outside => smith_events::Verdict::Outside,
         tools::Verdict::ReadOnly => smith_events::Verdict::ReadOnly,
@@ -534,6 +537,51 @@ mod tests {
         (book, sinks, destination, opener, metadata)
     }
 
+    fn timed_out_command_fact(opener: Token, metadata: session::ToolCall) -> session::Fact {
+        session::Fact {
+            at: metadata.deadline,
+            kind: session::FactKind::Tools {
+                opener,
+                fact: tools::FactKind::Answered {
+                    session: Token::new(88),
+                    tool: tools::Tool::Shell,
+                    verdict: tools::Verdict::Exited { exit: tools::Exit::TimedOut },
+                    bytes: 0,
+                    omitted_bytes: 0,
+                    clamped: true,
+                },
+            },
+            call: Some(metadata),
+            response: None,
+        }
+    }
+
+    #[test]
+    fn a_timed_out_command_is_projected_as_timed_out_with_its_bound() {
+        let (mut book, mut sinks, destination, opener, mut metadata) = fixture(Capture::Everything);
+        metadata.name = b"shell".as_slice().into();
+        metadata.effect = tools::Effect::Write;
+        let start = book.started(
+            Time::ZERO,
+            Time::from_nanos(3_000_000),
+            opener,
+            Scope { run: 77, conversation: 0 },
+            &metadata,
+        );
+        sinks.record(&start);
+        book.fact(Time::ZERO, &timed_out_command_fact(opener, metadata), &mut sinks);
+        let records = drain_ready(&mut sinks, destination);
+        let [started, completed] = records.as_slice() else { panic!("one command start and terminal") };
+        let Event::ToolStarted(started) = &started.event else { panic!("command start") };
+        let Event::ToolCompleted(completed) = &completed.event else { panic!("command terminal") };
+        assert_eq!(started.deadline_ms, Some(100));
+        assert_eq!(completed.verdict, smith_events::Verdict::TimedOut);
+        assert_eq!(completed.exit, None);
+        assert!(completed.clamped);
+        assert_eq!(completed.duration_ms, 100);
+        assert!(book.calls.is_empty());
+    }
+
     #[test]
     fn actual_workspace_terminals_keep_scalar_measurements_and_provider_identity_under_every_capture() {
         for capture in [Capture::None, Capture::Calls, Capture::Everything] {
@@ -554,7 +602,13 @@ mod tests {
                     0,
                     false,
                 ),
-                (tools::Verdict::Exited { exit: tools::Exit::TimedOut }, smith_events::Verdict::Exited, None, 9, true),
+                (
+                    tools::Verdict::Exited { exit: tools::Exit::TimedOut },
+                    smith_events::Verdict::TimedOut,
+                    None,
+                    9,
+                    true,
+                ),
                 (tools::Verdict::TimedOut, smith_events::Verdict::TimedOut, None, 0, true),
                 (tools::Verdict::Cancelled, smith_events::Verdict::Cancelled, None, 0, true),
             ] {
