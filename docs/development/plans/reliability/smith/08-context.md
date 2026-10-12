@@ -441,7 +441,18 @@ Scope: a history about to cross its message, block or byte bound is
 compacted as a failed check is; in a fresh window it fails with
 `Limit { which: History, bound }`. "A session never ends because its
 history grew" (session.md, 8.1). The transcript-full end goes, with every
-mapping of it.
+mapping of it. A completion's later batches, as the designer ruled on
+2026-10-12 (session.md, 8.1, "A completion's results never cross
+them"; limits.md, 3.2): the first batch's results fit whole by the
+derivation, which stays at one batch (`profile.rs:506`); before each
+later batch, `reserve_batch` (`session.rs` `advance`, near `:1443`)
+gives each of its calls its share of what is left of the history, less
+room for an answer to each call after it, as its cap: a read's window and
+a command's kept output as the call's budget, a listing's and a search's
+entries kept within it with the rest counted in `more`, a text result
+cut with its marker. Every call runs and is answered; no call is answered
+not run for this, and no new outcome or not-run reason is added. The
+next completion is then the compaction, by the history trigger above.
 Needs: smith 08's compaction (08.6).
 Files: `smith-domain-session` (`boundary.rs:404`, the 14 sites of
 `rg -n TranscriptFull crates/smith-domain-session/src/session.rs`,
@@ -459,15 +470,21 @@ Shape: the history trigger joins 08.6's two; `End::TranscriptFull`,
 `context_full` go, under channel version 2.
 Test shape: `tests/session/tests/compaction.rs`:
 `a_history_at_its_message_bound_compacts_instead_of_ending`,
-`a_fresh_window_at_its_history_bound_fails_naming_history`; fuzzy
-(`fuzzy_simulation.rs`): `no_drawn_session_ends_because_its_history_grew`.
+`a_fresh_window_at_its_history_bound_fails_naming_history`,
+`a_later_batch_runs_within_what_is_left_of_the_history_then_compacts`;
+fuzzy
+(`fuzzy_simulation.rs`): `no_drawn_session_ends_because_its_history_grew`,
+whose draws include completions of `calls_per_response` calls at their
+caps near the threshold.
 Ceilings: world 0.5 s, fuzzy 5 s.
 Proof: world, `a_history_at_its_message_bound_compacts_instead_of_ending`,
 run once with `heavy cargo nextest run -p smith-session-world -E 'test(history_at_its)'`:
 it passes when the session compacts and goes on; on the parent it ends
 `TranscriptFull`. Under 0.5 s. No probe shows it live: by derivation the
 check fires first (`window-first`).
-Don't: keep a transcript-full end under another name.
+Don't: keep a transcript-full end under another name; size the history
+for every call of a completion at its caps (it would pass `memory`);
+answer a call not run because the history filled.
 Size: at most 150 lines of production code, besides what it removes.
 Removes: `End::TranscriptFull`, `Fault::ContextFull`, `ModelFault::ContextFull`,
 `context_full` in the channel and in `run.completed`'s failure, their goldens
