@@ -398,7 +398,12 @@ when it is about one; and the kind's fields.
   HTTP failure, `retry_after_ms` when the provider said, and `detail`,
   the provider's text or the limit's words, as the session kept it
   (limits.md, 3.2): content, so only under `calls` and `everything`
-  (llm.md, section 6).
+  (llm.md, section 6). A limit a provider's failure caused, the window's
+  after *context too long* (domain/session.md, 8.2), is class `limit`
+  with its `limit`, and that failure's `evidence`, `status` and `detail`,
+  in `conversation.closed` and `run.completed`; that attempt's
+  `response.completed` keeps the provider's class. A limit no request
+  met is `unsent`, its detail the limit's words.
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
   `completion`, a completion failure; or with `account`; or with

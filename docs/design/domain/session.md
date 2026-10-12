@@ -371,6 +371,12 @@ window, history only grows (section 3).
   window that has made no ordinary completion yet, fails the session
   with a limit naming the window. A compaction that fails otherwise
   fails as any completion does, after its retries (section 4).
+  - **The window's limit keeps its cause.** When a provider's *context
+    too long* caused it, the limit carries that failure's evidence and
+    HTTP status, and the session's last failure detail stays the
+    provider's text (section 4): the limit is the end it led to, not a
+    later failure that replaces it. A check that fails before any request
+    is unsent, and its detail is the limit and its bound.
 - **No summary, no window.** An answer that is a refusal (its completion
   stopped for refusal, or it holds a refusal block), or whose text
   blocks hold nothing but ASCII whitespace, opens no window. The session
