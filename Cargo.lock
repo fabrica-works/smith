@@ -1070,6 +1070,7 @@ dependencies = [
 name = "smith-local-service"
 version = "0.0.0"
 dependencies = [
+ "skein-channel",
  "skein-fake-machine",
  "skein-fake-peers",
  "skein-io",

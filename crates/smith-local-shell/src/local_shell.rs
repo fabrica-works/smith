@@ -10,7 +10,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use skein_io::kernel::{Exit, Fd};
-use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
+use skein_shell::Clock;
 use smith_host_domain as host;
 use smith_host_protocol as protocol;
 use smith_local_domain as local;
@@ -71,7 +71,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         );
     }
     let agent_bytes = local_settings::agent_document(&settings).map_err(configuration)?;
-    let agent_config = config::parse(&agent_bytes).map_err(configuration)?;
+    let mut agent_config = config::parse(&agent_bytes).map_err(configuration)?;
     let endpoints = agent_config.service.channel_endpoints.clone();
     let mut prepared = policy(&settings, &agent_config.service).map_err(configuration)?;
     fs::create_dir_all(state_root).map_err(|error| host_failure(format!("state directory: {error}")))?;
@@ -106,7 +106,15 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
                 .map_err(configuration)?,
         );
     }
-    service::profile::memory(&limits, agent_config.memory).map_err(profile_refusal).map_err(configuration)?;
+    let trace = product_trace(&settings, agent_config.trace.take());
+    let (header, trace_memory) = Local::prepare_header(
+        &mut agent_config,
+        &mut limits,
+        trace.as_ref(),
+        settings.chat.as_bytes(),
+        u64::from(std::process::id()),
+    )?;
+    service::profile::memory(&limits, trace_memory).map_err(profile_refusal).map_err(configuration)?;
     let seed = skein_shell::seed().map_err(|error| host_failure(format!("local seed failed (errno {error})")))?;
     let local_config = service::Config {
         agent: service::AgentConfig::Spawned,
@@ -125,12 +133,9 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let signals = skein_shell::open_termination_signals()
         .map_err(|error| host_failure(format!("local signals failed (errno {error})")))?;
     let oauth_entropy = oauth_entropy().map_err(host_failure)?;
-    let trace = product_trace(&settings, agent_config.trace);
-    let trace_memory = agent_config.memory;
-    let chat = settings.chat.as_bytes().to_vec().into_boxed_slice();
     let (lower, spawned_trace) =
         if settings.in_process { (Some(agent_config.service), None) } else { (None, Some(agent_config.service)) };
-    let mut local_service = Local::within_memory(
+    let local_service = Local::within_memory(
         local_config,
         lower,
         Resources {
@@ -150,17 +155,9 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
             oauth_entropy,
         },
         Box::new(std::io::stderr()),
-        agent_config.memory,
+        trace_memory,
     )?;
-    if let Some(configuration) = spawned_trace
-        && trace.is_some()
-    {
-        local_service.prepare_trace(&configuration, trace_memory)?;
-    }
-    adopt_trace(&mut local_service, trace, chat)?;
-    let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
-        .map_err(|error| host_failure(format!("local kernel: {error}")))?;
-    Ok(drive(&mut kernel, &Clock::new(), &mut local_service))
+    local_service.run_traced(trace, header, spawned_trace, trace_memory)
 }
 
 fn open_effect_roots(settings: &local_settings::Settings) -> Result<Vec<Fd>, Failure> {
@@ -194,10 +191,10 @@ fn product_trace(
     trace
 }
 
-fn adopt_trace(
+pub(super) fn adopt_trace(
     local_service: &mut Local,
     trace: Option<smith_agent_shell::trace::TraceConfig>,
-    chat: Box<[u8]>,
+    header: Option<smith_events::SessionStarted>,
 ) -> Result<(), Failure> {
     if let Some(trace) = trace {
         let parent = trace.path.parent().ok_or_else(|| host_failure("trace path has no parent".into()))?;
@@ -206,7 +203,7 @@ fn adopt_trace(
         let fd = skein_shell::open_append(root, name.as_bytes(), 0o600)
             .map_err(|error| host_failure(format!("trace append: {error:?}")))?;
         let clocks = Clock::new().now();
-        let mut header = stream_header(chat, trace.capture, trace.delivery, u64::from(std::process::id()));
+        let mut header = header.expect("configured product header accompanies its trace");
         header.wall_ms = clocks.wall.as_nanos() / 1_000_000;
         local_service
             .adopt_trace(fd, Some(root), clocks.now, header, trace.delivery)
@@ -409,6 +406,7 @@ pub fn stream_header(
     capture: smith_agent_service::sinks::Capture,
     delivery: smith_agent_service::sinks::Delivery,
     pid: u64,
+    limits: skein_lib::List<smith_events::EffectiveLimit>,
 ) -> smith_events::SessionStarted {
     smith_events::SessionStarted {
         wall_ms: 0,
@@ -421,6 +419,6 @@ pub fn stream_header(
         capture: capture.encoded(),
         delivery: delivery.encoded(),
         versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
-        limits: skein_lib::List::with_capacity(0),
+        limits,
     }
 }

@@ -404,7 +404,7 @@ impl World {
         let bytes = machine.files.read(trace, 0, size).expect("trace bytes");
         machine.files.close(trace);
         let lower = process::lower_configuration();
-        let events = smith_agent_service::EventLimits::derive(
+        let mut events = smith_agent_service::EventLimits::derive(
             &lower.limits,
             smith_agent_service::sinks::Capture::Everything,
             1,
@@ -413,6 +413,7 @@ impl World {
             Duration::from_secs(1),
         )
         .expect("trace limits");
+        events.sinks.records.items = events.sinks.records.items.max(size);
         smith_agent_process_world::events::read(&bytes, &events)
     }
 

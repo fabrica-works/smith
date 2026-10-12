@@ -7,10 +7,12 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+mod header;
+
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{OutputDown, OutputOutcome, OutputUp};
 use skein_lib::{Env, Map, Queue, Time, Token, Wall};
-use skein_shell::Host;
+use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
 use smith_agent_service as agent;
 use smith_local_domain as domain;
 use smith_local_service as service;
@@ -82,6 +84,25 @@ pub struct Local {
 }
 
 impl Local {
+    /// Adopt the prepared product stream and drive all local owners to their terminal.
+    pub fn run_traced(
+        mut self,
+        trace: Option<smith_agent_shell::trace::TraceConfig>,
+        header: Option<smith_events::SessionStarted>,
+        lower: Option<agent::Config>,
+        available: u64,
+    ) -> Result<kernel::Exit, crate::local_shell::Failure> {
+        if let Some(configuration) = lower
+            && trace.is_some()
+        {
+            self.prepare_trace(&configuration, available)?;
+        }
+        crate::local_shell::adopt_trace(&mut self, trace, header)?;
+        let mut kernel = Kernel::open(KernelConfig { operations: self.operations() })
+            .map_err(|error| host_failure(format!("local kernel: {error}")))?;
+        Ok(drive(&mut kernel, &Clock::new(), &mut self))
+    }
+
     /// Compose either agent kind with the same file and terminal shell pass.
     pub fn new(
         config: service::Config,

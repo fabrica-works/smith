@@ -666,6 +666,12 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
             .expect("trace limits"),
         );
     }
+    let (lower, header) = if launch.traced {
+        let (lower, header) = product_header(&mut config, lower, &launch);
+        (lower, Some(header))
+    } else {
+        (lower, None)
+    };
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
     let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
@@ -700,15 +706,45 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     if launch.traced {
         let fd = inherited.appends.iter().find(|(name, _)| name.as_ref() == b"product-trace").expect("trace fd").1;
         let delivery = smith_agent_service::sinks::Delivery::Complete;
-        let header = smith_local_shell::local_shell::stream_header(
-            b"main".as_slice().into(),
-            smith_agent_service::sinks::Capture::Everything,
-            delivery,
-            101,
-        );
+        let header = header.expect("traced product header");
         local.adopt_trace(fd, None, Time::ZERO, header, delivery).expect("product trace adoption");
     }
     Proc::Local(Box::new(LocalProcess::new(capture.host(local), launch.keep_facts)))
+}
+
+fn product_header(
+    config: &mut service::Config,
+    lower: agent::Config,
+    launch: &Launch,
+) -> (agent::Config, smith_events::SessionStarted) {
+    if launch.in_process {
+        let cancel = match config.limits.local.agent {
+            local::AgentLimits::Inline(bounds) => bounds.cancel_grace,
+            local::AgentLimits::Spawned(bounds) => bounds.cancel_grace,
+        };
+        config.limits.local.agent = local::AgentLimits::inline(
+            config.limits.local.smith,
+            config.limits.local.unsaved,
+            config.local.budget.time,
+            cancel,
+        )
+        .expect("inline startup bounds");
+    }
+    let mut configuration = smith_agent_shell::config::Configuration {
+        service: lower,
+        memory: smith_agent_process_world::profile().declared.memory,
+        trace: None,
+        profile: smith_agent_process_world::profile(),
+        declarations: smith_agent_process_world::declarations(0),
+    };
+    let trace = smith_agent_shell::trace::TraceConfig {
+        path: launch.root_path.join("events.jsonl"),
+        capture: agent::sinks::Capture::Everything,
+        delivery: agent::sinks::Delivery::Complete,
+    };
+    let header = Local::trace_header(&mut configuration, &mut config.limits, &trace, b"main".as_slice().into(), 101)
+        .expect("product effective header");
+    (configuration.service, header)
 }
 /// The agent's declared workspace directories, each owned by this child.
 #[must_use]

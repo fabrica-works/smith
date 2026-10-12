@@ -57,6 +57,12 @@ pub enum Layer {
     Domain,
     /// The service's own limit, sent by startup.
     Service,
+    /// The local domain's derived limit, sent by its service.
+    Local,
+    /// The inline agent's derived limit, sent by its host.
+    Inline,
+    /// The spawned host and process adapter's derived limit, sent by startup.
+    Host,
 }
 
 impl Layer {
@@ -78,6 +84,9 @@ impl Layer {
             Self::Io => "io",
             Self::Domain => "domain",
             Self::Service => "service",
+            Self::Local => "local",
+            Self::Inline => "inline",
+            Self::Host => "host",
         }
     }
 }

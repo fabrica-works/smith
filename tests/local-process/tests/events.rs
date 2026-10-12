@@ -3,6 +3,25 @@ use smith_events::{Event, Mode};
 use smith_local_process_world::world::{Files, Placement, World};
 
 #[test]
+fn the_products_header_carries_its_local_limits() {
+    for placement in [Placement::InProcess, Placement::Spawned] {
+        let files = Files::new();
+        let mut world = World::traced(23, &files, placement, b"First answer");
+        world.settle();
+        let records = world.records();
+        let Event::SessionStarted(header) = &records[0].event else { panic!("header first") };
+        let local = header.limits.iter().find(|limit| limit.name.as_ref() == b"local.line_bytes");
+        let memory = header.limits.iter().find(|limit| limit.name.as_ref() == b"declared.memory");
+        assert_eq!(local.map(|limit| limit.value), Some(smith_events::LimitValue::Integer(248)));
+        assert_eq!(memory.map(|limit| limit.value), Some(smith_events::LimitValue::Integer(2_147_483_648)));
+        let inline = header.limits.iter().any(|limit| limit.name.as_ref() == b"inline.window.bytes");
+        let host = header.limits.iter().any(|limit| limit.name.as_ref() == b"host.process.io.sockets");
+        assert_eq!(inline, matches!(placement, Placement::InProcess));
+        assert_eq!(host, matches!(placement, Placement::Spawned));
+    }
+}
+
+#[test]
 fn an_inline_chat_writes_a_complete_stream_through_its_answer() {
     let files = Files::new();
     let mut world = World::traced(11, &files, Placement::InProcess, b"First answer");
