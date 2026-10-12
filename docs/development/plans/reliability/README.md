@@ -160,9 +160,9 @@ do not already say.
      the type's fields and other methods unchanged (decisions.md, 13.3);
    - a dependency the increment's code needs, added to a `Cargo.toml`
      (decisions.md, 13.4);
-   - at most 60 lines in the library of the world crate the Test shape
+   - at most 100 lines in the library of the world crate the Test shape
      names, that the Test shape's new tests need, with no existing
-     story's expected value changed (decisions.md, 13.4);
+     story's expected value changed (decisions.md, 13.4 and 13.24);
    - a referee or checker of a world that accepts what the increment's
      Shape newly requires, a line or an event, and nothing broader, its
      other checks unchanged (decisions.md, 13.8); and a test that asserts

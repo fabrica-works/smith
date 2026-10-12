@@ -197,6 +197,9 @@ The harness's face (decisions.md, 13.22): 03.9 appends one entry to
 records from the agent's trace at the trace path with `.agent` when that
 file exists, and from the trace path otherwise. Earlier entries stay as
 they are; no temporary registry, and no following registration step.
+Its Files gain `benchmarks/src/process.rs`'s trace opening and reading
+(`trace_file`, `execute_script`), only to choose `<trace>.agent` once it
+exists and keep the trace path otherwise (decisions.md, 13.24).
 Size: at most 200 lines of production code.
 Removes: nothing.
 

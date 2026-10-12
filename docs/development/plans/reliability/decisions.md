@@ -927,4 +927,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    is gone. 10.1 may add a diagnostic in its worktree that prints the
    leftover child's command once, run the story once, and remove it
    before its commit; nothing of it lands.
+24. **03.9's harness reads `.agent` once it exists; the world allowance is
+   100 lines** (block of 2026-10-12T15:11:25Z, smith 03.9). The harness
+   opens the trace it reads before it spawns the binary
+   (`benchmarks/src/process.rs`, `trace_file`, `execute_script`), so 13.22's
+   choice of `<trace>.agent` waits until that file exists; that code joins
+   03.9's Files, for that choice only. 03.9's world needs about 70 lines in
+   `tests/local-process/src/{process.rs,world.rs}` for the second trace
+   and its reader, past README rule 8's 60; the second time a world
+   library needed more (13.4 was 43), so rule 8's allowance becomes 100.
 
