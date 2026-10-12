@@ -991,3 +991,22 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    3 with its reason when SIGHUP is ignored: the test cannot pass while
    blind to a hangup, and no skein function or repin is needed.
 
+32. **A person's cue that waited for the crossing's notice moves to the
+   answer** (block of 2026-10-12T15:48:34Z, smith 05.14). 05.14's Scope:
+   "a wait whose fence is behind is a crossing, and shows nothing"
+   (host.md, section 8: "\"Waiting\" is shown only when every line
+   relayed is read"). `tests/local/tests/person.rs`'s
+   `a_person_typing_on_the_first_turn_has_both_lines_read` closes input
+   on `Trigger::Notice(Kind::Waiting)`, and its only waiting notice was
+   the one after turn 2, whose fence is line 1 with line 2 relayed: the
+   defect 05.14 removes. With it gone, turn 3 reads line 2 and the run
+   answers, and nothing closes input. Ruling: a plan defect, mine; that
+   cue becomes `Trigger::Answer`, which the person meets once, after
+   turn 3, and nothing else in the test changes. Another provider turn
+   before the wait, the alternative, would change the world's script for
+   one story. 05.14's own regression asserts no waiting notice while
+   line 2 is unread and the store's read fence at line 2 at its end; the
+   Test shape's "the chat waiting with the store's read fence at the
+   second line" is read so, since this script reads line 2 only in the
+   turn that answers. A step of an existing story changed this way is
+   not in README rule 8; a second such block adds it.
