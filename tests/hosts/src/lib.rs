@@ -119,6 +119,7 @@ fn host_limits() -> host::Limits {
 fn io_limits() -> io::Limits {
     io::Limits {
         sockets: 8,
+        names: 0,
         refusals: 1,
         intake: 4096,
         receive: 4096,

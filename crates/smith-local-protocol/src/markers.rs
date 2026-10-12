@@ -109,6 +109,7 @@ impl Markers {
             | file::Event::Stated { .. }
             | file::Event::Written { .. }
             | file::Event::Read { .. }
+            | file::Event::Cut { .. }
             | file::Event::Synced { .. }
             | file::Event::Closed { .. }
             | file::Event::Renamed { .. }

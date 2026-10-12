@@ -109,7 +109,7 @@ impl Post {
             http_up: Queue::with_capacity(64),
             plain_down: Queue::with_capacity(256),
         };
-        out.push(io::Request::Connect { owner, addr: destination.address });
+        out.push(io::Request::Connect { owner, addr: io::Addr::Ip(destination.address) });
         post.route(Time::ZERO, Wall::EPOCH, out);
         Ok(post)
     }
@@ -152,6 +152,8 @@ impl Post {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => {}
         }
         self.route(now, wall, out);
@@ -438,6 +440,7 @@ mod tests {
                 | io::Request::Stream { .. }
                 | io::Request::Output { .. }
                 | io::Request::Spawn { .. }
+                | io::Request::Window { .. }
                 | io::Request::Usage { .. }
                 | io::Request::Signal { .. }
                 | io::Request::Close { .. } => panic!("unexpected POST operation {request:?}"),

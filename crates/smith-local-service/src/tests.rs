@@ -36,6 +36,7 @@ pub(super) fn config() -> Config {
     let mut process = ProcessLimits {
         io: skein_io::Limits {
             sockets: 8,
+            names: 0,
             refusals: 1,
             intake: 4096,
             receive: 4096,

@@ -450,6 +450,8 @@ impl Local {
                 | io::Event::Spawned { .. }
                 | io::Event::Exited { .. }
                 | io::Event::Usage { .. }
+                | io::Event::Resized
+                | io::Event::Window { .. }
                 | io::Event::Shutdown { .. }) => panic!("unexpected terminal writer event: {other:?}"),
             }
         }
@@ -515,6 +517,7 @@ impl Local {
             | kernel::Op::Append { .. }
             | kernel::Op::Read { .. }
             | kernel::Op::Write { .. }
+            | kernel::Op::Truncate { .. }
             | kernel::Op::Sync { .. }
             | kernel::Op::Stat { .. }
             | kernel::Op::Rename { .. }
@@ -527,6 +530,7 @@ impl Local {
             | kernel::Op::ReadSignal { .. }
             | kernel::Op::PipeRead { .. }
             | kernel::Op::PipeWrite { .. }
+            | kernel::Op::Window { .. }
             | kernel::Op::Usage) => other,
         };
         let op = Token::new(self.operation);

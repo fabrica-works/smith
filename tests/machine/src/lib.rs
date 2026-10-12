@@ -41,6 +41,7 @@ fn machine_limits() -> Limits {
 fn io_limits() -> io::Limits {
     io::Limits {
         sockets: 8,
+        names: 0,
         refusals: 4,
         intake: 32,
         receive: 16,
@@ -424,6 +425,7 @@ impl skein_world::Machine for Adapter {
             | Ask::Read { .. }
             | Ask::Write { .. }
             | Ask::Append { .. }
+            | Ask::Truncate { .. }
             | Ask::Sync { .. }
             | Ask::Stat { .. }
             | Ask::Rename { .. }

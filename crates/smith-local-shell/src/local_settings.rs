@@ -536,6 +536,7 @@ fn read_document(path: &Path) -> Result<Value, String> {
             skein_shell::Unread::Absent => format!("settings metadata {}: file absent", path.display()),
             skein_shell::Unread::NotAFile => format!("settings {}: not a regular file", path.display()),
             skein_shell::Unread::TooLarge { max } => format!("settings {} exceed {max} bytes", path.display()),
+            skein_shell::Unread::Unsafe(reason) => format!("settings read {}: {reason:?}", path.display()),
             skein_shell::Unread::Kernel(error) => format!("settings read {}: {error:?}", path.display()),
         },
     )?;

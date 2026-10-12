@@ -75,6 +75,7 @@ impl Terminal {
         );
         let limits = io::Limits {
             sockets: 4,
+            names: 0,
             refusals: 1,
             intake: 256,
             receive: 256,

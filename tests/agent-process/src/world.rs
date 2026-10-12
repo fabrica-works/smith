@@ -201,6 +201,7 @@ impl Parent {
             | Op::Append { .. }
             | Op::Read { .. }
             | Op::Write { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
@@ -208,6 +209,7 @@ impl Parent {
             | Op::MakeDirectory { .. }
             | Op::List { .. }
             | Op::ReadSignal { .. }
+            | Op::Window { .. }
             | Op::Usage
             | Op::Cancel { .. } => unreachable!("scripted parent owns only process pipes"),
         }

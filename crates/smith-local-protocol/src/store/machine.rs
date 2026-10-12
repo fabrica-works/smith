@@ -250,6 +250,7 @@ impl Store {
             | file::Event::Written { .. }
             | file::Event::Read { .. }
             | file::Event::Renamed { .. }
+            | file::Event::Cut { .. }
             | file::Event::Listed { .. } => unreachable!("store requests have whole-file terminals"),
         }
     }

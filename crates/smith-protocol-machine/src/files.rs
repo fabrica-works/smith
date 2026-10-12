@@ -131,6 +131,7 @@ pub(crate) fn terminal(kind: Kind, event: file::Event) -> tools::Done {
         | file::Event::Stated { .. }
         | file::Event::Written { .. }
         | file::Event::Read { .. }
+        | file::Event::Cut { .. }
         | file::Event::Synced { .. }
         | file::Event::Closed { .. }
         | file::Event::Renamed { .. }

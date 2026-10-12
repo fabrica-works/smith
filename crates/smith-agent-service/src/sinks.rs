@@ -592,6 +592,8 @@ impl Sinks {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => return,
         };
         for index in 0..self.writers.len() {
@@ -789,6 +791,8 @@ fn received(writer: &mut Writer, event: io::Event) {
         | io::Event::Spawned { .. }
         | io::Event::Exited { .. }
         | io::Event::Usage { .. }
+        | io::Event::Resized
+        | io::Event::Window { .. }
         | io::Event::Shutdown { .. } => {}
     }
 }

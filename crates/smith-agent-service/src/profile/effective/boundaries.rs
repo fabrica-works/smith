@@ -38,8 +38,19 @@ pub(super) fn machine(inventory: &mut Inventory, limits: &smith_protocol_machine
 }
 
 pub(super) fn io(inventory: &mut Inventory, limits: &skein_io::Limits) -> Option<()> {
-    let skein_io::Limits { sockets, refusals, intake, receive, output, sends, accepts, backlog, close_timeout, retry } =
-        *limits;
+    let skein_io::Limits {
+        sockets,
+        names: _,
+        refusals,
+        intake,
+        receive,
+        output,
+        sends,
+        accepts,
+        backlog,
+        close_timeout,
+        retry,
+    } = *limits;
     inventory.layer = Layer::Io;
     inventory.value("sockets", Value::Count(u64::from(sockets)))?;
     inventory.value("refusals", Value::Count(u64::from(refusals)))?;

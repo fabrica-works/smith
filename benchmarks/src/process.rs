@@ -374,6 +374,7 @@ impl Host for Output {
                 | Op::Open { .. }
                 | Op::Write { .. }
                 | Op::Append { .. }
+                | Op::Truncate { .. }
                 | Op::Sync { .. }
                 | Op::Stat { .. }
                 | Op::Rename { .. }
@@ -383,6 +384,7 @@ impl Host for Output {
                 | Op::Spawn { .. }
                 | Op::Wait { .. }
                 | Op::Signal { .. }
+                | Op::Window { .. }
                 | Op::Usage
                 | Op::ReadSignal { .. }
                 | Op::Cancel { .. } => unreachable!("output submits only pipe operations and closes"),

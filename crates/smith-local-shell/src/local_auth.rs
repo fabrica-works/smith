@@ -211,7 +211,10 @@ impl Auth {
     pub(crate) fn visit(&mut self, url: Box<[u8]>, out: &mut Queue<io::Request>) {
         if let Some(address) = self.loopback {
             self.pending_url = Some(url);
-            out.push(io::Request::Listen { owner: self.listener_owner, addr: kernel::Addr::from(address) });
+            out.push(io::Request::Listen {
+                owner: self.listener_owner,
+                addr: io::Addr::Ip(kernel::Addr::from(address)),
+            });
         } else {
             self.credential.from_below(CredentialEvent::Cancel, &mut self.out);
         }
@@ -342,6 +345,8 @@ impl Auth {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => {}
         }
     }
@@ -488,10 +493,11 @@ pub(crate) fn event_owner(event: &io::Event) -> Token {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Window { owner, .. }
         | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => *owner,
-        io::Event::Shutdown { .. } => Token::new(u64::MAX),
+        io::Event::Resized | io::Event::Shutdown { .. } => Token::new(u64::MAX),
     }
 }
 

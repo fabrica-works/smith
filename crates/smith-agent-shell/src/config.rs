@@ -189,6 +189,7 @@ pub fn read(path: &Path) -> Result<Configuration, String> {
             skein_shell::Unread::TooLarge { max } => {
                 format!("configuration {} is larger than {max} bytes", path.display())
             }
+            skein_shell::Unread::Unsafe(reason) => format!("configuration read {}: {reason:?}", path.display()),
             skein_shell::Unread::Kernel(error) => format!("configuration read {}: {error:?}", path.display()),
         })?;
     parse(&bytes)

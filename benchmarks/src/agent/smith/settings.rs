@@ -265,6 +265,16 @@ mod tests {
         }
     }
 
+    fn loopback_template() -> Value {
+        let mut base: Value =
+            serde_json::from_str(include_str!("../../../agents/smith/legacy.json")).expect("template");
+        let endpoint = base["agent"]["endpoints"][0].as_object_mut().expect("fixture endpoint");
+        endpoint.insert("address".into(), json!("127.0.0.1:443"));
+        endpoint.insert("transport".into(), json!("plaintext"));
+        endpoint.remove("server_name");
+        base
+    }
+
     fn native_shape_cases() {
         let root = std::env::temp_dir().join(format!("smith-settings-{}", std::process::id()));
         std::fs::create_dir(&root).expect("fixture parent");
@@ -278,7 +288,7 @@ mod tests {
         let model = crate::ModelChoice { model: Some("selected-model".into()), effort: Some("low".into()) };
         let arm = ArmRef::Installed { program: "/unused".into() };
         let environment = vec![("NAMED".into(), "exact-value".into())];
-        let base: Value = serde_json::from_str(include_str!("../../../agents/smith/legacy.json")).expect("template");
+        let base = loopback_template();
         let render = |task: &Task, shape| {
             settings(
                 &Context {

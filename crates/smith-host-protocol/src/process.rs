@@ -381,6 +381,8 @@ impl Process {
             | IoEvent::Spawned { .. }
             | IoEvent::Exited { .. }
             | IoEvent::Usage { .. }
+            | IoEvent::Resized
+            | IoEvent::Window { .. }
             | IoEvent::Shutdown { .. }
             | IoEvent::Failed { .. }
             | IoEvent::Closed { .. }

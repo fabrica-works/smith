@@ -182,8 +182,19 @@ fn host_domain(limits: &smith_host_domain::Limits) -> Box<[Limit]> {
 
 fn process(limits: &crate::ProcessLimits) -> Box<[Limit]> {
     let crate::ProcessLimits { io, channel, detail_bytes, queue } = *limits;
-    let skein_io::Limits { sockets, refusals, intake, receive, output, sends, accepts, backlog, close_timeout, retry } =
-        io;
+    let skein_io::Limits {
+        sockets,
+        names: _,
+        refusals,
+        intake,
+        receive,
+        output,
+        sends,
+        accepts,
+        backlog,
+        close_timeout,
+        retry,
+    } = io;
     let smith_host_protocol::Limits { bodies: _, charter: _, transcript: _, endpoints, channel, start_bytes, calls } =
         channel;
     let skein_channel::Limits { chunk, credential, skip, output_bytes, output_frames, kinds } = channel;

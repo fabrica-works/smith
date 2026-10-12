@@ -409,6 +409,7 @@ fn io_limits(
         .ok_or(refusal)?;
     Ok(io::Limits {
         sockets,
+        names: 0,
         refusals: 4,
         intake: 19_000,
         receive: 4096,

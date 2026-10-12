@@ -36,7 +36,7 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
             Err(skein_shell::Unread::Absent) => continue,
             Err(skein_shell::Unread::NotAFile) => return Err(refusal(origin, "settings", "expected a regular file")),
             Err(skein_shell::Unread::TooLarge { .. }) => return Err(refusal(origin, "settings", "file exceeds 1 MiB")),
-            Err(skein_shell::Unread::Kernel(_)) => {
+            Err(skein_shell::Unread::Unsafe(_) | skein_shell::Unread::Kernel(_)) => {
                 return Err(refusal(origin, "settings", "kernel could not read settings"));
             }
         };

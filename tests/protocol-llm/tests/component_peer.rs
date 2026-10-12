@@ -37,6 +37,7 @@ fn limits() -> ComponentLimits {
             idle_keep: Duration::from_secs(10),
             io: skein_io::Limits {
                 sockets: 1,
+                names: 0,
                 refusals: 1,
                 intake: 19_000,
                 receive: 1024,
@@ -286,6 +287,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
                 | IoRequest::Signal { .. }
+                | IoRequest::Window { .. }
                 | IoRequest::Usage { .. }) => panic!("unexpected io request: {other:?}"),
             }
         }

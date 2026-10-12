@@ -942,6 +942,8 @@ fn lower_events(service: &mut Service) {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Failed { .. }
             | io::Event::Closed { .. } => true,
         };
@@ -1060,6 +1062,8 @@ fn route_io_event(service: &mut Service, event: io::Event) {
         | io::Event::Spawned { .. }
         | io::Event::Exited { .. }
         | io::Event::Usage { .. }
+        | io::Event::Resized
+        | io::Event::Window { .. }
         | io::Event::Shutdown { .. }
         | io::Event::Failed { .. }
         | io::Event::Closed { .. } => {}
@@ -1074,6 +1078,7 @@ fn route_io_event(service: &mut Service, event: io::Event) {
         }
     }
     match event {
+        io::Event::Resized | io::Event::Window { .. } => {}
         io::Event::Shutdown { signal: _ } => teardown::shutdown(service),
         io::Event::Stream { owner, up } if Some(owner) == service.input => {
             service.channel.as_mut().expect("framed agent owns its channel").from_below(
@@ -1135,6 +1140,8 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Failed { .. }
             | io::Event::Shutdown { .. } => false,
         };
@@ -1163,6 +1170,8 @@ fn route_owned_io(service: &mut Service, event: io::Event) {
         | io::Event::Exited { .. }
         | io::Event::Usage { .. }
         | io::Event::Failed { .. }
+        | io::Event::Resized
+        | io::Event::Window { .. }
         | io::Event::Shutdown { .. } => false,
     };
     match route {
@@ -1200,10 +1209,11 @@ fn io_event_owner(event: &io::Event) -> Option<Token> {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Window { owner, .. }
         | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => Some(*owner),
-        io::Event::Shutdown { .. } => None,
+        io::Event::Resized | io::Event::Shutdown { .. } => None,
     }
 }
 
@@ -1223,9 +1233,10 @@ fn remap_io_owner(event: io::Event, owner: Token) -> io::Event {
         io::Event::Spawned { child, pipes, .. } => io::Event::Spawned { owner, child, pipes },
         io::Event::Exited { exit, .. } => io::Event::Exited { owner, exit },
         io::Event::Usage { usage, .. } => io::Event::Usage { owner, usage },
+        io::Event::Window { window, .. } => io::Event::Window { owner, window },
         io::Event::Failed { error, .. } => io::Event::Failed { owner, error },
         io::Event::Closed { .. } => io::Event::Closed { owner },
-        io::Event::Shutdown { .. } => unreachable!("signals have no component owner"),
+        io::Event::Resized | io::Event::Shutdown { .. } => unreachable!("signals have no component owner"),
     }
 }
 
@@ -2019,6 +2030,7 @@ fn component_down(service: &mut Service) {
             | io::Request::Output { .. }
             | io::Request::Spawn { .. }
             | io::Request::Signal { .. }
+            | io::Request::Window { .. }
             | io::Request::Usage { .. }
             | io::Request::Close { .. }
             | io::Request::Abort { .. }) => service.io_requests.push(other),
@@ -2325,6 +2337,7 @@ mod tests {
         }
         let llm_io = io::Limits {
             sockets: 3,
+            names: 0,
             refusals: 1,
             intake: 19_000,
             receive: 1024,

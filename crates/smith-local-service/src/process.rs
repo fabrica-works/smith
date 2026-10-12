@@ -667,6 +667,7 @@ impl ProcessAdapter {
                 continue;
             }
             match event {
+                io::Event::Resized | io::Event::Window { .. } => {}
                 io::Event::Shutdown { .. } => terminal.interrupt(terminal_events),
                 io::Event::Stream { owner, up } if Some(owner) == self.terminal_input => match up {
                     stream::Up::Bytes(bytes) => {
@@ -1094,10 +1095,11 @@ fn io_owner(event: &io::Event) -> Option<Token> {
         | io::Event::Output { owner, .. }
         | io::Event::Spawned { owner, .. }
         | io::Event::Exited { owner, .. }
+        | io::Event::Window { owner, .. }
         | io::Event::Usage { owner, .. }
         | io::Event::Failed { owner, .. }
         | io::Event::Closed { owner } => Some(*owner),
-        io::Event::Shutdown { .. } => None,
+        io::Event::Resized | io::Event::Shutdown { .. } => None,
     }
 }
 

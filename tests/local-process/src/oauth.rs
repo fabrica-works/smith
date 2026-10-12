@@ -47,7 +47,7 @@ impl Browser {
         let (address, request) = get(url);
         let limits = browser_limits();
         let mut requests = Queue::with_capacity(64);
-        requests.push(io::Request::Connect { owner: Token::new(1), addr: kernel::Addr::from(address) });
+        requests.push(io::Request::Connect { owner: Token::new(1), addr: io::Addr::Ip(kernel::Addr::from(address)) });
         Self {
             io: io::Io::new(&limits),
             env: Env { now: Time::ZERO, wall: pki::VALID, limits },
@@ -209,8 +209,10 @@ impl Host for Browser {
                         let (address, request) = get(&url);
                         self.tls = tls_for(&url);
                         self.request = Some(request);
-                        self.requests
-                            .push(io::Request::Connect { owner: Token::new(1), addr: kernel::Addr::from(address) });
+                        self.requests.push(io::Request::Connect {
+                            owner: Token::new(1),
+                            addr: io::Addr::Ip(kernel::Addr::from(address)),
+                        });
                     } else {
                         self.ended = true;
                     }
@@ -287,6 +289,7 @@ fn browser_limits() -> io::Limits {
     io::Limits {
         // The redirect connects before the retired authorization socket is reclaimed.
         sockets: 2,
+        names: 0,
         refusals: 1,
         intake: 32_768,
         receive: 4096,

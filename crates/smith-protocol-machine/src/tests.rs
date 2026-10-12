@@ -578,12 +578,15 @@ fn every_operation_translates_the_directory_itself_and_nested_paths_once() {
                     | file::Request::Scan { path, .. } => assert_eq!(path.as_ref(), expected),
                     other @ (file::Request::Create { .. }
                     | file::Request::CreateNoFollow { .. }
+                    | file::Request::OpenWrite { .. }
+                    | file::Request::OpenWriteNoFollow { .. }
                     | file::Request::OpenRead { .. }
                     | file::Request::OpenReadNoFollow { .. }
                     | file::Request::OpenDirectory { .. }
                     | file::Request::Stat { .. }
                     | file::Request::WriteAt { .. }
                     | file::Request::ReadAt { .. }
+                    | file::Request::Cut { .. }
                     | file::Request::Sync { .. }
                     | file::Request::Close { .. }
                     | file::Request::SyncDirectory { .. }

@@ -697,7 +697,11 @@ fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
             lifetime: Duration::from_secs(200),
             environment: &[],
         };
-        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
+        let mut prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
+        let endpoint = prepared.rendered["agent"]["endpoints"][0].as_object_mut().expect("fixture endpoint");
+        endpoint.insert("address".into(), serde_json::json!("127.0.0.1:443"));
+        endpoint.insert("transport".into(), serde_json::json!("plaintext"));
+        endpoint.remove("server_name");
         let settings_path = private.root.join("settings.json");
         std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
             .expect("private settings");
