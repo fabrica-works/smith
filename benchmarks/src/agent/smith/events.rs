@@ -9,6 +9,7 @@ use smith_events::{Event, Reader, Record, SessionEnded, SessionStarted};
 use crate::agent::{HarnessFault, Seen};
 use crate::{Classification, Counts, Exit, Forced, TokenRecord};
 
+mod delegation;
 mod usage;
 mod usage_sums;
 
@@ -245,6 +246,12 @@ impl Observer {
     /// Count per-response usage once within each session and run's actual scope.
     pub fn tokens(&self) -> Result<Vec<TokenRecord>, HarnessFault> {
         usage::tokens(&self.sessions).map_err(fault)
+    }
+
+    /// Retain reported child shares, stops, turns and the union of main call spans.
+    #[must_use]
+    pub fn delegation(&self) -> crate::Delegation {
+        delegation::delegation(self)
     }
 
     /// Counts are exact only where the session explicitly reports no event loss.

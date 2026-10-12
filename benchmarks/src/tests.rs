@@ -589,7 +589,7 @@ fn result_readers_refuse_versions_unknown_shapes_and_trailing_documents() {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/results/attempt.json");
     let text = std::fs::read_to_string(&file).expect("recorded result");
     let mut document: serde_json::Value = serde_json::from_str(&text).expect("JSON");
-    document["version"] = 2.into();
+    document["version"] = 3.into();
     assert_eq!(crate::parse_result(&file, &document.to_string()).expect_err("another version").key, "version");
     document["version"] = crate::RESULT_VERSION.into();
     document["counts"]["extra"] = 1.into();
@@ -950,6 +950,7 @@ fn summary_baseline_and_comparison_contracts() {
     comparison::a_model_missing_from_the_price_table_leaves_priced_spend_unavailable();
     comparison::teardown_resources_and_tool_calls_are_never_compared_across_agents();
     comparison::tool_calls_by_name_are_summarised_per_arm();
+    delegation_medians_join_the_arm_summary();
 }
 
 fn task_waivers_keep_raw_passive_failures_and_unavailable_judgments() {
@@ -986,4 +987,38 @@ fn task_waivers_keep_raw_passive_failures_and_unavailable_judgments() {
     assert_eq!(checks[0].passed, Measure::Observed { value: false });
     result.outcome.end = End::Timeout;
     assert_eq!(crate::passive::judge(&result.health, &[], &result.outcome).len(), 3);
+}
+
+fn delegation_medians_join_the_arm_summary() {
+    let mut results = Vec::new();
+    for index in 0..5 {
+        let mut result = recorded_result();
+        result.identity.attempt = format!("attempt-{index}");
+        result.delegation = crate::Delegation {
+            turns: crate::Measure::Observed { value: 10 + index },
+            children: crate::Measure::Observed {
+                value: vec![crate::Child {
+                    conversation: 1,
+                    requested: None,
+                    share: crate::Share { turns: 3, time_ms: 1000, spend: 10 },
+                    clamped: Vec::new(),
+                    stop: crate::ChildStop::Budget,
+                    turns: 3,
+                    time_ms: 100,
+                }],
+            },
+            parent_blocked_ms: crate::Measure::Observed { value: 100 + index },
+        };
+        results.push(result);
+    }
+    let summary =
+        crate::summarise(&results, "sample", "small", crate::Design::Single, 17, None, &crate::PriceTable::default())
+            .expect("summary");
+    for (name, expected) in [("turns", 12.0), ("children", 1.0), ("children_budget", 1.0), ("parent_blocked_ms", 102.0)]
+    {
+        assert_eq!(
+            summary.groups[0].metrics[&format!("delegation/{name}")].median,
+            crate::Measure::Observed { value: expected }
+        );
+    }
 }

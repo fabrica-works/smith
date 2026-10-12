@@ -187,6 +187,22 @@ fn metric_values(result: &AttemptResult, prices: &crate::PriceTable) -> BTreeMap
         }
     }
     values.insert("spend_usd/priced".into(), priced_spend(result, prices));
+    values.insert("delegation/turns".into(), measure_u64(&result.delegation.turns));
+    values.insert("delegation/parent_blocked_ms".into(), measure_u64(&result.delegation.parent_blocked_ms));
+    for (name, budget_only) in [("children", false), ("children_budget", true)] {
+        let count = match &result.delegation.children {
+            Measure::Observed { value } => measure_u64(&Measure::Observed {
+                value: u64::try_from(
+                    value.iter().filter(|child| !budget_only || child.stop == crate::ChildStop::Budget).count(),
+                )
+                .expect("children fit u64"),
+            }),
+            Measure::LowerBound { missing, .. } => Measure::unavailable(missing.join("; ")),
+            Measure::Unavailable { reason } => Measure::unavailable(reason),
+        };
+        values.insert(format!("delegation/{name}"), count);
+    }
+
     for (name, count) in &result.counts.tool_calls {
         values.insert(format!("tool_calls/{name}"), measure_u64(count));
     }

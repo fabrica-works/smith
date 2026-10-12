@@ -4,6 +4,9 @@ use smith_events::{Event, Limits, Record};
 
 pub mod common;
 
+#[path = "events/delegation.rs"]
+mod delegation;
+
 use common::events::{LIMITS, balanced, bytes, record};
 
 fn observe(records: &[Record]) -> Observer {
@@ -1453,6 +1456,11 @@ fn smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_z
 
 #[test]
 fn typed_event_stream_classification_usage_and_author_predicates() {
+    delegation::a_childs_share_stop_turns_and_time_are_recorded();
+    delegation::a_clamped_share_names_its_part_and_bound();
+    delegation::parent_blocked_time_is_the_union_of_sub_agent_spans();
+    delegation::event_loss_leaves_delegation_unavailable();
+    delegation::an_unknown_child_stop_leaves_children_unavailable();
     smoke_usage_sums_compare_optional_raw_counts_once_and_do_not_fill_null_with_zero();
     expected_entrance_refusal_requires_captured_reason_and_no_request();
     every_codec_golden_remains_readable_as_outside_recorded_bytes();

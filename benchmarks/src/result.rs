@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Agent, Provider, Refusal, TokenRecord};
 
 /// The one result format understood by this harness.
-pub const RESULT_VERSION: u32 = 1;
+pub const RESULT_VERSION: u32 = 2;
 
 /// A measurement supplied by an observer, preserving its knowledge boundary.
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -135,6 +135,102 @@ pub struct Counts {
     pub conversations: Measure<u64>,
     pub compactions: Measure<u64>,
     pub message_terminals: BTreeMap<String, Measure<u64>>,
+}
+
+/// Exact delegation supplied by an agent adapter (benchmarks.md, section 8.1).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Delegation {
+    /// Main's completions, from run.completed.turns.
+    pub turns: Measure<u64>,
+    /// Child evidence in opening order.
+    pub children: Measure<Vec<Child>>,
+    /// The union of main's `sub_agent` call spans, in milliseconds.
+    pub parent_blocked_ms: Measure<u64>,
+}
+
+impl Delegation {
+    /// Leave every part unavailable when the adapter does not expose it.
+    #[must_use]
+    pub fn unavailable(reason: &str) -> Self {
+        Self {
+            turns: Measure::unavailable(reason),
+            children: Measure::unavailable(reason),
+            parent_blocked_ms: Measure::unavailable(reason),
+        }
+    }
+}
+
+/// One child's opening share and terminal supplied by smith's event adapter.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Child {
+    pub conversation: u64,
+    pub requested: Option<Requested>,
+    pub share: Share,
+    pub clamped: Vec<Clamp>,
+    pub stop: ChildStop,
+    pub turns: u64,
+    pub time_ms: u64,
+}
+
+/// The caller's optional turn and second limits, recorded at child opening.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Requested {
+    pub turns: Option<u64>,
+    pub seconds: Option<u64>,
+}
+
+/// Effective child allowance from smith's opening; spend is micro-dollars.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Share {
+    pub turns: u64,
+    pub time_ms: u64,
+    pub spend: u64,
+}
+
+/// A share part lowered by a bound, recorded at child opening.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Clamp {
+    pub part: SharePart,
+    pub by: ShareBound,
+}
+
+/// The part of a child's share lowered by smith's run.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SharePart {
+    /// Its completion allowance.
+    Turns,
+    /// Its wall-clock allowance.
+    Time,
+}
+
+/// The bound that lowered the child's requested share.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShareBound {
+    /// The parent's remaining ordinary pool above its finishing reserve.
+    Reserve,
+    /// The asker's call deadline.
+    Deadline,
+}
+
+/// The child's terminal reported by its enclosing tool completion.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChildStop {
+    /// The child chose to answer.
+    End,
+    /// Its share ended the answer.
+    Budget,
+    /// It failed without answering.
+    Failed,
+    /// It closed without answering.
+    Closed,
 }
 
 /// The process scope counted by the runner's resource observer.
@@ -336,6 +432,7 @@ pub struct AttemptResult {
     pub timing: Timing,
     pub tokens: Vec<TokenRecord>,
     pub counts: Counts,
+    pub delegation: Delegation,
     pub resources: Resources,
     pub spend: Spend,
     pub outcome: Outcome,

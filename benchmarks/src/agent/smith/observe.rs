@@ -286,6 +286,15 @@ impl Observing {
         counts
     }
 
+    /// Delegation is exact on the event face; the frozen trace does not expose it.
+    #[must_use]
+    pub fn delegation(&self) -> crate::Delegation {
+        match &self.observer {
+            Observer::Events(observer) => observer.delegation(),
+            Observer::Legacy(_) => crate::Delegation::unavailable("legacy trace does not report exact delegation"),
+        }
+    }
+
     /// Count content usage once for each trace-visible completion ordinal.
     pub fn tokens(&self) -> Result<Vec<TokenRecord>, String> {
         match &self.observer {

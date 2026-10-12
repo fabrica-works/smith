@@ -34,9 +34,10 @@ pub mod grade;
 pub use agent::{Agent, Configuration, PinnedConfiguration, Provider, read_configuration};
 pub use models::{ModelChoice, ModelTiers, PriceTable, Prices, read_model_tiers, read_prices};
 pub use result::{
-    Artifact, AttemptResult, BudgetLimit, CheckVerdict, Classification, Counts, End, Exit, FailureReason, Forced,
-    Headroom, Health, Identity, Measure, ModelIdentity, Outcome, RESULT_VERSION, ResourceScope, Resources, SmithFace,
-    Spend, SpendBasis, Timing, classify_smith_exit, parse_result, read_result, render_result,
+    Artifact, AttemptResult, BudgetLimit, CheckVerdict, Child, ChildStop, Clamp, Classification, Counts, Delegation,
+    End, Exit, FailureReason, Forced, Headroom, Health, Identity, Measure, ModelIdentity, Outcome, RESULT_VERSION,
+    Requested, ResourceScope, Resources, Share, ShareBound, SharePart, SmithFace, Spend, SpendBasis, Timing,
+    classify_smith_exit, parse_result, read_result, render_result,
 };
 pub use stats::{
     Comparison, Interval, ProbeVerdict, audit_sample, bootstrap_ratio, coefficient_of_variation, interleave, median,

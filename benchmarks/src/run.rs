@@ -106,6 +106,7 @@ fn blank(identity: Identity) -> AttemptResult {
             compactions: Measure::unavailable(missing),
             message_terminals: BTreeMap::new(),
         },
+        delegation: crate::Delegation::unavailable("inference did not start; delegation not observed"),
         resources: Resources {
             cpu_scope: ResourceScope::Unavailable,
             cpu_ms: Measure::unavailable(missing),
@@ -545,6 +546,8 @@ fn collect_observation(
     if let Some(observing) = process.observing.as_mut() {
         match observing.as_mut() {
             crate::agent::Observing::Codex(observing) => {
+                result.delegation =
+                    crate::Delegation::unavailable("Codex does not report child shares or parent blocking");
                 if let Some(thread) = observing.observer.thread().map(str::to_owned) {
                     let collection = observing.collect().map(|_| ()).map_err(|error| error.what);
                     if let Some(rollouts) = &observing.collected {
@@ -565,6 +568,7 @@ fn collect_observation(
                 result.tokens = observing.tokens()?;
                 result.spend = observing.spend(&result.tokens)?;
                 result.counts = observing.counts();
+                result.delegation = observing.delegation();
             }
         }
     }
@@ -610,6 +614,8 @@ fn observe(
     if let Some(observing) = &mut process.observing {
         match observing.as_mut() {
             crate::agent::Observing::Codex(observing) => {
+                result.delegation =
+                    crate::Delegation::unavailable("Codex does not report child shares or parent blocking");
                 if let Some(borrowed) = observing.prepared.borrowed.take() {
                     let proof = borrowed.finish(guard)?;
                     login_unchanged = Measure::Observed { value: proof.source_unchanged };

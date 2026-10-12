@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "identity": {
     "run": "recorded-run",
     "attempt": "recorded-attempt",
@@ -262,5 +262,19 @@
       "path": "output.jsonl",
       "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
     }
-  ]
+  ],
+  "delegation": {
+    "turns": {
+      "state": "unavailable",
+      "reason": "Codex does not report exact delegation"
+    },
+    "children": {
+      "state": "unavailable",
+      "reason": "Codex does not report exact delegation"
+    },
+    "parent_blocked_ms": {
+      "state": "unavailable",
+      "reason": "Codex does not report exact delegation"
+    }
+  }
 }

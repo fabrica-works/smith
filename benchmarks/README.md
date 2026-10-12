@@ -89,7 +89,7 @@ and process wall time, token fields and priced spend compare across agents.
 summaries and baselines; raw attempt data stays outside repositories.
 Smoke and fix evidence belongs in commit bodies.
 
-Results are strict version-one JSON documents with observed,
+Results are strict version-two JSON documents with observed,
 lower-bound or unavailable measurements. Missing observations never
 become zero or a root-only fallback. Token records retain their scope
 and convention, deduplicate responses and name missing child evidence.
