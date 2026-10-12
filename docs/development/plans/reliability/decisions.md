@@ -836,4 +836,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the stream, with a unit proof. Between the two, the stream tells a
    compaction's responses as an ordinary completion's; nothing reads
    that live until smith 00.16, which now needs 08.10 too.
+14. **`smith-bench build` serializes on its clone** (block of
+   2026-10-12T13:59:01Z, smith 04.7). `arm::build` fetches and checks out
+   each commit in one shared clone, `$XDG_STATE_HOME/smith-bench/clone`,
+   and builds into one shared `build-target` (`arm.rs:151-165`, `:343`);
+   the build lane runs two tasks at once, so a session's build of its
+   commit compiled another's checkout. Ruling: 00.27, which owns `build`
+   and is not landed, takes an exclusive file lock over the whole build;
+   a second build waits. Not the gate lane: 00.27's Shape keeps release
+   builds out of it. Until 00.27 lands, no smoke runs (README rule 1), so
+   04.7 lands without one.
 

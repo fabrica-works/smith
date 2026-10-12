@@ -163,6 +163,7 @@ Test shape: `tests/probe_command.rs`. Reuse `unexecuted_arm` and `unissued_auth`
   }
   ```
 Proof: process layer, `a_replay_arm_runs_through_the_probe_command_and_prints_one_line`; then live, once: `heavy cargo run -p smith-bench -- build HEAD`, then `heavy --gate cargo run -p smith-bench -- probe probes/smoke-tools --arm <the printed directory>`, at most 2 attempts, $0.02 and 5 minutes. A pass is exit 0 with a line `verdict=pass`.
+Also (decisions.md, 13.14): `arm::build` (`src/arm.rs:343`) holds an exclusive lock, `std::fs::File::lock` on `<state root>/build.lock`, from `prepare_clone` to `archive`, so that two builds in the build lane never share the clone or `build-target` at once; a second build waits for the first. Test: `tests/probe_command.rs`, `a_build_waits_while_another_holds_the_build_lock` (the test holds the lock, a build in a thread has not started its clone after 100 ms, and finishes once the lock is released), at most 40 lines, under 2 s, or, if the build cannot run offline in a test, a unit test in `arm.rs` that `build` refuses to start while `try_lock` on the file fails. Files: `src/arm.rs`.
 Don't: write into the checkout; read a login outside the adapters' converter; build a commit other than the one named.
 Size: at most 500 lines.
 Removes: the `run SUITE --prepared`, `fix … --build-only`, `fix … --prepared` and `calibrate … --prepared` forms; the README's run notes (runs and their identifiers, `phase`, `checkpoint`, increment numbers, the scoped skein URL rewrite).
