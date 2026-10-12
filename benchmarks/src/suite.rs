@@ -64,6 +64,9 @@ pub struct Suite {
     pub max_tokens: u64,
     #[serde(default)]
     pub tasks: Vec<String>,
+    /// Tasks that run only when a run names them with `--include` (benchmarks.md, 5.3).
+    #[serde(default)]
+    pub when_asked: Vec<String>,
     #[serde(default)]
     pub select: Vec<Selection>,
     pub agents: Vec<SuiteAgent>,
@@ -144,6 +147,11 @@ pub fn validate_suite(
         }
         selected.insert(name.clone());
     }
+    for name in &suite.when_asked {
+        if !task_exists(name, tasks) || suite.tasks.contains(name) {
+            return Err(Refusal::new(file, "when_asked", format!("unknown or default task or variant {name}")));
+        }
+    }
     for selector in &suite.select {
         let matches: Vec<&CatalogueTask> = tasks
             .iter()
@@ -156,7 +164,9 @@ pub fn validate_suite(
             return Err(Refusal::new(file, "select", "selector names no existing task"));
         }
         for task in matches {
-            selected.insert(task.name.clone());
+            if !suite.when_asked.contains(&task.name) {
+                selected.insert(task.name.clone());
+            }
         }
     }
     if selected.is_empty() {
@@ -191,6 +201,18 @@ pub fn validate_suite(
         }
     }
     Ok(selected.into_iter().collect())
+}
+
+/// The default selection plus asked tasks; names outside `when_asked` are refused.
+pub fn include(file: &Path, suite: &Suite, selected: &[String], asked: &[String]) -> Result<Vec<String>, Refusal> {
+    let mut names: BTreeSet<String> = selected.iter().cloned().collect();
+    for name in asked {
+        if !suite.when_asked.contains(name) {
+            return Err(Refusal::new(file, "include", format!("task is not under when_asked: {name}")));
+        }
+        names.insert(name.clone());
+    }
+    Ok(names.into_iter().collect())
 }
 
 fn validate_agent(

@@ -135,6 +135,13 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
     let models = crate::read_model_tiers(&root.join("agents/models.toml")).map_err(|error| error.to_string())?;
     let selected = crate::validate_suite(suite_file, suite, &catalogue, &root.join("agents"), &models)
         .map_err(|error| error.to_string())?;
+    let asked: Vec<String> = requests
+        .iter()
+        .map(|request| &request.identity.task)
+        .filter(|name| !selected.contains(name))
+        .cloned()
+        .collect();
+    let selected = crate::include(suite_file, suite, &selected, &asked).map_err(|error| error.to_string())?;
     let mut allowed = suite.agents.clone();
     for arm in &suite.arms {
         match arm {

@@ -26,7 +26,7 @@ clones and altered archives are refused. `--commit`, `--control` and
 probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]
 calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]
 fix PROBE --parent COMMIT [--commit COMMIT]
-suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]
+suite NAME [--include TASK]... [--seed N] [--commit COMMIT | --arm DIRECTORY]
 ```
 
 A probe name is `probes/<id>[/<variant>]`. The default source is `HEAD`,
@@ -71,6 +71,10 @@ solution. It prints both grader terminals and succeeds only when every
 seed fails and every reference passes. Graders never run in the focused
 suite. `compare` interleaves both fixtures across smith's comparison pin
 and Codex's standard pin, five times each at the working tier.
+`fixtures/03-planner` runs only with `suite compare --include
+fixtures/03-planner`; each repeated `--include` must name a task or
+variant listed under the suite's `when_asked`. Compare runs reserve two
+hours and eight million tokens for all three fixtures.
 
 `guards` lists affordable tasks guarding the named design sections,
 cheapest first, and explains omissions. Estimates reserve repetitions,

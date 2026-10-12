@@ -62,6 +62,11 @@ fn refuses(name: &str, key: &str, reason: &str) {
 fn every_catalogue_manifest_is_checked_offline() {
     let tasks = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks");
     check_tree(&tasks, &design()).expect("all committed manifests validate");
+    let planner = tasks.join("fixtures/03-planner");
+    for path in ["grader/tests/hidden.rs", "grader/tests/regression.rs", "reference/src/planner.rs"] {
+        assert!(planner.join(path).is_file());
+    }
+    assert!(!planner.join("seed/tests/hidden.rs").exists());
 }
 
 fn every_committed_suite_and_configuration_pin_is_checked_offline() {

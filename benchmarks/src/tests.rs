@@ -267,6 +267,47 @@ fn sample_catalogue() -> Vec<crate::CatalogueTask> {
     vec![crate::CatalogueTask { name: "probes/recorded".into(), manifest, task }]
 }
 
+fn a_when_asked_task_runs_only_when_a_run_includes_it() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
+    let mut suite = sample_suite();
+    suite.when_asked.push("probes/recorded/short".into());
+    let selected =
+        crate::validate_suite(Path::new("suite.toml"), &suite, &sample_catalogue(), &root.join("agents"), &models)
+            .expect("asked task resolves");
+    assert_eq!(selected, ["probes/recorded"]);
+    assert_eq!(crate::include(Path::new("suite.toml"), &suite, &selected, &[]).expect("default"), selected);
+    assert_eq!(
+        crate::include(Path::new("suite.toml"), &suite, &selected, &suite.when_asked).expect("included task"),
+        ["probes/recorded", "probes/recorded/short"]
+    );
+    suite.tasks = suite.when_asked.clone();
+    assert!(
+        crate::validate_suite(Path::new("suite.toml"), &suite, &sample_catalogue(), &root.join("agents"), &models)
+            .is_err()
+    );
+}
+
+fn an_include_outside_when_asked_is_refused() {
+    let suite = sample_suite();
+    let error = crate::include(Path::new("suite.toml"), &suite, &suite.tasks, &["probes/recorded/short".into()])
+        .expect_err("only asked tasks can be included");
+    assert_eq!(error.key, "include");
+}
+
+fn a_when_asked_name_must_name_an_existing_task() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
+    for name in ["probes/missing", "probes/recorded/missing"] {
+        let mut suite = sample_suite();
+        suite.when_asked.push(name.into());
+        let error =
+            crate::validate_suite(Path::new("suite.toml"), &suite, &sample_catalogue(), &root.join("agents"), &models)
+                .expect_err("asked names resolve before a run");
+        assert_eq!(error.key, "when_asked");
+    }
+}
+
 fn a_suite_resolves_task_variants_selectors_and_configuration_pins() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let models = crate::read_model_tiers(&root.join("agents/models.toml")).expect("model tiers");
@@ -909,6 +950,9 @@ fn task_documents_and_frozen_seed_contracts() {
 }
 
 fn suite_resolution_and_guard_budget_contracts() {
+    a_when_asked_task_runs_only_when_a_run_includes_it();
+    an_include_outside_when_asked_is_refused();
+    a_when_asked_name_must_name_an_existing_task();
     a_suite_resolves_task_variants_selectors_and_configuration_pins();
     a_suite_refuses_unknown_tasks_agents_tiers_and_empty_selectors();
     suite_keys_and_arms_are_strict();

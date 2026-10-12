@@ -269,10 +269,17 @@ pub fn plan(repository: &Path, order: &Order, arm: &ArmRef) -> Result<Planned, S
         return Err("invalid probe order".into());
     }
     let value = narrowed(&crate::fix::calibration_suite(&order.probe), order)?;
-    prepare(repository, &order.probe, &value, arm, true)
+    prepare(repository, &order.probe, &value, arm, true, &[])
 }
 
-fn prepare(repository: &Path, name: &str, value: &toml::Value, arm: &ArmRef, logical: bool) -> Result<Planned, String> {
+fn prepare(
+    repository: &Path,
+    name: &str,
+    value: &toml::Value,
+    arm: &ArmRef,
+    logical: bool,
+    asked: &[String],
+) -> Result<Planned, String> {
     let harness_commit = crate::arm::commit(repository, "HEAD")?;
     let suite: Suite = value.clone().try_into().map_err(|error| error.to_string())?;
     let (stamp, started) = utc()?;
@@ -313,6 +320,7 @@ fn prepare(repository: &Path, name: &str, value: &toml::Value, arm: &ArmRef, log
     let models = crate::read_model_tiers(&root.join("agents/models.toml")).map_err(|error| error.to_string())?;
     let names = crate::validate_suite(&suite_file, &suite, &entries, &root.join("agents"), &models)
         .map_err(|error| error.to_string())?;
+    let names = crate::include(&suite_file, &suite, &names, asked).map_err(|error| error.to_string())?;
     let face = match arm {
         ArmRef::Installed { .. } => None,
         ArmRef::Built(build) => {
@@ -395,11 +403,16 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         "probe" => &["--agent", "--attempts", "--commit", "--arm"],
         "calibrate" => &["--attempts", "--passes", "--control", "--commit", "--arm"],
         "fix" => &["--parent", "--commit"],
-        "suite" => &["--seed", "--commit", "--arm"],
+        "suite" => &["--seed", "--commit", "--arm", "--include"],
         _ => return Err("unknown probe command".into()),
     };
     let mut options = std::collections::BTreeMap::new();
+    let mut asked = Vec::new();
     for pair in flags.chunks_exact(2) {
+        if command == "suite" && pair[0] == "--include" {
+            asked.push(pair[1].clone());
+            continue;
+        }
         if !allowed.contains(&pair[0].as_str()) || options.insert(pair[0].as_str(), pair[1].as_str()).is_some() {
             return Err("unknown or repeated command option".into());
         }
@@ -443,7 +456,7 @@ pub fn command(command: &str, arguments: &[String]) -> Result<Judgment, String> 
         "suite" => {
             let file = repository.join("benchmarks/suites").join(format!("{name}.toml"));
             let value = crate::formats::read_document(&file).map_err(|error| error.to_string())?;
-            let planned = prepare(repository, name, &value, &arm, false)?;
+            let planned = prepare(repository, name, &value, &arm, false, &asked)?;
             let batch = crate::batch::run(&planned.suite, &planned.directory, seed)?;
             Ok(summary(&planned, &batch))
         }

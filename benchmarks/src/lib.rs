@@ -45,7 +45,7 @@ pub use stats::{
 };
 pub use suite::{
     Arm, CatalogueTask, Design, GuardSelection, Selection, Suite, SuiteAgent, catalogue, choose_guards,
-    choose_guards_with_costs, read_suite, validate_suite,
+    choose_guards_with_costs, include, read_suite, validate_suite,
 };
 pub use summary::{
     ArmSummary, Baseline, MetricSummary, PassCounts, RunSummary, SummaryComparison, baseline, committed_costs,

@@ -3,9 +3,10 @@ tier = "working"
 design = "interleaved"
 repetitions = 5
 rerun_failed = 0
-max_wall_seconds = 18000
-max_tokens = 10000000
+max_wall_seconds = 7200
+max_tokens = 8000000
 tasks = ["fixtures/01-backoff", "fixtures/02-line-decoder"]
+when_asked = ["fixtures/03-planner"]
 
 [[agents]]
 agent = "smith"
