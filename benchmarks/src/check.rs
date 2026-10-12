@@ -38,6 +38,7 @@ pub struct ManifestCounts {
 pub fn check_benchmark_tree(root: &Path, design: &Path) -> Result<ManifestCounts, Refusal> {
     let tasks = crate::catalogue(&root.join("tasks"), design)?;
     let agents = root.join("agents");
+    crate::read_prices(&agents.join("prices.toml"))?;
     let models = crate::read_model_tiers(&agents.join("models.toml"))?;
     for provider in [crate::Provider::Codex, crate::Provider::Anthropic] {
         models.lookup(&agents.join("models.toml"), "small", provider)?;

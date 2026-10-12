@@ -1,3 +1,6 @@
+#[path = "tests/comparison.rs"]
+mod comparison;
+
 use std::path::{Path, PathBuf};
 
 use crate::task::parse_task;
@@ -627,7 +630,9 @@ fn summaries_include_failed_attempt_metrics_and_report_budget_and_setup_apart() 
             result
         })
         .collect();
-    let summary = crate::summarise(&results, "sample", "small", crate::Design::Single, 1, None).expect("summary");
+    let summary =
+        crate::summarise(&results, "sample", "small", crate::Design::Single, 1, None, &crate::PriceTable::default())
+            .expect("summary");
     let group = &summary.groups[0];
     assert_eq!(group.attempts.len(), 5);
     assert_eq!(group.passes.passed, 2);
@@ -651,7 +656,9 @@ fn summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates()
         .collect();
     results[8].outcome.grade = Some(crate::Measure::Observed { value: false });
     results[9].outcome.grade = Some(crate::Measure::unavailable("grader crashed"));
-    let summary = crate::summarise(&results, "sample", "small", crate::Design::Single, 3, None).expect("summary");
+    let summary =
+        crate::summarise(&results, "sample", "small", crate::Design::Single, 3, None, &crate::PriceTable::default())
+            .expect("summary");
     assert!(summary.audits.contains(&"attempt-08".into()));
     assert_eq!(
         (summary.groups[0].passes.passed, summary.groups[0].passes.failed, summary.groups[0].passes.unavailable),
@@ -660,10 +667,16 @@ fn summaries_audit_disagreements_and_keep_unknown_grades_out_of_observed_rates()
     assert!(matches!(summary.groups[0].passes.interval_95, crate::Measure::Unavailable { .. }));
     let mut changed = results.clone();
     changed[0].identity.task_version += 1;
-    assert!(crate::summarise(&changed, "sample", "small", crate::Design::Single, 3, None).is_err());
+    assert!(
+        crate::summarise(&changed, "sample", "small", crate::Design::Single, 3, None, &crate::PriceTable::default())
+            .is_err()
+    );
     let mut duplicate = results.clone();
     duplicate.push(results[0].clone());
-    assert!(crate::summarise(&duplicate, "sample", "small", crate::Design::Single, 3, None).is_err());
+    assert!(
+        crate::summarise(&duplicate, "sample", "small", crate::Design::Single, 3, None, &crate::PriceTable::default())
+            .is_err()
+    );
 }
 
 fn baselines_raise_drift_notices_and_refuse_mixed_configurations() {
@@ -674,7 +687,9 @@ fn baselines_raise_drift_notices_and_refuse_mixed_configurations() {
             result
         })
         .collect();
-    let summary = crate::summarise(&results, "sample", "small", crate::Design::Single, 3, None).expect("summary");
+    let summary =
+        crate::summarise(&results, "sample", "small", crate::Design::Single, 3, None, &crate::PriceTable::default())
+            .expect("summary");
     let baseline = crate::baseline(&summary).expect("one configuration");
     let changed: Vec<_> = results
         .into_iter()
@@ -683,8 +698,16 @@ fn baselines_raise_drift_notices_and_refuse_mixed_configurations() {
             result
         })
         .collect();
-    let drift =
-        crate::summarise(&changed, "sample", "small", crate::Design::Single, 3, Some(&baseline)).expect("drift");
+    let drift = crate::summarise(
+        &changed,
+        "sample",
+        "small",
+        crate::Design::Single,
+        3,
+        Some(&baseline),
+        &crate::PriceTable::default(),
+    )
+    .expect("drift");
     assert!(
         drift
             .drift_notices
@@ -709,7 +732,9 @@ fn matching_committed_medians_replace_estimates_and_stale_pins_do_not() {
     let pin = crate::read_configuration(&agents.join("codex/standard.pin.toml")).expect("pin");
     result.identity.configuration_sha256 = pin.sha256;
     result.identity.prompt_sha256 = format!("{:x}", Sha256::digest(tasks[0].task.prompt.as_bytes()));
-    let summary = crate::summarise(&[result], "sample", "small", crate::Design::Single, 1, None).expect("summary");
+    let summary =
+        crate::summarise(&[result], "sample", "small", crate::Design::Single, 1, None, &crate::PriceTable::default())
+            .expect("summary");
     let costs =
         crate::committed_costs(&suite, &tasks, std::slice::from_ref(&summary), &agents, &models).expect("costs");
     assert_eq!((costs["probes/recorded"].seconds, costs["probes/recorded"].tokens), (1, 110));
@@ -732,22 +757,38 @@ fn summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart() {
             results.push(result);
         }
     }
-    let comparison = crate::summarise(&results, "sample", "small", crate::Design::Interleaved, 17, None)
-        .expect("interleaved summary");
+    let comparison = crate::summarise(
+        &results,
+        "sample",
+        "small",
+        crate::Design::Interleaved,
+        17,
+        None,
+        &crate::PriceTable::default(),
+    )
+    .expect("interleaved summary");
     let wall =
         comparison.comparisons.iter().find(|comparison| comparison.metric == "task_wall_ms").expect("wall comparison");
     assert!(
         matches!(&wall.result, crate::Measure::Observed { value } if value.detected && (value.ratio - 2.0).abs() < f64::EPSILON)
     );
     assert!(
-        crate::summarise(&results, "sample", "small", crate::Design::Single, 17, None)
+        crate::summarise(&results, "sample", "small", crate::Design::Single, 17, None, &crate::PriceTable::default())
             .expect("single summary")
             .comparisons
             .is_empty()
     );
     results[0].timing.task_wall_ms = crate::Measure::unavailable("missing task end");
-    let partial =
-        crate::summarise(&results, "sample", "small", crate::Design::Interleaved, 17, None).expect("partial summary");
+    let partial = crate::summarise(
+        &results,
+        "sample",
+        "small",
+        crate::Design::Interleaved,
+        17,
+        None,
+        &crate::PriceTable::default(),
+    )
+    .expect("partial summary");
     assert!(matches!(
         partial
             .comparisons
@@ -814,6 +855,11 @@ fn summary_baseline_and_comparison_contracts() {
     baselines_raise_drift_notices_and_refuse_mixed_configurations();
     matching_committed_medians_replace_estimates_and_stale_pins_do_not();
     summaries_compare_complete_interleaved_arms_and_keep_single_runs_apart();
+    comparison::cross_agent_token_fields_pair_across_conventions_and_name_both();
+    comparison::cross_agent_spend_is_priced_from_one_table();
+    comparison::a_model_missing_from_the_price_table_leaves_priced_spend_unavailable();
+    comparison::teardown_resources_and_tool_calls_are_never_compared_across_agents();
+    comparison::tool_calls_by_name_are_summarised_per_arm();
 }
 
 fn task_waivers_keep_raw_passive_failures_and_unavailable_judgments() {

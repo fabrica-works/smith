@@ -1,0 +1,10 @@
+# Notional list prices, micro-dollars per million tokens (shell.md, 6.1).
+[models.gpt-6-luna]
+fresh = 1250000
+cache_read = 125000
+output = 10000000
+
+[models.gpt-6-astra]
+fresh = 1250000
+cache_read = 125000
+output = 10000000

@@ -4,6 +4,8 @@
 //! Drift asks for another comparison, never declares a regression
 //! (benchmarks.md, sections 5.4, 8 and 9).
 
+mod compare;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -12,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Agent, AttemptResult, Comparison, Convention, Design, End, Identity, Interval, Measure, ModelIdentity, Provider,
     RESULT_VERSION, Refusal, ResourceScope, ScopeKind, SmithFace, SpendBasis, TokenRecord, audit_sample,
-    bootstrap_ratio, coefficient_of_variation, median, minimum_detectable_effect, pass_interval, read_result,
+    coefficient_of_variation, median, minimum_detectable_effect, pass_interval, read_result,
 };
 
 /// Observations of one metric across every end, supplied by the summary builder.
@@ -73,6 +75,8 @@ pub struct SummaryComparison {
     pub reference: String,
     pub candidate: String,
     pub metric: String,
+    /// Reference and candidate conventions for a token field across agents.
+    pub conventions: Option<(Convention, Convention)>,
     pub result: Measure<Comparison>,
 }
 
@@ -134,7 +138,7 @@ fn measure_u64(measure: &Measure<u64>) -> Measure<f64> {
     }
 }
 
-fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
+fn metric_values(result: &AttemptResult, prices: &crate::PriceTable) -> BTreeMap<String, Measure<f64>> {
     let mut values = BTreeMap::new();
     for (name, value) in [
         ("process_wall_ms", &result.timing.process_wall_ms),
@@ -182,6 +186,10 @@ fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
             values.insert(format!("tokens/{convention}/{name}"), measure_u64(value));
         }
     }
+    values.insert("spend_usd/priced".into(), priced_spend(result, prices));
+    for (name, count) in &result.counts.tool_calls {
+        values.insert(format!("tool_calls/{name}"), measure_u64(count));
+    }
     if let Some(cache) = &result.cache {
         values.insert(
             "cache/reuse".into(),
@@ -195,11 +203,35 @@ fn metric_values(result: &AttemptResult) -> BTreeMap<String, Measure<f64>> {
     values
 }
 
-fn observations(results: &[&AttemptResult], metric: &str) -> (Vec<f64>, Vec<String>) {
+fn priced_spend(result: &AttemptResult, table: &crate::PriceTable) -> Measure<f64> {
+    let model = &result.identity.model.requested_model;
+    let Some(prices) = table.models.get(model) else {
+        return Measure::unavailable(format!("model {model} missing from price table"));
+    };
+    let Some(total) = result.tokens.iter().find(|record| record.role == ScopeKind::Total) else {
+        return Measure::unavailable("total tokens not reported");
+    };
+    let mut usd = 0.0;
+    for (name, tokens, rate) in [
+        ("fresh", &total.usage.fresh, prices.fresh),
+        ("cache_read", &total.usage.cache_read, prices.cache_read),
+        ("output", &total.usage.output, prices.output),
+    ] {
+        match (measure_u64(tokens), measure_u64(&Measure::Observed { value: rate })) {
+            (Measure::Observed { value: tokens }, Measure::Observed { value: rate }) => {
+                usd += tokens * rate / 1_000_000_000_000.0;
+            }
+            _ => return Measure::unavailable(format!("total {name} tokens or price not observed at exact precision")),
+        }
+    }
+    observed(usd)
+}
+
+fn observations(results: &[&AttemptResult], metric: &str, prices: &crate::PriceTable) -> (Vec<f64>, Vec<String>) {
     let mut values = Vec::new();
     let mut missing = Vec::new();
     for result in results {
-        match metric_values(result).remove(metric) {
+        match metric_values(result, prices).remove(metric) {
             Some(Measure::Observed { value }) if value.is_finite() && value >= 0.0 => values.push(value),
             Some(Measure::Observed { value: _ }) => missing.push(format!("{}: invalid value", result.identity.attempt)),
             Some(Measure::LowerBound { value: _, missing: reasons }) => {
@@ -212,8 +244,12 @@ fn observations(results: &[&AttemptResult], metric: &str) -> (Vec<f64>, Vec<Stri
     (values, missing)
 }
 
-fn metric_summary(results: &[&AttemptResult], metric: &str) -> Result<MetricSummary, String> {
-    let (values, missing) = observations(results, metric);
+fn metric_summary(
+    results: &[&AttemptResult],
+    metric: &str,
+    prices: &crate::PriceTable,
+) -> Result<MetricSummary, String> {
+    let (values, missing) = observations(results, metric, prices);
     let n = u32::try_from(values.len()).map_err(|_| "too many observations")?;
     let total = u32::try_from(results.len()).map_err(|_| "too many attempts")?;
     let median = median(&values).map_or_else(Measure::unavailable, observed);
@@ -288,7 +324,7 @@ pub(crate) fn same_inputs(left: &Identity, right: &Identity) -> bool {
         && left.harness_commit == right.harness_commit
 }
 
-fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
+fn group_summary(results: &[&AttemptResult], prices: &crate::PriceTable) -> Result<ArmSummary, String> {
     let first = &results[0].identity;
     if results.iter().any(|result| !same_inputs(first, &result.identity)) {
         return Err(format!("{} / {} mixes task versions or arm inputs", first.task, first.arm));
@@ -335,10 +371,10 @@ fn group_summary(results: &[&AttemptResult]) -> Result<ArmSummary, String> {
     } else {
         passes.interval_95 = Measure::unavailable("some eligible attempt checks are unavailable");
     }
-    let names: BTreeSet<String> = results.iter().flat_map(|result| metric_values(result).into_keys()).collect();
+    let names: BTreeSet<String> = results.iter().flat_map(|result| metric_values(result, prices).into_keys()).collect();
     let mut metrics = BTreeMap::new();
     for name in names {
-        metrics.insert(name.clone(), metric_summary(results, &name)?);
+        metrics.insert(name.clone(), metric_summary(results, &name, prices)?);
     }
     Ok(ArmSummary {
         task: first.task.clone(),
@@ -369,6 +405,7 @@ pub fn summarise(
     design: Design,
     seed: u64,
     reference: Option<&Baseline>,
+    prices: &crate::PriceTable,
 ) -> Result<RunSummary, String> {
     if results.is_empty() || suite.is_empty() || tier.is_empty() || results.len() > u32::MAX as usize {
         return Err("summary needs attempts, suite and tier".into());
@@ -393,44 +430,10 @@ pub fn summarise(
     }
     let mut groups = Vec::new();
     for group in grouped.values() {
-        groups.push(group_summary(group)?);
+        groups.push(group_summary(group, prices)?);
     }
-    let mut comparisons = Vec::new();
-    for (index, left) in groups.iter().enumerate() {
-        for right in &groups[index + 1..] {
-            if left.task != right.task || design != Design::Interleaved {
-                continue;
-            }
-            if left.task_version != right.task_version
-                || left.seed_sha256 != right.seed_sha256
-                || left.prompt_sha256 != right.prompt_sha256
-            {
-                return Err("comparison mixes task versions or frozen inputs".into());
-            }
-            for metric in left.metrics.keys().filter(|metric| right.metrics.contains_key(*metric)) {
-                if left.agent != right.agent && (metric.starts_with("cpu_ms") || metric.starts_with("peak_rss_bytes")) {
-                    continue;
-                }
-                let (reference_values, reference_missing) =
-                    observations(&grouped[&(left.task.clone(), left.arm.clone())], metric);
-                let (candidate_values, candidate_missing) =
-                    observations(&grouped[&(right.task.clone(), right.arm.clone())], metric);
-                let result = if reference_missing.is_empty() && candidate_missing.is_empty() {
-                    bootstrap_ratio(&reference_values, &candidate_values, seed, 10_000)
-                        .map_or_else(Measure::unavailable, |value| Measure::Observed { value })
-                } else {
-                    Measure::unavailable("comparison needs observed values for every attempt, regardless of end")
-                };
-                comparisons.push(SummaryComparison {
-                    task: left.task.clone(),
-                    reference: left.arm.clone(),
-                    candidate: right.arm.clone(),
-                    metric: metric.clone(),
-                    result,
-                });
-            }
-        }
-    }
+    let comparisons =
+        if design == Design::Interleaved { compare::comparisons(&groups, &grouped, prices, seed)? } else { Vec::new() };
     let audits = audit_sample(ordered.len(), 3, &disagreements, seed)?
         .into_iter()
         .map(|index| ordered[index].identity.attempt.clone())
@@ -440,7 +443,7 @@ pub fn summarise(
     let drift_notices =
         if let Some(reference) = reference { drift(&groups, suite, tier, reference)? } else { Vec::new() };
     Ok(RunSummary {
-        version: 1,
+        version: 2,
         result_version: RESULT_VERSION,
         run: run.clone(),
         suite: suite.into(),
@@ -505,7 +508,7 @@ fn drift(groups: &[ArmSummary], suite: &str, tier: &str, reference: &Baseline) -
 /// Freeze a suite for one configuration and tier; comparisons use separate baselines.
 pub fn baseline(summary: &RunSummary) -> Result<Baseline, String> {
     let first = summary.groups.first().ok_or("baseline needs a task")?;
-    if summary.version != 1
+    if summary.version != 2
         || summary.result_version != RESULT_VERSION
         || summary.groups.iter().any(|group| {
             group.arm != first.arm
@@ -564,7 +567,7 @@ fn read_json<T: serde::de::DeserializeOwned>(file: &Path) -> Result<T, Refusal> 
 /// Read the one summary version and the current result version.
 pub fn read_summary(file: &Path) -> Result<RunSummary, Refusal> {
     let summary: RunSummary = read_json(file)?;
-    if summary.version != 1 || summary.result_version != RESULT_VERSION {
+    if summary.version != 2 || summary.result_version != RESULT_VERSION {
         return Err(Refusal::new(file, "version", "unsupported summary or result version"));
     }
     Ok(summary)
@@ -648,7 +651,7 @@ pub fn committed_costs(
     }
     let mut latest: BTreeMap<(String, String), (String, crate::Estimate)> = BTreeMap::new();
     for summary in summaries {
-        if summary.version != 1 || summary.result_version != RESULT_VERSION || summary.tier != suite.tier {
+        if summary.version != 2 || summary.result_version != RESULT_VERSION || summary.tier != suite.tier {
             continue;
         }
         for group in &summary.groups {

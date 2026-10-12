@@ -32,7 +32,7 @@ pub mod process;
 pub mod grade;
 
 pub use agent::{Agent, Configuration, PinnedConfiguration, Provider, read_configuration};
-pub use models::{ModelChoice, ModelTiers, read_model_tiers};
+pub use models::{ModelChoice, ModelTiers, PriceTable, Prices, read_model_tiers, read_prices};
 pub use result::{
     Artifact, AttemptResult, BudgetLimit, CheckVerdict, Classification, Counts, End, Exit, FailureReason, Forced,
     Headroom, Health, Identity, Measure, ModelIdentity, Outcome, RESULT_VERSION, ResourceScope, Resources, SmithFace,

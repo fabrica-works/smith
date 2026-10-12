@@ -45,3 +45,30 @@ impl ModelTiers {
 pub fn read_model_tiers(file: &Path) -> Result<ModelTiers, Refusal> {
     crate::formats::read_document(file)
 }
+
+/// List prices by model from smith's presets; notional (shell.md, section 6.1).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PriceTable {
+    pub models: BTreeMap<String, Prices>,
+}
+
+/// One model's micro-dollars per million normalised tokens (benchmarks.md, 8.2).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Prices {
+    pub fresh: u64,
+    pub cache_read: u64,
+    pub output: u64,
+}
+
+/// Read the committed price basis, refusing nonpositive rates.
+pub fn read_prices(file: &Path) -> Result<PriceTable, Refusal> {
+    let table: PriceTable = crate::formats::read_document(file)?;
+    for (model, prices) in &table.models {
+        if model.is_empty() || [prices.fresh, prices.cache_read, prices.output].contains(&0) {
+            return Err(Refusal::new(file, &format!("models.{model}"), "model and positive rates required"));
+        }
+    }
+    Ok(table)
+}

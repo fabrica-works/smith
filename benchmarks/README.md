@@ -57,7 +57,7 @@ cargo run -p smith-bench -- baseline benchmarks/summaries/RUN.json NAME
 cargo nextest run -p smith-bench
 ```
 
-`check` validates tasks, suites, model tiers, pins, summaries and
+`check` validates tasks, suites, model tiers, prices, pins, summaries and
 baselines. Tasks freeze their seed digest and complete prompt. Suite
 names are `<kind>/<id>[/<variant>]`; behaviour selections resolve through
 the task catalogue. Pins freeze each agent's provider, version and exact
@@ -80,6 +80,10 @@ estimates; missing costs remain unavailable.
 `summarise` reads result files recursively or one explicit result. It
 writes `benchmarks/summaries/<run>.json`, recording the suite, tier,
 design and seed. An optional baseline path is its final argument.
+Summaries use version 2. Cross-agent comparisons retain both token conventions
+and price total fresh, cache-read and output tokens from `agents/prices.toml`,
+in micro-dollars per million tokens. Tool calls stay within each arm; only task
+and process wall time, token fields and priced spend compare across agents.
 `baseline` freezes one binary, configuration and tier under
 `benchmarks/baselines/<name>.json`. Both refuse overwrites. Commit these
 summaries and baselines; raw attempt data stays outside repositories.
