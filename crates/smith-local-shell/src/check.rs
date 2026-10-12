@@ -33,6 +33,10 @@ pub struct Report {
     pub build: serde_json::Value,
     pub tools: BTreeMap<&'static str, PathBuf>,
     pub environment: Vec<String>,
+    #[serde(skip)]
+    pub limits: Vec<smith_agent_service::profile::Limit>,
+    #[serde(rename = "limits")]
+    named_limits: Vec<serde_json::Value>,
     pub caches: Vec<PathBuf>,
     pub warnings: Vec<Warning>,
     pub outside_models: BTreeMap<String, String>,
@@ -56,6 +60,33 @@ pub fn report(settings: &Settings) -> Verdict {
         Err(why) => return Verdict::Refused(why),
     };
     let settings = &resolved.settings;
+    let agent = &resolved.agent;
+    let Some(limits) = smith_agent_service::profile::effective(
+        &agent.profile,
+        &agent.declarations,
+        &agent.service.limits,
+        &agent.service.llm_endpoints,
+    ) else {
+        return effective_refusal();
+    };
+    let Some(header) =
+        smith_agent_service::profile::header(&limits, &agent.service.channel_endpoints, &agent.declarations)
+    else {
+        return effective_refusal();
+    };
+    let named_limits = header
+        .iter()
+        .zip(limits.iter())
+        .map(|(named, native)| {
+            let value = match named.value {
+                smith_events::LimitValue::Integer(value) => serde_json::json!(value),
+                smith_events::LimitValue::Fraction { numerator, denominator } => {
+                    serde_json::json!({"numerator":numerator,"denominator":denominator})
+                }
+            };
+            serde_json::json!({"name":String::from_utf8_lossy(&named.name),"value":value,"unit":unit(native.value)})
+        })
+        .collect();
     let values = match settings::environment::values(settings) {
         Ok(values) => values,
         Err(why) => return Verdict::Refused(why),
@@ -106,6 +137,8 @@ pub fn report(settings: &Settings) -> Verdict {
         build: serde_json::json!({"name":text(&identity.name),"version":text(&identity.version),"build":text(&identity.build)}),
         tools,
         environment,
+        limits: limits.into_vec(),
+        named_limits,
         caches,
         warnings,
         outside_models: resolved.outside_models.into_iter().map(|(model, reason)| (model, reason.into())).collect(),
@@ -117,6 +150,26 @@ pub fn startup_warnings(settings: &Settings) -> Result<Vec<Warning>, Refusal> {
     let values = settings::environment::values(settings)?;
     let caches = settings::environment::caches(settings, &values);
     warnings::collect(settings, &values, &caches)
+}
+
+fn effective_refusal() -> Verdict {
+    Verdict::Refused(Refusal {
+        origin: Origin::BuiltIn,
+        key: "limits".into(),
+        problem: Problem::Input("effective limits or names exceed their bounds".into()),
+    })
+}
+
+fn unit(value: smith_agent_service::profile::Value) -> &'static str {
+    use smith_agent_service::profile::Value;
+    match value {
+        Value::Bytes(_) => "bytes",
+        Value::Count(_) => "count",
+        Value::Tokens(_) => "tokens",
+        Value::Spend(_) => "micro-dollars",
+        Value::Duration(_) => "ms",
+        Value::Fraction(_) => "fraction",
+    }
 }
 
 /// Render the same document for scripts as one JSON object.
@@ -141,6 +194,14 @@ pub fn render_text(report: &Report) -> String {
     lines.push(format!("environment: {}", report.environment.join(", ")));
     for warning in &report.warnings {
         lines.push(warnings::line(warning));
+    }
+    for limit in &report.named_limits {
+        lines.push(format!(
+            "{} = {} {}",
+            limit.get("name").expect("limit name").as_str().expect("name text"),
+            limit.get("value").expect("limit value"),
+            limit.get("unit").expect("limit unit").as_str().expect("unit text")
+        ));
     }
     for (model, reason) in &report.outside_models {
         lines.push(format!("model {model} is outside the run: {reason}"));

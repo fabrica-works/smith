@@ -482,3 +482,30 @@ fn smith_check_warns_about_a_file_named_as_a_cache_and_keeps_it() {
         && warning["reason"] == "not a directory"));
     assert_eq!(std::fs::read(cache).expect("cache file remains"), b"kept");
 }
+
+#[test]
+fn smith_check_json_lists_the_effective_limits_by_name() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(
+        &scratch,
+        b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n",
+    );
+    let ran = support::smith(&scratch, &["check", "--json"], b"");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
+    let limits = report["limits"].as_array().expect("effective limits");
+    assert!(
+        limits.iter().any(|limit| limit["name"] == "declared.tool_payload"
+            && limit["value"] == 40_960
+            && limit["unit"] == "bytes")
+    );
+    assert!(limits.iter().any(|limit| limit["name"] == "declared.head[endpoint=codex,model=gpt-6-luna]"
+        && limit["value"] == 60_000
+        && limit["unit"] == "ms"));
+    assert!(
+        limits
+            .iter()
+            .any(|limit| limit["name"] == "service.teardown" && limit["value"] == 10_000 && limit["unit"] == "ms")
+    );
+    assert!(limits.iter().all(|limit| !limit["name"].as_str().expect("limit name").contains("endpoint=0")));
+}

@@ -37,6 +37,35 @@ fn configuration(reason: impl Into<String>) -> Setup {
     Setup { step: SetupStep::Configuration, reason: reason.into() }
 }
 
+/// Read the effective teardown bound from check's version 1 document (benchmarks.md, section 10).
+pub fn teardown_from_check(bytes: &[u8]) -> Result<skein_lib::Duration, Setup> {
+    let report: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|error| configuration(format!("Smith check JSON: {error}")))?;
+    if report["version"].as_u64() != Some(1) {
+        return Err(configuration("Smith check document must have version 1"));
+    }
+    let limits = report["limits"].as_array().ok_or_else(|| configuration("Smith check needs effective limits"))?;
+    let mut teardown = None;
+    for limit in limits {
+        if limit["name"].as_str() != Some("service.teardown") {
+            continue;
+        }
+        if teardown.is_some() {
+            return Err(configuration("Smith check repeats service.teardown"));
+        }
+        if limit["unit"].as_str() != Some("ms") {
+            return Err(configuration("Smith check service.teardown must use milliseconds"));
+        }
+        let nanos = limit["value"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .and_then(|value| value.checked_mul(1_000_000))
+            .ok_or_else(|| configuration("Smith check service.teardown exceeds its positive duration range"))?;
+        teardown = Some(skein_lib::Duration::from_nanos(nanos));
+    }
+    teardown.ok_or_else(|| configuration("Smith check lacks service.teardown"))
+}
+
 fn write(context: &Context<'_>, path: &Path, bytes: &[u8]) -> Result<(), Setup> {
     let result: Result<(), String> = (|| {
         let path = context.guard.write_path(path)?;
@@ -137,6 +166,59 @@ impl Prepared {
             environment: Vec::new(),
             mode: skein_world::end_to_end::Mode::Terminal,
             teardown: self.teardown,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::teardown_from_check;
+    use crate::isolate::SetupStep;
+    use serde_json::json;
+
+    fn report(limits: &serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(&json!({"version":1,"limits":limits})).expect("check fixture")
+    }
+
+    #[test]
+    fn check_teardown_reads_the_named_bound_in_milliseconds() {
+        let bytes = report(&json!([
+            {"name":"policy.close","value":999,"unit":"ms"},
+            {"name":"service.teardown","value":12345,"unit":"ms"}
+        ]));
+        assert_eq!(teardown_from_check(&bytes).expect("effective teardown").as_nanos(), 12_345_000_000);
+    }
+
+    #[test]
+    fn check_teardown_refuses_a_missing_bound() {
+        let refused = teardown_from_check(&report(&json!([]))).expect_err("bound required");
+        assert_eq!(refused.step, SetupStep::Configuration);
+    }
+
+    #[test]
+    fn check_teardown_refuses_a_repeated_bound() {
+        let bound = json!({"name":"service.teardown","value":12345,"unit":"ms"});
+        assert!(teardown_from_check(&report(&json!([bound, bound]))).is_err());
+    }
+
+    #[test]
+    fn check_teardown_refuses_another_unit() {
+        let bound = json!({"name":"service.teardown","value":12,"unit":"seconds"});
+        assert!(teardown_from_check(&report(&json!([bound]))).is_err());
+    }
+
+    #[test]
+    fn check_teardown_refuses_values_outside_its_positive_duration_range() {
+        for value in [json!(0), json!(-1), json!(1.5), json!("12"), json!(u64::MAX)] {
+            let bound = json!({"name":"service.teardown","value":value,"unit":"ms"});
+            assert!(teardown_from_check(&report(&json!([bound]))).is_err());
+        }
+    }
+
+    #[test]
+    fn check_teardown_refuses_another_version_or_a_malformed_document() {
+        for bytes in [b"{}".as_slice(), b"{", br#"{"version":2,"limits":[]}"#, br#"{"version":1}"#] {
+            assert!(teardown_from_check(bytes).is_err());
         }
     }
 }

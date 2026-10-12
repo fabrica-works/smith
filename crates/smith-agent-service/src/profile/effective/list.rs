@@ -402,6 +402,7 @@ fn service(inventory: &mut Inventory, limits: &crate::Limits) -> Option<()> {
         events: _,
     } = *limits;
     inventory.layer = Layer::Service;
+    inventory.value("teardown", Value::Duration(super::super::teardown_bound(limits)?))?;
     inventory.value("file_slots", Value::Count(u64::from(file_slots)))?;
     inventory.value("file_read", Value::Bytes(u64::from(file_read)))?;
     inventory.value("file_entries", Value::Count(u64::from(file_entries)))?;
