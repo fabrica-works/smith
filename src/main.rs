@@ -16,7 +16,7 @@ const USAGE: &str = "usage: smith agent CONFIG.json | smith local SETTINGS.json 
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().collect();
-    if let Some(code) = smith_local_shell::check::command(&args) {
+    if let Some(code) = smith_local_shell::check::command(&args, skein_shell::Clock::new().now().wall) {
         return ExitCode::from(code);
     }
     let result = if args.len() == 3 && args.get(1).is_some_and(|command| command == "agent") {

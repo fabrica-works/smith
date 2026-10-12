@@ -15,4 +15,4 @@ pub mod referee;
 pub mod process;
 
 pub mod world;
-pub use world::{Authentication, Files, Placement, World};
+pub use world::{Authentication, Borrowing, Files, Placement, World};

@@ -14,6 +14,9 @@ pub trait CheckoutRead {
     fn head(&self) -> Option<Vec<u8>>;
     fn message(&self, commit: &[u8]) -> Vec<u8>;
     fn files(&self, commit: &[u8]) -> Tree;
+    fn borrowed_notice(&self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// Concrete observations collected independently of process state.
@@ -74,6 +77,7 @@ pub struct Meeting {
     next_turn: u32,
     answered: bool,
     shown: bool,
+    borrowed_notice: Option<Vec<u8>>,
 }
 
 impl Expectations for Meeting {
@@ -123,6 +127,8 @@ impl Expectations for Meeting {
                 }
             },
             Observation::Terminal { shown, errors, exit, queries } => {
+                let borrowed = self.borrowed_notice.as_deref();
+                let borrowed_text = borrowed.and_then(|line| line.strip_prefix(b"smith: "));
                 let expected = match &self.ending {
                     Ending::Report(text) => text.as_slice(),
                     Ending::Cancelled => b"interrupted: the run was cancelled",
@@ -130,7 +136,7 @@ impl Expectations for Meeting {
                     Ending::Dropped => b"not delivered",
                     Ending::AgentEnded => b"run failed: the agent ended without answering",
                     Ending::Change { .. } => b"Change delivered",
-                    Ending::Unavailable => b"credential",
+                    Ending::Unavailable => borrowed_text.unwrap_or(b"credential"),
                     Ending::HostFailure | Ending::HostFailureBeforeAnswer => b"could not be kept: write failed",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
@@ -187,9 +193,13 @@ impl Expectations for Meeting {
                             })
                     })
                 } else if matches!(self.ending, Ending::Unavailable) {
-                    errors.strip_suffix(b"smith: account 0 has no credential: run `smith login 0`\n").or_else(|| {
-                        errors.strip_suffix(b"smith: account 0 could not renew its credential: run `smith login 0`\n")
-                    })
+                    errors
+                        .strip_suffix(b"smith: account 0 has no credential: run `smith login 0`\n")
+                        .or_else(|| {
+                            errors
+                                .strip_suffix(b"smith: account 0 could not renew its credential: run `smith login 0`\n")
+                        })
+                        .or_else(|| borrowed.and_then(|line| errors.strip_suffix(line)))
                 } else {
                     Some(errors.as_slice())
                 };
@@ -222,8 +232,10 @@ impl Expectations for Meeting {
                 });
                 judge.check(expected_diagnostic, "only the expected local operator start and failure lines");
                 judge.check(shown.windows(expected.len()).any(|part| part == expected), "expected terminal text");
+                let private = borrowed_text.and_then(|line| shown.strip_suffix(line)).unwrap_or(&shown);
                 judge.check(
-                    !shown.windows(7).any(|part| part == b"refresh") && !shown.windows(5).any(|part| part == b"token"),
+                    !private.windows(7).any(|part| part == b"refresh")
+                        && !private.windows(5).any(|part| part == b"token"),
                     "terminal never reveals credentials",
                 );
                 if self.require_facts && !matches!(self.ending, Ending::Unavailable) {
@@ -306,8 +318,15 @@ fn review_with_facts(
     ending: Ending,
     require_facts: bool,
 ) -> Referee<Meeting> {
-    let mut referee =
-        Referee::new(Meeting { ending, require_facts, activation: None, next_turn: 1, answered: false, shown: false });
+    let mut referee = Referee::new(Meeting {
+        ending,
+        require_facts,
+        activation: None,
+        next_turn: 1,
+        answered: false,
+        shown: false,
+        borrowed_notice: checkout.borrowed_notice(),
+    });
     let mut stimuli = Vec::new();
     for fact in &seen.facts {
         referee.observe(Time::ZERO, Observation::Fact(*fact), &mut stimuli);
@@ -414,6 +433,7 @@ impl Run {
                 next_turn: 1,
                 answered: false,
                 shown: false,
+                borrowed_notice: checkout.borrowed_notice(),
             }),
             checkout,
             token_directory,

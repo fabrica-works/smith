@@ -1133,6 +1133,7 @@ dependencies = [
  "skein-llm",
  "skein-llm-connection",
  "skein-oauth",
+ "skein-oauth-accounts",
  "skein-shell",
  "skein-sim",
  "skein-tls",

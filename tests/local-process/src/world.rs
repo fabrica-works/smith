@@ -21,6 +21,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod borrowed;
+pub use borrowed::Borrowing;
+pub(crate) use borrowed::login_token;
+
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
 /// Both placements enter the same shell and local policy.
@@ -183,8 +187,11 @@ fn tool_scripts() -> Box<[api::Script]> {
 
 /// Checkout observations shared only by the machine and outside referee.
 #[derive(Clone)]
-pub struct CheckoutView(Rc<RefCell<Option<(Checkout, History, u64)>>>);
+pub struct CheckoutView(Rc<RefCell<Option<(Checkout, History, u64)>>>, Option<Vec<u8>>);
 impl CheckoutRead for CheckoutView {
+    fn borrowed_notice(&self) -> Option<Vec<u8>> {
+        self.1.clone()
+    }
     fn head(&self) -> Option<Vec<u8>> {
         self.0.borrow().as_ref().map(|(_, _, head)| format!("{head:040x}").into_bytes())
     }
@@ -204,6 +211,11 @@ pub struct Machine {
     checkout: CheckoutView,
     commands: Vec<Box<[Box<[u8]>]>>,
     chat_path: PathBuf,
+    login_handles: Vec<skein_sim::Handle>,
+    login_reads: u32,
+    login_writes: u32,
+    renew_login: bool,
+    login_checks: bool,
 }
 impl Machine {
     fn current_tree(&mut self) -> Tree {
@@ -342,7 +354,11 @@ impl skein_world::Machine for Machine {
             }
         }
         self.files.close(root);
-        skein_fake_machine::step(&mut self.files, call, answers);
+        if self.login_checks {
+            self.login_step(call, answers);
+        } else {
+            skein_fake_machine::step(&mut self.files, call, answers);
+        }
     }
 }
 
@@ -570,15 +586,18 @@ impl World {
             items.push(skein_fake_machine::Item::file(b"repo/original.txt", b"original\n"));
         }
         let master = disk.lay(&items);
-        let checkout = CheckoutView(Rc::new(RefCell::new(if change {
-            let mut history = History::new(Tree::from([(b"original.txt".to_vec(), b"original\n".to_vec())]));
-            let mut checkout = Checkout::new();
-            git::clone_repository(&mut history, &mut checkout, b"repo", b"work").expect("clone fixture");
-            git::check_out(&history, &mut checkout, b"work", 1).expect("checkout fixture");
-            Some((checkout, history, 1))
-        } else {
-            None
-        })));
+        let checkout = CheckoutView(
+            Rc::new(RefCell::new(if change {
+                let mut history = History::new(Tree::from([(b"original.txt".to_vec(), b"original\n".to_vec())]));
+                let mut checkout = Checkout::new();
+                git::clone_repository(&mut history, &mut checkout, b"repo", b"work").expect("clone fixture");
+                git::check_out(&history, &mut checkout, b"work", 1).expect("checkout fixture");
+                Some((checkout, history, 1))
+            } else {
+                None
+            })),
+            None,
+        );
         let token_directory = files.path.join("tokens");
         let tokens = local_tokens::Tokens::new(&token_directory, token_limits()).expect("token directory");
         if tokens.load(0).expect("token record").is_none() {
@@ -611,6 +630,7 @@ impl World {
                     keep_facts,
                     traced: false,
                     authenticated: false,
+                    borrowing: None,
                     state_directory: files.path.join("chat"),
                     token_directory,
                     root_path: ".".into(),
@@ -627,6 +647,11 @@ impl World {
                 master,
                 checkout: checkout.clone(),
                 commands: Vec::new(),
+                login_handles: Vec::new(),
+                login_reads: 0,
+                login_writes: 0,
+                renew_login: false,
+                login_checks: false,
                 chat_path: files.path.join("chat"),
             }),
             checkout,
@@ -759,7 +784,28 @@ impl World {
         );
         // The terminal owns a fresh handle, never the machine's master.
         world.spawn_root(skein_sim::Handle::new(terminal_root.raw()), |root| {
-            let mut terminal = Terminal::configured(root, self.scenario.commands.clone(), launch.arguments());
+            let mut environment = Vec::new();
+            if launch.borrowing.is_some() {
+                let home = launch.token_directory.parent().expect("scratch home");
+                for (name, path) in [
+                    ("HOME", home.to_path_buf()),
+                    ("XDG_CONFIG_HOME", home.join("config")),
+                    ("XDG_STATE_HOME", home.join("state")),
+                ] {
+                    environment.push(format!("{name}={}", path.display()).into_bytes().into_boxed_slice());
+                }
+                if launch.borrowing == Some(Borrowing::Env) {
+                    let mut value = b"SMITH_FIXTURE_TOKEN=".to_vec();
+                    value.extend_from_slice(&login_token(false));
+                    environment.push(value.into());
+                }
+            }
+            let mut terminal = Terminal::with_environment(
+                root,
+                self.scenario.commands.clone(),
+                launch.arguments(),
+                environment.into(),
+            );
             if self.scenario.terminate_on_output_end {
                 terminal.terminate_when_output_ends();
             }
@@ -904,6 +950,9 @@ impl World {
     }
 }
 impl CheckoutRead for World {
+    fn borrowed_notice(&self) -> Option<Vec<u8>> {
+        self.checkout.borrowed_notice()
+    }
     fn head(&self) -> Option<Vec<u8>> {
         self.checkout.head()
     }
@@ -983,7 +1032,9 @@ impl Scenario {
         smith_agent_process_world::fake::configured_transport(
             provider_scripts,
             skein_llm::Credential {
-                access_token: if self.launch.authenticated {
+                access_token: if self.launch.borrowing.is_some() {
+                    login_token(false)
+                } else if self.launch.authenticated {
                     b"access-new".as_slice().into()
                 } else {
                     b"token".as_slice().into()

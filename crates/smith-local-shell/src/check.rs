@@ -19,6 +19,8 @@ pub enum Warning {
     WrapperCache { configured_by: String, origin: Origin, cache: Option<PathBuf> },
     /// Commands would receive a variable whose name suggests a credential.
     CredentialLikeName { name: String, origin: Origin },
+    /// An account outside the selected run has an unusable credential source.
+    Credential { account: String, credential: crate::credentials::Credential },
 }
 
 /// The version of check's JSON document, read by callers and the harness.
@@ -40,20 +42,29 @@ pub struct Report {
     pub caches: Vec<PathBuf>,
     pub warnings: Vec<Warning>,
     pub outside_models: BTreeMap<String, String>,
+    pub credentials: BTreeMap<String, crate::credentials::AccountReport>,
+}
+
+impl Report {
+    /// Only the resolver's needed accounts can make the check exit for credentials.
+    #[must_use]
+    pub fn credentials_ready(&self) -> bool {
+        self.credentials.values().all(|account| !account.required || account.credential.usable())
+    }
 }
 
 /// Startup either supplies the document or names its configuration problem.
 #[derive(Debug)]
 pub enum Verdict {
     /// The decoded settings and tools pass this stage's checks.
-    Ready(Report),
+    Ready(Box<Report>),
     /// A setting or tool prevents startup, rendered with exit 2.
     Refused(Refusal),
 }
 
-/// Build the document without reading or reporting a credential.
+/// Build the document with access values omitted from every reported state.
 #[must_use]
-pub fn report(settings: &Settings) -> Verdict {
+pub fn report(settings: &Settings, wall: skein_lib::Wall) -> Verdict {
     let command = Command::Check { shared: command::Shared::default(), json: false };
     let resolved = match settings::resolve::resolve(settings, &command) {
         Ok(resolved) => resolved,
@@ -111,10 +122,16 @@ pub fn report(settings: &Settings) -> Verdict {
     }
     let environment = values.keys().cloned().collect();
     let caches = settings::environment::caches(settings, &values);
-    let warnings = match warnings::collect(settings, &values, &caches) {
+    let mut warnings = match warnings::collect(settings, &values, &caches) {
         Ok(warnings) => warnings,
         Err(why) => return Verdict::Refused(why),
     };
+    let credentials = crate::credentials::report(&resolved, wall);
+    for (account, state) in &credentials {
+        if !state.required && !state.credential.usable() {
+            warnings.push(Warning::Credential { account: account.clone(), credential: state.credential.clone() });
+        }
+    }
     let mut redacted = settings.clone();
     for (key, value) in &mut redacted.values {
         if key.starts_with("environment.set.") || key.starts_with("endpoints.") && key.contains(".headers.") {
@@ -123,7 +140,7 @@ pub fn report(settings: &Settings) -> Verdict {
     }
     let identity = smith_agent_shell::identity();
     let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
-    Verdict::Ready(Report {
+    Verdict::Ready(Box::new(Report {
         version: CHECK_VERSION,
         settings: redacted,
         formats: BTreeMap::from([
@@ -141,8 +158,9 @@ pub fn report(settings: &Settings) -> Verdict {
         named_limits,
         caches,
         warnings,
+        credentials,
         outside_models: resolved.outside_models.into_iter().map(|(model, reason)| (model, reason.into())).collect(),
-    })
+    }))
 }
 
 /// Check the same caches and environment names before composing a product run.
@@ -206,12 +224,17 @@ pub fn render_text(report: &Report) -> String {
     for (model, reason) in &report.outside_models {
         lines.push(format!("model {model} is outside the run: {reason}"));
     }
+    for (name, account) in &report.credentials {
+        if account.required || account.credential.usable() {
+            lines.push(account.credential.line(name));
+        }
+    }
     lines.join("\n")
 }
 
 /// Handle product arguments, leaving legacy invocations to their existing glue.
 #[must_use]
-pub fn command(arguments: &[OsString]) -> Option<u8> {
+pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
     let (shared, json) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
         Ok(Command::Legacy(_)) => return None,
         Ok(Command::Check { shared, json }) => (shared, json),
@@ -221,13 +244,13 @@ pub fn command(arguments: &[OsString]) -> Option<u8> {
         }
     };
     let verdict = match settings::read(&shared) {
-        Ok(settings) => report(&settings),
+        Ok(settings) => report(&settings, wall),
         Err(why) => Verdict::Refused(why),
     };
     match verdict {
         Verdict::Ready(report) => {
             println!("{}", if json { render_json(&report) } else { render_text(&report) });
-            Some(0)
+            Some(if report.credentials_ready() { 0 } else { 3 })
         }
         Verdict::Refused(why) => {
             eprintln!("{}", why.line());

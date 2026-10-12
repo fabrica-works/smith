@@ -366,7 +366,7 @@ fn smith_check_json_shows_each_value_with_its_layer() {
     std::fs::write(directory.join("config.toml"), b"[environment.set]\nREPO='repository-value'\n")
         .expect("repository environment");
     let ran = support::smith(&scratch, &["check", "--json", "-c", "effort='high'"], b"");
-    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
     assert_eq!(report["version"], 1);
     assert_eq!(report["outside_models"]["anthropic/claude-opus-5-5"], "sub_agents is off");
@@ -434,7 +434,7 @@ fn smith_check_json_warns_of_a_wrapper_cache_outside_the_caches() {
     );
     let _file = support::user_layer(&scratch, settings.as_bytes());
     let ran = support::smith(&scratch, &["check", "--json"], b"");
-    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("one check document");
     assert!(
         report["warnings"]
@@ -456,7 +456,7 @@ fn smith_check_warns_about_an_absent_cache_and_creates_nothing() {
     );
     let _file = support::user_layer(&scratch, settings.as_bytes());
     let ran = support::smith(&scratch, &["check", "--json"], b"");
-    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
     assert!(report["warnings"].as_array().expect("warnings").iter().any(|warning| warning["kind"] == "cache_access"
         && warning["cache"] == cache.to_str().expect("UTF-8 path")
@@ -475,7 +475,7 @@ fn smith_check_warns_about_a_file_named_as_a_cache_and_keeps_it() {
     );
     let _file = support::user_layer(&scratch, settings.as_bytes());
     let ran = support::smith(&scratch, &["check", "--json"], b"");
-    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
     assert!(report["warnings"].as_array().expect("warnings").iter().any(|warning| warning["kind"] == "cache_access"
         && warning["cache"] == cache.to_str().expect("UTF-8 path")
@@ -491,7 +491,7 @@ fn smith_check_json_lists_the_effective_limits_by_name() {
         b"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\n",
     );
     let ran = support::smith(&scratch, &["check", "--json"], b"");
-    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.code, 3, "{}", String::from_utf8_lossy(&ran.stderr));
     let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("check document");
     let limits = report["limits"].as_array().expect("effective limits");
     assert!(

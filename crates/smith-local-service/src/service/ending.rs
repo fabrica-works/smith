@@ -32,7 +32,7 @@ impl Service {
                     Some(effects) => effects.components_closed(),
                     None => true,
                 };
-                shell_closed && lower_closed && self.below.process().settled(streams)
+                shell_closed && self.accounts_closed() && lower_closed && self.below.process().settled(streams)
             }
             Ending::Closing { step: Step::Stream, .. } => {
                 let lower_closed = match self.below.inline() {
@@ -124,7 +124,7 @@ impl Service {
                     Some(effects) => effects.components_closed(),
                     None => true,
                 };
-                if lower_closed && self.below.process().settled(streams) && shell_closed {
+                if lower_closed && self.accounts_closed() && self.below.process().settled(streams) && shell_closed {
                     if let Some(effects) = self.below.inline_mut() {
                         effects.end(crate::stream::exit(exit));
                     }

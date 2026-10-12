@@ -10,6 +10,7 @@ use skein_lib::{Env, List, Map, Queue, Time, Token, Wall};
 use smith_agent_service as agent_service;
 use smith_agent_service::{Close, Step};
 
+mod accounts;
 mod ending;
 use ending::Ending;
 use smith_domain as agent;
@@ -170,8 +171,9 @@ enum SnapshotState {
 }
 
 /// One local chat, its host kit and bounded requests to process and shell.
-#[derive(Debug)]
+#[expect(missing_debug_implementations, reason = "the handed-in account owner contains credentials")]
 pub struct Service {
+    accounts: Option<crate::Accounts>,
     limits: Limits,
     local: local::Domain,
     below: Effects,
@@ -180,6 +182,7 @@ pub struct Service {
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     now: Time,
+    wall: Wall,
     plain_directories: List<u32>,
     capture_activation: Option<u64>,
     snapshot_state: SnapshotState,
@@ -256,6 +259,7 @@ impl Service {
         let queue = config.limits.queue;
         let accounts = config.limits.local.smith.accounts;
         Ok(Self {
+            accounts: None,
             limits: config.limits,
             local,
             below: match native {
@@ -267,6 +271,7 @@ impl Service {
             completions: Queue::with_capacity(queue),
             submissions: Queue::with_capacity(queue),
             now: Time::ZERO,
+            wall: Wall::EPOCH,
             plain_directories,
             capture_activation: None,
             snapshot_state: SnapshotState::Idle,
@@ -430,6 +435,10 @@ impl Service {
         let mut next: Option<Time> = None;
         for deadline in [
             self.local.next_deadline(),
+            match &self.accounts {
+                Some(accounts) => accounts.next_deadline(),
+                None => None,
+            },
             self.below.process().next_deadline(),
             match self.below.inline() {
                 Some(effects) => effects.next_deadline(),
@@ -449,6 +458,10 @@ impl Service {
 
     #[must_use]
     pub fn work_pending(&self, now: Time) -> bool {
+        match &self.accounts {
+            Some(accounts) if accounts.work_pending(now) => return true,
+            Some(_) | None => {}
+        }
         let takes = match self.below.inline() {
             Some(effects) => effects.takes(),
             None => match &self.stream {
@@ -543,7 +556,13 @@ impl Service {
     fn route_completions(&mut self) {
         for _ in 0..self.completions.capacity() {
             let Some(complete) = self.completions.pop() else { break };
-            if complete.op.raw() & EFFECT_OPERATION_BIT == 0 {
+            if complete.op.raw() & ACCOUNT_OPERATION_BIT != 0 {
+                self.accounts.as_mut().expect("account operation owner").complete(kernel::Complete {
+                    op: Token::new(complete.op.raw() & !ACCOUNT_OPERATION_BIT),
+                    kind: complete.kind,
+                    result: complete.result,
+                });
+            } else if complete.op.raw() & EFFECT_OPERATION_BIT == 0 {
                 self.below.process_mut().completions().push(complete);
             } else {
                 self.below.inline_mut().expect("effect namespace belongs to colocated mode").completions().push(
@@ -558,12 +577,21 @@ impl Service {
     }
 
     fn flush_submissions(&mut self) {
+        if let Some(accounts) = &mut self.accounts {
+            for _ in 0..self.limits.queue {
+                if self.submissions.room() == 0 {
+                    break;
+                }
+                let Some(submit) = accounts.submissions().pop() else { break };
+                self.submissions.push(namespace_submit(submit, ACCOUNT_OPERATION_BIT));
+            }
+        }
         for _ in 0..self.limits.queue {
             if self.submissions.room() == 0 {
                 break;
             }
             let Some(submit) = self.below.process_mut().submissions().pop() else { break };
-            self.submissions.push(namespace_submit(submit, false));
+            self.submissions.push(namespace_submit(submit, 0));
         }
         if let Some(effects) = self.below.inline_mut() {
             for _ in 0..self.limits.queue {
@@ -571,7 +599,7 @@ impl Service {
                     break;
                 }
                 let Some(submit) = effects.submissions().pop() else { break };
-                self.submissions.push(namespace_submit(submit, true));
+                self.submissions.push(namespace_submit(submit, EFFECT_OPERATION_BIT));
             }
         }
     }
@@ -644,6 +672,7 @@ impl Service {
                 });
             }
             local::Request::Answered { answer } => {
+                self.release_accounts(now);
                 if let Some(effects) = self.below.inline_mut() {
                     effects.answered(now, crate::stream::answered(&answer, effects.capture()));
                 }
@@ -654,7 +683,10 @@ impl Service {
                     self.shell.push(local::Request::Answered { answer });
                 }
             }
-            local::Request::Unanswered { cause, turns, spent, read } => self.unanswered(now, cause, turns, spent, read),
+            local::Request::Unanswered { cause, turns, spent, read } => {
+                self.release_accounts(now);
+                self.unanswered(now, cause, turns, spent, read);
+            }
             local::Request::Exit { status } => {
                 let shell_closed = match self.ending {
                     Ending::Live { shell_closed } => shell_closed,
@@ -679,12 +711,29 @@ impl Service {
             local::Request::SaveDelivery { record } => {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
             }
-            other @ local::Request::Credential { .. } => self.shell.push(other),
+            local::Request::Credential { account } => self.account_request(account),
         }
     }
 
     fn notice(&mut self, now: Time, notice: local::Notice) {
-        self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
+        let handed = match &notice {
+            local::Notice::Failure(local::Failure::Credential { account, reason }) => match reason {
+                local::CredentialFailure::BorrowedExpiring { .. }
+                | local::CredentialFailure::BorrowedExpired { .. } => true,
+                local::CredentialFailure::Missing | local::CredentialFailure::Refresh => match &self.accounts {
+                    Some(accounts) => accounts.account_id(*account).is_some(),
+                    None => false,
+                },
+            },
+            local::Notice::Failure(_)
+            | local::Notice::Warning(_)
+            | local::Notice::Waiting
+            | local::Notice::Checking(_)
+            | local::Notice::NotDelivered { .. } => false,
+        };
+        if !handed {
+            self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
+        }
         match notice {
             local::Notice::Warning(local::Warning::ForcedExit { exit, forced }) => {
                 self.forced_exit(now, exit, forced);
@@ -827,7 +876,9 @@ fn inline_effects(
 /// One bounded up pass followed by one bounded down pass.
 pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.now = now;
+    service.wall = wall;
     service.route_completions();
+    service.accounts_pass(now, wall);
     if let Some(effects) = service.below.inline_mut() {
         effects.up(now, wall);
         for _ in 0..service.limits.queue {
@@ -873,6 +924,7 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.local.reclaim();
 }
 
+const ACCOUNT_OPERATION_BIT: u64 = 1 << 62;
 const EFFECT_OPERATION_BIT: u64 = 1 << 63;
 
 fn local_pass(service: &mut Service, now: Time, wall: Wall) {
@@ -948,12 +1000,14 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
     clippy::wildcard_enum_match_arm,
     reason = "kernel operations are external; only Cancel names another operation"
 )]
-fn namespace_submit(submit: kernel::Submit, effects: bool) -> kernel::Submit {
-    assert!(submit.op.raw() & EFFECT_OPERATION_BIT == 0, "operation namespace never exhausts its half");
-    let bit = if effects { EFFECT_OPERATION_BIT } else { 0 };
+fn namespace_submit(submit: kernel::Submit, bit: u64) -> kernel::Submit {
+    assert!(submit.op.raw() & (ACCOUNT_OPERATION_BIT | EFFECT_OPERATION_BIT) == 0, "bounded operation namespace");
     let kind = match submit.kind {
         kernel::Op::Cancel { target } if target.raw() != u64::MAX => {
-            assert!(target.raw() & EFFECT_OPERATION_BIT == 0, "lower cancel uses its own namespace");
+            assert!(
+                target.raw() & (ACCOUNT_OPERATION_BIT | EFFECT_OPERATION_BIT) == 0,
+                "lower cancel uses its own namespace"
+            );
             kernel::Op::Cancel { target: Token::new(target.raw() | bit) }
         }
         other => other,

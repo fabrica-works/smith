@@ -121,8 +121,9 @@ fn wrapper_cache(wrapper: &str, values: &BTreeMap<String, String>) -> Option<Pat
         .or_else(|| values.get("HOME").map(|home| PathBuf::from(home).join(".cache").join(name)))
 }
 
-pub(super) fn line(warning: &Warning) -> String {
+pub(crate) fn line(warning: &Warning) -> String {
     match warning {
+        Warning::Credential { account, credential } => format!("warning: {}", credential.line(account)),
         Warning::CacheAccess { cache, reason } => format!("warning: cache {}: {reason}", cache.display()),
         Warning::WrapperCache { configured_by, origin, cache } => format!(
             "warning: wrapper from {configured_by} (from {}) has no listed writable cache{}",

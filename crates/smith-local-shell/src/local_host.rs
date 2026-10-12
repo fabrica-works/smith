@@ -7,6 +7,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+mod credentials;
 mod header;
 
 use skein_io::{self as io, kernel};
@@ -66,6 +67,7 @@ pub struct Local {
     service: service::Service,
     tokens: Tokens,
     accounts: Box<[Auth]>,
+    credential_locations: skein_lib::List<crate::credentials::Location>,
     writer: io::Io,
     env: Env<io::Limits>,
     output: Token,
@@ -119,7 +121,8 @@ impl Local {
         resources: Resources,
         errors: Box<dyn Write>,
     ) -> Result<Self, String> {
-        Self::within_memory(config, lower, resources, errors, u64::MAX).map_err(|failure| failure.detail().to_owned())
+        Self::within_memory(config, lower, resources, errors, u64::MAX, None)
+            .map_err(|failure| failure.detail().to_owned())
     }
 
     /// Refuse the complete shell footprint above the caller's memory before stream adoption.
@@ -134,6 +137,7 @@ impl Local {
         resources: Resources,
         errors: Box<dyn Write>,
         available_bytes: u64,
+        handed: Option<crate::credentials::Prepared>,
     ) -> Result<Self, crate::local_shell::Failure> {
         let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
         config.agent = match lower {
@@ -185,20 +189,40 @@ impl Local {
             .and_then(|count| count.checked_mul(2))
             .and_then(|count| count.checked_add(64))
             .and_then(|count| count.checked_add(lower_routes))
+            .and_then(|count| count.checked_add(if handed.is_some() { 8 } else { 0 }))
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        let worst = accounted_memory(
+        let mut worst = accounted_memory(
             &config.limits,
             u32::try_from(resources.accounts.len())
                 .map_err(|_| configuration_failure(derivation_refusal("account_worst_case")))?,
             lower_routes,
         )
         .map_err(configuration_failure)?;
+        if let Some(prepared) = &handed {
+            worst = worst
+                .checked_add(
+                    prepared
+                        .worst_case()
+                        .ok_or_else(|| configuration_failure(derivation_refusal("account_worst_case")))?,
+                )
+                .and_then(|bytes| bytes.checked_add(Map::<Token, Route>::worst_case(8)?))
+                .ok_or_else(|| configuration_failure(derivation_refusal("account_worst_case")))?;
+        }
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
         let mut service = service::Service::new(config, resources.seed)
             .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
         service.adopt_store(resources.state_root).map_err(|error| host_failure(format!("chat store: {error:?}")))?;
+        let credential_locations = match handed {
+            Some(prepared) => {
+                service
+                    .handed_accounts(prepared.sources, prepared.limits, resources.oauth_entropy)
+                    .map_err(|error| configuration_failure(format!("account driver: {error:?}")))?;
+                prepared.locations
+            }
+            None => skein_lib::List::with_capacity(0),
+        };
         let tokens = Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?;
         let mut writer = io::Io::new(&io_limits);
         let output = writer
@@ -217,6 +241,7 @@ impl Local {
             service,
             tokens,
             accounts: accounts.into(),
+            credential_locations,
             writer,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: io_limits },
             output,
@@ -312,6 +337,9 @@ impl Local {
 
     fn files(&mut self) {
         for _ in 0..self.service.shell_requests().capacity() {
+            if !self.credential_locations.is_empty() && self.service.output().room() == 0 {
+                break;
+            }
             let Some(request) = self.service.shell_requests().pop() else { break };
             match request {
                 domain::Request::Credential { account } => {
@@ -347,12 +375,17 @@ impl Local {
                     smith_host_domain::RunResult::Failed { .. } | smith_host_domain::RunResult::Refused { .. } => {}
                 },
                 domain::Request::Notice { notice } => {
-                    let text = smith_local_protocol::notice_text(
-                        &notice,
-                        self.service.chat_name(),
-                        self.service.models(),
-                        self.service.show_bytes(),
-                    );
+                    let text = if let Some(text) = self.credential_notice(&notice) {
+                        self.service.output().push(text.clone());
+                        text
+                    } else {
+                        smith_local_protocol::notice_text(
+                            &notice,
+                            self.service.chat_name(),
+                            self.service.models(),
+                            self.service.show_bytes(),
+                        )
+                    };
                     match notice {
                         domain::Notice::Warning(_) => {
                             drop(write!(self.errors, "smith: {}", String::from_utf8_lossy(&text)));

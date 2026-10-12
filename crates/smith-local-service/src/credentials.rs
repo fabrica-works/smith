@@ -18,6 +18,14 @@ pub enum Source {
     Env { account: u32, borrowed: Borrowed },
 }
 
+impl Source {
+    /// Maximum account identifier accepted by this driver's handed-in boundary.
+    #[must_use]
+    pub const fn account_id_bytes() -> usize {
+        1024
+    }
+}
+
 struct Account {
     number: u32,
     source: Origin,

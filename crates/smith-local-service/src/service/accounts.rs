@@ -1,0 +1,87 @@
+//! Handed-in grants and read-only login operations in the service's kernel namespace.
+//! The source driver owns expiry; the service owns envelopes and local-domain events.
+use super::{Close, Error, Service, local, protocol};
+use skein_lib::{List, Queue, Time, Wall, Writer};
+
+impl Service {
+    /// Install the selected handed-in sources before the first service pass.
+    pub fn handed_accounts(
+        &mut self,
+        sources: List<crate::Source>,
+        limits: skein_oauth_accounts::Limits,
+        entropy: [u8; 32],
+    ) -> Result<(), Error> {
+        assert!(self.accounts.is_none(), "one handed-in driver");
+        if self.limits.queue < crate::ACCOUNTS_MAX_OUT {
+            return Err(Error::Queue);
+        }
+        if sources.len() > self.limits.local.smith.accounts {
+            return Err(Error::Memory);
+        }
+        self.accounts = Some(crate::Accounts::new(sources, limits, entropy)?);
+        Ok(())
+    }
+
+    pub(super) fn accounts_closed(&self) -> bool {
+        match &self.accounts {
+            Some(accounts) => accounts.closed(),
+            None => true,
+        }
+    }
+
+    pub(super) fn release_accounts(&mut self, now: Time) {
+        if let Some(accounts) = &mut self.accounts {
+            accounts.release_all(now, self.wall);
+        }
+    }
+
+    pub(super) fn accounts_pass(&mut self, now: Time, wall: Wall) {
+        if self.local_events.room() < crate::ACCOUNTS_MAX_OUT || self.shell.room() < crate::ACCOUNTS_MAX_OUT {
+            return;
+        }
+        let Some(mut accounts) = self.accounts.take() else { return };
+        if self.closing() {
+            accounts.close(if self.aborted() { Close::Aborted } else { Close::Graceful }, now, wall);
+        }
+        let mut out = Queue::with_capacity(crate::ACCOUNTS_MAX_OUT);
+        accounts.advance(now, wall, &mut out);
+        for _ in 0..crate::ACCOUNTS_MAX_OUT {
+            match out.pop() {
+                Some(protocol::CredentialRequest::Ready { event: local::Event::Credential { grant }, value }) => {
+                    let identifier = accounts.account_id(grant.name.account).expect("selected account");
+                    let bytes = identifier.len().checked_add(value.len()).expect("bounded credential fields");
+                    let length = bytes.checked_add(2).expect("bounded envelope");
+                    let mut envelope = Writer::new(length);
+                    envelope
+                        .put(&u16::try_from(identifier.len()).expect("bounded identifier").to_be_bytes())
+                        .expect("envelope prefix");
+                    envelope.put(identifier).expect("envelope identifier");
+                    envelope.put(&value).expect("envelope access value");
+                    self.credential(grant, envelope.finish());
+                }
+                Some(protocol::CredentialRequest::Notice { account, reason }) => {
+                    self.notice(now, local::Notice::Failure(local::Failure::Credential { account, reason }));
+                }
+                Some(protocol::CredentialRequest::Failed { event }) => self.local_events.push(event),
+                Some(protocol::CredentialRequest::Closed) | None => break,
+                Some(
+                    protocol::CredentialRequest::Visit { .. }
+                    | protocol::CredentialRequest::Http(_)
+                    | protocol::CredentialRequest::Save { .. }
+                    | protocol::CredentialRequest::Ready { .. },
+                ) => unreachable!("handed-in accounts perform no sign-in"),
+            }
+        }
+        self.accounts = Some(accounts);
+    }
+
+    pub(super) fn account_request(&mut self, account: u32) {
+        let handled = match &mut self.accounts {
+            Some(owner) => owner.request(account),
+            None => false,
+        };
+        if !handled {
+            self.shell.push(local::Request::Credential { account });
+        }
+    }
+}

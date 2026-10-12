@@ -156,6 +156,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         },
         Box::new(std::io::stderr()),
         trace_memory,
+        None,
     )?;
     local_service.run_traced(trace, header, spawned_trace, trace_memory)
 }

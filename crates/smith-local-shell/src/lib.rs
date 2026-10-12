@@ -8,6 +8,7 @@ mod local_auth_http;
 
 pub mod check;
 pub mod command;
+pub mod credentials;
 pub mod local_host;
 pub mod local_settings;
 pub mod local_shell;

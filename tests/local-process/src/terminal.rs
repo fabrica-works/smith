@@ -63,6 +63,17 @@ impl Terminal {
     /// Launch the same terminal story with immutable program arguments.
     #[must_use]
     pub fn configured(root: kernel::Fd, commands: Vec<Action>, arguments: Box<[Box<[u8]>]>) -> Self {
+        Self::with_environment(root, commands, arguments, Box::new([]))
+    }
+
+    /// Launch with the story's named environment, isolated from the test process.
+    #[must_use]
+    pub fn with_environment(
+        root: kernel::Fd,
+        commands: Vec<Action>,
+        arguments: Box<[Box<[u8]>]>,
+        environment: Box<[Box<[u8]>]>,
+    ) -> Self {
         assert!(commands.len() <= 16);
         assert!(
             commands
@@ -93,7 +104,7 @@ impl Terminal {
             spawn: kernel::Spawn {
                 program: b"smith-local".as_slice().into(),
                 args: arguments,
-                env: Box::new([]),
+                env: environment,
                 root,
                 dir: b".".as_slice().into(),
                 pipes: Box::new([

@@ -44,6 +44,8 @@ pub struct Launch {
     #[serde(default)]
     pub traced: bool,
     pub authenticated: bool,
+    #[serde(default)]
+    pub borrowing: Option<crate::world::Borrowing>,
     pub state_directory: PathBuf,
     pub token_directory: PathBuf,
     pub root_path: PathBuf,
@@ -676,6 +678,9 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
     let launch = Launch::read(spawn);
     let path = launch.root_path.as_os_str().as_encoded_bytes();
     let mut roots = vec![StartupRoot { name: b"launch".as_slice().into(), path: path.into() }];
+    if launch.borrowing.is_some() && launch.borrowing != Some(crate::world::Borrowing::Env) {
+        roots.push(StartupRoot { name: b"login".as_slice().into(), path: path.into() });
+    }
     roots.push(StartupRoot {
         name: b"state".as_slice().into(),
         path: launch.state_directory.as_os_str().as_encoded_bytes().into(),
@@ -734,7 +739,8 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
     let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
-    let mut local = Local::new(
+    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io);
+    let mut local = Local::within_memory(
         config,
         lower,
         Resources {
@@ -750,11 +756,17 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
                 Box::new([])
             },
             delivery_environment: Box::new([]),
-            accounts: accounts_with(launch.authenticated, launch.tls, launch.trust_der.as_deref()),
+            accounts: if launch.borrowing.is_some() {
+                Box::new([])
+            } else {
+                accounts_with(launch.authenticated, launch.tls, launch.trust_der.as_deref())
+            },
             seed: launch.seed,
             oauth_entropy: [31; 32],
         },
         Box::new(writer),
+        u64::MAX,
+        handed,
     )
     .expect("actual shared local shell");
     if let Some(configuration) = &spawned
@@ -904,4 +916,46 @@ pub fn make_exited_agent(_: &kernel::Spawn, inherited: &Inherited) -> Proc {
 pub fn make_lingering_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let Proc::Agent(agent, _, _) = make_agent(spawn, inherited) else { panic!("agent fixture") };
     Proc::LingeringAgent(agent)
+}
+
+fn borrowed_accounts(
+    launch: &Launch,
+    spawn: &kernel::Spawn,
+    inherited: &Inherited,
+    io: skein_io::Limits,
+) -> Option<smith_local_shell::credentials::Prepared> {
+    use crate::world::Borrowing;
+    use smith_local_shell::credentials::{Location, Prepared, Source};
+    let borrowing = launch.borrowing?;
+    let mut sources = skein_lib::List::with_capacity(1);
+    let mut locations = skein_lib::List::with_capacity(1);
+    let (handed, descriptor) = match borrowing {
+        Borrowing::Env => {
+            let variable = "SMITH_FIXTURE_TOKEN";
+            let value = spawn
+                .env
+                .iter()
+                .find_map(|entry| entry.strip_prefix(b"SMITH_FIXTURE_TOKEN="))
+                .expect("the launch's named fixture variable");
+            let borrowed = smith_local_shell::credentials::env_record(value, true, skein_tls_world::pki::VALID)
+                .expect("synthetic variable value");
+            (service::Source::Env { account: 0, borrowed }, Source::Env { variable: variable.into(), codex: true })
+        }
+        Borrowing::Valid | Borrowing::Expired | Borrowing::Renewed => (
+            service::Source::Borrow {
+                account: 0,
+                root: root(inherited, b"login"),
+                path: b"auth.json".as_slice().into(),
+                format: smith_local_protocol::LoginFormat::Codex,
+            },
+            Source::Borrow {
+                file: launch.token_directory.parent().expect("scratch parent").join("auth.json"),
+                format: smith_local_protocol::LoginFormat::Codex,
+                program: "codex".into(),
+            },
+        ),
+    };
+    assert!(sources.push(handed).is_ok(), "one selected source");
+    locations.push(Location { account: 0, name: "codex".into(), source: descriptor }).expect("one selected location");
+    Some(Prepared { sources, locations, limits: smith_local_shell::credentials::limits(io, 1) })
 }

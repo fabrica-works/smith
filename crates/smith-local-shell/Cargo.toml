@@ -9,6 +9,7 @@ publish.workspace = true
 smith-agent-shell.workspace = true
 skein-lib.workspace = true
 skein-oauth.workspace = true
+skein-oauth-accounts.workspace = true
 libc = "0.2"
 skein-io.workspace = true
 skein-shell.workspace = true
