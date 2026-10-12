@@ -14,6 +14,45 @@ fn design() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/design")
 }
 
+#[test]
+fn fixtures_freeze_their_seeds_and_keep_graders_outside_them() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tasks/fixtures");
+    for name in ["01-backoff", "02-line-decoder"] {
+        let directory = root.join(name);
+        let task = check_task(&directory.join("task.toml"), &design()).expect("frozen fixture");
+        assert_eq!(task.kind, smith_bench::Kind::Fixture);
+        assert_eq!(task.tier, "working");
+        assert_eq!(task.setup, [vec!["cargo", "build", "--offline", "--tests"]]);
+        assert_eq!(task.protected, ["tests", "Cargo.toml", "Cargo.lock", "AGENTS.md"].map(PathBuf::from));
+        assert!(directory.join("grader/tests/hidden.rs").is_file());
+        assert!(directory.join("grader/tests/regression.rs").is_file());
+        assert!(directory.join("reference/src/lib.rs").is_file());
+        assert!(!directory.join("seed/tests/hidden.rs").exists());
+        assert!(!directory.join("seed/grader").exists());
+        assert!(!directory.join("seed/reference").exists());
+    }
+    let hidden = std::fs::read_to_string(root.join("02-line-decoder/grader/tests/hidden.rs")).expect("hidden test");
+    assert!(hidden.contains("1u32 << 18"));
+    assert!(!hidden.contains("i < 16"));
+}
+
+#[test]
+fn the_compare_suite_names_both_fixtures_and_both_agents() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let suite = smith_bench::read_suite(&root.join("suites/compare.toml")).expect("comparison");
+    assert_eq!(suite.tasks, ["fixtures/01-backoff", "fixtures/02-line-decoder"]);
+    assert_eq!(suite.tier, "working");
+    assert_eq!(suite.design, smith_bench::Design::Interleaved);
+    assert_eq!(suite.repetitions, 5);
+    assert_eq!(
+        suite.agents.iter().map(|agent| agent.agent).collect::<Vec<_>>(),
+        [smith_bench::Agent::Smith, smith_bench::Agent::Codex]
+    );
+    assert_eq!(suite.agents.iter().map(|agent| agent.config.as_str()).collect::<Vec<_>>(), ["compare", "standard"]);
+    let pin = smith_bench::read_configuration(&root.join("agents/smith/compare.pin.toml")).expect("comparison pin");
+    assert_eq!(pin.pin.configuration, PathBuf::from("first-request.json"));
+}
+
 fn refuses(name: &str, key: &str, reason: &str) {
     let error = check_task(&recorded(name), &design()).expect_err("recorded task must refuse");
     assert!(error.key.contains(key), "{error}");

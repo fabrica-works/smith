@@ -24,6 +24,7 @@ fn main() -> ExitCode {
         }
         [command] if command == "check" => check_all(),
         [command, directory] if command == "check" => check(Path::new(directory)),
+        [command, names @ ..] if command == "validate" => validate_command(names),
         [command, results, suite, tier, design, seed, reference @ ..]
             if command == "summarise" && reference.len() <= 1 =>
         {
@@ -40,7 +41,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
+                "usage: smith-bench check [TASKS_DIRECTORY]\n       smith-bench validate [TASK]...\n       smith-bench guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...\n       smith-bench summarise RESULTS SUITE TIER DESIGN SEED [BASELINE]\n       smith-bench baseline SUMMARY NAME\n       smith-bench build COMMIT [--repository REPOSITORY]\n       smith-bench attempt PREPARED_REQUEST\n       smith-bench probe PROBE [--agent smith|codex] [--attempts N] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench calibrate PROBE [--attempts N] [--passes N] [--control COMMIT] [--commit COMMIT | --arm DIRECTORY]\n       smith-bench fix PROBE --parent COMMIT [--commit COMMIT]\n       smith-bench suite NAME [--seed N] [--commit COMMIT | --arm DIRECTORY]"
             );
             ExitCode::from(2)
         }
@@ -201,5 +202,29 @@ fn attempt_command(request: &Path) -> ExitCode {
             eprintln!("{error}");
             ExitCode::from(2)
         }
+    }
+}
+
+fn validate_command(names: &[String]) -> ExitCode {
+    let tasks = Path::new(env!("CARGO_MANIFEST_DIR")).join("tasks");
+    match smith_bench::validate::validate(&tasks, names) {
+        Ok(results) => {
+            for result in &results {
+                println!("{} seed={} reference={}", result.task, grade_end(&result.seed), grade_end(&result.reference));
+            }
+            ExitCode::from(u8::from(!results.iter().all(smith_bench::validate::Validation::passed)))
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn grade_end(end: &smith_bench::grade::GradeEnd) -> String {
+    match end {
+        smith_bench::grade::GradeEnd::Passed => "passed".into(),
+        smith_bench::grade::GradeEnd::Failed => "failed".into(),
+        smith_bench::grade::GradeEnd::Fault { reason } => format!("fault:{reason}"),
     }
 }

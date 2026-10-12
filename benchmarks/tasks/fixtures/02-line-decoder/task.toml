@@ -1,0 +1,32 @@
+id = "02-line-decoder"
+version = 1
+kind = "fixture"
+tier = "working"
+deadline_seconds = 900
+prompt = "The line decoder currently treats each `push` chunk as a complete set of lines. Make it truly incremental while retaining the public API. Lines terminate at LF. Remove exactly one CR immediately before LF; all other CR bytes are payload. Output `Line(Vec<u8>)`, including empty lines, only when LF arrives. `finish` emits a final nonempty unterminated payload (without stripping a final CR), then resets; repeated finish is empty and a decoder can be reused afterward. The maximum is the payload byte count, excluding LF and excluding a CR only when that CR is immediately before LF. A payload exactly at the maximum is accepted. On overflow emit exactly one `TooLong` for that line, then discard through its LF (or finish); subsequent lines recover. An overflow may be emitted as soon as it is certain, but must not depend on chunk boundaries. Keep retained buffering at most max_payload + 1 bytes; in particular never buffer an entire arbitrarily oversized chunk. Handle max_payload = 0, arbitrary byte values, CRLF split across chunks, and mixed empty/normal/oversized lines. Add tests and run the suite.\n"
+seed_sha256 = "77ef574da76f5ba5b2fdf3f635bf5e13a4fd17c21fb654caa12b5c8e34e75e2e"
+setup = [["cargo", "build", "--offline", "--tests"]]
+protected = ["tests", "Cargo.toml", "Cargo.lock", "AGENTS.md"]
+
+[estimate]
+seconds = 300
+tokens = 500000
+
+[budget]
+seconds = 840
+turns = 64
+
+[[grade]]
+command = ["cargo", "test", "--offline"]
+deadline_seconds = 60
+max_output_bytes = 1048576
+
+[[grade]]
+command = ["cargo", "test", "--offline", "--manifest-path", "../grader/Cargo.toml"]
+deadline_seconds = 60
+max_output_bytes = 1048576
+
+[[grade]]
+command = ["cargo", "fmt", "--check"]
+deadline_seconds = 30
+max_output_bytes = 1048576

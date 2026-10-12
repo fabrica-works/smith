@@ -49,6 +49,7 @@ Other commands:
 
 ```sh
 cargo run -p smith-bench -- check [TASKS_DIRECTORY]
+cargo run -p smith-bench -- validate [TASK]...
 cargo run -p smith-bench -- attempt PREPARED_REQUEST
 cargo run -p smith-bench -- guards --suite SUITE [--tasks TASKS_DIRECTORY] SECTION...
 cargo run -p smith-bench -- summarise RESULTS_DIRECTORY SUITE TIER single SEED
@@ -61,8 +62,15 @@ baselines. Tasks freeze their seed digest and complete prompt. Suite
 names are `<kind>/<id>[/<variant>]`; behaviour selections resolve through
 the task catalogue. Pins freeze each agent's provider, version and exact
 configuration bytes. Unknown fields and unresolved model tiers refuse
-setup. The small tier is pinned for both providers; working tiers await
-their owner's selection.
+setup. The small tier is pinned for both providers; the Codex working
+tier uses `gpt-6-astra` at high effort.
+
+`validate` runs every graded task, or the named tasks such as
+`fixtures/01-backoff`, on private copies of its seed and reference
+solution. It prints both grader terminals and succeeds only when every
+seed fails and every reference passes. Graders never run in the focused
+suite. `compare` interleaves both fixtures across smith's comparison pin
+and Codex's standard pin, five times each at the working tier.
 
 `guards` lists affordable tasks guarding the named design sections,
 cheapest first, and explains omissions. Estimates reserve repetitions,

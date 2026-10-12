@@ -66,7 +66,8 @@ pub fn program(machine: &Machine, working_directory: &Path, name: &Path) -> Resu
     };
     for path in candidates {
         if path.is_file() {
-            return path.canonicalize().map_err(|error| error.to_string());
+            // Tool proxies such as rustup choose their command from argv[0].
+            return Ok(path);
         }
     }
     Err(format!("command not found in the exact PATH: {}", name.display()))
@@ -326,6 +327,16 @@ pub fn restrict_tree(guard: &Guard, path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_keeps_the_name_of_its_tool_proxy() {
+        let root = std::env::temp_dir().join(format!("smith-bench-proxy-{}", std::process::id()));
+        fs::create_dir(&root).expect("fresh proxy directory");
+        std::os::unix::fs::symlink("/bin/sh", root.join("cargo")).expect("tool proxy");
+        let machine = Machine { path: root.as_os_str().into(), rustup_home: None };
+        assert_eq!(program(&machine, &root, Path::new("cargo")).expect("proxy"), root.join("cargo"));
+        fs::remove_dir_all(root).expect("remove proxy directory");
+    }
 
     #[test]
     fn exact_environment_has_private_caches_and_only_explicit_task_variables() {

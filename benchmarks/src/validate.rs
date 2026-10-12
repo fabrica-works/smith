@@ -1,0 +1,194 @@
+//! Validate hidden graders on private seeds and reference overlays, without an
+//! agent or credentials (benchmarks.md, sections 3.1, 5.2 and 10).
+
+use std::fs;
+use std::os::unix::fs::DirBuilderExt;
+use std::path::Path;
+
+use skein_lib::Duration;
+use skein_shell::Clock;
+
+use crate::CatalogueTask;
+use crate::grade::{Entry, GradeEnd};
+use crate::guard::Guard;
+use crate::isolate::{Machine, Private};
+use crate::process::Bounds;
+
+/// A task's grader terminals, supplied to the validation command.
+#[derive(Debug)]
+pub struct Validation {
+    pub task: String,
+    pub seed: GradeEnd,
+    pub reference: GradeEnd,
+}
+
+impl Validation {
+    /// A useful grader rejects its seed and accepts its reference solution.
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.seed == GradeEnd::Failed && self.reference == GradeEnd::Passed
+    }
+}
+
+/// Run named graded tasks, or every graded task, in private command homes.
+pub fn validate(tasks: &Path, names: &[String]) -> Result<Vec<Validation>, String> {
+    let design = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/design");
+    let catalogue = crate::catalogue(tasks, &design).map_err(|error| error.to_string())?;
+    let guard = Guard::from_environment()?;
+    let machine = Machine::from_environment()?;
+    let state = crate::arm::state_root(&guard)?;
+    let scratch = state.join("scratch");
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(guard.write_path(&scratch)?)
+        .map_err(|error| error.to_string())?;
+    let root = crate::isolate::create_directory(&guard, &scratch.join(format!("validate-{}", std::process::id())))?;
+    let result = validate_catalogue(&catalogue, names, &guard, &machine, &root);
+    crate::isolate::remove_owned_tree(&guard, &root)?;
+    result
+}
+
+fn validate_catalogue(
+    tasks: &[CatalogueTask],
+    names: &[String],
+    guard: &Guard,
+    machine: &Machine,
+    root: &Path,
+) -> Result<Vec<Validation>, String> {
+    for name in names {
+        if !tasks.iter().any(|entry| entry.name == *name && !entry.task.grade.is_empty()) {
+            return Err(format!("unknown graded task {name}"));
+        }
+    }
+    let clock = Clock::new();
+    let mut results = Vec::new();
+    for (index, entry) in tasks.iter().enumerate() {
+        if entry.task.grade.is_empty() || (!names.is_empty() && !names.contains(&entry.name)) {
+            continue;
+        }
+        let seed = candidate(&clock, guard, machine, entry, &root.join(format!("{index}-seed")), false)?;
+        let reference = candidate(&clock, guard, machine, entry, &root.join(format!("{index}-reference")), true)?;
+        results.push(Validation { task: entry.name.clone(), seed, reference });
+    }
+    Ok(results)
+}
+
+fn overlay(guard: &Guard, source: &Path, destination: &Path) -> Result<(), String> {
+    for (relative, entry) in crate::grade::snapshot_all(source)? {
+        let target = guard.write_path(&destination.join(&relative))?;
+        match entry {
+            Entry::Directory => {
+                if !target.exists() {
+                    crate::isolate::create_directory(guard, &target)?;
+                }
+            }
+            Entry::File { .. } => {
+                fs::copy(source.join(relative), target).map_err(|error| error.to_string())?;
+            }
+            Entry::Link { .. } | Entry::Special => return Err("reference contains a link or special node".into()),
+        }
+    }
+    Ok(())
+}
+
+fn candidate(
+    clock: &Clock,
+    guard: &Guard,
+    machine: &Machine,
+    entry: &CatalogueTask,
+    root: &Path,
+    reference: bool,
+) -> Result<GradeEnd, String> {
+    let task_root = entry.manifest.parent().ok_or("task has no directory")?;
+    let private: Private = crate::isolate::prepare(guard, &task_root.join("seed"), &entry.task.seed_sha256, root)
+        .map_err(|error| error.reason)?;
+    if reference {
+        overlay(guard, &task_root.join("reference"), &private.workspace)?;
+    }
+    let grader = task_root.join("grader");
+    if grader.exists() {
+        crate::isolate::copy_directory(guard, &grader, &root.join("grader"))?;
+    }
+    let bounds = Bounds {
+        hard: Duration::ZERO,
+        teardown: Duration::ZERO,
+        grace: Duration::from_secs(1),
+        settlement: Duration::from_secs(3),
+        stdout: 0,
+        stderr: 0,
+        force_walk: true,
+    };
+    let mut end = GradeEnd::Passed;
+    for (index, grade) in entry.task.grade.iter().enumerate() {
+        let result = crate::grade::command(
+            clock,
+            machine,
+            &private,
+            &private.workspace,
+            grade,
+            bounds,
+            &entry.task.environment,
+        )?;
+        if reference && result.end != GradeEnd::Passed {
+            eprintln!(
+                "{} reference grade {index}:\n{}{}",
+                entry.name,
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        match result.end {
+            GradeEnd::Failed if end == GradeEnd::Passed => end = GradeEnd::Failed,
+            GradeEnd::Passed | GradeEnd::Failed => {}
+            GradeEnd::Fault { reason } => end = GradeEnd::Fault { reason },
+        }
+    }
+    Ok(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str, solved: bool) -> Validation {
+        let root = std::env::temp_dir().join(format!("smith-bench-validate-{name}-{}", std::process::id()));
+        fs::create_dir(&root).expect("fresh root");
+        let task_root = root.join("task");
+        fs::create_dir_all(task_root.join("seed")).expect("seed");
+        fs::create_dir(task_root.join("reference")).expect("reference");
+        if solved {
+            fs::write(task_root.join("seed/solved"), "solution").expect("solution marker");
+        }
+        let mut task =
+            crate::read_task(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/recorded/tasks/valid/task.toml"))
+                .expect("recorded task");
+        task.seed_sha256 = crate::seed_digest(&task_root.join("seed")).expect("seed digest");
+        task.grade = vec![crate::Grade {
+            command: vec!["sh".into(), "-c".into(), "test -f solved".into()],
+            deadline_seconds: 1,
+            max_output_bytes: 1024,
+        }];
+        let guard = Guard::new(&root.join("home"), &root.join("config"), &root.join("state"), &[]).expect("guard");
+        let machine = Machine { path: "/usr/bin:/bin".into(), rustup_home: None };
+        let entry = CatalogueTask { name: name.into(), manifest: task_root.join("task.toml"), task };
+        let mut results = validate_catalogue(&[entry], &[], &guard, &machine, &root).expect("validation");
+        fs::remove_dir_all(root).expect("remove fixture");
+        results.pop().expect("one task")
+    }
+
+    #[test]
+    fn validate_reports_a_seed_its_grader_passes() {
+        let result = fixture("passing-seed", true);
+        assert_eq!(result.seed, GradeEnd::Passed);
+        assert!(!result.passed());
+    }
+
+    #[test]
+    fn validate_reports_a_reference_its_grader_fails() {
+        let result = fixture("failing-reference", false);
+        assert_eq!(result.seed, GradeEnd::Failed);
+        assert_eq!(result.reference, GradeEnd::Failed);
+        assert!(!result.passed());
+    }
+}

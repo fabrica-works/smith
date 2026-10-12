@@ -76,3 +76,5 @@ mod cache;
 pub use cache::{CacheObservation, CacheTriplet};
 
 pub mod probe;
+
+pub mod validate;
