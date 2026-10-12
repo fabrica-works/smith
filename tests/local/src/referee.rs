@@ -28,6 +28,8 @@ pub enum Seen {
     Answered { activation: u64, read: Option<Token> },
     /// The kit reported a line unread once for this activation.
     Unread { name: Token },
+    /// The terminal showed the run waiting for a person.
+    Waiting,
     /// The terminal showed a named line not delivered.
     NotDelivered { name: Token },
     /// The host showed that answer to the person.
@@ -73,6 +75,7 @@ pub struct Meeting {
     pending_turns: BTreeSet<u32>,
     saved: BTreeSet<u32>,
     relayed: BTreeSet<Token>,
+    not_delivered: BTreeSet<Token>,
     completions: BTreeSet<Token>,
     answered: BTreeMap<u64, u32>,
     shown: BTreeSet<u64>,
@@ -206,7 +209,16 @@ impl Expectations for Meeting {
                     "an unread line was relayed and not read",
                 );
             }
+            Seen::Waiting => {
+                judge.check(
+                    self.relayed_here
+                        .iter()
+                        .all(|name| name.raw() <= self.last_read || self.not_delivered.contains(name)),
+                    "waiting is shown only when every relayed line is read",
+                );
+            }
             Seen::NotDelivered { name } => {
+                self.not_delivered.insert(name);
                 judge.meet(&Pending::Line(name));
             }
             Seen::Answered { activation, read } => {

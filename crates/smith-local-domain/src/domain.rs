@@ -950,7 +950,7 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             accept_turn(domain, env, turn.number, turn.read, turn.opens_window, turn.body.into_value(), out);
         }
         parent::Request::Answered { answer, .. } => crate::person::answered(domain, answer, out),
-        parent::Request::Waiting { .. } => out.push(Request::Notice { notice: Notice::Waiting }),
+        parent::Request::Waiting { read, .. } => crate::person::waiting(&mut domain.lines, read, out),
         parent::Request::Long { operation, .. } => {
             if domain.long.begin(operation) {
                 out.push(Request::Notice { notice: Notice::Checking(Checks::Started) });

@@ -88,6 +88,38 @@ fn scripts() -> Box<[api::Script]> {
     Box::new([api::Script { cue: b"@local-shell".as_slice().into(), turns: turns.into() }])
 }
 
+fn waiting_scripts() -> Box<[api::Script]> {
+    Box::new([api::Script {
+        cue: b"@local-shell".as_slice().into(),
+        turns: Box::new([
+            api::Turn {
+                lines: Box::new([api::Line::Text { text: b"Starting now".as_slice().into() }]),
+                finish: api::Finish::Stop,
+                tokens: 1,
+            },
+            api::Turn {
+                lines: Box::new([api::Line::Call {
+                    name: b"wait".as_slice().into(),
+                    arguments: b"{}".as_slice().into(),
+                }]),
+                finish: api::Finish::ToolCalls,
+                tokens: 1,
+            },
+            api::Turn {
+                lines: Box::new([
+                    api::Line::Text { text: b"Read follow-up".as_slice().into() },
+                    api::Line::Call {
+                        name: b"finish".as_slice().into(),
+                        arguments: br#"{"form":"report","text":"Read follow-up","fields":{}}"#.as_slice().into(),
+                    },
+                ]),
+                finish: api::Finish::ToolCalls,
+                tokens: 1,
+            },
+        ]),
+    }])
+}
+
 fn change_scripts() -> Box<[api::Script]> {
     let turns = [
         ("write", "{\"path\":\"result.txt\",\"content\":\"new\\n\"}"),
@@ -388,6 +420,25 @@ impl World {
                 Action::Eof,
             ],
             Ending::Report(b"Second answer".to_vec()),
+            (false, true, false),
+        )
+    }
+
+    /// Send a follow-up across the first turn's wait fence.
+    #[must_use]
+    pub fn waiting(seed: u64, files: &Files, placement: Placement) -> Self {
+        Self::configured(
+            seed,
+            files,
+            placement,
+            vec![
+                Action::Send(b"hello\n".as_slice().into()),
+                Action::Wait(b"Starting now".as_slice().into()),
+                Action::Send(b"follow-up\n".as_slice().into()),
+                Action::Wait(b"Read follow-up".as_slice().into()),
+                Action::Eof,
+            ],
+            Ending::Report(b"Read follow-up".to_vec()),
             (false, true, false),
         )
     }
@@ -758,6 +809,8 @@ impl Scenario {
                 tool_scripts()
             } else if self.launch.change {
                 change_scripts()
+            } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Read follow-up") {
+                waiting_scripts()
             } else {
                 scripts()
             },

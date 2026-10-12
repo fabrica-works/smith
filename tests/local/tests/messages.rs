@@ -93,3 +93,25 @@ fn the_held_input_reopens_when_a_fence_reads_a_line() {
     assert_eq!(world.readings().first(), Some(&Reading::Held));
     assert_eq!(world.readings().last(), Some(&Reading::Open));
 }
+
+#[test]
+fn no_waiting_notice_shows_while_a_sent_line_is_unread() {
+    let mut world = World::new(33);
+    world.line(b"First question");
+    world.person(Person::new(vec![Cue { on: Trigger::Turn, act: Act::Type(b"Second question".to_vec()) }]));
+    assert!(world.drive_to_park(2_000), "the crossing wait parks after reading both lines");
+    assert!(!world.notices().contains(&Notice::Waiting));
+    world.close();
+    assert!(world.drive_to_exit(2_000));
+    assert_eq!(world.exit(), Some(ExitStatus::Accepted));
+    assert_eq!(world.into_store().read(), Some(Token::new(2)));
+}
+
+#[test]
+fn no_waiting_notice_shows_before_the_first_turn() {
+    let mut world = World::new(35);
+    assert!(!world.drive(20));
+    assert!(!world.notices().contains(&Notice::Waiting));
+    world.close();
+    assert!(world.drive_to_exit(2_000));
+}

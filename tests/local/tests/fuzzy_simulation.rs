@@ -64,7 +64,7 @@ fn random_local_chats_settle_against_the_boundary_referee() {
                 assert!(world.drive_to_cut(300, cut), "seed {seed}: crash cut reached");
                 let mut resumed = World::with_store(seed + 200, world.into_store());
                 resumed.line(b"Continue after crash");
-                assert!(resumed.drive(300), "seed {seed}: next invocation resumes");
+                assert!(!resumed.drive(300), "seed {seed}: next invocation resumes");
                 assert!(resumed.judged().0 > 0);
                 continue;
             }

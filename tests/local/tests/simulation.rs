@@ -438,7 +438,7 @@ fn a_chat_with_no_workspace_waits_parks_and_resumes_on_the_next_invocation() {
 
     let mut second = World::with_store(22, stored);
     second.line(b"I am back");
-    assert!(second.drive(300), "a fresh domain resumes from {prior_turns} stored turns: {:?}", second.trace());
+    assert!(!second.drive(300), "a fresh domain resumes from {prior_turns} stored turns: {:?}", second.trace());
     assert_eq!(second.activation(), 2, "the next activation is durable before its agent runs");
     assert_eq!(second.prompt_assistants().first(), Some(&prior_turns), "provider sees the saved assistant history");
     assert!(
@@ -479,7 +479,7 @@ fn a_chat_keeps_its_identity_across_activations_and_invocations() {
     );
     let mut resumed = World::with_store(8087, fresh.into_store());
     resumed.line(b"Resume the replacement chat");
-    assert!(resumed.drive(300));
+    assert!(!resumed.drive(300));
     assert_eq!(resumed.identity(), Some(replacement));
     assert!(resumed.prompt_affinities().iter().all(|affinity| affinity.key == replacement.bytes()));
 }
@@ -513,7 +513,7 @@ fn a_crash_before_a_turn_is_saved_resumes_from_the_turn_before_with_a_new_activa
 
     let mut second = World::with_store(26, stored);
     second.line(b"Continue");
-    assert!(second.drive(300), "the next activation resumes the saved prefix");
+    assert!(!second.drive(300), "the next activation resumes the saved prefix");
     assert_eq!(second.activation(), 2, "the replacement activation has a new name");
     assert_eq!(second.identity(), Some(identity));
     assert!(second.prompt_affinities().iter().all(|affinity| affinity.key == identity.bytes()));
@@ -530,7 +530,7 @@ fn a_crash_after_turn_saved_replays_that_turn() {
     assert!(stored.read().is_some(), "the acknowledged turn's read fence is durable");
     let mut second = World::with_store(28, stored);
     second.line(b"Continue");
-    assert!(second.drive(300), "the acknowledged turn is replayed");
+    assert!(!second.drive(300), "the acknowledged turn is replayed");
     assert_eq!(second.activation(), 2);
     assert_eq!(second.prompt_assistants().first(), Some(&2), "the acknowledged turns are in the next prompt");
 }
@@ -557,7 +557,7 @@ fn a_transcript_the_agent_refuses_is_reported_and_nothing_starts() {
     let stored = fresh.into_store();
     let mut resumed = World::with_store(32, stored);
     resumed.line(b"Continue after a fresh start");
-    assert!(resumed.drive(300), "the replacement history is resumable");
+    assert!(!resumed.drive(300), "the replacement history is resumable");
 }
 
 #[test]

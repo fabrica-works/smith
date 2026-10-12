@@ -93,8 +93,8 @@ impl Person {
             } else {
                 match rng.below(4) {
                     0 => Trigger::Turn,
-                    1 => Trigger::Notice(Kind::Waiting),
-                    2 => Trigger::Answer,
+                    1 if line == 1 => Trigger::Notice(Kind::Waiting),
+                    1 | 2 => Trigger::Answer,
                     _ => Trigger::Steps(u32::try_from(rng.below(8)).expect("bounded step count")),
                 }
             };

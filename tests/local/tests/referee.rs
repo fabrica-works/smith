@@ -264,3 +264,11 @@ fn a_named_line_with_no_terminal_is_rejected_when_its_deadline_expires() {
     referee.fire(Time::from_nanos(skein_lib::Duration::from_secs(3601).as_nanos()), &mut Vec::new());
     assert!(matches!(referee.verdict(), Verdict::Failed(_)));
 }
+
+#[test]
+fn a_waiting_notice_while_a_relayed_line_is_unread_is_rejected() {
+    broken(
+        vec![Seen::Activation { number: 1, message: 1 }, Seen::Message { name: Token::new(1) }, Seen::Waiting],
+        "waiting is shown only when every relayed line is read",
+    );
+}

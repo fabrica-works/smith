@@ -476,6 +476,13 @@ mod line_tests {
     }
 }
 
+pub(crate) fn waiting(lines: &mut Lines, read: Option<Token>, out: &mut Queue<Request>) {
+    lines.fence(read);
+    if lines.all_read() {
+        out.push(Request::Notice { notice: crate::Notice::Waiting });
+    }
+}
+
 pub(crate) fn answered(domain: &mut Domain, answer: host::Answer, out: &mut Queue<Request>) {
     domain.lines.fence(answer.read);
     domain.chat.state.read = answer.read;

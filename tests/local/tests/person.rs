@@ -11,7 +11,7 @@ fn a_person_typing_on_the_first_turn_has_both_lines_read() {
     world.person(Person::new(vec![
         Cue { on: Trigger::Steps(0), act: Act::Type(b"What can you do?".to_vec()) },
         Cue { on: Trigger::Turn, act: Act::Type(b"And then?".to_vec()) },
-        Cue { on: Trigger::Notice(Kind::Waiting), act: Act::Close },
+        Cue { on: Trigger::Answer, act: Act::Close },
     ]));
     assert!(world.drive_to_exit(2_000), "the chat parks and exits");
     assert_eq!(world.exit(), Some(ExitStatus::Accepted));

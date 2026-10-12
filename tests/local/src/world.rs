@@ -1127,6 +1127,7 @@ impl World {
             Request::Input { reading } => self.readings.push(reading),
             Request::Notice { notice } => {
                 if notice == smith_local_domain::Notice::Waiting {
+                    self.observe(Seen::Waiting);
                     self.reached.insert(Goal::Waiting);
                 }
                 if let local::Notice::NotDelivered { line: Some(name), .. } = notice {

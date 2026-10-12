@@ -151,3 +151,18 @@ fn an_interrupt_with_a_line_unread_starts_nothing_in_both_placements() {
         assert_eq!(world.facts().iter().filter(|fact| matches!(fact, Fact::Started { .. })).count(), 1);
     }
 }
+
+#[test]
+fn no_waiting_notice_shows_while_a_line_is_unread_in_both_placements() {
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::waiting(23, &files, placement);
+        world.settle();
+        review(&world.seen(), &world, Ending::Report(b"Read follow-up".to_vec())).assert_passed(23);
+        let read = world.shown().windows(14).position(|text| text == b"Read follow-up").expect("follow-up read");
+        assert!(!world.shown()[..read].windows(21).any(|text| text == b"Waiting for a message"));
+        assert!(world.facts().iter().any(|fact| {
+            matches!(fact, smith_local_domain::Fact::Answered { read: Some(name), .. } if name.raw() == 2)
+        }));
+    }
+}
