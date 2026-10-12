@@ -31,7 +31,7 @@ fn version_three_copies_all_prose_lines_before_finishing() {
         assert!(bytes.is_ascii());
         assert!(bytes.ends_with(b"This is the end of the source report.\n"));
         assert_eq!(bytes.len().div_ceil(32768), windows);
-        assert_eq!(bytes.iter().filter(|byte| **byte == b'\n').count(), lines);
+        assert_eq!(bytes.split(|byte| *byte == b'\n').count(), lines + 1);
         assert!(bytes.split(|byte| *byte == b'\n').all(|line| line.len() <= 76));
         assert!(prompt.contains(&format!("ALL {lines} source lines")));
         assert!(prompt.contains("remove only those display additions"));
