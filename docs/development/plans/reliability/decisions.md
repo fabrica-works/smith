@@ -814,4 +814,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    what the binary writes; 07.14 changes `legacy.rs` as far as that
    needs, the field list and that arm, and nothing else under
    `benchmarks/src/`.
+12. **skein-07.s1: the fake peers reject what they will not take**
+   (block of 2026-10-12T13:53:24Z, smith 05.12). The backtrace that 13.10
+   asked for names the sender: `skein-fake-peers/src/face.rs:97`, called
+   by `llm.rs:365`; `llm.rs:156` answers an announced socket with
+   `Abort` when stopping or full, and `oauth.rs:171` does the same. io.md
+   asks for `Reject`. A step not in the plan, in a new session file,
+   `skein/07-fake-peers.md`, so that a new implementer takes it and skein
+   02.6 goes on. smith 05.12 then repins skein at exactly that commit:
+   skein's `main` between smith's pin (30dc6f7) and now changed only
+   Markdown, and a precise pin keeps skein 02.6's new io records out of
+   smith until smith 10.10 takes them.
 

@@ -55,6 +55,7 @@ does its other increments meanwhile (development.md, section 8.7).
 | File | Session | Needs at start | Increments that need more |
 |---|---|---|---|
 | `02-shell-and-worlds.md` | 02: terminal modes | — | — |
+| `07-fake-peers.md` | 07, added during the run (decisions.md, 13.12): the fake peers reject what they will not take | — | — |
 
 **How many at once.** At the start, ten sessions can run: smith 00, 03,
 04, 05, 06, 07, 08, 10 and 12, and skein 02; smith 13 opens once 00.27

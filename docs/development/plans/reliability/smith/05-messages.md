@@ -210,6 +210,9 @@ Proof: world layer, the highest a referee has: the three negatives fail
   seconds.
 Don't: add the waiting, unread-report or liveness rules (05.13, 05.14);
   read the domain's state in the referee.
+Needs also (decisions.md, 13.12): skein-07.s1 landed; 05.12 then
+  repins skein at that commit, `cargo update -p skein-io --precise
+  <its commit>` in `Cargo.lock`, and nothing else moves with it.
 Size: no production code; at most 450 lines of test code.
 Removes: the rules "a person line is relayed only once", "person lines
   reach the agent in order" and "each saved line gets one increasing
