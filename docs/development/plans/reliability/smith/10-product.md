@@ -285,7 +285,14 @@ Needs: 10.13.
 Files: 10.13's.
 Shape: `resolve(settings: &Settings, command: &Command) ->
 Result<Resolved, Refusal>`, `Resolved { agent, local, accounts }`.
-Test shape: end to end
+Split again (decisions.md, 13.73): 10.17 lands the native trust arrays,
+custom presets' inheritance and the selection of the run's models and
+accounts (13.69's rule), with their unit tests (among them 13.69's
+three) and a unit Proof; 10.18 takes the rest: `resolve`'s entry, the
+native agent's and the local `Config`'s composition, limits, the other
+catalog models' checks, origin-aware relationship rendering and `smith
+check`'s report, with the end-to-end test and the process Proof below.
+Test shape (10.18's): end to end
 `smith_check_names_both_sides_of_a_budget_past_the_profile_ceiling`,
 expecting 5.3's line `smith: budget.turns = 5000 (from -c) exceeds the
 standard profile's ceiling of 4096 turns`; unit refusals for the
@@ -293,8 +300,16 @@ relationships `resolve` checks; unit
 `a_codex_only_first_run_needs_no_anthropic_credential`,
 `sub_agents_on_adds_the_models_of_every_account_with_a_source`,
 `mains_account_without_a_source_is_refused_naming_the_key`. Ceilings: 20 ms, 2 s.
-Proof: process, that test; once, under 2 s.
+Proof: 10.17, unit: 13.69's three tests and the trust-array tests, once; 10.18, process, that test; once, under 2 s.
 Don't: the profile's values stay the service crates' `standard()`.
+Size: README rule 9's. Removes: nothing.
+
+### 10.18 The run composed from settings, and `smith check`'s report
+Split from 10.17 (decisions.md, 13.73). Scope: what 10.17's section names
+as 10.18's. Its candidate's parts start from 10.17's (`4697786a`).
+Needs: 10.17.
+Files: 10.13's.
+Shape, Test shape and Proof: 10.17's section, as 10.18's.
 Size: README rule 9's. Removes: nothing.
 
 ### 10.7 `borrow` and `env`

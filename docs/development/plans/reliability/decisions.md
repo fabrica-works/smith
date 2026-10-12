@@ -1548,3 +1548,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    generated once, with those counts; 07.9 stands on its deterministic
    tests; the next task version is `later.md`'s existing row. No new
    batch, no check or task change.
+73. **smith 10.17 splits again; 10.18 takes composition and reporting**
+   (block of 2026-10-12T19:37:02Z). 10.17's candidate (`4697786a`) holds
+   728 production lines, past README rule 9's 700, before the resolver's
+   entry, composition, limits and reporting: native trust arrays, custom
+   presets' inheritance, shared setting-name quoting and local limit
+   assembly took them. Ruling: the implementer's split. 10.17 lands the
+   trust arrays, inheritance and the run's models and accounts (13.69)
+   with a unit Proof; 10.18 takes the rest with the end-to-end process
+   Proof. For the retrospective: 10.13's Size line was 500 for what took
+   three increments.
