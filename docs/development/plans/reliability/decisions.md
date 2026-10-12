@@ -1497,3 +1497,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    more (README rule 3's clause gains it); a second failure in a row
    stops on a question. 04.s2 reruns its timeout batch once, as a new
    run, and goes on.
+68. **An empty `/tmp/.git` failed 06.12's gate; removed** (block of
+   2026-10-12T19:01:06Z, smith 06.12). Four untouched tests failed
+   ("attempt data must be outside repositories", `benchmarks/src/run.rs:149`;
+   "benchmark runtime data must be outside every repository",
+   `arm.rs:133`; and the repository layer's refusal, exit 0 for 2): an
+   empty directory `/tmp/.git`, owned by the run's user and made at
+   2026-10-12T18:56:39Z, put every scratch directory under `/tmp` inside
+   a "repository" by those checks. The supervisor removed it (`rmdir`, it
+   was empty) at 19:03:19Z. 06.12 runs `land` once more. What made it is
+   not known (04.s2's live run aborted at about that time); if it comes
+   back, the session whose run made it gets a step.
