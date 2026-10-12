@@ -1826,3 +1826,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    unavailable and its request count as observed; a focused regression;
    then one fresh probes run from the start, within the original $10 and
    120 minutes. Not a predicate on one task's name.
+100. **skein-07.s6: a write pipe with a deadline; the product reads none
+   of its records** (block of 2026-10-12T23:46:46Z, smith 10.5; the
+   designer's answer of 23:49:46Z, skein ca600491, smith 09eb89c6 and
+   e80a20a8). 10.5's status comes from what the local host hears (its
+   told turns, notices and answer), never from the event records, in
+   either placement; `--json` on standard output is adopted by its kind
+   through the one sink owner, a pipe or terminal as a write stream under
+   the stream's write deadline. skein-07.s6 gives `adopt_write_pipe` that
+   deadline; 10.5 repins for it (its `--json`-on-a-pipe part only) and
+   goes on meanwhile.

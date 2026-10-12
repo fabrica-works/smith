@@ -98,3 +98,20 @@ Proof: those tests, once.
 Don't: read mode bits or an owner in its place; open anything for
 writing.
 Size: README rule 9's.
+
+### 07.s6 An inherited write pipe takes its owner's write deadline
+Added during the run (decisions.md, 13.100), from the designer's answer
+of 2026-10-12T23:49:46Z (skein ca600491, io.md 5.1). Scope:
+`adopt_write_pipe` (`skein-io/src/layer.rs:164-171`) takes an optional
+write deadline, as `adopt_append` has one; io arms, cancels and tells it
+(`Failed`) the same way; without one, a write pipe waits on its reader,
+as before.
+Needs: nothing.
+Files: `crates/skein-io/src/layer.rs` and the pipe's state; their tests.
+Shape: an optional deadline parameter.
+Test shape: a write pipe whose reader stops is given up past its stated
+deadline, as an append stream is; one without a deadline still waits; it
+fails on the parent. Under 20 ms each.
+Proof: those tests, once.
+Don't: change `adopt_append` or a child's pipes.
+Size: README rule 9's.
