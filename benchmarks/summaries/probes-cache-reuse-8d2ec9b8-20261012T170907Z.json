@@ -1,0 +1,612 @@
+{
+  "version": 2,
+  "result_version": 2,
+  "run": "probes-cache-reuse-8d2ec9b8-20261012T170907Z",
+  "suite": "calibrate",
+  "tier": "small",
+  "design": "single",
+  "seed": 1791824947878131670,
+  "date": "2026-10-12T17:09:09.427659045Z",
+  "groups": [
+    {
+      "task": "probes/cache-reuse",
+      "task_version": 1,
+      "seed_sha256": "74e4e582c1b015e147a260aa8a3214b49830362b27585b54fedb33d5132afe7c",
+      "prompt_sha256": "4834d3e286aa0860075539931400c93d6e72822e6b02ccc8a0491c67299e8c5f",
+      "arm": "smith-cache-reuse-48304432",
+      "agent": "smith",
+      "agent_version": "8d2ec9b878ae85240575788809c44fe0028e6a4a",
+      "binary_sha256": "483044321dbf7da5c5a9d833863b87640a51153df8930a63c73e133dbf23f149",
+      "smith_face": "events",
+      "configuration_sha256": "3b7e0d004c25bf3848593fa5379458fda302304d0aec5b67a2600ea8c8145a15",
+      "provider": "codex",
+      "model": {
+        "requested_model": "gpt-6-luna",
+        "requested_effort": "low",
+        "resolved_model": {
+          "state": "unavailable",
+          "reason": "not run"
+        },
+        "resolved_effort": {
+          "state": "unavailable",
+          "reason": "not run"
+        }
+      },
+      "attempts": [
+        "01",
+        "02"
+      ],
+      "counts_by_end": {
+        "completed": 2
+      },
+      "passes": {
+        "passed": 0,
+        "failed": 0,
+        "unavailable": 1,
+        "budget": 0,
+        "setup": 0,
+        "interval_95": {
+          "state": "unavailable",
+          "reason": "some eligible attempt checks are unavailable"
+        }
+      },
+      "metrics": {
+        "cache/reuse": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: cacheable request did not complete with usage"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 0.484957827793063
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.484957827793063,
+              "upper": 0.484957827793063
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "cpu_ms/pidfd-walk": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 165.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 164.0,
+              "upper": 167.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.012817645580420851
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.03588940762517838
+          }
+        },
+        "delegation/children": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "delegation/children_budget": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "delegation/parent_blocked_ms": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV is unavailable for a zero mean"
+          }
+        },
+        "delegation/turns": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 13.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 13.0,
+              "upper": 13.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.0
+          }
+        },
+        "grading_wall_ms": {
+          "observed": 0,
+          "total_attempts": 2,
+          "missing": [
+            "01: no grader ran",
+            "02: no grader ran"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/largest-process": {
+          "observed": 0,
+          "total_attempts": 2,
+          "missing": [
+            "01: lower bound (pidfd walk retains the largest process peak, not simultaneous tree memory)",
+            "02: metric not reported"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "peak_rss_bytes/unavailable": {
+          "observed": 0,
+          "total_attempts": 2,
+          "missing": [
+            "01: metric not reported",
+            "02: prior setup children establish the walk's unreducible peak baseline"
+          ],
+          "median": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "range": {
+            "state": "unavailable",
+            "reason": "no observed values"
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "statistics need nonempty finite nonnegative measurements"
+          }
+        },
+        "process_wall_ms": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 19502.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 17900.0,
+              "upper": 21105.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.11620444731203099
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.32537245247368674
+          }
+        },
+        "spend_usd/notional": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 0.02111
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.02111,
+              "upper": 0.02111
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.0
+          }
+        },
+        "spend_usd/priced": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: total fresh tokens or price not observed at exact precision"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 0.021104
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.021104,
+              "upper": 0.021104
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "task_wall_ms": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 19497.5
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 17895.0,
+              "upper": 21100.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.11623424714465376
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.3254558920050305
+          }
+        },
+        "teardown_ms": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 5.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 5.0,
+              "upper": 5.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.0
+          }
+        },
+        "tokens/smith-events/cache_read": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: lower bound (session-0/run-1/conversation-0: session-0/run-1/response-13: smith cache_read_tokens is null)"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 10752.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 10752.0,
+              "upper": 10752.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "tokens/smith-events/cache_write": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: lower bound (session-0/run-1/conversation-0: session-0/run-1/response-13: smith cache_write_tokens is null)"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "tokens/smith-events/fresh": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: lower bound (session-0/run-1/conversation-0: session-0/run-1/response-13: smith cache_write_tokens is null; smith input_tokens is null)"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 13656.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 13656.0,
+              "upper": 13656.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "tokens/smith-events/output": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: lower bound (session-0/run-1/conversation-0: session-0/run-1/response-13: smith output_tokens is null)"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 269.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 269.0,
+              "upper": 269.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "tokens/smith-events/reasoning": {
+          "observed": 1,
+          "total_attempts": 2,
+          "missing": [
+            "02: lower bound (session-0/run-1/conversation-0: session-0/run-1/response-13: smith reasoning_tokens is null)"
+          ],
+          "median": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "cv": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          },
+          "minimum_detectable_effect": {
+            "state": "unavailable",
+            "reason": "CV needs at least two observations"
+          }
+        },
+        "tool_calls/finish": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 1.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 1.0,
+              "upper": 1.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.0
+          }
+        },
+        "tool_calls/read": {
+          "observed": 2,
+          "total_attempts": 2,
+          "missing": [],
+          "median": {
+            "state": "observed",
+            "value": 12.0
+          },
+          "range": {
+            "state": "observed",
+            "value": {
+              "lower": 12.0,
+              "upper": 12.0
+            }
+          },
+          "cv": {
+            "state": "observed",
+            "value": 0.0
+          },
+          "minimum_detectable_effect": {
+            "state": "observed",
+            "value": 0.0
+          }
+        }
+      },
+      "cache_triplets": [
+        {
+          "repetitions": [
+            "01",
+            "02"
+          ],
+          "reuse": [
+            {
+              "state": "observed",
+              "value": 0.484957827793063
+            },
+            {
+              "state": "unavailable",
+              "reason": "cacheable request did not complete with usage"
+            }
+          ],
+          "median_reuse": {
+            "state": "unavailable",
+            "reason": "a complete like-input triplet is required"
+          },
+          "eligible": {
+            "state": "unavailable",
+            "reason": "incomplete triplet"
+          },
+          "full_misses": {
+            "state": "unavailable",
+            "reason": "incomplete triplet"
+          },
+          "judgment": "incomplete"
+        }
+      ]
+    }
+  ],
+  "comparisons": [],
+  "audits": [
+    "01",
+    "02"
+  ],
+  "drift_notices": []
+}
