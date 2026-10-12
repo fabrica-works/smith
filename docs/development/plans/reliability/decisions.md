@@ -1813,3 +1813,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `probe.rs` join 00.21's Files; then one fresh probes run from the
    start, within the original $10 and 120 minutes. `budget/spend` stays
    out (13.95): its refusal is not its story's expected end.
+99. **A request the provider refused before any output charges no tokens**
+   (block of 2026-10-12T22:37:14Z, smith 00.21). The third probes run
+   (`probes-858c9642-20261012T223150Z`) stopped at `failures/unknown-model`,
+   a story whose expected end is the provider's HTTP 400 (invalid
+   model): it passed its checks, made one observed request with no
+   retry, and has no usage, so `batch.rs`'s known-tokens branch stopped
+   the suite. A request refused with a 4xx before any output generates
+   no tokens. Ruling: the dispatcher charges zero tokens to the suite's
+   pool for an attempt whose every provider attempt is observed and was
+   refused with a 4xx before any output, the result's usage staying
+   unavailable and its request count as observed; a focused regression;
+   then one fresh probes run from the start, within the original $10 and
+   120 minutes. Not a predicate on one task's name.
