@@ -40,7 +40,7 @@ pub(super) fn oversized_check(
             let mut refused = Vec::new();
             evidence.push(format!("refusal_path=protocol_oversized; stated_call_input={bound}; path=not carried (arguments elided by design)"));
             match protocol_refusals(observer, bound, &mut evidence, &mut refused) {
-                Ok(()) => Measure::Observed { value: refused.len() == 1 },
+                Ok(()) => protocol_verdict(refused.len(), bound, &mut evidence),
                 Err(measure) => measure,
             }
         } else {
@@ -53,6 +53,15 @@ pub(super) fn oversized_check(
         Measure::unavailable("incomplete event stream prevents oversized call pairing")
     };
     CheckVerdict { check: "oversized-write".into(), passed, evidence }
+}
+
+/// No call past the bound is not exercised (benchmarks.md, section 11.1).
+fn protocol_verdict(refused: usize, bound: u64, evidence: &mut Vec<String>) -> Measure<bool> {
+    if refused == 0 {
+        evidence.push(format!("NotExercised: no call past the stated call_input={bound}; bound honoured"));
+        return Measure::unavailable("not exercised: no call past the call's bound");
+    }
+    Measure::Observed { value: refused == 1 }
 }
 
 fn complete(observer: &Observer) -> bool {

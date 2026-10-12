@@ -12,6 +12,28 @@ use smith_events::{Effect, Event, Source, Verdict};
 pub mod common;
 
 #[test]
+fn oversized_write_without_a_call_past_the_bound_is_not_exercised() {
+    let mut records = common::events::balanced();
+    let input = serde_json::json!({"path":"payload.txt","content":"Line 0001"});
+    piece(&mut records, "write", "first", &input, Verdict::Written);
+    let workspace = std::env::temp_dir();
+    let verdict = observe(&records).oversized_write(std::path::Path::new("payload.txt"), 2048, Some(13848), &workspace);
+    assert!(matches!(&verdict.passed, Measure::Unavailable { reason } if reason.starts_with("not exercised")));
+    assert!(verdict.evidence.iter().any(|line| line.starts_with("NotExercised")));
+}
+
+#[test]
+fn payload_refusal_within_the_call_bound_is_not_exercised() {
+    let mut records = common::events::balanced();
+    let input = serde_json::json!({"path":"payload.txt","content":"x".repeat(20)});
+    piece(&mut records, "write", "first", &input, Verdict::TooLarge);
+    let workspace = std::env::temp_dir();
+    let verdict = observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, Some(13848), &workspace);
+    assert!(matches!(&verdict.passed, Measure::Unavailable { reason } if reason.starts_with("not exercised")));
+    assert!(verdict.evidence.iter().any(|line| line.starts_with("NotExercised")));
+}
+
+#[test]
 fn protocol_probe_judges_accepted_pieces_without_inventing_a_refusal() {
     let directory = std::env::temp_dir().join(format!("smith-pieces-unexercised-{}", std::process::id()));
     fs::create_dir(&directory).expect("fresh workspace");
@@ -37,10 +59,10 @@ fn protocol_probe_judges_accepted_pieces_without_inventing_a_refusal() {
             .passed
     };
     assert_eq!(checked(&records), Measure::Observed { value: true });
-    assert_eq!(
+    assert!(matches!(
         observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, Some(15), &directory).passed,
-        Measure::Observed { value: false }
-    );
+        Measure::Unavailable { reason } if reason.starts_with("not exercised")
+    ));
     // Historical v7/v8 semantics and assertions are unchanged.
     assert_eq!(
         observe(&records).file_pieces(std::path::Path::new("payload.txt"), 10, 64, &directory).passed,
@@ -67,20 +89,17 @@ fn protocol_probe_judges_accepted_pieces_without_inventing_a_refusal() {
 fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let normal =
-        smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &root.join("../docs/design"))
+        smith_bench::check_task(&root.join("tests/fixtures/large-write/v7/task.toml"), &root.join("../docs/design"))
             .expect("unchanged normal v7");
-    let task = smith_bench::check_task(
-        &root.join("tasks/probes/large-write/v9/oversized-v9.toml"),
-        &root.join("../docs/design"),
-    )
-    .expect("new adjacent v9");
+    let task = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &root.join("../docs/design"))
+        .expect("current v9");
     assert_eq!(task.version, 9);
     assert_eq!(task.effort.as_deref(), Some("low"));
     assert_eq!(task.prompt, normal.prompt);
     assert_eq!(task.budget, normal.budget);
     let variant = task.with_variant("oversized").expect("small-payload variant");
     let medium = smith_bench::check_task(
-        &root.join("tasks/probes/large-write/v9/oversized-v9-medium.toml"),
+        &root.join("tests/fixtures/large-write/v9/oversized-v9-medium.toml"),
         &root.join("../docs/design"),
     )
     .expect("named medium document");
@@ -188,10 +207,10 @@ fn protocol_only_oversized_write_records_identity_and_elided_path() {
         observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, None, &directory).passed,
         Measure::Observed { value: true }
     );
-    assert_eq!(
+    assert!(matches!(
         observe(&records).oversized_write(std::path::Path::new("payload.txt"), 10, Some(13848), &directory).passed,
-        Measure::Observed { value: false }
-    );
+        Measure::Unavailable { reason } if reason.starts_with("not exercised")
+    ));
     fs::remove_dir(directory).expect("cleanup");
 }
 
@@ -258,7 +277,7 @@ fn version_seven_generates_visible_numbered_lines_at_low_with_unchanged_deciders
         }
         assert_eq!(expected.len(), bytes);
         assert_eq!(
-            fs::read(root.join("tasks/probes/large-write/seed").join(file)).expect("numbered measurement seed"),
+            fs::read(root.join("tests/fixtures/large-write/v7/seed").join(file)).expect("numbered measurement seed"),
             expected.as_bytes()
         );
     }
@@ -460,10 +479,14 @@ fn oversized_pieces_replay_successful_edits_and_keep_failed_edit_measurement() {
 }
 
 fn piece(records: &mut Vec<smith_events::Record>, tool: &str, call: &str, input: &serde_json::Value, verdict: Verdict) {
-    let mut started =
-        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_started_everything.jsonl"));
-    let mut completed =
-        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_completed_everything.jsonl"));
+    static START: std::sync::LazyLock<smith_events::Record> = std::sync::LazyLock::new(|| {
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_started_everything.jsonl"))
+    });
+    static END: std::sync::LazyLock<smith_events::Record> = std::sync::LazyLock::new(|| {
+        common::events::record(include_str!("../../crates/smith-events/golden/v1/tool_completed_everything.jsonl"))
+    });
+    let mut started = START.clone();
+    let mut completed = END.clone();
     started.t_ms = 4;
     completed.t_ms = 4;
     if let Event::ToolStarted(value) = &mut started.event {
@@ -603,8 +626,11 @@ fn add_tool(records: &mut Vec<smith_events::Record>, tool: &str, verdict: Verdic
 }
 
 fn observe(records: &[smith_events::Record]) -> Observer {
-    let mut observer = Observer::new(&common::events::LIMITS).expect("reader");
-    observer.feed(&common::events::bytes(records)).expect("synthetic codec records");
+    let bytes = common::events::bytes(records);
+    let ceiling = bytes.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::len).max().expect("fixture lines");
+    let ceiling = u32::try_from(ceiling).expect("bounded fixture line");
+    let mut observer = Observer::with_ceiling(&common::events::LIMITS, ceiling).expect("reader");
+    observer.feed(&bytes).expect("synthetic codec records");
     observer.finish().expect("complete framing");
     observer
 }
@@ -651,7 +677,8 @@ fn payload_too_large_write_then_actual_pieces_is_a_valid_oversized_refusal() {
 fn corrected_refusal_checks_keep_normal_low_and_only_oversized_v8_medium() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let design = root.join("../docs/design");
-    let normal = smith_bench::check_task(&root.join("tasks/probes/large-write/task.toml"), &design).expect("normal v7");
+    let normal = smith_bench::check_task(&root.join("tests/fixtures/large-write/v7-corrected/task.toml"), &design)
+        .expect("normal v7");
     let original =
         smith_bench::check_task(&root.join("tests/fixtures/large-write/v7/task.toml"), &design).expect("original v7");
     assert_eq!(normal.version, 7);
@@ -661,7 +688,7 @@ fn corrected_refusal_checks_keep_normal_low_and_only_oversized_v8_medium() {
     assert_eq!(normal.outcome, original.outcome);
     assert_eq!(normal.deciding, original.deciding);
     let low = normal.with_variant("oversized").expect("corrected low");
-    let medium = smith_bench::check_task(&root.join("tasks/probes/large-write/oversized-v8.toml"), &design)
+    let medium = smith_bench::check_task(&root.join("tests/fixtures/large-write/v8/task.toml"), &design)
         .expect("explicit oversized v8")
         .with_variant("oversized")
         .expect("selected v8");
@@ -756,14 +783,14 @@ fn native_oversized_refusal_rejects_wrong_pairs_small_content_loss_and_absent_ca
 #[test]
 fn oversized_refusal_threshold_must_equal_the_native_tool_payload() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source = root.join("tasks/probes/large-write");
+    let source = root.join("tests/fixtures/large-write/v8");
     let directory = std::env::temp_dir().join(format!("smith-refusal-declaration-{}", std::process::id()));
     std::fs::create_dir(&directory).expect("fresh task");
     std::fs::create_dir(directory.join("seed")).expect("seed directory");
     for name in ["source.txt", "oversized-source.txt", "README.md"] {
         std::fs::copy(source.join("seed").join(name), directory.join("seed").join(name)).expect("same seed bytes");
     }
-    let document = std::fs::read_to_string(source.join("oversized-v8.toml"))
+    let document = std::fs::read_to_string(source.join("task.toml"))
         .expect("v8 task")
         .replace("content_bytes_above = 40960", "content_bytes_above = 40959");
     std::fs::write(directory.join("task.toml"), document).expect("wrong threshold fixture");

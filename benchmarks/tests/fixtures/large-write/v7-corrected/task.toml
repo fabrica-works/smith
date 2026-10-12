@@ -1,11 +1,11 @@
 id = "large-write"
-version = 9
+version = 7
 kind = "probe"
 tier = "small"
 effort = "low"
 deadline_seconds = 330
 prompt = "Write payload.txt in one write call with numbered lines from Line 0001 through Line 0643 inclusive. Each line is exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. This is 36008 bytes. Do not read, use shell, edit, or delegate. Finish with ALPHA after written.\n"
-seed_sha256 = "231c7a416929fda166e8d336cfcf3f7186dcb496ef96d77d86ab52cc42967580"
+seed_sha256 = "c66e8ecba8b9f92c36e311d567e911184107078ce03d8271266c3a8b3e717663"
 guards = ["domain/tools.md, section 3", "protocol/limits.md, section 6"]
 deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "written-file", "tool-call", "no-stop", "run-completed"]
 
@@ -74,7 +74,7 @@ content_bytes_at_least = 32768
 [[variant]]
 name = "oversized"
 replace_checks = true
-prompt = "This checks how an intentionally too-large call is refused. First make ONE write to payload.txt containing numbered lines Line 0001 through Line 0280 inclusive. Each line is exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. The 15995-byte JSON call is deliberately over the stated 13848-byte call-input bound and is MEANT TO BE REFUSED. After that protocol refusal, create a smaller payload.txt with numbered lines Line 0001 through Line 0060 inclusive: write lines 0001 through 0030 in one write, then append lines 0031 through 0060 with ONE edit. Each accepted piece fits the 2048-byte payload; the final file is 3360 bytes, above one payload. Do not use shell or delegate. Finish with ALPHA after the write and edit are accepted.\n"
+prompt = "Generate numbered lines from Line 0001 through Line 0893 inclusive, each exactly like \"Line 0001: The quick brown fox jumps over the lazy dog.\" with its four-digit number and a final newline. This is 50008 bytes. First attempt one write of all lines to payload.txt, above the 40960-byte payload. After the oversized refusal, write the first piece and extend it with edit calls until the final file is above 40960 bytes. Do not read, use shell, or delegate. Finish with ALPHA after the pieces are accepted.\n"
 deciding = ["end", "exit-code", "answer", "file-size:payload.txt", "file-pieces", "oversized-write", "no-stop", "run-completed"]
 [[variant.outcome]]
 check = "end"
@@ -88,18 +88,18 @@ pattern = "ALPHA"
 [[variant.outcome]]
 check = "file-digest"
 path = "payload.txt"
-sha256 = "f9ba04dc90f64462cb71c9676039c14a9c3a6dfca4146512f586ea68bcff621d"
+sha256 = "68a6dc3bc27d1c7731aa2c7211af828571df1cf56e0d19c1575d946937cd90ed"
 [[variant.event]]
 check = "blocks"
 oversized = { exactly = 1 }
 [[variant.outcome]]
 check = "file-size"
 path = "payload.txt"
-bytes_at_least = 2049
+bytes_at_least = 40961
 [[variant.event]]
 check = "file-pieces"
 path = "payload.txt"
-bytes_above = 2048
+bytes_above = 40960
 file_bytes = 1048576
 [[variant.event]]
 check = "no-stop"
@@ -111,9 +111,4 @@ status = "accepted"
 [[variant.event]]
 check = "oversized-write"
 path = "payload.txt"
-content_bytes_above = 2048
-protocol_input_bytes_above = 13848
-
-[variant.smith]
-tool_payload = 2048
-read_window = 2048
+content_bytes_above = 40960
