@@ -1,6 +1,8 @@
 //! Bounded joins between logical session facts and actual LLM hand-offs.
 //! Each live conversation keeps its opening model, current intent and at most
-//! one provider attempt. Intents can be revised before hand-off; only `request`
+//! one provider attempt and one temporary compaction scope. Actual hand-offs
+//! retain their public conversation number until their terminal. Intents can be
+//! revised before hand-off; only `request`
 //! assigns a run-wide response number. Raw usage is counted before accounting;
 //! rejected reports remain in nullable totals, with sticky per-field overflow.
 //! A content cursor skips already recorded completions; original completion
@@ -39,6 +41,8 @@ pub(crate) struct Book {
     conversations: Map<Token, Conversation>,
     next: u64,
     reported: crate::observations::Reported,
+    run: Option<u64>,
+    next_conversation: u64,
     main_failure: Option<RunFailure>,
 }
 
@@ -67,17 +71,29 @@ struct Conversation {
     main: bool,
     attempts: u64,
     last_failure: Option<CompletionFailure>,
+    compaction: Option<Compaction>,
+}
+
+#[derive(Debug)]
+struct Compaction {
+    number: u64,
+    at: Time,
+    usage: crate::observations::Reported,
+    spent: u64,
+    turns: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct Intent {
     turn: u64,
     retry: u32,
+    window: u32,
 }
 
 #[derive(Debug)]
 struct Started {
     number: u64,
+    conversation: u64,
     at: Time,
     owner: Token,
     received: Option<Received>,
@@ -114,10 +130,25 @@ impl Book {
             next: 1,
             reported: crate::observations::Reported::NONE,
             main_failure: None,
+            run: None,
+            next_conversation: 0,
         }
     }
 
+    pub(crate) fn next_conversation(&mut self, run: u64) -> u64 {
+        if self.run != Some(run) {
+            self.run = Some(run);
+            self.next_conversation = 0;
+        }
+        let number = self.next_conversation;
+        self.next_conversation = number.checked_add(1).expect("conversation names cannot exhaust");
+        number
+    }
+
     pub(crate) fn opened(&mut self, at: Time, owner: Token, opening: &ConversationOpened) {
+        self.run = Some(opening.run);
+        self.next_conversation =
+            self.next_conversation.max(opening.conversation.checked_add(1).expect("bounded names"));
         let old = self
             .conversations
             .insert(
@@ -143,6 +174,7 @@ impl Book {
                     },
                     attempts: 0,
                     last_failure: None,
+                    compaction: None,
                 },
             )
             .expect("one join row per bounded live conversation");
@@ -152,6 +184,8 @@ impl Book {
     pub(crate) fn starting(&mut self) {
         assert!(self.conversations.is_empty(), "prior run's conversations settled");
         self.next = 1;
+        self.run = None;
+        self.next_conversation = 0;
         self.reported = crate::observations::Reported::NONE;
         self.main_failure = None;
     }
@@ -187,8 +221,13 @@ impl Book {
         self.next = self.next.checked_add(1).expect("a process cannot exhaust response names");
         conversation.attempts = u64::from(intent.retry).checked_add(1).expect("u32 retry count plus one fits u64");
         conversation.last_failure = None;
+        let response_conversation = match &conversation.compaction {
+            Some(compaction) => compaction.number,
+            None => conversation.number,
+        };
         conversation.attempt = Attempt::Started(Started {
             number,
+            conversation: response_conversation,
             at: now,
             owner: request_owner,
             received: None,
@@ -200,12 +239,14 @@ impl Book {
             t_ms: millis(now, origin),
             event: Event::ResponseStarted(ResponseStarted {
                 run: conversation.run,
-                conversation: conversation.number,
+                conversation: response_conversation,
                 response: number,
-                turn: intent.turn,
+                turn: match &conversation.compaction {
+                    Some(_) => 1,
+                    None => intent.turn,
+                },
                 attempt: u64::from(intent.retry),
-                // Compaction (08.6) is not merged: each actual opening has its first window.
-                window: 1,
+                window: u64::from(intent.window),
                 model: conversation.model.clone(),
                 messages: u64::try_from(prompt.messages.len()).expect("admitted actual prompt messages"),
                 output_tokens: u64::from(prompt.max_tokens),
@@ -344,8 +385,8 @@ impl Book {
     pub(crate) fn delta(&self, at: Time, origin: Time, request_owner: Token, block: u32, text: Box<[u8]>) -> Record {
         let owner = self.owner_for(request_owner).expect("delta belongs to an actual request");
         let conversation = self.conversations.get(&owner).expect("found above");
-        let response = match &conversation.attempt {
-            Attempt::Started(started) => started.number,
+        let (response, response_conversation) = match &conversation.attempt {
+            Attempt::Started(started) => (started.number, started.conversation),
             Attempt::Idle | Attempt::Answered { .. } | Attempt::Failed { .. } => {
                 unreachable!("deltas precede the domain terminal")
             }
@@ -354,7 +395,7 @@ impl Book {
             t_ms: millis(at, origin),
             event: Event::TextDelta(smith_events::TextDelta {
                 run: conversation.run,
-                conversation: conversation.number,
+                conversation: response_conversation,
                 response,
                 block: u64::from(block),
                 text,
@@ -376,6 +417,9 @@ impl Book {
         let conversation_owner = found.expect("typed answer retains its hand-off identity");
         let conversation = self.conversations.get_mut(&conversation_owner).expect("found above");
         conversation.reported.add(completion.usage);
+        if let Some(compaction) = &mut conversation.compaction {
+            compaction.usage.add(completion.usage);
+        }
         self.reported.add(completion.usage);
         match &mut conversation.attempt {
             Attempt::Started(started) => {
@@ -460,13 +504,79 @@ impl Book {
     pub(crate) fn fact(&mut self, origin: Time, fact: &session::Fact) -> List<Record> {
         let mut records = List::with_capacity(2);
         match fact.kind {
+            session::FactKind::CompactionStarted { opener, .. } => {
+                let run = self.conversations.get(&opener).expect("compaction follows opening").run;
+                let number = self.next_conversation(run);
+                let conversation = self.conversations.get_mut(&opener).expect("found above");
+                if let Some(record) = terminal(conversation, origin, unknown_usage(), 0, None) {
+                    records.push(record).expect("the prior failed response settles before the summary request");
+                }
+                assert!(conversation.compaction.is_none(), "one active compaction per conversation");
+                conversation.compaction = Some(Compaction {
+                    number,
+                    at: fact.at,
+                    usage: crate::observations::Reported::NONE,
+                    spent: 0,
+                    turns: 0,
+                });
+                records
+                    .push(Record {
+                        t_ms: millis(fact.at, origin),
+                        event: Event::ConversationOpened(ConversationOpened {
+                            run,
+                            conversation: number,
+                            thread: conversation.thread,
+                            model: conversation.model.clone(),
+                            kind: smith_events::ConversationKind::Compaction,
+                            parent: Some(conversation.number),
+                            call: None,
+                            requested: None,
+                            share: None,
+                            clamped: List::with_capacity(0),
+                        }),
+                    })
+                    .expect("one compaction opening");
+            }
+            session::FactKind::CompactionEnded { opener, end, .. } => {
+                let conversation = self.conversations.get_mut(&opener).expect("end follows opening");
+                if let Some(record) = terminal(conversation, origin, unknown_usage(), 0, None) {
+                    records.push(record).expect("the summary response settles before its conversation");
+                }
+                let compaction = conversation.compaction.take().expect("one compaction terminal");
+                match end {
+                    session::Compacted::Opened => conversation.recorded = None,
+                    session::Compacted::Failed => {}
+                }
+                records
+                    .push(Record {
+                        t_ms: millis(fact.at, origin),
+                        event: Event::ConversationClosed(ConversationClosed {
+                            run: conversation.run,
+                            conversation: compaction.number,
+                            end: match end {
+                                session::Compacted::Opened => ConversationEnd::Closed,
+                                session::Compacted::Failed => ConversationEnd::Failed,
+                            },
+                            which: None,
+                            failure: match end {
+                                session::Compacted::Opened => None,
+                                session::Compacted::Failed => conversation.last_failure.clone(),
+                            },
+                            turns: u64::from(compaction.turns),
+                            usage: compaction.usage.usage(),
+                            spent: compaction.spent,
+                            duration_ms: millis(fact.at, compaction.at),
+                        }),
+                    })
+                    .expect("one compaction terminal");
+            }
             session::FactKind::Opened { opener } => {
                 self.conversations.get_mut(&opener).expect("session admission follows actual opening").admitted = true;
             }
-            session::FactKind::CompletionStarted { opener, attempt, .. } => {
+            session::FactKind::CompletionStarted { opener, attempt, window, .. } => {
                 let turn = fact.response.expect("intent carries its actual session turn").number;
                 let conversation = self.conversations.get_mut(&opener).expect("intent follows opening");
-                conversation.intent = Some(Intent { turn, retry: attempt });
+                conversation.intent = Some(Intent { turn, retry: attempt, window });
             }
             session::FactKind::CompletionAnswered { opener, stop, blocks, calls, invalid } => {
                 let conversation = self.conversations.get_mut(&opener).expect("answer follows opening");
@@ -493,6 +603,10 @@ impl Book {
                     .spent
                     .checked_add(spent)
                     .expect("session accepted this representable cumulative spend");
+                if let Some(compaction) = &mut conversation.compaction {
+                    compaction.spent = spent;
+                    compaction.turns = 1;
+                }
                 let record = terminal(conversation, origin, crate::reported_usage(usage), spent, None)
                     .expect("an accepted charge follows its pending answer");
                 records.push(record).expect("one response terminal");
@@ -521,12 +635,6 @@ impl Book {
                         conversation.attempt = Attempt::Failed { started, at: fact.at, failure: observed };
                     }
                     None => unreachable!("a component failure follows an actual hand-off"),
-                }
-            }
-            session::FactKind::CompactionStarted { opener, .. } => {
-                let conversation = self.conversations.get_mut(&opener).expect("compaction follows opening");
-                if let Some(record) = terminal(conversation, origin, unknown_usage(), 0, None) {
-                    records.push(record).expect("the prior failed response settles before the summary request");
                 }
             }
             session::FactKind::CompletionRetried { opener, delay, .. } => {
@@ -588,8 +696,7 @@ impl Book {
                     })
                     .expect("one conversation terminal");
             }
-            session::FactKind::CompactionEnded { .. }
-            | session::FactKind::ReasoningDropped { .. }
+            session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }
@@ -659,7 +766,7 @@ fn terminal(
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
             run: conversation.run,
-            conversation: conversation.number,
+            conversation: started.conversation,
             response: started.number,
             outcome,
             stop,
@@ -687,7 +794,7 @@ fn cancelled(conversation: &Conversation, origin: Time, started: Started, at: Ti
         t_ms: millis(at, origin),
         event: Event::ResponseCompleted(ResponseCompleted {
             run: conversation.run,
-            conversation: conversation.number,
+            conversation: started.conversation,
             response: started.number,
             outcome: Outcome::Cancelled,
             stop: None,

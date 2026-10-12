@@ -333,20 +333,14 @@ impl Producer {
             run::facts::FactKind::Opened { run: _, conversation, kind } => {
                 let opening = opening.as_ref().expect("actual Run::Open metadata accompanied the fact");
                 assert_eq!(opening.activation, self.activation(), "opening carries this actual Start activation");
+                let number = self.sinks.next_conversation(self.activation());
                 let (kind, parent, call, requested, share, clamped) = match kind {
                     run::facts::Kind::Main => {
                         (smith_events::ConversationKind::Main, None, None, None, None, List::with_capacity(0))
                     }
                     run::facts::Kind::Child { parent, call, granted, .. } => {
                         let parent = self.sinks.scope(parent).expect("actual parent conversation precedes child");
-                        let id = self.calls.child_opened(
-                            conversation,
-                            u64::from(opening.ordinal),
-                            call,
-                            parent,
-                            granted,
-                            fact.at,
-                        );
+                        let id = self.calls.child_opened(conversation, number, call, parent, granted, fact.at);
                         let share = crate::child_share(kind).expect("actual child share");
                         (
                             smith_events::ConversationKind::Child,
@@ -364,7 +358,7 @@ impl Producer {
                     conversation,
                     smith_events::ConversationOpened {
                         run: self.activation(),
-                        conversation: u64::from(opening.ordinal),
+                        conversation: number,
                         kind,
                         parent,
                         call,

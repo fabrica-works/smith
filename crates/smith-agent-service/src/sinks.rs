@@ -311,6 +311,10 @@ impl Sinks {
         });
     }
 
+    pub(crate) fn next_conversation(&mut self, run: u64) -> u64 {
+        self.responses.next_conversation(run)
+    }
+
     pub(crate) fn scope(&self, owner: Token) -> Option<crate::responses::Scope> {
         self.responses.scope(owner)
     }

@@ -745,3 +745,213 @@ fn standard_profile_accepts_provider_events_that_echo_tool_schemas() {
     let json = openai::Json::from_bytes(&received, &limits.native().document()).expect("provider event document");
     assert_eq!(openai::decode_event(&json, &limits.native()), Ok(openai::Event::Created { echo: None }));
 }
+
+fn assert_stream_record(actual: &smith_events::Record, literal: &[u8]) {
+    let limits = smith_events::Limits { string: 256, content: 1024, items: 8 };
+    let expected = smith_events::read(literal, &limits).unwrap().unwrap();
+    assert_eq!(*actual, expected);
+}
+
+fn compaction_intent(book: &mut crate::responses::Book, owner: skein_lib::Token, window: u32) {
+    use crate::responses::tests::fact;
+    use smith_domain::session;
+    assert!(
+        book.fact(
+            skein_lib::Time::ZERO,
+            &fact(
+                3,
+                session::FactKind::CompletionStarted {
+                    opener: owner,
+                    window,
+                    attempt: 0,
+                    messages: 0,
+                    max_tokens: 7,
+                    choice: session::Choice::Auto,
+                },
+                3,
+                None
+            )
+        )
+        .is_empty()
+    );
+}
+
+fn compaction_answer(book: &mut crate::responses::Book, owner: skein_lib::Token, stop: smith_domain::llm::Stop) {
+    use crate::responses::tests::fact;
+    use smith_domain::{llm, session};
+    let usage = llm::Usage { input_tokens: Some(2), output_tokens: Some(3), ..llm::Usage::NONE };
+    book.received(
+        skein_lib::Token::new(99),
+        &llm::Completion { content: Box::new([]), stop, usage, reasoning_dropped: Box::new([]) },
+    );
+    book.fact(
+        skein_lib::Time::ZERO,
+        &fact(
+            5,
+            session::FactKind::CompletionAnswered { opener: owner, stop, blocks: 0, calls: 0, invalid: 0 },
+            3,
+            None,
+        ),
+    );
+    let records =
+        book.fact(skein_lib::Time::ZERO, &fact(6, session::FactKind::Used { opener: owner, usage }, 3, Some(7)));
+    let end = match stop {
+        llm::Stop::Refusal => "refusal",
+        llm::Stop::EndTurn | llm::Stop::ToolUse | llm::Stop::MaxTokens => "end",
+    };
+    let literal = alloc::format!(
+        "{{\"v\":1,\"type\":\"response.completed\",\"t_ms\":5,\"run\":7,\"conversation\":1,\"response\":1,\"outcome\":\"completed\",\"stop\":\"{end}\",\"blocks\":0,\"calls\":0,\"invalid\":0,\"oversized\":0,\"cut\":0,\"usage\":{{\"input_tokens\":2,\"cache_read_tokens\":null,\"cache_write_tokens\":null,\"output_tokens\":3,\"reasoning_tokens\":null}},\"spent\":7,\"request_bytes\":null,\"first_byte_ms\":null,\"largest_gap_ms\":null,\"duration_ms\":1}}"
+    );
+    assert_stream_record(records.get(0).unwrap(), literal.as_bytes());
+}
+
+#[test]
+fn a_compaction_is_a_conversation_of_kind_compaction_in_the_stream() {
+    use crate::responses::tests::{at, fact, opened, prompt};
+    use skein_lib::{Time, Token};
+    use smith_domain::{llm, session};
+    let owner = Token::new(11);
+    let mut book = crate::responses::Book::new(1);
+    book.opened(at(1), owner, &opened(0, 0));
+    let opened =
+        book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    assert_stream_record(opened.get(0).unwrap(), br#"{"v":1,"type":"conversation.opened","t_ms":2,"run":7,"conversation":1,"kind":"compaction","parent":0,"thread":0,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"}}"#);
+    compaction_intent(&mut book, owner, 1);
+    let started = book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
+    assert_stream_record(&started, br#"{"v":1,"type":"response.started","t_ms":4,"run":7,"conversation":1,"response":1,"turn":1,"attempt":0,"window":1,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
+    assert_stream_record(
+        &book.delta(at(4), Time::ZERO, Token::new(99), 0, b"summary".as_slice().into()),
+        br#"{"v":1,"type":"text.delta","t_ms":4,"run":7,"conversation":1,"response":1,"block":0,"text":"summary"}"#,
+    );
+    book.prompt_recorded(Token::new(99), 4);
+    compaction_answer(&mut book, owner, llm::Stop::EndTurn);
+    let closed = book.fact(
+        Time::ZERO,
+        &fact(
+            7,
+            session::FactKind::CompactionEnded { opener: owner, window: 2, end: session::Compacted::Opened },
+            3,
+            None,
+        ),
+    );
+    assert_stream_record(closed.get(0).unwrap(), br#"{"v":1,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"closed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
+    compaction_intent(&mut book, owner, 2);
+    let next = book.request(at(8), Time::ZERO, Token::new(100), &prompt(0));
+    assert_stream_record(&next, br#"{"v":1,"type":"response.started","t_ms":8,"run":7,"conversation":0,"response":2,"turn":3,"attempt":0,"window":2,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"},"messages":0,"output_tokens":7,"tool_choice":"only"}"#);
+    assert!(book.observation(Token::new(100)).first);
+    assert_eq!(book.observation(Token::new(100)).messages, 0);
+    assert_eq!(book.next_conversation(7), 2);
+}
+
+#[test]
+fn a_refused_compaction_closes_failed_with_no_completion_failure() {
+    use crate::responses::tests::{at, fact, opened, prompt};
+    use skein_lib::{Time, Token};
+    use smith_domain::{llm, session};
+    let owner = Token::new(11);
+    let mut book = crate::responses::Book::new(1);
+    book.opened(at(1), owner, &opened(0, 0));
+    book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    compaction_intent(&mut book, owner, 1);
+    book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
+    compaction_answer(&mut book, owner, llm::Stop::Refusal);
+    let closed = book.fact(
+        Time::ZERO,
+        &fact(
+            7,
+            session::FactKind::CompactionEnded { opener: owner, window: 1, end: session::Compacted::Failed },
+            3,
+            None,
+        ),
+    );
+    assert_stream_record(closed.get(0).unwrap(), br#"{"v":1,"type":"conversation.closed","t_ms":7,"run":7,"conversation":1,"end":"failed","turns":1,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":5}"#);
+    let parent = book.fact(
+        Time::ZERO,
+        &fact(
+            7,
+            session::FactKind::Ended {
+                opener: owner,
+                end: session::End::NoSummary { fault: session::NoSummary::Refused },
+                turns: 3,
+                usage: llm::Usage::NONE,
+            },
+            3,
+            None,
+        ),
+    );
+    assert_stream_record(parent.get(0).unwrap(), br#"{"v":1,"type":"conversation.closed","t_ms":7,"run":7,"conversation":0,"end":"failed","turns":3,"usage":{"input_tokens":2,"cache_read_tokens":null,"cache_write_tokens":null,"output_tokens":3,"reasoning_tokens":null},"spent":7,"duration_ms":6}"#);
+}
+
+#[test]
+fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_limit() {
+    use crate::responses::tests::{at, fact, opened, prompt};
+    use skein_lib::{Time, Token};
+    use smith_domain::{llm, session};
+    use smith_events::Event;
+    let owner = Token::new(11);
+    let mut book = crate::responses::Book::new(1);
+    book.opened(at(1), owner, &opened(0, 0));
+    book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    compaction_intent(&mut book, owner, 1);
+    book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
+    book.failed(
+        Token::new(99),
+        llm::Failure::ContextTooLong,
+        llm::Evidence::Response,
+        Some(400),
+        b"context",
+        crate::sinks::Capture::Calls,
+    );
+    book.fact(
+        Time::ZERO,
+        &fact(
+            5,
+            session::FactKind::CompletionFailed {
+                opener: owner,
+                failure: llm::Failure::ContextTooLong,
+                evidence: llm::Evidence::Response,
+            },
+            3,
+            None,
+        ),
+    );
+    let records = book.fact(
+        Time::ZERO,
+        &fact(
+            6,
+            session::FactKind::CompactionEnded { opener: owner, window: 1, end: session::Compacted::Failed },
+            3,
+            None,
+        ),
+    );
+    assert_eq!(records.len(), 2);
+    let Event::ResponseCompleted(response) = &records.get(0).unwrap().event else { panic!("failed summary response") };
+    let Event::ConversationClosed(compaction) = &records.get(1).unwrap().event else { panic!("failed compaction") };
+    assert_eq!(response.conversation, 1);
+    assert_eq!(compaction.conversation, 1);
+    assert_eq!(response.failure, compaction.failure);
+    let parent = book.fact(
+        Time::ZERO,
+        &fact(
+            6,
+            session::FactKind::Ended {
+                opener: owner,
+                end: session::End::Failed {
+                    failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 123 },
+                    evidence: llm::Evidence::Response,
+                },
+                turns: 2,
+                usage: llm::Usage::NONE,
+            },
+            3,
+            None,
+        ),
+    );
+    let Event::ConversationClosed(parent) = &parent.get(0).unwrap().event else { panic!("parent terminal") };
+    assert_eq!(parent.conversation, 0);
+    let failure = parent.failure.as_ref().unwrap();
+    assert_eq!(failure.class, smith_events::FailureClass::Limit);
+    assert_eq!(failure.limit.as_ref().unwrap().which.as_ref(), b"window");
+    assert_eq!(failure.status, Some(400));
+    assert_eq!(failure.detail.as_deref(), Some(b"context".as_slice()));
+}
