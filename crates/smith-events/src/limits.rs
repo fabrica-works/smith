@@ -572,7 +572,7 @@ fn size_answer_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
     length = length.checked_add(10)?.checked_add(u64::from(limits.string).checked_mul(6)?.checked_add(2)?)?;
     length = length.checked_add(24)?.checked_add(u64::from(limits.string).checked_mul(12)?.checked_add(4)?)?;
     length = length.checked_add(12)?.checked_add(20)?;
-    Some(length)
+    length.checked_add(16)?.checked_add(39)?.checked_add(28)
 }
 
 fn size_field(_capture: &Capture, limits: &Limits) -> Option<u64> {

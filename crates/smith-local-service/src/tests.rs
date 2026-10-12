@@ -11,8 +11,13 @@ use crate::{Config, Launch, Limits, ProcessLimits, Service, iterate};
 fn config() -> Config {
     let mut local_limits = local::Limits {
         smith: smith_agent_world::LIMITS,
-        agent: local::AgentLimits::inline(smith_agent_world::LIMITS, 2, Duration::from_secs(60))
-            .expect("bounded inline child"),
+        agent: local::AgentLimits::inline(
+            smith_agent_world::LIMITS,
+            2,
+            Duration::from_secs(60),
+            Duration::from_secs(5),
+        )
+        .expect("bounded inline child"),
         endpoints: Box::new([Endpoint(4)]),
         chat_bytes: 64,
         text_bytes: 1024,
@@ -438,9 +443,13 @@ fn colocated_config() -> Config {
     config.local.budget.turns = 1;
     config.local.budget.spend = 1000;
     config.local.models[0].model = Box::from(b"fake".as_slice());
-    config.limits.local.agent =
-        local::AgentLimits::inline(config.limits.local.smith, config.limits.local.unsaved, config.local.budget.time)
-            .expect("bounded inline child");
+    config.limits.local.agent = local::AgentLimits::inline(
+        config.limits.local.smith,
+        config.limits.local.unsaved,
+        config.local.budget.time,
+        Duration::from_secs(5),
+    )
+    .expect("bounded inline child");
     config.limits.inline = Some(crate::InlineLimits::new(&lower).expect("bounded lower configuration"));
     config.limits.queue = config.limits.queue.max(local::max_out(&config.limits.local));
     config.agent = crate::AgentConfig::Inline { configuration: lower, roots: Box::new([]) };

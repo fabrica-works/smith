@@ -5,8 +5,8 @@
 //! protocol/limits.md, section 3, rule 1.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
-    CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckExit, CheckStarted, ChildCompleted, ChildStop, Clamp, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
     EffectiveLimit, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Form, Level, LimitValue,
     Loss, Message, MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind,
@@ -633,6 +633,8 @@ fn read_answer_class(tokens: &[Token], limits: &Limits) -> Result<AnswerClass, E
         b"budget" => AnswerClass::Budget,
         b"policy" => AnswerClass::Policy,
         b"cancelled" => AnswerClass::Cancelled,
+        b"agent" => AnswerClass::Agent,
+        b"host" => AnswerClass::Host,
         b"stale" => AnswerClass::Stale,
         b"transcript" => AnswerClass::Transcript,
         b"busy" => AnswerClass::Busy,
@@ -845,9 +847,34 @@ fn read_failure_limit(tokens: &[Token], limits: &Limits) -> Result<FailureLimit,
     })
 }
 
+fn read_agent_exit(tokens: &[Token]) -> Result<AgentExit, Error> {
+    object(tokens)?;
+    match field(tokens, b"code")? {
+        Some(code) => {
+            if field(tokens, b"signal")?.is_some() {
+                return Err(Error::Shape);
+            }
+            Ok(AgentExit::Code(signed(code)?))
+        }
+        None => Ok(AgentExit::Signal(unsigned(required(tokens, b"signal")?)?)),
+    }
+}
+
 fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailure, Error> {
     object(tokens)?;
     Ok(AnswerFailure {
+        dropped: match field(tokens, b"dropped")? {
+            Some(item) => Some(boolean(item)?),
+            None => None,
+        },
+        ended: match field(tokens, b"ended")? {
+            Some(item) => Some(read_agent_exit(item)?),
+            None => None,
+        },
+        turn: match field(tokens, b"turn")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
         class: read_answer_class(required(tokens, b"class")?, limits)?,
         endpoint: match field(tokens, b"endpoint")? {
             Some(item) => Some(text(item, limits.string)?),

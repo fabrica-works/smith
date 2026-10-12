@@ -19,6 +19,8 @@ pub struct Limits {
     pub window: smith::Window,
     /// Independent wall allowance; progress and waits never pause it.
     pub wall_time: Duration,
+    /// Host allowance after cancellation before the slot drops its root.
+    pub cancel_grace: Duration,
     pub facts: u32,
 }
 

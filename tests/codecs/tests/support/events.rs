@@ -2,12 +2,13 @@
 
 use skein_lib::List;
 use smith_events::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckExit, CheckStarted, CommandExit,
-    Completion, CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count,
-    Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, FailureLimit, FailurePhase, Family, Field, Form,
-    Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt, Record, ResponseCompleted,
-    ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded, SessionStarted, Source, Status, Stop,
-    TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict, Versions,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, Capture, CheckCompleted, CheckExit, CheckStarted,
+    CommandExit, Completion, CompletionFailure, ConversationClosed, ConversationEnd, ConversationKind,
+    ConversationOpened, Count, Cpu, Delivered, Delivery, Effect, Event, Evidence, FailureClass, FailureLimit,
+    FailurePhase, Family, Field, Form, Level, Loss, Message, Mode, Model, Notice, NoticeKind, Outcome, PeakRss, Prompt,
+    Record, ResponseCompleted, ResponseStarted, Role, RunCompleted, RunResult, RunStarted, SessionEnded,
+    SessionStarted, Source, Status, Stop, TextDelta, ToolChoice, ToolCompleted, ToolStarted, Tools, Usage, Verdict,
+    Versions,
 };
 
 fn value_capture(name: &str, spelling: &str) -> Capture {
@@ -368,6 +369,9 @@ fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
 
 fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
     AnswerFailure {
+        dropped: if name == "AnswerClass" && spelling == "cancelled" { Some(false) } else { None },
+        ended: None,
+        turn: None,
         endpoint: None,
         model: None,
         attempts: None,
@@ -1565,6 +1569,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
         samples.push((name, Record { t_ms: u64::MAX, event: Event::ResponseStarted(response) }, Capture::Everything));
     }
     samples.extend(failure_samples());
+    samples.extend(end_samples());
     samples.extend(budget_samples());
     samples.extend(message_samples());
     samples.extend(samples_0());
@@ -1879,6 +1884,58 @@ fn failure_samples() -> Vec<(&'static str, Record, Capture)> {
         completion.status = Some(404);
         completion.detail = Some("unknown model 🌍".as_bytes().into());
         samples.push((name, Record { t_ms: 0, event: Event::RunCompleted(run) }, capture));
+    }
+    samples
+}
+
+fn end_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for (name, class, dropped, ended, turn) in [
+        ("end_cancelled_answer", AnswerClass::Cancelled, Some(false), None, None),
+        ("end_cancelled_drop", AnswerClass::Cancelled, Some(true), None, None),
+        ("end_host_store", AnswerClass::Host, None, None, Some(2)),
+        ("end_agent_code", AnswerClass::Agent, None, Some(AgentExit::Code(7)), None),
+        ("end_agent_signal", AnswerClass::Agent, None, Some(AgentExit::Signal(15)), None),
+    ] {
+        let reason = if class == AnswerClass::Host { Some(Box::from(b"store".as_slice())) } else { None };
+        samples.push((
+            name,
+            Record {
+                t_ms: 10,
+                event: Event::RunCompleted(RunCompleted {
+                    run: 1,
+                    wind_down: false,
+                    read: None,
+                    unread: 0,
+                    status: Status::Failed,
+                    failure: Some(AnswerFailure {
+                        endpoint: None,
+                        model: None,
+                        attempts: None,
+                        class,
+                        completion: None,
+                        account: None,
+                        which: None,
+                        reason,
+                        dropped,
+                        ended,
+                        turn,
+                    }),
+                    result: None,
+                    turns: 1,
+                    spent: 2,
+                    usage: Usage {
+                        input_tokens: Some(0),
+                        cache_read_tokens: Some(0),
+                        cache_write_tokens: Some(0),
+                        output_tokens: Some(0),
+                        reasoning_tokens: Some(0),
+                    },
+                    duration_ms: 10,
+                }),
+            },
+            Capture::Everything,
+        ));
     }
     samples
 }

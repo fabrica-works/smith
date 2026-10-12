@@ -34,6 +34,8 @@ fn failed(failure: &AnswerFailure) -> Result<(End, i32), String> {
         }
         AnswerClass::Policy => (End::Failed { reason: FailureReason::Policy, detail }, 1),
         AnswerClass::Cancelled => (End::Failed { reason: FailureReason::Cancelled, detail }, 130),
+        AnswerClass::Agent => (End::Failed { reason: FailureReason::Agent, detail }, 1),
+        AnswerClass::Host => (End::Failed { reason: FailureReason::Host, detail }, 1),
         AnswerClass::Stale => (End::Failed { reason: FailureReason::Stale, detail }, 1),
         AnswerClass::Transcript => (End::Failed { reason: FailureReason::Transcript, detail }, 1),
         AnswerClass::Busy => (End::Refused { setup: detail }, 1),

@@ -31,6 +31,14 @@ pub(crate) enum Step {
 }
 
 impl Guide {
+    /// Cancellation may stop the active read, but must leave descriptor close to settle.
+    pub(crate) const fn cancellable(&self) -> bool {
+        match self {
+            Self::OpeningRead { .. } | Self::OpeningProbe { .. } | Self::Reading { .. } | Self::Probing { .. } => true,
+            Self::Closing { .. } => false,
+        }
+    }
+
     #[expect(clippy::wildcard_enum_match_arm, reason = "skein event and kernel error vocabularies are external")]
     pub(crate) fn event(self, owner: Token, event: file::Event, below: &mut Queue<Below>) -> Step {
         match self {

@@ -271,6 +271,8 @@ impl Book {
             smith_events::AnswerClass::Budget
             | smith_events::AnswerClass::Policy
             | smith_events::AnswerClass::Cancelled
+            | smith_events::AnswerClass::Agent
+            | smith_events::AnswerClass::Host
             | smith_events::AnswerClass::Stale
             | smith_events::AnswerClass::Transcript
             | smith_events::AnswerClass::Busy
@@ -1478,6 +1480,9 @@ pub(crate) mod tests {
                     wind_down: false,
                     status: smith_events::Status::Failed,
                     failure: Some(smith_events::AnswerFailure {
+                        dropped: None,
+                        ended: None,
+                        turn: None,
                         class: smith_events::AnswerClass::Model,
                         endpoint: None,
                         model: None,

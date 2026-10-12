@@ -2,8 +2,8 @@
 //! Contract: protocol/events.md, sections 5.3 and 6.
 
 use crate::records::{
-    Agent, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted, CheckExit,
-    CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
+    Agent, AgentExit, AnswerClass, AnswerFailure, Block, Budget, BudgetStage, BudgetStanding, Capture, CheckCompleted,
+    CheckExit, CheckStarted, ChildCompleted, ChildStop, CommandExit, Completion, CompletionFailure, Containment,
     ConversationClosed, ConversationEnd, ConversationKind, ConversationOpened, Count, Cpu, Delivered, Delivery, Effect,
     EffectiveLimit, Event, Evidence, FailureClass, FailurePhase, Family, Field, Form, Level, LimitValue, Loss, Message,
     MessageRead, MessageReceived, MessageRefusal, MessageUnread, Mode, Model, Notice, NoticeKind, Outcome, PeakRss,
@@ -339,6 +339,8 @@ fn write_answer_class(json: &mut Encoder, value: &AnswerClass, _capture: &Captur
         AnswerClass::Budget => json.string(b"budget"),
         AnswerClass::Policy => json.string(b"policy"),
         AnswerClass::Cancelled => json.string(b"cancelled"),
+        AnswerClass::Agent => json.string(b"agent"),
+        AnswerClass::Host => json.string(b"host"),
         AnswerClass::Stale => json.string(b"stale"),
         AnswerClass::Transcript => json.string(b"transcript"),
         AnswerClass::Busy => json.string(b"busy"),
@@ -599,6 +601,29 @@ fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Cap
     if let Some(item) = &value.reason {
         json.key(b"reason");
         json.string(item);
+    }
+    if let Some(item) = value.dropped {
+        json.key(b"dropped");
+        json.boolean(item);
+    }
+    if let Some(item) = &value.ended {
+        json.key(b"ended");
+        json.object_start();
+        match item {
+            AgentExit::Code(code) => {
+                json.key(b"code");
+                json.signed(*code);
+            }
+            AgentExit::Signal(signal) => {
+                json.key(b"signal");
+                json.unsigned(*signal);
+            }
+        }
+        json.object_end();
+    }
+    if let Some(item) = value.turn {
+        json.key(b"turn");
+        json.unsigned(item);
     }
     json.object_end();
 }
@@ -1031,6 +1056,8 @@ fn validate_answer_class(value: &AnswerClass, limits: &Limits) -> Result<(), Err
         | AnswerClass::Budget
         | AnswerClass::Policy
         | AnswerClass::Cancelled
+        | AnswerClass::Agent
+        | AnswerClass::Host
         | AnswerClass::Stale
         | AnswerClass::Transcript
         | AnswerClass::Busy

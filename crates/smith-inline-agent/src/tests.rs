@@ -16,6 +16,7 @@ fn bounds() -> Limits {
             bytes: smith::max_turn_bytes(&smith).expect("root bound").checked_mul(8).expect("small window"),
         },
         wall_time: Duration::from_secs(3600),
+        cancel_grace: Duration::from_secs(5),
         facts: 32,
     }
 }
@@ -441,7 +442,7 @@ fn directories_move_the_exact_io_root_into_the_run() {
 }
 
 #[test]
-fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
+fn a_dropped_slot_keeps_a_command_right_until_its_terminal() {
     let env = env();
     let mut agent = Domain::new(&env.limits, configuration(), 93);
     let mut out = Queue::with_capacity(crate::max_out(&env.limits));
@@ -469,41 +470,15 @@ fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
     });
     translate::route(&mut agent, &env, Id::from_token(handle), &mut out);
     while out.pop().is_some() {}
-    step(&mut agent, &env, Input::Parent(parent::Event::Stop { agent: handle }), &mut out);
-    agent.reclaim();
-    for _ in 0_u32..8 {
-        if !agent.is_ready() {
-            break;
-        }
-        resume(&mut agent, &env, &mut out);
-        agent.reclaim();
-    }
+    step(&mut agent, &env, Input::Parent(parent::Event::Drop { agent: handle }), &mut out);
+    let mut faulted = false;
+    let mut cancel_io = false;
     let mut provider_cancelled = false;
     while let Some(output) = out.pop() {
-        if let Output::Lower { request: Lower::Cancel { .. }, .. } = output {
-            provider_cancelled = true;
-        }
-    }
-    assert!(provider_cancelled, "deliver cancellation only after the actual cancel request");
-    step(
-        &mut agent,
-        &env,
-        Input::Below { agent: handle, terminal: Below::Cancelled { owner: completion.expect("actual Complete") } },
-        &mut out,
-    );
-    agent.reclaim();
-    for _ in 0_u32..8 {
-        if !agent.is_ready() {
-            break;
-        }
-        resume(&mut agent, &env, &mut out);
-        agent.reclaim();
-    }
-    let mut answered = false;
-    let mut cancel_io = false;
-    while let Some(output) = out.pop() {
         match output {
-            Output::Parent(parent::Request::Answered { .. }) => answered = true,
+            Output::Parent(parent::Request::Faulted { fault: smith_host_domain::Fault::Exited, .. }) => faulted = true,
+            Output::Parent(parent::Request::Answered { .. }) => panic!("dropped root never answers"),
+            Output::Lower { request: Lower::Cancel { .. }, .. } => provider_cancelled = true,
             Output::Lower { request: Lower::CancelIo { owner }, .. } => {
                 assert_eq!(owner, Token::new(100));
                 cancel_io = true;
@@ -512,11 +487,19 @@ fn an_answered_slot_keeps_a_command_right_until_its_terminal() {
             Output::Parent(_) | Output::Lower { .. } => {}
         }
     }
-    assert!(answered);
+    assert!(faulted);
     assert!(cancel_io);
+    assert!(provider_cancelled);
+    step(
+        &mut agent,
+        &env,
+        Input::Below { agent: handle, terminal: Below::Cancelled { owner: completion.expect("actual Complete") } },
+        &mut out,
+    );
+    assert!(out.is_empty(), "the command still owns its terminal");
     assert_eq!(agent.hosted(), 1);
-    // After Answered, the terminal consumes the retained right without entering
-    // the native root again. The boundary fixture therefore needs no tools job.
+    // A dropped root hears nothing, so this boundary fixture needs no native tools job.
+    // Actual composed cancellation and answer settlement stay in the host worlds.
     step(
         &mut agent,
         &env,

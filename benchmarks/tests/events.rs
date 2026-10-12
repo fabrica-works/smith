@@ -1516,6 +1516,9 @@ fn expected_entrance_refusal_requires_captured_reason_and_no_request() {
         value.status = smith_events::Status::Refused;
         value.result = None;
         value.failure = Some(smith_events::AnswerFailure {
+            dropped: None,
+            ended: None,
+            turn: None,
             endpoint: None,
             model: None,
             attempts: None,

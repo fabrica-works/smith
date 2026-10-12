@@ -205,6 +205,8 @@ pub enum FailureReason {
     Cancelled,
     /// The agent ended without an answer or a more specific class.
     Agent,
+    /// The host could not retain the run's durable state.
+    Host,
 }
 
 /// The exhausted budget named by the agent, never inferred from exit 4 alone.

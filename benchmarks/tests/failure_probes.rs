@@ -53,6 +53,9 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
 fn model_failure_requires_the_run_class_and_the_actual_matching_exit() {
     let mut records = common::events::balanced();
     let failure = AnswerFailure {
+        dropped: None,
+        ended: None,
+        turn: None,
         class: AnswerClass::Model,
         endpoint: None,
         model: None,
@@ -139,6 +142,9 @@ fn set_completion_failure(records: &mut [smith_events::Record], completion: &smi
         run.status = Status::Failed;
         run.result = None;
         run.failure = Some(AnswerFailure {
+            dropped: None,
+            ended: None,
+            turn: None,
             class: AnswerClass::Model,
             endpoint: Some(Box::from(&b"codex"[..])),
             model: Some(Box::from(&b"smith-bench-nonexistent-model-2026-10-11"[..])),
@@ -190,6 +196,9 @@ fn reserve_refusal_requires_exact_typed_identity_under_every_capture() {
         run.status = Status::Refused;
         run.result = None;
         run.failure = Some(AnswerFailure {
+            dropped: None,
+            ended: None,
+            turn: None,
             class: AnswerClass::Invalid,
             endpoint: None,
             model: None,

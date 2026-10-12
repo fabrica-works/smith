@@ -51,12 +51,18 @@ pub enum AgentLimits {
 impl AgentLimits {
     /// Build the single inline child with enough credit for one complete native turn.
     #[must_use]
-    pub fn inline(smith: agent::Limits, turns: u32, wall_time: skein_lib::Duration) -> Option<Self> {
+    pub fn inline(
+        smith: agent::Limits,
+        turns: u32,
+        wall_time: skein_lib::Duration,
+        cancel_grace: skein_lib::Duration,
+    ) -> Option<Self> {
         let limits = smith_inline_agent::Limits {
             slots: 1,
             smith,
             window: agent::Window { turns, bytes: agent::max_turn_bytes(&smith)? },
             wall_time,
+            cancel_grace,
             facts: 32,
         };
         smith_inline_agent::worst_case(&limits)?;

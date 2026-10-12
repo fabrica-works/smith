@@ -50,6 +50,8 @@ pub struct Domain {
     turns: Turns,
     held: Queue<Held>,
     stop_failed: bool,
+    end_cause: Option<crate::EndCause>,
+    cancel_requested: Option<Time>,
     agent_failed: bool,
     agent_life: AgentLife,
     show_bytes: u32,
@@ -173,6 +175,8 @@ impl Domain {
             turns: Turns::new(limits.unsaved),
             held: Queue::with_capacity(1),
             stop_failed: false,
+            end_cause: None,
+            cancel_requested: None,
             agent_failed: false,
             agent_life: AgentLife::Starting,
             show_bytes: limits.show_bytes,
@@ -182,6 +186,18 @@ impl Domain {
             facts_lost: 0,
             agent_facts_not_written: 0,
         })
+    }
+
+    /// First recorded cause of an unanswering end, retained through lower settlement.
+    #[must_use]
+    pub const fn end_cause(&self) -> Option<crate::EndCause> {
+        self.end_cause
+    }
+
+    /// Bounded chat name for the shell's final operator line.
+    #[must_use]
+    pub fn chat_name(&self) -> &[u8] {
+        &self.config.chat
     }
 
     /// Whether initial loading or the child has deferred work.
@@ -238,6 +254,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     match event {
         Event::Line { text } => receive_line(domain, env, text, out),
         Event::Interrupt => interrupt(domain, env, out),
+        Event::Drop => drop_run(domain, env),
         Event::Closed => closed(domain, out),
         Event::Loaded { state, transcript, deliveries } => loaded(domain, env, state, transcript, deliveries, out),
         Event::StateSaved => state_saved(domain, env, out),
@@ -396,7 +413,7 @@ fn dispatch_line(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request
 fn stop_names(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.chat.phase = Phase::Done;
     out.push(Request::Show { text: Box::from(&b"Chat names exhausted"[..]) });
-    out.push(Request::Exit { status: ExitStatus::Failed });
+    out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
 }
 
 fn loaded(
@@ -560,6 +577,8 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     domain.wall_deadline = Some(env.now.saturating_add(domain.config.budget.time));
     domain.agent_life = AgentLife::Starting;
     domain.agent_failed = false;
+    domain.end_cause = None;
+    domain.cancel_requested = None;
     let source = RunStart {
         identity: domain.chat.state.identity,
         activation: domain.chat.state.activation,
@@ -577,7 +596,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             domain.agent_failed = true;
             domain.agent_life = AgentLife::Gone;
             out.push(Request::Show { text: Box::from(&b"Agent failed"[..]) });
-            out.push(Request::Exit { status: ExitStatus::Failed });
+            out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         }
     }
     domain.chat.phase = Phase::Running;
@@ -675,7 +694,7 @@ fn turn_saved(domain: &mut Domain, env: &Env<Limits>, number: u32, out: &mut Que
     if domain.turns.unsaved.is_empty() {
         if domain.agent_failed && domain.agent_life == AgentLife::Gone {
             domain.chat.phase = Phase::Done;
-            out.push(Request::Exit { status: ExitStatus::Failed });
+            out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         } else {
             finish_answer(domain, out);
         }
@@ -689,6 +708,7 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
             out.push(Request::Exit { status: ExitStatus::Success });
         }
         Phase::Running => {
+            domain.cancel_requested = Some(env.now);
             domain.chat.phase = Phase::Ending;
             domain.wall_deadline = None;
             if let Some(run) = domain.run {
@@ -707,6 +727,24 @@ fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
     }
 }
 
+fn record_cause(domain: &mut Domain, cause: crate::EndCause) {
+    if domain.end_cause.is_none() {
+        domain.end_cause = Some(cause);
+    }
+}
+
+fn drop_run(domain: &mut Domain, env: &Env<Limits>) {
+    if domain.turns.answer.is_some() {
+        return;
+    }
+    if let Some(run) = domain.run {
+        record_cause(domain, crate::EndCause::Cancelled);
+        domain.chat.phase = Phase::Ending;
+        domain.wall_deadline = None;
+        command(&mut domain.agent, env.now, env.wall, parent::Event::Drop { agent: run });
+    }
+}
+
 fn store_failed(
     domain: &mut Domain,
     env: &Env<Limits>,
@@ -717,6 +755,7 @@ fn store_failed(
     if domain.stop_failed {
         return;
     }
+    record_cause(domain, crate::EndCause::Host { turn, reason });
     domain.stop_failed = true;
     domain.chat.closed = true;
     domain.wall_deadline = None;
@@ -756,7 +795,7 @@ fn store_failed(
         domain.chat.phase = Phase::Ending;
     } else {
         domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status: ExitStatus::Failed });
+        out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
     }
 }
 
@@ -867,35 +906,55 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             ),
         },
         parent::Request::Withdrawn { .. } | parent::Request::Told { .. } | parent::Request::Unread { .. } => {}
+        parent::Request::MessageRefused { reason: host::MessageRefusal::Ending, .. }
+            if domain.agent_life == AgentLife::Gone => {}
+        parent::Request::Faulted { fault, .. } => {
+            let dropped = match fault {
+                host::Fault::Exited => match env.limits.agent {
+                    AgentLimits::Inline(_) => domain.cancel_requested.is_some(),
+                    AgentLimits::Spawned(_) => false,
+                },
+                host::Fault::Rules | host::Fault::TooLarge | host::Fault::NoProgress | host::Fault::WallTime => false,
+            };
+            let cause = if dropped { crate::EndCause::Cancelled } else { crate::EndCause::Agent };
+            record_cause(domain, cause);
+            failed_child(domain, out);
+        }
         parent::Request::MessageRefused { .. } => {
             out.push(Request::Show { text: Box::from(&b"Message not delivered"[..]) });
-        }
-        parent::Request::Faulted { .. } => {
-            domain.agent_failed = true;
-            if !domain.stop_failed {
-                out.push(Request::Show { text: Box::from(&b"Agent process failed"[..]) });
-            }
-            if domain.turns.unsaved.is_empty() && domain.agent_life == AgentLife::Gone {
-                domain.chat.phase = Phase::Done;
-                out.push(Request::Exit { status: ExitStatus::Failed });
-            }
         }
         parent::Request::Gone { .. } => {
             domain.agent_life = AgentLife::Gone;
             domain.run = None;
             if domain.turns.answer.is_none() && !domain.agent_failed && !domain.stop_failed {
+                record_cause(domain, crate::EndCause::Agent);
                 domain.agent_failed = true;
                 out.push(Request::Show { text: Box::from(&b"Agent process ended without an answer"[..]) });
             }
             if domain.turns.unsaved.is_empty() {
                 if domain.agent_failed || domain.stop_failed {
                     domain.chat.phase = Phase::Done;
-                    out.push(Request::Exit { status: ExitStatus::Failed });
+                    out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
                 } else if domain.turns.answer.is_some() {
                     finish_answer(domain, out);
                 }
             }
         }
+    }
+}
+
+fn failed_child(domain: &mut Domain, out: &mut Queue<Request>) {
+    domain.agent_failed = true;
+    if !domain.stop_failed {
+        let text: &[u8] = match domain.end_cause {
+            Some(crate::EndCause::Cancelled) => b"Run dropped",
+            Some(crate::EndCause::Host { .. } | crate::EndCause::Agent) | None => b"Agent process failed",
+        };
+        out.push(Request::Show { text: Box::from(text) });
+    }
+    if domain.turns.unsaved.is_empty() && domain.agent_life == AgentLife::Gone {
+        domain.chat.phase = Phase::Done;
+        out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
     }
 }
 
@@ -907,7 +966,7 @@ fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
     if domain.stop_failed {
         domain.run = None;
         domain.chat.phase = Phase::Done;
-        out.push(Request::Exit { status: ExitStatus::Failed });
+        out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
         return;
     }
     observe(domain, Fact::Shown { activation: domain.chat.state.activation });
@@ -1677,7 +1736,7 @@ fn reconcile_git(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: G
 fn recovery_unknown(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.stop_failed = true;
     domain.chat.phase = Phase::Done;
-    out.push(Request::Exit { status: ExitStatus::Failed });
+    out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
 }
 
 fn reconcile_answer(domain: &mut Domain, reconcile: Reconcile, interrupted: Option<u32>, out: &mut Queue<Request>) {

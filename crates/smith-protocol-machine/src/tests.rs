@@ -289,6 +289,81 @@ fn guide_read_cuts_utf8_and_closes_before_answer() {
 }
 
 #[test]
+fn cancelling_a_guide_open_waits_for_its_actual_file_terminal() {
+    for probe in [false, true] {
+        let mut component = component();
+        let mut to_domain = Queue::with_capacity(1);
+        let mut below = Queue::with_capacity(3);
+        let owner = Token::new(61);
+        let at = run::Place { root: Token::new(10), path: Box::from(&b"AGENTS.md"[..]) };
+        let deadline = Time::from_nanos(100);
+        let request = if probe {
+            FromDomain::Probe { owner, at, deadline }
+        } else {
+            FromDomain::Read { owner, at, max: 3, deadline }
+        };
+        component.from_domain(&env(), request, &mut to_domain, &mut below);
+        let Some(Below::OpenRead { .. }) = below.pop() else { panic!("expected an actual guide open") };
+        component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
+        assert_eq!(below.pop(), Some(Below::CancelFile { owner }));
+        assert!(to_domain.is_empty(), "cancel request does not fabricate the guide's terminal");
+        component.from_below(&env(), BelowEvent::File(file::Event::Cancelled { owner }), &mut to_domain, &mut below);
+        let expected = if probe {
+            ToDomain::Probed { owner, executable: false }
+        } else {
+            ToDomain::Read { owner, read: run::Read::Failed }
+        };
+        assert_eq!(to_domain.pop(), Some(expected));
+        // Installing a new workspace asserts that every retained operation has ended.
+        component.workspace(&run::Workspace { directories: Box::new([]) });
+    }
+}
+
+#[test]
+fn a_cancelled_guide_closes_its_open_descriptor_before_its_terminal() {
+    let mut component = component();
+    let mut to_domain = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(3);
+    let owner = Token::new(62);
+    let descriptor = Token::new(72);
+    component.from_domain(
+        &env(),
+        FromDomain::Read {
+            owner,
+            at: run::Place { root: Token::new(10), path: Box::from(&b"AGENTS.md"[..]) },
+            max: 3,
+            deadline: Time::from_nanos(100),
+        },
+        &mut to_domain,
+        &mut below,
+    );
+    below.pop().expect("actual open request");
+    component.from_below(
+        &env(),
+        BelowEvent::File(file::Event::Opened { owner, file: descriptor, len: 4 }),
+        &mut to_domain,
+        &mut below,
+    );
+    let Some(Below::File { request: file::Request::ReadAt { .. }, .. }) = below.pop() else {
+        panic!("expected an actual guide read");
+    };
+    component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
+    assert_eq!(below.pop(), Some(Below::CancelFile { owner }));
+    component.from_below(&env(), BelowEvent::File(file::Event::Cancelled { owner }), &mut to_domain, &mut below);
+    let Some(Below::File { request: file::Request::Close { file, .. }, .. }) = below.pop() else {
+        panic!("expected an actual descriptor close");
+    };
+    assert_eq!(file, descriptor);
+    component.from_domain(&env(), FromDomain::Cancel { owner }, &mut to_domain, &mut below);
+    assert!(below.is_empty(), "a repeated cancel leaves descriptor close to finish");
+    assert!(to_domain.is_empty());
+    component.from_below(&env(), BelowEvent::File(file::Event::Closed { owner }), &mut to_domain, &mut below);
+    assert_eq!(to_domain.pop(), Some(ToDomain::Read { owner, read: run::Read::Failed }));
+    // Installing a new workspace asserts that every retained operation has ended.
+    component.workspace(&run::Workspace { directories: Box::new([]) });
+}
+
+#[test]
 fn command_output_waits_for_both_pipes_and_child_close() {
     use skein_io::Event;
     use skein_lib::stream::Up;

@@ -31,6 +31,7 @@ pub fn limits() -> inline::Limits {
         smith,
         window: smith::Window { turns: 8, bytes: smith::max_turn_bytes(&smith).expect("root turn bound") * 8 },
         wall_time: Duration::from_secs(3600),
+        cancel_grace: Duration::from_secs(5),
         facts: 32,
     }
 }
@@ -298,7 +299,7 @@ impl World {
     pub fn run(&mut self) {
         for _ in 0..4096 {
             self.pass();
-            if self.seen.values().all(|seen| seen.gone.is_some()) && !self.seen.is_empty() {
+            if self.seen.values().all(|seen| seen.gone.is_some()) && !self.seen.is_empty() && self.schedule.is_empty() {
                 return;
             }
             let next = self

@@ -286,6 +286,18 @@ impl Service {
         self.local_events.push(event);
     }
 
+    /// First local cause of an unanswering run, kept through effects settlement.
+    #[must_use]
+    pub const fn end_cause(&self) -> Option<local::EndCause> {
+        self.local.end_cause()
+    }
+
+    /// Bounded chat name for the final operator line.
+    #[must_use]
+    pub fn chat_name(&self) -> &[u8] {
+        self.local.chat_name()
+    }
+
     /// Feed one standard-input byte to the bounded line translator.
     pub fn feed(&mut self, byte: u8) {
         self.terminal.feed(byte, &mut self.terminal_events);
@@ -547,13 +559,7 @@ impl Service {
             let Some(event) = self.terminal_events.pop() else { break };
             match event {
                 protocol::TerminalEvent::Domain(event) => self.local_events.push(event),
-                protocol::TerminalEvent::StopProcess => {
-                    if self.below.inline().is_some() {
-                        self.local_events.push(local::Event::Interrupt);
-                    } else {
-                        self.below.process_mut().force_stop();
-                    }
-                }
+                protocol::TerminalEvent::DropRun => self.local_events.push(local::Event::Drop),
                 protocol::TerminalEvent::Write(text) => self.output.push(text),
             }
         }
@@ -720,6 +726,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             }
             other @ (local::Event::Line { .. }
             | local::Event::Interrupt
+            | local::Event::Drop
             | local::Event::Closed
             | local::Event::Loaded { .. }
             | local::Event::TurnSaved { .. }

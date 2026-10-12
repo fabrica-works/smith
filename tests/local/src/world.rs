@@ -446,7 +446,7 @@ impl World {
         let referee = Referee::new(meeting);
         let limits = local::Limits {
             smith: agent_world::LIMITS,
-            agent: local::AgentLimits::inline(agent_world::LIMITS, 2, Duration::from_secs(60))
+            agent: local::AgentLimits::inline(agent_world::LIMITS, 2, Duration::from_secs(60), Duration::from_secs(5))
                 .expect("bounded inline child"),
             endpoints: Box::new([run::charter::Endpoint(0)]),
             chat_bytes: 64,
@@ -943,6 +943,7 @@ impl World {
                     }
                     Event::Line { .. }
                     | Event::Interrupt
+                    | Event::Drop
                     | Event::Closed
                     | Event::Loaded { .. }
                     | Event::StateSaved

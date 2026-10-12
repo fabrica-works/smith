@@ -10,7 +10,7 @@ use skein_lib::{Env, Id, List, Map, Queue, Slab, Time, Token};
 use smith_domain as smith;
 use smith_host_domain::{self as host, parent};
 
-use crate::stop::Stage;
+use crate::stop::{Settling, Stage};
 use crate::{Below, Fact, FactKind, Limits, Output, stop, translate};
 
 #[derive(Debug)]
@@ -87,12 +87,12 @@ impl Domain {
         for (_, id) in &self.clients {
             let slot = self.slots.get(*id).expect("client binding names its retained slot");
             match slot.state {
-                Stage::Live | Stage::Cancelling => {
+                Stage::Live | Stage::Cancelling { .. } => {
                     if slot.root.is_ready() && slot.root.facts_room() >= self.root_fact_reservation {
                         return true;
                     }
                 }
-                Stage::Settling | Stage::Dropped | Stage::Gone => {}
+                Stage::Settling(_) | Stage::Gone => {}
             }
         }
         false
@@ -111,12 +111,13 @@ impl Domain {
                         next = Some(earlier(next, at));
                     }
                 }
-                Stage::Cancelling => {
+                Stage::Cancelling { grace } => {
+                    next = Some(earlier(next, grace));
                     if let Some(at) = slot.root.next_deadline() {
                         next = Some(earlier(next, at));
                     }
                 }
-                Stage::Settling | Stage::Dropped | Stage::Gone => {}
+                Stage::Settling(_) | Stage::Gone => {}
             }
         }
         next
@@ -289,7 +290,7 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
             };
             let run = match slot.state {
                 Stage::Live => slot.run,
-                Stage::Cancelling | Stage::Settling | Stage::Dropped | Stage::Gone => None,
+                Stage::Cancelling { .. } | Stage::Settling(_) | Stage::Gone => None,
             };
             match run {
                 Some(run) => {
@@ -329,8 +330,10 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
             };
             slot.relays.remove(&call).expect("the retained relay receives one answer");
             match slot.state {
-                Stage::Live | Stage::Cancelling => root_step(agent, env, id, event, out),
-                Stage::Settling | Stage::Dropped | Stage::Gone => {}
+                Stage::Live | Stage::Cancelling { .. } | Stage::Settling(Settling::Answered) => {
+                    root_step(agent, env, id, event, out);
+                }
+                Stage::Settling(Settling::Dropped) | Stage::Gone => {}
             }
             stop::settle(agent, env.now, id, out);
         }
@@ -345,12 +348,12 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
             }
             let run = slot.run;
             match slot.state {
-                Stage::Live | Stage::Cancelling => {
+                Stage::Live | Stage::Cancelling { .. } | Stage::Settling(Settling::Answered) => {
                     if let Some(run) = run {
                         root_step(agent, env, id, smith::Event::Acknowledge { run, turn }, out);
                     }
                 }
-                Stage::Settling | Stage::Dropped | Stage::Gone => {}
+                Stage::Settling(Settling::Dropped) | Stage::Gone => {}
             }
             stop::settle(agent, env.now, id, out);
         }
@@ -361,10 +364,10 @@ fn command(agent: &mut Domain, env: &Env<Limits>, event: parent::Event, out: &mu
                 None => return,
             };
             match slot.state {
-                Stage::Live | Stage::Cancelling => {
+                Stage::Live | Stage::Cancelling { .. } => {
                     root_step(agent, env, id, smith::Event::Grant { grant: translate::grant(grant) }, out);
                 }
-                Stage::Settling | Stage::Dropped | Stage::Gone => {}
+                Stage::Settling(_) | Stage::Gone => {}
             }
         }
         parent::Event::Stop { agent: handle } => stop::cancel(agent, env, Id::<Slot>::from_token(handle), out),
@@ -384,8 +387,10 @@ fn terminal(agent: &mut Domain, env: &Env<Limits>, handle: Token, completion: Be
         None => return,
     };
     match slot.state {
-        Stage::Live | Stage::Cancelling => root_step(agent, env, id, event, out),
-        Stage::Settling | Stage::Dropped | Stage::Gone => {}
+        Stage::Live | Stage::Cancelling { .. } | Stage::Settling(Settling::Answered) => {
+            root_step(agent, env, id, event, out);
+        }
+        Stage::Settling(Settling::Dropped) | Stage::Gone => {}
     }
     stop::settle(agent, env.now, id, out);
 }
@@ -408,13 +413,13 @@ pub fn fire(agent: &mut Domain, env: &Env<Limits>, out: &mut Queue<Output>) {
                     break;
                 }
             }
-            Stage::Cancelling => {
-                if slot.root.is_due(env.now) {
+            Stage::Cancelling { grace } => {
+                if grace <= env.now || slot.root.is_due(env.now) {
                     due = Some(*id);
                     break;
                 }
             }
-            Stage::Settling | Stage::Dropped | Stage::Gone => {}
+            Stage::Settling(_) | Stage::Gone => {}
         }
     }
     let id = match due {
@@ -424,13 +429,14 @@ pub fn fire(agent: &mut Domain, env: &Env<Limits>, out: &mut Queue<Output>) {
     let slot = agent.slots.get_mut(id).expect("due slot");
     match slot.state {
         Stage::Live if slot.wall <= env.now => stop::cancel(agent, env, id, out),
-        Stage::Live | Stage::Cancelling => {
+        Stage::Cancelling { grace } if grace <= env.now => stop::drop_run(agent, env.now, id, out),
+        Stage::Live | Stage::Cancelling { .. } => {
             slot.facts_drained = false;
             slot.content_drained = false;
             smith::fire(&mut slot.root, &child_env(env), &mut agent.lower);
             translate::route(agent, env, id, out);
         }
-        Stage::Settling | Stage::Dropped | Stage::Gone => unreachable!("settling slots have no alarms"),
+        Stage::Settling(_) | Stage::Gone => unreachable!("settling slots have no alarms"),
     }
 }
 
@@ -443,13 +449,13 @@ pub fn resume(agent: &mut Domain, env: &Env<Limits>, out: &mut Queue<Output>) {
     for (_, id) in &agent.clients {
         let slot = agent.slots.get(*id).expect("retained slot");
         match slot.state {
-            Stage::Live | Stage::Cancelling => {
+            Stage::Live | Stage::Cancelling { .. } => {
                 if slot.root.is_ready() && slot.root.facts_room() >= agent.root_fact_reservation {
                     ready = Some(*id);
                     break;
                 }
             }
-            Stage::Settling | Stage::Dropped | Stage::Gone => {}
+            Stage::Settling(_) | Stage::Gone => {}
         }
     }
     if let Some(id) = ready {
@@ -473,7 +479,7 @@ fn reclaim(agent: &mut Domain) {
                     gone.push(*client).expect("one entry per slot");
                 }
             }
-            Stage::Live | Stage::Cancelling | Stage::Settling | Stage::Dropped => {}
+            Stage::Live | Stage::Cancelling { .. } | Stage::Settling(_) => {}
         }
     }
     for client in &gone {

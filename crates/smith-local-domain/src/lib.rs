@@ -41,6 +41,7 @@ mod config;
 mod credentials;
 mod delivery;
 mod domain;
+mod end;
 mod facts;
 mod limits;
 mod long;
@@ -59,5 +60,6 @@ pub use boundary::{
 };
 pub use config::{Config, Contract, Invalid, PushTarget, charter};
 pub use domain::{Domain, fire, max_out, resume, step};
+pub use end::EndCause;
 pub use facts::Fact;
 pub use limits::{AgentLimits, Limits, max_line_bytes, worst_case};

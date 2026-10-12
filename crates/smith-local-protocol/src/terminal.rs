@@ -1,6 +1,6 @@
 //! Bounded line and signal translation for one person at a terminal
 //! (protocol/hosts.md, section 5.1). Only completed lines reach the local
-//! domain; a second interrupt requests process stop from the service.
+//! domain; a second interrupt asks the selected child to drop through local policy.
 
 use alloc::boxed::Box;
 use skein_lib::{List, Queue};
@@ -20,8 +20,8 @@ pub struct Limits {
 pub enum Event {
     /// A completed person line for the local domain.
     Domain(local::Event),
-    /// A second interrupt before an answer stops the child process.
-    StopProcess,
+    /// A second interrupt before an answer drops the selected child; its terminals still settle.
+    DropRun,
     /// A bounded notice to write on the terminal.
     Write(Box<[u8]>),
 }
@@ -73,10 +73,10 @@ impl Terminal {
         }
     }
 
-    /// Translate a terminal interrupt; the second one asks the service to stop the child.
+    /// Translate a terminal interrupt; the second one asks local policy to drop the child.
     pub fn interrupt(&mut self, out: &mut Queue<Event>) {
         if self.cancelled {
-            out.push(Event::StopProcess);
+            out.push(Event::DropRun);
         } else {
             self.cancelled = true;
             out.push(Event::Domain(local::Event::Interrupt));
@@ -144,30 +144,30 @@ mod tests {
         }
         match out.pop().expect("one line") {
             Event::Domain(local::Event::Line { text }) => assert_eq!(text.as_ref(), b"helloworld"),
-            Event::Domain(_) | Event::StopProcess | Event::Write(_) => panic!("unexpected terminal event"),
+            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("unexpected terminal event"),
         }
         assert!(out.is_empty());
     }
 
     #[test]
-    fn a_second_interrupt_stops_the_process() {
+    fn a_second_interrupt_drops_the_selected_child() {
         let mut terminal = terminal();
         let mut out = Queue::with_capacity(max_out());
         terminal.interrupt(&mut out);
         match out.pop().expect("first interrupt") {
             Event::Domain(local::Event::Interrupt) => {}
-            Event::Domain(_) | Event::StopProcess | Event::Write(_) => panic!("expected cancel"),
+            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected cancel"),
         }
         terminal.interrupt(&mut out);
         match out.pop().expect("second interrupt") {
-            Event::StopProcess => {}
+            Event::DropRun => {}
             Event::Domain(_) | Event::Write(_) => panic!("expected process stop"),
         }
         terminal.answer_finished();
         terminal.interrupt(&mut out);
         match out.pop().expect("new run interrupt") {
             Event::Domain(local::Event::Interrupt) => {}
-            Event::Domain(_) | Event::StopProcess | Event::Write(_) => panic!("expected cancel"),
+            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected cancel"),
         }
     }
 
@@ -180,14 +180,14 @@ mod tests {
         }
         match out.pop().expect("too long notice") {
             Event::Write(_) => {}
-            Event::Domain(_) | Event::StopProcess => panic!("expected notice"),
+            Event::Domain(_) | Event::DropRun => panic!("expected notice"),
         }
         for byte in b"ok\n" {
             terminal.feed(*byte, &mut out);
         }
         match out.pop().expect("following line") {
             Event::Domain(local::Event::Line { text }) => assert_eq!(text.as_ref(), b"ok"),
-            Event::Domain(_) | Event::StopProcess | Event::Write(_) => panic!("expected line"),
+            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected line"),
         }
     }
 }

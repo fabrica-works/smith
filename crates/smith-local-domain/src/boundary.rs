@@ -141,6 +141,8 @@ pub enum ExitStatus {
     Success,
     /// A required store or account operation failed.
     Failed,
+    /// The run was dropped before answering at the person's ask or after cancellation grace.
+    Interrupted,
 }
 
 /// One event from the person or a typed lower boundary.
@@ -150,6 +152,8 @@ pub enum Event {
     Line { text: Box<[u8]> },
     /// The person asks to cancel a live run or leave an idle chat.
     Interrupt,
+    /// A second interrupt asks the selected child to drop now; `Gone` follows settlement.
+    Drop,
     /// The terminal closed; finish outstanding work, then leave.
     Closed,
     /// Terminal for Load, including a possibly empty saved chat.

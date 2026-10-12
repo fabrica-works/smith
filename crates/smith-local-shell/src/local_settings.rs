@@ -120,6 +120,9 @@ pub struct Settings {
     pub sub_agents: bool,
     pub budget: Budget,
     pub waiting_seconds: u64,
+    /// Host cancellation grace in seconds; omission uses the receiving profile.
+    #[serde(default)]
+    pub cancel_grace: Option<u64>,
     #[serde(default)]
     pub brief: Vec<Section>,
     #[serde(default)]
@@ -340,7 +343,15 @@ pub fn policy(
     let limits = local::Limits {
         endpoints: configured_endpoints.into(),
         smith: agent_limits,
-        agent: local::AgentLimits::inline(agent_limits, 2, policy.budget.time).ok_or("local inline bounds overflow")?,
+        agent: local::AgentLimits::inline(
+            agent_limits,
+            2,
+            policy.budget.time,
+            settings
+                .cancel_grace
+                .map_or(smith_agent_service::profile::standard().policy.cancel_grace, Duration::from_secs),
+        )
+        .ok_or("local inline bounds overflow")?,
         chat_bytes: 256,
         text_bytes: 1 << 16,
         models: 3,
@@ -681,6 +692,7 @@ mod tests {
             sub_agents: false,
             budget: Budget { turns: 512, spend: 25_000_000, seconds: 3600, reserve: default_reserve() },
             waiting_seconds: 30,
+            cancel_grace: None,
             brief: vec![],
             directories: vec![],
             conventions: None,

@@ -18,6 +18,8 @@ pub(super) fn answer(value: &AnswerClass) -> &[u8] {
         AnswerClass::Budget => b"budget",
         AnswerClass::Policy => b"policy",
         AnswerClass::Cancelled => b"cancelled",
+        AnswerClass::Agent => b"agent",
+        AnswerClass::Host => b"host",
         AnswerClass::Stale => b"stale",
         AnswerClass::Transcript => b"transcript",
         AnswerClass::Busy => b"busy",

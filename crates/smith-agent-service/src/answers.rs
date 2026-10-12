@@ -85,6 +85,9 @@ fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult {
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
+        dropped: None,
+        ended: None,
+        turn: None,
         endpoint: None,
         model: None,
         attempts: None,

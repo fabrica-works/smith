@@ -10,6 +10,34 @@ fn limits() -> Limits {
 }
 
 #[test]
+fn unanswering_end_goldens_keep_the_first_cause_under_every_capture_policy() {
+    use smith_events::{AgentExit, AnswerClass};
+    for (name, class, dropped, ended, turn) in [
+        ("cancelled_answer", AnswerClass::Cancelled, Some(false), None, None),
+        ("cancelled_drop", AnswerClass::Cancelled, Some(true), None, None),
+        ("host_store", AnswerClass::Host, None, None, Some(2)),
+        ("agent_code", AnswerClass::Agent, None, Some(AgentExit::Code(7)), None),
+        ("agent_signal", AnswerClass::Agent, None, Some(AgentExit::Signal(15)), None),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../crates/smith-events/golden/v1/end_{name}.jsonl"));
+        let frozen = std::fs::read(path).expect("frozen end golden");
+        let record = read(&frozen, &limits()).expect(name).expect("completed run");
+        let Event::RunCompleted(completed) = &record.event else { panic!("completed run") };
+        let failure = completed.failure.as_ref().expect("first cause");
+        assert_eq!(completed.status, smith_events::Status::Failed);
+        assert_eq!(completed.result, None);
+        assert_eq!(failure.class, class);
+        assert_eq!(failure.dropped, dropped);
+        assert_eq!(failure.ended, ended);
+        assert_eq!(failure.turn, turn);
+        for capture in [Capture::None, Capture::Calls, Capture::Everything] {
+            assert_eq!(write(&record, &capture, &limits()).expect(name).expect("record").as_ref(), frozen);
+        }
+    }
+}
+
+#[test]
 fn every_record_and_listed_value_reads_back_to_its_written_values() {
     for (name, record, capture) in fixtures::samples() {
         let line = write(&record, &capture, &limits()).expect(name).expect("a recorded event");

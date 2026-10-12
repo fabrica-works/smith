@@ -92,6 +92,10 @@ impl Component {
                     below.push(Below::CancelFile { owner });
                 } else if let Some(process) = self.processes.get_mut(&owner) {
                     process.stop(env.now, env.limits.group_stop, crate::process::Why::Cancel, below);
+                } else if let Some(guide) = self.guides.get(&owner)
+                    && guide.cancellable()
+                {
+                    below.push(Below::CancelFile { owner });
                 }
             }
             FromDomain::Read { owner, at, max, deadline } => {
