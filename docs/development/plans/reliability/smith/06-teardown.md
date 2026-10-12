@@ -352,10 +352,11 @@ Removes: the kit's `grace`; the hand-set `exit_grace`.
 ### 06.7 Typed failures in the run's answer
 Scope: the run's model failure carries what the session met (run.md,
 section 10; limits.md, section 8): a limit with which and bound, a
-timeout's phase, the HTTP status in the evidence, the last completion's
-model and its attempts. The root, the channel (version 2), the kit's
-parent face and the inline agent carry them, each translating with a
-total function. `315d7f08` put them in the event stream already.
+timeout's phase, the HTTP status in the evidence. The root, the channel
+(version 2), the kit's parent face and the inline agent carry them, each
+translating with a total function. `315d7f08` put them in the event
+stream already. Split (decisions.md, 13.52): the last completion's model
+and its attempts are 06.13's.
 Needs: nothing (skein's typed limits and phases, smith 04's retry by
 phase are on `main`).
 Files: `crates/smith-domain-session/src/llm.rs:428`, `boundary.rs:390`,
@@ -384,13 +385,33 @@ Test shape: `tests/agent/tests/feedback_table.rs:227` as reference:
 `an_inline_answer_keeps_its_typed_completion_failure`; channel goldens
 through `tests/codecs/tests/drift.rs:36`. Ceilings: 0.5 s.
 Proof: world, `every_completion_failure_reaches_the_answer_with_its_fields`,
-once: limit, phase, status, model and attempts reach the run's answer;
-the parent's `Limit` has no fields. Under 1 s.
+once: limit, phase and status reach the run's answer; the parent's
+`Limit` has no fields. Under 1 s.
 Don't: carry a limit or a status as text; change retry policy.
 Size: at most 550 lines of production code, generated code excepted.
 Removes: the fieldless `Limit` and the phaseless `TimedOut` in the run,
 the channel and the kit; `ToDomain::Failed`'s `status` beside the
 evidence.
+
+### 06.13 The last completion's model and attempts in the run's answer
+Split from 06.7 (decisions.md, 13.52). Scope: what 06.7's Scope gave
+before the split and its candidate (`ee9d158d`) holds for it: the last
+completion's model, numbered main first through one `Charter` lookup
+(13.49), and its attempts, carried by the root (`Peer`'s model index),
+the channel's `CompletionFault` (`model`, `attempts`), the kit's parent
+face and the inline agent, each translating with a total function.
+Needs: 06.7.
+Files: 06.7's, those its candidate touches for the model and the
+attempts; `crates/smith-domain/src/peer.rs`.
+Shape: 06.7's sketch for `model` and `attempts`; `End::Failed`'s
+`attempts`.
+Test shape: 06.7's `every_completion_failure_reaches_the_answer_with_its_fields`
+gains the model and attempts assertions; the parent resolves the
+endpoint and name through the same lookup. Ceilings: 0.5 s.
+Proof: world, that test, once: model and attempts reach the run's
+answer. Under 1 s.
+Don't: carry a model as text; change retry policy.
+Size: README rule 9's.
 
 ### 06.12 The last failure's kept detail
 Scope: the session keeps the detail of the last failure it met, within
@@ -486,7 +507,7 @@ agent existed, an agent's failure with how it ended, a credential that
 needs the person; a forced exit after an accepted answer is a warning
 (host.md, section 8; hosts.md, 5.1). The same words go to the operator's
 error output; none enters a turn or a prompt.
-Needs: 06.1, 06.2, 06.7 and 06.12; smith 05's typed notices (05.11).
+Needs: 06.1, 06.2, 06.7, 06.13 and 06.12; smith 05's typed notices (05.11).
 Files: `crates/smith-local-domain/src/agent.rs:332`, `domain.rs:909-960`,
 `boundary.rs`, `parent_tests.rs:328`; `crates/smith-local-protocol/src/terminal.rs`,
 `Cargo.toml` (takes `smith-events`); `crates/smith-local-shell/src/local_host.rs:510-530`.

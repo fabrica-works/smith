@@ -1291,3 +1291,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    line received is relayed, carried or shown as not delivered"): a step
    not in the plan, 05.s2, after 05.s1, with 05.s1's process candidate as
    its story.
+52. **smith 06.7 splits; 06.13 takes the model and the attempts** (block
+   of 2026-10-12T17:34:28Z). 06.7's candidate (`ee9d158d`) holds 719
+   production lines before its last mechanical fixes, past README rule
+   9's 700: two 21-variant cap vocabularies, four total cap
+   translations, typed limits, phases and status, and the event failure
+   metadata kept. Ruling: the implementer's split. 06.7 lands the typed
+   limit, phase and status with their mirrors, and its Removes; 06.13,
+   the next unused number of session 06 (06.11 landed in the first run),
+   adds the last completion's model (13.49's numbering, `Peer`'s index,
+   the `Charter` lookup) and its attempts over the same carriers, with
+   06.7's reference test gaining their assertions. 06.9 needs both.
