@@ -244,18 +244,30 @@ fn encode_outcome(source: &tools::Outcome, limits: &wire::v3::Limits) -> Result<
             wire::Outcome::Listed(wire::Listed::new(limits, wire::ListedParts { entries: output, more: *more })?)
         }
         tools::Outcome::Found { hits, more, timed_out } => {
-            let mut output = List::with_capacity(count(hits.len())?);
+            let mut bytes = 0_usize;
             for hit in hits {
-                if output
-                    .push(wire::Hit::new(
-                        limits,
-                        wire::HitParts { path: hit.path.clone(), line: hit.line, text: hit.text.clone() },
-                    )?)
-                    .is_err()
-                {
-                    return Err(Error::ResultCapacity);
-                }
+                bytes = bytes
+                    .checked_add(12)
+                    .ok_or(Error::ResultCapacity)?
+                    .checked_add(hit.path.len())
+                    .ok_or(Error::ResultCapacity)?
+                    .checked_add(hit.text.len())
+                    .ok_or(Error::ResultCapacity)?;
             }
+            if bytes
+                > usize::try_from(limits.found_hits.min(wire::CEILINGS.found_hits)).expect("piece bound fits usize")
+            {
+                return Err(Error::ResultCapacity);
+            }
+            let mut output = Writer::new(bytes);
+            for hit in hits {
+                let value = wire::Hit::new(
+                    limits,
+                    wire::HitParts { path: hit.path.clone(), line: hit.line, text: hit.text.clone() },
+                )?;
+                value.encode(&mut output)?;
+            }
+            let output = output.finish();
             wire::Outcome::Found(wire::Found::new(
                 limits,
                 wire::FoundParts { hits: output, more: *more, timed_out: *timed_out },

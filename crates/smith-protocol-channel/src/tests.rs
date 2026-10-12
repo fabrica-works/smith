@@ -14,6 +14,8 @@ fn the_agent_demands_the_open_before_the_domain_hears_anything() {
         .expect("fixture frame"),
         charter: smith_charter::CEILINGS,
         transcript: smith_transcript::CEILINGS,
+        resume_turns: 64,
+        search_hits: 256,
         endpoints: 0,
         calls: 0,
         turns: 0,
@@ -123,7 +125,7 @@ fn transcript_decodes_history_with_one_invalid_call_problem() {
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("one endpoint");
     let endpoints = crate::Endpoints::new(configured);
     let bytes = Box::from([saved_turn(1, b"00000000")]);
-    let transcript = crate::decode_transcript(&bytes, &smith_transcript::CEILINGS, &endpoints)
+    let transcript = decode_saved_transcript(&bytes, &smith_transcript::CEILINGS, &endpoints)
         .expect("valid transcript")
         .expect("saved history");
     assert_eq!(transcript.version, record::VERSION);
@@ -148,11 +150,11 @@ fn transcript_refuses_a_gap_and_a_different_dialect() {
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("one endpoint");
     let endpoints = crate::Endpoints::new(configured);
     assert_eq!(
-        crate::decode_transcript(&[saved_turn(2, b"00000000")], &smith_transcript::CEILINGS, &endpoints),
+        decode_saved_transcript(&[saved_turn(2, b"00000000")], &smith_transcript::CEILINGS, &endpoints),
         Err(record::Refusal::Malformed)
     );
     assert_eq!(
-        crate::decode_transcript(&[saved_turn(1, b"other")], &smith_transcript::CEILINGS, &endpoints),
+        decode_saved_transcript(&[saved_turn(1, b"other")], &smith_transcript::CEILINGS, &endpoints),
         Err(record::Refusal::Dialect)
     );
 }
@@ -335,7 +337,7 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
             .expect("fixed affinity");
     let first = with_recorded_affinity(&saved_turn(1, b"00000000"), Some(affinity));
     let ordinary = saved_turn(2, b"00000000");
-    let decoded = crate::decode_transcript(&[first.clone(), ordinary.clone()], &limits, &endpoints)
+    let decoded = decode_saved_transcript(&[first.clone(), ordinary.clone()], &limits, &endpoints)
         .expect("opening and ordinary")
         .expect("transcript");
     assert_eq!(
@@ -344,14 +346,14 @@ fn a_transcript_records_affinity_only_in_its_opening_turn() {
     );
     assert_eq!(decoded.turns[1].kind, record::Kind::Ordinary);
     assert_eq!(
-        crate::decode_transcript(&[with_recorded_affinity(&first, None)], &limits, &endpoints),
+        decode_saved_transcript(&[with_recorded_affinity(&first, None)], &limits, &endpoints),
         Err(record::Refusal::Malformed)
     );
     let extra =
         smith_transcript::Affinity::new(&limits, smith_transcript::AffinityParts { key: [0x42; 16], thread: 7 })
             .expect("fixed affinity");
     assert_eq!(
-        crate::decode_transcript(&[first, with_recorded_affinity(&ordinary, Some(extra))], &limits, &endpoints),
+        decode_saved_transcript(&[first, with_recorded_affinity(&ordinary, Some(extra))], &limits, &endpoints),
         Err(record::Refusal::Malformed)
     );
 }
@@ -377,7 +379,7 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
         }]),
     };
     let first = crate::encode_turn(&window, &limits, &endpoints).expect("window turn");
-    let decoded = crate::decode_transcript(&[first.clone(), saved_turn(9, b"00000000")], &limits, &endpoints)
+    let decoded = decode_saved_transcript(&[first.clone(), saved_turn(9, b"00000000")], &limits, &endpoints)
         .expect("window suffix")
         .expect("transcript");
     assert_eq!(decoded.turns[0], window);
@@ -386,7 +388,7 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
     let mut second = window.clone();
     second.sequence = 9;
     let second = crate::encode_turn(&second, &limits, &endpoints).expect("second window bytes");
-    assert_eq!(crate::decode_transcript(&[first, second], &limits, &endpoints), Err(record::Refusal::Malformed));
+    assert_eq!(decode_saved_transcript(&[first, second], &limits, &endpoints), Err(record::Refusal::Malformed));
 }
 
 #[test]
@@ -504,4 +506,68 @@ fn an_endpoint_number_resolves_its_name_or_is_absent() {
     let names = crate::Endpoints::new(entries);
     assert_eq!(names.name_for(7), Some(b"codex".as_slice()));
     assert_eq!(names.name_for(8), None);
+}
+
+fn decode_saved_transcript(
+    bodies: &[Box<[u8]>],
+    limits: &smith_transcript::v3::Limits,
+    endpoints: &crate::Endpoints,
+) -> Result<Option<smith_domain_session::record::Transcript>, smith_domain_session::record::Refusal> {
+    crate::decode_transcript(
+        &crate::transcript_piece(bodies).expect("fixture piece"),
+        u32::try_from(bodies.len()).expect("fixture turns"),
+        u32::MAX,
+        limits,
+        endpoints,
+    )
+}
+
+#[test]
+fn a_piece_whose_lengths_pass_its_end_is_malformed() {
+    let endpoints = crate::Endpoints::new(skein_lib::List::with_capacity(0));
+    assert_eq!(
+        crate::decode_transcript(&[0, 0, 0, 2, 1], 1, u32::MAX, &smith_transcript::CEILINGS, &endpoints),
+        Err(smith_domain_session::record::Refusal::Malformed)
+    );
+}
+
+#[test]
+fn a_piece_of_more_turns_than_the_resume_limit_is_too_large() {
+    let endpoints = crate::Endpoints::new(skein_lib::List::with_capacity(0));
+    assert_eq!(
+        crate::decode_transcript(&[0, 0, 0, 0], 0, u32::MAX, &smith_transcript::CEILINGS, &endpoints),
+        Err(smith_domain_session::record::Refusal::TooLarge)
+    );
+}
+
+#[test]
+fn a_search_hit_holding_all_of_search_bytes_is_told_and_resumed() {
+    use smith_domain_session::llm;
+    let mut names = skein_lib::List::with_capacity(1);
+    names.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
+    let endpoints = crate::Endpoints::new(names);
+    let original = decode_saved_transcript(&[saved_turn(1, b"00000000")], &smith_transcript::CEILINGS, &endpoints)
+        .expect("saved fixture")
+        .expect("history");
+    let mut turn = original.turns[0].clone();
+    turn.messages[0].content[1] = llm::Block::ToolResult {
+        id: b"call-1".as_slice().into(),
+        result: llm::Returned::Owned {
+            outcome: smith_domain_tools::Outcome::Found {
+                hits: Box::new([smith_domain_tools::Hit {
+                    path: b"a".as_slice().into(),
+                    line: 1,
+                    text: skein_lib::bytes::zeroed(16_383),
+                }]),
+                more: 0,
+                timed_out: false,
+            },
+        },
+    };
+    let encoded = crate::encode_turn(&turn, &smith_transcript::CEILINGS, &endpoints).expect("full search hit is told");
+    let piece = crate::transcript_piece(&[encoded]).expect("saved piece");
+    let resumed = crate::decode_transcript(&piece, 1, 100, &smith_transcript::CEILINGS, &endpoints)
+        .expect("full search hit resumes")
+        .expect("history");
+    assert_eq!(resumed.turns[0], turn);
 }

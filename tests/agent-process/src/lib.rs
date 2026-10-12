@@ -328,7 +328,7 @@ pub(crate) fn start_workspace_message(
             } else {
                 None
             },
-            transcript: List::with_capacity(0),
+            transcript: Box::default(),
             answered: List::with_capacity(0),
             grants,
             window,

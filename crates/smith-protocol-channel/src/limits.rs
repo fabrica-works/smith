@@ -15,6 +15,10 @@ pub struct Limits {
     pub charter: smith_charter::v2::Limits,
     /// This agent's bounded saved-turn decoder allowances.
     pub transcript: smith_transcript::v3::Limits,
+    /// Saved turns admitted on resume, from one window's message capacity.
+    pub resume_turns: u32,
+    /// Hits admitted within one search outcome on resume.
+    pub search_hits: u32,
     pub channel: skein_channel::Limits,
     /// Maximum configured endpoint names kept by this component.
     pub endpoints: u32,
@@ -130,9 +134,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         // Input, decoded codec values and translated values can coexist.
         .checked_add(start_cells(&limits.bodies)?.checked_mul(2)?)?
         .checked_add(charter_cells(&limits.charter)?.checked_mul(2)?)?
-        .checked_add(
-            turn_cells(&limits.transcript)?.checked_mul(u64::from(limits.bodies.start_transcript))?.checked_mul(2)?,
-        )?
+        // One saved turn decodes at a time. The accumulating concrete turn
+        // envelopes are separate from the whole window's shared payload.
+        .checked_add(turn_cells(&limits.transcript)?.checked_mul(2)?)?
+        .checked_add(List::<smith_domain_session::record::Turn>::worst_case(limits.resume_turns)?)?
         // Body, decoded Start fields, accumulated translated fields, and
         // the one Charter/Turn currently being decoded. A saved window is
         // decoded sequentially; codec nodes are priced separately above.
@@ -194,7 +199,7 @@ fn start_cells(limits: &smith_channel::Limits) -> Option<u64> {
         message_label: 0,
         message_text: 0,
         start_charter: 0,
-        start_transcript_item: 0,
+        start_transcript: 0,
         host_ask_tool: 0,
         host_ask_input: 0,
         field_name: 0,

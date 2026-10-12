@@ -470,8 +470,7 @@ fn the_local_start_window_admits_the_standard_agents_largest_turn() {
     )
     .expect("standard agent");
     let largest = smith_domain::max_turn_bytes(&agent.domain).expect("bounded turn");
-    let host =
-        crate::profile::host_limits(&smith_agent_service::profile::standard(), largest, &agent).expect("host limits");
+    let host = crate::profile::host_limits(&smith_agent_service::profile::standard(), &agent).expect("host limits");
     assert!(host.unacknowledged_bytes >= largest, "agent accepts only a window holding its largest turn");
     assert!(host.turn_bytes >= largest, "host can receive the turn it grants");
     assert_eq!(host.message_bytes, u64::from(agent.domain.run.message_bytes));
@@ -500,8 +499,8 @@ fn the_standard_no_progress_is_silence_and_one_close() {
     let mut agent = smith_agent_process_world::limits();
     agent.file_timeout = Duration::from_secs(30);
     agent.io.close_timeout = Duration::from_secs(5);
-    let host = crate::profile::host_limits(&smith_agent_service::profile::standard(), 262_144, &agent)
-        .expect("derived watchdog");
+    let host =
+        crate::profile::host_limits(&smith_agent_service::profile::standard(), &agent).expect("derived watchdog");
     assert_eq!(host.silence, Duration::from_secs(30));
     assert_eq!(host.no_progress, Duration::from_secs(35));
 }

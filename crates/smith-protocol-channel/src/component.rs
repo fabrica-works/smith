@@ -98,6 +98,8 @@ pub struct Component {
     calls: Map<CallKey, CallRoute>,
     window: Option<smith_domain::Window>,
     turns: Map<u32, u64>,
+    resume_turns: u32,
+    search_hits: u32,
     last_sent_turn: u32,
     long_open: u32,
     held_turn_bytes: u64,
@@ -135,6 +137,8 @@ impl Component {
             calls: Map::with_capacity(limits.calls),
             window: None,
             turns: Map::with_capacity(limits.turns),
+            resume_turns: limits.resume_turns,
+            search_hits: limits.search_hits,
             last_sent_turn: 0,
             long_open: 0,
             held_turn_bytes: 0,
@@ -799,7 +803,9 @@ impl Component {
                                 match decode_charter(start.charter(), &self.charter, &self.endpoints) {
                                     Ok(charter) => {
                                         match decode_transcript(
-                                            start.transcript().as_slice(),
+                                            start.transcript(),
+                                            self.resume_turns,
+                                            self.search_hits,
                                             &self.transcript,
                                             &self.endpoints,
                                         ) {

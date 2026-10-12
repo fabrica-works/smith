@@ -96,9 +96,15 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     .ok_or(derived(Layer::Render, "result"))?;
     validate::render_in_result(rendered_result, rendered_result)?;
     let bodies = channel_bodies(&domain, &policy)?;
-    let start_bytes = channel_start_bytes(&bodies, &domain)?;
-    let output_bytes = channel_output(&bodies)?;
-    let io = io_limits(output_bytes, &policy);
+    let fact =
+        u32::try_from(smith_channel::Fact::worst_case_bytes(&bodies).ok_or(derived(Layer::Channel, "output_bytes"))?)
+            .or(Err(derived(Layer::Channel, "output_bytes")))?;
+    let output_bytes = channel_output(&bodies)?
+        .checked_add(fact.checked_add(8).ok_or(derived(Layer::Channel, "output_bytes"))?)
+        .ok_or(derived(Layer::Channel, "output_bytes"))?;
+    let machine = derive_machine(profile, configuration, &domain)?;
+    let file_slots = machine.roots.checked_add(machine.operations).ok_or(derived(Layer::Service, "file_slots"))?;
+    let io = io_limits(output_bytes, &policy, declared.conversations, &machine, file_slots)?;
     let mut charter = smith_charter::CEILINGS;
     charter.charter_brief = policy.sections;
     charter.tools_host = policy.host_tools;
@@ -110,46 +116,28 @@ pub fn derive(profile: &Profile, configuration: &Configuration) -> Result<servic
     charter.item_kind_fields = policy.fields;
     charter.verdict_rule_fields = policy.fields;
     charter.change_rule_fields = policy.fields;
-    let transcript = transcript(declared.calls_per_response, client.output_items)?;
+    let transcript = transcript(&domain, &client)?;
     let queue = domain::max_out(&domain).max(256);
     let operations = io::operations(&io).ok_or(derived(Layer::Service, "routes"))?;
     let routes = operations.checked_add(64).ok_or(derived(Layer::Service, "routes"))?;
     let limits = service::Limits {
         domain,
-        channel: channel::Limits {
-            bodies,
-            start_bytes,
-            charter,
-            transcript,
-            channel: skein_channel::Limits {
-                chunk: 4096,
-                credential: 0,
-                skip: 4096,
-                output_bytes,
-                output_frames: 4,
-                kinds: 18,
-            },
-            endpoints: ENDPOINTS,
-            calls: declared.calls_per_response,
-            turns: policy.unacknowledged,
-            fact_reserve_frames: 1,
-            fact_reserve_bytes: 128,
-            grants: 8,
-        },
+        channel: channel_limits(&domain, &policy, bodies, charter, transcript, &io)?,
         llm: component_limits(profile, client, io, &domain, rendered_result)?,
-        machine: derive_machine(profile, configuration, &domain)?,
+        machine,
         io,
-        file_slots: 32,
-        file_read: 65_536,
-        file_entries: 64,
+        file_slots,
+        file_read: domain.session.tools.tool_payload.max(domain.session.tools.read_bytes),
+        file_entries: domain.session.tools.list_entries,
         file_bytes: domain.session.tools.file_bytes,
-        file_timeout: Duration::from_secs(30),
+        file_timeout: domain.session.tools.file_timeout,
         queue,
         routes,
         memory,
         events: None,
     };
     validate::machine(&limits.machine, &limits.domain.session.tools)?;
+    validate::resume_holds_window(u64::from(domain.session.history_messages), u64::from(limits.channel.resume_turns))?;
     Ok(limits)
 }
 
@@ -172,13 +160,78 @@ pub fn endpoint_allowance(profile: &Profile, endpoint: &Endpoint, tools: &tools:
 // One turn surrounds one completion; a first final turn also includes its
 // opening and final note before the assistant and settled results. A window
 // turn instead has one opening message.
-fn transcript(calls: u32, completion: u32) -> Result<smith_transcript::v3::Limits, Refusal> {
-    let result_blocks = calls.checked_add(1).ok_or(derived(Layer::Transcript, "message_blocks"))?;
-    let message_blocks = completion.max(result_blocks);
+fn transcript(
+    domain: &domain::Limits,
+    client: &shared::client::Limits,
+) -> Result<smith_transcript::v3::Limits, Refusal> {
+    let session = domain.session;
+    let tools = session.tools;
+    let run = domain.run;
+    let result_blocks = run.calls.checked_add(1).ok_or(derived(Layer::Transcript, "message_blocks"))?;
+    let message_blocks = client.output_items.max(result_blocks);
     validate::calls_in_transcript(message_blocks, smith_transcript::CEILINGS.message_blocks)?;
+    let host = u32::try_from(run.host_part).or(Err(derived(Layer::Transcript, "text_text")))?;
     let mut limits = smith_transcript::CEILINGS;
+    limits.replay_bytes = client.metadata;
+    limits.text_text = client.answer.max(host).max(run.offer_bytes).max(run.answer_bytes);
+    limits.opaque_bytes = client.reasoning;
+    limits.call_input = client.input;
+    limits.entry_name = tools.path_bytes;
+    limits.hit_path = tools.path_bytes;
+    limits.hit_text = tools.search_bytes;
+    limits.read_content = tools.tool_payload.max(tools.read_bytes);
+    limits.listed_entries = tools.list_entries;
+    limits.found_hits = tools
+        .search_hits
+        .checked_mul(12)
+        .ok_or(derived(Layer::Transcript, "found_hits"))?
+        .checked_add(tools.search_bytes)
+        .ok_or(derived(Layer::Transcript, "found_hits"))?;
+    limits.command_end_head = tools.shell_head;
+    limits.command_end_last = tools.shell_tail;
+    limits.ambiguous_lines = tools.match_lines;
+    limits.working_path_path = tools.path_bytes;
+    limits.other_path_directory = run.directory_name_bytes;
+    limits.other_path_path = tools.path_bytes;
+    limits.outside_path_path = tools.path_bytes;
+    limits.said_text = run
+        .host_reply_bytes
+        .max(run.message_bytes)
+        .max(u32::try_from(session.delegated_result_bytes).or(Err(derived(Layer::Transcript, "said_text")))?);
     limits.message_blocks = message_blocks;
     limits.turn_messages = 4;
+    let ceiling = smith_transcript::CEILINGS;
+    for (field, required, available) in [
+        ("replay_bytes", limits.replay_bytes, ceiling.replay_bytes),
+        ("text_text", limits.text_text, ceiling.text_text),
+        ("opaque_bytes", limits.opaque_bytes, ceiling.opaque_bytes),
+        ("call_input", limits.call_input, ceiling.call_input),
+        ("entry_name", limits.entry_name, ceiling.entry_name),
+        ("hit_path", limits.hit_path, ceiling.hit_path),
+        ("hit_text", limits.hit_text, ceiling.hit_text),
+        ("found_hits", limits.found_hits, ceiling.found_hits),
+        ("read_content", limits.read_content, ceiling.read_content),
+        ("command_end_head", limits.command_end_head, ceiling.command_end_head),
+        ("command_end_last", limits.command_end_last, ceiling.command_end_last),
+        ("working_path_path", limits.working_path_path, ceiling.working_path_path),
+        ("other_path_directory", limits.other_path_directory, ceiling.other_path_directory),
+        ("other_path_path", limits.other_path_path, ceiling.other_path_path),
+        ("outside_path_path", limits.outside_path_path, ceiling.outside_path_path),
+        ("said_text", limits.said_text, ceiling.said_text),
+    ] {
+        validate::transcript_field(field, Value::Bytes(u64::from(required)), Value::Bytes(u64::from(available)))?;
+    }
+    for (field, required, available) in [
+        ("listed_entries", limits.listed_entries, ceiling.listed_entries),
+        ("ambiguous_lines", limits.ambiguous_lines, ceiling.ambiguous_lines),
+        ("turn_messages", limits.turn_messages, ceiling.turn_messages),
+    ] {
+        validate::transcript_field(field, Value::Count(u64::from(required)), Value::Count(u64::from(available)))?;
+    }
+    let bytes = smith_transcript::Turn::worst_case_bytes(&limits).ok_or(derived(Layer::Transcript, "turn_bytes"))?;
+    let available =
+        smith_transcript::Turn::worst_case_bytes(&ceiling).ok_or(derived(Layer::Transcript, "turn_bytes"))?;
+    validate::turn_in_transcript(bytes, available)?;
     Ok(limits)
 }
 
@@ -205,9 +258,34 @@ fn channel_output(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
 // vocabulary maxima remain upper bounds, never an independent reservation.
 fn channel_bodies(domain: &domain::Limits, policy: &Policy) -> Result<smith_channel::Limits, Refusal> {
     let run = domain.run;
-    let turn = domain::max_turn_bytes(domain)
+    let refusal = derived(Layer::Channel, "turn_body");
+    let session = domain.session;
+    let results = tools::batch_result_worst_case(&session.tools, run.calls).ok_or(refusal)?;
+    let delegated = session.delegated_result_bytes.checked_mul(u64::from(run.calls)).ok_or(refusal)?;
+    // One completion, every result it can cause, and its first/window opening
+    // share a turn. A window's earlier settled completions are not this turn.
+    // Binary lengths fit their owned cells; payload has no escape multiplier.
+    let payload = session::completion_reserve(&session)
+        .ok_or(refusal)?
+        .checked_add(results.max(delegated))
+        .ok_or(refusal)?
+        .checked_add(run.host_part)
+        .ok_or(refusal)?
+        .checked_add(u64::from(run.offer_bytes))
+        .ok_or(refusal)?
+        .checked_add(session.answer_bytes)
+        .ok_or(refusal)?
+        .checked_add(run.run_bytes)
+        .ok_or(refusal)?
+        .min(session.history_bytes);
+    let turn = payload
+        .checked_add(
+            4_u64
+                .checked_mul(u64::try_from(size_of::<session::llm::Message>()).expect("cell fits u64"))
+                .ok_or(derived(Layer::Channel, "turn_body"))?,
+        )
         .ok_or(derived(Layer::Channel, "turn_body"))?
-        .checked_mul(2)
+        .checked_add(u64::try_from(size_of::<session::record::Turn>()).expect("cell fits u64"))
         .ok_or(derived(Layer::Channel, "turn_body"))?;
     let charter = run.run_bytes.checked_mul(2).ok_or(derived(Layer::Channel, "start_charter"))?;
     let result = run.outcome_bytes.checked_mul(2).ok_or(derived(Layer::Channel, "accepted_result"))?;
@@ -230,7 +308,18 @@ fn channel_bodies(domain: &domain::Limits, policy: &Policy) -> Result<smith_chan
     bodies.deliver_ask_fields = policy.fields;
     bodies.turn_body =
         u32::try_from(turn.min(u64::from(bodies.turn_body))).or(Err(derived(Layer::Channel, "turn_body")))?;
-    bodies.start_transcript_item = bodies.turn_body;
+    let lengths =
+        u64::from(domain.session.history_messages).checked_mul(4).ok_or(derived(Layer::Channel, "start_transcript"))?;
+    let history = domain::max_turn_bytes(domain)
+        .ok_or(derived(Layer::Channel, "start_transcript"))?
+        .checked_mul(2)
+        .ok_or(derived(Layer::Channel, "start_transcript"))?;
+    let piece = history.checked_add(lengths).ok_or(derived(Layer::Channel, "start_transcript"))?;
+    validate::turn_in_channel(piece, u64::from(bodies.start_transcript))?;
+    bodies.start_transcript = u32::try_from(piece).or(Err(derived(Layer::Channel, "start_transcript")))?;
+    validate::turn_in_channel(turn, u64::from(smith_channel::CEILINGS.turn_body))?;
+    validate::turn_in_channel(charter, u64::from(smith_channel::CEILINGS.start_charter))?;
+    validate::turn_in_channel(u64::from(run.message_bytes), u64::from(smith_channel::CEILINGS.message_text))?;
     bodies.accepted_result = u32::try_from(result.min(u64::from(bodies.accepted_result)))
         .or(Err(derived(Layer::Channel, "accepted_result")))?;
     Ok(bodies)
@@ -238,24 +327,88 @@ fn channel_bodies(domain: &domain::Limits, policy: &Policy) -> Result<smith_chan
 
 // Rule 6: saved turns share one whole window. Scalar and length fields
 // fit twice their owning record cells; individual codec bounds stay sealed.
-fn channel_start_bytes(bodies: &smith_channel::Limits, domain: &domain::Limits) -> Result<u32, Refusal> {
-    let refusal = derived(Layer::Channel, "start_bytes");
-    let mut empty_transcript = *bodies;
-    empty_transcript.start_transcript = 0;
-    let lengths = u64::from(bodies.start_transcript).checked_mul(4).ok_or(refusal)?;
-    let history = domain::max_turn_bytes(domain).ok_or(refusal)?.checked_mul(2).ok_or(refusal)?;
-    let bytes = smith_channel::Start::worst_case_bytes(&empty_transcript)
-        .ok_or(refusal)?
-        .checked_add(lengths)
-        .ok_or(refusal)?
-        .checked_add(history)
-        .ok_or(refusal)?;
-    u32::try_from(bytes).or(Err(refusal))
+fn channel_start_bytes(bodies: &smith_channel::Limits) -> Result<u32, Refusal> {
+    let bytes = smith_channel::Start::worst_case_bytes(bodies).ok_or(derived(Layer::Channel, "start_bytes"))?;
+    u32::try_from(bytes).or(Err(derived(Layer::Channel, "start_bytes")))
 }
 
-fn io_limits(output_bytes: u32, policy: &Policy) -> io::Limits {
-    io::Limits {
-        sockets: 32,
+// Rule 5: bounded producers share the byte queue; frame slots cover the
+// unacknowledged turns, live calls, notices, long spans, answer and one fact.
+fn channel_limits(
+    domain: &domain::Limits,
+    policy: &Policy,
+    bodies: smith_channel::Limits,
+    charter: smith_charter::v2::Limits,
+    transcript: smith_transcript::v3::Limits,
+    io: &io::Limits,
+) -> Result<channel::Limits, Refusal> {
+    let refusal = derived(Layer::Channel, "output_frames");
+    let turns = policy.unacknowledged.min(domain.session.history_messages);
+    let long = domain
+        .run
+        .conversations
+        .checked_mul(domain.session.tools.calls.checked_add(1).ok_or(refusal)?)
+        .ok_or(refusal)?
+        .checked_add(1)
+        .ok_or(refusal)?;
+    let output_frames = turns
+        .checked_add(domain.run.conversations)
+        .ok_or(refusal)?
+        .checked_add(domain.run.messages.min(bodies.start_messages))
+        .ok_or(refusal)?
+        .checked_add(long.checked_mul(2).ok_or(refusal)?)
+        .ok_or(refusal)?
+        .checked_add(2)
+        .ok_or(refusal)?;
+    let authority = channel_output(&bodies)?;
+    let fact = u32::try_from(smith_channel::Fact::worst_case_bytes(&bodies).ok_or(refusal)?)
+        .or(Err(refusal))?
+        .checked_add(8)
+        .ok_or(refusal)?;
+    let output_bytes = authority.checked_add(fact).ok_or(derived(Layer::Channel, "output_bytes"))?;
+    Ok(channel::Limits {
+        bodies,
+        start_bytes: channel_start_bytes(&bodies)?,
+        charter,
+        transcript,
+        resume_turns: domain.session.history_messages,
+        search_hits: domain.session.tools.search_hits,
+        channel: skein_channel::Limits {
+            chunk: io.receive,
+            credential: 0,
+            skip: channel_start_bytes(&bodies)?.max(output_bytes),
+            output_bytes,
+            output_frames,
+            kinds: u32::try_from(smith_channel::V2.len()).or(Err(derived(Layer::Channel, "kinds")))?,
+        },
+        endpoints: ENDPOINTS,
+        calls: domain.run.calls,
+        turns,
+        fact_reserve_frames: 1,
+        fact_reserve_bytes: authority,
+        grants: domain.accounts.checked_mul(2).ok_or(derived(Layer::Channel, "grants"))?,
+    })
+}
+
+// Rule 6: one connection per conversation, the three process streams, file
+// slots, and each machine child's process plus its two read-only pipes.
+fn io_limits(
+    output_bytes: u32,
+    policy: &Policy,
+    connections: u32,
+    machine: &machine::Limits,
+    file_slots: u32,
+) -> Result<io::Limits, Refusal> {
+    let refusal = derived(Layer::Io, "sockets");
+    let sockets = connections
+        .checked_add(3)
+        .ok_or(refusal)?
+        .checked_add(file_slots)
+        .ok_or(refusal)?
+        .checked_add(machine.processes.checked_mul(3).ok_or(refusal)?)
+        .ok_or(refusal)?;
+    Ok(io::Limits {
+        sockets,
         refusals: 4,
         intake: 19_000,
         receive: 4096,
@@ -265,7 +418,7 @@ fn io_limits(output_bytes: u32, policy: &Policy) -> io::Limits {
         backlog: 2,
         close_timeout: policy.close,
         retry: Duration::from_millis(10),
-    }
+    })
 }
 
 fn threshold_bytes(policy: &Policy, configuration: &Configuration) -> Result<u64, Refusal> {

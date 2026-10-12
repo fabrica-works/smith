@@ -181,7 +181,8 @@ pub fn decode_turns(
             .push(Box::from(reader.bytes(reader.remaining()).ok_or(StoreError::Malformed)?))
             .expect("bounded turn count");
     }
-    match channel::decode_transcript(bodies.as_slice(), limits, endpoints) {
+    let piece = channel::transcript_piece(bodies.as_slice()).ok_or(StoreError::Malformed)?;
+    match channel::decode_transcript(&piece, bodies.len(), u32::MAX, limits, endpoints) {
         Ok(transcript) => Ok((transcript, last_read)),
         Err(_) => Err(StoreError::Malformed),
     }

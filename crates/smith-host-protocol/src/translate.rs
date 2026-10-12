@@ -21,7 +21,6 @@ pub struct Values {
 /// Encode a domain Start and its service-owned values as the first downlink frame.
 #[expect(
     clippy::manual_let_else,
-    clippy::single_match,
     clippy::manual_map,
     reason = "strict subset keeps typed Start translation as explicit matches without higher-order methods"
 )]
@@ -45,21 +44,22 @@ pub fn encode_start(
         }
     }
     let workspace = encode_workspace(&start.directories, &values.paths, limits)?;
-    let mut transcript = List::with_capacity(limits.start_transcript);
-    match &start.transcript {
+    let transcript = match &start.transcript {
         Some(history) => {
+            let mut bodies = List::with_capacity(u32::try_from(history.value().turns.len()).or(Err(Error::Value))?);
             for turn in &history.value().turns {
                 let body = match smith_protocol_channel::encode_turn(turn, transcript_limits, endpoints) {
                     Ok(body) => body,
                     Err(_) => return Err(Error::Value),
                 };
-                if transcript.push(body).is_err() {
+                if bodies.push(body).is_err() {
                     return Err(Error::MissingValue);
                 }
             }
+            smith_protocol_channel::transcript_piece(bodies.as_slice()).ok_or(Error::Value)?
         }
-        None => {}
-    }
+        None => Box::default(),
+    };
     let charter = match smith_protocol_channel::encode_charter(start.charter.value(), charter_limits, endpoints) {
         Ok(body) => body,
         Err(_) => return Err(Error::Value),

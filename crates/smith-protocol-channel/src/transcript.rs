@@ -7,7 +7,7 @@
 //! the history; the domain still checks call/result pairing and ownership.
 
 use alloc::boxed::Box;
-use skein_lib::{Duration, List, Reader};
+use skein_lib::{Duration, List, Reader, Writer};
 use smith_domain_session::{llm, record};
 use smith_domain_tools as tools;
 use smith_transcript as wire;
@@ -16,21 +16,36 @@ use crate::Endpoints;
 
 /// Decode the host's ordered saved turn bodies into the domain's concrete history.
 pub fn decode_transcript(
-    bytes: &[Box<[u8]>],
+    piece: &[u8],
+    resume_turns: u32,
+    search_hits: u32,
     limits: &wire::v3::Limits,
     endpoints: &Endpoints,
 ) -> Result<Option<record::Transcript>, record::Refusal> {
-    if bytes.is_empty() {
+    if piece.is_empty() {
         return Ok(None);
     }
-    let Ok(count) = u32::try_from(bytes.len()) else {
-        return Err(record::Refusal::TooLarge);
-    };
+    let mut reader = Reader::new(piece);
+    let mut count = 0_u32;
+    for _ in 0..=piece.len() / 4 {
+        if reader.is_empty() {
+            break;
+        }
+        let length = reader.u32().ok_or(record::Refusal::Malformed)?;
+        reader.bytes(length).ok_or(record::Refusal::Malformed)?;
+        count = count.checked_add(1).ok_or(record::Refusal::TooLarge)?;
+        if count > resume_turns {
+            return Err(record::Refusal::TooLarge);
+        }
+    }
+    let mut reader = Reader::new(piece);
     let mut turns = List::with_capacity(count);
     let mut first_endpoint: Option<llm::Endpoint> = None;
     let mut first_dialect: Option<u32> = None;
     let mut previous: Option<u32> = None;
-    for body in bytes {
+    for _ in 0..count {
+        let length = reader.u32().ok_or(record::Refusal::Malformed)?;
+        let body = reader.bytes(length).ok_or(record::Refusal::Malformed)?;
         if body.get(..2) != Some(&[0, 3][..]) {
             return Err(record::Refusal::Version);
         }
@@ -38,7 +53,7 @@ pub fn decode_transcript(
             Some(place) => Some(place.checked_add(1).ok_or(record::Refusal::Malformed)?),
             None => None,
         };
-        let turn = saved_turn(body, place, limits, endpoints)?;
+        let turn = saved_turn(body, place, limits, endpoints, search_hits)?;
         if turns.is_empty() {
             match turn.kind {
                 record::Kind::First { .. } | record::Kind::Window { .. } => {}
@@ -73,6 +88,23 @@ pub fn decode_transcript(
     }))
 }
 
+/// Join opaque saved turns, each preceded by its big-endian u32 length.
+#[must_use]
+pub fn transcript_piece(bodies: &[Box<[u8]>]) -> Option<Box<[u8]>> {
+    let mut bytes = 0_usize;
+    for body in bodies {
+        u32::try_from(body.len()).ok()?;
+        bytes = bytes.checked_add(4)?.checked_add(body.len())?;
+    }
+    u32::try_from(bytes).ok()?;
+    let mut writer = Writer::new(bytes);
+    for body in bodies {
+        writer.put(&u32::try_from(body.len()).ok()?.to_be_bytes()).ok()?;
+        writer.put(body).ok()?;
+    }
+    Some(writer.finish())
+}
+
 /// Decode one live numbered turn without requiring its earlier saved prefix.
 pub fn decode_turn(
     bytes: &[u8],
@@ -83,7 +115,7 @@ pub fn decode_turn(
     if number == 0 {
         return Err(record::Refusal::Malformed);
     }
-    saved_turn(bytes, Some(number), limits, endpoints)
+    saved_turn(bytes, Some(number), limits, endpoints, u32::MAX)
 }
 
 fn saved_turn(
@@ -91,6 +123,7 @@ fn saved_turn(
     number: Option<u32>,
     limits: &wire::v3::Limits,
     endpoints: &Endpoints,
+    search_hits: u32,
 ) -> Result<record::Turn, record::Refusal> {
     if bytes.get(..2) != Some(&[0, 3][..]) {
         return Err(record::Refusal::Version);
@@ -109,11 +142,17 @@ fn saved_turn(
     if source.dialect() != dialect_name(endpoint.dialect).as_ref() {
         return Err(record::Refusal::Dialect);
     }
-    translate_turn(source, endpoint.number, endpoint.dialect)
+    translate_turn(source, endpoint.number, endpoint.dialect, limits, search_hits)
 }
 
 #[expect(clippy::manual_map, reason = "step code translates optional affinity through an exhaustive match")]
-fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<record::Turn, record::Refusal> {
+fn translate_turn(
+    source: wire::Turn,
+    endpoint: u32,
+    dialect: u32,
+    limits: &wire::v3::Limits,
+    search_hits: u32,
+) -> Result<record::Turn, record::Refusal> {
     let affinity = match source.affinity() {
         Some(value) => Some(llm::Affinity { key: *value.key(), thread: value.thread() }),
         None => None,
@@ -137,7 +176,7 @@ fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<rec
         };
         let mut content = List::with_capacity(message.blocks().len());
         for block in message.blocks() {
-            let value = decode_block(block, dialect)?;
+            let value = decode_block(block, dialect, limits, search_hits)?;
             if content.push(value).is_err() {
                 return Err(record::Refusal::TooLarge);
             }
@@ -164,7 +203,12 @@ fn translate_turn(source: wire::Turn, endpoint: u32, dialect: u32) -> Result<rec
     })
 }
 
-fn decode_block(source: &wire::Block, dialect: u32) -> Result<llm::Block, record::Refusal> {
+fn decode_block(
+    source: &wire::Block,
+    dialect: u32,
+    limits: &wire::v3::Limits,
+    search_hits: u32,
+) -> Result<llm::Block, record::Refusal> {
     let value = match source {
         wire::Block::Text(text) => {
             llm::Block::Text { text: Box::from(text.text()), replay: replay(text.replay().as_ref(), dialect)? }
@@ -179,9 +223,10 @@ fn decode_block(source: &wire::Block, dialect: u32) -> Result<llm::Block, record
             call: llm::Decoded::Historical,
             replay: replay(call.replay().as_ref(), dialect)?,
         },
-        wire::Block::Result(result) => {
-            llm::Block::ToolResult { id: Box::from(result.id()), result: returned(result.returned())? }
-        }
+        wire::Block::Result(result) => llm::Block::ToolResult {
+            id: Box::from(result.id()),
+            result: returned(result.returned(), limits, search_hits)?,
+        },
         wire::Block::Opaque(opaque) => {
             if opaque.dialect() != dialect_name(dialect).as_ref() {
                 return Err(record::Refusal::Dialect);
@@ -204,9 +249,15 @@ fn replay(source: Option<&wire::Replay>, dialect: u32) -> Result<Option<llm::Rep
     }
 }
 
-fn returned(source: &wire::Returned) -> Result<llm::Returned, record::Refusal> {
+fn returned(
+    source: &wire::Returned,
+    limits: &wire::v3::Limits,
+    search_hits: u32,
+) -> Result<llm::Returned, record::Refusal> {
     let value = match source {
-        wire::Returned::Outcome(value) => llm::Returned::Owned { outcome: outcome(value.value())? },
+        wire::Returned::Outcome(value) => {
+            llm::Returned::Owned { outcome: outcome(value.value(), limits, search_hits)? }
+        }
         wire::Returned::Said(value) => {
             llm::Returned::Text { text: Box::from(value.text()), error: value.error(), replay: None }
         }
@@ -233,7 +284,11 @@ fn problem(source: &wire::CallProblem) -> llm::Problem {
     }
 }
 
-fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
+fn outcome(
+    source: &wire::Outcome,
+    limits: &wire::v3::Limits,
+    search_hits: u32,
+) -> Result<tools::Outcome, record::Refusal> {
     let value = match source {
         wire::Outcome::Read(read) => read_outcome(read)?,
         wire::Outcome::Listed(listed) => {
@@ -257,14 +312,8 @@ fn outcome(source: &wire::Outcome) -> Result<tools::Outcome, record::Refusal> {
             tools::Outcome::Listed { entries: entries.into_boxed(), more: listed.more() }
         }
         wire::Outcome::Found(found) => {
-            let mut hits = List::with_capacity(found.hits().len());
-            for hit in found.hits() {
-                let item = tools::Hit { path: Box::from(hit.path()), line: hit.line(), text: Box::from(hit.text()) };
-                if hits.push(item).is_err() {
-                    return Err(record::Refusal::TooLarge);
-                }
-            }
-            tools::Outcome::Found { hits: hits.into_boxed(), more: found.more(), timed_out: found.timed_out() }
+            let hits = found_piece(found.hits(), limits, search_hits)?;
+            tools::Outcome::Found { hits, more: found.more(), timed_out: found.timed_out() }
         }
         wire::Outcome::Written(written) => tools::Outcome::Written { created: written.created() },
         wire::Outcome::Edited(edited) => tools::Outcome::Edited { replaced: edited.replaced() },
@@ -417,6 +466,55 @@ fn byte_clamp(source: &wire::BytesClamp) -> Result<tools::BytesClamp, record::Re
     }
 }
 
+fn hit_length(bytes: &[u8]) -> Result<u32, record::Refusal> {
+    let mut reader = Reader::new(bytes);
+    let start = reader.remaining();
+    let path = reader.u32().ok_or(record::Refusal::Malformed)?;
+    reader.bytes(path).ok_or(record::Refusal::Malformed)?;
+    reader.u32().ok_or(record::Refusal::Malformed)?;
+    let text = reader.u32().ok_or(record::Refusal::Malformed)?;
+    reader.bytes(text).ok_or(record::Refusal::Malformed)?;
+    start.checked_sub(reader.remaining()).ok_or(record::Refusal::Malformed)
+}
+
+fn found_piece(
+    piece: &[u8],
+    limits: &wire::v3::Limits,
+    search_hits: u32,
+) -> Result<Box<[tools::Hit]>, record::Refusal> {
+    let mut reader = Reader::new(piece);
+    let mut count = 0_u32;
+    for _ in 0..=piece.len() / 12 {
+        if reader.is_empty() {
+            break;
+        }
+        let remaining = reader.remaining();
+        let offset = u32::try_from(piece.len())
+            .or(Err(record::Refusal::TooLarge))?
+            .checked_sub(remaining)
+            .ok_or(record::Refusal::Malformed)?;
+        let tail = piece.get(usize::try_from(offset).expect("piece offset")..).ok_or(record::Refusal::Malformed)?;
+        let length = hit_length(tail)?;
+        reader.bytes(length).ok_or(record::Refusal::Malformed)?;
+        count = count.checked_add(1).ok_or(record::Refusal::TooLarge)?;
+        if count > search_hits {
+            return Err(record::Refusal::TooLarge);
+        }
+    }
+    let mut hits = List::with_capacity(count);
+    let mut offset = 0_u32;
+    for _ in 0..count {
+        let tail = piece.get(usize::try_from(offset).expect("piece offset")..).ok_or(record::Refusal::Malformed)?;
+        let length = hit_length(tail)?;
+        let body = tail.get(..usize::try_from(length).expect("hit length")).ok_or(record::Refusal::Malformed)?;
+        let hit = wire::Hit::decode(limits, &mut Reader::new(body)).or(Err(record::Refusal::Malformed))?;
+        hits.push(tools::Hit { path: Box::from(hit.path()), line: hit.line(), text: Box::from(hit.text()) })
+            .or(Err(record::Refusal::TooLarge))?;
+        offset = offset.checked_add(length).ok_or(record::Refusal::Malformed)?;
+    }
+    Ok(hits.into_boxed())
+}
+
 fn read_outcome(read: &wire::Read) -> Result<tools::Outcome, record::Refusal> {
     if read.first() == 0 {
         return Err(record::Refusal::Malformed);
@@ -469,11 +567,31 @@ mod edit_tests {
             wire::EditFailed::new(&wire::CEILINGS, wire::EditFailedParts { edit: 0, why: wire::Mismatch::NoMatch })
                 .expect("codec-shaped value"),
         );
-        assert_eq!(outcome(&zero), Err(record::Refusal::Malformed));
+        assert_eq!(outcome(&zero, &wire::CEILINGS, 256), Err(record::Refusal::Malformed));
         let two = wire::Outcome::EditFailed(
             wire::EditFailed::new(&wire::CEILINGS, wire::EditFailedParts { edit: 2, why: wire::Mismatch::NoMatch })
                 .expect("bounded value"),
         );
-        assert_eq!(outcome(&two), Ok(tools::Outcome::EditFailed { edit: 2, why: tools::Mismatch::NoMatch }));
+        assert_eq!(
+            outcome(&two, &wire::CEILINGS, 256),
+            Ok(tools::Outcome::EditFailed { edit: 2, why: tools::Mismatch::NoMatch })
+        );
+    }
+}
+
+#[cfg(test)]
+mod found_tests {
+    use super::found_piece;
+    use smith_domain_session::record;
+    use smith_transcript::CEILINGS;
+
+    #[test]
+    fn a_found_piece_whose_hits_pass_its_end_is_malformed() {
+        assert_eq!(found_piece(&[0, 0, 0, 2, 1], &CEILINGS, 100), Err(record::Refusal::Malformed));
+    }
+
+    #[test]
+    fn a_found_piece_past_the_tools_hit_count_is_too_large() {
+        assert_eq!(found_piece(&[0; 12], &CEILINGS, 0), Err(record::Refusal::TooLarge));
     }
 }

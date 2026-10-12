@@ -52,7 +52,7 @@ record Start {
     activation: u64
     charter: bytes 67108864
     workspace: option Workspace
-    transcript: list 64 bytes 8388608
+    transcript: bytes 536870912
     answered: list 128 AnsweredCall
     grants: list 64 Grant
     window: Window

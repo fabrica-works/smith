@@ -1,57 +1,29 @@
-//! Both channel halves are measured under their ceiling configuration with
+//! Both channel halves are measured under their derived deployment configuration with
 //! Skein's shared counting allocator (protocol/channel.md, section 7;
 //! programming-model.md, section 6.3; testing-strategy.md, section 6).
 
 use skein_channel::StreamMode;
 use skein_lib::{List, Queue};
 use skein_world::domain::heap::{Counting, Meter};
-use smith_channel::CEILINGS;
 use smith_host_protocol as host;
 use smith_protocol_channel as agent;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
 
-fn channel_limits() -> skein_channel::Limits {
-    let schema = smith_channel::schema(&CEILINGS).expect("ceiling body schema");
-    let largest = schema.version(2).expect("version two").kinds.iter().map(|kind| kind.largest).max().expect("kinds");
-    skein_channel::Limits {
-        chunk: 4096,
-        credential: 0,
-        skip: 4096,
-        output_bytes: largest.checked_add(8).expect("one largest frame"),
-        output_frames: 4,
-        kinds: 18,
-    }
-}
-
 #[test]
-fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
-    let channel = channel_limits();
-    let host_limits = host::Limits {
-        start_bytes: u32::try_from(smith_channel::Start::worst_case_bytes(&CEILINGS).expect("fixture Start bound"))
-            .expect("fixture frame"),
-        bodies: CEILINGS,
-        charter: smith_charter::CEILINGS,
-        transcript: smith_transcript::CEILINGS,
-        endpoints: 1,
-        channel,
-        calls: 8,
+fn derived_limit_halves_and_their_opening_fit_their_combined_worst_case() {
+    let agent_limits = smith_agent_process_world::limits().channel;
+    let mut host_limits = host::Limits {
+        bodies: agent_limits.bodies,
+        start_bytes: agent_limits.start_bytes,
+        charter: agent_limits.charter,
+        transcript: agent_limits.transcript,
+        endpoints: agent_limits.endpoints,
+        channel: agent_limits.channel,
+        calls: agent_limits.calls,
     };
-    let agent_limits = agent::Limits {
-        bodies: CEILINGS,
-        start_bytes: u32::try_from(smith_channel::Start::worst_case_bytes(&CEILINGS).expect("fixture Start bound"))
-            .expect("fixture frame"),
-        charter: smith_charter::CEILINGS,
-        transcript: smith_transcript::CEILINGS,
-        channel,
-        endpoints: 1,
-        calls: 8,
-        turns: 8,
-        fact_reserve_frames: 1,
-        fact_reserve_bytes: 128,
-        grants: 8,
-    };
+    host_limits.channel.output_bytes = host::output_bytes(&host_limits).expect("host directional frame");
     let mut entries = List::with_capacity(1);
     entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 }).expect("one endpoint");
     let endpoints = agent::Endpoints::new(entries);
@@ -67,7 +39,7 @@ fn ceiling_limit_halves_and_their_opening_fit_their_combined_worst_case() {
     let mut below = Queue::with_capacity(host::max_out(&host_limits).below);
     host.open(&mut host_events, &mut below);
     let measurement = meter.end();
-    let peak = meter.check(measurement, bound, &"both ceiling channel halves and opening");
+    let peak = meter.check(measurement, bound, &"both derived channel halves and opening");
     assert!(peak > 0, "the allocator saw the real channel construction");
     drop((host, agent, host_events, below));
 }

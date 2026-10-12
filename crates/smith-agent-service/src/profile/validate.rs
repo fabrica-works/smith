@@ -301,6 +301,41 @@ pub fn calls_in_transcript(required: u32, available: u32) -> Result<(), Refusal>
     )
 }
 
+/// The largest turn's bytes fit the transcript vocabulary.
+pub fn turn_in_transcript(required: u64, available: u64) -> Result<(), Refusal> {
+    at_most(
+        Check::TurnInTranscript,
+        bytes(Layer::Session, "turn_bytes", required),
+        bytes(Layer::Transcript, "turn_bytes", available),
+    )
+}
+
+/// The resume allowance holds every turn of one window.
+pub fn resume_holds_window(required: u64, available: u64) -> Result<(), Refusal> {
+    at_most(
+        Check::ResumeHoldsWindow,
+        LimitName::deployment(Layer::Session, "history_messages").value(Value::Count(required)),
+        LimitName::deployment(Layer::Channel, "resume_turns").value(Value::Count(available)),
+    )
+}
+
+/// A largest turn, start or message fits its channel frame.
+pub fn turn_in_channel(required: u64, available: u64) -> Result<(), Refusal> {
+    at_most(
+        Check::TurnInChannel,
+        bytes(Layer::Session, "frame_bytes", required),
+        bytes(Layer::Channel, "frame_bytes", available),
+    )
+}
+
+pub(super) fn transcript_field(field: &'static str, required: Value, available: Value) -> Result<(), Refusal> {
+    at_most(
+        Check::TurnInTranscript,
+        LimitName::deployment(Layer::Session, field).value(required),
+        LimitName::deployment(Layer::Transcript, field).value(available),
+    )
+}
+
 /// The actual configured head, with credential and affinity maxima, fits one transport piece.
 /// Startup supplies the native measurement before constructing the connection component.
 pub fn request_head(endpoint: u32, required: u32, available: u32) -> Result<(), Refusal> {

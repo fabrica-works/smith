@@ -648,7 +648,9 @@ fn a_concrete_turn_reaches_the_host_and_its_acknowledgement_returns() {
         .push(smith_protocol_channel::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 })
         .expect("one endpoint");
     let transcript = smith_protocol_channel::decode_transcript(
-        &[body],
+        &smith_protocol_channel::transcript_piece(&[body]).expect("fixture piece"),
+        1,
+        u32::MAX,
         &smith_transcript::CEILINGS,
         &smith_protocol_channel::Endpoints::new(endpoints),
     )
@@ -1229,3 +1231,6 @@ fn a_host_resumes_from_its_last_window_turn_alone() {
         resumed.observations()
     );
 }
+
+#[path = "stories/limits.rs"]
+mod limits;

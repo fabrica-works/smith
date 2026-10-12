@@ -216,11 +216,8 @@ impl Peer {
                             .expect("host Start frame");
                             let mut parts = start.into_parts();
                             parts.charter = charter;
-                            let mut turns = skein_lib::List::with_capacity(smith_channel::CEILINGS.start_transcript);
-                            for turn in transcript.unwrap_or_default() {
-                                turns.push(turn).expect("fixture transcript");
-                            }
-                            parts.transcript = turns;
+                            parts.transcript =
+                                agent::transcript_piece(&transcript.unwrap_or_default()).expect("fixture piece");
                             let start = smith_channel::Start::new(&smith_channel::CEILINGS, parts)
                                 .expect("wire fixture bounds");
                             let mut writer =
@@ -393,7 +390,9 @@ impl Peer {
     }
 }
 
-fn test_endpoints() -> agent::Endpoints {
+/// The shared endpoint names and dialect used by channel stories.
+#[must_use]
+pub fn test_endpoints() -> agent::Endpoints {
     let mut entries = skein_lib::List::with_capacity(1);
     entries.push(agent::Endpoint { name: Box::default(), number: 0, dialect: 0, account: 0 }).expect("one endpoint");
     agent::Endpoints::new(entries)
@@ -450,6 +449,8 @@ impl World {
                 .expect("fixture frame"),
                 charter: smith_charter::CEILINGS,
                 transcript: smith_transcript::CEILINGS,
+                resume_turns: 256,
+                search_hits: 256,
                 channel,
                 endpoints: 1,
                 calls: 8,
@@ -461,6 +462,27 @@ impl World {
             mode,
         );
         World { host, agent, observed: Vec::new(), channel }
+    }
+
+    /// Open the two halves at the agent fixture's derived deployment bounds.
+    #[must_use]
+    pub fn with_agent_limits(limits: agent::Limits, mode: StreamMode) -> World {
+        let mut host_limits = host::Limits {
+            bodies: limits.bodies,
+            charter: limits.charter,
+            transcript: limits.transcript,
+            endpoints: limits.endpoints,
+            channel: limits.channel,
+            start_bytes: limits.start_bytes,
+            calls: limits.calls,
+        };
+        host_limits.channel.output_bytes = host::output_bytes(&host_limits).expect("host directional frame");
+        World {
+            host: Peer::host(&host_limits, mode),
+            agent: Peer::agent(&limits, mode),
+            observed: Vec::new(),
+            channel: limits.channel,
+        }
     }
 
     /// Drive the finite opening until no new bytes remain.
@@ -514,7 +536,9 @@ impl World {
     ) {
         let typed_charter = typed_charter(&charter);
         let typed_transcript = agent::decode_transcript(
-            transcript.as_deref().unwrap_or(&[]),
+            &agent::transcript_piece(transcript.as_deref().unwrap_or(&[])).expect("fixture piece"),
+            256,
+            u32::MAX,
             &smith_transcript::CEILINGS,
             &test_endpoints(),
         )
@@ -577,7 +601,9 @@ impl World {
         self.observed.push(Observation::HostStarted);
         let typed_charter = typed_charter(&charter);
         let typed_transcript = agent::decode_transcript(
-            transcript.as_deref().unwrap_or(&[]),
+            &agent::transcript_piece(transcript.as_deref().unwrap_or(&[])).expect("fixture piece"),
+            256,
+            u32::MAX,
             &smith_transcript::CEILINGS,
             &test_endpoints(),
         )
@@ -1006,7 +1032,13 @@ pub fn typed_charter(bytes: &[u8]) -> smith_host_domain::Charter {
 /// Decode a valid history fixture before a typed host Start.
 #[must_use]
 pub fn typed_transcript(bytes: &[Box<[u8]>]) -> Option<smith_host_domain::Transcript> {
-    agent::decode_transcript(bytes, &smith_transcript::CEILINGS, &test_endpoints())
-        .expect("typed fixture history")
-        .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"))
+    agent::decode_transcript(
+        &agent::transcript_piece(bytes).expect("fixture piece"),
+        256,
+        u32::MAX,
+        &smith_transcript::CEILINGS,
+        &test_endpoints(),
+    )
+    .expect("typed fixture history")
+    .map(|value| smith_host_domain::Transcript::new(value, u64::MAX).expect("fixture ownership"))
 }

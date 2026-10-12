@@ -38,7 +38,7 @@ pub use charter::encode_charter;
 pub use component::{Component, OpenEvent};
 pub use limits::{Error, Limits, MaxOut, max_out, schema, schema_for_start, worst_case};
 pub use result::decode_declared;
-pub use transcript::{decode_transcript, decode_turn};
+pub use transcript::{decode_transcript, decode_turn, transcript_piece};
 pub use translate::{
     DecodedStart, Endpoint, Endpoints, Grant, Mount, answer_record, decode_charter, encode_result, host_path,
     start_context,

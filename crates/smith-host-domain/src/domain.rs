@@ -534,7 +534,7 @@ fn valid_start(start: &Start, limits: &Limits) -> Option<Invalid> {
         return Some(Invalid::Charter);
     }
     let transcript_fits = match &start.transcript {
-        Some(transcript) => transcript.owned_bytes() <= limits.transcript_bytes && transcript.value().turns.len() <= 64,
+        Some(transcript) => transcript.owned_bytes() <= limits.transcript_bytes,
         None => true,
     };
     if !transcript_fits {

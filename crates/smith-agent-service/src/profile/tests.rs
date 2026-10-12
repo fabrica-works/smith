@@ -40,6 +40,45 @@ pub(super) fn declarations() -> Configuration {
 }
 
 #[test]
+fn file_bounds_follow_the_tools_admitted_piece_and_listing() {
+    let mut selected = profile();
+    let mut configuration = declarations();
+    configuration.endpoints[0].models[0].output = 4096;
+    for (payload, entries) in [(256, 3), (1024, 17), (4096, 100)] {
+        selected.declared.tool_payload = payload;
+        selected.declared.read_window = payload / 2;
+        selected.declared.list_entries = entries;
+        let limits = super::derive(&selected, &configuration).expect("derived file bounds");
+        assert_eq!(limits.file_read, payload);
+        assert_eq!(limits.file_entries, entries);
+        assert!(limits.file_slots >= limits.machine.roots + limits.machine.operations);
+        assert_eq!(limits.file_timeout, limits.domain.session.tools.file_timeout);
+    }
+}
+
+#[test]
+fn io_slots_hold_connections_the_channel_files_and_process_pipes() {
+    let mut selected = profile();
+    for conversations in [1, 2, 6, 17] {
+        selected.declared.conversations = conversations;
+        let limits = super::derive(&selected, &declarations()).expect("derived io bounds");
+        let required = conversations + 3 + limits.file_slots + 3 * limits.machine.processes;
+        assert!(limits.io.sockets >= required);
+        assert_eq!(limits.llm.connection.io, limits.io);
+    }
+}
+
+#[test]
+fn io_slot_overflow_names_its_derived_limit() {
+    let selected = profile();
+    let limits = super::derive(&selected, &declarations()).expect("derived io bounds");
+    assert_eq!(
+        super::io_limits(128, &selected.policy, u32::MAX, &limits.machine, limits.file_slots),
+        Err(Refusal::Derived { limit: LimitName::deployment(Layer::Io, "sockets") }),
+    );
+}
+
+#[test]
 #[expect(
     clippy::disallowed_methods,
     reason = "UTF-8 fixture slices feed an independent test encoder, programming-model.md section 10.2"
@@ -269,6 +308,17 @@ fn random_declarations_refuse_by_name_or_hold_the_checked_relationships() {
                 assert!(profile.declared.read_window <= profile.declared.tool_payload, "default read fits payload");
                 assert!(profile.declared.tool_payload <= profile.declared.file_bytes, "payload fits file");
                 assert!(output < window, "output fits window");
+                validate::resume_holds_window(
+                    u64::from(limits.domain.session.history_messages),
+                    u64::from(limits.channel.resume_turns),
+                )
+                .expect("window turns fit resume");
+                validate::turn_in_channel(
+                    u64::from(limits.channel.bodies.turn_body),
+                    u64::from(smith_channel::CEILINGS.turn_body),
+                )
+                .expect("turn fits channel");
+                assert!(limits.channel.transcript.listed_entries >= limits.domain.session.tools.list_entries);
                 validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
             }
             Err(Refusal::Llm { endpoint, violation: _ }) => assert_eq!(endpoint, 7, "native refusal retains its scope"),
@@ -414,4 +464,36 @@ fn the_worst_case_does_not_grow_with_connections_times_the_request() {
         assert_eq!(skein_llm::client::worst_case(&small_client), skein_llm::client::worst_case(&large_client));
         configuration.endpoints[0].models[0].window /= 2;
     }
+}
+
+#[test]
+fn a_turn_past_the_transcript_ceiling_is_refused_by_name() {
+    let mut selected = profile();
+    selected.declared.list_entries = 513;
+    let refusal = super::derive(&selected, &declarations()).expect_err("listing exceeds transcript");
+    assert_eq!(refusal.check(), Some(Check::TurnInTranscript));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"turn-in-transcript: session.listed_entries=513 items; transcript.listed_entries=512 items"
+    );
+}
+
+#[test]
+fn a_resume_smaller_than_the_window_is_refused_by_name() {
+    let refusal = validate::resume_holds_window(65, 64).expect_err("one turn short");
+    assert_eq!(refusal.check(), Some(Check::ResumeHoldsWindow));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"resume-holds-window: session.history_messages=65 items; channel.resume_turns=64 items"
+    );
+}
+
+#[test]
+fn a_turn_larger_than_the_channel_frame_is_refused_by_name() {
+    let refusal = validate::turn_in_channel(101, 100).expect_err("one byte short");
+    assert_eq!(refusal.check(), Some(Check::TurnInChannel));
+    assert_eq!(
+        words(&refusal).as_ref(),
+        b"turn-in-channel: session.frame_bytes=101 bytes; channel.frame_bytes=100 bytes"
+    );
 }

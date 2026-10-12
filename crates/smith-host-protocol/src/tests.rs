@@ -74,7 +74,7 @@ fn a_start_keeps_host_bytes_and_service_values_in_order() {
         smith_host_world::charter_value(7).into_value()
     );
     assert_eq!(
-        smith_protocol_channel::decode_transcript(start.transcript().as_slice(), &limits.transcript, &endpoints())
+        smith_protocol_channel::decode_transcript(start.transcript(), 64, u32::MAX, &limits.transcript, &endpoints())
             .expect("typed transcript")
             .expect("history"),
         smith_host_world::transcript_value(512).into_value()

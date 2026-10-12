@@ -2372,6 +2372,8 @@ mod tests {
                 .expect("fixture frame"),
                 charter: smith_charter::CEILINGS,
                 transcript: smith_transcript::CEILINGS,
+                resume_turns: 64,
+                search_hits: 256,
                 channel: skein_channel::Limits {
                     chunk: 4096,
                     credential: 0,

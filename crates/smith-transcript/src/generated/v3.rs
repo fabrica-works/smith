@@ -48,10 +48,10 @@ pub const CEILINGS: Limits = Limits {
     call_input: 1_048_576,
     entry_name: 4_096,
     hit_path: 4_096,
-    hit_text: 4_096,
+    hit_text: 2_097_152,
     read_content: 1_048_576,
-    listed_entries: 256,
-    found_hits: 256,
+    listed_entries: 512,
+    found_hits: 2_097_152,
     command_end_head: 1_048_576,
     command_end_last: 1_048_576,
     ambiguous_lines: 1_024,
@@ -1442,7 +1442,7 @@ impl Listed {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FoundParts {
     /// The `hits` field.
-    pub hits: List<Hit>,
+    pub hits: Box<[u8]>,
     /// The `more` field.
     pub more: u64,
     /// The `timed_out` field.
@@ -1452,7 +1452,7 @@ pub struct FoundParts {
 /// `Found` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Found {
-    hits: List<Hit>,
+    hits: Box<[u8]>,
     more: u64,
     timed_out: bool,
 }
@@ -1468,7 +1468,7 @@ impl Found {
 
     /// Reads the `hits` field.
     #[must_use]
-    pub fn hits(&self) -> &List<Hit> { &self.hits }
+    pub fn hits(&self) -> &[u8] { &self.hits }
 
     /// Reads the `more` field.
     #[must_use]
@@ -1511,10 +1511,7 @@ impl Found {
         if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
         if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
         if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
-        if self.hits.capacity() > limits.found_hits.min(CEILINGS.found_hits) { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Bound }); }
-        for item_0 in self.hits.as_slice() {
-        item_0.check(limits)?;
-        }
+        if self.hits.len() > usize::try_from(limits.found_hits.min(CEILINGS.found_hits)).expect("u32 fits usize") { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -4660,9 +4657,7 @@ impl Found {
         let mut size = 0_u32;
         let field_hits = &self.hits;
         size = size.checked_add(4).expect("schema ceilings fit u32");
-        for item_0 in field_hits.as_slice() {
-        size = size.checked_add(item_0.measure()).expect("schema ceilings fit u32");
-        }
+        size = size.checked_add(u32::try_from(field_hits.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
         size = size.checked_add(8).expect("schema ceilings fit u32");
         size = size.checked_add(1).expect("schema ceilings fit u32");
         size
@@ -4671,10 +4666,8 @@ impl Found {
     /// Writes into a writer with room for the measured bytes.
     pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
         let field_hits = &self.hits;
-        writer.put(&field_hits.len().to_be_bytes())?;
-        for item_0 in field_hits.as_slice() {
-        item_0.encode(writer)?;
-        }
+        writer.put(&u32::try_from(field_hits.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_hits.as_ref())?;
         let field_more = &self.more;
         writer.put(&field_more.to_be_bytes())?;
         let field_timed_out = &self.timed_out;
@@ -4690,7 +4683,7 @@ impl Found {
     }
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        let decoded_hits = { let count = match skein_codec::read_count(reader, limits.found_hits.min(CEILINGS.found_hits)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::FoundHits, reason }), }; if count > reader.remaining() / 12 { return Err(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Hit::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
+        let decoded_hits = { let length = match skein_codec::read_len(reader, limits.found_hits.min(CEILINGS.found_hits)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::FoundHits, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::FoundHits, reason: skein_codec::Reason::Short })?) };
         let decoded_more = reader.u64().ok_or(Problem { path: Path::FoundMore, reason: skein_codec::Reason::Short })?;
         let decoded_timed_out = match reader.u8().ok_or(Problem { path: Path::FoundTimedOut, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::FoundTimedOut, reason: skein_codec::Reason::Bool }) };
         Self::new(limits, FoundParts { hits: decoded_hits, more: decoded_more, timed_out: decoded_timed_out })
@@ -6461,7 +6454,7 @@ impl Found {
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut size = 0_u64;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.found_hits).checked_mul(Hit::worst_case_bytes(limits)?)?)?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.found_hits))?)?;
         size = size.checked_add(8_u64)?;
         size = size.checked_add(1_u64)?;
         Some(size)
@@ -6472,7 +6465,7 @@ impl Found {
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if !limits_valid(limits) { return None; }
         let mut heap = 0_u64;
-        heap = heap.checked_add(List::<Hit>::worst_case(limits.found_hits)?.checked_add(u64::from(limits.found_hits).checked_mul(Hit::worst_case_heap(limits)?)?)?)?;
+        heap = heap.checked_add(u64::from(limits.found_hits))?;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         Some(heap)
@@ -7834,7 +7827,7 @@ mod golden_tests {
 
     #[test]
     fn record_found_smallest() {
-        let value = Found::new(&CEILINGS, FoundParts { hits: skein_lib::List::with_capacity(0), more: 0_u64, timed_out: false }).expect("golden within ceilings");
+        let value = Found::new(&CEILINGS, FoundParts { hits: Box::from([].as_slice()), more: 0_u64, timed_out: false }).expect("golden within ceilings");
         let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
@@ -7844,8 +7837,8 @@ mod golden_tests {
 
     #[test]
     fn record_found_full() {
-        let value = Found::new(&CEILINGS, FoundParts { hits: { let mut items = skein_lib::List::with_capacity(1); items.push(Hit::new(&CEILINGS, HitParts { path: Box::from([0_u8, 127_u8, 255_u8].as_slice()), line: u32::MAX, text: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, more: u64::MAX, timed_out: true }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 1, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
+        let value = Found::new(&CEILINGS, FoundParts { hits: Box::from([0_u8, 127_u8, 255_u8].as_slice()), more: u64::MAX, timed_out: true }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -8614,7 +8607,7 @@ mod golden_tests {
 
     #[test]
     fn enum_outcome_found_smallest() {
-        let value = Outcome::Found(Found::new(&CEILINGS, FoundParts { hits: skein_lib::List::with_capacity(0), more: 0_u64, timed_out: false }).expect("golden within ceilings"));
+        let value = Outcome::Found(Found::new(&CEILINGS, FoundParts { hits: Box::from([].as_slice()), more: 0_u64, timed_out: false }).expect("golden within ceilings"));
         let golden: &[u8] = &[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
@@ -8624,8 +8617,8 @@ mod golden_tests {
 
     #[test]
     fn enum_outcome_found_full() {
-        let value = Outcome::Found(Found::new(&CEILINGS, FoundParts { hits: { let mut items = skein_lib::List::with_capacity(1); items.push(Hit::new(&CEILINGS, HitParts { path: Box::from([0_u8, 127_u8, 255_u8].as_slice()), line: u32::MAX, text: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, more: u64::MAX, timed_out: true }).expect("golden within ceilings"));
-        let golden: &[u8] = &[2, 0, 0, 0, 1, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
+        let value = Outcome::Found(Found::new(&CEILINGS, FoundParts { hits: Box::from([0_u8, 127_u8, 255_u8].as_slice()), more: u64::MAX, timed_out: true }).expect("golden within ceilings"));
+        let golden: &[u8] = &[2, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -9927,8 +9920,8 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Hit::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4_096, true))).expect("field at ceiling");
-        let problem = Hit::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4_097, false))).expect_err("field past ceiling");
+        Hit::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(2_097_152, true))).expect("field at ceiling");
+        let problem = Hit::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(2_097_153, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::HitText, skein_codec::Reason::Bound));
     }
 
@@ -9967,28 +9960,28 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Listed::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(256, true))).expect("field at ceiling");
-        let problem = Listed::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(257, false))).expect_err("field past ceiling");
+        Listed::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(512, true))).expect("field at ceiling");
+        let problem = Listed::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(513, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::ListedEntries, skein_codec::Reason::Bound));
     }
 
     #[test]
     fn bound_found_hits() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(12).expect("schema ceiling");
+            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
             let header = 0_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(9_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
             writer.put(&[]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
+                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
                 writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
             }
             writer.finish()
         }
-        Found::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(256, true))).expect("field at ceiling");
-        let problem = Found::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(257, false))).expect_err("field past ceiling");
+        Found::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(2_097_152, true))).expect("field at ceiling");
+        let problem = Found::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(2_097_153, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::FoundHits, skein_codec::Reason::Bound));
     }
 

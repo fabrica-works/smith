@@ -23,7 +23,6 @@ pub struct Limits {
     pub message_text: u32,
     pub start_charter: u32,
     pub start_transcript: u32,
-    pub start_transcript_item: u32,
     pub start_answered: u32,
     pub start_grants: u32,
     pub start_messages: u32,
@@ -54,8 +53,7 @@ pub const CEILINGS: Limits = Limits {
     message_label: 1_024,
     message_text: 1_048_576,
     start_charter: 67_108_864,
-    start_transcript: 64,
-    start_transcript_item: 8_388_608,
+    start_transcript: 536_870_912,
     start_answered: 128,
     start_grants: 64,
     start_messages: 128,
@@ -513,7 +511,6 @@ impl CallName {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -584,7 +581,6 @@ impl Window {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -675,7 +671,6 @@ impl Directory {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -747,7 +742,6 @@ impl Workspace {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -814,7 +808,6 @@ impl GrantValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -899,7 +892,6 @@ impl Grant {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -970,7 +962,6 @@ impl Receipt {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1034,7 +1025,6 @@ impl Delivered {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1108,7 +1098,6 @@ impl Marker {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1180,7 +1169,6 @@ impl DeliveryRefusal {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1253,7 +1241,6 @@ impl DeliveryReason {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1337,7 +1324,6 @@ impl DeliveryFailure {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1400,7 +1386,6 @@ impl Delivery {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1470,7 +1455,6 @@ impl HostReply {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1535,7 +1519,6 @@ impl DeliveryReply {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1598,7 +1581,6 @@ impl Reply {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1654,7 +1636,6 @@ impl SavedReply {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1731,7 +1712,6 @@ impl AnsweredCall {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1812,7 +1792,6 @@ impl Message {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1843,7 +1822,7 @@ pub struct StartParts {
     /// The `workspace` field.
     pub workspace: Option<Workspace>,
     /// The `transcript` field.
-    pub transcript: List<Box<[u8]>>,
+    pub transcript: Box<[u8]>,
     /// The `answered` field.
     pub answered: List<AnsweredCall>,
     /// The `grants` field.
@@ -1861,7 +1840,7 @@ pub struct Start {
     activation: u64,
     charter: Box<[u8]>,
     workspace: Option<Workspace>,
-    transcript: List<Box<[u8]>>,
+    transcript: Box<[u8]>,
     answered: List<AnsweredCall>,
     grants: List<Grant>,
     window: Window,
@@ -1895,7 +1874,7 @@ impl Start {
 
     /// Reads the `transcript` field.
     #[must_use]
-    pub fn transcript(&self) -> &List<Box<[u8]>> { &self.transcript }
+    pub fn transcript(&self) -> &[u8] { &self.transcript }
 
     /// Reads the `answered` field.
     #[must_use]
@@ -1935,7 +1914,6 @@ impl Start {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -1950,10 +1928,7 @@ impl Start {
         if let Some(some_0) = self.workspace.as_ref() {
         some_0.check(limits)?;
         }
-        if self.transcript.capacity() > limits.start_transcript.min(CEILINGS.start_transcript) { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        for item_0 in self.transcript.as_slice() {
-        if item_0.len() > usize::try_from(limits.start_transcript_item.min(CEILINGS.start_transcript_item)).expect("u32 fits usize") { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        }
+        if self.transcript.len() > usize::try_from(limits.start_transcript.min(CEILINGS.start_transcript)).expect("u32 fits usize") { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if self.answered.capacity() > limits.start_answered.min(CEILINGS.start_answered) { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.answered.as_slice() {
         item_0.check(limits)?;
@@ -2026,7 +2001,6 @@ impl HostAnswer {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2092,7 +2066,6 @@ impl Acknowledge {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2155,7 +2128,6 @@ impl GrantRefresh {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2213,7 +2185,6 @@ impl Cancel {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2270,7 +2241,6 @@ impl Admitted {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2326,7 +2296,6 @@ impl MessageRefusal {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2396,7 +2365,6 @@ impl MessageRefused {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2449,7 +2417,6 @@ impl Effect {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2519,7 +2486,6 @@ impl HostAsk {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2592,7 +2558,6 @@ impl Field {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2659,7 +2624,6 @@ impl DeliverAsk {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2716,7 +2680,6 @@ impl Ask {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2800,7 +2763,6 @@ impl Call {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2866,7 +2828,6 @@ impl Withdraw {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -2958,7 +2919,6 @@ impl Turn {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3023,7 +2983,6 @@ impl Waiting {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3077,7 +3036,6 @@ impl Operation {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3147,7 +3105,6 @@ impl Long {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3205,7 +3162,6 @@ impl LongDone {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3276,7 +3232,6 @@ impl Rejected {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3347,7 +3302,6 @@ impl Exhausted {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3415,7 +3369,6 @@ impl FactKind {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3492,7 +3445,6 @@ impl Fact {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3549,7 +3501,6 @@ impl ReceivingLimit {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3601,7 +3552,6 @@ impl Overflow {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3664,7 +3614,6 @@ impl ReceivingLimitValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3728,7 +3677,6 @@ impl OverflowValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3789,7 +3737,6 @@ impl BudgetFailure {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3859,7 +3806,6 @@ impl CompletionFailure {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3913,7 +3859,6 @@ impl CompletionEvidence {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -3990,7 +3935,6 @@ impl CompletionFault {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4055,7 +3999,6 @@ impl ModelFault {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4115,7 +4058,6 @@ impl TranscriptRefusal {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4178,7 +4120,6 @@ impl TranscriptRefusalValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4242,7 +4183,6 @@ impl ModelFaultValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4306,7 +4246,6 @@ impl BudgetFailureValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4378,7 +4317,6 @@ impl PolicyFailure {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4442,7 +4380,6 @@ impl RunFailure {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4498,7 +4435,6 @@ impl PriceRate {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4561,7 +4497,6 @@ impl PriceRateValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4616,7 +4551,6 @@ impl BudgetPart {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4679,7 +4613,6 @@ impl BudgetPartValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4744,7 +4677,6 @@ impl BudgetTurns {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4808,7 +4740,6 @@ impl BudgetSpend {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4872,7 +4803,6 @@ impl BudgetTime {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4928,7 +4858,6 @@ impl BudgetCeiling {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -4991,7 +4920,6 @@ impl BudgetCeilingValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5056,7 +4984,6 @@ impl BudgetCompletion {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5127,7 +5054,6 @@ impl BudgetChecks {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5188,7 +5114,6 @@ impl BudgetRefusal {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5251,7 +5176,6 @@ impl BudgetRefusalValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5316,7 +5240,6 @@ impl WindowBound {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5401,7 +5324,6 @@ impl InvalidStart {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5464,7 +5386,6 @@ impl InvalidStartValue {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5518,7 +5439,6 @@ impl StartRefusal {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5581,7 +5501,6 @@ impl Accepted {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5645,7 +5564,6 @@ impl Failed {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5709,7 +5627,6 @@ impl Refused {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5769,7 +5686,6 @@ impl RunResult {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -5853,7 +5769,6 @@ impl Answer {
         if limits.message_text > CEILINGS.message_text { return Err(Problem { path: Path::MessageText, reason: skein_codec::Reason::Bound }); }
         if limits.start_charter > CEILINGS.start_charter { return Err(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Bound }); }
         if limits.start_transcript > CEILINGS.start_transcript { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
-        if limits.start_transcript_item > CEILINGS.start_transcript_item { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Bound }); }
         if limits.start_answered > CEILINGS.start_answered { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Bound }); }
         if limits.start_grants > CEILINGS.start_grants { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Bound }); }
         if limits.start_messages > CEILINGS.start_messages { return Err(Problem { path: Path::StartMessages, reason: skein_codec::Reason::Bound }); }
@@ -6663,10 +6578,7 @@ impl Start {
         }
         let field_transcript = &self.transcript;
         size = size.checked_add(4).expect("schema ceilings fit u32");
-        for item_0 in field_transcript.as_slice() {
-        size = size.checked_add(4).expect("schema ceilings fit u32");
-        size = size.checked_add(u32::try_from(item_0.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
-        }
+        size = size.checked_add(u32::try_from(field_transcript.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
         let field_answered = &self.answered;
         size = size.checked_add(4).expect("schema ceilings fit u32");
         for item_0 in field_answered.as_slice() {
@@ -6711,11 +6623,8 @@ impl Start {
             None => writer.put(&[0_u8])?,
         }
         let field_transcript = &self.transcript;
-        writer.put(&field_transcript.len().to_be_bytes())?;
-        for item_0 in field_transcript.as_slice() {
-        writer.put(&u32::try_from(item_0.len()).expect("field ceiling fits u32").to_be_bytes())?;
-        writer.put(item_0.as_ref())?;
-        }
+        writer.put(&u32::try_from(field_transcript.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_transcript.as_ref())?;
         let field_answered = &self.answered;
         writer.put(&field_answered.len().to_be_bytes())?;
         for item_0 in field_answered.as_slice() {
@@ -6748,7 +6657,7 @@ impl Start {
         let decoded_activation = reader.u64().ok_or(Problem { path: Path::StartActivation, reason: skein_codec::Reason::Short })?;
         let decoded_charter = { let length = match skein_codec::read_len(reader, limits.start_charter.min(CEILINGS.start_charter)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::StartCharter, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::StartCharter, reason: skein_codec::Reason::Short })?) };
         let decoded_workspace = match reader.u8().ok_or(Problem { path: Path::StartWorkspace, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(Workspace::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::StartWorkspace, reason: skein_codec::Reason::Tag }) };
-        let decoded_transcript = { let count = match skein_codec::read_count(reader, limits.start_transcript.min(CEILINGS.start_transcript)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::StartTranscript, reason }), }; if count > reader.remaining() / 4 { return Err(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = { let length = match skein_codec::read_len(reader, limits.start_transcript_item.min(CEILINGS.start_transcript_item)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::StartTranscript, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Short })?) }; items_0.push(item).expect("count within capacity"); } items_0 };
+        let decoded_transcript = { let length = match skein_codec::read_len(reader, limits.start_transcript.min(CEILINGS.start_transcript)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::StartTranscript, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::StartTranscript, reason: skein_codec::Reason::Short })?) };
         let decoded_answered = { let count = match skein_codec::read_count(reader, limits.start_answered.min(CEILINGS.start_answered)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::StartAnswered, reason }), }; if count > reader.remaining() / 21 { return Err(Problem { path: Path::StartAnswered, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = AnsweredCall::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_grants = { let count = match skein_codec::read_count(reader, limits.start_grants.min(CEILINGS.start_grants)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::StartGrants, reason }), }; if count > reader.remaining() / 24 { return Err(Problem { path: Path::StartGrants, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Grant::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_window = Window::decode_from(limits, reader)?;
@@ -8945,7 +8854,7 @@ impl Answer {
 }
 
 fn limits_valid(limits: &Limits) -> bool {
-    limits.directory_name <= CEILINGS.directory_name && limits.directory_path <= CEILINGS.directory_path && limits.directory_conflicts <= CEILINGS.directory_conflicts && limits.directory_conflicts_item <= CEILINGS.directory_conflicts_item && limits.workspace_directories <= CEILINGS.workspace_directories && limits.grant_value_credential <= CEILINGS.grant_value_credential && limits.receipt_text <= CEILINGS.receipt_text && limits.delivered_receipts <= CEILINGS.delivered_receipts && limits.marker_path <= CEILINGS.marker_path && limits.delivery_refusal_explanation <= CEILINGS.delivery_refusal_explanation && limits.delivery_failure_diagnostic <= CEILINGS.delivery_failure_diagnostic && limits.host_reply_text <= CEILINGS.host_reply_text && limits.answered_call_tool <= CEILINGS.answered_call_tool && limits.message_label <= CEILINGS.message_label && limits.message_text <= CEILINGS.message_text && limits.start_charter <= CEILINGS.start_charter && limits.start_transcript <= CEILINGS.start_transcript && limits.start_transcript_item <= CEILINGS.start_transcript_item && limits.start_answered <= CEILINGS.start_answered && limits.start_grants <= CEILINGS.start_grants && limits.start_messages <= CEILINGS.start_messages && limits.host_ask_tool <= CEILINGS.host_ask_tool && limits.host_ask_input <= CEILINGS.host_ask_input && limits.field_name <= CEILINGS.field_name && limits.field_text <= CEILINGS.field_text && limits.deliver_ask_fields <= CEILINGS.deliver_ask_fields && limits.turn_body <= CEILINGS.turn_body && limits.accepted_result <= CEILINGS.accepted_result
+    limits.directory_name <= CEILINGS.directory_name && limits.directory_path <= CEILINGS.directory_path && limits.directory_conflicts <= CEILINGS.directory_conflicts && limits.directory_conflicts_item <= CEILINGS.directory_conflicts_item && limits.workspace_directories <= CEILINGS.workspace_directories && limits.grant_value_credential <= CEILINGS.grant_value_credential && limits.receipt_text <= CEILINGS.receipt_text && limits.delivered_receipts <= CEILINGS.delivered_receipts && limits.marker_path <= CEILINGS.marker_path && limits.delivery_refusal_explanation <= CEILINGS.delivery_refusal_explanation && limits.delivery_failure_diagnostic <= CEILINGS.delivery_failure_diagnostic && limits.host_reply_text <= CEILINGS.host_reply_text && limits.answered_call_tool <= CEILINGS.answered_call_tool && limits.message_label <= CEILINGS.message_label && limits.message_text <= CEILINGS.message_text && limits.start_charter <= CEILINGS.start_charter && limits.start_transcript <= CEILINGS.start_transcript && limits.start_answered <= CEILINGS.start_answered && limits.start_grants <= CEILINGS.start_grants && limits.start_messages <= CEILINGS.start_messages && limits.host_ask_tool <= CEILINGS.host_ask_tool && limits.host_ask_input <= CEILINGS.host_ask_input && limits.field_name <= CEILINGS.field_name && limits.field_text <= CEILINGS.field_text && limits.deliver_ask_fields <= CEILINGS.deliver_ask_fields && limits.turn_body <= CEILINGS.turn_body && limits.accepted_result <= CEILINGS.accepted_result
 }
 
 impl CallName {
@@ -9386,7 +9295,7 @@ impl Start {
         size = size.checked_add(8_u64)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.start_charter))?)?;
         size = size.checked_add(1_u64.checked_add(Workspace::worst_case_bytes(limits)?)?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.start_transcript).checked_mul(4_u64.checked_add(u64::from(limits.start_transcript_item))?)?)?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.start_transcript))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.start_answered).checked_mul(AnsweredCall::worst_case_bytes(limits)?)?)?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.start_grants).checked_mul(Grant::worst_case_bytes(limits)?)?)?)?;
         size = size.checked_add(Window::worst_case_bytes(limits)?)?;
@@ -9403,7 +9312,7 @@ impl Start {
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(u64::from(limits.start_charter))?;
         heap = heap.checked_add(Workspace::worst_case_heap(limits)?)?;
-        heap = heap.checked_add(List::<Box<[u8]>>::worst_case(limits.start_transcript)?.checked_add(u64::from(limits.start_transcript).checked_mul(u64::from(limits.start_transcript_item))?)?)?;
+        heap = heap.checked_add(u64::from(limits.start_transcript))?;
         heap = heap.checked_add(List::<AnsweredCall>::worst_case(limits.start_answered)?.checked_add(u64::from(limits.start_answered).checked_mul(AnsweredCall::worst_case_heap(limits)?)?)?)?;
         heap = heap.checked_add(List::<Grant>::worst_case(limits.start_grants)?.checked_add(u64::from(limits.start_grants).checked_mul(Grant::worst_case_heap(limits)?)?)?)?;
         heap = heap.checked_add(Window::worst_case_heap(limits)?)?;
@@ -11625,7 +11534,7 @@ mod golden_tests {
 
     #[test]
     fn record_start_smallest() {
-        let value = Start::new(&CEILINGS, StartParts { identity: None, activation: 0_u64, charter: Box::from([].as_slice()), workspace: None, transcript: skein_lib::List::with_capacity(0), answered: skein_lib::List::with_capacity(0), grants: skein_lib::List::with_capacity(0), window: Window::new(&CEILINGS, WindowParts { turns: 0_u32, bytes: 0_u64 }).expect("golden within ceilings"), messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
+        let value = Start::new(&CEILINGS, StartParts { identity: None, activation: 0_u64, charter: Box::from([].as_slice()), workspace: None, transcript: Box::from([].as_slice()), answered: skein_lib::List::with_capacity(0), grants: skein_lib::List::with_capacity(0), window: Window::new(&CEILINGS, WindowParts { turns: 0_u32, bytes: 0_u64 }).expect("golden within ceilings"), messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
         let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
@@ -11635,8 +11544,8 @@ mod golden_tests {
 
     #[test]
     fn record_start_full() {
-        let value = Start::new(&CEILINGS, StartParts { identity: Some([165_u8; 16]), activation: u64::MAX, charter: Box::from([0_u8, 127_u8, 255_u8].as_slice()), workspace: Some(Workspace::new(&CEILINGS, WorkspaceParts { directories: { let mut items = skein_lib::List::with_capacity(1); items.push(Directory::new(&CEILINGS, DirectoryParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), path: Box::from([97_u8, 98_u8, 99_u8].as_slice()), writable: true, git: true, conflicts: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([97_u8, 98_u8, 99_u8].as_slice())).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), transcript: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([0_u8, 127_u8, 255_u8].as_slice())).expect("one slot"); items }, answered: { let mut items = skein_lib::List::with_capacity(1); items.push(AnsweredCall::new(&CEILINGS, AnsweredCallParts { name: CallName::new(&CEILINGS, CallNameParts { activation: u64::MAX, completion: u32::MAX, position: u32::MAX }).expect("golden within ceilings"), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()), reply: SavedReply::Host(HostReply::new(&CEILINGS, HostReplyParts { error: true, text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings")).expect("one slot"); items }, grants: { let mut items = skein_lib::List::with_capacity(1); items.push(Grant::new(&CEILINGS, GrantParts { account: u32::MAX, generation: u64::MAX, valid: skein_lib::Duration::from_nanos(u64::MAX), value: GrantValue::new(&CEILINGS, GrantValueParts { credential: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, window: Window::new(&CEILINGS, WindowParts { turns: u32::MAX, bytes: u64::MAX }).expect("golden within ceilings"), messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { name: u64::MAX, label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
+        let value = Start::new(&CEILINGS, StartParts { identity: Some([165_u8; 16]), activation: u64::MAX, charter: Box::from([0_u8, 127_u8, 255_u8].as_slice()), workspace: Some(Workspace::new(&CEILINGS, WorkspaceParts { directories: { let mut items = skein_lib::List::with_capacity(1); items.push(Directory::new(&CEILINGS, DirectoryParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), path: Box::from([97_u8, 98_u8, 99_u8].as_slice()), writable: true, git: true, conflicts: { let mut items = skein_lib::List::with_capacity(1); items.push(Box::from([97_u8, 98_u8, 99_u8].as_slice())).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), transcript: Box::from([0_u8, 127_u8, 255_u8].as_slice()), answered: { let mut items = skein_lib::List::with_capacity(1); items.push(AnsweredCall::new(&CEILINGS, AnsweredCallParts { name: CallName::new(&CEILINGS, CallNameParts { activation: u64::MAX, completion: u32::MAX, position: u32::MAX }).expect("golden within ceilings"), tool: Box::from([97_u8, 98_u8, 99_u8].as_slice()), reply: SavedReply::Host(HostReply::new(&CEILINGS, HostReplyParts { error: true, text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings")).expect("one slot"); items }, grants: { let mut items = skein_lib::List::with_capacity(1); items.push(Grant::new(&CEILINGS, GrantParts { account: u32::MAX, generation: u64::MAX, valid: skein_lib::Duration::from_nanos(u64::MAX), value: GrantValue::new(&CEILINGS, GrantValueParts { credential: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, window: Window::new(&CEILINGS, WindowParts { turns: u32::MAX, bytes: u64::MAX }).expect("golden within ceilings"), messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { name: u64::MAX, label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
+        let golden: &[u8] = &[1, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14806,20 +14715,20 @@ mod golden_tests {
     #[test]
     fn bound_start_transcript() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(4).expect("schema ceiling");
+            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
             let header = 14_usize.checked_add(4).expect("header size");
             let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(24_usize).expect("wire size") } else { header };
             let mut writer = skein_lib::Writer::new(total);
             writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
             writer.put(&count.to_be_bytes()).expect("length room");
             if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0]).expect("item room"); }
+                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
                 writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
             }
             writer.finish()
         }
-        Start::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Start::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
+        Start::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(536_870_912, true))).expect("field at ceiling");
+        let problem = Start::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(536_870_913, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::StartTranscript, skein_codec::Reason::Bound));
     }
 
