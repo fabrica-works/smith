@@ -1062,3 +1062,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    branches stay. The second block of 13.32's kind: README rule 8 gains
    that case, a scripted cue that waits for what the Scope or Shape now
    withholds.
+37. **03.8's queued signals: find the order before changing them**
+   (block of 2026-10-12T16:06:54Z, smith 03.8). With 13.35's two
+   `Signal::Terminate` in one pass, both dropped stories cancelled and
+   answered instead of dropping. The implementer's reading, standard
+   signals coalescing, does not hold in this world: at smith's skein pin
+   (26502c96) the simulation queues each signal in order
+   (`skein-sim/src/sim.rs:317-321`, a `VecDeque`), and the kit's
+   `kernel::Signal` has only `Terminate` and `Kill`
+   (`skein-io/src/kernel.rs:537`), so "Interrupt then Terminate" is not
+   on offer. Ruling: the implementer's other proposal, README rule 11's
+   diagnostic (at most three runs, removed before the commit), naming
+   when each `Shutdown` reaches the local domain against the cancel's
+   terminals. A cause in 03.8's Files is fixed in 03.8; a cause in skein
+   comes back as a question, with the trace.
