@@ -81,15 +81,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let token_path = token_directory(settings.token_directory.as_deref()).map_err(host_failure)?;
     let parent = token_path.parent().ok_or_else(|| host_failure("token directory has no parent".into()))?;
     fs::create_dir_all(parent).map_err(|error| host_failure(format!("token directory parent: {error}")))?;
-    let mut effect_roots = Vec::new();
-    if settings.in_process {
-        for directory in &settings.directories {
-            effect_roots.push(
-                skein_shell::open_root(Path::new(&directory.path))
-                    .map_err(|error| host_failure(format!("agent root {}: {error}", directory.path)))?,
-            );
-        }
-    }
+    let effect_roots = open_effect_roots(&settings)?;
     let launch_root =
         skein_shell::open_root(Path::new(".")).map_err(|error| host_failure(format!("launch root: {error}")))?;
     let executable = std::env::current_exe().map_err(|error| host_failure(format!("agent program path: {error}")))?;
@@ -135,6 +127,8 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
     let signals = skein_shell::open_termination_signals()
         .map_err(|error| host_failure(format!("local signals failed (errno {error})")))?;
     let oauth_entropy = oauth_entropy().map_err(host_failure)?;
+    let trace = settings.in_process.then_some(agent_config.trace).flatten();
+    let chat = settings.chat.as_bytes().to_vec().into_boxed_slice();
     let lower = settings.in_process.then_some(agent_config.service);
     let mut local_service = Local::within_memory(
         local_config,
@@ -155,9 +149,44 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         Box::new(std::io::stderr()),
         agent_config.memory,
     )?;
+    adopt_trace(&mut local_service, trace, chat)?;
     let mut kernel = Kernel::open(KernelConfig { operations: local_service.operations() })
         .map_err(|error| host_failure(format!("local kernel: {error}")))?;
     Ok(drive(&mut kernel, &Clock::new(), &mut local_service))
+}
+
+fn open_effect_roots(settings: &local_settings::Settings) -> Result<Vec<Fd>, Failure> {
+    let mut effect_roots = Vec::new();
+    if settings.in_process {
+        for directory in &settings.directories {
+            effect_roots.push(
+                skein_shell::open_root(Path::new(&directory.path))
+                    .map_err(|error| host_failure(format!("agent root {}: {error}", directory.path)))?,
+            );
+        }
+    }
+    Ok(effect_roots)
+}
+
+fn adopt_trace(
+    local_service: &mut Local,
+    trace: Option<smith_agent_shell::trace::TraceConfig>,
+    chat: Box<[u8]>,
+) -> Result<(), Failure> {
+    if let Some(trace) = trace {
+        let parent = trace.path.parent().ok_or_else(|| host_failure("trace path has no parent".into()))?;
+        let name = trace.path.file_name().ok_or_else(|| host_failure("trace path has no filename".into()))?;
+        let root = skein_shell::open_root(parent).map_err(|error| host_failure(format!("trace root: {error}")))?;
+        let fd = skein_shell::open_append(root, name.as_bytes(), 0o600)
+            .map_err(|error| host_failure(format!("trace append: {error:?}")))?;
+        let clocks = Clock::new().now();
+        let mut header = stream_header(chat, trace.capture, trace.delivery, u64::from(std::process::id()));
+        header.wall_ms = clocks.wall.as_nanos() / 1_000_000;
+        local_service
+            .adopt_trace(fd, Some(root), clocks.now, header, trace.delivery)
+            .map_err(|fd| host_failure(format!("trace descriptor {} cannot be adopted", fd.raw())))?;
+    }
+    Ok(())
 }
 
 fn validate_delivery_environment(entries: &[String]) -> Result<(), Failure> {
@@ -350,4 +379,27 @@ fn product_host_startup_and_complete_outer_memory_fit() {
     short.process.channel.channel.output_bytes -= 1;
     assert!(service::worst_case(&short).is_none(), "one byte short rejects before adopting streams");
     assert!(Local::required_memory(&short, 1, 0).is_none());
+}
+
+/// Startup metadata for the product stream, with its chat and capture policy.
+#[must_use]
+pub fn stream_header(
+    chat: Box<[u8]>,
+    capture: smith_agent_service::sinks::Capture,
+    delivery: smith_agent_service::sinks::Delivery,
+    pid: u64,
+) -> smith_events::SessionStarted {
+    smith_events::SessionStarted {
+        wall_ms: 0,
+        agent: smith_agent_shell::identity(),
+        mode: smith_events::Mode::Chat,
+        chat: Some(chat),
+        containment: smith_events::Containment::Groups,
+        pid,
+        profile: b"standard".as_slice().into(),
+        capture: capture.encoded(),
+        delivery: delivery.encoded(),
+        versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
+        limits: skein_lib::List::with_capacity(0),
+    }
 }

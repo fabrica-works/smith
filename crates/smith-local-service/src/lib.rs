@@ -14,6 +14,7 @@ extern crate alloc;
 
 mod process;
 mod service;
+pub mod stream;
 
 pub mod profile;
 

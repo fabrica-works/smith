@@ -272,6 +272,17 @@ impl skein_world::Machine for Machine {
                 .map_err(|_| kernel::Error::NotFound)
         }
     }
+    fn open_append(
+        &mut self,
+        root: skein_sim::Handle,
+        path: &[u8],
+        mode: u32,
+    ) -> Result<skein_sim::Handle, kernel::Error> {
+        self.files
+            .open(Opened::new(root.raw()), path, How::Create { mode })
+            .map(|file| skein_sim::Handle::new(file.raw()))
+            .map_err(|_| kernel::Error::NotFound)
+    }
     fn close_root(&mut self, root: skein_sim::Handle) {
         self.files.close(Opened::new(root.raw()));
     }
@@ -311,6 +322,35 @@ impl World {
             (false, true, false),
         )
     }
+    /// Name the product's event destination while retaining the ordinary chat story.
+    #[must_use]
+    pub fn traced(seed: u64, files: &Files, placement: Placement, answer: &[u8]) -> Self {
+        let mut world = Self::new(seed, files, placement, answer);
+        world.scenario.launch.traced = true;
+        world
+    }
+
+    /// Read the settled append bytes independently of the local service.
+    #[must_use]
+    pub fn records(&mut self) -> Vec<smith_events::Record> {
+        let machine = &mut self.outcome.as_mut().expect("settled world").machine;
+        let trace = machine.files.open(machine.master, b"events.jsonl", How::Read).expect("trace file");
+        let size = u32::try_from(machine.files.stat(trace).size).expect("finite trace size");
+        let bytes = machine.files.read(trace, 0, size).expect("trace bytes");
+        machine.files.close(trace);
+        let lower = process::lower_configuration();
+        let events = smith_agent_service::EventLimits::derive(
+            &lower.limits,
+            smith_agent_service::sinks::Capture::Everything,
+            1,
+            0,
+            &[],
+            Duration::from_secs(1),
+        )
+        .expect("trace limits");
+        smith_agent_process_world::events::read(&bytes, &events)
+    }
+
     #[must_use]
     pub fn interrupted(seed: u64, files: &Files, placement: Placement) -> Self {
         Self::configured(
@@ -412,6 +452,7 @@ impl World {
                     tools: false,
                     in_process: placement == Placement::InProcess,
                     keep_facts,
+                    traced: false,
                     authenticated: false,
                     state_directory: files.path.join("chat"),
                     token_directory,
@@ -507,7 +548,7 @@ impl World {
             referee.fail_turn_at_query(launch.state_directory.clone(), 2);
         }
         let mut world = skein_world::World::new(launch.seed, config, referee, self.memory).with_machine(machine);
-        world.host_roots(
+        world.host_startup(
             HostedProgram {
                 program: b"smith-local".as_slice().into(),
                 make: process::make_local,
@@ -515,6 +556,7 @@ impl World {
                 operations: 2048,
             },
             process::local_roots,
+            process::local_appends,
         );
         world.host_roots(
             HostedProgram {

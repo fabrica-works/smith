@@ -27,6 +27,7 @@ enum Route {
     Service(Token),
     Writer(Token),
     Launch,
+    TraceRoot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -225,6 +226,22 @@ impl Local {
         Ok(local)
     }
 
+    /// Adopt an opened product trace before the first loop pass.
+    pub fn adopt_trace(
+        &mut self,
+        fd: kernel::Fd,
+        root: Option<kernel::Fd>,
+        now: Time,
+        header: smith_events::SessionStarted,
+        delivery: agent::sinks::Delivery,
+    ) -> Result<(), kernel::Fd> {
+        self.service.adopt_trace(fd, now, header, delivery)?;
+        if let Some(fd) = root {
+            self.submit(kernel::Submit { op: Token::new(0), kind: kernel::Op::Close { fd } }, Route::TraceRoot);
+        }
+        Ok(())
+    }
+
     /// Price the selected local service and every outer shell owner before adopting resources.
     /// `accounts` counts actual configured OAuth owners; `lower_routes` is zero for a spawned child.
     /// Contract: protocol/limits.md, sections 3 and 4.
@@ -276,6 +293,7 @@ impl Local {
                     continue;
                 }
                 domain::Request::Notice { .. }
+                | domain::Request::Answered { .. }
                 | domain::Request::Show { .. }
                 | domain::Request::Git { .. }
                 | domain::Request::PlainStatus { .. }
@@ -455,7 +473,7 @@ impl Local {
                 let wanted = match route {
                     Route::Service(_) => Route::Service(target),
                     Route::Writer(_) => Route::Writer(target),
-                    Route::Launch => unreachable!("launch directory only closes"),
+                    Route::Launch | Route::TraceRoot => unreachable!("startup directory only closes"),
                 };
                 let target = self
                     .routes
@@ -555,6 +573,11 @@ impl Host for Local {
                 }),
                 Route::Writer(op) => {
                     self.store_completions.push(kernel::Complete { op, kind: complete.kind, result: complete.result });
+                }
+                Route::TraceRoot => {
+                    if complete.result.is_err() {
+                        self.error = Some("trace directory close failed".into());
+                    }
                 }
                 Route::Launch => {
                     self.launch_closing = false;

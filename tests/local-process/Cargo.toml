@@ -38,6 +38,7 @@ smith-host-domain.workspace = true
 smith-host-protocol.workspace = true
 smith-protocol-channel.workspace = true
 smith-domain.workspace = true
+smith-events.workspace = true
 smith-transcript.workspace = true
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

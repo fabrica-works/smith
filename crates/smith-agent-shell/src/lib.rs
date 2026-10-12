@@ -8,4 +8,4 @@ mod agent_shell;
 pub mod config;
 pub mod trace;
 
-pub use agent_shell::{Agent, Resources, run};
+pub use agent_shell::{Agent, Resources, identity, run};

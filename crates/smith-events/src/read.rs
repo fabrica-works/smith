@@ -995,10 +995,19 @@ fn read_check_exit(tokens: &[Token], limits: &Limits) -> Result<CheckExit, Error
 
 fn read_session_started(tokens: &[Token], limits: &Limits) -> Result<SessionStarted, Error> {
     object(tokens)?;
+    let mode = read_mode(required(tokens, b"mode")?, limits)?;
+    let chat = match &mode {
+        Mode::Agent => None,
+        Mode::Exec | Mode::Chat | Mode::Unknown(_) => match field(tokens, b"chat")? {
+            Some([Token::Null]) | None => None,
+            Some(value) => Some(text(value, limits.string)?),
+        },
+    };
     Ok(SessionStarted {
+        chat,
         wall_ms: unsigned(required(tokens, b"wall_ms")?)?,
         agent: read_agent(required(tokens, b"agent")?, limits)?,
-        mode: read_mode(required(tokens, b"mode")?, limits)?,
+        mode,
         containment: read_containment(required(tokens, b"containment")?, limits)?,
         pid: unsigned(required(tokens, b"pid")?)?,
         profile: text(required(tokens, b"profile")?, limits.string)?,

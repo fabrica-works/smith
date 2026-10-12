@@ -12,7 +12,7 @@ use smith_protocol_llm as llm;
 
 pub mod fake;
 
-mod events;
+pub mod events;
 mod tracing;
 
 /// The bounded diagnostic writer observed outside each hosted agent.

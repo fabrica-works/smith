@@ -209,7 +209,7 @@ fn heap_completion(limits: &Limits) -> Option<u64> {
 }
 
 fn heap_session_started(limits: &Limits) -> Option<u64> {
-    let mut length = 0_u64;
+    let mut length = u64::from(limits.string);
     length = length.checked_add(heap_agent(limits)?)?;
     length = length.checked_add(u64::from(limits.string))?;
     length = length.checked_add(u64::from(limits.string))?;
@@ -643,7 +643,7 @@ fn size_check_exit(_capture: &Capture, limits: &Limits) -> Option<u64> {
 }
 
 fn size_session_started(capture: &Capture, limits: &Limits) -> Option<u64> {
-    let mut length = 2_u64;
+    let mut length = 12_u64.checked_add(u64::from(limits.string).checked_mul(6)?)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;
     length = length.checked_add(9)?.checked_add(size_agent(capture, limits)?)?;
     length = length.checked_add(8)?.checked_add(size_mode(capture, limits)?)?;

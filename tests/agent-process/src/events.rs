@@ -214,3 +214,22 @@ fn name(event: &Event) -> &'static [u8] {
         Event::Notice(_) => b"notice",
     }
 }
+
+/// Decode the actual closed append file under its producer's receiving ceiling.
+#[must_use]
+pub fn read(bytes: &[u8], events: &smith_agent_service::EventLimits) -> Vec<Record> {
+    let ceiling = events.sinks.line_ceiling(events.capture).expect("producer line ceiling");
+    let mut reader = smith_events::Reader::with_ceiling(&events.sinks.records, ceiling).expect("reader limits");
+    let mut records = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let line = reader.feed(&bytes[offset..]).expect("valid event stream");
+        assert!(line.consumed > 0);
+        offset += line.consumed;
+        if let Some(record) = line.record {
+            records.push(record);
+        }
+    }
+    reader.finish().expect("newline-terminated stream");
+    records
+}

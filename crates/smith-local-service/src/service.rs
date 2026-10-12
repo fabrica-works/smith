@@ -281,6 +281,38 @@ impl Service {
         })
     }
 
+    /// Adopt an inline product trace and record its startup before the first pass.
+    pub fn adopt_trace(
+        &mut self,
+        fd: kernel::Fd,
+        now: Time,
+        header: smith_events::SessionStarted,
+        delivery: agent_service::sinks::Delivery,
+    ) -> Result<(), kernel::Fd> {
+        let Some(effects) = self.below.inline_mut() else { return Err(fd) };
+        effects.adopt_destination(fd, agent_service::Destination::Trace, delivery)?;
+        effects.start_session(now, header);
+        Ok(())
+    }
+
+    fn drain_run_facts(&mut self) -> bool {
+        let Some(effects) = self.below.inline_mut() else { return true };
+        if let Some(message) = self.local.pop_run_message() {
+            effects.message(message.name, &message.label, &message.text);
+        }
+        for _ in 0..self.limits.queue {
+            if !effects.takes() {
+                return false;
+            }
+            let Some(fact) = self.local.pop_run_fact() else {
+                effects.facts_drained();
+                return effects.takes();
+            };
+            effects.fact(&fact);
+        }
+        false
+    }
+
     /// Queue a terminal, store, git or OAuth outcome from the shell.
     pub fn local_event(&mut self, event: local::Event) {
         self.local_events.push(event);
@@ -369,16 +401,18 @@ impl Service {
 
     #[must_use]
     pub fn work_pending(&self, now: Time) -> bool {
+        let takes = match self.below.inline() {
+            Some(effects) => effects.takes(),
+            None => true,
+        };
         !self.completions.is_empty()
             || !self.submissions.is_empty()
-            || self.local.is_ready()
-            || self.local.is_due(now)
+            || (takes && (self.local.is_ready() || self.local.is_due(now)))
             || match self.below.inline() {
                 Some(effects) => effects.work_pending(now),
                 None => false,
             }
-            || !self.local_events.is_empty()
-            || !self.local_requests.is_empty()
+            || (takes && (!self.local_events.is_empty() || !self.local_requests.is_empty()))
             || !self.host_events.is_empty()
             || !self.terminal_events.is_empty()
             || self.below.process().work_pending(now)
@@ -534,6 +568,10 @@ impl Service {
             local::Request::SaveState { state, fresh } => {
                 if self.capture_activation != Some(state.activation) {
                     self.capture_activation = Some(state.activation);
+                    let (charter, messages) = self.local.charter();
+                    if let Some(effects) = self.below.inline_mut() {
+                        effects.starting(state.activation, messages, &charter);
+                    }
                     self.snapshot_state = SnapshotState::Capturing { saved: false };
                     self.below
                         .process_mut()
@@ -541,11 +579,24 @@ impl Service {
                 }
                 self.shell.push(local::Request::SaveState { state, fresh });
             }
+            local::Request::Answered { answer } => {
+                if let Some(effects) = self.below.inline_mut() {
+                    effects.answered(now, crate::stream::answered(&answer, effects.capture()));
+                }
+            }
             local::Request::Exit { status } => {
                 self.pending_exit = Some(status);
                 self.below.process_mut().close();
                 if let Some(effects) = self.below.inline_mut() {
-                    effects.close();
+                    effects.end(match status {
+                        local::ExitStatus::Accepted => 0,
+                        local::ExitStatus::RunFailed => 1,
+                        local::ExitStatus::Refused => 2,
+                        local::ExitStatus::Credentials { .. } => 3,
+                        local::ExitStatus::Budget => 4,
+                        local::ExitStatus::NeedsInput => 5,
+                        local::ExitStatus::Interrupted => 130,
+                    });
                 }
             }
             other @ (local::Request::SaveTurn { .. }
@@ -717,6 +768,9 @@ const EFFECT_OPERATION_BIT: u64 = 1 << 63;
 fn local_pass(service: &mut Service, now: Time, wall: Wall) {
     let local_env = Env { now, wall, limits: service.limits.local.clone() };
     for _ in 0..service.local_events.capacity() {
+        if !service.drain_run_facts() {
+            break;
+        }
         if service.local_requests.room() < local::max_out(&service.limits.local) {
             break;
         }
@@ -747,14 +801,21 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
         }
         local::step(&mut service.local, &local_env, local::Event::StateSaved, &mut service.local_requests);
     }
-    if service.local.is_due(now) && service.local_requests.room() >= local::max_out(&service.limits.local) {
+    if service.drain_run_facts()
+        && service.local.is_due(now)
+        && service.local_requests.room() >= local::max_out(&service.limits.local)
+    {
         local::fire(&mut service.local, &local_env, &mut service.local_requests);
     }
-    if service.local.is_ready() && service.local_requests.room() >= local::max_out(&service.limits.local) {
+    if service.drain_run_facts()
+        && service.local.is_ready()
+        && service.local_requests.room() >= local::max_out(&service.limits.local)
+    {
         local::resume(&mut service.local, &local_env, &mut service.local_requests);
     }
     for _ in 0..service.local_requests.capacity() {
-        if service.shell.room() == 0
+        if !service.drain_run_facts()
+            || service.shell.room() == 0
             || service.host_events.room() == 0
             || service.local_events.room() == 0
             || service.terminal_events.room() < protocol::terminal_max_out()

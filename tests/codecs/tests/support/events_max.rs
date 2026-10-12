@@ -131,6 +131,7 @@ fn max_command_exit(_limits: &smith_events::Limits) -> CommandExit {
 
 fn max_session_started(limits: &smith_events::Limits) -> SessionStarted {
     SessionStarted {
+        chat: Some(payload(limits.string)),
         limits: {
             let mut values = List::with_capacity(limits.items);
             for index in 0..limits.items {

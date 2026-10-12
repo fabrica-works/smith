@@ -465,19 +465,7 @@ fn read_records(machine: &mut Machine) -> (Vec<smith_events::Record>, Box<[u8]>)
         machine.files.close(file);
         machine.files.close(root);
         let events = crate::tracing::event_limits(&crate::limits());
-        let ceiling = events.sinks.line_ceiling(events.capture).expect("actual producer line ceiling");
-        let mut reader = smith_events::Reader::with_ceiling(&events.sinks.records, ceiling)
-            .expect("actual receiving bound and aggregate line ceiling");
-        let mut offset = 0;
-        while offset < bytes.len() {
-            let line = reader.feed(&bytes[offset..]).expect("valid event stream");
-            assert!(line.consumed > 0);
-            offset += line.consumed;
-            if let Some(record) = line.record {
-                records.push(record);
-            }
-        }
-        reader.finish().expect("newline-terminated stream");
+        records = crate::events::read(&bytes, &events);
         actual = bytes.into();
     }
     (records, actual)

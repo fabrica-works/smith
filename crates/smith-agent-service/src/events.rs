@@ -126,6 +126,7 @@ pub(crate) struct Producer {
     origin: Option<Time>,
     start: Option<Start>,
     admitted: Option<u64>,
+    admitted_at: Option<Time>,
     activation: Option<u64>,
     answer_at: Option<Time>,
     overflow_notice: Option<run::Overflow>,
@@ -176,6 +177,7 @@ impl Producer {
             origin: None,
             start: None,
             admitted: None,
+            admitted_at: None,
             activation: None,
             answer_at: None,
             overflow_notice: None,
@@ -196,10 +198,16 @@ impl Producer {
         self.messages.received(name, label, text);
     }
 
-    pub(crate) fn starting(&mut self, start: &channel::DecodedStart) {
-        assert!(self.activation.is_none(), "one Start per invocation");
-        self.activation = Some(start.activation);
-        let charter = &start.charter;
+    pub(crate) fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
+        assert!(self.activation.is_none() || self.answer_at.is_some(), "prior run has answered");
+        self.sinks.starting();
+        self.activation = Some(activation);
+        self.admitted = None;
+        self.admitted_at = None;
+        self.answer_at = None;
+        self.wind_down = false;
+        self.unread = 0;
+        self.check_at = None;
         let mut families = List::with_capacity(4);
         for (allowed, family) in [
             (charter.grants.tools.inspect, smith_events::Family::Inspect),
@@ -230,7 +238,7 @@ impl Producer {
             contract.push(smith_events::Form::Failure).expect("four forms");
         }
         self.start = Some(Start {
-            messages: u64::try_from(start.messages.len()).expect("bounded messages"),
+            messages,
             llm: charter.llm.clone(),
             budget: smith_events::Budget {
                 turns: u64::from(charter.budget.turns),
@@ -278,6 +286,7 @@ impl Producer {
         let event = match fact.kind {
             run::facts::FactKind::Admitted { run: _, resumed } => {
                 self.admitted = Some(self.activation());
+                self.admitted_at = Some(fact.at);
                 let start = self.start.take().expect("actual Start retained before its admission");
                 Event::RunStarted(smith_events::RunStarted {
                     run: self.activation(),
@@ -490,6 +499,30 @@ impl Producer {
         });
     }
 
+    pub(crate) fn answered(&mut self, now: Time, started: Time, answer: crate::Answered) {
+        self.messages.clear();
+        assert!(self.answer_at.is_none(), "one actual answer per run");
+        self.answer_at = Some(now);
+        let mut record = smith_events::RunCompleted {
+            run: self.activation(),
+            wind_down: self.wind_down,
+            status: answer.status,
+            failure: answer.failure,
+            result: answer.result,
+            turns: answer.turns,
+            spent: answer.spent,
+            read: answer.read,
+            unread: self.unread,
+            usage: self.sinks.reported(),
+            duration_ms: now.saturating_since(self.admitted_at.unwrap_or(started)).as_nanos() / 1_000_000,
+        };
+        self.sinks.answer_failure(&mut record);
+        self.sinks.record(&Record {
+            t_ms: now.saturating_since(self.origin()).as_nanos() / 1_000_000,
+            event: Event::RunCompleted(record),
+        });
+    }
+
     pub(crate) fn notice(
         &mut self,
         now: Time,
@@ -584,6 +617,7 @@ mod tests {
                 origin: Some(Time::ZERO),
                 start: None,
                 admitted: Some(7),
+                admitted_at: None,
                 activation: Some(7),
                 answer_at: None,
                 overflow_notice: None,

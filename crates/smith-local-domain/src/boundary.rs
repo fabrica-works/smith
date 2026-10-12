@@ -296,6 +296,8 @@ pub enum Request {
     Lower { agent: Token, request: smith_inline_agent::Lower },
     /// One process effect for the adapter; its terminal returns as Process.
     Process(smith_host_domain::process::Request),
+    /// The shown answer moves to the service for its run terminal; owes no terminal.
+    Answered { answer: smith_host_domain::Answer },
     /// The caller may terminate this invocation.
     Exit { status: ExitStatus },
 }

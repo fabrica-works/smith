@@ -515,3 +515,38 @@ fn a_told_turns_window_flag_reaches_its_save() {
         }));
     }
 }
+
+#[test]
+fn an_inline_runs_facts_wait_for_the_service() {
+    let limits = limits();
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+    let mut domain = Domain::new(config(), &limits, 11).expect("inline chat");
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    crate::resume(&mut domain, &env, &mut out);
+    drop(drain_requests(&mut out));
+    let loaded = Event::Loaded { state: None, transcript: None, deliveries: Box::default() };
+    crate::step(&mut domain, &env, loaded, &mut out);
+    crate::step(&mut domain, &env, Event::Line { text: b"hello".as_slice().into() }, &mut out);
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Credential {
+            grant: smith_domain::Grant {
+                name: smith_domain::GrantName { account: 7, generation: 1 },
+                valid: Duration::from_secs(60),
+            },
+        },
+        &mut out,
+    );
+    crate::step(&mut domain, &env, Event::StateSaved, &mut out);
+    for _ in 0_u32..4 {
+        drop(drain_requests(&mut out));
+        crate::resume(&mut domain, &env, &mut out);
+    }
+    let mut facts = 0_u32;
+    while domain.pop_run_fact().is_some() {
+        facts += 1;
+    }
+    assert!(facts > 0, "ordinary local entrances retained the native run facts");
+    assert!(domain.pop_run_fact().is_none());
+}

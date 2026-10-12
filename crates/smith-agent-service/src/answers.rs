@@ -50,6 +50,17 @@ pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer) {
     }
 }
 
+/// Parts of a run terminal supplied by the writer that meets its answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Answered {
+    pub status: Status,
+    pub failure: Option<AnswerFailure>,
+    pub result: Option<RunResult>,
+    pub turns: u64,
+    pub spent: u64,
+    pub read: Option<u64>,
+}
+
 /// The run owner's final fence and measurements, supplied with its actual answer.
 #[derive(Clone, Copy, Debug)]
 pub struct AnswerMeta {
@@ -92,7 +103,9 @@ pub fn answer_record(meta: AnswerMeta, answer: &run::Answer, capture: Capture) -
     }
 }
 
-fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult {
+/// Project the accepted result under the writer's capture policy.
+#[must_use]
+pub fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult {
     let (form, label, text, fields) = match outcome {
         run::outcome::Declared::Change(change) => (Form::Change, None, None, &change.fields),
         run::outcome::Declared::Verdict(verdict) => {

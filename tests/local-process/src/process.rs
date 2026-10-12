@@ -32,6 +32,8 @@ pub struct Launch {
     pub tools: bool,
     pub in_process: bool,
     pub keep_facts: bool,
+    #[serde(default)]
+    pub traced: bool,
     pub authenticated: bool,
     pub state_directory: PathBuf,
     pub token_directory: PathBuf,
@@ -644,12 +646,25 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
 #[must_use]
 pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
-    let (mut config, lower) =
+    let (mut config, mut lower) =
         configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
     config.launch.arguments = launch.arguments();
+    if launch.traced {
+        lower.limits.events = Some(
+            smith_agent_service::EventLimits::derive(
+                &lower.limits,
+                smith_agent_service::sinks::Capture::Everything,
+                1,
+                0,
+                &[],
+                Duration::from_secs(1),
+            )
+            .expect("trace limits"),
+        );
+    }
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
-    let local = Local::new(
+    let mut local = Local::new(
         config,
         launch.in_process.then_some(lower),
         Resources {
@@ -672,6 +687,17 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         Box::new(writer),
     )
     .expect("actual shared local shell");
+    if launch.traced {
+        let fd = inherited.appends.iter().find(|(name, _)| name.as_ref() == b"product-trace").expect("trace fd").1;
+        let delivery = smith_agent_service::sinks::Delivery::Complete;
+        let header = smith_local_shell::local_shell::stream_header(
+            b"main".as_slice().into(),
+            smith_agent_service::sinks::Capture::Everything,
+            delivery,
+            101,
+        );
+        local.adopt_trace(fd, None, Time::ZERO, header, delivery).expect("product trace adoption");
+    }
     Proc::Local(Box::new(LocalProcess::new(capture.host(local), launch.keep_facts)))
 }
 /// The agent's declared workspace directories, each owned by this child.
@@ -700,4 +726,20 @@ pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         ))),
         errors,
     )
+}
+
+/// The product trace selected by the same launch document as its agent kind.
+#[must_use]
+pub fn local_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
+    let launch = Launch::read(spawn);
+    if launch.traced {
+        vec![skein_world::StartupAppend {
+            name: b"product-trace".as_slice().into(),
+            root: launch.root_path.as_os_str().as_encoded_bytes().into(),
+            path: b"events.jsonl".as_slice().into(),
+            mode: 0o600,
+        }]
+    } else {
+        Vec::new()
+    }
 }

@@ -1210,6 +1210,13 @@ fn validate_completion(value: &Completion, limits: &Limits) -> Result<(), Error>
 fn validate_session_started(value: &SessionStarted, limits: &Limits) -> Result<(), Error> {
     validate_agent(&value.agent, limits)?;
     validate_mode(&value.mode, limits)?;
+    match &value.mode {
+        Mode::Agent if value.chat.is_some() => return Err(Error::Shape),
+        Mode::Agent | Mode::Exec | Mode::Chat | Mode::Unknown(_) => {}
+    }
+    if let Some(chat) = &value.chat {
+        check_text(chat, limits.string)?;
+    }
     validate_containment(&value.containment, limits)?;
 
     check_text(&value.profile, limits.string)?;
@@ -1507,6 +1514,10 @@ fn encode_session_started(json: &mut Encoder, value: &SessionStarted, capture: &
     write_agent(json, &value.agent, capture);
     json.key(b"mode");
     write_mode(json, &value.mode, capture);
+    if let Some(chat) = &value.chat {
+        json.key(b"chat");
+        json.string(chat);
+    }
     json.key(b"containment");
     write_containment(json, &value.containment, capture);
     json.key(b"pid");

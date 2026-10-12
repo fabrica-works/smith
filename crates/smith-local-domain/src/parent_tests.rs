@@ -327,6 +327,7 @@ fn a_message_refused_after_the_last_word_keeps_the_single_transcript_reload() {
     );
     let Some(Request::Show { text }) = out.pop() else { panic!("actual transcript refusal") };
     assert_eq!(text.as_ref(), b"Saved transcript was refused");
+    let Some(Request::Answered { .. }) = out.pop() else { panic!("answer reaches its event writer") };
     let Some(Request::Load) = out.pop() else { panic!("one transcript reload") };
     let Some(Request::Notice { notice }) = out.pop() else { panic!("late message terminal") };
     assert_eq!(

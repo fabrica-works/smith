@@ -150,6 +150,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     agent
         .checked_add(configuration)?
         .checked_add(lines)?
+        .checked_add(u64::from(limits.line_bytes))?
+        .checked_add(u64::try_from(crate::person::LABEL.len()).ok()?)?
         .checked_add(unsaved)?
         .checked_add(out)?
         .checked_add(child_out)?

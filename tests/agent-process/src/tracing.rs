@@ -125,6 +125,7 @@ impl Host for Tracing {
             self.service.start_session(
                 now,
                 smith_events::SessionStarted {
+                    chat: None,
                     wall_ms: wall.as_nanos() / 1_000_000,
                     agent: smith_events::Agent {
                         name: b"smith".as_slice().into(),

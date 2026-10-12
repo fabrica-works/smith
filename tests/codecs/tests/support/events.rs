@@ -418,6 +418,7 @@ fn value_command_exit(_name: &str, _spelling: &str) -> CommandExit {
 
 fn value_session_started(name: &str, spelling: &str) -> SessionStarted {
     SessionStarted {
+        chat: if name == "Mode" && spelling == "chat" { Some(b"main".as_slice().into()) } else { None },
         limits: List::with_capacity(0),
         wall_ms: u64::MAX,
         agent: value_agent(name, spelling),

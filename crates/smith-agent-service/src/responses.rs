@@ -149,6 +149,13 @@ impl Book {
         assert!(old.is_none(), "each conversation opens once");
     }
 
+    pub(crate) fn starting(&mut self) {
+        assert!(self.conversations.is_empty(), "prior run's conversations settled");
+        self.next = 1;
+        self.reported = crate::observations::Reported::NONE;
+        self.main_failure = None;
+    }
+
     pub(crate) fn scope(&self, owner: Token) -> Option<Scope> {
         let conversation = self.conversations.get(&owner)?;
         Some(Scope { run: conversation.run, conversation: conversation.number })

@@ -980,3 +980,22 @@ fn a_budget_call_is_bounded_like_a_tool_call() {
     assert_eq!(read(&line, &bounded), Err(Error::Shape));
     assert_eq!(write(&record, &Capture::None, &bounded), Err(Error::Limits));
 }
+
+#[test]
+fn session_started_chat_round_trips() {
+    let (_, mut record, capture) = fixtures::samples()
+        .into_iter()
+        .find(|(_, record, _)| matches!(record.event, Event::SessionStarted(_)))
+        .expect("header sample");
+    let Event::SessionStarted(header) = &mut record.event else { panic!("header") };
+    header.mode = smith_events::Mode::Chat;
+    header.chat = Some(b"main".as_slice().into());
+    let line = write(&record, &capture, &limits()).expect("bounded header").expect("header record");
+    assert_eq!(read(&line, &limits()).expect("read chat"), Some(record));
+    let agent = String::from_utf8(line.into_vec()).expect("JSON").replace("\"mode\":\"chat\"", "\"mode\":\"agent\"");
+    let Event::SessionStarted(header) = read(agent.as_bytes(), &limits()).expect("agent header").expect("record").event
+    else {
+        panic!("header")
+    };
+    assert_eq!(header.chat, None);
+}

@@ -330,12 +330,12 @@ pub(crate) struct RunStart {
 }
 
 /// Preserve today's display words while retaining the host-owned typed answer.
-pub(crate) fn answer_text(answer: host::Answer) -> Box<[u8]> {
-    match answer.result {
-        host::RunResult::Accepted { outcome } => match outcome.into_value() {
-            run::outcome::Declared::Report(report) => report.text,
-            run::outcome::Declared::Failure(failure) => failure.reason,
-            run::outcome::Declared::Verdict(verdict) => verdict.text,
+pub(crate) fn answer_text(answer: &host::Answer) -> Box<[u8]> {
+    match &answer.result {
+        host::RunResult::Accepted { outcome } => match outcome.value() {
+            run::outcome::Declared::Report(report) => report.text.clone(),
+            run::outcome::Declared::Failure(failure) => failure.reason.clone(),
+            run::outcome::Declared::Verdict(verdict) => verdict.text.clone(),
             run::outcome::Declared::Change(_) => Box::from(&b"Change delivered"[..]),
         },
         host::RunResult::Parked => Box::from(&b"Chat parked"[..]),

@@ -421,6 +421,11 @@ impl Sinks {
         self.responses.reported()
     }
 
+    /// Begin another run after the previous conversations have settled.
+    pub(crate) fn starting(&mut self) {
+        self.responses.starting();
+    }
+
     /// Keep an actual root terminal until the gathered session facts have drained.
     pub fn conversation_ended(&mut self, at: Time, owner: Token, end: smith_domain::run::End) {
         self.responses.root_ended(at, owner, end);

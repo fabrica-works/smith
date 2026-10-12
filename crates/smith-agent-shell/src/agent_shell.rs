@@ -196,6 +196,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         service::profile::Name::Standard => b"standard".as_slice(),
     };
     let header = configuration.trace.as_ref().map(|trace| smith_events::SessionStarted {
+        chat: None,
         wall_ms: 0,
         agent: smith_events::Agent {
             name: b"smith".as_slice().into(),
@@ -431,4 +432,14 @@ pub fn run(path: &Path, mut errors: Box<dyn Write>) -> Result<Exit, String> {
 
 fn derivation_refusal(field: &'static str) -> String {
     config::profile_refusal(Refusal::Derived { limit: LimitName::deployment(Layer::Service, field) })
+}
+
+/// The shipped agent identity, shared with the product's event header.
+#[must_use]
+pub fn identity() -> smith_events::Agent {
+    smith_events::Agent {
+        name: b"smith".as_slice().into(),
+        version: env!("CARGO_PKG_VERSION").as_bytes().into(),
+        build: env!("SMITH_BUILD").as_bytes().into(),
+    }
 }

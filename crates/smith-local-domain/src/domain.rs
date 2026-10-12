@@ -45,6 +45,7 @@ pub struct Domain {
     head_survey: HeadSurvey,
     raw_lines: Queue<Box<[u8]>>,
     line: Option<Line>,
+    run_message: Option<host::Message>,
     grants: Grants,
     grant_failed: Option<u32>,
     run: Option<Token>,
@@ -60,7 +61,6 @@ pub struct Domain {
     wall_deadline: Option<Time>,
     facts: Queue<Fact>,
     facts_lost: u64,
-    agent_facts_not_written: u64,
 }
 
 /// One completion terminal held under the local store's acknowledgement pressure.
@@ -175,6 +175,7 @@ impl Domain {
             head_survey: HeadSurvey::NotStarted,
             raw_lines,
             line: None,
+            run_message: None,
             grants: Grants::new(limits.smith.accounts),
             grant_failed: None,
             run: None,
@@ -190,7 +191,6 @@ impl Domain {
             wall_deadline: None,
             facts: Queue::with_capacity(limits.facts),
             facts_lost: 0,
-            agent_facts_not_written: 0,
         })
     }
 
@@ -243,10 +243,27 @@ impl Domain {
         self.facts_lost
     }
 
-    /// Agent observations drained without a destination until the inline sink is installed.
+    /// One fact of the inline run, oldest first; none for a spawned agent.
+    pub fn pop_run_fact(&mut self) -> Option<agent::Fact> {
+        match &mut self.agent {
+            Agent::Inline { domain, .. } => domain.pop_fact(Token::new(1)),
+            Agent::Spawned { .. } => None,
+        }
+    }
+
+    /// The actual inline parent message, before its run receipt reaches the service.
+    pub fn pop_run_message(&mut self) -> Option<host::Message> {
+        self.run_message.take()
+    }
+
+    /// Current run policy for its service's event producer.
     #[must_use]
-    pub fn agent_facts_not_written(&self) -> u64 {
-        self.agent_facts_not_written
+    pub fn charter(&self) -> (agent::run::Charter, u64) {
+        let messages = match self.config.mode {
+            crate::Mode::Chat { .. } => 0,
+            crate::Mode::Headless { .. } => u64::from(self.line.is_some()),
+        };
+        (charter(&self.config), messages)
     }
 
     fn pressured(&self) -> bool {
@@ -256,7 +273,7 @@ impl Domain {
 
 /// Handle one typed event and its immediate child handoffs.
 pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
-    drain_agent_facts(domain, env);
+    drain_agent_content(domain, env);
     match event {
         Event::Line { text } => receive_line(domain, env, text, out),
         Event::Interrupt => interrupt(domain, env, out),
@@ -278,20 +295,15 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     release_held(domain, env, out);
 }
 
-/// Take native observations until 03.7 connects the owner's event stream.
-fn drain_agent_facts(domain: &mut Domain, env: &Env<Limits>) {
+/// Release duplicate capture content and inline lifecycle observations.
+/// The service alone takes native run facts into its event producer.
+fn drain_agent_content(domain: &mut Domain, env: &Env<Limits>) {
     let maximum = agent::max_facts(&env.limits.smith)
         .saturating_add(env.limits.smith.run.facts)
         .saturating_add(env.limits.smith.session.facts)
         .saturating_add(1);
     match &mut domain.agent {
         Agent::Inline { domain: child, limits, .. } => {
-            for _ in 0..maximum {
-                match child.pop_fact(Token::new(1)) {
-                    Some(_) => domain.agent_facts_not_written = domain.agent_facts_not_written.saturating_add(1),
-                    None => break,
-                }
-            }
             for _ in 0..maximum {
                 if child.pop_content(Token::new(1)).is_none() {
                     break;
@@ -321,7 +333,7 @@ fn agent_terminal(domain: &mut Domain, env: &Env<Limits>, agent: Token, terminal
     if completion && domain.turns.unsaved.room() == 0 {
         domain.held.push(Held { agent, terminal });
     } else {
-        drain_agent_facts(domain, env);
+        drain_agent_content(domain, env);
         domain.agent.below(env.now, env.wall, agent, terminal);
     }
 }
@@ -331,7 +343,7 @@ fn release_held(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>
         return;
     }
     if let Some(held) = domain.held.pop() {
-        drain_agent_facts(domain, env);
+        drain_agent_content(domain, env);
         domain.agent.below(env.now, env.wall, held.agent, held.terminal);
         route_agent(domain, env, out);
     }
@@ -339,7 +351,7 @@ fn release_held(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>
 
 /// Fire one child deadline and route its output.
 pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    drain_agent_facts(domain, env);
+    drain_agent_content(domain, env);
     if domain.pressured() {
         if let Some(deadline) = domain.wall_deadline
             && deadline <= env.now
@@ -356,7 +368,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
 
 /// Ask for the initial transcript or advance one ready child handoff.
 pub fn resume(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    drain_agent_facts(domain, env);
+    drain_agent_content(domain, env);
     if domain.chat.phase == Phase::Loading && !domain.chat.load_requested {
         domain.chat.load_requested = true;
         out.push(Request::Load);
@@ -623,6 +635,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     let mut initial = None;
     for message in &messages {
         initial = Some(message.name);
+        observe_initial_message(domain, message);
     }
     let source = RunStart {
         messages,
@@ -655,6 +668,13 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
 fn finish_failed_start(domain: &mut Domain, out: &mut Queue<Request>) {
     if domain.chat.closed {
         closed(domain, out);
+    }
+}
+
+fn observe_initial_message(domain: &mut Domain, message: &host::Message) {
+    match &domain.agent {
+        Agent::Inline { .. } => domain.run_message = Some(message.clone()),
+        Agent::Spawned { .. } => {}
     }
 }
 
@@ -715,6 +735,17 @@ fn head_result(domain: &mut Domain, env: &Env<Limits>, owner: Token, result: Git
 fn send_line(domain: &mut Domain, env: &Env<Limits>, _out: &mut Queue<Request>) {
     let Some(run) = domain.run else { return };
     let Some(line) = domain.line.take() else { return };
+    match &domain.agent {
+        Agent::Inline { .. } => {
+            assert!(domain.run_message.is_none(), "the service drains between local entrances");
+            domain.run_message = Some(host::Message {
+                name: line.name,
+                label: Box::from(crate::person::LABEL),
+                text: line.text.clone(),
+            });
+        }
+        Agent::Spawned { .. } => {}
+    }
     command(
         &mut domain.agent,
         env.now,
@@ -861,7 +892,7 @@ fn route_agent(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
     for _ in 0..max_out(&env.limits) {
         match domain.agent.pop() {
             Some(Output::Parent(request)) => {
-                drain_agent_facts(domain, env);
+                drain_agent_content(domain, env);
                 parent_request(domain, env, request, out);
             }
             Some(Output::Lower { agent, request }) => match request {
@@ -879,7 +910,7 @@ fn route_agent(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
             None => break,
         }
     }
-    drain_agent_facts(domain, env);
+    drain_agent_content(domain, env);
 }
 
 fn accept_turn(
@@ -1035,8 +1066,9 @@ fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
         }
         crate::Mode::Chat { .. } => ExitStatus::Accepted,
     };
-    let text = crate::agent::answer_text(answer);
+    let text = crate::agent::answer_text(&answer);
     out.push(Request::Show { text: crate::person::bounded_text(&text, domain.show_bytes) });
+    out.push(Request::Answered { answer });
     domain.run = None;
     domain.wall_deadline = None;
     domain.line = None;

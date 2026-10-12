@@ -111,6 +111,7 @@ pub struct Service {
     limits: Limits,
     events: Option<crate::events::Producer>,
     ending: Ending,
+    product_exit: Option<u8>,
     usage_unread: bool,
     domain: Option<domain::Domain>,
     channel: Option<channel::Component>,
@@ -199,6 +200,7 @@ impl Effects {
         let mut service = Service::new(config, seed)?;
         service.domain = None;
         service.channel = None;
+        service.answer_sent = true;
         Ok(Self { service, installed: Map::with_capacity(accounts) })
     }
 
@@ -302,6 +304,10 @@ impl Effects {
         domain_down(service);
         component_down(service);
         cleanup(service);
+        finish_events(service);
+        if let Some(events) = &mut service.events {
+            events.sinks.down(&mut service.io_requests);
+        }
         io_down(service);
         service.io.reclaim();
         service.llm.reclaim();
@@ -328,6 +334,87 @@ impl Effects {
     #[must_use]
     pub fn work_pending(&self, now: Time) -> bool {
         work_pending(&self.service, now)
+    }
+
+    /// Adopt the product's append descriptor under its configured delivery policy.
+    pub fn adopt_destination(
+        &mut self,
+        fd: kernel::Fd,
+        destination: crate::Destination,
+        delivery: crate::sinks::Delivery,
+    ) -> Result<(), kernel::Fd> {
+        self.service.adopt_destination(fd, destination, delivery)
+    }
+
+    /// Record the product's startup before its first pass.
+    pub fn start_session(&mut self, now: Time, header: smith_events::SessionStarted) {
+        self.service.start_session(now, header);
+    }
+
+    /// Retain the values supplied by the parent face's start.
+    pub fn starting(&mut self, activation: u64, messages: u64, charter: &run::Charter) {
+        self.service.run_started = self.service.domain_env.now;
+        self.service.answer_sent = false;
+        if let Some(events) = &mut self.service.events {
+            events.starting(activation, messages, charter);
+        }
+    }
+
+    /// Capture selected by the product's event configuration.
+    #[must_use]
+    pub fn capture(&self) -> crate::sinks::Capture {
+        match self.service.limits.events {
+            Some(events) => events.capture,
+            None => crate::sinks::Capture::None,
+        }
+    }
+
+    /// Whether the destinations can take another record this pass.
+    #[must_use]
+    pub fn takes(&self) -> bool {
+        match &self.service.events {
+            Some(events) => events.sinks.takes(),
+            None => true,
+        }
+    }
+
+    /// Observe the exact parent message before draining its run receipt.
+    pub fn message(&mut self, name: Token, label: &[u8], text: &[u8]) {
+        if let Some(events) = &mut self.service.events {
+            events.message(name, label, text);
+        }
+    }
+
+    /// Project one inline run fact in its native drain order.
+    pub fn fact(&mut self, fact: &domain::Fact) {
+        if let Some(events) = &mut self.service.events {
+            events.fact(fact);
+        }
+    }
+
+    /// Finish any opening whose root terminal followed its last session fact.
+    pub fn facts_drained(&mut self) {
+        if let Some(events) = &mut self.service.events {
+            for _ in 0..self.service.limits.domain.run.conversations {
+                if !events.sinks.takes() || !events.sinks.facts_drained(events.origin()) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Record the answer where the product meets it, with its producer's totals.
+    pub fn answered(&mut self, now: Time, answer: crate::Answered) {
+        self.service.answer_sent = true;
+        if let Some(events) = &mut self.service.events {
+            events.answered(now, self.service.run_started, answer);
+        }
+    }
+
+    /// End the stream with the product's exit after its children settle.
+    pub fn end(&mut self, exit: u8) {
+        self.service.product_exit = Some(exit);
+        self.service.channel_ended = true;
     }
 
     /// Close reusable lower entities after the local domain has ended its run.
@@ -476,6 +563,7 @@ impl Service {
             limits,
             events,
             ending: Ending::Running,
+            product_exit: None,
             usage_unread: false,
             domain: Some(domain::Domain::new(&limits.domain, config.domain, seed)),
             channel: Some(channel),
@@ -962,7 +1050,7 @@ fn record_usage(service: &mut Service, usage: io::Measured) {
         service.io_env.now,
         events.origin(),
         &crate::sinks::Ended {
-            exit: u8::from(!service.answer_sent || service.failed),
+            exit: service.product_exit.unwrap_or(u8::from(!service.answer_sent || service.failed)),
             answered: service.answer_sent,
             teardown,
             usage,
@@ -1358,7 +1446,11 @@ fn channel_event(service: &mut Service, event: channel::OpenEvent) {
                 None => true,
             };
             if let Some(events) = &mut service.events {
-                events.starting(&start);
+                events.starting(
+                    start.activation,
+                    u64::try_from(start.messages.len()).expect("bounded messages"),
+                    &start.charter,
+                );
             }
             service.pending_start = Some(start);
             if empty {
@@ -2123,20 +2215,23 @@ pub fn next_policy_deadline(service: &Service) -> Option<Time> {
 /// Whether another iteration can progress without waiting on the kernel.
 #[must_use]
 pub fn work_pending(service: &Service, now: Time) -> bool {
+    let takes = match &service.events {
+        Some(events) => events.sinks.takes(),
+        None => true,
+    };
     let due = match next_deadline(service) {
         Some(deadline) => deadline <= now,
         None => false,
     };
     due || end_pending(service)
         || service.io.is_ready()
-        || service.llm.has_work()
-        || !service.llm.measures_drained()
+        || (takes && (service.llm.has_work() || !service.llm.measures_drained()))
         || match &service.events {
             Some(events) => events.sinks.has_work(),
             None => false,
         }
         || match &service.domain {
-            Some(domain) => domain.is_ready() || domain.has_facts(),
+            Some(domain) => takes && (domain.is_ready() || domain.has_facts()),
             None => false,
         }
         || !service.completions.is_empty()
@@ -2144,10 +2239,10 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         || !service.file_events.is_empty()
         || !service.channel_events.is_empty()
         || (!service.pending_messages.is_empty() && service.admitted.is_some())
-        || !service.llm_events.is_empty()
+        || (takes && !service.llm_events.is_empty())
         || !service.machine_events.is_empty()
-        || !service.domain_events.is_empty()
-        || (!service.domain_requests.is_empty() && channel_takes(service))
+        || (takes && !service.domain_events.is_empty())
+        || (takes && !service.domain_requests.is_empty() && channel_takes(service))
         || !service.channel_below.is_empty()
         || !service.llm_below.is_empty()
         || !service.machine_below.is_empty()

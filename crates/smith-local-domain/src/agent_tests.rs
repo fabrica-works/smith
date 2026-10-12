@@ -7,11 +7,11 @@ use smith_host_domain as host;
 #[test]
 fn a_spawned_last_word_keeps_its_local_display_class() {
     assert_eq!(
-        answer_text(host::Answer { read: None, turns: 3, spent: 29, result: host::RunResult::Parked }).as_ref(),
+        answer_text(&host::Answer { read: None, turns: 3, spent: 29, result: host::RunResult::Parked }).as_ref(),
         b"Chat parked"
     );
     assert_eq!(
-        answer_text(host::Answer {
+        answer_text(&host::Answer {
             read: None,
             turns: 1,
             spent: 7,

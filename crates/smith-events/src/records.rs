@@ -709,6 +709,8 @@ pub struct SessionStarted {
     pub wall_ms: u64,
     pub agent: Agent,
     pub mode: Mode,
+    /// The product chat; absent from an agent invocation.
+    pub chat: Option<Box<[u8]>>,
     pub containment: Containment,
     pub pid: u64,
     pub profile: Box<[u8]>,

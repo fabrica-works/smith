@@ -841,12 +841,6 @@ impl World {
         self.domain.facts_lost()
     }
 
-    /// Native agent observations taken by the local owner before its stream sink exists.
-    #[must_use]
-    pub fn agent_facts_not_written(&self) -> u64 {
-        self.domain.agent_facts_not_written()
-    }
-
     /// Boundary chronology for deterministic replay.
     #[must_use]
     pub fn trace(&self) -> &[String] {
@@ -1365,6 +1359,7 @@ impl World {
                 self.agent_request(request);
             }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
+            Request::Answered { .. } => {}
             Request::Exit { status } => {
                 self.exit = Some(status);
                 self.reached.insert(Goal::Exit);
@@ -1456,6 +1451,8 @@ impl World {
     }
 
     fn gather_facts(&mut self) {
+        drop(self.domain.pop_run_message());
+        while self.domain.pop_run_fact().is_some() {}
         if !self.collect_facts {
             return;
         }
