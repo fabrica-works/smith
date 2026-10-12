@@ -159,7 +159,10 @@ do not already say.
      (decisions.md, 13.4);
    - at most 60 lines in the library of the world crate the Test shape
      names, that the Test shape's new tests need, with no existing
-     story's expected value changed (decisions.md, 13.4).
+     story's expected value changed (decisions.md, 13.4);
+   - a referee or checker of a world that accepts what the increment's
+     Shape newly requires, a line or an event, and nothing broader, its
+     other checks unchanged (decisions.md, 13.8).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For
@@ -168,6 +171,12 @@ do not already say.
    changed). Any other edit outside Files is still a question: new
    behaviour, a test renamed, removed or with new steps, a limit or its
    accounting. Applies to every session, until the run ends.
+9. **A Size line is a guide up to 600** (decisions.md, 13.9). An
+   increment that needs more production lines than its Size line gives,
+   but at most 600 (code-organization.md, section 8), lands without
+   asking; its commit body gives the count and what took the lines.
+   Past 600, it stops and asks: the plan splits it. This replaces "at
+   most" in every Size line, for this run.
 
 ## Proving what landed
 

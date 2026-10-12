@@ -766,4 +766,33 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    in the same increment, so probes keep running." Rule 4 wins for the
    adapter: 07.14 adds `"call"` to that field list, and touches nothing
    else under `benchmarks/src/`.
+7. **smith 10.1's store root is a descriptor** (block of
+   2026-10-12T13:44:06Z). 10.1 says "the shell opens the state directory
+   as a root and owns no file once the loop runs", but
+   `smith-local-shell`'s `Resources` carries `state_directory: PathBuf`
+   (`local_host.rs:41`) into a synchronous `Store::new`, while the worlds
+   hand the product its other roots as inherited descriptors. A root
+   beside the path would keep two representations (code-organization.md,
+   section 7). Ruling: the field becomes `state_root: kernel::Fd`, opened
+   before `Local::new`, in place, and 10.1's Files name its two users,
+   the process world's factory and `local_library.rs`. The worlds'
+   `Launch::state_directory`, which tests read and fault, stays. smith
+   03.7 also edits `tests/local-process/src/process.rs`; whichever lands
+   second rebases (development.md, section 8.5).
+8. **The hosts referee accepts the agent's failure line** (block of
+   2026-10-12T13:44:35Z, smith 06.2). 06.2's Shape has the shell write
+   "`smith: run failed: <words>`", and `tests/hosts/src/referee.rs:124`
+   accepts only the lines the agent wrote before it; three hosts stories
+   fail. The referee accepts lines that start "smith: run failed: ", and
+   nothing else changes in it. The second block in which a referee
+   rejected what the Shape newly requires (13.5 was the first): README
+   rule 8 gains that case.
+9. **Size lines are guides up to 600** (block of 2026-10-12T13:45:18Z,
+   smith 04.7). 04.7 needs about 570 production lines against its 450:
+   the inventory (about 407 lines over 14 declarations, 22 policies and
+   every layer's fields), the header (about 80) and its wiring (about
+   80). The second block on a Size line in the run's first half hour
+   (13.4 was the first), each under code-organization.md 8's split
+   threshold of about 600. README rule 9 makes every Size line a guide up
+   to 600, and 600 the rule; 04.7's Size reads 600.
 

@@ -156,7 +156,7 @@ whose `limits` is empty. The passive headroom checks (benchmarks.md,
 11.2) would show it live; not run in this plan.
 Don't: list a field twice under two names; name a schema's ceiling as
 a derived limit; print `smith check` (session 10).
-Size: at most 450 lines of production code.
+Size: at most 600 lines of production code (decisions.md, 13.9; was 450).
 Removes: the comment "Effective projection is owned by 04.7" and the empty
 `limits` in `agent_shell.rs`.
 

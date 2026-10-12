@@ -98,6 +98,11 @@ Files: `smith-local-protocol` (`store.rs`, `lib.rs`);
 `smith-local-service` (`service.rs`, `process.rs:85`); `smith-local-shell`
 (`local_host.rs`, `local_shell.rs`); users of `local_store::Store`:
 `tests/real/src/{lib.rs,settled.rs}`, `tests/local-process/src/world.rs`.
+`Resources::state_directory: PathBuf` becomes `state_root: kernel::Fd`,
+opened before `Local::new` (decisions.md, 13.7); its users:
+`tests/local-process/src/process.rs` (`local_roots`, `make_local`, :656),
+`crates/smith-local-shell/tests/local_library.rs:120`. The worlds' own
+`Launch::state_directory`, the path a test reads or faults, stays.
 Shape: `smith_local_protocol::{Store, StoreRequest, Action, StoreFault,
 StoreLimits}` (sketch), with its `Expect` rule.
 Test shape: unit in `crates/smith-local-protocol/src/tests.rs`:
