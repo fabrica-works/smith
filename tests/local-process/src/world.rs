@@ -681,6 +681,9 @@ impl World {
             self.scenario.interrupt_on_query,
             launch.keep_facts,
         );
+        if matches!(&self.scenario.ending, Ending::Report(text) if text.as_slice() == b"Crossed wait") {
+            referee.line_on_wait(b"follow-up\n".as_slice().into());
+        }
         if matches!(self.scenario.ending, Ending::HostFailure | Ending::HostFailureBeforeAnswer) {
             referee.fail_turn_at_query(launch.state_directory.clone(), 2);
         }
@@ -887,6 +890,18 @@ impl Scenario {
             tool_scripts()
         } else if self.launch.change {
             change_scripts()
+        } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Crossed wait") {
+            let mut scripts = waiting_scripts();
+            let mut turns = scripts[0].turns.to_vec();
+            let wait = turns.remove(1).lines[0].clone();
+            turns[0].lines = Box::new([api::Line::Text { text: b"Starting now".as_slice().into() }, wait]);
+            turns[0].finish = api::Finish::ToolCalls;
+            turns[1].lines = Box::new([api::Line::Call {
+                name: b"finish".as_slice().into(),
+                arguments: br#"{"form":"report","text":"Crossed wait","fields":{}}"#.as_slice().into(),
+            }]);
+            scripts[0].turns = turns.into();
+            scripts
         } else if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"Read follow-up") {
             waiting_scripts()
         } else {

@@ -342,6 +342,7 @@ pub struct Run {
     shutdown: bool,
     end: Option<Time>,
     failed_turn: Option<std::path::PathBuf>,
+    line_on_wait: Option<Box<[u8]>>,
     /// The provider's scripted reply delay, which an interrupted turn leaves
     /// to run out: the scenario's last word (skein's testing-strategy.md, 6).
     delay: Option<Time>,
@@ -381,8 +382,14 @@ impl Run {
             shutdown: false,
             end: None,
             failed_turn: None,
+            line_on_wait: None,
             delay: None,
         }
+    }
+
+    /// Type this line when the process emits its first wait event.
+    pub fn line_on_wait(&mut self, line: Box<[u8]>) {
+        self.line_on_wait = Some(line);
     }
 
     /// Make this turn's rename fail only after the provider observes the saved activation.
@@ -406,6 +413,14 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         if query && let Some(path) = self.failed_turn.take() {
             std::fs::create_dir(path).expect("turn rename fault after the initial transcript load");
         }
+        let wait = procs.iter().any(|proc| match proc {
+            Proc::Local(local) => local.wait_seen(),
+            Proc::Agent(_, _, wait) => *wait,
+            Proc::Terminal(_) | Proc::Peer(_) | Proc::Issuer(_) | Proc::Browser(_) | Proc::Ended(_) | Proc::Git(_) => {
+                false
+            }
+        });
+        let line = if wait { self.line_on_wait.take() } else { None };
         let exited = procs.iter().any(|p| matches!(p, Proc::Terminal(t) if t.exit().is_some()));
         let url = procs.iter().find_map(|p| {
             if let Proc::Terminal(t) = p {
@@ -428,9 +443,13 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         if exited {
             self.shutdown = true;
         }
+        let mut line = line;
         for (host, proc) in procs.iter_mut().enumerate() {
             match proc {
                 Proc::Terminal(t) => {
+                    if let Some(line) = line.take() {
+                        t.type_line(line);
+                    }
                     if self.interrupt_on_query && !self.drop_on_query && query && !self.interrupted {
                         t.interrupt();
                         self.interrupted = true;
@@ -460,7 +479,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
                         browser.shutdown();
                     }
                 }
-                Proc::Local(_) | Proc::Agent(_, _) | Proc::Ended(_) | Proc::Git(_) => {}
+                Proc::Local(_) | Proc::Agent(_, _, _) | Proc::Ended(_) | Proc::Git(_) => {}
             }
         }
     }
@@ -505,7 +524,15 @@ impl skein_world::Referee<crate::process::Proc> for Run {
                 .windows(9)
                 .position(|bytes| bytes == b"Sign in: ")
                 .is_some_and(|at| terminal.shown()[at + 9..].contains(&b'\n'));
-        if (self.interrupt_on_query && !self.interrupted && crate::llm::queries(peer).next().is_some())
+        let wait = procs.iter().any(|proc| match proc {
+            Proc::Local(local) => local.wait_seen(),
+            Proc::Agent(_, _, wait) => *wait,
+            Proc::Terminal(_) | Proc::Peer(_) | Proc::Issuer(_) | Proc::Browser(_) | Proc::Ended(_) | Proc::Git(_) => {
+                false
+            }
+        });
+        if (self.line_on_wait.is_some() && wait)
+            || (self.interrupt_on_query && !self.interrupted && crate::llm::queries(peer).next().is_some())
             || visit
             || (terminal.exit().is_some() && !self.shutdown)
         {

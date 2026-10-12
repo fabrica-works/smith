@@ -262,6 +262,20 @@ pub fn accounts_with(
     }
 }
 
+// Observe emitted trace bytes at the public kernel boundary, preserving every submission.
+fn wait_in_trace(submissions: &mut Queue<kernel::Submit>) -> bool {
+    let mut wait = false;
+    for _ in 0..submissions.len() {
+        let submit = submissions.pop().expect("bounded output snapshot");
+        if let kernel::Op::Append { bytes, .. } = &submit.kind {
+            wait |= bytes.windows(b"\"type\":\"tool.started\"".len()).any(|part| part == b"\"type\":\"tool.started\"")
+                && bytes.windows(b"\"tool\":\"wait\"".len()).any(|part| part == b"\"tool\":\"wait\"");
+        }
+        submissions.push(submit);
+    }
+    wait
+}
+
 /// The scripted issuer and its one successful token rotation.
 #[must_use]
 pub fn issuer() -> Issuer {
@@ -317,18 +331,25 @@ pub struct LocalProcess {
     local: skein_world::PipeHost<Local>,
     facts: Vec<local::Fact>,
     keep_facts: bool,
+    wait_seen: bool,
 }
 impl LocalProcess {
     /// Wrap a configured shared shell inside its own metered factory call.
     #[must_use]
     pub fn new(local: skein_world::PipeHost<Local>, keep_facts: bool) -> Self {
-        Self { local, facts: Vec::with_capacity(256), keep_facts }
+        Self { local, facts: Vec::with_capacity(256), keep_facts, wait_seen: false }
     }
     /// Facts emitted at the public boundary, independent of internal state.
     #[must_use]
     pub fn facts(&self) -> &[local::Fact] {
         &self.facts
     }
+    /// The first wait event observed in the process's outgoing trace records.
+    #[must_use]
+    pub fn wait_seen(&self) -> bool {
+        self.wait_seen
+    }
+
     /// The shared shell's public terminal outcome.
     #[must_use]
     pub fn result(&self) -> Option<Result<local::ExitStatus, &str>> {
@@ -347,6 +368,7 @@ impl Host for LocalProcess {
     }
     fn drain(&mut self) {
         self.local.drain();
+        self.wait_seen |= wait_in_trace(self.local.submissions());
     }
     fn completions(&mut self) -> &mut Queue<kernel::Complete> {
         self.local.completions()
@@ -547,7 +569,7 @@ pub enum Proc {
     /// The actual shared local shell, ending after its public result settles.
     Local(Box<LocalProcess>),
     /// The spawned agent service, ending after its channel and descriptors settle.
-    Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, smith_agent_process_world::AgentErrors),
+    Agent(Box<skein_world::PipeHost<smith_agent_shell::Agent>>, smith_agent_process_world::AgentErrors, bool),
     /// A child that ends before admitting an opening.
     Ended(Box<crate::git::Child>),
     /// The independent fake provider, stopped after the terminal exits.
@@ -564,7 +586,7 @@ impl Proc {
         match self {
             Self::Terminal(p) => p.as_ref(),
             Self::Local(p) => p.as_ref(),
-            Self::Agent(p, _) => p.as_ref(),
+            Self::Agent(p, _, _) => p.as_ref(),
             Self::Ended(p) => p.as_ref(),
             Self::Peer(p) => p.as_ref(),
             Self::Issuer(p) => p.as_ref(),
@@ -576,7 +598,7 @@ impl Proc {
         match self {
             Self::Terminal(p) => p.as_mut(),
             Self::Local(p) => p.as_mut(),
-            Self::Agent(p, _) => p.as_mut(),
+            Self::Agent(p, _, _) => p.as_mut(),
             Self::Ended(p) => p.as_mut(),
             Self::Peer(p) => p.as_mut(),
             Self::Issuer(p) => p.as_mut(),
@@ -587,7 +609,12 @@ impl Proc {
 }
 impl Host for Proc {
     fn drain(&mut self) {
-        self.host_mut().drain();
+        if let Self::Agent(agent, _, wait) = self {
+            agent.drain();
+            *wait |= wait_in_trace(agent.submissions());
+        } else {
+            self.host_mut().drain();
+        }
     }
 
     fn iterate(&mut self, now: Time, wall: Wall) {
@@ -813,7 +840,7 @@ pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         Box::new(errors.clone()),
     )
     .expect("configured agent trace");
-    Proc::Agent(Box::new(capture.host(agent)), errors)
+    Proc::Agent(Box::new(capture.host(agent)), errors, false)
 }
 
 /// The product trace selected by the same launch document as its agent kind.

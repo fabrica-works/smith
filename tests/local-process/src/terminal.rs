@@ -154,6 +154,11 @@ impl Terminal {
         person
     }
 
+    /// Insert a line supplied by the scripted person's observed peer cue.
+    pub fn type_line(&mut self, line: Box<[u8]>) {
+        self.commands.push_front(Action::Send(line));
+    }
+
     /// The binary observer supplies only the child's externally observed exit.
     pub fn finished(&mut self, exit: kernel::Exit) {
         self.exit = Some(exit);

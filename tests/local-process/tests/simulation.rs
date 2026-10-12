@@ -252,3 +252,40 @@ fn no_waiting_notice_shows_while_a_line_is_unread_in_both_placements() {
         }));
     }
 }
+
+fn assert_crossing_wait_records(records: &[smith_events::Record]) {
+    let position = |predicate: fn(&Event) -> bool| records.iter().position(|record| predicate(&record.event)).unwrap();
+    let wait = position(|event| matches!(event, Event::ToolStarted(tool) if tool.tool.as_ref() == b"wait"));
+    let received = position(|event| matches!(event, Event::MessageReceived(message) if message.name == 2));
+    let read = position(|event| matches!(event, Event::MessageRead(message) if message.name == 1));
+    let resumed = position(|event| matches!(event, Event::ResponseStarted(response) if response.response == 2));
+    assert!(wait < received && received < read && read < resumed);
+    assert!(records.iter().any(|record| matches!(&record.event,
+        Event::MessageRead(message) if message.name == 2)));
+}
+
+#[test]
+fn a_turn_saved_while_a_line_crosses_a_wait_releases_the_next_response() {
+    use smith_local_process_world::terminal::Action;
+    for placement in [Placement::Spawned, Placement::InProcess] {
+        let files = Files::new();
+        let mut world = World::waiting(37, &files, placement);
+        world.scenario.launch.traced = true;
+        world.scenario.ending = Ending::Report(b"Crossed wait".to_vec());
+        world.scenario.commands = vec![
+            Action::Send(b"hello\n".as_slice().into()),
+            Action::Wait(b"Crossed wait".as_slice().into()),
+            Action::Eof,
+        ];
+        world.settle();
+        review(&world.seen(), &world, Ending::Report(b"Crossed wait".to_vec())).assert_passed(37);
+        assert_eq!(world.queries().len(), 2);
+        assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+        assert_eq!(world.turns(), 2);
+        let records = match placement {
+            Placement::Spawned => world.agent_records(),
+            Placement::InProcess => world.records(),
+        };
+        assert_crossing_wait_records(&records);
+    }
+}
