@@ -444,7 +444,7 @@ fn render_end(text: &mut Text, end: run::End) {
 
 fn render_fault(text: &mut Text, fault: run::Fault) {
     match fault {
-        run::Fault::Completion { failure, evidence } => {
+        run::Fault::Completion { failure, evidence, model: _, attempts: _ } => {
             text.put(b"completion:");
             render_completion_failure(text, failure);
             text.put(b" evidence=");

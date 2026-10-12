@@ -977,7 +977,7 @@ fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]
         session::End::Closed => (ConversationEnd::Closed, None, None),
         session::End::NoSummary { .. } => (ConversationEnd::Failed, None, None),
         session::End::Busy | session::End::Invalid => (ConversationEnd::Refused, None, None),
-        session::End::Failed { failure, evidence } => {
+        session::End::Failed { failure, evidence, attempts: _ } => {
             (ConversationEnd::Failed, None, Some(completion_failure(failure, evidence)))
         }
         session::End::Budget { spent } => {
@@ -1639,6 +1639,7 @@ pub(crate) mod tests {
                             end: session::End::Failed {
                                 failure: llm::Failure::Invalid,
                                 evidence: llm::Evidence::Response { status: None },
+                                attempts: 1,
                             },
                             turns: 0,
                             usage: llm::Usage::NONE,

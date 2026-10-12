@@ -939,6 +939,7 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
                 end: session::End::Failed {
                     failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 123 },
                     evidence: llm::Evidence::Response { status: None },
+                    attempts: 1,
                 },
                 turns: 2,
                 usage: llm::Usage::NONE,

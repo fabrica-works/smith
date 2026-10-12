@@ -120,7 +120,7 @@ fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
                     host::CompletionEvidence::Response { status: *record.status() }
                 }
             };
-            host::ModelFault::Completion { failure, evidence }
+            host::ModelFault::Completion { failure, evidence, model: record.model(), attempts: record.attempts() }
         }
         wire::ModelFault::Exhausted => host::ModelFault::Exhausted,
         wire::ModelFault::Provider => host::ModelFault::Provider,

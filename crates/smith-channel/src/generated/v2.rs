@@ -359,6 +359,10 @@ pub enum Path {
     CompletionFaultEvidence,
     /// The `retry_after` field of `CompletionFault`.
     CompletionFaultRetryAfter,
+    /// The `model` field of `CompletionFault`.
+    CompletionFaultModel,
+    /// The `attempts` field of `CompletionFault`.
+    CompletionFaultAttempts,
     /// Bytes after `CompletionFault`.
     CompletionFaultTail,
     /// The tag of `ModelFault`.
@@ -4444,6 +4448,10 @@ pub struct CompletionFaultParts {
     pub evidence: CompletionEvidence,
     /// The `retry_after` field.
     pub retry_after: Option<skein_lib::Duration>,
+    /// The `model` field.
+    pub model: u32,
+    /// The `attempts` field.
+    pub attempts: u32,
 }
 
 /// `CompletionFault` in this codec family.
@@ -4452,13 +4460,15 @@ pub struct CompletionFault {
     failure: CompletionFailure,
     evidence: CompletionEvidence,
     retry_after: Option<skein_lib::Duration>,
+    model: u32,
+    attempts: u32,
 }
 
 impl CompletionFault {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: CompletionFaultParts) -> Result<Self, Problem> {
-        let CompletionFaultParts { failure, evidence, retry_after } = parts;
-        let value = Self { failure, evidence, retry_after };
+        let CompletionFaultParts { failure, evidence, retry_after, model, attempts } = parts;
+        let value = Self { failure, evidence, retry_after, model, attempts };
         value.check(limits)?;
         Ok(value)
     }
@@ -4475,9 +4485,17 @@ impl CompletionFault {
     #[must_use]
     pub fn retry_after(&self) -> &Option<skein_lib::Duration> { &self.retry_after }
 
+    /// Reads the `model` field.
+    #[must_use]
+    pub fn model(&self) -> u32 { self.model }
+
+    /// Reads the `attempts` field.
+    #[must_use]
+    pub fn attempts(&self) -> u32 { self.attempts }
+
     /// Moves the fields out without copying.
     #[must_use]
-    pub fn into_parts(self) -> CompletionFaultParts { CompletionFaultParts { failure: self.failure, evidence: self.evidence, retry_after: self.retry_after } }
+    pub fn into_parts(self) -> CompletionFaultParts { CompletionFaultParts { failure: self.failure, evidence: self.evidence, retry_after: self.retry_after, model: self.model, attempts: self.attempts } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         if limits.directory_name > CEILINGS.directory_name { return Err(Problem { path: Path::DirectoryName, reason: skein_codec::Reason::Bound }); }
@@ -8663,6 +8681,8 @@ impl CompletionFault {
         if field_retry_after.is_some() {
         size = size.checked_add(8).expect("schema ceilings fit u32");
         }
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(4).expect("schema ceilings fit u32");
         size
     }
 
@@ -8680,6 +8700,10 @@ impl CompletionFault {
             }
             None => writer.put(&[0_u8])?,
         }
+        let field_model = &self.model;
+        writer.put(&field_model.to_be_bytes())?;
+        let field_attempts = &self.attempts;
+        writer.put(&field_attempts.to_be_bytes())?;
         Ok(())
     }
 
@@ -8694,7 +8718,9 @@ impl CompletionFault {
         let decoded_failure = CompletionFailure::decode_from(limits, reader)?;
         let decoded_evidence = CompletionEvidence::decode_from(limits, reader)?;
         let decoded_retry_after = match reader.u8().ok_or(Problem { path: Path::CompletionFaultRetryAfter, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::CompletionFaultRetryAfter, reason: skein_codec::Reason::Short })?)), _ => return Err(Problem { path: Path::CompletionFaultRetryAfter, reason: skein_codec::Reason::Tag }) };
-        Self::new(limits, CompletionFaultParts { failure: decoded_failure, evidence: decoded_evidence, retry_after: decoded_retry_after })
+        let decoded_model = reader.u32().ok_or(Problem { path: Path::CompletionFaultModel, reason: skein_codec::Reason::Short })?;
+        let decoded_attempts = reader.u32().ok_or(Problem { path: Path::CompletionFaultAttempts, reason: skein_codec::Reason::Short })?;
+        Self::new(limits, CompletionFaultParts { failure: decoded_failure, evidence: decoded_evidence, retry_after: decoded_retry_after, model: decoded_model, attempts: decoded_attempts })
     }
 }
 
@@ -11001,6 +11027,8 @@ impl CompletionFault {
         size = size.checked_add(CompletionFailure::worst_case_bytes(limits)?)?;
         size = size.checked_add(CompletionEvidence::worst_case_bytes(limits)?)?;
         size = size.checked_add(1_u64.checked_add(8_u64)?)?;
+        size = size.checked_add(4_u64)?;
+        size = size.checked_add(4_u64)?;
         Some(size)
     }
 
@@ -11011,6 +11039,8 @@ impl CompletionFault {
         let mut heap = 0_u64;
         heap = heap.checked_add(CompletionFailure::worst_case_heap(limits)?)?;
         heap = heap.checked_add(CompletionEvidence::worst_case_heap(limits)?)?;
+        heap = heap.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
         Some(heap)
     }
@@ -14707,8 +14737,8 @@ mod golden_tests {
 
     #[test]
     fn record_completion_fault_smallest() {
-        let value = CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None, model: 0_u32, attempts: 0_u32 }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14717,8 +14747,8 @@ mod golden_tests {
 
     #[test]
     fn record_completion_fault_full() {
-        let value = CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)), model: u32::MAX, attempts: u32::MAX }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14727,8 +14757,8 @@ mod golden_tests {
 
     #[test]
     fn enum_model_fault_completion_smallest() {
-        let value = ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None, model: 0_u32, attempts: 0_u32 }).expect("golden within ceilings"));
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -14737,8 +14767,8 @@ mod golden_tests {
 
     #[test]
     fn enum_model_fault_completion_full() {
-        let value = ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)), model: u32::MAX, attempts: u32::MAX }).expect("golden within ceilings"));
+        let golden: &[u8] = &[0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -15007,8 +15037,8 @@ mod golden_tests {
 
     #[test]
     fn record_model_fault_value_smallest() {
-        let value = ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None }).expect("golden within ceilings")) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None, model: 0_u32, attempts: 0_u32 }).expect("golden within ceilings")) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -15017,8 +15047,8 @@ mod golden_tests {
 
     #[test]
     fn record_model_fault_value_full() {
-        let value = ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)) }).expect("golden within ceilings")) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)), model: u32::MAX, attempts: u32::MAX }).expect("golden within ceilings")) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -15087,8 +15117,8 @@ mod golden_tests {
 
     #[test]
     fn enum_run_failure_model_smallest() {
-        let value = RunFailure::Model(ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None }).expect("golden within ceilings")) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let value = RunFailure::Model(ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: 0_u64 }).expect("golden within ceilings")), bound: 0_u64 }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: None, model: 0_u32, attempts: 0_u32 }).expect("golden within ceilings")) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
@@ -15097,8 +15127,8 @@ mod golden_tests {
 
     #[test]
     fn enum_run_failure_model_full() {
-        let value = RunFailure::Model(ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)) }).expect("golden within ceilings")) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255];
+        let value = RunFailure::Model(ModelFaultValue::new(&CEILINGS, ModelFaultValueParts { value: ModelFault::Completion(CompletionFault::new(&CEILINGS, CompletionFaultParts { failure: CompletionFailure::Limit(LimitFailure::new(&CEILINGS, LimitFailureParts { which: CompletionLimit::Pool(PoolLimit::new(&CEILINGS, PoolLimitParts { reservation: u64::MAX }).expect("golden within ceilings")), bound: u64::MAX }).expect("golden within ceilings")), evidence: CompletionEvidence::Unsent, retry_after: Some(skein_lib::Duration::from_nanos(u64::MAX)), model: u32::MAX, attempts: u32::MAX }).expect("golden within ceilings")) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);

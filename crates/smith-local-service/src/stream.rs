@@ -135,7 +135,7 @@ fn invalid_name(invalid: host::RunInvalid) -> &'static [u8] {
 fn failed(why: host::RunFailure) -> AnswerFailure {
     match why {
         host::RunFailure::Model(fault) => match fault {
-            host::ModelFault::Completion { failure: why, evidence } => {
+            host::ModelFault::Completion { failure: why, evidence, model: _, attempts: _ } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.completion = Some(completion(why, evidence));
                 result

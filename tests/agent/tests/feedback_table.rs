@@ -255,7 +255,7 @@ fn every_model_fault_and_completion_failure_keeps_its_evidence() {
             (run::CompletionEvidence::Response { status: None }, "response"),
         ] {
             rendered(
-                unanswered(run::End::Fault(run::Fault::Completion { failure, evidence })),
+                unanswered(run::End::Fault(run::Fault::Completion { failure, evidence, model: 0, attempts: 1 })),
                 &format!("unanswered end=fault:completion:{label} evidence={evidence_label}"),
                 true,
             );
@@ -298,6 +298,7 @@ fn every_completion_failure_reaches_the_answer_with_its_fields() {
     for (source, expected) in failure_fields() {
         let mut settings = Settings::calm(6807);
         settings.limits.session.retries = 0;
+        let charter = smith_agent_world::scripted_charter(&settings);
         let mut world = World::with_failure(settings, source, llm::Evidence::Response { status: Some(503) });
         world.run(20_000);
         assert_eq!(
@@ -305,11 +306,21 @@ fn every_completion_failure_reaches_the_answer_with_its_fields() {
             &run::Answer::Failed {
                 failure: run::Failure::Model(run::Fault::Completion {
                     failure: expected,
-                    evidence: run::CompletionEvidence::Response { status: Some(503) }
+                    evidence: run::CompletionEvidence::Response { status: Some(503) },
+                    model: 0,
+                    attempts: 1
                 }),
                 spent: run::Spend::ZERO,
                 turns: 0,
             }
         );
+        let run::Answer::Failed { failure: run::Failure::Model(run::Fault::Completion { model, .. }), .. } =
+            world.answer()
+        else {
+            panic!("completion failure");
+        };
+        let resolved = charter.model(*model).expect("parent resolves the failed completion's model");
+        assert_eq!(resolved.endpoint, charter.llm.endpoint);
+        assert_eq!(resolved.model, charter.llm.model);
     }
 }

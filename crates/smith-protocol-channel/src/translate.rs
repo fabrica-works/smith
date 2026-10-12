@@ -605,7 +605,7 @@ fn failure_record(failure: run::Failure, limits: &channel::Limits) -> Result<cha
 
 fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::ModelFault, Error> {
     let value = match fault {
-        run::Fault::Completion { failure, evidence } => {
+        run::Fault::Completion { failure, evidence, model, attempts } => {
             let (failure, retry_after) = match failure {
                 run::CompletionFailure::Limit { which, bound } => (
                     channel::CompletionFailure::Limit(channel::LimitFailure::new(
@@ -645,7 +645,7 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
             };
             channel::ModelFault::Completion(channel::CompletionFault::new(
                 limits,
-                channel::CompletionFaultParts { failure, evidence, retry_after },
+                channel::CompletionFaultParts { failure, evidence, retry_after, model, attempts },
             )?)
         }
         run::Fault::Exhausted => channel::ModelFault::Exhausted,

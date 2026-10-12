@@ -1233,7 +1233,14 @@ fn transient_failures_are_retried_after_a_backoff_until_the_retries_run_out() {
     });
     assert_eq!(
         end,
-        Some(ended(End::Failed { failure: Failure::Overloaded, evidence: crate::llm::Evidence::Unknown }, 0))
+        Some(ended(
+            End::Failed {
+                failure: Failure::Overloaded,
+                evidence: crate::llm::Evidence::Unknown,
+                attempts: LIMITS.retries + 1
+            },
+            0
+        ))
     );
 }
 
@@ -1255,7 +1262,10 @@ fn a_rate_limit_is_waited_out_and_lasting_failures_are_not_retried() {
         evidence: crate::llm::Evidence::Unknown,
         detail: Box::default(),
     });
-    assert_eq!(end, Some(ended(End::Failed { failure: Failure::Invalid, evidence: crate::llm::Evidence::Unknown }, 0)));
+    assert_eq!(
+        end,
+        Some(ended(End::Failed { failure: Failure::Invalid, evidence: crate::llm::Evidence::Unknown, attempts: 1 }, 0))
+    );
 }
 
 #[test]
@@ -2769,7 +2779,7 @@ fn a_native_request_limit_is_context_too_long_without_retry() {
                 evidence: crate::llm::Evidence::Unsent,
                 detail: Box::default(),
             }),
-            Some(ended(End::Failed { failure: expected, evidence: crate::llm::Evidence::Unsent }, 0))
+            Some(ended(End::Failed { failure: expected, evidence: crate::llm::Evidence::Unsent, attempts: 1 }, 0))
         );
         assert_eq!(harness.domain.next_deadline(), None);
     }

@@ -667,7 +667,11 @@ fn exact_failure_classes_and_transport_evidence_survive_policy_without_diagnosti
                     evidence,
                     detail: vec![0xff; 512].into(),
                 });
-                let expected = if closing { session::End::Closed } else { session::End::Failed { failure, evidence } };
+                let expected = if closing {
+                    session::End::Closed
+                } else {
+                    session::End::Failed { failure, evidence, attempts: 1 }
+                };
                 assert_eq!(world.end, Some(expected));
                 assert_eq!(world.prompts.len(), 1, "new classes cannot start retry");
                 assert!(world.turns.is_empty(), "failure does not fabricate assistant content");

@@ -122,6 +122,8 @@ record CompletionFault {
     failure: CompletionFailure
     evidence: CompletionEvidence
     retry_after: option duration
+    model: u32
+    attempts: u32
 }
 enum ModelFault {
     completion: CompletionFault, exhausted, provider, context_full,

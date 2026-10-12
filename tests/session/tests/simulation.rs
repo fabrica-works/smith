@@ -174,7 +174,11 @@ fn a_session_fails_once_its_retries_run_out() {
 
     assert_eq!(
         end(&world, opener),
-        End::Failed { failure: Failure::Overloaded, evidence: smith_domain_session::llm::Evidence::Unknown }
+        End::Failed {
+            failure: Failure::Overloaded,
+            evidence: smith_domain_session::llm::Evidence::Unknown,
+            attempts: calm.agent.retries + 1
+        }
     );
     assert_eq!(world.stats().calls, calm.agent.retries + 1);
 }
@@ -207,7 +211,8 @@ fn calls_slower_than_their_timeout_time_out_and_their_late_answers_are_dropped()
         end(&world, opener),
         End::Failed {
             failure: Failure::TimedOut { phase: smith_domain_session::llm::Phase::Head },
-            evidence: smith_domain_session::llm::Evidence::Unknown
+            evidence: smith_domain_session::llm::Evidence::Unknown,
+            attempts: 3
         }
     );
     let stats = world.stats();

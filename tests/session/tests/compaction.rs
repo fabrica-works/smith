@@ -87,7 +87,8 @@ fn context_too_long_on_the_compaction_fails_naming_the_window() {
         world.end,
         Some(session::End::Failed {
             failure: llm::Failure::Limit { which: llm::Limit::Window, bound: 2_000 },
-            evidence: llm::Evidence::Response { status: None }
+            evidence: llm::Evidence::Response { status: None },
+            attempts: 1
         })
     ));
     assert_eq!(world.turns.len(), 1);

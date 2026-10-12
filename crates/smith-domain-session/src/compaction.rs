@@ -68,16 +68,21 @@ pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
     Some(bytes)
 }
 
-pub(super) fn window_limit(conversation: &Conversation, evidence: Evidence) -> End {
+pub(super) fn window_limit(conversation: &Conversation, evidence: Evidence, attempts: u32) -> End {
     let failure = Failure::Limit { which: Limit::Window, bound: u64::from(conversation.model_window) };
-    End::Failed { failure, evidence }
+    End::Failed { failure, evidence, attempts }
 }
 
 /// Move only opener text appended after the last ordinary completion out of the request.
-pub(super) fn start(conversation: &mut Conversation, limits: &Limits, evidence: Evidence) -> Option<End> {
+pub(super) fn start(
+    conversation: &mut Conversation,
+    limits: &Limits,
+    evidence: Evidence,
+    attempts: u32,
+) -> Option<End> {
     match conversation.window.stage {
-        Stage::Fresh => return Some(window_limit(conversation, evidence)),
-        Stage::Used if conversation.compaction.asking() => return Some(window_limit(conversation, evidence)),
+        Stage::Fresh => return Some(window_limit(conversation, evidence, attempts)),
+        Stage::Used if conversation.compaction.asking() => return Some(window_limit(conversation, evidence, attempts)),
         Stage::Used => {}
     }
     let mut blocks = 0_u32;

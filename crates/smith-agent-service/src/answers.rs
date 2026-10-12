@@ -194,7 +194,7 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
 fn failed(why: run::Failure) -> AnswerFailure {
     match why {
         run::Failure::Model(fault) => match fault {
-            run::Fault::Completion { failure: why, evidence } => {
+            run::Fault::Completion { failure: why, evidence, model: _, attempts: _ } => {
                 let mut result = failure(AnswerClass::Model, None);
                 result.completion = Some(completion(why, evidence));
                 result
@@ -406,6 +406,8 @@ mod tests {
                     failure: run::Failure::Model(run::Fault::Completion {
                         failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
                         evidence: run::CompletionEvidence::Response { status: None },
+                        model: 0,
+                        attempts: 1,
                     }),
                     spent,
                     turns: 2,
@@ -451,6 +453,8 @@ mod tests {
         let why = failed(run::Failure::Model(run::Fault::Completion {
             failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
             evidence: run::CompletionEvidence::Response { status: None },
+            model: 0,
+            attempts: 1,
         }));
         assert_eq!(
             why.completion,

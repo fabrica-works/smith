@@ -779,7 +779,12 @@ pub(crate) fn failed(
     session.state = match state {
         State::Calling { attempt } => {
             if compaction::context_failure(failure) {
-                match compaction::start(&mut session.conversation, &env.limits, evidence) {
+                match compaction::start(
+                    &mut session.conversation,
+                    &env.limits,
+                    evidence,
+                    attempt.checked_add(1).expect("an actual completion has a one-based attempt"),
+                ) {
                     Some(end) => finish(end),
                     None => call(&mut session.conversation, id, 0, env, out),
                 }
@@ -1761,7 +1766,11 @@ fn call_failed(
         Retry::After(delay) => {
             State::Backoff { attempt: attempt.saturating_add(1), until: env.now.saturating_add(delay) }
         }
-        Retry::Fail => finish(End::Failed { failure, evidence }),
+        Retry::Fail => finish(End::Failed {
+            failure,
+            evidence,
+            attempts: attempt.checked_add(1).expect("an admitted completion leaves room for its first attempt"),
+        }),
         Retry::TimeUp => finish(OUT_OF_TIME),
     }
 }
@@ -1787,7 +1796,7 @@ fn call(
     }
     if !conversation.compaction.asking()
         && compaction::due(conversation, &env.limits)
-        && let Some(end) = compaction::start(conversation, &env.limits, crate::llm::Evidence::Unsent)
+        && let Some(end) = compaction::start(conversation, &env.limits, crate::llm::Evidence::Unsent, 0)
     {
         return finish(end);
     }

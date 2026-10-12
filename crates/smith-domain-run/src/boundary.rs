@@ -893,6 +893,9 @@ pub enum Fault {
 
         /// Exact transport evidence, including across interrupted Delivery.
         evidence: CompletionEvidence,
+        /// Charter LLM index, resolved by `Charter::model`.
+        model: u32,
+        attempts: u32,
     },
 
     /// The account spent its provider allowance. The engine retries after cooldown.

@@ -505,7 +505,7 @@ fn an_inline_answer_keeps_its_typed_completion_failure() {
     world.event(parent::Event::Spawn { client: Token::new(1), start });
     world.run();
     world.settled();
-    let RunResult::Failed { failure: RunFailure::Model(host::ModelFault::Completion { failure, evidence }) } =
+    let RunResult::Failed { failure: RunFailure::Model(host::ModelFault::Completion { failure, evidence, .. }) } =
         world.seen[&Token::new(1)].answer.as_ref().expect("answer").result
     else {
         panic!("typed model failure")

@@ -71,6 +71,15 @@ pub struct Charter {
 }
 
 impl Charter {
+    /// Resolve a completion's model index: zero is `llm`, and k + 1 is `models[k]`.
+    #[must_use]
+    pub fn model(&self, index: u32) -> Option<&Llm> {
+        match index.checked_sub(1) {
+            Some(child) => self.models.get(usize::try_from(child).ok()?),
+            None => Some(&self.llm),
+        }
+    }
+
     /// Checked ownership of the policy's boxed values, without encoding them.
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {

@@ -150,9 +150,11 @@ const fn failure(value: run::Failure) -> host::RunFailure {
 
 const fn model_fault(value: run::Fault) -> host::ModelFault {
     match value {
-        run::Fault::Completion { failure, evidence } => host::ModelFault::Completion {
+        run::Fault::Completion { failure, evidence, model, attempts } => host::ModelFault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
+            model,
+            attempts,
         },
         run::Fault::Exhausted => host::ModelFault::Exhausted,
         run::Fault::Provider => host::ModelFault::Provider,

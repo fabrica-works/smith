@@ -237,6 +237,8 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
                 retry_after: skein_lib::Duration::from_nanos(42),
             },
             evidence: smith_domain::run::CompletionEvidence::Response { status: None },
+            model: 0,
+            attempts: 1,
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 2,
@@ -273,6 +275,8 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
         failure: smith_domain::run::Failure::Model(smith_domain::run::Fault::Completion {
             failure: smith_domain::run::CompletionFailure::RateLimited { retry_after },
             evidence: smith_domain::run::CompletionEvidence::Response { status: None },
+            model: 0,
+            attempts: 1,
         }),
         spent: smith_domain::run::Spend::ZERO,
         turns: 0,
@@ -288,7 +292,9 @@ fn a_model_failure_reaches_the_host_domain_in_its_typed_vocabulary() {
                 failure: smith_host_domain::channel::RunFailure::Model(
                     smith_host_domain::channel::ModelFault::Completion {
                         failure: smith_host_domain::channel::CompletionFailure::RateLimited { retry_after },
-                        evidence: smith_host_domain::channel::CompletionEvidence::Response { status: None }
+                        evidence: smith_host_domain::channel::CompletionEvidence::Response { status: None },
+                        model: 0,
+                        attempts: 1
                     },
                 ),
             },

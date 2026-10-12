@@ -166,7 +166,7 @@ fn decoded_batch_reserves_refusal_cells_before_any_payload() {
         agents: false,
         wait: true,
     };
-    let mut peer = crate::peer::Peer::new(Token::new(17), 1, 0, offered, &LIMITS.session);
+    let mut peer = crate::peer::Peer::new(Token::new(17), 1, 0, 0, offered, &LIMITS.session);
     let completion = Completion {
         reasoning_dropped: Box::default(),
         content: Box::new([
@@ -870,6 +870,8 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
                         run::Failure::Model(run::Fault::Completion {
                             failure: run::CompletionFailure::Exhausted { .. },
                             evidence: run::CompletionEvidence::Unknown,
+                            model: 0,
+                            attempts: 1,
                         }),
                     ..
                 },
@@ -1966,7 +1968,9 @@ fn scalar_reservation_denies_before_any_provider_call_or_credential_lookup() {
         *failure,
         run::Failure::Model(run::Fault::Completion {
             failure: run::CompletionFailure::Limit { which: run::Limit::Window, bound: 8 },
-            evidence: run::CompletionEvidence::Unsent
+            evidence: run::CompletionEvidence::Unsent,
+            model: 0,
+            attempts: 0
         })
     );
     assert_eq!((spent.units, spent.turns, *turns), (0, 0, 0));

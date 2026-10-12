@@ -240,6 +240,13 @@ pub fn owner(domain: &Domain, conversation: Token) -> Option<Token> {
     Some(conversation.run.token())
 }
 
+/// The charter of the live run that owns this conversation.
+#[must_use]
+pub fn conversation_charter(domain: &Domain, conversation: Token) -> Option<&crate::Charter> {
+    let conversation = domain.conversations.get(skein_lib::Id::from_token(conversation))?;
+    Some(&domain.runs.get(conversation.run)?.charter)
+}
+
 /// The host's logical name for the run owning a live conversation.
 #[must_use]
 pub fn host_name(domain: &Domain, conversation: Token) -> Option<Token> {

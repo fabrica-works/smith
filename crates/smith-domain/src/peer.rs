@@ -31,6 +31,7 @@ pub(crate) struct Peer {
     /// The run's token for the conversation, which is its session's opener.
     pub(crate) conversation: Token,
     pub(crate) account: u32,
+    pub(crate) model: u32,
     /// The session's token for itself, once it has opened.
     pub(crate) session: Option<Token>,
     offered: Offered,
@@ -47,6 +48,7 @@ impl Peer {
         conversation: Token,
         activation: u64,
         account: u32,
+        model: u32,
         offered: Offered,
         limits: &session::Limits,
     ) -> Peer {
@@ -54,6 +56,7 @@ impl Peer {
             conversation,
             activation,
             account,
+            model,
             session: None,
             offered,
             asks: Map::with_capacity(asks(limits)),

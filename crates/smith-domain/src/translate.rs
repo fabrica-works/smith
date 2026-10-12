@@ -195,7 +195,7 @@ pub(crate) fn spend(turns: u32, usage: llm::Usage) -> Spend {
 /// How the session ended, as the run hears it: a failed call is its
 /// provider's fault, but for a conversation too long for the model, which is
 /// a full context, as is a transcript past the session's limits.
-pub(crate) fn end(end: session::End) -> run::End {
+pub(crate) fn end(end: session::End, model: u32) -> run::End {
     match end {
         session::End::TranscriptRefused { reason } => {
             run::End::TranscriptRefused { reason: transcript_refusal(reason) }
@@ -205,9 +205,11 @@ pub(crate) fn end(end: session::End) -> run::End {
         session::End::Busy => run::End::Busy,
         session::End::Invalid => run::End::Invalid,
         session::End::Closed => run::End::Closed,
-        session::End::Failed { failure, evidence } => run::End::Fault(run::Fault::Completion {
+        session::End::Failed { failure, evidence, attempts } => run::End::Fault(run::Fault::Completion {
             failure: completion_failure(failure),
             evidence: completion_evidence(evidence),
+            model,
+            attempts,
         }),
         session::End::NoSummary { fault } => run::End::Fault(match fault {
             session::NoSummary::Refused => run::Fault::Refused,

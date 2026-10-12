@@ -407,6 +407,7 @@ pub enum End {
 
         /// Exact content-free transport evidence carried by the terminal.
         evidence: crate::llm::Evidence,
+        attempts: u32,
     },
     /// The session's budget ran out in the `spent` dimension: it needed a
     /// completion the budget does not leave room for, or its time is up.

@@ -482,13 +482,14 @@ fn from_session(domain: &mut Domain, env: &Env<Limits>, request: session::Reques
         session::Request::Ended { opener, end, turns, usage: _, reported } => {
             let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
             let id = peer(domain, opener);
+            let model = domain.peers.get(id).expect("session retains peer").model;
             if domain.peers.get(id).expect("session retains peer").is_main() {
                 domain.pending.remove(&run);
             }
             free(domain, id);
             run::Event::Ended {
                 conversation: opener,
-                end: translate::end(end),
+                end: translate::end(end, model),
                 spend: translate::spend(turns, reported),
             }
         }
@@ -797,9 +798,23 @@ fn complete(domain: &mut Domain, env: &Env<Limits>, pending: PendingCompletion, 
     });
 }
 
+/// Resolve the selected LLM through the charter's main-first numbering.
+fn model_index(domain: &Domain, conversation: Token, model: &run::charter::Llm) -> u32 {
+    let charter = run::conversation_charter(&domain.run, conversation).expect("run owns the conversation it opens");
+    let children = u32::try_from(charter.models.len()).expect("admitted model count fits u32");
+    for index in 0..=children {
+        match charter.model(index) {
+            Some(candidate) if candidate == model => return index,
+            Some(_) | None => {}
+        }
+    }
+    unreachable!("a conversation opens on one of its charter's LLMs")
+}
+
 /// Host rate/share translation and concrete restore admission precede effects.
 /// Session alone prices, while token ceilings remain receiving limits.
 fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: run::Opening) {
+    let model = model_index(domain, conversation, &opening.llm);
     let progress = domain.config.progress(&opening.llm);
     let allowance = domain.config.protocol_allowance(&opening.llm);
     let activation = opening.activation;
@@ -854,7 +869,7 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         }
         spec.prompt = prompt.into_boxed();
     }
-    let peer = Peer::new(conversation, activation, account, offered, &env.limits.session);
+    let peer = Peer::new(conversation, activation, account, model, offered, &env.limits.session);
     let id = domain.peers.insert(peer).expect("a peer for every conversation the run has");
     let fresh = domain.conversations.insert(conversation, id).expect("a peer for every conversation");
     assert!(fresh.is_none(), "the run names its conversations apart");
