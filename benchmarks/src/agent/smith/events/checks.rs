@@ -255,8 +255,8 @@ pub(super) fn evaluate(observer: &Observer, check: &EventCheck, task: &str, curr
         if let EventCheck::ToolResultBytes { tool, at_least } = check {
             return tool_result_bytes(observer, tool, *at_least);
         }
-        if let EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms } = check {
-            return tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms);
+        if let EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } = check {
+            return tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref());
         }
         evaluate_complete(observer, check, task, currency)
     };
@@ -274,8 +274,8 @@ fn evaluate_complete(observer: &Observer, check: &EventCheck, task: &str, curren
         EventCheck::OversizedWrite { .. } => unavailable("oversized write pairing requires its workspace path"),
         EventCheck::FilePieces { .. } => unavailable("file piece comparison requires the settled workspace"),
         EventCheck::UsageSums => super::usage_sums::check(observer),
-        EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms } =>
-            tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms).passed,
+        EventCheck::ToolTimeout { requested_seconds, deadline_ms, clamped, grace_ms, command } =>
+            tool_timeout(observer, *requested_seconds, *deadline_ms, *clamped, *grace_ms, command.as_deref()).passed,
         EventCheck::ToolCall { .. } => tool_call(observer, check),
         EventCheck::ToolResultBytes { tool, at_least } => tool_result_bytes(observer, tool, *at_least).passed,
         EventCheck::NoVerdict { verdicts } => measured(!records.iter().any(|record| matches!(&record.event,
@@ -430,13 +430,20 @@ fn tool_result_bytes(observer: &Observer, tool: &str, bound: u64) -> CheckVerdic
 
 // This probe configures the command bound equal to the emitted outer ceiling.
 // An emitted outer ceiling alone never proves a shorter requested duration.
-fn tool_timeout(observer: &Observer, requested: u32, bound: u64, clamped: bool, grace: u64) -> CheckVerdict {
+fn tool_timeout(
+    observer: &Observer,
+    requested: u32,
+    bound: u64,
+    clamped: bool,
+    grace: u64,
+    command: Option<&str>,
+) -> CheckVerdict {
     let maximum = bound.checked_add(grace).expect("manifest duration checked");
     let mut count = 0_u64;
     let mut passed = true;
     let mut evidence = Vec::new();
     for session in &observer.sessions {
-        for record in &session.records {
+        for (start_at, record) in session.records.iter().enumerate() {
             if let Event::ToolStarted(start) = &record.event
                 && start.tool.as_ref() == b"shell"
             {
@@ -453,6 +460,17 @@ fn tool_timeout(observer: &Observer, requested: u32, bound: u64, clamped: bool, 
                 if input.get("timeout_seconds").and_then(serde_json::Value::as_u64) != Some(u64::from(requested)) {
                     continue;
                 }
+                if let Some(command) = command {
+                    let Some(actual) = input.get("command").and_then(serde_json::Value::as_str) else {
+                        return CheckVerdict {
+                            check: "tool-timeout".into(),
+                            passed: unavailable("shell command identity was not retained"),
+                            evidence,
+                        };
+                    };
+                    passed &= actual == command;
+                    evidence.push(format!("command={actual}"));
+                }
                 count = count.checked_add(1).expect("retained shell count fits");
                 let Some(deadline) = start.deadline_ms else {
                     return CheckVerdict {
@@ -464,6 +482,7 @@ fn tool_timeout(observer: &Observer, requested: u32, bound: u64, clamped: bool, 
                 let Some(end) = session
                     .records
                     .iter()
+                    .skip(start_at + 1)
                     .filter_map(|record| if let Event::ToolCompleted(end) = &record.event { Some(end) } else { None })
                     .find(|end| {
                         end.run == start.run

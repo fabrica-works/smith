@@ -1,0 +1,67 @@
+id = "process-tree"
+version = 1
+kind = "probe"
+tier = "small"
+effort = "low"
+deadline_seconds = 120
+prompt = "Run exactly one shell call with command sh -c 'sleep 600 & wait' and timeout_seconds=1. Omit output_bytes. This starts a sleeping child and waits for it; let the tool's timeout terminate the whole process group. Do not run another command, delegate, or modify files. After the timed-out result finish with PROCESS TREE ENDED.\n"
+seed_sha256 = "004577ba0d0270885d8eb3994af77c63a4bc91b53570c505866f496ff2f85cc5"
+guards = ["domain/tools.md, section 5"]
+protected = ["marker.txt"]
+deciding = ["end", "exit-code", "answer", "tool-call", "tool-timeout", "run-completed", "protected-unchanged", "stream-whole", "paired", "nothing-lost", "tree-ended"]
+[budget]
+seconds = 90
+turns = 8
+[smith]
+window = 272000
+output = 32000
+reasoning_item = 65536
+head = 60000
+idle = 300000
+connect = 10000
+handshake = 10000
+conversations = 1
+calls_per_response = 4
+tool_payload = 4096
+read_window = 4096
+file_bytes = 1048576
+guide = 16384
+shell_output = 16384
+shell_head = 8192
+shell_tail = 8192
+llm_pool = 134217728
+memory = 2147483648
+tool_deadline = 1000
+shell_timeout = 1000
+group_stop = 250
+[[outcome]]
+check = "end"
+end = "completed"
+[[outcome]]
+check = "exit-code"
+code = 0
+[[outcome]]
+check = "answer"
+pattern = "PROCESS TREE ENDED"
+[[outcome]]
+check = "protected"
+path = "marker.txt"
+[[event]]
+check = "tool-call"
+tool = "shell"
+count = { exactly = 1 }
+verdict = "timed_out"
+[[event]]
+check = "tool-timeout"
+requested_seconds = 1
+deadline_ms = 1000
+clamped = false
+grace_ms = 250
+command = "sh -c 'sleep 600 & wait'"
+[[event]]
+check = "run-completed"
+status = "accepted"
+[[event]]
+check = "tool-call"
+tool = "finish"
+count = { exactly = 1 }

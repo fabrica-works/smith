@@ -101,14 +101,8 @@ pub(super) fn checks(
                     return Err(Refusal::new(file, &key, "tool and result byte bound must be nonempty"));
                 }
             }
-            EventCheck::ToolTimeout { requested_seconds, deadline_ms, grace_ms, .. } => {
-                if *requested_seconds == 0 || *deadline_ms == 0 || deadline_ms.checked_add(*grace_ms).is_none() {
-                    return Err(Refusal::new(
-                        file,
-                        &key,
-                        "timeout request, bound and grace must fit positive durations",
-                    ));
-                }
+            EventCheck::ToolTimeout { requested_seconds, deadline_ms, grace_ms, command, .. } => {
+                timeout(file, &key, *requested_seconds, *deadline_ms, *grace_ms, command.as_deref())?;
             }
             EventCheck::NoVerdict { verdicts } => {
                 for value in verdicts {
@@ -229,4 +223,21 @@ fn file_check(
         return Ok(true);
     }
     Ok(false)
+}
+
+fn timeout(
+    file: &Path,
+    key: &str,
+    requested: u32,
+    deadline: u64,
+    grace: u64,
+    command: Option<&str>,
+) -> Result<(), Refusal> {
+    if command.is_some_and(|value| value.trim().is_empty()) {
+        return Err(Refusal::new(file, key, "command identity must be nonempty when supplied"));
+    }
+    if requested == 0 || deadline == 0 || deadline.checked_add(grace).is_none() {
+        return Err(Refusal::new(file, key, "timeout request, bound and grace must fit positive durations"));
+    }
+    Ok(())
 }

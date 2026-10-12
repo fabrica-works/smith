@@ -92,3 +92,46 @@ fn protected_and_teardown_measurements_preserve_counterexamples_and_missing_proo
     );
     assert!(matches!(teardown(&Measure::unavailable("no answer"), 40, Forced::No).passed, Measure::Unavailable { .. }));
 }
+
+#[cfg(test)]
+#[test]
+fn tree_leftovers_fail_even_after_supervisor_cleanup_and_missing_observation_is_unavailable() {
+    use skein_lib::{Duration, Time, Wall};
+    use skein_world::end_to_end::{Counts, Method, PeakScope, TreeStatus};
+    let mut process = ProcessResult {
+        exit: crate::Exit::Code(0),
+        forced: Forced::No,
+        start: Time::from_nanos(0),
+        start_wall: Wall::from_nanos(0),
+        end: Time::from_nanos(1),
+        answered: None,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        trace: Vec::new(),
+        observer: crate::agent::codex::Observer::default(),
+        observing: None,
+        error: None,
+        counts: Counts {
+            method: Method::Walk,
+            user: Duration::ZERO,
+            system: Duration::ZERO,
+            peak_rss_bytes: 0,
+            peak_scope: PeakScope::LargestProcess { baseline_bytes: 0 },
+        },
+        tree: TreeStatus {
+            live_pids: Vec::new(),
+            live_at_leader_exit: Some(Vec::new()),
+            terminated_pids: Vec::new(),
+            killed_pids: Vec::new(),
+            forced_cleanup: false,
+        },
+    };
+    assert_eq!(tree(&process).passed, Measure::Observed { value: true });
+    process.tree.live_at_leader_exit = Some(vec![42]);
+    process.tree.killed_pids = vec![42];
+    process.tree.forced_cleanup = true;
+    assert_eq!(tree(&process).passed, Measure::Observed { value: false });
+    assert!(tree(&process).evidence[0].contains("42"));
+    process.tree.live_at_leader_exit = None;
+    assert!(matches!(tree(&process).passed, Measure::Unavailable { .. }));
+}

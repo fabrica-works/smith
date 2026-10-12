@@ -109,7 +109,13 @@ fn observed(records: &[Record], check: &EventCheck) -> Measure<bool> {
 
 #[test]
 fn timeouts_require_the_native_equal_bound_exact_request_clamp_and_complete_join() {
-    let check = EventCheck::ToolTimeout { requested_seconds: 9999, deadline_ms: 1000, clamped: true, grace_ms: 250 };
+    let check = EventCheck::ToolTimeout {
+        requested_seconds: 9999,
+        deadline_ms: 1000,
+        clamped: true,
+        grace_ms: 250,
+        command: None,
+    };
     let original = common::events::balanced();
     let mut values = original.clone();
     let mut start =
@@ -177,8 +183,13 @@ fn timeouts_require_the_native_equal_bound_exact_request_clamp_and_complete_join
             value.input = Some(Box::from(&br#"{"command":"sleep 600","timeout_seconds":1}"#[..]));
         }
         assert_eq!(observed_capture(&changed, &check, &capture).passed, Measure::Observed { value: false });
-        let unclamped =
-            EventCheck::ToolTimeout { requested_seconds: 1, deadline_ms: 1000, clamped: false, grace_ms: 250 };
+        let unclamped = EventCheck::ToolTimeout {
+            requested_seconds: 1,
+            deadline_ms: 1000,
+            clamped: false,
+            grace_ms: 250,
+            command: None,
+        };
         if let Event::ToolCompleted(value) = &mut changed[6].event {
             value.clamped = false;
         }
