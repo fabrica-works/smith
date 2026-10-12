@@ -78,3 +78,23 @@ Proof: those tests, once.
 Don't: change `output_items` or its formula, or add a count; change the
 reasoning limit per item, its opt-in drop, or the receiving reservation.
 Size: README rule 9's.
+
+### 07.s5 `directory_access`: whether a directory can be written
+Added during the run (decisions.md, 13.88), from the designer's answer of
+2026-10-12T21:31:06Z (skein 698b9a93, shell.md 6.1 and section 9).
+Scope: a startup function in `skein-shell`, beside `effective_user`
+(`ring.rs:1664`), through the ring adapter: `directory_access(path)`
+answers as the kernel does for the process's effective user, with
+`faccessat2(..., W_OK | X_OK, AT_EACCESS)`: writable, absent, not a
+directory, or denied with the kernel's error; it creates nothing, opens
+nothing for writing and changes nothing.
+Needs: nothing.
+Files: `crates/skein-shell/src/{lib.rs,ring.rs}`; `tests/ring`.
+Shape: one function and its answer's enum.
+Test shape: shell.md section 9's startup-read tests: a writable
+directory, an absent path, a file, a directory without write permission,
+and nothing created. Under 20 ms each.
+Proof: those tests, once.
+Don't: read mode bits or an owner in its place; open anything for
+writing.
+Size: README rule 9's.

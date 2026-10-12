@@ -1707,3 +1707,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    and the driver with a unit Proof; 10.19 takes the credential
    inspection, composition and `smith check` with 10.7's world test. 10.9
    may go on meanwhile (development.md 8.7).
+88. **skein-07.s5: `directory_access`; smith 10.9 repins for it** (block
+   of 2026-10-12T21:28:43Z, smith 10.9; the designer's answer of
+   21:31:06Z, skein 698b9a93, smith 38089dae and 7dc21a9b). `smith check`
+   confirms a cache is a directory smith's effective user may write and
+   search, as the kernel answers it, creating nothing; a cache it cannot
+   confirm is a warning. skein has no such call: a step not in the plan,
+   skein-07.s5, adds `directory_access`; smith 10.9 repins skein at it,
+   in its own commit first, and the rest of 10.9 goes on meanwhile.
