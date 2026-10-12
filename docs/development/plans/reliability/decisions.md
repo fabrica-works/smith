@@ -951,4 +951,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    600 production lines. The projection belongs with the end that
    causes it, and a split now would land 08.6 with a gate that fails, so
    08.6 may take up to 700, its commit body giving the count by file.
+27. **shell-cwd's bundle stays on this machine** (block of
+   2026-10-12T15:29:16Z, smith 12.2). 12.2's session file already names
+   the bundle's place, `$XDG_STATE_HOME/smith-bench/bundles/shell-cwd-56c0c59/`,
+   and benchmarks.md, section 15 leaves open "where a bundle is kept
+   durably, so that another machine can run the task". This run needs
+   only this machine, where 12.5 runs, so 12.2 goes on as written and the
+   durable place goes to `later.md`; nothing waits on the user.
 

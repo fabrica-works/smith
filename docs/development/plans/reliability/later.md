@@ -23,3 +23,4 @@ IDs cite `findings/`.
 | A notice for lines a crash lost | domain/host.md, section 8 | When the design names one (decisions.md, 12.19) |
 | A probe's next task version, for each probe session 13 records as not calibrated | benchmarks.md, section 11.1 | After this plan, one version per probe, with the reason session 13 recorded (decisions.md, 12.4) |
 | smith-bench's offline tier within "under a second" (95 tests take about 8 s serially) | benchmarks.md, sections 4.1 and 14 | When the harness's tests are next reworked; the suites' budgets hold meanwhile (decisions.md, 11.13) |
+| A repository bundle kept durably, so that another machine can run `shell-cwd` (this plan keeps it in `$XDG_STATE_HOME/smith-bench/bundles/` on debian-16gb-hel1-1) | benchmarks.md, section 15, "Repository bundles" | When a second machine runs the repository suite; the designer chooses where, and the user if it needs a hosted service (decisions.md, 13.27) |
