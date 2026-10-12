@@ -26,6 +26,13 @@ pub fn declarations(profile: &Profile, configuration: &Configuration) -> Result<
     )?;
     policy_deadlines(profile)?;
     vocabulary(profile)?;
+    let required = profile
+        .policy
+        .close
+        .as_nanos()
+        .checked_mul(2)
+        .ok_or(Refusal::Derived { limit: LimitName::deployment(Layer::Policy, "cancel_grace") })?;
+    cancel_over_close(Duration::from_nanos(required), profile.policy.cancel_grace)?;
     for endpoint in &configuration.endpoints {
         positive_duration(
             LimitName { layer: Layer::Policy, field: "connect", per: Per::Endpoint(endpoint.number) },
@@ -117,6 +124,18 @@ fn policy_deadlines(profile: &Profile) -> Result<(), Refusal> {
         });
     }
     Ok(())
+}
+
+/// Cancellation grace holds twice IO's close deadline before dropping a run.
+pub fn cancel_over_close(required: Duration, available: Duration) -> Result<(), Refusal> {
+    if required <= available {
+        return Ok(());
+    }
+    Err(Refusal::Broken {
+        check: Check::CancelOverClose,
+        left: LimitName::deployment(Layer::Io, "twice_close").value(Value::Duration(required)),
+        right: duration("cancel_grace", available),
+    })
 }
 
 fn positive_duration(name: LimitName, duration: Duration) -> Result<(), Refusal> {

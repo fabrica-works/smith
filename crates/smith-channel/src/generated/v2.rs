@@ -62,7 +62,7 @@ pub const CEILINGS: Limits = Limits {
     field_name: 64,
     field_text: 262_144,
     deliver_ask_fields: 32,
-    turn_body: 8_388_608,
+    turn_body: 16_777_216,
     accepted_result: 67_108_864,
 };
 
@@ -14907,8 +14907,8 @@ mod golden_tests {
             }
             writer.finish()
         }
-        Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(8_388_608, true))).expect("field at ceiling");
-        let problem = Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(8_388_609, false))).expect_err("field past ceiling");
+        Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(16_777_216, true))).expect("field at ceiling");
+        let problem = Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(16_777_217, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::TurnBody, skein_codec::Reason::Bound));
     }
 

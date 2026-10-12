@@ -13,7 +13,7 @@ fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
             "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
             "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
             "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134_217_728,"memory":2_147_483_648_u64},
-            "policy":{"group_stop":250}},
+            "policy":{"group_stop":250,"host_tools":2}},
         "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
             "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
             "connect":30000,"handshake":30000,"reasoning_effort":"low"}],

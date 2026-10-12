@@ -522,3 +522,21 @@ fn a_turn_larger_than_the_channel_frame_is_refused_by_name() {
         b"turn-in-channel: session.frame_bytes=101 bytes; channel.frame_bytes=100 bytes"
     );
 }
+
+#[test]
+fn cancel_grace_under_twice_close_is_refused_as_cancel_over_close() {
+    let mut profile = profile();
+    profile.policy.close = Duration::from_secs(5);
+    profile.policy.cancel_grace = Duration::from_millis(9_999);
+    let refusal = super::derive(&profile, &declarations()).expect_err("cancel grace lacks its close margin");
+    assert_eq!(refusal.check(), Some(Check::CancelOverClose));
+    assert_eq!(
+        refusal,
+        Refusal::Broken {
+            check: Check::CancelOverClose,
+            left: LimitName::deployment(Layer::Io, "twice_close").value(Value::Duration(Duration::from_secs(10))),
+            right: LimitName::deployment(Layer::Policy, "cancel_grace")
+                .value(Value::Duration(Duration::from_millis(9_999))),
+        }
+    );
+}

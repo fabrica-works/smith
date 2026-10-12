@@ -1,6 +1,6 @@
 //! Declared deployment and model quantities retained at startup. This module
 //! knows no transport destinations or derived byte limits. `standard` supplies
-//! the transitional named bundle; the service composes derivation separately.
+//! the standard deployment bundle; the service composes derivation separately.
 //! Contracts: protocol/limits.md, section 2; protocol/agent.md, section 4.
 
 use alloc::boxed::Box;
@@ -9,7 +9,7 @@ use skein_lib::Duration;
 /// A named deployment bundle, selected by the shell before startup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Name {
-    /// The standard bundle, refined as each limit layer is derived.
+    /// The standard deployment and policy bundle.
     Standard,
 }
 
@@ -146,24 +146,24 @@ pub struct Configuration {
     pub endpoints: Box<[Endpoint]>,
 }
 
-/// The transitional deployment bundle, with 2 GiB of process memory.
+/// The standard deployment and policy values of shell.md, sections 6.3 and 6.5.
 #[must_use]
 pub const fn standard() -> Profile {
     Profile {
         name: Name::Standard,
         declared: Declared {
             conversations: 6,
-            tool_payload: 65_536,
-            file_bytes: 65_536,
+            tool_payload: 40_960,
+            file_bytes: 1_048_576,
             calls_per_response: 16,
-            read_window: 4096,
-            shell_output: 512,
-            shell_head: 256,
-            shell_tail: 512,
-            search_hits: 16,
-            search_bytes: 1024,
-            list_entries: 64,
-            guide: 1024,
+            read_window: 32_768,
+            shell_output: 16_384,
+            shell_head: 16_384,
+            shell_tail: 49_152,
+            search_hits: 100,
+            search_bytes: 16_384,
+            list_entries: 512,
+            guide: 16_384,
             llm_pool: 134_217_728,
             memory: 2_147_483_648,
         },
@@ -172,23 +172,23 @@ pub const fn standard() -> Profile {
             max_spend: 1_000_000_000,
             max_time: Duration::from_secs(24 * 60 * 60),
             max_waiting: Duration::from_secs(24 * 60 * 60),
-            sections: 4,
-            host_tools: 2,
-            verdicts: 2,
-            items: 256,
-            fields: 32,
-            inbox: 8,
+            sections: smith_charter::CEILINGS.charter_brief,
+            host_tools: smith_charter::CEILINGS.tools_host,
+            verdicts: smith_charter::CEILINGS.contract_verdicts,
+            items: smith_charter::CEILINGS.run_result_items,
+            fields: smith_charter::CEILINGS.text_rule_fields,
+            inbox: 64,
             unacknowledged: 64,
             compaction_threshold: Fraction { numerator: 4, denominator: 5 },
-            connection_keep: Duration::from_secs(15),
+            connection_keep: Duration::from_secs(30),
             tool_deadline: Duration::from_secs(20 * 60),
             shell_timeout: Duration::from_secs(2 * 60),
-            check_timeout: Duration::from_secs(60),
+            check_timeout: Duration::from_secs(5 * 60),
             wrap_up: Duration::from_secs(60),
-            group_stop: Duration::from_millis(250),
+            group_stop: Duration::from_secs(1),
             close: Duration::from_secs(5),
             write_deadline: Duration::from_secs(30),
-            cancel_grace: Duration::from_secs(5),
+            cancel_grace: Duration::from_secs(10),
             exit_grace: Duration::from_secs(45),
         },
     }

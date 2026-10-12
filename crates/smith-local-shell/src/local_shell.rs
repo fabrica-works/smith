@@ -335,13 +335,10 @@ fn product_host_startup_and_complete_outer_memory_fit() {
     }
     let settings: local_settings::Settings = serde_json::from_value(serde_json::json!({
       "agent":{
-        "profile":{"name":"standard","declared":{
-          "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
-          "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
-          "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134_217_728,"memory":2_147_483_648_u64},
-          "policy":{"group_stop":250}},
+        "profile":{"name":"standard"},
         "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
           "address":"127.0.0.1:443","transport":"tls","server_name":"fixture.invalid",
+          "trust_der":concat!(env!("CARGO_MANIFEST_DIR"),"/../../tests/protocol-llm/fixtures/root.der"),
           "connect":10000,"handshake":10000,"reasoning_effort":"low"}],
         "environment":environment,"trace":{"path":"/unused-product-trace","capture":"everything"}},
       "chat":"fixture","instructions":"x".repeat(170),

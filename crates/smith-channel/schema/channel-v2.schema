@@ -78,7 +78,7 @@ record Turn {
     spent: u64
     last_read: option u64
     opens_window: bool
-    body: bytes 8388608
+    body: bytes 16777216
 }
 record Waiting { last_read: option u64 }
 enum Operation { check, completion, command }

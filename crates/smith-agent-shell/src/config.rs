@@ -1132,10 +1132,7 @@ mod tests {
 
     fn product_document() -> serde_json::Value {
         serde_json::json!({
-          "profile":{"name":"standard","declared":{
-            "conversations":6,"tool_payload":40960,"file_bytes":1_048_576,"calls_per_response":16,
-            "read_window":32768,"guide":16384,"shell_output":16384,"shell_head":16384,"shell_tail":49152,
-            "search_hits":100,"search_bytes":16384,"list_entries":512,"llm_pool":134_217_728,"memory":2_147_483_648_u64}},
+          "profile":{"name":"standard"},
           "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
             "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
             "connect":10000,"handshake":10000,"reasoning_effort":"low",
@@ -1143,6 +1140,34 @@ mod tests {
           "environment":[{"name":"X","value":"x".repeat(833)}],
           "trace":{"path":"/tmp/unused-diagnostic-trace","capture":"everything"}
         })
+    }
+
+    fn all_product_models(mut document: serde_json::Value) -> serde_json::Value {
+        let mut astra = document["endpoints"][0]["models"][0].clone();
+        astra["name"] = "gpt-6-astra".into();
+        document["endpoints"][0]["models"].as_array_mut().unwrap().push(astra);
+        let mut anthropic = document["endpoints"][0].clone();
+        anthropic["name"] = "anthropic".into();
+        anthropic["number"] = 2.into();
+        anthropic["dialect"] = 2.into();
+        anthropic["provider"] = "anthropic".into();
+        anthropic["server_name"] = "api.anthropic.com".into();
+        anthropic["identity"] = "claude-code".into();
+        let mut models = Vec::new();
+        for name in ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] {
+            let mut model = document["endpoints"][0]["models"][0].clone();
+            model["name"] = name.into();
+            model["window"] = 200_000.into();
+            model["idle"] = 120_000.into();
+            models.push(model);
+        }
+        anthropic["models"] = models.into();
+        document["endpoints"].as_array_mut().unwrap().push(anthropic);
+        let trust = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/protocol-llm/fixtures/root.der");
+        for endpoint in document["endpoints"].as_array_mut().unwrap() {
+            endpoint["trust_der"] = trust.to_str().expect("fixture trust path").into();
+        }
+        document
     }
 
     fn assert_native_prompt_line(line: &[u8], native: &shared::Prompt, text: &[u8], credential: &shared::Credential) {
@@ -1263,7 +1288,7 @@ mod tests {
         use skein_io::kernel::{Complete, Fd, Submit};
         use skein_lib::Queue;
 
-        let document = product_document();
+        let document = all_product_models(product_document());
         // Record each owner and the complete checked process bound before
         // checking the concrete parser's startup relationships.
         let dto: Document = serde_json::from_value(document.clone()).expect("product DTO");
@@ -1369,10 +1394,16 @@ mod tests {
             + Queue::<Submit>::worst_case(queue).expect("submit queue")
             + u64::try_from(size_of::<crate::Agent>()).expect("agent cell")
             + u64::from(roots) * u64::try_from(size_of::<Fd>()).expect("root cells");
-        let header = u64::try_from(
-            b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
-        )
-        .unwrap();
+        let header_limits = effective_header(&selected, &declarations, limits, &configured.channel, &destinations)
+            .expect("complete header");
+        let header_names: u64 = header_limits.iter().map(|entry| u64::try_from(entry.name.len()).unwrap()).sum();
+        let header_inventory =
+            List::<smith_events::EffectiveLimit>::worst_case(header_limits.len()).unwrap() + header_names;
+        let header = header_inventory
+            + u64::try_from(
+                b"smith".len() + env!("CARGO_PKG_VERSION").len() + env!("SMITH_BUILD").len() + b"standard".len(),
+            )
+            .unwrap();
         let complete = service + header + shell;
         println!(
             "PRODUCT_COMPLETE service={service} startup_header={header} shell={shell} complete={complete} memory={}",

@@ -121,6 +121,8 @@ pub fn profile() -> agent::profile::Profile {
     profile.declared.conversations = smith_agent_world::LIMITS.run.conversations;
     profile.declared.calls_per_response = smith_agent_world::LIMITS.run.calls;
     profile.declared.tool_payload = 256;
+    profile.declared.file_bytes = 65_536;
+    profile.declared.shell_output = 512;
     profile.declared.read_window = 16;
     profile.declared.shell_head = 64;
     profile.declared.shell_tail = 64;
@@ -133,6 +135,10 @@ pub fn profile() -> agent::profile::Profile {
     profile.policy.max_turns = 512;
     profile.policy.max_time = Duration::from_secs(3600);
     profile.policy.inbox = 8;
+    profile.policy.sections = 4;
+    profile.policy.host_tools = 2;
+    profile.policy.verdicts = 2;
+    profile.policy.check_timeout = Duration::from_secs(60);
     profile.policy.unacknowledged = 8;
     profile.policy.group_stop = Duration::from_millis(10);
     profile

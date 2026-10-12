@@ -44,6 +44,8 @@ pub enum Check {
     CeilingsInVocabulary,
     /// Deadlines are positive and the shell default fits the tool deadline.
     Deadlines,
+    /// Cancellation grace holds IO close and a second close as margin.
+    CancelOverClose,
     /// Every worst case fits declared process memory.
     Memory,
     /// The host's exit grace exceeds the agent's teardown bound.
@@ -74,6 +76,7 @@ impl Check {
             Self::RequestHead => "request-head",
             Self::CeilingsInVocabulary => "ceilings-in-vocabulary",
             Self::Deadlines => "deadlines",
+            Self::CancelOverClose => "cancel-over-close",
             Self::Memory => "memory",
             Self::GraceOverTeardown => "grace-over-teardown",
             Self::WatchdogOverSilence => "watchdog-over-silence",
