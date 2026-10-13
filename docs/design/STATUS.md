@@ -49,10 +49,10 @@ its skein session's; "not planned" is in section 3.
   parent with std (`crates/smith-local-shell/src/local_shell.rs:94`,
   `:100`, `:154`, `compose.rs:301`, `local_tokens.rs:21`), and never
   syncs them into their parents, so a power loss can drop a chat's
-  directory with the files synced beneath it. Waits for skein's `make_root` (skein-03.s1,
-  jig's jig-protocol); then a smith step moves those sites onto it. The
-  temporary directories of `compose/files.rs` stay: nothing relies on
-  them past a crash.
+  directory with the files synced beneath it. Waits for skein's
+  `make_root` (skein-03.s1, jig's jig-protocol); then a smith step moves
+  those sites onto it. The temporary directories of `compose/files.rs`
+  stay: nothing relies on them past a crash.
 - **Contained trees** (`protocol/agent.md`, sections 3 and 7; also
   `shell.md`, 8, `domain/host.md`, 4 and 9.3, `protocol/hosts.md`, 3 and
   5.5): searches, commands, checks and agents in trees with views, git
