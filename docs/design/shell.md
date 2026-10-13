@@ -347,6 +347,15 @@ One run, then exit:
   starts a new chat, named in `session.started` and on standard error.
 - **`--ephemeral`** keeps no chat: its files live in a private temporary
   directory removed at exit. Sign-in records are kept as usual.
+  - **Removed by the names it wrote.** At exit, after the run has
+    answered and before the process ends, the chat store removes through
+    io each file it wrote there, by the names it knows (its state, its
+    turns by number, its deliveries), then the directory, empty (skein's
+    `io.md`, 5, `Remove` with `directory`). It never lists or traverses
+    the directory, so it removes nothing it did not write.
+  - **A directory left behind is said.** One that is not empty then, or
+    a removal the kernel refuses, is kept, and a warning before the last
+    line names it and why; the code stays the answer's.
 
 ### 4.3 Exit codes
 
