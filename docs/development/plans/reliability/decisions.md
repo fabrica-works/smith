@@ -1931,3 +1931,10 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    limits owner; a step not in the plan, 10.s3, adds the file's deadlines
    when `-o` is given. The harness gives `exec` no `-o`, so 10.15's Proof
    does not wait for it.
+111. **A field boxed for `large_enum_variant` needs no question** (block of
+   2026-10-13T05:34:18Z, smith 06.s3). 06.s3's new budget fields enlarge
+   the host's `OpenEvent`, and `ProcessEvent::Channel` (232 bytes against
+   24) trips `large_enum_variant`; boxing `ProcessEvent::Channel.event`,
+   with its constructor and the agent service's consumer, changes nothing
+   else. The second such box (00.21 boxed `Observing.prepared`): README
+   rule 8 gains it.

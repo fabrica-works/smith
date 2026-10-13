@@ -196,7 +196,11 @@ do not already say.
      adds, at most to the next power of two above what it needs; the
      test's name, steps and assertions
      unchanged, the commit body quoting the Scope's or Shape's words
-     beside it (decisions.md, 13.40 and 13.43).
+     beside it (decisions.md, 13.40 and 13.43);
+   - an existing variant's field boxed, and its constructors and
+     consumers moved through the box, when the increment's change
+     to a type trips `large_enum_variant`, nothing else changed
+     (decisions.md, 13.111).
 
    The commit body lists those files and lookups under "Users outside
    Files:". For
