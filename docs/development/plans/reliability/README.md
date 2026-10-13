@@ -64,7 +64,7 @@ and 00.29 land. The coordinator runs at most eight threads
 this order, the sessions others wait on:
 
 1. smith 00 (00.27 gates the smoke, session 13 and the live Proofs of
-   05.13, 10.8 and 10.15);
+   05.13, 10.24 and 10.15);
 2. smith 03 (its product stream opens 04.22, 06.8, 10.5 and 10.16);
 3. smith 06 (06.1 and 06.2 open 03.10 and 10.5);
 4. smith 05 (its notices and lines open 00.14, 06.9 and 10.8);
@@ -312,7 +312,7 @@ guards stand on their deterministic tests (decisions.md, 12.4).
   |---|---:|---:|---:|
   | the smoke, on each smith code landing (about 80) | 160 at most | $2 | 15 min |
   | smith 00 (00.27, 00.14, 00.16, 00.30, 00.21) | about 115 | $25 | 4 h |
-  | smith 05.13, 10.8, 10.15 | 8 | $1 | 35 min |
+  | smith 05.13, 10.24, 10.15 | 8 | $1 | 35 min |
   | smith 13 | 248 | $22 | 8 h |
   | smith 12 | 126 | $45 | 8 h |
   | **the run** | **about 660** | **$95** | **about 21 h** |

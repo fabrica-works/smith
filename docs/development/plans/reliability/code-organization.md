@@ -246,7 +246,7 @@ The owner defines the interface; the others use or extend it by name.
 
 | Interface | Owner | Used or extended by |
 |---|---|---|
-| `smith-bench`'s `build`, `probe`, `calibrate`, `fix` and `suite` | smith 00.27 | 05.13, 10.8, 10.15, sessions 12 and 13; 12.1 adds `suite --include` |
+| `smith-bench`'s `build`, `probe`, `calibrate`, `fix` and `suite` | smith 00.27 | 05.13, 10.24, 10.15, sessions 12 and 13; 12.1 adds `suite --include` |
 | `smith-bench validate` | smith 00.13 | 12.1, 12.2 |
 | `[[person]]` and `input_end` in tasks | smith 00.28 | 00.14 |
 | `suites/probes.toml` | smith 00.29 | 00.14, 00.16, 00.30, 10.15; session 13 reads it |

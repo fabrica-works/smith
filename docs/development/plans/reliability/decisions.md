@@ -1947,3 +1947,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    registration from settings, `smith login`, the legacy migration and
    removal, and both live-arm moves, with 10.6's process Proof; it stops
    past 700.
+113. **smith 10.8 splits; 10.24 takes the interactive screen, its commands
+   and the live Proof** (block of 2026-10-13T10:21:04Z). 10.8's candidate
+   (`6e6790d1`, on `2834aedf`) holds 708 production lines: the sink's live
+   view and the store's selection with their routing (428), the entered
+   parser (90) and a screen draft (190), with startup, the commands'
+   execution, the named stories, the harness and the Proof unstarted.
+   Ruling: the implementer's split, as 13.112's: 10.8 lands the sink's
+   typed, bounded, best-effort view and the store's selection of one chat
+   at idle, with their routing and unit tests, and a unit Proof of them;
+   10.24 takes the rest of 10.8's Scope, starting from its preserved
+   screen and parser drafts, with 10.8's world and end-to-end stories and
+   its live Proof. 10.16 follows 10.24 and 10.10 needs it. Each stops
+   past 700.

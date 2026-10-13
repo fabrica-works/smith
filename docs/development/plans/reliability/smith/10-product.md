@@ -65,7 +65,7 @@ loop of its own beside skein's.
 
 ## Rules that bind it
 
-- **The harness follows the binary** (README, rule 4): 10.15 and 10.8
+- **The harness follows the binary** (README, rule 4): 10.15 and 10.24
   move `smith-bench`'s smith adapter; the legacy face is never edited.
 - **Never touch the user's logins** (README, rule 7): an end-to-end test
   sets `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` to directories in
@@ -701,6 +701,7 @@ events.md, 5.2; hosts.md, 5.3):
   store's bounds, is refused naming it; an `--ephemeral` store selects
   no other. The harness runs `probes/first-request` at `smith --trace <file>`
 on a pseudo-terminal; its `headless` variant stays on `smith exec`.
+Split (decisions.md, 13.113): 10.8 lands the sink's typed, bounded, best-effort live view (`EventLimits.front`) and the store's selection of one chat at idle (`StoreRequest::SelectChat`), with their routing through the domain, the services and the local host, and their unit tests; 10.24 takes the rest, from the preserved drafts of `6e6790d1`.
 Needs: smith 05's typed notices [05.11], and lines carried, held until
 read, unread by outcome [05.13]; for its Proof, smith 00's one command
 per probe run [00.27].
@@ -723,13 +724,41 @@ Test shape: unit: each `/` line, the renderer per record kind. World, in
 `smith_on_a_terminal_signs_in_and_commits_in_place`,
 `a_second_smith_resumes_the_chat_from_its_files`,
 `an_interrupt_cancels_the_run`. Ceilings: 20 ms, 0.5 s, 2 s.
-Proof: live, `heavy cargo run -p smith-bench -- build HEAD`, then `heavy
+Proof (10.24's, decisions.md 13.113): live, `heavy cargo run -p smith-bench -- build HEAD`, then `heavy
 --gate cargo run -p smith-bench -- probe probes/first-request --arm <the
 printed directory>`, one attempt typed at `smith --trace` on a
 pseudo-terminal: it passes. No before: the parent passes it through `smith local`. At most
 $0.20 and 5 minutes; once. `follow-up` (smith 00.14) is not its proof.
 Don't: no raw input (10.10); no `/` command reaches the run.
 Size: at most 600.
+Removes: nothing.
+10.8's own Test shape and Proof (decisions.md, 13.113): its units of the
+sink's view and the store's selection; Proof: unit,
+`the_live_view_drops_without_holding_a_none_capture_destination` and
+`selecting_a_new_chat_makes_a_private_directory_and_keeps_its_record_layout`;
+once each, under 20 ms. Size: README rule 9's; past 700, it stops and asks.
+
+### 10.24 The interactive `smith`'s screen, commands and live Proof
+Split from 10.8 (decisions.md, 13.113). Scope: 10.8's Scope beyond the
+sink's live view and the store's selection: interactive startup in line
+mode with the workspace's chats adopted as the store's root, `front` at
+the header's and the footprint's derivation, line mode and `--plain`
+detected, the screen per record kind with notices and the budget joined,
+the status line, the `/` lines parsed and executed at the domain's
+activation boundary (`/model`, `/effort`, `/new`, `/resume NAME`,
+`/quit`), interrupts and end of input, a `sign_in` account without a
+record showing its address through the existing driver, and the
+harness's Chat face running `probes/first-request` at `smith --trace
+<file>` on a pseudo-terminal. It starts from 10.8's preserved drafts:
+the screen and the entered parser of `6e6790d1` (on `2834aedf`).
+Needs: 10.8.
+Files: 10.8's.
+Shape: 10.8's.
+Test shape: 10.8's units of each `/` line and of the renderer per record
+kind, its four world stories and its three end-to-end tests.
+Proof: 10.8's live Proof.
+Don't: 10.8's.
+Size: README rule 9's; past 700, it stops and asks.
 Removes: nothing.
 
 ### 10.16 `smith local`, `smith agent` and the JSON settings go
@@ -743,7 +772,7 @@ process go; worlds and the sample host spawn `smith-agent` through
 the composition; `docs/development/local-host.md` is rewritten for the
 product, and `workflow.md`'s `cargo run -- local` line goes.
 Needs: smith 03's product stream with a spawned agent [03.9]; it
-follows 10.8 and 10.15.
+follows 10.24 and 10.15.
 Files: `smith-local-shell` (`local_settings.rs`, `local_shell.rs`,
 `local_host.rs`, `compose.rs`, `tests/local_library.rs`); `src/main.rs`;
 `tests/local-process/src/process.rs`; `tests/real`; `tests/end-to-end`;
@@ -801,7 +830,7 @@ Scope (shell.md, 4.1; skein shell.md, 6.3): with a terminal and without
 `--plain`, raw input at startup with the interrupt key kept as a signal;
 the modes restored once `drive` returns, on every path, before the last
 line; `Resized` heard and `Window` read for the status line's width.
-Needs: smith 10.8's interactive owner (`front/interactive.rs`, the status line, `--plain`) and 10.s1's repin (decisions.md, 13.75); skein's terminal modes (skein 02.6): `raw_input`,
+Needs: smith 10.24's interactive owner (`front/interactive.rs`, the status line, `--plain`; decisions.md, 13.113) and 10.s1's repin (decisions.md, 13.75); skein's terminal modes (skein 02.6): `raw_input`,
 `Kept::restore`, `open_signals(Watch::TerminationAndWindow)`, io's
 `Resized` and `Window`. Repin skein in its own commit first.
 Files: `smith-local-shell` (`compose.rs`, `front/interactive.rs`,
@@ -917,6 +946,6 @@ failed, `RunFailed` (shell.md, 4.3).
   'clippy::disallowed_' crates/smith-local-shell/src
   crates/smith-agent-shell/src src` prints nothing (6 lines on `main`).
 - 10.15's commit records `failures` and `first-request/headless`
-  passing, and 10.8's interactive `first-request`: `git log origin/main
-  --format=%B -E --grep='^Step: smith-10\.(8|15)$' | rg -c '^Proof: live'`
+  passing, and 10.24's interactive `first-request`: `git log origin/main
+  --format=%B -E --grep='^Step: smith-10\.(15|24)$' | rg -c '^Proof: live'`
   prints 2.
