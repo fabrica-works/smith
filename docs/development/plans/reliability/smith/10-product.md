@@ -498,6 +498,7 @@ run's"): written and synced after the answer and before
 <file>: <the kernel's error>`, `run.completed` unchanged and
 `session.ended`'s `exit` 1; after any other answer, a warning before
 the answer's last line.
+Split (decisions.md, 13.107): 10.20 lands `-o`'s durable output with its failure policy (shell.md 4.3, the designer's faaba005) and its tests; 10.22 takes `--ephemeral`'s private files and their known-name cleanup (the designer's 536b3a2d) with their tests.
 Needs: 10.5; skein's `Remove` with `directory` (skein's `io.md`, 5), a
 skein step its supervisor names, pinned.
 Files: 10.5's, as they concern these two.
@@ -510,6 +511,22 @@ be written after an accepted answer exits 1 with that last line, and
 Proof: process, those tests, once.
 Size: README rule 9's.
 
+
+### 10.22 `smith exec --ephemeral`'s private files and their cleanup
+Split from 10.20 (decisions.md, 13.107). Scope: 10.20's Scope for
+`--ephemeral`: the private chat directory, the store keeping its written
+names in ephemeral mode, their removal through io by those names, then
+the directory, empty (skein-07.s8's `Remove` with `directory`), and a
+directory left behind as a warning before the last line; never a listing
+or a traversal. Its candidate's parts start from 10.20's (`c61212fa`).
+Needs: 10.20.
+Files: 10.20's, as they concern `--ephemeral`; the store's
+`machine.rs` and `boundary.rs`.
+Test shape: `--ephemeral` leaves no file behind on success and on
+failure; a file the store did not write is kept, with its directory and
+the warning. Under 0.5 s.
+Proof: process, those tests, once.
+Size: README rule 9's.
 ### 10.21 `smith exec`'s last text and named failure forms
 Split from 10.5 (decisions.md, 13.103). Scope: 10.5's rendering left at
 its 950-line stop: the last assistant text kept across later tool-only

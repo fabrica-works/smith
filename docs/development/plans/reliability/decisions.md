@@ -1889,3 +1889,10 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    traversal or `std::fs`; a directory left behind is a warning before
    the last line. skein's `Remove` gains `directory`: a step not in the
    plan, skein-07.s8; 10.20 repins for it.
+107. **smith 10.20 splits; 10.22 takes `--ephemeral`'s cleanup** (block of
+   2026-10-13T03:31:43Z). 10.20's candidate (`c61212fa`) holds 738
+   production lines, past README rule 9's 700, with its ownership review,
+   compiler fixes and tests still to do. Ruling: the implementer's split:
+   10.20 lands `-o`'s durable output with its failure policy; 10.22 takes
+   `--ephemeral`'s private files and their known-name cleanup. Each has
+   its own process Proof.
