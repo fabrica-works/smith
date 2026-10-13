@@ -900,9 +900,13 @@ Shape: `sinks::View` (the projection) and its bound beside
 Test shape: unit: a request's record never enters the view; each shown
 record's projection stays within its bound; the footprint's view part is
 `FRONT_RECORDS` times that bound. Process:
-`the_interactive_default_fits_its_memory`: `smith check --json` for the
-interactive invocation, on each preset's default settings in scratch
-`HOME` and `XDG_*`, reports a worst case within the default `memory`.
+`the_interactive_default_fits_its_memory` (decisions.md, 13.122): for
+each preset's default interactive composition, every check passes and
+the complete worst case, from the existing `smith_local_service::worst_case`
+owner, fits the default `memory` with at least 64 MiB to spare, each
+number recorded in the test (limits.md, 3); and `smith check --json` for
+the interactive invocation on those defaults, in scratch `HOME` and
+`XDG_*`, exits 0. No effective limit is added.
 Ceilings: 20 ms, 2 s.
 Proof: process, `the_interactive_default_fits_its_memory`; once, under
 2 s. The body states each preset's interactive worst case and its

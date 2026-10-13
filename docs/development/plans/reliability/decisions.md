@@ -2059,3 +2059,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the screen shows, never a prompt, and the footprint prices the view
    from the projection's bound; 10.24 needs it and keeps 700 once the
    projection work leaves its diff. No limit, default or design changes.
+122. **10.s4's Proof takes the worst case from its owner, not from
+   `smith check`** (block of 2026-10-13T14:24:24Z, smith 10.s4). 13.121's
+   Proof had `smith check --json` report the interactive worst case;
+   check's effective limits carry no total, and a new name beside
+   limits.md's is not wanted (10.14: "no list of names beside smith
+   04's"). limits.md, section 3: "The service's tests hold, for the
+   product's values, that every check passes and that the complete worst
+   case fits `memory`, recording the number." Ruling: the Proof's test
+   holds that for each preset's default interactive composition through
+   the existing `smith_local_service::worst_case` owner, with at least
+   64 MiB to spare, recording each number; and `smith check --json` on
+   those defaults, for the interactive invocation, exits 0. No effective
+   limit, JSON field or version is added.
