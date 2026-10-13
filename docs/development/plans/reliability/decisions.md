@@ -1843,3 +1843,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    implementer's boundary: 10.5 keeps the command, startup and headless
    rendering with its process Proof; 10.20 takes `-o` and `--ephemeral`
    with their accounting and tests.
+102. **smith 10.5 lands whole, at up to 950 lines** (block of
+   2026-10-13T00:19:37Z). With `-o` and `--ephemeral` moved to 10.20,
+   10.5 stands at 888 production lines, 320 of them the resource
+   composition (103 preflight and refusals, 217 resources and start)
+   that its command needs to run at all: a further split would land a
+   command that cannot start, or stubs. As 13.80 did for 10.18: 10.5 is
+   one increment of at most 950 production lines, its commit body giving
+   the count by file; past 950, it stops and asks.
