@@ -2031,3 +2031,18 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    three end-to-end stories keep `Terminal::attached` on a real
    pseudo-terminal. No shared terminal mechanism is invented, and
    skein's world is unchanged.
+120. **smith 10.24 splits; 10.25 takes `/model` and `/effort`** (block of
+   2026-10-13T12:32:39Z). 10.24 reached 715 production lines after
+   rebasing onto 08.s1 (47e99f6e) and starting the next charter's model
+   and effort, which the designer's ruling of 11:05:21Z added to its
+   Scope. Ruling: the implementer's split. 10.24 lands the interactive
+   product, `/new`, `/resume` and `/quit`, its four world and three
+   end-to-end stories, the Chat face and its live Proof; it parses
+   `/model` and `/effort` as local commands and answers them with a
+   refusal in words naming them as not yet available, so no `/` line
+   reaches the run. 10.25 takes their execution: the next activation's
+   charter model and effort, the refusal of another endpoint's model
+   naming `smith --chat NAME -m ENDPOINT/NAME`, an effort checked against
+   the dialect's, `sub_agents`' models unchanged, with unit tests and a
+   process Proof. 10.16 and 10.10 still follow 10.24 only. Each stops
+   past 700.

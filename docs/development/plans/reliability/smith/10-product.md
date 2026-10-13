@@ -769,6 +769,9 @@ sections 3 and 8.2; transcript.md, section 2):
 Those crossings (the charter, the agent configuration, the transcript,
 the session's trigger, `smith-protocol-llm`) are a step its supervisor
 names, which 10.24's `/model` and `/effort` need.
+Split (decisions.md, 13.120): 10.24 lands all but `/model` and
+`/effort`'s execution: it parses them as local commands and refuses them
+in words, naming them, as not yet available; 10.25 executes them.
 Needs: 10.8; for `/model` and `/effort`, that step: 08.s1 (decisions.md, 13.114).
 Files: 10.8's, and `benchmarks/agents/smith/faces.toml` for one appended
 Chat entry (decisions.md, 13.118).
@@ -782,6 +785,34 @@ Proof: 10.8's live Proof.
 Don't: 10.8's.
 Size: README rule 9's; past 700, it stops and asks.
 Removes: nothing.
+
+### 10.25 `/model` and `/effort`
+Split from 10.24 (decisions.md, 13.120). Scope: 10.24's `/model` and
+`/effort`, as the designer ruled on 2026-10-13 (shell.md, 4.1 and 5.2):
+`/model ENDPOINT/NAME` sets the next activation's charter model to one of
+main's endpoint's models, which 08.s1 composes at startup; another
+endpoint's model is refused in words, the chat kept, naming `smith --chat
+NAME -m ENDPOINT/NAME`; `/effort LEVEL` sets the next activation's
+charter effort, refused in words when the dialect has no such effort;
+both take effect only once the live activation has answered or parked;
+`sub_agents`' models and the needed accounts are unchanged; 10.24's
+interim refusal of both goes. It starts from 10.24's preserved WIP (the
+startup inventory's model resolution and the next charter's private
+model and effort state).
+Needs: 10.24; 08.s1.
+Files: 10.24's.
+Shape: no new crossing type: the local host's next-start charter fields
+and 08.s1's `Effort`.
+Test shape: unit: each `/model` and `/effort` line's choice or refusal,
+its words. World, on the scripted `Terminal` (13.119):
+`slash_model_applies_from_the_next_activation`,
+`slash_model_on_another_endpoint_is_refused_and_the_chat_kept`. End to
+end: `slash_effort_reaches_the_next_request`. Ceilings: 20 ms, 0.5 s, 2 s.
+Proof: process, `slash_effort_reaches_the_next_request`; once, under 2 s.
+Don't: nothing composed again within the process; no endpoint but
+main's; no live run (10.24's live Proof covers the product).
+Size: README rule 9's; past 700, it stops and asks.
+Removes: 10.24's interim refusal of `/model` and `/effort`.
 
 ### 10.16 `smith local`, `smith agent` and the JSON settings go
 Scope: `Command::Legacy`, `smith local`, `smith agent`, the JSON
