@@ -685,7 +685,21 @@ response; the waiting prompt only once the relayed lines are read; `/model`,
 drop; end of input lets the run answer or park, and lines it left
 unread open one more activation, then exit 0 (4.1); `--plain`
 and no terminal; a `sign_in` account without a record shows its
-address. The harness runs `probes/first-request` at `smith --trace <file>`
+address. As the designer ruled on 2026-10-13 (shell.md, 4.1 and 4.2;
+events.md, 5.2; hosts.md, 5.3):
+- the live view comes from the one event sink: the front end asks it
+  for the records it shows, typed and in process, through a bounded
+  queue counted in the startup footprint, whatever the destinations'
+  capture, best effort (dropped and counted when behind, never holding
+  the run back), never read back from a destination; the answer and
+  its failure in words come from what the local host hears;
+- the chat store's root is the workspace's chats; it holds one chat at
+  a time and selects another only when idle, after the live activation
+  has answered or parked, forgetting the old chat's remembered state;
+  `/new` makes the new chat's directory, private; `/resume` of an
+  absent chat, or of a name that is not one path component within the
+  store's bounds, is refused naming it; an `--ephemeral` store selects
+  no other. The harness runs `probes/first-request` at `smith --trace <file>`
 on a pseudo-terminal; its `headless` variant stays on `smith exec`.
 Needs: smith 05's typed notices [05.11], and lines carried, held until
 read, unread by outcome [05.13]; for its Proof, smith 00's one command
@@ -693,6 +707,9 @@ per probe run [00.27].
 Files: `smith-local-shell` (`front/interactive.rs`, `command.rs`,
 `compose.rs`, `local_host.rs`); `smith-local-protocol/src/terminal.rs`;
 `smith-local-domain` (`/` commands at an activation's boundary);
+`smith-agent-service` (`src/events.rs`, `src/sinks.rs`, the front end's
+queue); `smith-local-protocol` (`src/store/boundary.rs`,
+`src/store/machine.rs`, the chat's selection);
 `smith-local-service`; `src/main.rs`; `tests/local-process`;
 `tests/end-to-end`; `benchmarks/src/agent/smith/{prepare.rs,faces.rs}`.
 Shape: `front::interactive::{Interactive, Screen, StatusLine}`;
