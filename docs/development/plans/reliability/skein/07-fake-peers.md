@@ -136,3 +136,22 @@ Proof: those tests, once.
 Don't: change `output_items`, the reasoning share or the receiving
 reservation.
 Size: README rule 9's.
+
+### 07.s8 `Remove` takes `directory`
+Added during the run (decisions.md, 13.106), from the designer's answer
+of 2026-10-13T02:50:36Z (skein ed8d2358, io.md 5). Scope:
+`file::Request::Remove` gains `directory: bool` (it fixes `false` today,
+`file_layer` 584-590), passed to `kernel::Op::Remove`: a file, or with
+`directory` an empty directory, never what lies inside one; a directory
+that is not empty fails with the kernel's error (`unlinkat` with
+`AT_REMOVEDIR`). io never traverses.
+Needs: nothing.
+Files: `crates/skein-io/src/file.rs`, `file_layer.rs`; their tests and
+the request's users (README rule 8).
+Shape: one field.
+Test shape: an empty directory removed; a non-empty one refused with the
+kernel's error, its files kept; a file removed as before; it fails on
+the parent. Under 20 ms each.
+Proof: those tests, once.
+Don't: traverse; remove a tree.
+Size: README rule 9's.

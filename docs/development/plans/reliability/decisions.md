@@ -1881,3 +1881,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    code, for every session; 10.s2 regenerates the three sources with the
    pinned codegen, schemas and goldens unchanged, the gate's drift
    checks its Proof; the generated files join 10.s2's Files.
+106. **skein-07.s8: `Remove` takes `directory`; 10.20 removes by its known
+   names** (block of 2026-10-13T02:48:51Z, smith 10.20; the designer's
+   answer of 02:50:36Z, skein ed8d2358, smith 536b3a2d and d464631a).
+   `--ephemeral`'s chat store removes, through io, each file it wrote by
+   the names it knows, then the empty directory; never a listing, a
+   traversal or `std::fs`; a directory left behind is a warning before
+   the last line. skein's `Remove` gains `directory`: a step not in the
+   plan, skein-07.s8; 10.20 repins for it.
