@@ -465,6 +465,19 @@ and nothing else; `--ephemeral` leaves no file behind, on success and on
 failure. Under 0.5 s.
 Proof: process, those tests, once.
 Size: README rule 9's.
+
+### 10.21 `smith exec`'s last text and named failure forms
+Split from 10.5 (decisions.md, 13.103). Scope: 10.5's rendering left at
+its 950-line stop: the last assistant text kept across later tool-only
+turns for the result, and smith 06's words and notices carrying shell.md
+4.3's named forms (the account and endpoint, the budget used against its
+limit), through the existing words owner.
+Needs: 10.5.
+Files: 10.5's rendering files; smith 06's words owner, for those forms.
+Test shape: unit tests with literal expected lines for each form, and
+one for a result whose last text precedes tool-only turns. Under 20 ms.
+Proof: unit, those tests, once.
+Size: README rule 9's.
 ### 10.15 The harness on `smith exec`
 Scope (benchmarks.md, 6 and 10): for commits from this one, the smith
 adapter writes its pinned settings as the attempt's user layer, state in

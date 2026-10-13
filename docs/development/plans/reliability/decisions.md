@@ -1851,3 +1851,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    command that cannot start, or stubs. As 13.80 did for 10.18: 10.5 is
    one increment of at most 950 production lines, its commit body giving
    the count by file; past 950, it stops and asks.
+103. **smith 10.5 lands at its stop; 10.21 takes the last text and the
+   named forms** (block of 2026-10-13T00:36:03Z). 10.5 reached 951 lines
+   against 13.102's 950 with two rendering refinements left: the last
+   assistant text across later tool-only turns, and shell.md 4.3's named
+   account, endpoint and budget forms in smith 06's words. Unlike the
+   resource composition, these refine a command that already runs, so
+   they split cleanly. Ruling: 10.5 lands what it holds, with its process
+   Proof and at most 951 lines; 10.21 takes the two refinements with
+   literal unit tests.
