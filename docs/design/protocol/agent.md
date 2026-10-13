@@ -1,6 +1,6 @@
 # The agent process
 
-Provisional, 2026-10-07, revised 2026-10-09. What an agent process is:
+Provisional, 2026-10-07, revised 2026-10-13. What an agent process is:
 the `smith-agent` binary, glue over `smith-agent-shell`, which a host
 spawns to run one run. It covers:
 
@@ -137,7 +137,8 @@ product's own settings are `docs/design/shell.md`'s.
     (skein's `llm.md`). The affinity's header names are reserved and
     refused here (llm.md, 2.1);
   - the account its grants are named by;
-  - its options: reasoning effort and an identity profile. Cache
+  - its options: an identity profile. Reasoning effort is a run's
+    choice, in its charter's LLM (charter.md, section 2), and cache
     affinity is the run's, never an endpoint's (llm.md, 2.1);
   - its connect and handshake deadlines;
   - **its models,** each with its declared quantities: `window`,

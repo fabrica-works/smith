@@ -1,6 +1,6 @@
 # Sessions
 
-Provisional, 2026-10-05, revised 2026-10-12. What a smith session is, as
+Provisional, 2026-10-05, revised 2026-10-13. What a smith session is, as
 a domain layer: one conversation with an LLM, opened by a run. It is the
 child domain `smith-domain-session`, whose own child is the tools domain
 (tools.md). What is still open is listed in section 11.
@@ -81,9 +81,11 @@ child domain `smith-domain-session`, whose own child is the tools domain
 - **The stable prefix** is a contract, so that a provider can serve each
   prompt's prefix from its cache:
   - Within a window, the model, the endpoint's options, the affinity, the
-    system text and the tools offered are fixed, and history is
-    append-only: each completion's prompt is the one before it, then that
-    completion's blocks, then what was appended after them.
+    system text and the tools offered are fixed. The reasoning effort is
+    the conversation's, from its charter, and a later activation may ask
+    for another without a window boundary, since no block depends on it.
+    History is append-only: each completion's prompt is the one before
+    it, then that completion's blocks, then what was appended after them.
   - The system text and the tools offered are fixed for the
     conversation's life. A session never changes them; a run that resumes
     the conversation composes them again from its charter (run.md,
@@ -346,8 +348,14 @@ window, history only grows (section 3).
 
 ### 8.2 Compaction
 
-- **Its trigger:** a failed window check (8.1), or a provider's *context
-  too long* (section 4).
+- **Its trigger:** a failed window check (8.1), a provider's *context
+  too long* (section 4), or a session opened from a window whose last
+  turn's model is not its charter's main model, as when a person chose
+  another (`docs/design/shell.md`, 4.1). That compaction runs with the
+  window's own model, when the agent's configuration declares it, and
+  the new window opens with the charter's; one the configuration no
+  longer declares makes the transcript one the run cannot resume
+  (section 3).
 - **The compaction completion** has the same model, affinity, system
   text, tools and tool choice as the completion it stands in for, and
   the window's history with every result owed to it, then one appended

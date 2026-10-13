@@ -280,9 +280,15 @@ The interactive chat, the local host of domain/host.md, section 8:
   A waiting prompt appears only once every relayed line has been read.
 - **Commands** begin with `/`. They are the local host's, never
   messages:
-  - `/model ENDPOINT/NAME` and `/effort LEVEL` apply from the next
-    activation, since a conversation's model is fixed for its life. A
-    model on another endpoint starts a new chat, and says so;
+  - `/model ENDPOINT/NAME` chooses another model of main's endpoint,
+    and `/effort LEVEL` another effort, from the next activation, since
+    a conversation's model and effort are fixed for its life. A window
+    opened with another model is compacted first, with that model
+    (domain/session.md, 8.2); another effort takes no compaction. A model
+    on another endpoint is refused, and the chat kept: an endpoint is
+    resolved, derived and signed in to at startup (5.2), so another
+    endpoint is another invocation, and the refusal names it: `smith
+    --chat NAME -m ENDPOINT/NAME`;
   - `/new` starts a new chat, and `/resume NAME` reopens one, once the
     live activation has answered or parked; the chat store then holds
     the other chat (protocol/hosts.md, 5.3). `/resume` of a chat that
@@ -566,7 +572,10 @@ source = "borrow"
 - **The run's models and accounts.** A run's charter lists main's model
   and, with `sub_agents` on, every model a preset knows or settings
   declare whose endpoint's account names a source; the asking LLM names
-  one of them, or gets main's (domain/run.md, 5.3). An account with no
+  one of them, or gets main's (domain/run.md, 5.3). Every model main's
+  endpoint declares is also the run's, so that `/model` may choose any
+  of them (4.1): they share main's account and connections, and the
+  derivation is the largest of them. An account with no
   source is one the person has not set up, so its models stay out: a
   first run with one account's source needs no other credential.
   - **Needed accounts** are the accounts of the run's models. Main's

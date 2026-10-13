@@ -1,6 +1,6 @@
 # Turns and transcripts
 
-Provisional, 2026-10-07, revised 2026-10-12. The records of a
+Provisional, 2026-10-07, revised 2026-10-13. The records of a
 conversation kept beyond its process: a turn, as a run tells it, and a
 transcript, as a run resumes from it (domain/session.md, section 3). They
 are the family `smith-transcript`, versioned on their own, since a host
@@ -47,6 +47,9 @@ A versioned record. Every turn starts with its version.
   (domain/session.md, section 8.2);
 - **endpoint:** the name of the endpoint it ran on, as the agent's
   configuration names it, and the dialect of its provider;
+- **model and effort:** the model its completion was made with, and the
+  effort it asked for, if any, so that a resume knows the window's model
+  (domain/session.md, 8.2);
 - **its place in the conversation:** from one, going on across the
   activations that resume it and across windows. The channel numbers turns
   per activation (channel.md, section 4);

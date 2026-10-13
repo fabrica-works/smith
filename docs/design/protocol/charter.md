@@ -1,6 +1,6 @@
 # The charter and the result
 
-Provisional, 2026-10-07, revised 2026-10-09. Two records:
+Provisional, 2026-10-07, revised 2026-10-13. Two records:
 
 - **the charter:** how a run is set up (domain/run.md, 3.1);
 - **the result:** what a run declares to finish (domain/run.md, section 7).
@@ -83,6 +83,10 @@ A versioned record (skein's `codec.md`, section 3):
   Each LLM has:
   - an endpoint's name;
   - a model, one the agent's configuration declares for that endpoint;
+  - **`effort`,** optional: the reasoning effort its completions ask
+    for, one of the dialect's; without it, the provider's default. It is
+    fixed for the conversation's life and may differ in the next
+    activation (domain/session.md, section 3);
   - **`window`:** its usable input tokens, the most one prompt may hold.
     The session compacts its conversation before a prompt would pass it
     (domain/session.md, section 8);
