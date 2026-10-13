@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-05, revised 2026-10-12. The other side of a run:
+Provisional, 2026-10-05, revised 2026-10-13. The other side of a run:
 what a host owes an agent and is owed, the channel between them, and the
 domains smith ships for hosts: `smith-host-domain`, which a host embeds
 to start and supervise agent processes; `smith-inline-agent`, its twin,
@@ -330,7 +330,9 @@ the inline agent it is the `smith` product:
     handled in the answered state, never assumed away.
 - **Failures in words.** The person sees what went wrong, whichever kind
   of agent runs: a run's typed failure (the model, with its provider's
-  class; the budget, naming what ran out; policy; cancelled; stale; a
+  class; an exhausted account, and when it may be used again; the budget,
+  naming what ran out and how much of its bound was used; policy;
+  cancelled; stale; a
   transcript it could not resume), an agent's failure with its bounded
   detail, a refused start saying what, and a credential that needs the
   person. Each kind has its own words, matched exhaustively, so a new

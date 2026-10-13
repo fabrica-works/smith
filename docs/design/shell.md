@@ -1,6 +1,6 @@
 # smith's shell and product
 
-Provisional, 2026-10-09, revised 2026-10-12. smith's shell layer: the crates that turn its
+Provisional, 2026-10-09, revised 2026-10-13. smith's shell layer: the crates that turn its
 services into processes, the root package whose binaries are glue, and
 the product `smith`, one process a person or a script runs. It covers
 the commands, the settings and their presets, credentials, the
@@ -386,7 +386,13 @@ exits with.
 
 **Standard error's last line** says how the run ended, in words rendered
 from `run.completed`'s typed failure or the startup refusal, matched
-exhaustively, so a new class has no words until it is given some. Each
+exhaustively, so a new class has no words until it is given some. The
+words are one function of the answer's failure and of the two facts only
+the host has: each account's name, and its own clock when the answer
+came, which turns a wait into a time. Every other value is the failure's
+own: an exhausted account's number and wait, and a budget's used and
+bound, the time used being the run's wall time as its budget counted it,
+never the product's elapsed time. Each
 is one line, beginning `smith: `, its detail clipped as an operator's
 line is (protocol/limits.md, 2.4). The forms, with `<...>` filled from
 the typed values:
@@ -395,7 +401,7 @@ the typed values:
 |---|---|---|
 | 0 | accepted | `smith: accepted in <turns> turns, <spend> notional, <time>` |
 | 1 | the model | `smith: run failed: <endpoint>/<model> <provider's class> after <attempts> attempts: <detail>`; for a limit, `smith: run failed: <limit> reached its bound of <bound>` |
-| 1 | an exhausted account | `smith: run failed: account <account> exhausted, usable again at <time>` |
+| 1 | an exhausted account | `smith: run failed: account <account> exhausted, usable again at <time>`; when its provider gave no time, `smith: run failed: account <account> exhausted` |
 | 1 | policy, stale | `smith: run failed: policy: <what was refused>`; `smith: run failed: stale: <what moved>` |
 | 1 | a transcript | `smith: run failed: chat <name> cannot be resumed: <reason>` |
 | 1 | a spawned agent's failure | `smith: run failed: the agent <how it ended>: <its error output's tail>` |

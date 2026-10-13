@@ -1,6 +1,6 @@
 # The channel
 
-Provisional, 2026-10-07, revised 2026-10-12. The channel between a run and
+Provisional, 2026-10-07, revised 2026-10-13. The channel between a run and
 its host is smith's application protocol on skein's framed channel
 (skein's `channel.md`). This document covers:
 
@@ -212,8 +212,10 @@ last one with `opens_window` (domain/host.md, section 6).
 - **accepted,** with its result, as bytes (charter.md);
 - **parked;**
 - **failed,** typed, so the host can act without reading prose:
-  - the model, with its provider's failure class;
-  - the budget, naming what ran out;
+  - the model, with its provider's failure class; an exhausted account
+    with the account and, when its provider said, how long until it may
+    be used again, measured when the run answers;
+  - the budget, naming what ran out, with what was used and its bound;
   - policy;
   - cancelled;
   - stale;

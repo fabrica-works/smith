@@ -1,6 +1,6 @@
 # The run
 
-Provisional, 2026-10-05, revised 2026-10-12. What a smith run is, as a
+Provisional, 2026-10-05, revised 2026-10-13. What a smith run is, as a
 domain layer: one activation of an agent, from the charter its host gives
 it to the answer it gives back. It is the child domain `smith-domain-run`,
 composed with its sessions by `smith-domain` (README.md, section 4). The
@@ -701,12 +701,17 @@ the last message it read (section 6).
 - **failed,** typed so the host can act without reading prose: the model
   (a provider's failure past its retries, with its class, the endpoint
   and model of the last completion and how many attempts it made; an
-  account exhausted; a limit that fired, naming the limit and its
+  account exhausted, naming the account and, when its provider said, how
+  long until it may be used again, measured when the run answers; a
+  limit that fired, naming the limit and its
   bound; or a fault of the model's own answer, *refused*, *truncated* or
   *malformed*, when it kept refusing, stopping at its output limit, or
   asking for tools and naming none past its nudges (7.2), or when a
   compaction's answer gave no summary (session.md, section 8.2)), the
-  budget (naming what ran out), policy (a call or result the run refused
+  budget (naming what ran out, how much of it the run used and its
+  bound, each in its own unit: turns, spend in the host's unit, or the
+  run's wall time as its time budget counts it, section 9), policy (a
+  call or result the run refused
   to make), cancelled, stale, or a transcript it could not resume; each
   with what it spent.
 

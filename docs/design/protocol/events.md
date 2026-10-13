@@ -1,6 +1,6 @@
 # Events
 
-Provisional, 2026-10-09, revised 2026-10-12. The event vocabulary: one
+Provisional, 2026-10-09, revised 2026-10-13. The event vocabulary: one
 versioned stream of JSON lines that says what a process running smith
 did, from its start to its end. `smith exec --json` writes it to
 standard output, and a trace file is the same stream. Its records,
@@ -406,10 +406,13 @@ when it is about one; and the kind's fields.
   met is `unsent`, its detail the limit's words.
 - **answer failure:** `class`, one of `model` (with `endpoint` and
   `model`, the last completion's, `attempts`, how many it made, and
-  `completion`, a completion failure; or with `account`; or with
+  `completion`, a completion failure; or with `account`, and
+  `retry_after_ms`, how long from this record until it may be used
+  again, when the provider said; or with
   `which`, a fault of the model's own answer, `refused`, `truncated` or
   `malformed`, domain/run.md, section 10), `budget` (with `which`: `turns`,
-  `spend` or `time`), `policy`, `cancelled` (with `dropped`), `stale`,
+  `spend` or `time`, and `used` and `bound` in its unit: a count, the
+  host's unit, or milliseconds of the run's wall time), `policy`, `cancelled` (with `dropped`), `stale`,
   `transcript` (with `reason`), `agent` (with `ended`) or `host` (with
   `reason`) for a failed run; `busy` or `invalid` (with `which`, what was
   beyond the limits, and `bound`) for a refused one.
