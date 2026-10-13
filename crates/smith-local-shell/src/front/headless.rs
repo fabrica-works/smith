@@ -69,6 +69,7 @@ pub struct Headless {
     pub output_kind: skein_shell::OutputKind,
     pub input_closed: bool,
     pub(crate) file_memory: u64,
+    pub(crate) cleanup_memory: u64,
     cap: u32,
     result_bytes: u64,
     text: skein_lib::List<u8>,
@@ -83,6 +84,7 @@ impl Headless {
             output_kind,
             input_closed: false,
             file_memory: 0,
+            cleanup_memory: 0,
             cap,
             result_bytes,
             text: skein_lib::List::with_capacity(cap),
@@ -96,7 +98,8 @@ impl Headless {
             .checked_add(u64::from(self.cap))?
             .checked_add(self.result_bytes)?
             .checked_add(4096)?
-            .checked_add(self.file_memory)
+            .checked_add(self.file_memory)?
+            .checked_add(self.cleanup_memory)
     }
 
     /// Show tool status and keep the latest told text, with names clipped for the operator.

@@ -1,6 +1,8 @@
 //! Serial durable chat operations (protocol/hosts.md, 5.3; skein io.md, 5.2).
 //! The owner retains only record versions and bounded loading buffers. It knows
 //! neither the conversation's policy nor whether a turn was acknowledged.
+mod ephemeral;
+
 use super::boundary::{Action, History, RecordName, StoreFault, StoreLimits, StoreRequest};
 use super::{File, STATE_BYTES, decode_state, decode_turns, save_state, save_turn, turn_opens_window};
 use alloc::boxed::Box;
@@ -27,6 +29,7 @@ enum Phase {
     SyncOld,
     RemoveJournal,
     SyncJournal,
+    Cleaning,
     Closing,
     Closed,
 }
@@ -61,6 +64,7 @@ pub struct Store {
     deliveries: List<DeliveryRecord>,
     versions: Map<Box<[u8]>, Digest>,
     writing: Option<Writing>,
+    ephemeral: Option<ephemeral::Ephemeral>,
 }
 
 impl Store {
@@ -100,6 +104,7 @@ impl Store {
             deliveries: List::with_capacity(limits.deliveries),
             versions: Map::with_capacity(records),
             writing: None,
+            ephemeral: None,
         })
     }
 
@@ -114,6 +119,9 @@ impl Store {
             .checked_add(u64::from(records).checked_mul(42)?)?
             .checked_add(List::<Box<[u8]>>::worst_case(limits.turns)?)?
             .checked_add(List::<DeliveryRecord>::worst_case(limits.deliveries)?)?
+            // A private parent leaf and one copied known removal name.
+            .checked_add(255)?
+            .checked_add(42)?
             .checked_add(u64::try_from(size_of::<Self>()).ok()?)
     }
 
@@ -136,6 +144,7 @@ impl Store {
             | Phase::SyncOld
             | Phase::RemoveJournal
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => false,
         }
@@ -146,6 +155,9 @@ impl Store {
         assert!(self.takes(), "the service reserves a serial store slot");
         self.loading = false;
         match request {
+            StoreRequest::Load if self.ephemeral.is_some() => {
+                self.finish(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) }, now, out);
+            }
             StoreRequest::Load => {
                 self.loading = true;
                 self.total = 0;
@@ -160,6 +172,9 @@ impl Store {
             }
             StoreRequest::SaveState { state, history } => match history {
                 History::Kept => self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out),
+                History::Fresh if self.ephemeral.is_some() => {
+                    self.write(RecordName::State, save_state(state), local::Event::StateSaved, now, out);
+                }
                 History::Fresh => {
                     self.fresh = Some(state);
                     let mut journal = save_state(state);
@@ -188,6 +203,25 @@ impl Store {
     /// Consume one terminal of the last file request, reserving three output slots.
     pub fn from_io(&mut self, event: file::Event, now: Time, out: &mut Queue<Action>) {
         assert_eq!(event.owner(), self.owner, "store IO echoes its owner");
+        match self.phase {
+            Phase::Cleaning => {
+                self.cleanup_event(event, now, out);
+                return;
+            }
+            Phase::Idle
+            | Phase::Journal
+            | Phase::State
+            | Phase::Scan
+            | Phase::Headers
+            | Phase::Records
+            | Phase::Write
+            | Phase::Remove
+            | Phase::SyncOld
+            | Phase::RemoveJournal
+            | Phase::SyncJournal
+            | Phase::Closing
+            | Phase::Closed => {}
+        }
         let record = self.record();
         match event {
             file::Event::Loaded { bytes, .. } => self.loaded(Some(bytes), now, out),
@@ -216,12 +250,15 @@ impl Store {
                 | Phase::SyncOld
                 | Phase::RemoveJournal
                 | Phase::SyncJournal
+                | Phase::Cleaning
                 | Phase::Closing
                 | Phase::Closed => {
                     self.fail(record, StoreFault::Io { file: record, error: kernel::Error::NotFound }, now, out);
                 }
             },
             file::Event::Failed { committed: true, .. } => {
+                let writing = self.writing.as_ref().expect("committed belongs to Store");
+                self.retain_written(writing.file.name.clone(), digest(&writing.file.bytes));
                 let writing = self.writing.as_mut().expect("committed belongs to Store");
                 if writing.retried {
                     self.fail(record, StoreFault::NotDurable { file: record }, now, out);
@@ -275,6 +312,7 @@ impl Store {
             | Phase::Write
             | Phase::SyncOld
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => unreachable!("remove terminal belongs to fresh history"),
         }
@@ -306,31 +344,9 @@ impl Store {
             | Phase::Write
             | Phase::Remove
             | Phase::RemoveJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => unreachable!("sync terminal belongs to fresh history"),
-        }
-    }
-
-    /// Settle an outstanding operation before closing the owned root once.
-    pub fn close(&mut self, now: Time, out: &mut Queue<Action>) {
-        self.closing = true;
-        match self.phase {
-            Phase::Idle => {
-                self.phase = Phase::Closing;
-                Self::io(file::Request::Close { owner: self.owner, file: self.root }, now, out);
-            }
-            Phase::Journal
-            | Phase::State
-            | Phase::Scan
-            | Phase::Headers
-            | Phase::Records
-            | Phase::Write
-            | Phase::Remove
-            | Phase::SyncOld
-            | Phase::RemoveJournal
-            | Phase::SyncJournal
-            | Phase::Closing
-            | Phase::Closed => {}
         }
     }
 
@@ -350,6 +366,7 @@ impl Store {
             | Phase::SyncOld
             | Phase::RemoveJournal
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => self.limits.file_bytes,
         };
@@ -441,6 +458,7 @@ impl Store {
             | Phase::SyncOld
             | Phase::RemoveJournal
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => unreachable!("load terminal belongs to a read"),
         }
@@ -481,6 +499,7 @@ impl Store {
             | Phase::SyncOld
             | Phase::RemoveJournal
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => unreachable!("metadata phase"),
         }
@@ -514,6 +533,7 @@ impl Store {
                     | Phase::SyncOld
                     | Phase::RemoveJournal
                     | Phase::SyncJournal
+                    | Phase::Cleaning
                     | Phase::Closing
                     | Phase::Closed => unreachable!("scan traversal phase"),
                 };
@@ -574,6 +594,7 @@ impl Store {
                 | Phase::SyncOld
                 | Phase::RemoveJournal
                 | Phase::SyncJournal
+                | Phase::Cleaning
                 | Phase::Closing
                 | Phase::Closed => unreachable!("scan exhausted"),
             }
@@ -587,6 +608,13 @@ impl Store {
 
     fn write(&mut self, record: RecordName, file: File, terminal: local::Event, now: Time, out: &mut Queue<Action>) {
         if file.bytes.len() > usize::try_from(self.limits.file_bytes).expect("file bound fits") {
+            self.fail(record, StoreFault::TooLarge { file: record }, now, out);
+            return;
+        }
+        if self.ephemeral.is_some()
+            && !self.versions.contains_key(&file.name)
+            && self.versions.len() == self.versions.capacity()
+        {
             self.fail(record, StoreFault::TooLarge { file: record }, now, out);
             return;
         }
@@ -620,6 +648,7 @@ impl Store {
 
     fn stored(&mut self, digest: Digest, now: Time, out: &mut Queue<Action>) {
         let writing = self.writing.take().expect("stored terminal belongs to a write");
+        self.retain_written(writing.file.name.clone(), digest);
         let retained = match writing.record {
             RecordName::Turn(_) => true,
             RecordName::State | RecordName::Journal | RecordName::Delivery(_) => {
@@ -687,6 +716,7 @@ impl Store {
             | Phase::SyncOld
             | Phase::RemoveJournal
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closed => {}
         }
         let turn = match record {
@@ -709,6 +739,7 @@ impl Store {
             | Phase::Scan
             | Phase::SyncOld
             | Phase::SyncJournal
+            | Phase::Cleaning
             | Phase::Closing
             | Phase::Closed => b"state".as_slice().into(),
         }

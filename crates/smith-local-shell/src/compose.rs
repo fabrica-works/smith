@@ -130,10 +130,12 @@ fn compose(
     }
     let prepared = credentials::prepare(&resolved, wall).map_err(Refused::Credentials)?;
     files.prepare_output(seed)?;
+    files.create_temporary()?;
     if invocation.shared.chat.is_none() {
         resolved.local.chat = format!("exec-{seed:016x}").into_bytes().into();
     }
-    let (workspace, chat_path) = chat_paths(&resolved.settings.workspace, &resolved.local.chat)?;
+    let (workspace, chat_path) =
+        chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
     let prompt = match invocation.prompt {
         Prompt::Argument(prompt) => prompt,
         Prompt::Stdin => unreachable!("stdin phase ended"),
@@ -172,11 +174,7 @@ fn compose(
         limits.local.smith.run.outcome_bytes,
     );
     front.input_closed = input_closed;
-    front.file_memory =
-        files.live_memory().ok_or_else(|| Refused::Usage(Usage("the product file bound overflows".into())))?;
-    let available = available
-        .checked_sub(files.reservation())
-        .ok_or_else(|| Refused::Usage(Usage("the file choices exceed declared memory".into())))?;
+    let available = files.reserve(&mut front, available)?;
     let environment = resolved.agent.service.environment.command_entries();
     let config = smith_local_service::Config {
         local: resolved.local,
@@ -193,7 +191,7 @@ fn compose(
         agent: smith_local_service::AgentConfig::Spawned,
     };
     let resources = crate::Resources {
-        state_root: root(&chat_path)?,
+        state_root: files.store_root(&chat_path)?,
         token_directory: chat_path.join("unused-tokens"),
         input: skein_io::kernel::Fd::new(0),
         output: skein_io::kernel::Fd::new(1),
@@ -218,8 +216,10 @@ fn compose(
         Some(front),
     )
     .map_err(Refused::Local)?;
+    files.attach_private(&mut local)?;
     start_stream(&mut local, trace, header, now)?;
     local.result_file(files.output.take());
+    files.composed();
     Ok(Composed { local })
 }
 
@@ -282,6 +282,7 @@ fn workspace_roots(local: &smith_local_domain::Config) -> Result<WorkspaceRoots,
 fn chat_paths(
     workspace: &std::path::Path,
     chat_name: &[u8],
+    temporary: Option<&std::path::Path>,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), Refused> {
     use std::{fmt::Write, os::unix::fs::DirBuilderExt, path::PathBuf};
     let chat = std::str::from_utf8(chat_name).expect("decoded chat");
@@ -289,6 +290,9 @@ fn chat_paths(
         return Err(Refused::Usage(Usage("the chat must be one directory name".into())));
     }
     let workspace = workspace.canonicalize().map_err(|why| host(&why))?;
+    if let Some(path) = temporary {
+        return Ok((workspace, path.into()));
+    }
     let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
     let mut key = String::new();
     for part in digest.0 {

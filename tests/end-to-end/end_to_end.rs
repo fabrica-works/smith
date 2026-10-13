@@ -669,3 +669,68 @@ fn output_records(bytes: &[u8]) -> Vec<serde_json::Value> {
         .map(|line| serde_json::from_slice(line).expect("event record"))
         .collect()
 }
+
+#[test]
+fn smith_exec_ephemeral_removes_its_private_files_after_acceptance() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--ephemeral", "-o", "answer.txt", "-"],
+        b"Ask first\n",
+        support::Reply::Accepted,
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.stdout, b"First answer");
+    assert_eq!(std::fs::read(scratch.path().join("answer.txt")).unwrap(), b"First answer");
+    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+    assert!(!String::from_utf8_lossy(&ran.stderr).contains("smith: warning: ephemeral directory "));
+}
+
+#[test]
+fn smith_exec_ephemeral_removes_its_private_files_after_a_failed_answer() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--ephemeral", "--json", "-"],
+        b"Ask first\n",
+        support::Reply::Filtered,
+    );
+    assert_eq!(ran.code, 1, "{}", String::from_utf8_lossy(&ran.stderr));
+    let records = output_records(&ran.stdout);
+    assert_eq!(records.last().unwrap()["type"], "session.ended");
+    assert_eq!(records.last().unwrap()["exit"], 1);
+    assert_eq!(records.iter().find(|record| record["type"] == "run.completed").unwrap()["status"], "failed");
+    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+}
+
+#[test]
+fn smith_exec_ephemeral_keeps_a_foreign_file_and_warns_before_the_last_line() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_foreign_file(&scratch, &["exec", "--ephemeral", "-"], b"Ask first\n");
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let entries: Vec<_> = std::fs::read_dir(scratch.path().join("state")).unwrap().collect();
+    assert_eq!(entries.len(), 1);
+    let directory = entries[0].as_ref().unwrap().path();
+    assert_eq!(std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::read(directory.join("foreign.txt")).unwrap(), b"kept foreign content");
+    assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+    let errors = std::str::from_utf8(&ran.stderr).unwrap();
+    let mut last = errors.lines().rev();
+    assert!(last.next().unwrap().starts_with("smith: accepted in "));
+    assert_eq!(last.next().unwrap(), format!("smith: warning: ephemeral directory {}: NotEmpty", directory.display()));
+}
+
+#[test]
+fn an_ephemeral_directory_is_removed_when_product_startup_refuses() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::smith(&scratch, &["exec", "--ephemeral", "--trace", "absent/events.jsonl", "message"], b"");
+    assert_eq!(ran.code, 1, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(ran.stdout.is_empty());
+    assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
+}

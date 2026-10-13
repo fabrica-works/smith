@@ -397,11 +397,23 @@ pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> 
 
 struct Refusal {
     now: Time,
+    foreign: Option<std::path::PathBuf>,
     deadline: Time,
     trace: Option<(std::path::PathBuf, bool)>,
 }
 impl Referee<Process> for Refusal {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
+        if let Some(state) = &self.foreign {
+            for entry in std::fs::read_dir(state).into_iter().flatten() {
+                let entry = entry.expect("private fixture entry");
+                if entry.file_name().as_encoded_bytes().starts_with(b".smith-exec-") {
+                    std::fs::write(entry.path().join("foreign.txt"), b"kept foreign content")
+                        .expect("foreign fixture file");
+                    self.foreign = None;
+                    break;
+                }
+            }
+        }
         let exit = procs.iter().find_map(|p| if let Process::Binary(p) = p { p.exit_status() } else { None });
         if let Some(exit) = exit {
             for p in procs {
@@ -447,7 +459,7 @@ impl Referee<Process> for Refusal {
         (now >= self.deadline).then(|| "startup refusal did not exit and drain".into())
     }
     fn passed(&self) -> bool {
-        self.trace.as_ref().is_none_or(|(_, growing)| *growing)
+        self.foreign.is_none() && self.trace.as_ref().is_none_or(|(_, growing)| *growing)
     }
 }
 
@@ -480,8 +492,12 @@ fn refusal_program_code(
     let streams = binary.take_streams().expect("startup terminal");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("startup on terminal") };
-    let mut world =
-        real::World::new(Refusal { now, deadline: now.saturating_add(Duration::from_secs(1)), trace: None });
+    let mut world = real::World::new(Refusal {
+        now,
+        foreign: None,
+        deadline: now.saturating_add(Duration::from_secs(1)),
+        trace: None,
+    });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         Process::Script(Proc::Terminal(Box::new(Terminal::attached(
@@ -519,8 +535,12 @@ pub fn refused_run(scratch: &Scratch) -> Vec<smith_events::Record> {
     let streams = binary.take_streams().expect("actual local terminal");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("local terminal") };
-    let mut world =
-        real::World::new(Refusal { now, deadline: now.saturating_add(Duration::from_secs(3)), trace: None });
+    let mut world = real::World::new(Refusal {
+        now,
+        foreign: None,
+        deadline: now.saturating_add(Duration::from_secs(3)),
+        trace: None,
+    });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         Process::Script(Proc::Terminal(Box::new(Terminal::attached(
@@ -593,8 +613,12 @@ pub fn smith(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
     let Streams::Pipes { input: stdin, output } = streams else { unreachable!("product on pipes") };
     let clock = Clock::new();
     let now = clock.now().now;
-    let mut world =
-        real::World::new(Refusal { now, deadline: now.saturating_add(Duration::from_secs(1)), trace: None });
+    let mut world = real::World::new(Refusal {
+        now,
+        foreign: None,
+        deadline: now.saturating_add(Duration::from_secs(1)),
+        trace: None,
+    });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         let mut commands = Vec::new();
@@ -616,4 +640,4 @@ pub fn smith(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
 }
 
 mod exec;
-pub use exec::{Reply, exec_with_provider, fake_provider_settings};
+pub use exec::{Reply, exec_with_foreign_file, exec_with_provider, fake_provider_settings};

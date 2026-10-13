@@ -72,6 +72,8 @@ pub enum Action {
     Domain(local::Event),
     /// Content-free detail behind `StoreFailed`.
     Fault(StoreFault),
+    /// Cleanup kept the private directory or could not finish its parent close.
+    CleanupWarning { error: kernel::Error },
     /// The root descriptor and all operations have closed.
     Closed,
 }

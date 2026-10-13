@@ -67,6 +67,7 @@ pub struct Resources {
 pub struct Local {
     service: service::Service,
     result_file: Option<Box<crate::compose::ResultFile>>,
+    ephemeral_directory: Option<Box<[u8]>>,
     tokens: Option<Tokens>,
     headless: Option<crate::front::headless::Headless>,
     accounts: Box<[Auth]>,
@@ -280,6 +281,7 @@ impl Local {
         let mut local = Self {
             service,
             result_file: None,
+            ephemeral_directory: None,
             tokens,
             headless,
             accounts: accounts.into(),
@@ -431,6 +433,14 @@ impl Local {
     /// Attach the product result owner before its first pass.
     pub(crate) fn result_file(&mut self, file: Option<Box<crate::compose::ResultFile>>) {
         self.result_file = file;
+    }
+
+    /// The private store removes only its own names through this parent.
+    pub(crate) fn ephemeral(&mut self, parent: kernel::Fd, path: &std::path::Path) -> Result<(), kernel::Fd> {
+        let name = path.file_name().expect("private directory has a name").as_encoded_bytes().into();
+        self.service.ephemeral(parent, name)?;
+        self.ephemeral_directory = Some(path.as_os_str().as_encoded_bytes().into());
+        Ok(())
     }
 
     /// The completed invocation's status after every lower close settles.
@@ -663,6 +673,14 @@ impl Local {
     }
 
     fn product_files(&mut self, now: Time, wall: Wall) {
+        if let Some(error) = self.service.cleanup_warning() {
+            let directory = self.ephemeral_directory.as_deref().expect("private store has its path");
+            drop(writeln!(
+                self.errors,
+                "smith: warning: ephemeral directory {}: {error:?}",
+                String::from_utf8_lossy(directory)
+            ));
+        }
         let Some(file) = &mut self.result_file else { return };
         if self.service.closing() && file.waiting() {
             file.begin(Box::new([]));

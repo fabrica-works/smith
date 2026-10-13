@@ -567,6 +567,16 @@ impl Service {
         self.below.process_mut().adopt_store(root).ok_or(Error::Memory)
     }
 
+    /// The private chat's known-name cleanup owns this parent directory.
+    pub fn ephemeral(&mut self, parent: kernel::Fd, name: Box<[u8]>) -> Result<(), kernel::Fd> {
+        self.below.process_mut().ephemeral(parent, name)
+    }
+
+    /// One warning from a private store cleanup that could not finish.
+    pub fn cleanup_warning(&mut self) -> Option<kernel::Error> {
+        self.below.process_mut().cleanup_warning()
+    }
+
     /// Whether the local domain and effects live in this process.
     #[must_use]
     pub fn inline(&self) -> bool {

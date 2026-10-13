@@ -18,6 +18,7 @@ use smith_real_world::{Scratch, settled::assert_no_children};
 pub enum Reply {
     Wait,
     Accepted,
+    Filtered,
 }
 
 #[must_use]
@@ -32,6 +33,15 @@ pub fn fake_provider_settings(scratch: &Scratch) -> Vec<u8> {
 
 #[must_use]
 pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], reply: Reply) -> Ran {
+    run(scratch, arguments, input, Some(provider(scratch, reply)))
+}
+
+#[must_use]
+pub fn exec_with_foreign_file(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
+    run_fixture(scratch, arguments, input, Some(provider(scratch, Reply::Accepted)), true)
+}
+
+fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
     let login = std::fs::read(scratch.path().join("auth.json")).expect("scratch login");
     let document: serde_json::Value = serde_json::from_slice(&login).expect("scratch login document");
     let credential = skein_llm::Credential {
@@ -44,11 +54,36 @@ pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], r
             .into(),
         account_id: b"acc".as_slice().into(),
     };
-    let peer = world::headless_provider(matches!(reply, Reply::Wait), credential);
-    run(scratch, arguments, input, Some(peer))
+    match reply {
+        Reply::Wait => world::headless_provider(true, credential),
+        Reply::Accepted => world::headless_provider(false, credential),
+        Reply::Filtered => smith_agent_process_world::fake::configured_transport(
+            Box::new([skein_fake_llm_domain::api::Script {
+                cue: b"@local-shell".as_slice().into(),
+                turns: Box::new([skein_fake_llm_domain::api::Turn {
+                    lines: Box::new([skein_fake_llm_domain::api::Line::Text { text: b"Filtered".as_slice().into() }]),
+                    finish: skein_fake_llm_domain::api::Finish::ContentFilter,
+                    tokens: 1,
+                }]),
+            }]),
+            credential,
+            Duration::ZERO,
+            skein_fake_peers::Transport::Tls,
+        ),
+    }
 }
 
 pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option<skein_fake_peers::llm::Peer>) -> Ran {
+    run_fixture(scratch, arguments, input, provider, false)
+}
+
+fn run_fixture(
+    scratch: &Scratch,
+    arguments: &[&str],
+    input: &[u8],
+    provider: Option<skein_fake_peers::llm::Peer>,
+    foreign: bool,
+) -> Ran {
     assert_no_children();
     let mut binary = Binary::start(
         Command {
@@ -73,6 +108,7 @@ pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option
     let now = clock.now().now;
     let mut world = real::World::new(Refusal {
         now,
+        foreign: foreign.then(|| scratch.path().join("state")),
         deadline: now.saturating_add(Duration::from_secs(1)),
         trace: arguments
             .windows(2)

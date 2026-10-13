@@ -153,3 +153,146 @@ fn a_large_delivery_is_refused_before_io() {
     let Some(Action::Domain(local::Event::StoreFailed { .. })) = out.pop() else { panic!("expected store terminal") };
     assert!(out.is_empty());
 }
+
+fn private() -> Store {
+    let mut store = store();
+    store.ephemeral(Token::new(12), kernel::Fd::new(13), b"private".as_slice().into());
+    store
+}
+
+fn known_files(store: &mut Store, out: &mut Queue<Action>) {
+    store.request(save(), Time::ZERO, out);
+    io(out);
+    store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"state") }, Time::ZERO, out);
+    let Some(Action::Domain(local::Event::StateSaved)) = out.pop() else { panic!("saved private state") };
+    let (_, turn) = crate::store::tests::fixture();
+    store.request(StoreRequest::SaveTurn { number: 1, read: None, opens_window: true, turn }, Time::ZERO, out);
+    io(out);
+    store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"turn") }, Time::ZERO, out);
+    let Some(Action::Domain(local::Event::TurnSaved { number: 1 })) = out.pop() else { panic!("saved private turn") };
+}
+
+#[test]
+fn a_private_chat_starts_empty_without_listing_or_loading_a_record() {
+    let mut store = private();
+    let mut out = Queue::with_capacity(3);
+    store.request(StoreRequest::Load, Time::ZERO, &mut out);
+    let Some(Action::Domain(local::Event::Loaded { state: None, transcript: None, deliveries })) = out.pop() else {
+        panic!("empty private chat")
+    };
+    assert!(deliveries.is_empty());
+    assert!(out.is_empty());
+    store.request(StoreRequest::SaveState { state: state(), history: History::Fresh }, Time::ZERO, &mut out);
+    let file::Request::Store { path, .. } = io(&mut out) else { panic!("private state write") };
+    assert_eq!(path.as_ref(), b"state");
+}
+
+#[test]
+fn a_private_chat_removes_its_known_names_then_closes_both_roots() {
+    let mut store = private();
+    let mut out = Queue::with_capacity(3);
+    known_files(&mut store, &mut out);
+    store.close(Time::ZERO, &mut out);
+    for name in [b"0000000001.turn".as_slice(), b"state".as_slice()] {
+        expect_remove(&mut out, kernel::Fd::new(9), name, false);
+        store.from_io(file::Event::Removed { owner: OWNER }, Time::ZERO, &mut out);
+    }
+    expect_close(&mut out, Token::new(8));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_remove(&mut out, kernel::Fd::new(13), b"private", true);
+    store.from_io(file::Event::Removed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_close(&mut out, Token::new(12));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    let Some(Action::Closed) = out.pop() else { panic!("private store closed") };
+    assert!(out.is_empty());
+}
+
+#[test]
+fn a_private_directory_not_empty_warns_without_a_domain_failure() {
+    let mut store = private();
+    let mut out = Queue::with_capacity(3);
+    store.close(Time::ZERO, &mut out);
+    io(&mut out);
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_remove(&mut out, kernel::Fd::new(13), b"private", true);
+    store.from_io(
+        file::Event::Failed { owner: OWNER, error: kernel::Error::NotEmpty, committed: false, residue: None },
+        Time::ZERO,
+        &mut out,
+    );
+    expect_close(&mut out, Token::new(12));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_warning(&mut out, kernel::Error::NotEmpty);
+    let Some(Action::Closed) = out.pop() else { panic!("private store closed") };
+    assert!(out.is_empty());
+}
+
+#[test]
+fn a_private_file_removal_failure_still_attempts_each_other_known_name() {
+    let mut store = private();
+    let mut out = Queue::with_capacity(3);
+    known_files(&mut store, &mut out);
+    store.close(Time::ZERO, &mut out);
+    io(&mut out);
+    store.from_io(failed(false), Time::ZERO, &mut out);
+    expect_remove(&mut out, kernel::Fd::new(9), b"state", false);
+    store.from_io(file::Event::Removed { owner: OWNER }, Time::ZERO, &mut out);
+    io(&mut out);
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_close(&mut out, Token::new(12));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    expect_warning(&mut out, kernel::Error::Other(5));
+    let Some(Action::Closed) = out.pop() else { panic!("private store closed") };
+}
+
+#[test]
+fn private_written_names_refuse_beyond_the_stores_record_capacity_before_io() {
+    let mut store = private();
+    let mut out = Queue::with_capacity(3);
+    let (_, turn) = crate::store::tests::fixture();
+    for number in 1..=6 {
+        let turn = numbered_turn(&turn, number);
+        store.request(
+            StoreRequest::SaveTurn { number, read: None, opens_window: true, turn: turn.clone() },
+            Time::ZERO,
+            &mut out,
+        );
+        io(&mut out);
+        store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"turn") }, Time::ZERO, &mut out);
+        out.pop();
+    }
+    let turn = numbered_turn(&turn, 7);
+    store.request(StoreRequest::SaveTurn { number: 7, read: None, opens_window: true, turn }, Time::ZERO, &mut out);
+    let Some(Action::Fault(StoreFault::TooLarge { file: RecordName::Turn(7) })) = out.pop() else {
+        panic!("known name bound")
+    };
+    let Some(Action::Domain(local::Event::StoreFailed { .. })) = out.pop() else { panic!("failed bounded store") };
+    assert!(out.is_empty());
+}
+
+fn expect_remove(out: &mut Queue<Action>, wanted_root: kernel::Fd, wanted_name: &[u8], wanted_directory: bool) {
+    let file::Request::Remove { root, name, directory, .. } = io(out) else { panic!("known removal") };
+    assert_eq!(root, wanted_root);
+    assert_eq!(name.as_ref(), wanted_name);
+    assert_eq!(directory, wanted_directory);
+}
+
+fn expect_close(out: &mut Queue<Action>, wanted: Token) {
+    let file::Request::Close { file, .. } = io(out) else { panic!("owned root close") };
+    assert_eq!(file, wanted);
+}
+
+fn expect_warning(out: &mut Queue<Action>, wanted: kernel::Error) {
+    let Some(Action::CleanupWarning { error }) = out.pop() else { panic!("private cleanup warning") };
+    assert_eq!(error, wanted);
+}
+
+fn numbered_turn(turn: &smith_domain::Turn, sequence: u32) -> smith_domain::Turn {
+    smith_domain::Turn {
+        sequence,
+        kind: smith_domain::session::record::Kind::Window {
+            affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
+        },
+        ..turn.clone()
+    }
+}

@@ -92,6 +92,7 @@ pub(crate) struct ProcessAdapter {
     capture_done: Option<bool>,
     files: file_layer::FileIo,
     store: Option<local_protocol::Store>,
+    cleanup_warning: Option<kernel::Error>,
     store_requests: Queue<local_protocol::StoreRequest>,
     store_actions: Queue<local_protocol::Action>,
     file_roots: Box<[Token]>,
@@ -150,6 +151,7 @@ impl ProcessAdapter {
             capture_done: None,
             files,
             store: None,
+            cleanup_warning: None,
             store_requests: Queue::with_capacity(limits.queue),
             store_actions: Queue::with_capacity(3),
             file_roots: Box::new([]),
@@ -305,6 +307,16 @@ impl ProcessAdapter {
         Some(())
     }
 
+    pub(crate) fn ephemeral(&mut self, parent: kernel::Fd, name: Box<[u8]>) -> Result<(), kernel::Fd> {
+        let token = self.files.adopt_root(parent).ok_or(parent)?;
+        self.store.as_mut().expect("adopted private store").ephemeral(token, parent, name);
+        Ok(())
+    }
+
+    pub(crate) fn cleanup_warning(&mut self) -> Option<kernel::Error> {
+        self.cleanup_warning.take()
+    }
+
     #[cfg(test)]
     pub(crate) fn store_requests(&mut self) -> &mut Queue<local_protocol::StoreRequest> {
         &mut self.store_requests
@@ -324,6 +336,7 @@ impl ProcessAdapter {
                 local_protocol::Action::Io { request, deadline } => self.file_requests.push((request, deadline)),
                 local_protocol::Action::Domain(event) => local_events.push(event),
                 local_protocol::Action::Fault(_) => {}
+                local_protocol::Action::CleanupWarning { error } => self.cleanup_warning = Some(error),
                 local_protocol::Action::Closed => self.store = None,
             }
         }

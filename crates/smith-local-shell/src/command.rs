@@ -31,6 +31,7 @@ pub struct Exec {
     pub shared: Shared,
     pub prompt: Prompt,
     pub output: Option<PathBuf>,
+    pub ephemeral: bool,
     pub deliver: bool,
     pub json: bool,
 }
@@ -64,6 +65,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     let mut json = false;
     let mut prompt = None;
     let mut output = None;
+    let mut ephemeral = false;
     let mut deliver = false;
     while let Some(argument) = arguments.next() {
         let argument = argument.to_str().ok_or_else(|| Usage("a flag is not UTF-8".into()))?;
@@ -75,6 +77,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             "--effort" => shared.effort = Some(text(&mut arguments, "--effort")?),
             "--chat" => shared.chat = Some(text(&mut arguments, "--chat")?),
             "-c" => shared.overrides.push(text(&mut arguments, "-c")?),
+            "--ephemeral" if exec => ephemeral = true,
             "-o" if exec => output = Some(value(&mut arguments, "-o")?.into()),
             "--deliver" if exec => deliver = true,
             "-" if exec => set_prompt(&mut prompt, Prompt::Stdin)?,
@@ -88,7 +91,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
         }
     }
     if exec {
-        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, deliver, json }))
+        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, ephemeral, deliver, json }))
     } else {
         Ok(Command::Check { shared, json })
     }
@@ -206,5 +209,13 @@ mod tests {
     #[test]
     fn a_result_file_without_its_name_is_a_usage_refusal() {
         assert_eq!(parse(arguments(&["exec", "-o"])), Err(Usage("-o requires a value".into())));
+    }
+    #[test]
+    fn exec_requests_a_private_chat_without_changing_its_prompt() {
+        let Command::Exec(exec) = parse(arguments(&["exec", "--ephemeral", "message"])).unwrap() else {
+            panic!("exec command")
+        };
+        assert!(exec.ephemeral);
+        assert_eq!(exec.prompt, Prompt::Argument(b"message".as_slice().into()));
     }
 }
