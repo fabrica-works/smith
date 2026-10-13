@@ -47,8 +47,14 @@ A versioned record. Every turn starts with its version.
   (domain/session.md, section 8.2);
 - **endpoint:** the name of the endpoint it ran on, as the agent's
   configuration names it, and the dialect of its provider;
-- **model and effort:** the model its completion was made with, and the
-  effort it asked for, if any, so that a resume knows the window's model
+- **model and effort:** for an ordinary turn, the model its completion
+  was made with and the effort it asked for, if any; for a window turn,
+  the model and effort of the window it opens, the charter's, whatever
+  model and effort its compaction ran with. So the last turn always
+  names the window's model, which a resume compares with its charter's
+  (domain/session.md, 8.2). The compaction's own model, usage and cost
+  are its conversation's records in the event stream (events.md, 3.4
+  and 3.5), and the window turn's usage and spend stay the compaction's
   (domain/session.md, 8.2);
 - **its place in the conversation:** from one, going on across the
   activations that resume it and across windows. The channel numbers turns

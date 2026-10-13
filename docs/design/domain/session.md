@@ -353,7 +353,9 @@ window, history only grows (section 3).
   turn's model is not its charter's main model, as when a person chose
   another (`docs/design/shell.md`, 4.1). That compaction runs with the
   window's own model, when the agent's configuration declares it, and
-  the new window opens with the charter's; one the configuration no
+  the new window opens with the charter's, which its window turn records
+  (protocol/transcript.md, section 2), so a later resume does not
+  compact again; one the configuration no
   longer declares makes the transcript one the run cannot resume
   (section 3).
 - **The compaction completion** has the same model, affinity, system
