@@ -290,7 +290,11 @@ The interactive chat, the local host of domain/host.md, section 8:
     resolved, derived and signed in to at startup (5.2), so another
     endpoint is another invocation, and the refusal names it: `smith
     --chat NAME -m ENDPOINT/NAME`. An effort the model does not declare
-    is refused, naming those it does;
+    is refused, naming those it does. `/model` to a model that declares
+    efforts without the chat's current one applies, and drops that
+    effort for the provider's default, saying so: the effort dropped and
+    the efforts the new model declares. An effort the new model declares
+    stays;
   - `/new` starts a new chat, and `/resume NAME` reopens one, once the
     live activation has answered or parked; the chat store then holds
     the other chat (protocol/hosts.md, 5.3). `/resume` of a chat that
