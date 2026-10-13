@@ -559,15 +559,21 @@ Size: README rule 9's.
 Scope (benchmarks.md, 6 and 10): for commits from this one, the smith
 adapter writes its pinned settings as the attempt's user layer, state in
 its `XDG_STATE_HOME`, and an account borrowing the user's
-`~/.codex/auth.json`; runs `smith check --json` before an arm's first
-attempt, a nonzero exit refusing the arm as setup; runs `smith exec
---json -C <workspace> -m <endpoint>/<model> --effort <effort> -`;
+`~/.codex/auth.json`; runs `smith check --json exec` with the attempt's
+own `exec` flags, its prompt aside, before an arm's first attempt, a
+nonzero exit refusing the arm as setup; runs `smith exec
+--json -C <workspace> -m <endpoint>/<model> --effort <effort> -` with no
+trace file, so the run has one event destination, its standard output
+(benchmarks.md, section 6; shell.md, 4.4, as the designer ruled on
+2026-10-13);
 classifies by the exit code held against `run.completed`. The live
 suite runs through `smith exec --json`, borrowing the file its caller
 names (testing.md, 2.3). It adds the variant `probes/first-request/headless`,
 the task in the start, to the task and `suites/probes.toml` (decisions.md, 12.21).
 Gains (decisions.md, 13.89): the harness reads an exec or chat arm's teardown bound from `smith check`, through 10.14's decoder, with `an_exec_arms_teardown_bound_comes_from_check`.
-Needs: session 00's one command per probe run [00.27], for its proof.
+Needs: session 00's one command per probe run [00.27], for its proof;
+`smith check` taking the invocation it checks (shell.md, 4.4), a step its
+supervisor names.
 Files: `benchmarks/src/agent/smith/` (`prepare.rs:84`, `settings.rs`,
 `faces.rs`, `events.rs`, `events/classify.rs`),
 `benchmarks/agents/smith/faces.toml`, `benchmarks/src/credential.rs`,
