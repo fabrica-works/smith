@@ -418,7 +418,11 @@ Split (decisions.md, 13.101): 10.5 lands the command, its parser and versions, t
 Needs: smith 03's product stream [03.7]; smith 06's words function,
 `smith_events::words` [06.2]; for `--json` on a pipe only, skein's write
 pipe with a stated write deadline (skein's `io.md`, 5.1), a skein step
-its supervisor names, pinned.
+its supervisor names, pinned; the inline product's memory counted once
+(limits.md, section 5, "One process counts each part once") and skein's
+replay values charged at their total (skein's `llm.md`, 4.2), steps its
+supervisor names, as the designer ruled on 2026-10-13, so that the
+product's default worst case fits shell.md's 2 GiB.
 Files: `smith-local-shell` (`command.rs`, `compose.rs`,
 `front/headless.rs`, `local_host.rs`); `smith-local-service`;
 `smith-events` (`records.rs:401`, `read.rs`, `write.rs`) and the users of
