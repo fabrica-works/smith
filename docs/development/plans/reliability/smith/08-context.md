@@ -513,6 +513,7 @@ section 4; session.md, sections 3 and 8.2; transcript.md, section 2), for
   refusal to resume; a change of effort needs no window boundary.
 Needs: nothing (10.8 landed).
 Files: `smith-charter` (schema, generated code by its generator);
+`smith-domain-run` (`boundary.rs`, the opening its root builds);
 `smith-agent-shell` (`config.rs`, `README.md`); `smith-local-shell`
 (`settings/resolve.rs`, `settings/resolve/document.rs`,
 `local_host/header.rs`, `local_shell.rs`); `smith-protocol-llm`
@@ -523,6 +524,12 @@ the profile's tests); the tests and harness files of `rg -l
 reasoning_effort tests benchmarks` (README rule 8).
 Shape: `charter::Llm.effort: Option<Effort>`; `transcript::Turn { model,
 effort, .. }`; no endpoint option named effort.
+`smith-domain-session`'s `record::Opening.window_llm: Option<Llm>` (decisions.md,
+13.115): the window's model with its declared window, output and prices,
+filled by the run's root from `Config.models` when the transcript's last
+turn's model is not the charter's main; `None` otherwise. The compaction
+it triggers is admitted against that model's window and charged at its
+prices; the new window opens with the charter's `Spec`.
 Test shape: unit: a prompt takes its session's effort, and none when the
 charter names none; a turn's model and effort round-trip in the
 transcript; the configuration holds each model of main's endpoint and

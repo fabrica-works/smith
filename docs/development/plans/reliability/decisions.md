@@ -1971,3 +1971,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    are a step not in the plan, 08.s1, in session 08's file, since the
    compaction trigger and the transcript are 08's; it needs nothing and
    may run beside 10.24, whose `/model` and `/effort` need it.
+115. **08.s1's opening carries the window's model** (block of
+   2026-10-13T11:17:11Z, smith 08.s1). session.md 8.2 has the compaction
+   on a model change run "with the window's own model, when the agent's
+   configuration declares it"; the session's `record::Opening` carries
+   only the charter's main `Spec` and prices. Ruling: the implementer's
+   proposal, as the plan's Shape: `record::Opening` gains
+   `window_llm: Option<Llm>`, a session-owned model with its declared
+   window, output and prices, filled by the run's root from its existing
+   `Config.models` (no catalog) when the transcript's last turn's model is
+   not the charter's main; the session keeps the charter's `Spec` for the
+   window it opens after that compaction. A window model the
+   configuration does not declare is the existing refusal to resume, so
+   no opening carries it. No design change.
