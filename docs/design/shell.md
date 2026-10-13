@@ -755,8 +755,8 @@ Each account has one source:
     `redirect_uri`, on loopback with an explicit port and a path, a
     `localhost` one compared exactly (skein's `oauth.md`, section 1);
     `scope`; `token_format`, `json` or `form`, how the token endpoint
-    speaks; and `trust`, the token endpoint's roots, the machine's unless
-    a DER file is named. The token endpoint's address and TLS name are
+    speaks; and `trust`, the token endpoint's roots, in the same form as
+    an endpoint's `trust` (`der` or `pem`), the machine's by default. The token endpoint's address and TLS name are
     its URL's host and port. There is no client secret: a public client
     has none.
   - **Missing keys are refused,** each naming the key and its file, by
