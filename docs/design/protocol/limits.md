@@ -556,6 +556,20 @@ reserve against the budget.
 - **Waiting is the backpressure.** A full pool slows the run's calls; it
   never refuses one that fits the pool alone (programming-model.md,
   section 7).
+- **One process counts each part once.** The product in one process
+  (`docs/design/shell.md`, section 9) has one loop, one ring and no
+  channel. Its worst case is the sum of what it owns, each part once:
+  - the local host's domain with the inline agent, which holds the run's
+    domains;
+  - the effects the run uses (the LLM component, the machine, the files,
+    the event sink), built from their own parts, never as a whole agent
+    service built and then stripped, so nothing is allocated or priced
+    for a domain or a channel they do not hold;
+  - one io, for the local host and the effects together;
+  - the chat store, the terminal and delivery.
+
+  No agent process and no host channel are priced. Construction holds no
+  more than the worst case: what is never kept is never built.
 
 ## 6. One call at a limit
 
