@@ -1984,3 +1984,15 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    window it opens after that compaction. A window model the
    configuration does not declare is the existing refusal to resume, so
    no opening carries it. No design change.
+116. **08.s1: a configured model's prices, and effort as bounded text**
+   (block of 2026-10-13T11:18:46Z, smith 08.s1). The run's root's
+   `ConfiguredModel` holds a model's window, output and allowances but
+   not its prices, which 13.115's `window_llm` needs; and effort is
+   unrestricted settings text with no type. Ruling: the implementer's
+   proposals, as the plan's Shape. `ConfiguredModel` gains the model's
+   prices, filled from the prices resolved at startup, and the root's
+   lookup yields `window_llm` from it. The charter's `effort` is an
+   optional text of at most 32 bytes (schema `text32`), with a public
+   `Effort` alias of bounded bytes keeping the provider's names; no
+   catalog. Checking that an effort is one of the dialect's stays where
+   settings check it now, and at `/effort` in 10.24.

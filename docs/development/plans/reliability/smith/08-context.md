@@ -530,6 +530,10 @@ filled by the run's root from `Config.models` when the transcript's last
 turn's model is not the charter's main; `None` otherwise. The compaction
 it triggers is admitted against that model's window and charged at its
 prices; the new window opens with the charter's `Spec`.
+The run's root's `ConfiguredModel` gains the model's prices, from those
+resolved at startup; the charter's `effort` is schema `text32`, with a
+public `Effort` alias of bounded bytes keeping the provider's names
+(decisions.md, 13.116).
 Test shape: unit: a prompt takes its session's effort, and none when the
 charter names none; a turn's model and effort round-trip in the
 transcript; the configuration holds each model of main's endpoint and
