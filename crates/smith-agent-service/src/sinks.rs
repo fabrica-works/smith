@@ -12,6 +12,9 @@ use skein_io as io;
 use skein_lib::{Duration, List, Map, Queue, Time, Token, bytes, stream};
 use smith_events::{Event, Record};
 
+mod view;
+pub use view::View;
+
 /// An event destination, named by the shell if IO abandons it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Destination {
@@ -173,7 +176,7 @@ pub struct Sinks {
     io_output: u32,
     counts: [u64; TYPES],
     ended: bool,
-    front: Option<Queue<Record>>,
+    front: Option<Queue<View>>,
     front_lost: u64,
 }
 
@@ -216,7 +219,7 @@ impl Sinks {
     }
 
     /// Take the next typed live-view record without changing a destination's credit.
-    pub fn pop_front(&mut self) -> Option<Record> {
+    pub fn pop_front(&mut self) -> Option<View> {
         match &mut self.front {
             Some(front) => front.pop(),
             None => None,
@@ -498,9 +501,11 @@ impl Sinks {
         assert!(!self.ended, "no record follows the process terminal");
         if let Some(front) = &mut self.front {
             if front.room() == 0 {
-                self.front_lost = self.front_lost.checked_add(1).expect("bounded process record count");
-            } else {
-                front.push(record.clone());
+                if View::shows(record) {
+                    self.front_lost = self.front_lost.checked_add(1).expect("bounded process record count");
+                }
+            } else if let Some(view) = View::project(record) {
+                front.push(view);
             }
         }
         let capture = match &record.event {
@@ -1082,6 +1087,8 @@ pub(crate) mod tests {
 
     use super::*;
 
+    mod view;
+
     pub(crate) fn limits(destinations: u32) -> SinkLimits {
         let records = smith_events::Limits { string: 64, content: 1024, items: 18 };
         let line = largest_line(&records, Capture::None, records.content, records.string).unwrap();
@@ -1121,8 +1128,8 @@ pub(crate) mod tests {
         assert_eq!(sinks.front_lost(), 2);
         for number in 0..4 {
             let record = sinks.pop_front().expect("the bounded live view");
-            assert_eq!(record.t_ms, number);
-            let Event::TextDelta(delta) = record.event else { panic!("typed delta") };
+            let View::TextDelta { t_ms, delta } = record else { panic!("typed delta") };
+            assert_eq!(t_ms, number);
             assert_eq!(delta.text.as_ref(), b"live");
         }
         assert!(sinks.pop_front().is_none());

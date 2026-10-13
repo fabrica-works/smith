@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 mod credentials;
 mod header;
+pub use header::View;
 mod memory;
 mod words;
 
@@ -350,7 +351,7 @@ impl Local {
     }
 
     /// Take one typed best-effort live-view record from the service's event sink.
-    pub fn pop_front(&mut self) -> Option<smith_events::Record> {
+    pub fn pop_front(&mut self) -> Option<agent::sinks::View> {
         self.service.pop_front()
     }
 

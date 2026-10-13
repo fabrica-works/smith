@@ -328,7 +328,7 @@ pub(crate) fn prepare_stream(
         (destinations != 0).then_some(&specification),
         chat,
         u64::from(std::process::id()),
-        destinations,
+        crate::local_host::View { destinations, front: false },
         result_file,
     )
     .map_err(Refused::Local)?;

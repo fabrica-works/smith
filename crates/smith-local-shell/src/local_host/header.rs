@@ -8,6 +8,13 @@ use smith_local_service as service;
 
 use super::{Local, configuration_failure, derivation_refusal};
 
+/// Startup's destination count and whether the product asks for a typed live view.
+#[derive(Clone, Copy)]
+pub struct View {
+    pub destinations: u32,
+    pub front: bool,
+}
+
 impl Local {
     /// Prepare and price the product's startup record before any local resources move.
     pub fn prepare_header(
@@ -16,13 +23,12 @@ impl Local {
         trace: Option<&TraceConfig>,
         chat: &[u8],
         pid: u64,
-        destinations: u32,
+        view: View,
         result_file: skein_lib::Duration,
     ) -> Result<(Option<smith_events::SessionStarted>, u64), crate::local_shell::Failure> {
         match trace {
             Some(trace) => {
-                let header =
-                    Self::trace_header(configuration, limits, trace, chat.into(), pid, destinations, result_file)?;
+                let header = Self::trace_header(configuration, limits, trace, chat.into(), pid, view, result_file)?;
                 let bytes = Self::header_memory(&header)
                     .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?;
                 smith_agent_service::profile::validate::memory(bytes, configuration.memory)
@@ -42,7 +48,7 @@ impl Local {
         trace: &TraceConfig,
         chat: Box<[u8]>,
         pid: u64,
-        destinations: u32,
+        view: View,
         result_file: skein_lib::Duration,
     ) -> Result<smith_events::SessionStarted, crate::local_shell::Failure> {
         let options = smith_charter::CEILINGS.llm_effort_some;
@@ -57,13 +63,14 @@ impl Local {
                 smith_agent_service::EventLimits::derive(
                     &configuration.service.limits,
                     trace.capture,
-                    destinations,
+                    view.destinations,
                     options,
                     header.as_slice(),
                     write_deadline,
                 )
                 .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?,
             );
+            configuration.service.limits.events.as_mut().expect("derived event limits").front = view.front;
             match limits.local.agent {
                 AgentLimits::Inline(_) => {
                     limits.inline = Some(

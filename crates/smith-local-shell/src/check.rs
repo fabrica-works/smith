@@ -236,7 +236,7 @@ fn invocation_limits(
 ) -> Result<Option<Box<[smith_agent_service::profile::Limit]>>, String> {
     let local = match execution {
         Some(execution) => Some(derive_execution(resolved, execution, wall)?),
-        None => None,
+        None => Some(interactive_limits(resolved)?),
     };
     let agent = &resolved.agent;
     Ok(match &local {
@@ -283,6 +283,30 @@ fn derive_execution(
     invocation: &command::Exec,
     wall: skein_lib::Wall,
 ) -> Result<(smith_local_service::Limits, skein_lib::Duration), String> {
+    derive_invocation(resolved, invocation, wall, false)
+}
+
+/// Derive and admit the interactive invocation's limits without opening resources.
+pub fn interactive_limits(
+    resolved: &mut settings::resolve::Resolved,
+) -> Result<(smith_local_service::Limits, skein_lib::Duration), String> {
+    let invocation = command::Exec {
+        shared: command::Shared::default(),
+        prompt: command::Prompt::Stdin,
+        output: None,
+        ephemeral: false,
+        deliver: false,
+        json: false,
+    };
+    derive_invocation(resolved, &invocation, skein_lib::Wall::from_nanos(0), true)
+}
+
+fn derive_invocation(
+    resolved: &mut settings::resolve::Resolved,
+    invocation: &command::Exec,
+    wall: skein_lib::Wall,
+    interactive: bool,
+) -> Result<(smith_local_service::Limits, skein_lib::Duration), String> {
     if let Some(chat) = crate::compose::invocation_chat(&invocation.shared, 0) {
         resolved.local.chat = chat;
     }
@@ -291,15 +315,20 @@ fn derive_execution(
     let host = smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits)
         .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
     let mut limits = crate::local_shell::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
-    let (_, _, available) = crate::compose::prepare_stream(
-        &mut resolved.agent,
-        &resolved.local.chat,
-        &mut limits,
-        invocation.json,
-        wall,
-        result_file,
-    )
-    .map_err(|why| why.line())?;
+    let available = if interactive {
+        interactive_header(resolved, &mut limits, result_file)?
+    } else {
+        crate::compose::prepare_stream(
+            &mut resolved.agent,
+            &resolved.local.chat,
+            &mut limits,
+            invocation.json,
+            wall,
+            result_file,
+        )
+        .map_err(|why| why.line())?
+        .2
+    };
     match limits.local.agent {
         smith_local_domain::AgentLimits::Inline(_) => {
             limits.inline = Some(
@@ -329,12 +358,41 @@ fn derive_execution(
         locations,
         limits: crate::credentials::limits(resolved.agent.service.limits.io, count.max(1)),
     };
-    let (required, _) =
-        crate::Local::startup_memory(&limits, 0, resolved.agent.service.limits.routes, Some(&handed), Some(&front))
-            .map_err(|why| why.detail().to_owned())?;
+    let (required, _) = crate::Local::startup_memory(
+        &limits,
+        0,
+        resolved.agent.service.limits.routes,
+        Some(&handed),
+        if interactive { None } else { Some(&front) },
+    )
+    .map_err(|why| why.detail().to_owned())?;
     smith_agent_service::profile::validate::memory(required, available)
         .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
     Ok((limits, result_file))
+}
+
+fn interactive_header(
+    resolved: &mut settings::resolve::Resolved,
+    limits: &mut smith_local_service::Limits,
+    result_file: skein_lib::Duration,
+) -> Result<u64, String> {
+    let destinations = u32::from(resolved.agent.trace.is_some());
+    let trace = resolved.agent.trace.take().unwrap_or(smith_agent_shell::trace::TraceConfig {
+        path: "stdout".into(),
+        capture: smith_agent_service::sinks::Capture::None,
+        delivery: smith_agent_service::sinks::Delivery::Complete,
+    });
+    crate::Local::prepare_header(
+        &mut resolved.agent,
+        limits,
+        Some(&trace),
+        &resolved.local.chat,
+        0,
+        crate::local_host::View { destinations, front: true },
+        result_file,
+    )
+    .map(|(_, available)| available)
+    .map_err(|why| why.detail().to_owned())
 }
 
 /// Handle product arguments, leaving legacy invocations to their existing glue.
@@ -367,6 +425,29 @@ pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_view_footprint_is_its_slots_times_its_projection_bound() {
+        let mut resolved = execution_fixture();
+        let (limits, _) = interactive_limits(&mut resolved).expect("interactive admission");
+        let events = resolved.agent.service.limits.events.expect("interactive sink");
+        assert!(events.front);
+        let view = smith_agent_service::events::front_worst_case(&resolved.agent.service.limits).unwrap();
+        let one = smith_agent_service::sinks::View::worst_case(
+            resolved
+                .agent
+                .service
+                .limits
+                .llm
+                .adapter
+                .client
+                .answer
+                .max(resolved.agent.service.limits.llm.adapter.client.strings),
+        )
+        .unwrap();
+        assert_eq!(view, one * 4);
+        assert!(smith_local_service::worst_case(&limits).is_some());
+    }
 
     fn resolved(trace: bool) -> settings::resolve::Resolved {
         let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");

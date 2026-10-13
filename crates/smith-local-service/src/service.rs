@@ -455,7 +455,7 @@ impl Service {
     }
 
     /// Take a typed live-view record from the same sink that owns the trace.
-    pub fn pop_front(&mut self) -> Option<smith_events::Record> {
+    pub fn pop_front(&mut self) -> Option<agent_service::sinks::View> {
         match self.below.inline_mut() {
             Some(effects) => match effects.front_sinks() {
                 Some(sinks) => sinks.pop_front(),

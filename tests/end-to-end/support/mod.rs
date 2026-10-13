@@ -590,18 +590,31 @@ pub fn user_layer(scratch: &Scratch, bytes: &[u8]) -> std::path::PathBuf {
 }
 
 /// Drive the shipped product with only the scratch HOME and XDG locations.
+#[must_use]
 pub fn smith(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
+    smith_with_environment(scratch, arguments, input, Vec::new())
+}
+
+/// Run with caller-supplied synthetic variables beside the scratch locations.
+pub fn smith_with_environment(
+    scratch: &Scratch,
+    arguments: &[&str],
+    input: &[u8],
+    additional: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) -> Ran {
     assert_no_children();
+    let mut environment = vec![
+        ("HOME".into(), scratch.path().into()),
+        ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+        ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+        ("PATH".into(), "/usr/bin:/bin".into()),
+    ];
+    environment.extend(additional);
     let mut binary = Binary::start(
         Command {
             program: env!("CARGO_BIN_EXE_smith").into(),
             arguments: arguments.iter().map(std::ffi::OsString::from).collect(),
-            environment: vec![
-                ("HOME".into(), scratch.path().into()),
-                ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
-                ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
-                ("PATH".into(), "/usr/bin:/bin".into()),
-            ],
+            environment,
             directory: scratch.path().into(),
         },
         Mode::Pipes,

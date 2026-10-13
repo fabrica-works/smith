@@ -7,7 +7,7 @@
 #![expect(clippy::manual_map, reason = "bounded production entries use explicit matches without closures")]
 
 use alloc::boxed::Box;
-use skein_lib::{Duration, List, Map, Queue, Time, Token};
+use skein_lib::{Duration, List, Map, Time, Token};
 use smith_domain::{self as domain, run};
 use smith_events::{Event, Record};
 use smith_protocol_channel as channel;
@@ -618,19 +618,13 @@ pub fn worst_case(limits: &crate::Limits) -> Option<u64> {
         )
 }
 
-/// The typed queue, its largest native payload and one hand-off copy.
+/// The live queue owns exactly its slots times one projection's bound.
 #[must_use]
 pub fn front_worst_case(limits: &crate::Limits) -> Option<u64> {
-    let events = limits.events?;
+    limits.events?;
     let client = limits.llm.adapter.client;
-    let prompt = u64::from(client.request)
-        .checked_add(u64::from(client.history_items).checked_mul(128)?)?
-        .checked_add(u64::from(client.tools).checked_mul(128)?)?
-        .checked_add(u64::from(events.sinks.metadata_string).checked_mul(18)?)?
-        .checked_add(2048)?;
-    let payload = u64::from(events.sinks.line_ceiling(Capture::Everything)?).max(prompt);
-    Queue::<Record>::worst_case(crate::sinks::FRONT_RECORDS)?
-        .checked_add(payload.checked_mul(u64::from(crate::sinks::FRONT_RECORDS).checked_add(1)?)?)
+    crate::sinks::View::worst_case(client.answer.max(client.strings))?
+        .checked_mul(u64::from(crate::sinks::FRONT_RECORDS))
 }
 
 #[cfg(test)]

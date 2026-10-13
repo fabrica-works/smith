@@ -63,7 +63,7 @@ fn prepare_header(
         trace,
         chat.as_bytes(),
         u64::from(std::process::id()),
-        1,
+        crate::local_host::View { destinations: 1, front: false },
         skein_lib::Duration::ZERO,
     )
 }

@@ -843,7 +843,7 @@ fn product_header(
         &trace,
         b"main".as_slice().into(),
         101,
-        1,
+        smith_local_shell::local_host::View { destinations: 1, front: false },
         skein_lib::Duration::ZERO,
     )
     .expect("product effective header");

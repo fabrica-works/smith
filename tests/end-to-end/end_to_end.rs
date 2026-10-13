@@ -4,6 +4,66 @@ use smith_local_process_world::{Placement, referee::CheckoutRead};
 use smith_real_world::{Scratch, World};
 
 #[test]
+fn the_interactive_default_fits_its_memory() {
+    use smith_local_shell::{check, command, settings};
+
+    for (model, account, source) in
+        [("codex/gpt-6-astra", "codex", "borrow"), ("anthropic/claude-opus-5-5", "anthropic", "env")]
+    {
+        let scratch = Scratch::new();
+        let token = smith_local_process_world::world::login_at(skein_shell::Clock::new().now().wall, false);
+        let login =
+            serde_json::json!({"tokens":{"access_token":std::str::from_utf8(&token).unwrap(),"account_id":"acc"}});
+        std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&login).unwrap()).unwrap();
+        let file = if source == "borrow" { "file='auth.json'\n" } else { "" };
+        let _file = support::user_layer(
+            &scratch,
+            format!("model='{model}'\n[accounts.{account}]\nsource='{source}'\n{file}").as_bytes(),
+        );
+        let ran = support::smith_with_environment(
+            &scratch,
+            &["check", "--json"],
+            b"",
+            vec![("ANTHROPIC_API_KEY".into(), "synthetic-unissued".into())],
+        );
+        assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+        let report: serde_json::Value = serde_json::from_slice(&ran.stdout).expect("interactive check document");
+        let limits = report["limits"].as_array().expect("named limits");
+        let memory = limits.iter().find(|limit| limit["name"] == "declared.memory").expect("default memory")["value"]
+            .as_u64()
+            .expect("memory bytes");
+        let settings = settings::Settings {
+            workspace: scratch.path().into(),
+            values: report["settings"]["values"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, sourced)| {
+                    (
+                        name.clone(),
+                        settings::Sourced {
+                            value: serde_json::from_value(sourced["value"].clone()).expect("checked setting"),
+                            origin: settings::Origin::BuiltIn,
+                        },
+                    )
+                })
+                .collect(),
+        };
+        let mut resolved = settings::resolve::resolve(
+            &settings,
+            &command::Command::Check { shared: command::Shared::default(), json: true, execution: None },
+        )
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+        let (local, _) = check::interactive_limits(&mut resolved).expect("all interactive checks pass");
+        let worst = smith_local_service::worst_case(&local).expect("complete service footprint");
+        assert_eq!(memory, 2_147_483_648);
+        assert!(worst <= memory - 67_108_864, "{account}: worst_case={worst}; margin={}", memory - worst);
+        println!("{account}: interactive worst_case={worst} bytes; margin={} bytes under 2 GiB", memory - worst);
+        assert!(!scratch.path().join("state").exists(), "check starts no store or sign-in");
+    }
+}
+
+#[test]
 fn the_shipped_local_and_agent_answer_on_a_terminal() {
     let scratch = Scratch::new();
     let scenario = World::new(31, &scratch, Placement::Spawned, b"First answer").scenario;
@@ -505,7 +565,7 @@ fn smith_check_json_lists_the_effective_limits_by_name() {
     assert!(
         limits
             .iter()
-            .any(|limit| limit["name"] == "service.teardown" && limit["value"] == 10_000 && limit["unit"] == "ms")
+            .any(|limit| limit["name"] == "service.teardown" && limit["value"] == 40_000 && limit["unit"] == "ms")
     );
     assert!(limits.iter().all(|limit| !limit["name"].as_str().expect("limit name").contains("endpoint=0")));
 }
