@@ -329,7 +329,9 @@ One run, then exit:
   - **`--json`** puts the event stream on standard output instead, one
     record per line, the same records `--trace` writes. The result is in
     `run.completed`, and nothing else is written there;
-  - **`-o FILE`** also writes the result's text to `FILE`;
+  - **`-o FILE`** also writes the result's text to `FILE`, replaced
+    whole and synced, after the run's answer and before `session.ended`;
+    a write or a sync that fails is 4.3's;
   - standard error carries a human status: the chat's name, each tool
     call and its verdict, notices, and a failure in words, with provider
     text clipped;
@@ -364,7 +366,7 @@ A headless run's code follows its answer (domain/run.md, section 10):
 | Code | Meaning | When |
 |---|---|---|
 | 0 | accepted | an accepted answer, however long its teardown took |
-| 1 | run failed | a failed answer: the model (a provider's failure past its retries, an exhausted account, a limit that fired), policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; or a start refused as busy |
+| 1 | run failed | a failed answer: the model (a provider's failure past its retries, an exhausted account, a limit that fired), policy, stale, a transcript it could not resume; a spawned agent that ended without answering; a host failure while the run went on, such as its chat store failing; the result's file not written after an accepted answer (`-o`); or a start refused as busy |
 | 2 | usage or configuration | arguments, a settings refusal (5.3), a start the run refused as invalid |
 | 3 | credentials | an account the run needs without a usable credential: not signed in, rejected, a borrowed login expired, a variable unset; also a run that failed because the provider refused its credential (a model failure of class `unauthorized`) |
 | 4 | budget | a failed answer for its budget: spend, time or turns |
@@ -372,6 +374,15 @@ A headless run's code follows its answer (domain/run.md, section 10):
 | 130 | interrupted | a cancelled answer, after an interrupt or a termination signal; or a run dropped before it answered, at the person's second interrupt or past the cancel's grace |
 
 The code is also `session.ended`'s `exit`.
+
+**The result's file is the product's, not the run's.** `-o`'s file is
+written after the answer, so `run.completed` stays as the run answered.
+When the answer was accepted and the file cannot be written or synced,
+the code is 1 and the last line is the result's file's form above. After
+any other answer, the answer's code and last line stand, and the file's
+failure is a warning line before the last. `session.ended` is written
+once the file's write has ended, so its `exit` is the code the process
+exits with.
 
 **Standard error's last line** says how the run ended, in words rendered
 from `run.completed`'s typed failure or the startup refusal, matched
@@ -389,6 +400,7 @@ the typed values:
 | 1 | a transcript | `smith: run failed: chat <name> cannot be resumed: <reason>` |
 | 1 | a spawned agent's failure | `smith: run failed: the agent <how it ended>: <its error output's tail>` |
 | 1 | a host failure | `smith: run failed: chat <name>: turn <n> could not be kept: <error>` |
+| 1 | the result's file | `smith: run accepted, but its result could not be written to <file>: <the kernel's error>` |
 | 2 | usage or configuration | `smith: usage: <problem>`; a setting as in 5.3; `smith: run refused: <what> is <value>, past its bound of <bound>` |
 | 3 | credentials | ``smith: account <account> has no credential: run `smith login <account>` ``; the expiry notice of section 7; `smith: account <account>: the provider rejected its credential`; `smith: account <account>: <VARIABLE> is not set` |
 | 4 | budget | `smith: run failed: out of <spend, time or turns>: used <used> of <limit>` |

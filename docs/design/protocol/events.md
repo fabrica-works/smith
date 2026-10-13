@@ -130,7 +130,7 @@ conversation, which is `conversation`.
 
 | Field | Type | What it is |
 |---|---|---|
-| `exit` | integer | the code the process exits with: for the product, one of `docs/design/shell.md`, 4.3; for an agent process, 0 once it answered and 1 when it could not (agent.md, section 6) |
+| `exit` | integer | the code the process exits with: for the product, one of `docs/design/shell.md`, 4.3, written once its own output, `-o`'s file among it, has been written or has failed; for an agent process, 0 once it answered and 1 when it could not (agent.md, section 6) |
 | `answered` | bool | whether every run it held answered |
 | `teardown_ms` | integer or null | from the last answer to the end: `Answered` to `Closed` (agent.md, section 6) |
 | `aborted` | bool | a termination signal turned graceful closes into aborts |
