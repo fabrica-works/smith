@@ -142,8 +142,6 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
     {
         resolved.local.chat = chat;
     }
-    let (workspace, chat_path) =
-        chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
     let prompt = match invocation.prompt {
         Prompt::Argument(prompt) => prompt,
         Prompt::Stdin => unreachable!("stdin phase ended"),
@@ -154,6 +152,8 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
         resolved.local.resume = true;
     }
     let prepared = credentials::prepare(&resolved, wall, interactive.is_some()).map_err(Refused::Credentials)?;
+    let (workspace, chat_path) =
+        chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
     deliver_contract(&mut resolved.local, invocation.deliver);
     let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local)?;
     let host_limits =

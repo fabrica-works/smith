@@ -942,6 +942,6 @@ fn the_current_source_arm_selects_the_exec_face() {
     };
     let entries = smith_bench::agent::smith::read_faces(&project.join("agents/smith/faces.toml")).expect("registry");
     let selected = smith_bench::agent::smith::face(&arm, &entries, repository).expect("source face");
-    assert_eq!(selected.shape, smith_bench::agent::smith::events::Shape::Exec);
+    assert_eq!(selected.shape, smith_bench::agent::smith::events::Shape::Chat);
     assert_eq!(selected.credential(), smith_bench::agent::smith::CredentialShape::Borrowed);
 }

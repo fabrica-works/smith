@@ -173,7 +173,15 @@ fn exec(
     registry: FaceSince,
 ) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
     let login = context.home.join("auth.json");
-    let rendered = settings::product(context, base, &login)?;
+    let mut rendered = settings::product(context, base, &login)?;
+    let trace = if registry.shape == super::events::Shape::Chat {
+        let trace = context.private.root.join("smith/trace.jsonl");
+        write(context, &trace, &[])?;
+        Some(trace)
+    } else {
+        None
+    };
+    chat_trace(&mut rendered, trace.as_deref());
     let directory = context.private.config.join("smith");
     crate::run::private_parent(context.guard, &directory).map_err(configuration)?;
     let settings = directory.join("config.toml");
@@ -225,13 +233,6 @@ fn exec(
             context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
         Credential::Record(Some(crate::credential::smith_borrowed(&login, context.wall, lifetime)?))
     };
-    let trace = if registry.shape == super::events::Shape::Chat {
-        let trace = context.private.root.join("smith/trace.jsonl");
-        write(context, &trace, &[])?;
-        Some(trace)
-    } else {
-        None
-    };
     let prepared = Prepared {
         face: registry.shape,
         registry,
@@ -244,6 +245,12 @@ fn exec(
         teardown,
     };
     Ok((prepared, refused.then_some(receipt)))
+}
+
+fn chat_trace(rendered: &mut serde_json::Value, path: Option<&Path>) {
+    if let Some(path) = path {
+        rendered["trace"] = serde_json::json!({"path":path,"capture":"everything"});
+    }
 }
 
 fn product_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
@@ -311,7 +318,7 @@ impl Prepared {
 
 #[cfg(test)]
 mod tests {
-    use super::{Credential, Prepared, teardown_from_check};
+    use super::{Credential, Prepared, chat_trace, teardown_from_check};
     use crate::agent::smith::{FaceSince, Receiving, events::Shape};
     use crate::isolate::SetupStep;
     use serde_json::json;
@@ -321,7 +328,7 @@ mod tests {
     }
 
     fn invocation(face: Shape) -> Prepared {
-        Prepared {
+        let mut prepared = Prepared {
             face,
             settings: "/scratch/config/smith/config.toml".into(),
             credential: Credential::Record(None),
@@ -337,12 +344,16 @@ mod tests {
             program: "/arm/smith".into(),
             state: "/scratch/state".into(),
             teardown: skein_lib::Duration::from_secs(10),
-        }
+        };
+        chat_trace(&mut prepared.rendered, prepared.trace.as_deref());
+        prepared
     }
 
     #[test]
     fn the_chat_face_types_at_a_terminal_and_reads_its_private_trace() {
         let prepared = invocation(Shape::Chat);
+        assert_eq!(prepared.rendered["trace"]["capture"], "everything");
+        assert_eq!(prepared.rendered["trace"]["path"], "/scratch/smith/trace.jsonl");
         let command = prepared.command();
         assert!(matches!(command.mode, skein_world::end_to_end::Mode::Terminal));
         let arguments: Vec<_> =
@@ -376,6 +387,7 @@ mod tests {
             ["exec", "--json", "-C", "/scratch/workspace", "-m", "codex/gpt-6-luna", "--effort", "low", "-"]
         );
         assert!(prepared.trace.is_none());
+        assert!(prepared.rendered.get("trace").is_none());
     }
 
     #[test]
