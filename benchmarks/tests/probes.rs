@@ -115,6 +115,46 @@ fn result() -> smith_bench::AttemptResult {
         .expect("unchanged recorded result")
 }
 
+#[test]
+fn credentials_decides_on_the_login_digest_and_the_answer() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let task = smith_bench::check_task(&root.join("tasks/probes/credentials/task.toml"), &root.join("../docs/design"))
+        .expect("credentials task with its frozen seed");
+    assert_eq!(task.deciding, ["end", "answer", "login-unchanged"]);
+    assert_eq!(task.outcome.len(), 3);
+    assert_eq!(
+        std::fs::read_to_string(root.join("tasks/probes/credentials/seed/token.txt")).expect("seed token"),
+        "BORROWED_SEED_7C31\n"
+    );
+    let unchanged = Measure::Observed { value: true };
+    let changed = Measure::Observed { value: false };
+    let missing = Measure::unavailable("synthetic attempt has no digest comparison");
+    let cases = [
+        (End::Completed, Some("BORROWED_SEED_7C31"), unchanged.clone(), Judgment::Pass),
+        (End::Completed, Some("BORROWED_SEED_7C31"), changed, Judgment::Fail),
+        (End::Completed, Some("BORROWED_SEED_7C31"), missing, Judgment::Incomplete),
+        (End::Completed, Some("wrong token"), unchanged.clone(), Judgment::Fail),
+        (End::Completed, None, unchanged.clone(), Judgment::Incomplete),
+        (End::Timeout, Some("BORROWED_SEED_7C31"), unchanged, Judgment::Fail),
+    ];
+    let snapshot = smith_bench::grade::Snapshot::new();
+    let mut value = result();
+    value.outcome.grade = None;
+    value.outcome.deciding.clone_from(&task.deciding);
+    for (end, answer, login_unchanged, expected) in cases {
+        let ended = smith_bench::grade::Ended {
+            end: end.clone(),
+            exit: Measure::Observed { value: smith_bench::Exit::Code(0) },
+            last_line: None,
+            answer: answer.map(str::to_owned),
+            login_unchanged,
+        };
+        value.outcome.end = end;
+        value.outcome.checks = smith_bench::grade::checks(&root, &snapshot, &snapshot, &task.outcome, &ended);
+        assert_eq!(judge(&value), expected);
+    }
+}
+
 fn follow_up() -> smith_bench::Task {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     smith_bench::check_task(&root.join("tasks/probes/follow-up/task.toml"), &root.join("../docs/design"))
