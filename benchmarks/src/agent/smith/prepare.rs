@@ -180,13 +180,13 @@ fn exec(
         &settings,
         toml::to_string(&document).map_err(|error| configuration(error.to_string()))?.as_bytes(),
     )?;
-    let working =
-        crate::isolate::working_directory(context.guard, context.private, context.task).map_err(configuration)?;
+    let mut check_arguments = vec!["check".into(), "--json".into()];
+    check_arguments.extend(exec_arguments(&rendered));
     let receipt = crate::process::execute(
         &skein_shell::Clock::new(),
         skein_world::end_to_end::Command {
             program: program.clone(),
-            arguments: vec!["check".into(), "--json".into(), "-C".into(), working.into_os_string()],
+            arguments: check_arguments,
             environment: context.environment.to_vec(),
             directory: context.private.workspace.clone(),
         },
@@ -203,6 +203,8 @@ fn exec(
         },
     )
     .map_err(configuration)?;
+    write(context, &directory.join("check.json"), &receipt.stdout)?;
+    write(context, &directory.join("check-stderr.log"), &receipt.stderr)?;
     if receipt.error.is_some() || receipt.forced != crate::Forced::No {
         return Err(configuration("Smith check did not settle within its process bounds"));
     }
@@ -229,24 +231,34 @@ fn exec(
     Ok((prepared, refused.then_some(receipt)))
 }
 
+fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
+    vec![
+        "exec".into(),
+        "--json".into(),
+        "-C".into(),
+        rendered["workspace"]["directories"][0]["path"].as_str().expect("rendered workspace").into(),
+        "-m".into(),
+        rendered["model"].as_str().expect("rendered model").into(),
+        "--effort".into(),
+        rendered["effort"].as_str().expect("rendered effort").into(),
+        "-".into(),
+    ]
+}
+
 impl Prepared {
+    /// The product check's retained setup document; historical invocations have none.
+    #[must_use]
+    pub fn check_document(&self) -> Option<PathBuf> {
+        (self.face == super::events::Shape::Exec).then(|| self.settings.with_file_name("check.json"))
+    }
+
     /// Invoke the frozen native local front end with its own private state.
     #[must_use]
     pub fn command(&self) -> Invocation {
         if self.face == super::events::Shape::Exec {
             return Invocation {
                 program: self.program.clone(),
-                arguments: vec![
-                    "exec".into(),
-                    "--json".into(),
-                    "-C".into(),
-                    self.rendered["workspace"]["directories"][0]["path"].as_str().expect("rendered workspace").into(),
-                    "-m".into(),
-                    self.rendered["model"].as_str().expect("rendered model").into(),
-                    "--effort".into(),
-                    self.rendered["effort"].as_str().expect("rendered effort").into(),
-                    "-".into(),
-                ],
+                arguments: exec_arguments(&self.rendered),
                 environment: Vec::new(),
                 mode: skein_world::end_to_end::Mode::Pipes,
                 teardown: self.teardown,

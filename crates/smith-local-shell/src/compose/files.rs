@@ -1,7 +1,7 @@
 //! Exec's durable result file (shell.md, sections 4.2–4.3).
 //! The file owner holds teardown until its whole-file write and closes end.
 //! It knows the output path and kernel terminals, not the run's outcome.
-use super::{Opened, Refused, host, root};
+use super::{Refused, host, root};
 use crate::command::Usage;
 use skein_io::{file, file_layer, kernel};
 use skein_lib::{Duration, Queue, Time, Token, Wall};
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 const PATH_BYTES: u64 = 4096;
 
-pub(super) struct Files {
+pub(crate) struct Files {
     pub(super) output: Option<Box<ResultFile>>,
     pub(super) temporary: Option<PathBuf>,
     created: bool,
@@ -23,24 +23,28 @@ pub(super) struct Files {
 }
 
 impl Files {
-    pub(super) fn prepare(opened: &Opened) -> Result<Self, Refused> {
-        let target = opened.invocation.output.clone();
+    pub(crate) fn prepare(
+        invocation: &crate::command::Exec,
+        resolved: &crate::settings::resolve::Resolved,
+        seed: u64,
+    ) -> Result<Self, Refused> {
+        let target = invocation.output.clone();
         if let Some(path) = &target {
             check_path(path)?;
             if path.file_name().is_none() {
                 return Err(Refused::Usage(Usage("-o requires a file name".into())));
             }
         }
-        let maximum = u32::try_from(opened.resolved.limits.smith.run.outcome_bytes)
+        let maximum = u32::try_from(resolved.limits.smith.run.outcome_bytes)
             .map_err(|_| Refused::Usage(Usage("the result file bound exceeds u32".into())))?
-            .max(opened.resolved.limits.show_bytes)
+            .max(resolved.limits.show_bytes)
             .max(1);
-        let temporary = if opened.invocation.ephemeral {
+        let temporary = if invocation.ephemeral {
             let base = std::env::var_os("XDG_STATE_HOME")
                 .map(PathBuf::from)
                 .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
                 .ok_or_else(|| Refused::Usage(Usage("HOME or XDG_STATE_HOME is required for chats".into())))?;
-            let path = base.join(format!(".smith-exec-{}-{:016x}", std::process::id(), opened.seed));
+            let path = base.join(format!(".smith-exec-{}-{:016x}", std::process::id(), seed));
             check_path(&path)?;
             Some(path)
         } else {
@@ -65,12 +69,12 @@ impl Files {
             parent_root: None,
             output: None,
             maximum,
-            timeout: opened.resolved.agent.service.limits.file_timeout,
+            timeout: resolved.agent.service.limits.file_timeout,
             reservation,
         })
     }
 
-    pub(super) fn reserve(&self, front: &mut crate::front::headless::Headless, available: u64) -> Result<u64, Refused> {
+    pub(crate) fn reserve(&self, front: &mut crate::front::headless::Headless, available: u64) -> Result<u64, Refused> {
         front.file_memory =
             self.live_memory().ok_or_else(|| Refused::Usage(Usage("the product file bound overflows".into())))?;
         front.cleanup_memory = self.cleanup_memory();

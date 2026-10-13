@@ -4,7 +4,7 @@
 use std::{ffi::OsString, path::PathBuf};
 
 /// Flags shared by product commands, supplied by their caller before resolution.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Shared {
     pub directory: Option<PathBuf>,
     pub model: Option<String>,
@@ -18,7 +18,7 @@ pub struct Shared {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// Resolve and validate settings without starting a run.
-    Check { shared: Shared, json: bool },
+    Check { shared: Shared, json: bool, execution: Option<Exec> },
     /// One headless run, with its prompt supplied before the activation starts.
     Exec(Exec),
     /// The existing agent and local entry points, removed by product migration.
@@ -26,7 +26,7 @@ pub enum Command {
 }
 
 /// A headless invocation's prompt and output choices, before any startup reads.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Exec {
     pub shared: Shared,
     pub prompt: Prompt,
@@ -37,7 +37,7 @@ pub struct Exec {
 }
 
 /// Where the headless front end obtains its one bounded person message.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Prompt {
     /// The argument's UTF-8 bytes are the whole message.
     Argument(Box<[u8]>),
@@ -56,11 +56,13 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     }
     let mut arguments = arguments.into_iter();
     let name = arguments.next();
-    let exec = match name.as_deref().and_then(std::ffi::OsStr::to_str) {
+    let mut exec = match name.as_deref().and_then(std::ffi::OsStr::to_str) {
         Some("exec") => true,
         Some("check") => false,
         _ => return Err(Usage("expected `smith exec [FLAGS] [PROMPT | -]` or `smith check [--json]`".into())),
     };
+    let checking = !exec;
+    let mut report_json = false;
     let mut shared = Shared::default();
     let mut json = false;
     let mut prompt = None;
@@ -70,6 +72,11 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     while let Some(argument) = arguments.next() {
         let argument = argument.to_str().ok_or_else(|| Usage("a flag is not UTF-8".into()))?;
         match argument {
+            "exec" if checking && !exec => {
+                exec = true;
+                report_json = json;
+                json = false;
+            }
             "--json" => json = true,
             "-C" => shared.directory = Some(value(&mut arguments, "-C")?.into()),
             "--trace" => shared.trace = Some(value(&mut arguments, "--trace")?.into()),
@@ -90,10 +97,18 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
         }
     }
-    if exec {
-        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, ephemeral, deliver, json }))
+    if checking {
+        let execution = exec.then(|| Exec {
+            shared: shared.clone(),
+            prompt: prompt.unwrap_or(Prompt::Stdin),
+            output,
+            ephemeral,
+            deliver,
+            json,
+        });
+        Ok(Command::Check { shared, json: if exec { report_json } else { json }, execution })
     } else {
-        Ok(Command::Check { shared, json })
+        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, ephemeral, deliver, json }))
     }
 }
 
@@ -121,7 +136,7 @@ mod tests {
 
     #[test]
     fn check_collects_shared_flags_and_ordered_overrides() {
-        let Command::Check { shared, json } = parse(arguments(&[
+        let Command::Check { shared, json, execution } = parse(arguments(&[
             "check",
             "--json",
             "-C",
@@ -143,12 +158,54 @@ mod tests {
             panic!("check command")
         };
         assert!(json);
+        assert!(execution.is_none());
         assert_eq!(shared.directory, Some(PathBuf::from("work")));
         assert_eq!(shared.model.as_deref(), Some("codex/model"));
         assert_eq!(shared.effort.as_deref(), Some("high"));
         assert_eq!(shared.chat.as_deref(), Some("plan"));
         assert_eq!(shared.trace, Some(PathBuf::from("trace")));
         assert_eq!(shared.overrides, ["budget.turns=4", "budget.turns=5"]);
+    }
+
+    #[test]
+    fn check_separates_its_report_form_from_execs_output_choices() {
+        let Command::Check { shared, json, execution: Some(exec) } = parse(arguments(&[
+            "check",
+            "--json",
+            "-c",
+            "budget.turns=4",
+            "exec",
+            "--json",
+            "-C",
+            "work",
+            "--trace",
+            "events",
+            "-o",
+            "result",
+            "--ephemeral",
+            "--deliver",
+            "-",
+        ]))
+        .expect("checked invocation") else {
+            panic!("checked exec")
+        };
+        assert!(json && exec.json && exec.ephemeral && exec.deliver);
+        assert_eq!(shared, exec.shared);
+        assert_eq!(shared.overrides, ["budget.turns=4"]);
+        assert_eq!(exec.output, Some("result".into()));
+        assert_eq!(exec.prompt, Prompt::Stdin);
+        let Command::Check { json, execution: Some(exec), .. } =
+            parse(arguments(&["check", "exec", "--json"])).expect("text check")
+        else {
+            panic!("checked exec")
+        };
+        assert!(!json && exec.json);
+        let Command::Check { json, execution: Some(exec), .. } =
+            parse(arguments(&["check", "--json", "exec"])).expect("JSON check")
+        else {
+            panic!("checked exec")
+        };
+        assert!(json && !exec.json);
     }
 
     #[test]

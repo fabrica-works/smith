@@ -34,3 +34,10 @@ commit = "4d06c1106b45b12280bad141cacb2806c514fe26"
 shape = "local-agent-trace"
 session_ended_aborted = true
 receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }
+
+# Product invocation, check-derived teardown and read-only source borrowing.
+[[face]]
+commit = "0d5604f94d9eb7f2aa6605634fd616e42f20d11e"
+shape = "exec"
+session_ended_aborted = true
+receiving = { string = 256000, content = 13056000, items = 52778, encoded_line = 19817472 }

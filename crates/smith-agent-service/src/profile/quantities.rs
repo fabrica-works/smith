@@ -152,7 +152,7 @@ pub const fn standard() -> Profile {
     Profile {
         name: Name::Standard,
         declared: Declared {
-            conversations: 6,
+            conversations: 5,
             tool_payload: 40_960,
             file_bytes: 1_048_576,
             calls_per_response: 16,

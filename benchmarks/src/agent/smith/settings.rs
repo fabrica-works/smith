@@ -272,7 +272,7 @@ pub fn product(context: &Context<'_>, base: &Value, login: &Path) -> Result<Valu
         "deployment":deployment,"models":{selected:declared},"endpoints":{endpoint_name:provider},
         "accounts":{endpoint_name:{"source":"borrow","file":login,"format":"codex","program":"codex"}},
         "workspace":{"directories":native["directories"],"conventions":native["conventions"],"contract":native["contract"]},
-        "environment":{"inherit":[],"set":environment},"trace":{"path":root.join("trace.jsonl"),"capture":"everything"}}))
+        "environment":{"inherit":[],"set":environment}}))
 }
 
 #[cfg(test)]

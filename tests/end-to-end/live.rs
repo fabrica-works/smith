@@ -319,9 +319,17 @@ fn run_exec(scratch: &Scratch, prompt: &str, change: bool, expectation: Expectat
         stderr: 65_536,
         force_walk: true,
     };
+    let mut arguments =
+        vec!["exec".into(), "--json".into(), "-C".into(), workspace.clone().into(), "--chat".into(), "chat".into()];
+    if change {
+        arguments.push("--deliver".into());
+    }
+    arguments.push("-".into());
+    let mut check_arguments = vec!["check".into(), "--json".into()];
+    check_arguments.extend(arguments.clone());
     let check = execute(
         &clock,
-        command(vec!["check".into(), "--json".into(), "-C".into(), workspace.clone().into()]),
+        command(check_arguments),
         Box::default(),
         Capture::Raw,
         bounds(Duration::from_secs(15), Duration::ZERO),
@@ -367,12 +375,6 @@ fn run_exec(scratch: &Scratch, prompt: &str, change: bool, expectation: Expectat
         state: scratch.path().join("state"),
         teardown,
     };
-    let mut arguments =
-        vec!["exec".into(), "--json".into(), "-C".into(), workspace.into(), "--chat".into(), "chat".into()];
-    if change {
-        arguments.push("--deliver".into());
-    }
-    arguments.push("-".into());
     let mut result = execute(
         &clock,
         command(arguments),

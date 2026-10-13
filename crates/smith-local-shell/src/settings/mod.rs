@@ -11,6 +11,8 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use layers::merge;
 pub use layers::read;
 
 pub(crate) fn name(part: &str) -> String {

@@ -197,8 +197,7 @@ impl Backend {
                     "contract":if change {serde_json::json!({"form":"change","checks_must_pass":true,
                         "fields":[{"name":"title","max":256},{"name":"body","max":4096}]})}
                         else {serde_json::json!({"form":"report","max":4096})}},
-                "environment":{"inherit":[],"set":{"PATH":required("PATH")}},
-                "trace":{"path":directory.join("agent-trace.jsonl"),"capture":"everything"}});
+                "environment":{"inherit":[],"set":{"PATH":required("PATH")}}});
         }
         let (host, identity, headers) = if self.name == "codex" {
             ("chatgpt.com", "plain", skein_llm::openai::identity::headers().iter().map(|header| serde_json::json!({"name":String::from_utf8_lossy(&header.name),"value":String::from_utf8_lossy(&header.value)})).collect::<Vec<_>>())
@@ -305,5 +304,108 @@ mod tests {
             assert!(settings.get("push").is_none());
             assert_eq!(settings["contract"]["checks_must_pass"], true);
         }
+    }
+
+    fn pinned_product_check(conversations: i64) -> smith_bench::process::ProcessResult {
+        use skein_lib::Duration;
+        let scratch = Scratch::new();
+        let root = scratch.path();
+        let guard = smith_bench::guard::Guard::new(&root.join("user"), &root.join("config"), &root.join("state"), &[])
+            .expect("guard");
+        let private = smith_bench::isolate::empty(&guard, &root.join("attempt")).expect("private paths");
+        let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmarks");
+        let pin_file = project.join("agents/smith/first-request.pin.toml");
+        let pin = smith_bench::read_configuration(&pin_file).expect("pin");
+        let mut task = smith_bench::read_task(&project.join("tasks/probes/first-request/task.toml")).expect("task");
+        task.smith.insert("conversations".into(), toml::Value::Integer(conversations));
+        let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+        let arm = smith_bench::arm::ArmRef::Installed { program: "/unused".into() };
+        let environment = smith_bench::isolate::environment(
+            &smith_bench::isolate::Machine { path: "/usr/bin:/bin".into(), rustup_home: None },
+            &private,
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("environment");
+        let clock = skein_shell::Clock::new();
+        let token = smith_local_process_world::world::login_at(clock.now().wall, false);
+        let login = root.join("unissued-auth.json");
+        std::fs::write(&login,serde_json::to_vec(&serde_json::json!({"tokens":{"access_token":std::str::from_utf8(&token).expect("unissued token"),"account_id":"acc"}})).expect("fixture encoding")).expect("fixture file");
+        let context = smith_bench::agent::Context {
+            guard: &guard,
+            private: &private,
+            pin: &pin,
+            pin_file: &pin_file,
+            task: &task,
+            variant: None,
+            model: &model,
+            arm: &arm,
+            installed_version: "unused",
+            home: root,
+            wall: clock.now().wall,
+            lifetime: Duration::from_secs(20),
+            environment: &environment,
+        };
+        let base: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../../../benchmarks/agents/smith/first-request.json"))
+                .expect("template");
+        let rendered = smith_bench::agent::smith::product_settings(&context, &base, &login).expect("product rendering");
+        let directory = private.config.join("smith");
+        std::fs::create_dir(&directory).expect("user layer directory");
+        let document: toml::Value = serde_json::from_value(rendered).expect("TOML document");
+        std::fs::write(directory.join("config.toml"), toml::to_string(&document).expect("user layer"))
+            .expect("scratch settings");
+        let result = smith_bench::process::execute(
+            &clock,
+            skein_world::end_to_end::Command {
+                program: env!("CARGO_BIN_EXE_smith").into(),
+                arguments: vec![
+                    "check".into(),
+                    "--json".into(),
+                    "exec".into(),
+                    "--json".into(),
+                    "-C".into(),
+                    private.workspace.clone().into(),
+                    "-o".into(),
+                    root.join("unopened/result").into(),
+                    "--ephemeral".into(),
+                ],
+                environment,
+                directory: private.workspace.clone(),
+            },
+            Box::default(),
+            smith_bench::process::Capture::Raw,
+            smith_bench::process::Bounds {
+                hard: Duration::from_secs(1),
+                teardown: Duration::ZERO,
+                grace: Duration::from_millis(20),
+                settlement: Duration::from_secs(1),
+                stdout: 1_048_576,
+                stderr: 65_536,
+                force_walk: true,
+            },
+        )
+        .expect("check settles");
+        assert!(!root.join("unopened").exists());
+        assert_eq!(std::fs::read_dir(&private.state).expect("scratch state").count(), 0);
+        result
+    }
+
+    #[test]
+    fn the_product_adapter_user_layer_passes_the_shipped_check() {
+        let result = pinned_product_check(5);
+        assert_eq!(result.exit, smith_bench::Exit::Code(0), "pinned product settings pass check");
+        assert!(
+            smith_bench::agent::smith::teardown_from_check(&result.stdout)
+                .is_ok_and(|bound| bound == skein_lib::Duration::from_secs(40)),
+            "check reports its teardown bound"
+        );
+    }
+
+    #[test]
+    fn the_shipped_exec_check_refuses_the_whole_startup_footprint() {
+        let result = pinned_product_check(6);
+        assert_eq!(result.exit, smith_bench::Exit::Code(2));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("memory"));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("service.worst_case"));
     }
 }

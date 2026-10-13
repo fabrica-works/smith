@@ -6,7 +6,7 @@ use crate::{
     credentials, local_shell, settings,
 };
 mod files;
-pub(crate) use files::{Failure as ResultFileFailure, ResultFile};
+pub(crate) use files::{Failure as ResultFileFailure, Files, ResultFile};
 
 use skein_lib::Wall;
 use skein_shell::{Clock, Config, Kernel};
@@ -118,12 +118,7 @@ struct Composed {
 }
 
 /// Compose the selected native values with their roots and source driver, without a configuration file.
-fn compose(
-    opened: Opened,
-    kind: AgentKind,
-    now: skein_lib::Time,
-    files: &mut files::Files,
-) -> Result<Composed, Refused> {
+fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Files) -> Result<Composed, Refused> {
     let Opened { mut resolved, invocation, seed, wall, input_closed } = opened;
     match kind {
         AgentKind::Inline => {}
@@ -131,8 +126,8 @@ fn compose(
     let prepared = credentials::prepare(&resolved, wall).map_err(Refused::Credentials)?;
     files.prepare_output(seed)?;
     files.create_temporary()?;
-    if invocation.shared.chat.is_none() {
-        resolved.local.chat = format!("exec-{seed:016x}").into_bytes().into();
+    if let Some(chat) = invocation_chat(&invocation.shared, seed) {
+        resolved.local.chat = chat;
     }
     let (workspace, chat_path) =
         chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
@@ -307,7 +302,11 @@ fn chat_paths(
     Ok((workspace, chat_path))
 }
 
-fn prepare_stream(
+pub(crate) fn invocation_chat(shared: &crate::command::Shared, seed: u64) -> Option<Box<[u8]>> {
+    shared.chat.is_none().then(|| format!("exec-{seed:016x}").into_bytes().into())
+}
+
+pub(crate) fn prepare_stream(
     agent: &mut smith_agent_shell::config::Configuration,
     chat: &[u8],
     limits: &mut smith_local_service::Limits,
@@ -373,7 +372,7 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
 
 fn run(invocation: Exec, at: skein_shell::Now, clock: &Clock) -> Result<u8, Refused> {
     let (opened, mut kernel) = open(invocation, at.wall, clock)?;
-    let mut files = files::Files::prepare(&opened)?;
+    let mut files = Files::prepare(&opened.invocation, &opened.resolved, opened.seed)?;
     let result = compose(opened, AgentKind::Inline, at.now, &mut files).map(|mut started| {
         match skein_shell::drive(&mut kernel, clock, &mut started.local) {
             skein_io::kernel::Exit::Code(code) => code,

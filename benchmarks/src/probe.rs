@@ -584,7 +584,7 @@ fn comparison(
 pub(crate) fn judgment(batch: &crate::batch::Batch) -> Judgment {
     if batch.results.iter().any(|result| {
         matches!(result.outcome.end, End::HarnessError { .. })
-            || (matches!(result.outcome.end, End::Refused { .. }) && !crate::batch::expected_startup_refusal(result))
+            || (matches!(result.outcome.end, End::Refused { .. }) && !crate::batch::expected_refusal(result))
     }) || batch.probes.values().any(|verdict| matches!(verdict, crate::ProbeVerdict::Quarantined))
     {
         Judgment::Incomplete

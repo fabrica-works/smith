@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 mod credentials;
 mod header;
+mod memory;
 
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{OutputDown, OutputOutcome, OutputUp};
@@ -199,44 +200,14 @@ impl Local {
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
             return Err(configuration_failure("local IO limits cannot carry OAuth TLS records".into()));
         }
-        let file_operations = if headless.as_ref().is_some_and(|front| front.file_memory != 0) { 4 } else { 0 };
-        let base_operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())
-            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        let operations = base_operations
-            .checked_add(file_operations)
-            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        let mut worst = accounted_memory(
+        let (worst, operations) = Self::startup_memory(
             &config.limits,
             u32::try_from(resources.accounts.len())
                 .map_err(|_| configuration_failure(derivation_refusal("account_worst_case")))?,
             lower_routes,
-        )
-        .map_err(configuration_failure)?;
-        if let Some(prepared) = &handed {
-            worst = worst
-                .checked_add(
-                    prepared
-                        .worst_case()
-                        .ok_or_else(|| configuration_failure(derivation_refusal("account_worst_case")))?,
-                )
-                .and_then(|bytes| bytes.checked_add(Map::<Token, Route>::worst_case(8)?))
-                .ok_or_else(|| configuration_failure(derivation_refusal("account_worst_case")))?;
-        }
-        if let Some(front) = &headless {
-            worst = worst
-                .checked_add(
-                    front
-                        .worst_case()
-                        .ok_or_else(|| configuration_failure(derivation_refusal("headless_worst_case")))?,
-                )
-                .ok_or_else(|| configuration_failure(derivation_refusal("headless_worst_case")))?;
-        }
-        let file_routes = Map::<Token, Route>::worst_case(operations)
-            .and_then(|bytes| bytes.checked_sub(Map::<Token, Route>::worst_case(base_operations)?))
-            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        worst = worst
-            .checked_add(file_routes)
-            .ok_or_else(|| configuration_failure(derivation_refusal("local_worst_case")))?;
+            handed.as_ref(),
+            headless.as_ref(),
+        )?;
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
@@ -373,14 +344,6 @@ impl Local {
         Ok(())
     }
 
-    /// Price the selected local service and every outer shell owner before adopting resources.
-    /// `accounts` counts actual configured OAuth owners; `lower_routes` is zero for a spawned child.
-    /// Contract: protocol/limits.md, sections 3 and 4.
-    #[must_use]
-    pub fn required_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Option<u64> {
-        accounted_memory(limits, accounts, lower_routes).ok()
-    }
-
     /// The same checked operation bound used before opening the product's one kernel.
     #[must_use]
     pub fn kernel_operations(limits: &io::Limits, lower_routes: u32, handed: bool) -> Option<u32> {
@@ -399,35 +362,6 @@ impl Local {
     /// Content-free service facts available to the caller's independent referee.
     pub fn pop_fact(&mut self) -> Option<domain::Fact> {
         self.service.pop_fact()
-    }
-
-    /// The inline product's admitted ownership by part, including its front and routing.
-    pub fn memory_parts(
-        limits: &service::Limits,
-        lower: &agent::Config,
-        accounts: u32,
-        lower_routes: u32,
-    ) -> Result<Vec<(&'static str, u64)>, String> {
-        let mut parts = Vec::new();
-        for (name, value) in service::memory_parts(limits).ok_or_else(|| derivation_refusal("local_parts"))? {
-            if name != "effects_and_io" {
-                parts.push((name, value));
-            }
-        }
-        let effects = agent::effects_parts(&lower.limits, &lower.llm_endpoints)
-            .ok_or_else(|| derivation_refusal("effects_parts"))?;
-        let io = agent::io_worst_case(&lower.limits).ok_or_else(|| derivation_refusal("io_parts"))?;
-        let expected = effects
-            .iter()
-            .try_fold(io, |total, (_, value)| total.checked_add(*value))
-            .ok_or_else(|| derivation_refusal("effects_parts"))?;
-        if limits.inline.as_ref().map(|inline| inline.memory) != Some(expected) {
-            return Err(derivation_refusal("inline_parts"));
-        }
-        parts.extend(effects);
-        parts.push(("io", io));
-        parts.extend(shell_parts(limits, accounts, lower_routes)?);
-        Ok(parts)
     }
 
     /// Attach the product result owner before its first pass.
@@ -1010,48 +944,6 @@ fn derivation_refusal(field: &'static str) -> String {
     profile_refusal(smith_agent_service::profile::Refusal::Derived {
         limit: smith_agent_service::profile::LimitName::deployment(smith_agent_service::profile::Layer::Service, field),
     })
-}
-
-/// The constructor and offline startup checks share one complete shell accounting entrance.
-fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<u64, String> {
-    let mut total = service::worst_case(limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    for (_, value) in shell_parts(limits, accounts, lower_routes)? {
-        total = total.checked_add(value).ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    }
-    Ok(total)
-}
-
-fn shell_parts(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<[(&'static str, u64); 4], String> {
-    let queue = limits.queue;
-    let show_bytes = limits.local.show_bytes;
-    let io_limits = limits.process.io;
-    let accounts = local_auth::worst_case()
-        .and_then(|bound| bound.checked_mul(u64::from(accounts)))
-        .ok_or_else(|| derivation_refusal("account_worst_case"))?;
-    let operations = io::operations(&io_limits)
-        .and_then(|count| count.checked_mul(2))
-        .and_then(|count| count.checked_add(64))
-        .and_then(|count| count.checked_add(lower_routes))
-        .ok_or_else(|| derivation_refusal("local_routes"))?;
-    let io = match limits.local.agent {
-        domain::AgentLimits::Inline(_) => 0,
-        domain::AgentLimits::Spawned(_) => {
-            io::worst_case(&io_limits).ok_or_else(|| derivation_refusal("local_worst_case"))?
-        }
-    };
-    let front = u64::from(queue)
-        .checked_mul(u64::from(show_bytes.max(8192)))
-        .and_then(|count| count.checked_add(u64::from(show_bytes.max(512))))
-        .ok_or_else(|| derivation_refusal("front_worst_case"))?;
-    let routing = Queue::<kernel::Complete>::worst_case(queue)
-        .and_then(|count| count.checked_mul(3))
-        .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))
-        .and_then(|count| count.checked_add(Queue::<io::Event>::worst_case(queue)?))
-        .and_then(|count| count.checked_add(Queue::<io::Request>::worst_case(queue)?))
-        .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
-        .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
-        .ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    Ok([("accounts", accounts), ("shell_io", io), ("front", front), ("shell_routing", routing)])
 }
 
 fn configuration_failure(detail: String) -> crate::local_shell::Failure {

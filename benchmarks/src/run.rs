@@ -728,6 +728,19 @@ fn archive_preparation(
             )?;
         }
         crate::agent::Prepared::Smith(prepared) => {
+            if let Some(check) = prepared.check_document() {
+                for (path, name) in
+                    [(check.clone(), "check.json"), (check.with_file_name("check-stderr.log"), "check-stderr.log")]
+                {
+                    archive(
+                        work.guard,
+                        work.directory,
+                        result,
+                        name,
+                        &fs::read(path).map_err(|error| error.to_string())?,
+                    )?;
+                }
+            }
             result.identity.user_configuration_sha256 = Measure::unavailable("Smith uses frozen harness settings only");
             archive(
                 work.guard,
@@ -848,11 +861,6 @@ fn invocation(
             step = error.step;
             error.reason
         })?;
-        if let Some(receipt) = &receipt
-            && !work.task.event.contains(&crate::EventCheck::NoRun)
-        {
-            return Err(format!("Smith check refused setup with {:?}", receipt.exit));
-        }
         if let crate::agent::Prepared::Smith(_) = &prepared {
             let selected = crate::SmithFace::Events;
             if result.identity.smith_face != Some(selected) {
@@ -860,6 +868,11 @@ fn invocation(
             }
         }
         archive_preparation(&prepared, work, result)?;
+        if let Some(receipt) = &receipt
+            && !work.task.event.contains(&crate::EventCheck::NoRun)
+        {
+            return Err(format!("Smith check refused setup with {:?}", receipt.exit));
+        }
         let invocation = prepared.command();
         environment.extend(invocation.environment);
         Ok((

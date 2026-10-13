@@ -97,10 +97,14 @@ fn observed_checks(result: &AttemptResult, names: &[&str]) -> bool {
     })
 }
 
+/// A task's expected refused end passes only with every deciding check observed true.
+pub(crate) fn expected_refusal(result: &AttemptResult) -> bool {
+    matches!(result.outcome.end, End::Refused { .. }) && crate::judge(result) == crate::Judgment::Pass
+}
+
 /// A selected startup refusal passes every check of its empty-run story.
 pub(crate) fn expected_startup_refusal(result: &AttemptResult) -> bool {
-    matches!(result.outcome.end, End::Refused { .. })
-        && observed_checks(result, &["no-run", "end", "exit-code", "last-line", "tree-ended"])
+    expected_refusal(result) && observed_checks(result, &["no-run", "end", "exit-code", "last-line", "tree-ended"])
 }
 
 fn observed_no_request(result: &AttemptResult) -> bool {
@@ -584,7 +588,35 @@ mod tests {
         }
         batch.results[0].outcome.deciding.pop();
         assert!(!observed_no_request(&batch.results[0]));
-        assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Incomplete);
+        assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Pass);
+    }
+
+    #[test]
+    fn an_expected_in_run_refusal_passes_only_when_every_deciding_check_passes() {
+        let mut result = startup_refusal_result();
+        result.outcome.deciding =
+            ["end", "run-completed", "no-request", "stream-whole", "tree-ended"].map(str::to_owned).to_vec();
+        result.outcome.checks = result
+            .outcome
+            .deciding
+            .iter()
+            .map(|name| crate::CheckVerdict {
+                check: name.clone(),
+                passed: Measure::Observed { value: true },
+                evidence: vec![],
+            })
+            .collect();
+        let mut batch = Batch { results: vec![result], incomplete: false, probes: BTreeMap::new() };
+        assert!(!expected_startup_refusal(&batch.results[0]));
+        assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Pass);
+        for index in 0..batch.results[0].outcome.checks.len() {
+            batch.results[0].outcome.checks[index].passed = Measure::Observed { value: false };
+            assert!(!expected_refusal(&batch.results[0]));
+            assert_eq!(crate::probe::judgment(&batch), crate::Judgment::Incomplete);
+            batch.results[0].outcome.checks[index].passed = Measure::unavailable("missing deciding observation");
+            assert!(!expected_refusal(&batch.results[0]));
+            batch.results[0].outcome.checks[index].passed = Measure::Observed { value: true };
+        }
     }
 
     #[test]

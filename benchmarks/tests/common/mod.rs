@@ -16,12 +16,13 @@ pub fn unissued_auth() -> Vec<u8> {
 pub fn unexecuted_arm(directory: &Path, repository: &Path) -> smith_bench::arm::Build {
     use sha2::{Digest, Sha256};
     use smith_bench::arm::{ArmBinary, BuiltArm};
-    let commit = std::process::Command::new("git")
-        .args(["-C", repository.to_str().expect("path"), "rev-parse", "HEAD"])
-        .output()
-        .expect("source identity");
-    assert!(commit.status.success());
-    let commit = String::from_utf8(commit.stdout).expect("hexadecimal").trim().to_owned();
+    // Historical native-rendering fixtures keep the source identity they inherited.
+    let commit = "8ad7058936bbefc49496c2687767370e00b12e0f".to_owned();
+    let ancestor = std::process::Command::new("git")
+        .args(["-C", repository.to_str().expect("path"), "merge-base", "--is-ancestor", &commit, "HEAD"])
+        .status()
+        .expect("historical source identity");
+    assert!(ancestor.success());
     let executable = b"unexecuted rendering fixture\n";
     let digest = format!("{:x}", Sha256::digest(executable));
     let path = directory.join(smith_bench::arm::arm_name(&commit, &digest).expect("fixture identity"));

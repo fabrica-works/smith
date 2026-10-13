@@ -65,39 +65,36 @@ pub enum Verdict {
 /// Build the document with access values omitted from every reported state.
 #[must_use]
 pub fn report(settings: &Settings, wall: skein_lib::Wall) -> Verdict {
-    let command = Command::Check { shared: command::Shared::default(), json: false };
-    let resolved = match settings::resolve::resolve(settings, &command) {
+    report_for(settings, wall, None)
+}
+
+fn report_for(settings: &Settings, wall: skein_lib::Wall, execution: Option<&command::Exec>) -> Verdict {
+    let command = match execution {
+        Some(execution) => Command::Exec(execution.clone()),
+        None => Command::Check { shared: command::Shared::default(), json: false, execution: None },
+    };
+    let mut resolved = match settings::resolve::resolve(settings, &command) {
         Ok(resolved) => resolved,
         Err(why) => return Verdict::Refused(why),
     };
+    let inventory = match invocation_limits(&mut resolved, execution, wall) {
+        Ok(inventory) => inventory,
+        Err(reason) => {
+            return Verdict::Refused(Refusal {
+                origin: Origin::BuiltIn,
+                key: "limits".into(),
+                problem: Problem::Input(reason),
+            });
+        }
+    };
     let settings = &resolved.settings;
     let agent = &resolved.agent;
-    let Some(limits) = smith_agent_service::profile::effective(
-        &agent.profile,
-        &agent.declarations,
-        &agent.service.limits,
-        &agent.service.llm_endpoints,
-    ) else {
+    let Some(limits) = inventory else {
         return effective_refusal();
     };
-    let Some(header) =
-        smith_agent_service::profile::header(&limits, &agent.service.channel_endpoints, &agent.declarations)
-    else {
+    let Some(named_limits) = named_limits(&limits, agent) else {
         return effective_refusal();
     };
-    let named_limits = header
-        .iter()
-        .zip(limits.iter())
-        .map(|(named, native)| {
-            let value = match named.value {
-                smith_events::LimitValue::Integer(value) => serde_json::json!(value),
-                smith_events::LimitValue::Fraction { numerator, denominator } => {
-                    serde_json::json!({"numerator":numerator,"denominator":denominator})
-                }
-            };
-            serde_json::json!({"name":String::from_utf8_lossy(&named.name),"value":value,"unit":unit(native.value)})
-        })
-        .collect();
     let values = match settings::environment::values(settings) {
         Ok(values) => values,
         Err(why) => return Verdict::Refused(why),
@@ -232,19 +229,116 @@ pub fn render_text(report: &Report) -> String {
     lines.join("\n")
 }
 
+fn invocation_limits(
+    resolved: &mut settings::resolve::Resolved,
+    execution: Option<&command::Exec>,
+    wall: skein_lib::Wall,
+) -> Result<Option<Box<[smith_agent_service::profile::Limit]>>, String> {
+    let local = match execution {
+        Some(execution) => Some(derive_execution(resolved, execution, wall)?),
+        None => None,
+    };
+    let agent = &resolved.agent;
+    Ok(match &local {
+        Some(local) => {
+            smith_local_service::profile::effective(&agent.profile, &agent.declarations, &agent.service, local)
+        }
+        None => smith_agent_service::profile::effective(
+            &agent.profile,
+            &agent.declarations,
+            &agent.service.limits,
+            &agent.service.llm_endpoints,
+        ),
+    })
+}
+
+fn named_limits(
+    limits: &[smith_agent_service::profile::Limit],
+    agent: &smith_agent_shell::config::Configuration,
+) -> Option<Vec<serde_json::Value>> {
+    let header = smith_agent_service::profile::header(limits, &agent.service.channel_endpoints, &agent.declarations)?;
+    Some(
+        header
+            .iter()
+            .zip(limits.iter())
+            .map(|(named, native)| {
+                let value = match named.value {
+                    smith_events::LimitValue::Integer(value) => serde_json::json!(value),
+                    smith_events::LimitValue::Fraction { numerator, denominator } => {
+                        serde_json::json!({"numerator":numerator,"denominator":denominator})
+                    }
+                };
+                serde_json::json!({"name":String::from_utf8_lossy(&named.name),"value":value,"unit":unit(native.value)})
+            })
+            .collect(),
+    )
+}
+
+fn derive_execution(
+    resolved: &mut settings::resolve::Resolved,
+    invocation: &command::Exec,
+    wall: skein_lib::Wall,
+) -> Result<smith_local_service::Limits, String> {
+    if let Some(chat) = crate::compose::invocation_chat(&invocation.shared, 0) {
+        resolved.local.chat = chat;
+    }
+    let files = crate::compose::Files::prepare(invocation, resolved, 0).map_err(|why| why.line())?;
+    let host = smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits)
+        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+    let mut limits = crate::local_shell::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
+    let (_, _, available) =
+        crate::compose::prepare_stream(&mut resolved.agent, &resolved.local.chat, &mut limits, invocation.json, wall)
+            .map_err(|why| why.line())?;
+    match limits.local.agent {
+        smith_local_domain::AgentLimits::Inline(_) => {
+            limits.inline = Some(
+                smith_local_service::InlineLimits::new(&resolved.agent.service)
+                    .ok_or_else(|| "inline memory bound overflows".to_owned())?,
+            );
+        }
+        smith_local_domain::AgentLimits::Spawned(_) => {}
+    }
+    let mut front = crate::front::headless::Headless::new(
+        invocation.json,
+        skein_shell::OutputKind::Pipe,
+        limits.local.show_bytes,
+        limits.local.smith.run.outcome_bytes,
+    );
+    let available = files.reserve(&mut front, available).map_err(|why| why.line())?;
+    let count = u32::try_from(resolved.accounts.len()).map_err(|_| "too many account sources".to_owned())?;
+    let mut locations = skein_lib::List::with_capacity(count);
+    for account in &resolved.accounts {
+        let source = crate::credentials::source(&account.fields, &resolved.settings.workspace, false);
+        locations
+            .push(crate::credentials::Location { account: account.number, name: account.name.clone(), source })
+            .expect("selected locations fit their account bound");
+    }
+    let handed = crate::credentials::Prepared {
+        sources: skein_lib::List::with_capacity(count),
+        locations,
+        limits: crate::credentials::limits(resolved.agent.service.limits.io, count.max(1)),
+    };
+    let (required, _) =
+        crate::Local::startup_memory(&limits, 0, resolved.agent.service.limits.routes, Some(&handed), Some(&front))
+            .map_err(|why| why.detail().to_owned())?;
+    smith_agent_service::profile::validate::memory(required, available)
+        .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
+    Ok(limits)
+}
+
 /// Handle product arguments, leaving legacy invocations to their existing glue.
 #[must_use]
 pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
-    let (shared, json) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
+    let (shared, json, execution) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
         Ok(Command::Legacy(_) | Command::Exec(_)) => return None,
-        Ok(Command::Check { shared, json }) => (shared, json),
+        Ok(Command::Check { shared, json, execution }) => (shared, json, execution),
         Err(usage) => {
             eprintln!("smith: usage: {}", usage.0);
             return Some(2);
         }
     };
     let verdict = match settings::read(&shared) {
-        Ok(settings) => report(&settings, wall),
+        Ok(settings) => report_for(&settings, wall, execution.as_ref()),
         Err(why) => Verdict::Refused(why),
     };
     match verdict {
@@ -255,6 +349,54 @@ pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
         Verdict::Refused(why) => {
             eprintln!("{}", why.line());
             Some(2)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resolved(trace: bool) -> settings::resolve::Resolved {
+        let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+        let trace = if trace { "[trace]\npath='/unopened-events'\n" } else { "" };
+        let text = format!(
+            "model='codex/gpt-6-luna'\n[deployment]\nmemory=8589934592\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\ntrust.system=false\ntrust.der=['{certificate}']\n{trace}"
+        );
+        let settings = settings::merge(
+            &command::Shared::default(),
+            "/workspace".into(),
+            &[settings::Source { layer: settings::Layer::User, path: "check-fixture.toml".into(), text }],
+        )
+        .unwrap_or_else(|why| panic!("{}", why.line()));
+        settings::resolve::resolve(
+            &settings,
+            &Command::Check { shared: command::Shared::default(), json: true, execution: None },
+        )
+        .unwrap_or_else(|why| panic!("{}", why.line()))
+    }
+
+    #[test]
+    fn check_derives_execs_event_destinations_through_its_stream_owner() {
+        for (trace, json, destinations) in [(false, false, 0), (false, true, 1), (true, false, 1), (true, true, 2)] {
+            let mut resolved = resolved(trace);
+            let invocation = command::Exec {
+                shared: command::Shared::default(),
+                prompt: command::Prompt::Stdin,
+                output: Some("/unopened-output-parent/result".into()),
+                ephemeral: false,
+                deliver: false,
+                json,
+            };
+            let limits = derive_execution(&mut resolved, &invocation, skein_lib::Wall::from_nanos(0))
+                .expect("pure invocation derivation");
+            let agent = &resolved.agent;
+            let events = agent.service.limits.events.as_ref();
+            assert_eq!(events.map_or(0, |events| events.sinks.destinations), destinations);
+            let inventory =
+                smith_local_service::profile::effective(&agent.profile, &agent.declarations, &agent.service, &limits)
+                    .expect("one effective limits owner");
+            assert!(inventory.iter().any(|limit| limit.name.field == "teardown"));
         }
     }
 }

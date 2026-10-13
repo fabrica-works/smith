@@ -253,7 +253,10 @@ fn composed(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
         "model='codex/gpt-6-luna'\n{extra}\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n[endpoints.anthropic]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['{certificate}']\n"
     );
     let decoded = settings(&[source(Layer::User, &text)])?;
-    super::resolve::resolve(&decoded, &crate::command::Command::Check { shared: Shared::default(), json: false })
+    super::resolve::resolve(
+        &decoded,
+        &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
+    )
 }
 
 #[test]
@@ -390,9 +393,11 @@ fn trust_paths_are_resolved_from_the_settings_workspace() {
     let decoded = merge(&Shared::default(), PathBuf::from(env!("CARGO_MANIFEST_DIR")), &[
         source(Layer::User,"model='codex/gpt-6-luna'\n[accounts.codex]\nsource='borrow'\n[endpoints.codex]\naddress='127.0.0.1:443'\ntrust.system=false\ntrust.der=['../../tests/protocol-llm/fixtures/root.der']\n")
     ]).expect("relative root");
-    let resolved =
-        super::resolve::resolve(&decoded, &crate::command::Command::Check { shared: Shared::default(), json: false })
-            .unwrap_or_else(|why| panic!("{}", why.line()));
+    let resolved = super::resolve::resolve(
+        &decoded,
+        &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
+    )
+    .unwrap_or_else(|why| panic!("{}", why.line()));
     assert_eq!(resolved.local.models.len(), 1);
 }
 

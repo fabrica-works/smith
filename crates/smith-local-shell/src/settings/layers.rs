@@ -46,7 +46,7 @@ pub fn read(shared: &Shared) -> Result<Settings, Refusal> {
     merge(shared, workspace, &sources)
 }
 
-pub(super) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
+pub(crate) fn merge(shared: &Shared, workspace: PathBuf, sources: &[Source]) -> Result<Settings, Refusal> {
     let mut settings = Settings { workspace, values: BTreeMap::new() };
     document(&mut settings, BUILT_IN, &Origin::BuiltIn)?;
     for preset in [crate::presets::Preset::Codex, crate::presets::Preset::Anthropic] {
