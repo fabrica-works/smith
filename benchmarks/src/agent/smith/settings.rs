@@ -118,7 +118,7 @@ pub fn settings(
         let effort =
             context.model.effort.as_ref().filter(|effort| !effort.is_empty()).ok_or("Smith effort must be selected")?;
         settings["models"][0]["name"] = json!(model);
-        settings["agent"]["endpoints"][0]["reasoning_effort"] = json!(effort);
+        settings["effort"] = json!(effort);
         settings["agent"]["trace"] = json!({"path":trace,"capture":"everything"});
         settings["directories"] = super::directories::render(context)?;
         settings["accounts"] = json!([{"number":0,"account_id":account_id}]);
@@ -267,7 +267,7 @@ pub fn product(context: &Context<'_>, base: &Value, login: &Path) -> Result<Valu
     }
     let mut budget = native["budget"].clone();
     budget["spend"] = dollars(&budget["spend"])?;
-    Ok(json!({"model":selected,"effort":endpoint["reasoning_effort"],"profile":"standard",
+    Ok(json!({"model":selected,"effort":native["effort"],"profile":"standard",
         "instructions":native["instructions"],"sub_agents":native["sub_agents"],"budget":budget,
         "deployment":deployment,"models":{selected:declared},"endpoints":{endpoint_name:provider},
         "accounts":{endpoint_name:{"source":"borrow","file":login,"format":"codex","program":"codex"}},

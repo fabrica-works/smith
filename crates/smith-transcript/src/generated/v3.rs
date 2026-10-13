@@ -32,6 +32,8 @@ pub struct Limits {
     pub tool_result_id: u32,
     pub message_blocks: u32,
     pub turn_endpoint: u32,
+    pub turn_model: u32,
+    pub turn_effort_some: u32,
     pub turn_dialect: u32,
     pub turn_messages: u32,
 }
@@ -64,6 +66,8 @@ pub const CEILINGS: Limits = Limits {
     tool_result_id: 256,
     message_blocks: 64,
     turn_endpoint: 64,
+    turn_model: 128,
+    turn_effort_some: 32,
     turn_dialect: 32,
     turn_messages: 16,
 };
@@ -327,6 +331,10 @@ pub enum Path {
     TurnAffinity,
     /// The `endpoint` field of `Turn`.
     TurnEndpoint,
+    /// The `model` field of `Turn`.
+    TurnModel,
+    /// The `effort` field of `Turn`.
+    TurnEffort,
     /// The `dialect` field of `Turn`.
     TurnDialect,
     /// The `place` field of `Turn`.
@@ -383,6 +391,8 @@ fn check_limits_0(limits: &Limits) -> Result<(), Problem> {
     if limits.tool_result_id > CEILINGS.tool_result_id { return Err(Problem { path: Path::ToolResultId, reason: skein_codec::Reason::Bound }); }
     if limits.message_blocks > CEILINGS.message_blocks { return Err(Problem { path: Path::MessageBlocks, reason: skein_codec::Reason::Bound }); }
     if limits.turn_endpoint > CEILINGS.turn_endpoint { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
+    if limits.turn_model > CEILINGS.turn_model { return Err(Problem { path: Path::TurnModel, reason: skein_codec::Reason::Bound }); }
+    if limits.turn_effort_some > CEILINGS.turn_effort_some { return Err(Problem { path: Path::TurnEffort, reason: skein_codec::Reason::Bound }); }
     if limits.turn_dialect > CEILINGS.turn_dialect { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
     if limits.turn_messages > CEILINGS.turn_messages { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
     Ok(())
@@ -2317,6 +2327,10 @@ pub struct TurnParts {
     pub affinity: Option<Affinity>,
     /// The `endpoint` field.
     pub endpoint: Box<[u8]>,
+    /// The `model` field.
+    pub model: Box<[u8]>,
+    /// The `effort` field.
+    pub effort: Option<Box<[u8]>>,
     /// The `dialect` field.
     pub dialect: Box<[u8]>,
     /// The `place` field.
@@ -2335,6 +2349,8 @@ pub struct Turn {
     kind: TurnKind,
     affinity: Option<Affinity>,
     endpoint: Box<[u8]>,
+    model: Box<[u8]>,
+    effort: Option<Box<[u8]>>,
     dialect: Box<[u8]>,
     place: u32,
     usage: Usage,
@@ -2345,8 +2361,8 @@ pub struct Turn {
 impl Turn {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: TurnParts) -> Result<Self, Problem> {
-        let TurnParts { kind, affinity, endpoint, dialect, place, usage, spent, messages } = parts;
-        let value = Self { kind, affinity, endpoint, dialect, place, usage, spent, messages };
+        let TurnParts { kind, affinity, endpoint, model, effort, dialect, place, usage, spent, messages } = parts;
+        let value = Self { kind, affinity, endpoint, model, effort, dialect, place, usage, spent, messages };
         value.check(limits)?;
         Ok(value)
     }
@@ -2362,6 +2378,14 @@ impl Turn {
     /// Reads the `endpoint` field.
     #[must_use]
     pub fn endpoint(&self) -> &[u8] { &self.endpoint }
+
+    /// Reads the `model` field.
+    #[must_use]
+    pub fn model(&self) -> &[u8] { &self.model }
+
+    /// Reads the `effort` field.
+    #[must_use]
+    pub fn effort(&self) -> &Option<Box<[u8]>> { &self.effort }
 
     /// Reads the `dialect` field.
     #[must_use]
@@ -2385,11 +2409,17 @@ impl Turn {
 
     /// Moves the fields out without copying.
     #[must_use]
-    pub fn into_parts(self) -> TurnParts { TurnParts { kind: self.kind, affinity: self.affinity, endpoint: self.endpoint, dialect: self.dialect, place: self.place, usage: self.usage, spent: self.spent, messages: self.messages } }
+    pub fn into_parts(self) -> TurnParts { TurnParts { kind: self.kind, affinity: self.affinity, endpoint: self.endpoint, model: self.model, effort: self.effort, dialect: self.dialect, place: self.place, usage: self.usage, spent: self.spent, messages: self.messages } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         if self.endpoint.len() > usize::try_from(limits.turn_endpoint.min(CEILINGS.turn_endpoint)).expect("u32 fits usize") { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.endpoint.as_ref()) { return Err(Problem { path: Path::TurnEndpoint, reason: skein_codec::Reason::Utf8 }); }
+        if self.model.len() > usize::try_from(limits.turn_model.min(CEILINGS.turn_model)).expect("u32 fits usize") { return Err(Problem { path: Path::TurnModel, reason: skein_codec::Reason::Bound }); }
+        if !skein_codec::text_is_valid(self.model.as_ref()) { return Err(Problem { path: Path::TurnModel, reason: skein_codec::Reason::Utf8 }); }
+        if let Some(some_0) = self.effort.as_ref() {
+        if some_0.len() > usize::try_from(limits.turn_effort_some.min(CEILINGS.turn_effort_some)).expect("u32 fits usize") { return Err(Problem { path: Path::TurnEffort, reason: skein_codec::Reason::Bound }); }
+        if !skein_codec::text_is_valid(some_0.as_ref()) { return Err(Problem { path: Path::TurnEffort, reason: skein_codec::Reason::Utf8 }); }
+        }
         if self.dialect.len() > usize::try_from(limits.turn_dialect.min(CEILINGS.turn_dialect)).expect("u32 fits usize") { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.dialect.as_ref()) { return Err(Problem { path: Path::TurnDialect, reason: skein_codec::Reason::Utf8 }); }
         if self.messages.capacity() > limits.turn_messages.min(CEILINGS.turn_messages) { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Bound }); }
@@ -4456,6 +4486,15 @@ impl Turn {
         let field_endpoint = &self.endpoint;
         size = size.checked_add(4).expect("schema ceilings fit u32");
         size = size.checked_add(u32::try_from(field_endpoint.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        let field_model = &self.model;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(field_model.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        let field_effort = &self.effort;
+        size = size.checked_add(1).expect("schema ceilings fit u32");
+        if let Some(some_0) = field_effort {
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(some_0.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        }
         let field_dialect = &self.dialect;
         size = size.checked_add(4).expect("schema ceilings fit u32");
         size = size.checked_add(u32::try_from(field_dialect.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
@@ -4487,6 +4526,18 @@ impl Turn {
         let field_endpoint = &self.endpoint;
         writer.put(&u32::try_from(field_endpoint.len()).expect("field ceiling fits u32").to_be_bytes())?;
         writer.put(field_endpoint.as_ref())?;
+        let field_model = &self.model;
+        writer.put(&u32::try_from(field_model.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(field_model.as_ref())?;
+        let field_effort = &self.effort;
+        match field_effort {
+            Some(some_0) => {
+                writer.put(&[1_u8])?;
+        writer.put(&u32::try_from(some_0.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(some_0.as_ref())?;
+            }
+            None => writer.put(&[0_u8])?,
+        }
         let field_dialect = &self.dialect;
         writer.put(&u32::try_from(field_dialect.len()).expect("field ceiling fits u32").to_be_bytes())?;
         writer.put(field_dialect.as_ref())?;
@@ -4517,12 +4568,14 @@ impl Turn {
         let decoded_kind = TurnKind::decode_from(limits, reader)?;
         let decoded_affinity = match reader.u8().ok_or(Problem { path: Path::TurnAffinity, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(Affinity::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::TurnAffinity, reason: skein_codec::Reason::Tag }) };
         let decoded_endpoint = match skein_codec::read_text(reader, limits.turn_endpoint.min(CEILINGS.turn_endpoint)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::TurnEndpoint, reason }), };
+        let decoded_model = match skein_codec::read_text(reader, limits.turn_model.min(CEILINGS.turn_model)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::TurnModel, reason }), };
+        let decoded_effort = match reader.u8().ok_or(Problem { path: Path::TurnEffort, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(match skein_codec::read_text(reader, limits.turn_effort_some.min(CEILINGS.turn_effort_some)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::TurnEffort, reason }), }), _ => return Err(Problem { path: Path::TurnEffort, reason: skein_codec::Reason::Tag }) };
         let decoded_dialect = match skein_codec::read_text(reader, limits.turn_dialect.min(CEILINGS.turn_dialect)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::TurnDialect, reason }), };
         let decoded_place = reader.u32().ok_or(Problem { path: Path::TurnPlace, reason: skein_codec::Reason::Short })?;
         let decoded_usage = Usage::decode_from(limits, reader)?;
         let decoded_spent = reader.u64().ok_or(Problem { path: Path::TurnSpent, reason: skein_codec::Reason::Short })?;
         let decoded_messages = { let count = match skein_codec::read_count(reader, limits.turn_messages.min(CEILINGS.turn_messages)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::TurnMessages, reason }), }; if count > reader.remaining() / 5 { return Err(Problem { path: Path::TurnMessages, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Message::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Ok(Self { kind: decoded_kind, affinity: decoded_affinity, endpoint: decoded_endpoint, dialect: decoded_dialect, place: decoded_place, usage: decoded_usage, spent: decoded_spent, messages: decoded_messages })
+        Ok(Self { kind: decoded_kind, affinity: decoded_affinity, endpoint: decoded_endpoint, model: decoded_model, effort: decoded_effort, dialect: decoded_dialect, place: decoded_place, usage: decoded_usage, spent: decoded_spent, messages: decoded_messages })
     }
 }
 
@@ -5671,6 +5724,8 @@ impl Turn {
         size = size.checked_add(TurnKind::worst_case_bytes(limits)?)?;
         size = size.checked_add(1_u64.checked_add(Affinity::worst_case_bytes(limits)?)?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.turn_endpoint))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.turn_model))?)?;
+        size = size.checked_add(1_u64.checked_add(4_u64.checked_add(u64::from(limits.turn_effort_some))?)?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.turn_dialect))?)?;
         size = size.checked_add(4_u64)?;
         size = size.checked_add(Usage::worst_case_bytes(limits)?)?;
@@ -5687,6 +5742,8 @@ impl Turn {
         heap = heap.checked_add(TurnKind::worst_case_heap(limits)?)?;
         heap = heap.checked_add(Affinity::worst_case_heap(limits)?)?;
         heap = heap.checked_add(u64::from(limits.turn_endpoint))?;
+        heap = heap.checked_add(u64::from(limits.turn_model))?;
+        heap = heap.checked_add(u64::from(limits.turn_effort_some))?;
         heap = heap.checked_add(u64::from(limits.turn_dialect))?;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(Usage::worst_case_heap(limits)?)?;
@@ -6123,15 +6180,15 @@ mod golden_tests {
         ("enum_turn_kind_ordinary_full", || { let value = TurnKind::Ordinary; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, TurnKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_turn_kind_window_smallest", || { let value = TurnKind::Window; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, TurnKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_turn_kind_window_full", || { let value = TurnKind::Window; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, TurnKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
-        ("record_turn_smallest", || { let value = Turn::new(&CEILINGS, TurnParts { kind: TurnKind::Ordinary, affinity: None, endpoint: Box::from([].as_slice()), dialect: Box::from([].as_slice()), place: 0_u32, usage: Usage::new(&CEILINGS, UsageParts { input: None, output: None, cache_read: None, cache_write: None, reasoning: None }).expect("golden within ceilings"), spent: 0_u64, messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
-        ("record_turn_full", || { let value = Turn::new(&CEILINGS, TurnParts { kind: TurnKind::Ordinary, affinity: Some(Affinity::new(&CEILINGS, AffinityParts { key: [165_u8; 16], thread: u32::MAX }).expect("golden within ceilings")), endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), dialect: Box::from([97_u8, 98_u8, 99_u8].as_slice()), place: u32::MAX, usage: Usage::new(&CEILINGS, UsageParts { input: Some(u64::MAX), output: Some(u64::MAX), cache_read: Some(u64::MAX), cache_write: Some(u64::MAX), reasoning: Some(u64::MAX) }).expect("golden within ceilings"), spent: u64::MAX, messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { role: Role::User, blocks: { let mut items = skein_lib::List::with_capacity(1); items.push(Block::Text(Text::new(&CEILINGS, TextParts { text: Box::from([97_u8, 98_u8, 99_u8].as_slice()), replay: Some(Replay::new(&CEILINGS, ReplayParts { dialect: Box::from([97_u8, 98_u8, 99_u8].as_slice()), bytes: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings"))).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 3, 0, 1, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 97, 98, 99, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_turn_smallest", || { let value = Turn::new(&CEILINGS, TurnParts { kind: TurnKind::Ordinary, affinity: None, endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), effort: None, dialect: Box::from([].as_slice()), place: 0_u32, usage: Usage::new(&CEILINGS, UsageParts { input: None, output: None, cache_read: None, cache_write: None, reasoning: None }).expect("golden within ceilings"), spent: 0_u64, messages: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_turn_full", || { let value = Turn::new(&CEILINGS, TurnParts { kind: TurnKind::Ordinary, affinity: Some(Affinity::new(&CEILINGS, AffinityParts { key: [165_u8; 16], thread: u32::MAX }).expect("golden within ceilings")), endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), effort: Some(Box::from([97_u8, 98_u8, 99_u8].as_slice())), dialect: Box::from([97_u8, 98_u8, 99_u8].as_slice()), place: u32::MAX, usage: Usage::new(&CEILINGS, UsageParts { input: Some(u64::MAX), output: Some(u64::MAX), cache_read: Some(u64::MAX), cache_write: Some(u64::MAX), reasoning: Some(u64::MAX) }).expect("golden within ceilings"), spent: u64::MAX, messages: { let mut items = skein_lib::List::with_capacity(1); items.push(Message::new(&CEILINGS, MessageParts { role: Role::User, blocks: { let mut items = skein_lib::List::with_capacity(1); items.push(Block::Text(Text::new(&CEILINGS, TextParts { text: Box::from([97_u8, 98_u8, 99_u8].as_slice()), replay: Some(Replay::new(&CEILINGS, ReplayParts { dialect: Box::from([97_u8, 98_u8, 99_u8].as_slice()), bytes: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")) }).expect("golden within ceilings"))).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 3, 0, 1, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 97, 98, 99, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Turn::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ];
         table(CASES);
     }
 
     #[test]
     fn bounds_0() {
-        const CASES: [Case; 28] = [
+        const CASES: [Case; 30] = [
         ("bound_replay_dialect", || bound((Path::ReplayDialect, skein_codec::Reason::Bound), &Limits { replay_dialect: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Replay::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_replay_bytes", || bound((Path::ReplayBytes, skein_codec::Reason::Bound), &Limits { replay_bytes: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Replay::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_text_text", || bound((Path::TextText, skein_codec::Reason::Bound), &Limits { text_text: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0], |limits, bytes| match Text::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
@@ -6157,9 +6214,11 @@ mod golden_tests {
         ("bound_said_text", || bound((Path::SaidText, skein_codec::Reason::Bound), &Limits { said_text: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0], |limits, bytes| match Said::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_tool_result_id", || bound((Path::ToolResultId, skein_codec::Reason::Bound), &Limits { tool_result_id: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match ToolResult::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_message_blocks", || bound((Path::MessageBlocks, skein_codec::Reason::Bound), &Limits { message_blocks: 3, ..CEILINGS }, &[0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Message::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
-        ("bound_turn_endpoint", || bound((Path::TurnEndpoint, skein_codec::Reason::Bound), &Limits { turn_endpoint: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
-        ("bound_turn_dialect", || bound((Path::TurnDialect, skein_codec::Reason::Bound), &Limits { turn_dialect: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
-        ("bound_turn_messages", || bound((Path::TurnMessages, skein_codec::Reason::Bound), &Limits { turn_messages: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_turn_endpoint", || bound((Path::TurnEndpoint, skein_codec::Reason::Bound), &Limits { turn_endpoint: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_turn_model", || bound((Path::TurnModel, skein_codec::Reason::Bound), &Limits { turn_model: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_turn_effort_some", || bound((Path::TurnEffort, skein_codec::Reason::Bound), &Limits { turn_effort_some: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_turn_dialect", || bound((Path::TurnDialect, skein_codec::Reason::Bound), &Limits { turn_dialect: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_turn_messages", || bound((Path::TurnMessages, skein_codec::Reason::Bound), &Limits { turn_messages: 3, ..CEILINGS }, &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Turn::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ];
         table(CASES);
     }

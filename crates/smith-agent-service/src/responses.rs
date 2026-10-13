@@ -76,6 +76,7 @@ struct Conversation {
 
 #[derive(Debug)]
 struct Compaction {
+    charter_model: Model,
     number: u64,
     at: Time,
     usage: crate::observations::Reported,
@@ -499,7 +500,9 @@ impl Book {
     pub(crate) fn fact(&mut self, origin: Time, fact: &session::Fact) -> List<Record> {
         let mut records = List::with_capacity(2);
         match fact.kind {
-            session::FactKind::CompactionStarted { opener, .. } => {
+            session::FactKind::CompactionStarted {
+                opener, model, model_bytes, model_window, output, effort, ..
+            } => {
                 let run = self.conversations.get(&opener).expect("compaction follows opening").run;
                 let number = self.next_conversation(run);
                 let conversation = self.conversations.get_mut(&opener).expect("found above");
@@ -507,7 +510,24 @@ impl Book {
                     records.push(record).expect("the prior failed response settles before the summary request");
                 }
                 assert!(conversation.compaction.is_none(), "one active compaction per conversation");
+                let effort = match effort {
+                    Some((bytes, length)) => Some(Box::from(
+                        bytes.get(..usize::try_from(length).expect("bounded effort")).expect("admitted effort"),
+                    )),
+                    None => None,
+                };
+                let model = Model {
+                    endpoint: conversation.model.endpoint.clone(),
+                    model: Box::from(
+                        model.get(..usize::try_from(model_bytes).expect("bounded model")).expect("admitted model"),
+                    ),
+                    window_tokens: u64::from(model_window),
+                    output_tokens: u64::from(output),
+                    effort,
+                };
+                let charter_model = core::mem::replace(&mut conversation.model, model);
                 conversation.compaction = Some(Compaction {
+                    charter_model,
                     number,
                     at: fact.at,
                     usage: crate::observations::Reported::NONE,
@@ -539,7 +559,10 @@ impl Book {
                 }
                 let compaction = conversation.compaction.take().expect("one compaction terminal");
                 match end {
-                    session::Compacted::Opened => conversation.recorded = None,
+                    session::Compacted::Opened => {
+                        conversation.recorded = None;
+                        conversation.model = compaction.charter_model;
+                    }
                     session::Compacted::Failed => {}
                 }
                 records
@@ -1009,7 +1032,7 @@ fn conversation_end(end: session::End) -> (ConversationEnd, Option<&'static [u8]
 pub(crate) fn worst_case(conversations: u32, string: u32, detail: u32) -> Option<u64> {
     List::<Record>::worst_case(2)?
         .checked_add(Map::<Token, Conversation>::worst_case(conversations)?)?
-        .checked_add(u64::from(conversations).checked_mul(u64::from(string).checked_mul(3)?)?)?
+        .checked_add(u64::from(conversations).checked_mul(u64::from(string).checked_mul(6)?)?)?
         .checked_add(
             u64::from(conversations).checked_mul(u64::from(detail).checked_add(u64::from(string))?.checked_mul(2)?)?,
         )?
@@ -1056,6 +1079,7 @@ pub(crate) mod tests {
 
     pub(crate) fn prompt(thread: u32) -> llm::Prompt {
         llm::Prompt {
+            effort: Some(b"medium".as_slice().into()),
             purpose: llm::Purpose::Ordinary,
             endpoint: llm::Endpoint(0),
             affinity: llm::Affinity { key: [0; 16], thread },
@@ -1080,7 +1104,7 @@ pub(crate) mod tests {
         }
     }
 
-    fn intent(book: &mut Book, owner: Token, choice: session::Choice, retry: u32) {
+    pub(crate) fn intent(book: &mut Book, owner: Token, choice: session::Choice, retry: u32) {
         let records = book.fact(
             Time::ZERO,
             &fact(
@@ -1118,8 +1142,15 @@ pub(crate) mod tests {
             None,
         );
         assert!(book.fact(Time::ZERO, &failed).is_empty());
-        let records =
-            book.fact(Time::ZERO, &fact(6, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 1, None));
+        let records = book.fact(
+            Time::ZERO,
+            &fact(
+                6,
+                session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")),
+                1,
+                None,
+            ),
+        );
         let Event::ResponseCompleted(ended) = &records.get(0).expect("failure terminal").event else {
             panic!("response closes")
         };
@@ -1789,5 +1820,33 @@ mod window_failure_tests {
             retry_after_ms: Some(1),
         };
         assert_eq!(end_failure(projected.clone(), observed), projected);
+    }
+}
+
+#[cfg(test)]
+mod model_change_tests {
+    use super::tests::{at, fact, intent, opened, prompt};
+    use super::*;
+
+    #[test]
+    fn a_model_change_compactions_conversation_names_the_windows_model() {
+        let owner = Token::new(11);
+        let mut book = Book::new(1);
+        book.opened(at(1), owner, &opened(11, 0));
+        let kind = session::FactKind::compaction_started(owner, 1, b"old-model", 256, 7, Some(b"low"));
+        let records = book.fact(Time::ZERO, &fact(2, kind, 1, None));
+        let Event::ConversationOpened(opened) = &records.get(0).expect("opening").event else {
+            panic!("compaction opening")
+        };
+        assert_eq!(opened.model.model.as_ref(), b"old-model");
+        assert_eq!((opened.model.window_tokens, opened.model.output_tokens), (256, 7));
+        assert_eq!(opened.model.effort.as_deref(), Some(b"low".as_slice()));
+        intent(&mut book, owner, session::Choice::Auto, 0);
+        let mut requested = prompt(0);
+        requested.model = b"old-model".as_slice().into();
+        requested.effort = Some(b"low".as_slice().into());
+        let started = book.request(at(4), Time::ZERO, Token::new(99), &requested);
+        let Event::ResponseStarted(response) = started.event else { panic!("compaction request") };
+        assert_eq!(response.model, opened.model);
     }
 }

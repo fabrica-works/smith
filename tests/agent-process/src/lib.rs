@@ -202,7 +202,6 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
                 llm: if anthropic { skein_llm::Endpoint::anthropic() } else { skein_llm_world::call(7).endpoint },
             },
             account: 0,
-            reasoning_effort: None,
             identity: llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
@@ -215,6 +214,13 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
         domain: smith_domain::Config {
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                prices: smith_domain::run::Prices {
+                    input: 1,
+                    cached: 1,
+                    cache_write: None,
+                    output: 1,
+                    unit: 1_000_000,
+                },
                 protocol_allowance: agent::profile::endpoint_allowance(
                     &profile(),
                     &declarations(0).endpoints[0],

@@ -242,6 +242,7 @@ fn rendered_utf8_cuts_remain_valid_and_count_exact_omitted_bytes() {
 fn described_prompt() -> smith_domain::llm::Prompt {
     use smith_domain::llm;
     llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: llm::ToolChoice::Auto,
         namespace: tools::Namespace::One,

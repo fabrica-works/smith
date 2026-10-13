@@ -81,6 +81,8 @@ impl Prices {
 pub struct Opening {
     /// The original session opening, validated before replaying any history.
     pub spec: Spec,
+    /// Declared old window model for a model-change compaction, supplied by the root.
+    pub window_llm: Option<Llm>,
     /// Provider dialect/schema identity, paired with the configured endpoint.
     pub dialect: u32,
     /// Immutable integer prices used to charge each accepted completion.
@@ -91,6 +93,16 @@ pub struct Opening {
     pub transcript: Option<Transcript>,
     /// Results the host supplied for calls in the last saved turn.
     pub answered: Box<[Answered]>,
+}
+
+/// A window's declared model and rates, supplied by the root for its compaction.
+#[derive(PartialEq, Eq, Debug)]
+pub struct Llm {
+    pub effort: Option<Box<[u8]>>,
+    pub model: Box<[u8]>,
+    pub window: u32,
+    pub output: u32,
+    pub prices: Prices,
 }
 
 /// One post-transcript result, keyed by the saved completion and block position.
@@ -133,6 +145,8 @@ pub struct Turn {
     pub version: u16,
     pub kind: Kind,
     pub endpoint: Endpoint,
+    pub model: Box<[u8]>,
+    pub effort: Option<Box<[u8]>>,
     /// Configured provider dialect identity; replay requires an exact match.
     pub dialect: u32,
     /// Monotonic turn sequence within the concrete transcript.
@@ -148,7 +162,12 @@ impl Turn {
     /// Checked ownership of this turn's message envelopes and their payloads.
     #[must_use]
     pub fn owned_bytes(&self) -> Option<u64> {
-        messages_bytes(&self.messages)
+        messages_bytes(&self.messages)?.checked_add(u64::try_from(self.model.len()).ok()?)?.checked_add(
+            match &self.effort {
+                Some(effort) => u64::try_from(effort.len()).ok()?,
+                None => 0,
+            },
+        )
     }
 }
 
@@ -192,7 +211,7 @@ impl Transcript {
     pub fn owned_bytes(&self) -> Option<u64> {
         let mut bytes = u64::try_from(size_of::<Turn>()).ok()?.checked_mul(u64::try_from(self.turns.len()).ok()?)?;
         for turn in &self.turns {
-            bytes = bytes.checked_add(messages_bytes(&turn.messages)?)?;
+            bytes = bytes.checked_add(turn.owned_bytes()?)?;
         }
         Some(bytes)
     }

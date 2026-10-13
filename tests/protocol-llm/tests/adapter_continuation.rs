@@ -97,6 +97,7 @@ fn receiving(bounds: &Limits) -> Receiving {
 
 fn prompt(messages: Box<[llm::Message]>) -> llm::Prompt {
     llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,

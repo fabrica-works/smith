@@ -865,7 +865,7 @@ fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivati
         assert_eq!(local.models[0].idle, 300_000);
         assert_eq!(local.models[0].reasoning_item, 65536);
         assert!(local.models[0].oversized_reasoning.is_none());
-        assert_eq!(prepared.rendered["agent"]["endpoints"][0]["reasoning_effort"], "high");
+        assert_eq!(prepared.rendered["effort"], "high");
         let allowances = configured
             .service
             .domain

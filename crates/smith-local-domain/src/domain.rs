@@ -142,6 +142,7 @@ impl Domain {
                 .push(agent::ConfiguredModel {
                     endpoint: model.endpoint,
                     model: model.model.clone(),
+                    prices: model.prices,
                     window: model.window,
                     output: model.output,
                     protocol_allowance: *config

@@ -22,6 +22,7 @@ startup with a reason on standard error.
       "connect": 10000,
       "handshake": 10000,
       "models": [{ "name": "gpt-5.5", "window": 8192, "output": 4096,
+        "prices": { "input": 1, "cached": 1, "output": 1, "unit": 1000000 },
         "reasoning_item": 2048, "head": 60000, "idle": 30000 }],
       "address": "chatgpt.com:443",
       "transport": "tls",
@@ -36,12 +37,13 @@ startup with a reason on standard error.
 ```
 
 The `standard` profile derives the domain, channel, LLM, machine, IO and
-queue limits from deployment and model declarations. `profile.declared.memory`
+queue limits from deployment and model declarations. Each model supplies
+positive prices per `unit` tokens; omitted `cache_write` uses `input`. `profile.declared.memory`
 is the checked process ceiling, not an allocation. `profile.policy.group_stop`
 is the process stop grace in milliseconds. Children use Skein's supervised
 process trees. An endpoint may also set
 `authority`, `target`, `headers` (an array of `{ "name", "value" }`),
-`reasoning_effort` and `identity` (`plain` or `claude-code`).
+`identity` (`plain` or `claude-code`). Reasoning effort is supplied by each charter’s LLM.
 `trust_der` is an optional path to one DER root certificate; without it, the
 system trust store is loaded. `transport` is `"tls"` by default, requiring
 `server_name` and using the configured trust. For a server on this machine,

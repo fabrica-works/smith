@@ -159,6 +159,7 @@ pub(super) fn config() -> Config {
             idle: Duration::from_secs(30),
         }]),
         models: Box::new([run::charter::Llm {
+            effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             dialect: 1,
             account: 7,
@@ -305,6 +306,8 @@ fn spawned_agent_receives_saved_start_message_and_durable_turn_ack() {
     use smith_host_domain::{self as host, process};
     let (mut domain, env, mut out, owner) = spawned_chat_with_saved_hello();
     let turn = smith_domain::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         },
@@ -578,6 +581,8 @@ fn a_one_turn_configuration_keeps_scalar_and_completion_startup_checks() {
 
 fn saved_window_turn() -> smith_domain::Turn {
     smith_domain::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         },

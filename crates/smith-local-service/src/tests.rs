@@ -74,6 +74,7 @@ pub(super) fn config() -> Config {
             instructions: Box::from(&b"Assist"[..]),
             brief: run::charter::Brief { sections: Box::new([]) },
             models: Box::new([run::charter::Llm {
+                effort: None,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                 dialect: 1,
                 account: 7,

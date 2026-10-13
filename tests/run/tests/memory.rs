@@ -189,6 +189,7 @@ fn charter(held: u64) -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
+            effort: None,
             prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
@@ -198,6 +199,7 @@ fn charter(held: u64) -> Charter {
             dialect: 1,
         },
         models: Box::new([Llm {
+            effort: None,
             prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
@@ -683,6 +685,7 @@ fn full_delivery_charter(limits: &Limits) -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
+            effort: None,
             prices: smith_domain_run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),

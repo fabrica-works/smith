@@ -113,6 +113,7 @@ struct FractionDocument {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ModelDocument {
+    prices: PriceDocument,
     name: String,
     window: u32,
     output: u32,
@@ -121,6 +122,29 @@ struct ModelDocument {
     oversized_reasoning: Option<String>,
     head: u64,
     idle: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PriceDocument {
+    input: u64,
+    cached: u64,
+    #[serde(default)]
+    cache_write: Option<u64>,
+    output: u64,
+    unit: u32,
+}
+
+impl PriceDocument {
+    fn rates(&self) -> run::Prices {
+        run::Prices {
+            input: self.input,
+            cached: self.cached,
+            cache_write: self.cache_write,
+            output: self.output,
+            unit: self.unit,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -167,8 +191,6 @@ struct Endpoint {
     trust: Option<TrustDocument>,
     #[serde(default)]
     headers: Vec<HeaderField>,
-    #[serde(default)]
-    reasoning_effort: Option<String>,
     #[serde(default)]
     identity: Option<String>,
 }
@@ -246,21 +268,21 @@ fn environment_refusal(error: machine::Unencodable) -> ConfigurationRefusal {
 
 fn event_limits(
     limits: &service::Limits,
-    endpoints: &llm::Endpoints,
-    declarations: &service::profile::Configuration,
+    _endpoints: &llm::Endpoints,
+    _declarations: &service::profile::Configuration,
     capture: Capture,
     header: &[smith_events::EffectiveLimit],
     write_deadline: Duration,
 ) -> Result<service::EventLimits, ConfigurationRefusal> {
-    let mut options = 0_u32;
-    for endpoint in &declarations.endpoints {
-        let resolved = endpoints.resolve(domain::llm::Endpoint(endpoint.number)).ok_or("unknown event endpoint")?;
-        if let Some(effort) = &resolved.reasoning_effort {
-            options = options.max(u32::try_from(effort.len()).map_err(|_| "event option length overflow")?);
-        }
-    }
-    let events = service::EventLimits::derive(limits, capture, 1, options, header, write_deadline)
-        .ok_or("event ownership overflow")?;
+    let events = service::EventLimits::derive(
+        limits,
+        capture,
+        1,
+        smith_charter::CEILINGS.llm_effort_some,
+        header,
+        write_deadline,
+    )
+    .ok_or("event ownership overflow")?;
     Ok(events)
 }
 
@@ -334,6 +356,11 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
     };
     let mut limits = service::profile::derive(&profile, &declarations).map_err(ConfigurationRefusal::Profile)?;
     let environment = machine::Environment::encode(&environment, &limits.machine).map_err(environment_refusal)?;
+    let prices: Vec<_> = document
+        .endpoints
+        .iter()
+        .flat_map(|endpoint| endpoint.models.iter().map(|model| model.prices.rates()))
+        .collect();
     let endpoints = build_endpoints(document.endpoints, &limits.llm, &profile)?;
     let llm_endpoints =
         llm::Endpoints::new(endpoints.llm, ENDPOINTS, ACCOUNTS).map_err(|error| format!("LLM endpoints: {error:?}"))?;
@@ -355,6 +382,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
     for endpoint in &declarations.endpoints {
         for model in &endpoint.models {
             models.push(domain::ConfiguredModel {
+                prices: *prices.get(models.len()).expect("one resolved price per declared model"),
                 endpoint: run::charter::Endpoint(endpoint.number),
                 model: model.name.clone(),
                 window: model.window,
@@ -479,7 +507,6 @@ fn build_endpoints(
             account: endpoint.account,
             connect: endpoint_duration(endpoint.connect, endpoint.number, "connect")?,
             handshake: endpoint_duration(endpoint.handshake, endpoint.number, "handshake")?,
-            reasoning_effort: endpoint.reasoning_effort.map(|value| value.into_bytes().into()),
             identity,
             models: endpoint_models(&endpoint.models)?,
         });
@@ -769,12 +796,11 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
         _ => return Err("endpoint provider must be codex or anthropic".into()),
     };
     let identity = endpoint_identity(endpoint.identity.as_deref())?;
-    let option_bytes =
-        llm::endpoint_own(endpoint.reasoning_effort.as_deref().map(str::as_bytes), identity).map_err(|_| {
-            ConfigurationRefusal::Profile(Refusal::Derived {
-                limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
-            })
-        })?;
+    let option_bytes = llm::endpoint_own(identity).map_err(|_| {
+        ConfigurationRefusal::Profile(Refusal::Derived {
+            limit: LimitName { layer: Layer::Service, field: "endpoint_own", per: Per::Endpoint(number) },
+        })
+    })?;
     if models.is_empty() {
         return Err(ConfigurationRefusal::Profile(Refusal::Field {
             limit: LimitName { layer: Layer::Declared, field: "models", per: Per::Endpoint(number) },
@@ -801,6 +827,7 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
         if !names.insert(model.name.clone()) {
             return Err("duplicate declared model".into());
         }
+        model.prices.rates().check().map_err(|_| "model prices must be positive")?;
         prepared.push(service::profile::Model {
             name: model.name.as_bytes().into(),
             window: model.window,
@@ -1012,6 +1039,7 @@ mod tests {
             connect: 10_000,
             handshake: 10_000,
             models: vec![ModelDocument {
+                prices: PriceDocument { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
                 name: "test".into(),
                 window: 65_536,
                 output: 512,
@@ -1033,7 +1061,6 @@ mod tests {
             trust_der: Some(format!("{}/../../tests/protocol-llm/fixtures/root.der", env!("CARGO_MANIFEST_DIR"))),
             trust: None,
             headers: vec![],
-            reasoning_effort: None,
             identity: None,
         });
         let configuration = build(document).expect("resolved endpoint");
@@ -1044,7 +1071,7 @@ mod tests {
     fn affinity_header_names_and_static_cache_keys_are_refused_in_configuration() {
         for name in ["session-id", "SESSION-ID", "thread-id", "ThReAd-Id"] {
             let json = format!(
-                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},"endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext","headers":[{{"name":"{name}","value":"host override"}}]}}],"environment":[]}}"#
+                r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},"endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex","address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{{"input":1,"cached":1,"output":1,"unit":1}},"head":60000,"idle":30000}}],"transport":"plaintext","headers":[{{"name":"{name}","value":"host override"}}]}}],"environment":[]}}"#
             );
             assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("invalid endpoint HTTP header"));
         }
@@ -1058,7 +1085,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{{"input":1,"cached":1,"output":1,"unit":1}},"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             let configuration = parse(json.as_bytes()).expect("loopback plaintext configuration");
             service::Service::new(configuration.service, 1).expect("loopback plaintext service");
@@ -1067,7 +1094,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
+                "address":"{address}","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{{"input":1,"cached":1,"output":1,"unit":1}},"head":60000,"idle":30000}}],"transport":"plaintext"}}],"environment":[]}}"#
             );
             assert_eq!(parse(json.as_bytes()).err().as_deref(), Some("plaintext endpoint address must be loopback"));
         }
@@ -1084,7 +1111,7 @@ mod tests {
             let json = format!(
                 r#"{{"profile":{{"name":"standard","declared":{{"memory":1099511627776,"tool_payload":256,"read_window":256}},"policy":{{"group_stop":10}}}},
                 "endpoints":[{{"name":"local","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
+                "address":"127.0.0.1:8080","connect":10000,"handshake":10000,"models":[{{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{{"input":1,"cached":1,"output":1,"unit":1}},"head":60000,"idle":30000}}],{extra}}}],"environment":[]}}"#
             );
             assert!(parse(json.as_bytes()).is_err(), "invalid transport {extra}");
         }
@@ -1123,7 +1150,7 @@ mod tests {
             "profile":{"name":"standard","declared":{"memory":2_147_483_648_u64,"tool_payload":256,"read_window":256}},
             "endpoints":[{"name":"local","number":0,"dialect":0,"account":0,"provider":"codex",
                 "address":"127.0.0.1:8080","transport":"plaintext","connect":10000,"handshake":10000,
-                "models":[{"name":"test","window":65536,"output":512,"reasoning_item":64,"head":60000,"idle":30000}]}],
+                "models":[{"name":"test","window":65536,"output":512,"reasoning_item":64,"prices":{"input":1,"cached":1,"output":1,"unit":1},"head":60000,"idle":30000}]}],
             "environment":[]
         })
     }
@@ -1226,8 +1253,8 @@ mod tests {
           "profile":{"name":"standard"},
           "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
             "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
-            "connect":10000,"handshake":10000,"reasoning_effort":"low",
-            "models":[{"name":"gpt-6-luna","window":272_000,"output":32000,"reasoning_item":65536,"head":60000,"idle":300_000}]}],
+            "connect":10000,"handshake":10000,
+            "models":[{"name":"gpt-6-luna","window":272_000,"output":32000,"reasoning_item":65536,"prices":{"input":1,"cached":1,"output":1,"unit":1},"head":60000,"idle":300_000}]}],
           "environment":[{"name":"X","value":"x".repeat(833)}],
           "trace":{"path":"/tmp/unused-diagnostic-trace","capture":"everything"}
         })
@@ -1390,13 +1417,7 @@ mod tests {
         };
         let mut derived =
             service::profile::derive(&selected, &declarations).expect("all product startup relationships");
-        let effort = dto
-            .endpoints
-            .iter()
-            .filter_map(|endpoint| endpoint.reasoning_effort.as_ref())
-            .map(|effort| u32::try_from(effort.len()).unwrap())
-            .max()
-            .unwrap_or(0);
+        let effort = smith_charter::CEILINGS.llm_effort_some;
         let configured = build_endpoints(dto.endpoints, &derived.llm, &selected).expect("product endpoints");
         let destinations = llm::Endpoints::new(configured.llm, ENDPOINTS, ACCOUNTS).expect("numeric destinations");
         let header = effective_header(&selected, &declarations, &derived, &configured.channel, &destinations)
@@ -1556,13 +1577,7 @@ mod tests {
             validate::window_first(&profile, &declarations, &limits.domain.session).expect("whole window and batch");
             validate::machine(&limits.machine, &limits.domain.session.tools).expect("machine holds tools");
             assert!(limits.file_bytes >= limits.domain.session.tools.file_bytes);
-            let effort = dto
-                .endpoints
-                .iter()
-                .filter_map(|endpoint| endpoint.reasoning_effort.as_ref())
-                .map(|effort| u32::try_from(effort.len()).unwrap())
-                .max()
-                .unwrap_or(0);
+            let effort = smith_charter::CEILINGS.llm_effort_some;
             let events = service::EventLimits::derive(
                 &limits,
                 Capture::Everything,

@@ -186,6 +186,8 @@ pub struct Llm {
     pub endpoint: Endpoint,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
+    /// Reasoning effort requested by this activation, absent for the provider default.
+    pub effort: Option<Effort>,
     /// Usable input tokens for this conversation.
     pub window: u32,
     /// Output tokens reserved for one completion, thinking included.
@@ -378,6 +380,9 @@ fn has_writable(workspace: Option<&crate::Workspace>) -> bool {
 /// at its fixed size, plus its payload. `None` past a `u64`.
 pub(crate) fn cost(charter: &Charter) -> Option<u64> {
     let mut cost = len(&charter.instructions)?.checked_add(len(&charter.llm.model)?)?;
+    if let Some(effort) = &charter.llm.effort {
+        cost = cost.checked_add(len(effort)?)?;
+    }
     let section_bytes = u64::try_from(size_of::<Section>()).ok()?;
     let sections = u64::try_from(charter.brief.sections.len()).ok()?;
     cost = cost.checked_add(sections.checked_mul(section_bytes)?)?;
@@ -389,8 +394,11 @@ pub(crate) fn cost(charter: &Charter) -> Option<u64> {
         cost = cost.checked_add(len(&conventions.guide)?)?.checked_add(len(&conventions.checks)?)?;
     }
     let llm = u64::try_from(size_of::<Llm>()).ok()?;
-    for Llm { account: _, endpoint: _, model, window: _, output: _, dialect: _, prices: _ } in &charter.models {
+    for Llm { account: _, endpoint: _, model, window: _, output: _, dialect: _, prices: _, effort } in &charter.models {
         cost = cost.checked_add(llm)?.checked_add(len(model)?)?;
+        if let Some(effort) = effort {
+            cost = cost.checked_add(len(effort)?)?;
+        }
     }
     let host_tool = u64::try_from(size_of::<HostTool>()).ok()?;
     for tool in &charter.grants.host_tools {
@@ -408,6 +416,11 @@ pub(crate) fn cost(charter: &Charter) -> Option<u64> {
 
 /// Whether an LLM declares positive quantities and a positive price unit.
 fn valid_llm(llm: &Llm) -> bool {
+    if let Some(effort) = &llm.effort
+        && effort.len() > 32
+    {
+        return false;
+    }
     if llm.prices.unit == 0 {
         return false;
     }
@@ -492,3 +505,6 @@ fn has_room(llm: &Llm, limits: &Limits) -> bool {
         None => false,
     }
 }
+
+/// Provider effort name, bounded to 32 UTF-8 bytes by the charter codec.
+pub type Effort = Box<[u8]>;

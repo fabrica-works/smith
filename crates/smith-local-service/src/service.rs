@@ -170,6 +170,7 @@ pub fn memory_parts(limits: &Limits) -> Option<[(&'static str, u64); 6]> {
         .checked_add(Queue::<host::Input>::worst_case(limits.queue)?)?
         .checked_add(Queue::<host::process::Request>::worst_case(limits.queue)?)?
         .checked_add(Queue::<protocol::TerminalEvent>::worst_case(limits.queue)?)?
+        .checked_add(u64::from(limits.queue).checked_mul(u64::try_from(size_of::<local::Event>()).ok()?)?)?
         .checked_add(Queue::<Box<[u8]>>::worst_case(limits.queue)?)?
         .checked_add(Map::<u32, Box<[u8]>>::worst_case(limits.local.smith.accounts)?)?
         .checked_add(u64::from(limits.local.smith.accounts).checked_mul(limits.envelope_bytes)?)?
@@ -935,7 +936,7 @@ impl Service {
             }
             let Some(event) = self.terminal_events.pop() else { break };
             match event {
-                protocol::TerminalEvent::Domain(event) => self.local_events.push(event),
+                protocol::TerminalEvent::Domain(event) => self.local_events.push(*event),
                 protocol::TerminalEvent::DropRun => self.local_events.push(local::Event::Drop),
                 protocol::TerminalEvent::Write(text) => self.output.push(text),
             }

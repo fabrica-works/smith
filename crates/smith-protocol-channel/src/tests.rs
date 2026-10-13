@@ -84,6 +84,8 @@ fn saved_turn(place: u32, dialect: &[u8]) -> Box<[u8]> {
     let turn = wire::Turn::new(
         &limits,
         wire::TurnParts {
+            model: b"model".as_slice().into(),
+            effort: None,
             kind: wire::TurnKind::Ordinary,
             affinity: if place == 1 {
                 Some(
@@ -366,6 +368,8 @@ fn a_window_suffix_round_trips_its_noninitial_place_and_rejects_a_second_window(
     configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).expect("endpoint");
     let endpoints = crate::Endpoints::new(configured);
     let window = record::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
         version: record::VERSION,
         kind: record::Kind::Window { affinity: llm::Affinity { key: [0x25; 16], thread: 0 } },
         endpoint: llm::Endpoint(3),
@@ -570,4 +574,25 @@ fn a_search_hit_holding_all_of_search_bytes_is_told_and_resumed() {
         .expect("full search hit resumes")
         .expect("history");
     assert_eq!(resumed.turns[0], turn);
+}
+
+#[test]
+fn a_turns_model_and_effort_round_trip_in_its_transcript() {
+    let limits = smith_transcript::CEILINGS;
+    let mut configured = skein_lib::List::with_capacity(1);
+    configured.push(crate::Endpoint { name: Box::default(), number: 3, dialect: 0, account: 5 }).unwrap();
+    let endpoints = crate::Endpoints::new(configured);
+    let mut turn = crate::decode_turn(&saved_turn(1, b"00000000"), 1, &limits, &endpoints).unwrap();
+    turn.model = b"another-model".as_slice().into();
+    for effort in [None, Some(b"high".as_slice())] {
+        turn.effort = None;
+        if let Some(value) = effort {
+            turn.effort = Some(value.into());
+        }
+        let encoded = crate::encode_turn(&turn, &limits, &endpoints).unwrap();
+        let decoded = crate::decode_turn(&encoded, 1, &limits, &endpoints).unwrap();
+        assert_eq!(decoded.model.as_ref(), b"another-model");
+        assert_eq!(decoded.effort.as_deref(), effort);
+        assert_eq!(decoded, turn);
+    }
 }

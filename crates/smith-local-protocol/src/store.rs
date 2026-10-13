@@ -238,6 +238,8 @@ pub(crate) mod tests {
             .expect("one endpoint");
         let endpoints = Endpoints::new(entries);
         let turn = smith_domain::Turn {
+            model: b"model".as_slice().into(),
+            effort: None,
             kind: smith_domain::session::record::Kind::First {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             },
@@ -268,6 +270,8 @@ pub(crate) mod tests {
     fn a_load_starts_at_the_last_turn_that_opens_a_window() {
         let (endpoints, first) = fixture();
         let window = smith_domain::Turn {
+            model: b"model".as_slice().into(),
+            effort: None,
             kind: smith_domain::session::record::Kind::Window {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             },
@@ -279,7 +283,13 @@ pub(crate) mod tests {
         unread_body.put(&earlier.bytes[..TURN_HEADER]).expect("header fits");
         unread_body.put(b"not a transcript body").expect("unread body fits");
         let window_file = save_turn(3, None, true, &window, &transcript::CEILINGS, &endpoints).expect("window file");
-        let ordinary = smith_domain::Turn { kind: smith_domain::session::record::Kind::Ordinary, sequence: 4, ..first };
+        let ordinary = smith_domain::Turn {
+            model: b"model".as_slice().into(),
+            effort: None,
+            kind: smith_domain::session::record::Kind::Ordinary,
+            sequence: 4,
+            ..first
+        };
         let last = save_turn(4, Some(Token::new(9)), false, &ordinary, &transcript::CEILINGS, &endpoints)
             .expect("ordinary file");
         let (loaded, read) =

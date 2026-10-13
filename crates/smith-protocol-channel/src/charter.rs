@@ -209,6 +209,7 @@ fn llm(source: &run::charter::Llm, limits: &wire::v2::Limits, endpoints: &Endpoi
         wire::LlmParts {
             endpoint,
             model: source.model.clone(),
+            effort: source.effort.clone(),
             window: source.window,
             output: source.output,
             prices: wire::Prices::new(

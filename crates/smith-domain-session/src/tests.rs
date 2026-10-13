@@ -292,6 +292,7 @@ fn bytes(text: &[u8]) -> Box<[u8]> {
 
 fn spec() -> Spec {
     Spec {
+        effort: None,
         final_turn: None,
         window: 65_536,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -439,6 +440,7 @@ fn answer_cancelled(owner: Token) -> Event {
 
 fn opening(spec: Spec) -> Box<crate::record::Opening> {
     Box::new(crate::record::Opening {
+        window_llm: None,
         spec,
         dialect: 1,
         prices: crate::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
@@ -2027,6 +2029,7 @@ fn reserved_recorded_call(harness: &mut Harness) -> Token {
         Event::Open {
             opener: Token::new(1),
             opening: Box::new(crate::record::Opening {
+                window_llm: None,
                 spec: spec(),
                 dialect: 1,
                 prices: crate::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },

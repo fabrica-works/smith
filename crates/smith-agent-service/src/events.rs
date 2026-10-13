@@ -28,14 +28,14 @@ pub struct EventLimits {
 
 impl EventLimits {
     /// Derive receiving and destination ownership from the admitted source bounds.
-    /// `option_bytes` is the shell's measured largest configured effort string.
+    /// `effort_bytes` is the charter codec’s reasoning effort bound.
     /// `header` supplies the startup inventory's count and longest configured name.
     #[must_use]
     pub fn derive(
         limits: &crate::Limits,
         capture: Capture,
         destinations: u32,
-        option_bytes: u32,
+        effort_bytes: u32,
         header: &[smith_events::EffectiveLimit],
         write_deadline: Duration,
     ) -> Option<EventLimits> {
@@ -50,7 +50,7 @@ impl EventLimits {
             .max(charter.host_tool_name)
             .max(charter.field_name)
             .max(charter.run_result_label_some)
-            .max(option_bytes)
+            .max(effort_bytes)
             .max(header_string)
             .max(46);
         let client = limits.llm.adapter.client;
@@ -121,7 +121,6 @@ struct Start {
 pub struct Producer {
     pub(crate) sinks: Sinks,
     names: channel::Endpoints,
-    efforts: Map<u32, Box<[u8]>>,
     calls: crate::calls::Book,
     messages: crate::messages::Book,
     capture: Capture,
@@ -189,26 +188,13 @@ impl Producer {
     pub(crate) fn new(
         limits: &crate::Limits,
         names: channel::Endpoints,
-        endpoints: &llm::Endpoints,
-        declared: &[run::charter::Endpoint],
+        _endpoints: &llm::Endpoints,
+        _declared: &[run::charter::Endpoint],
     ) -> Producer {
         let events = limits.events.expect("event configuration exists");
-        let mut efforts = Map::with_capacity(limits.channel.endpoints);
-        for endpoint in declared {
-            let options =
-                endpoints.resolve(domain::llm::Endpoint(endpoint.0)).expect("configured domain endpoint resolves");
-            if let Some(effort) = &options.reasoning_effort {
-                assert!(
-                    u32::try_from(effort.len()).expect("configured option length") <= events.sinks.records.string,
-                    "startup measured the actual effort cap"
-                );
-                efforts.insert(endpoint.0, effort.clone()).expect("bounded configured endpoints");
-            }
-        }
         Producer {
             sinks: Sinks::with_front(&events.sinks, events.capture, limits.io.output, events.front),
             names,
-            efforts,
             calls: crate::calls::Book::new(&limits.domain.session, events.capture),
             messages: crate::messages::Book::new(limits, events.capture),
             capture: events.capture,
@@ -466,11 +452,7 @@ impl Producer {
     fn model(&self, model: &run::charter::Llm) -> smith_events::Model {
         let name =
             self.names.name_of(model.endpoint.0, model.dialect).expect("admitted endpoint has its configured name");
-        let effort = match self.efforts.get(&model.endpoint.0) {
-            Some(effort) => Some(effort.as_ref()),
-            None => None,
-        };
-        crate::opening_model(model, name, effort)
+        crate::opening_model(model, name, model.effort.as_deref())
     }
 
     pub(crate) fn received(&mut self, owner: Token, completion: &domain::llm::Completion) {
@@ -678,7 +660,6 @@ mod tests {
             let mut producer = Producer {
                 sinks: Sinks::new(&bounds, Capture::Calls, bounds.output),
                 names: channel::Endpoints::new(List::with_capacity(0)),
-                efforts: Map::with_capacity(0),
                 calls: crate::calls::Book::new(&smith_agent_world::LIMITS.session, Capture::Calls),
                 messages: crate::messages::Book::disabled(),
                 capture: Capture::Calls,

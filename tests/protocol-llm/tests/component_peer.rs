@@ -137,7 +137,6 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
                 llm: call.endpoint,
             },
             account: 0,
-            reasoning_effort: None,
             identity: smith_protocol_llm::IdentityProfile::Plain,
             models: Box::new([]),
         }]),
@@ -174,6 +173,7 @@ fn run(dialect: Provider, calls: bool, observed: bool, owner_close: bool) {
             owner: Token::new(7),
             grant: GrantName { account: 0, generation: 1 },
             prompt: llm::Prompt {
+                effort: None,
                 purpose: llm::Purpose::Ordinary,
                 choice: smith_domain::llm::ToolChoice::Auto,
                 namespace: smith_domain::tools::Namespace::One,

@@ -33,7 +33,9 @@ pub const OPAQUE: &[u8] = b"\0provider reasoning\xffsignature";
 #[must_use]
 pub fn opening(transcript: Option<record::Transcript>, budget: u64) -> record::Opening {
     record::Opening {
+        window_llm: None,
         spec: session::Spec {
+            effort: None,
             final_turn: None,
             window: 65_536,
             summary: b"Summarise the work so far.".as_slice().into(),

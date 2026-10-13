@@ -158,6 +158,7 @@ fn prompt_feedback(returned: Option<run::Returned>) -> smith_domain::llm::Prompt
         None => Box::new([]),
     };
     llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,

@@ -101,7 +101,6 @@ impl Peer {
                     llm: skein_llm::Endpoint::codex(),
                 },
                 account: 0,
-                reasoning_effort: None,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
                 models: Box::new([]),
             }]),
@@ -162,6 +161,7 @@ impl Peer {
                 owner: Token::new(owner),
                 grant: GrantName { account: 0, generation: 1 },
                 prompt: llm::Prompt {
+                    effort: None,
                     purpose: llm::Purpose::Ordinary,
                     choice: smith_domain::llm::ToolChoice::Auto,
                     namespace: smith_domain::tools::Namespace::One,

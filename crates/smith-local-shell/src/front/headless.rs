@@ -177,6 +177,8 @@ mod tests {
     fn turn(content: Box<[smith_domain::session::llm::Block]>) -> smith_domain::Turn {
         use smith_domain::session::{llm, record::Kind};
         smith_domain::Turn {
+            model: b"model".as_slice().into(),
+            effort: None,
             version: 3,
             kind: Kind::Ordinary,
             endpoint: llm::Endpoint(0),

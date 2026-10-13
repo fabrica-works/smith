@@ -253,6 +253,8 @@ pub struct Prompt {
     pub protocol_allowance: u64,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
+    /// Reasoning effort requested by this activation, absent for the provider default.
+    pub effort: Option<Box<[u8]>>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
     pub system: Box<[u8]>,
     /// The families of tools the LLM may call, whose schemas the protocol
@@ -288,6 +290,9 @@ impl Prompt {
                 u64::try_from(size_of::<Message>()).ok()?.checked_mul(u64::try_from(self.messages.len()).ok()?)?,
             )?;
         bytes = bytes.checked_add(self.namespace.owned_bytes()?)?.checked_add(self.protocol_allowance)?;
+        if let Some(effort) = &self.effort {
+            bytes = bytes.checked_add(u64::try_from(effort.len()).ok()?)?;
+        }
         match &self.choice {
             ToolChoice::Auto | ToolChoice::None => {}
             ToolChoice::Only(tickets) => {

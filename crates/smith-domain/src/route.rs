@@ -871,6 +871,21 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         }
         None => (None, Box::default()),
     };
+    let window_llm = match resumed_model(&domain.config, &opening.llm, transcript.as_ref()) {
+        Ok(llm) => llm,
+        Err(reason) => {
+            return run_step(
+                domain,
+                env,
+                run::Event::Ended {
+                    conversation,
+                    end: run::End::TranscriptRefused { reason },
+                    spend: Spend::ZERO,
+                    detail: Box::default(),
+                },
+            );
+        }
+    };
     let Some((mut spec, offered)) = translate::spec(opening, env.limits.session.budget, progress) else {
         // Refused at the conversations' entrance, in the run's terms.
         let ended =
@@ -912,20 +927,37 @@ fn open(domain: &mut Domain, env: &Env<Limits>, conversation: Token, opening: ru
         opener: conversation,
         opening: Box::new(session::record::Opening {
             spec,
+            window_llm,
             dialect,
-            prices: session::record::Prices {
-                input: prices.input,
-                cached: prices.cached,
-                cache_write: prices.cache_write,
-                output: prices.output,
-                unit: prices.unit,
-            },
+            prices: translate::prices(prices),
             budget,
             transcript,
             answered: Box::default(),
         }),
     };
     session_step(domain, env, event);
+}
+
+/// Select the configured model of a saved window only when main changes model.
+fn resumed_model(
+    config: &crate::Config,
+    main: &run::charter::Llm,
+    transcript: Option<&session::record::Transcript>,
+) -> Result<Option<session::record::Llm>, run::TranscriptRefusal> {
+    let last = match transcript {
+        Some(history) => history.turns.last(),
+        None => None,
+    };
+    match last {
+        Some(turn) if turn.model != main.model => match config.window_llm(main.endpoint, &turn.model) {
+            Some(mut llm) => {
+                llm.effort.clone_from(&turn.effort);
+                Ok(Some(llm))
+            }
+            None => Err(run::TranscriptRefusal::Malformed),
+        },
+        Some(_) | None => Ok(None),
+    }
 }
 
 /// The peer whose session's opener is `conversation`.

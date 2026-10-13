@@ -349,7 +349,8 @@ pub fn charter(config: &Config) -> charter::Charter {
         Contract::Change(spec) => Some(spec.clone()),
     };
     let main = config.models.first().expect("validated configuration has a main model").clone();
-    let models = Box::from(config.models.get(1..).unwrap_or_default());
+    let models: Box<[charter::Llm]> =
+        if config.sub_agents { Box::from(config.models.get(1..).unwrap_or_default()) } else { Box::new([]) };
     let mut sections = List::with_capacity(u32::try_from(config.brief.sections.len()).expect("validated brief count"));
     for section in &config.brief.sections {
         sections

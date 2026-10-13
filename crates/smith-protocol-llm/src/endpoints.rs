@@ -33,19 +33,8 @@ pub enum OversizedReasoning {
 /// Measure actual endpoint options and provider identity for startup's own part.
 /// Field punctuation belongs to the separately measured provider framing.
 /// Contract: protocol/limits.md, sections 3.2 and 3.9.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the protocol validates configured endpoint option text before measuring it"
-)]
-pub fn endpoint_own(reasoning_effort: Option<&[u8]>, identity: IdentityProfile) -> Result<u64, crate::Error> {
+pub fn endpoint_own(identity: IdentityProfile) -> Result<u64, crate::Error> {
     let mut bytes = 0_u64;
-    if let Some(value) = reasoning_effort {
-        if core::str::from_utf8(value).is_err() {
-            return Err(crate::Error::Invalid);
-        }
-        bytes =
-            bytes.checked_add(u64::try_from(value.len()).or(Err(crate::Error::Limit))?).ok_or(crate::Error::Limit)?;
-    }
     match identity {
         IdentityProfile::Plain => {}
         IdentityProfile::ClaudeCode => {
@@ -80,8 +69,6 @@ pub struct ConfiguredEndpoint {
     pub account: u32,
     pub connect: Duration,
     pub handshake: Duration,
-    /// Dialect-supported reasoning option supplied by startup configuration.
-    pub reasoning_effort: Option<Box<[u8]>>,
     /// Optional provider system identity selected at startup.
     pub identity: IdentityProfile,
     /// The models whose per-call reasoning policy this endpoint serves.
@@ -103,8 +90,6 @@ pub struct EndpointOptions {
     pub endpoint: skein_llm::Endpoint,
     /// Native per-endpoint bounds, including its transport pieces and measured head.
     pub client: skein_llm::client::Limits,
-    /// Configured reasoning option, when supported.
-    pub reasoning_effort: Option<Box<[u8]>>,
     /// Optional provider system identity selected at startup.
     pub identity: IdentityProfile,
     /// The models whose per-call reasoning policy this endpoint serves.
@@ -184,7 +169,6 @@ impl Endpoints {
                 provider,
                 endpoint,
                 client,
-                reasoning_effort: configured.reasoning_effort,
                 identity: configured.identity,
                 models: configured.models,
             };
@@ -203,7 +187,6 @@ impl Endpoints {
     /// Its dialect, target and headers are already in the destination.
     pub fn apply(&self, name: llm::Endpoint, prompt: &mut Prompt) -> Result<u32, EndpointError> {
         let options = self.resolve(name).ok_or(EndpointError::Unknown)?;
-        prompt.reasoning_effort.clone_from(&options.reasoning_effort);
         match options.identity {
             IdentityProfile::Plain => {}
             IdentityProfile::ClaudeCode => {
@@ -235,9 +218,6 @@ impl Endpoints {
             for model in &option.models {
                 held = held.checked_add(u64::try_from(size_of::<ConfiguredModel>()).ok()?)?;
                 held = held.checked_add(u64::try_from(model.name.len()).ok()?)?;
-            }
-            if let Some(value) = &option.reasoning_effort {
-                held = held.checked_add(u64::try_from(value.len()).ok()?)?;
             }
         }
         Some(held)

@@ -20,6 +20,7 @@ fn grants() -> tools::Grants {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,

@@ -114,7 +114,6 @@ fn endpoints(configuration: &super::super::Configuration, limits: &crate::Limits
                 account: 0,
                 connect: endpoint.connect,
                 handshake: endpoint.handshake,
-                reasoning_effort: None,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
                 models: Box::new([]),
             })

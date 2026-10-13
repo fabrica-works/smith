@@ -84,6 +84,8 @@ versioned record Turn {
     kind: TurnKind
     affinity: option Affinity
     endpoint: text 64
+    model: text 128
+    effort: option text 32
     dialect: text 32
     place: u32
     usage: Usage

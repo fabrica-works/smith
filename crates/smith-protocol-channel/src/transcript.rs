@@ -189,6 +189,8 @@ fn translate_turn(
         version: record::VERSION,
         kind,
         endpoint: llm::Endpoint(endpoint),
+        model: Box::from(source.model()),
+        effort: source.effort().clone(),
         dialect,
         sequence: source.place(),
         usage: llm::Usage {

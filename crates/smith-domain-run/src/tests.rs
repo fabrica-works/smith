@@ -324,6 +324,7 @@ pub(crate) fn charter() -> Charter {
         },
         budget: BUDGET,
         llm: Llm {
+            effort: None,
             prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
@@ -630,6 +631,7 @@ fn charters_beyond_the_limits_are_refused_as_invalid() {
         },
     ]);
     let llm = Llm {
+        effort: None,
         prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),
@@ -1682,6 +1684,7 @@ fn families(inspect: bool, modify: bool, agents: bool) -> crate::charter::Famili
 fn agents() -> Charter {
     let grants = Grants { agents: true, ..charter().grants };
     let models = Box::new([Llm {
+        effort: None,
         prices: crate::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(2),

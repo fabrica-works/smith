@@ -53,7 +53,15 @@ pub enum FactKind {
     /// The session was admitted.
     Opened { opener: Token },
     /// A summary completion is replacing this conversation's current window.
-    CompactionStarted { opener: Token, window: u32 },
+    CompactionStarted {
+        opener: Token,
+        window: u32,
+        model: [u8; 128],
+        model_bytes: u32,
+        model_window: u32,
+        output: u32,
+        effort: Option<([u8; 32], u32)>,
+    },
     /// The one compaction of this window has settled.
     CompactionEnded { opener: Token, window: u32, end: Compacted },
     /// A completion was asked for, after `attempt` retries, with `messages`
@@ -227,4 +235,43 @@ pub struct ResponseInfo {
     pub number: u64,
     /// Accepted charge in the opener's price unit; None before accounting.
     pub spent: Option<u64>,
+}
+
+impl FactKind {
+    /// Copy admitted model identity into a bounded compaction observation.
+    #[must_use]
+    pub fn compaction_started(
+        opener: Token,
+        window: u32,
+        model: &[u8],
+        model_window: u32,
+        output: u32,
+        effort: Option<&[u8]>,
+    ) -> Self {
+        let mut name = [0; 128];
+        assert!(model.len() <= name.len(), "admitted model name");
+        for (slot, byte) in name.iter_mut().zip(model) {
+            *slot = *byte;
+        }
+        let effort = match effort {
+            Some(value) => {
+                let mut bytes = [0; 32];
+                assert!(value.len() <= bytes.len(), "admitted effort name");
+                for (slot, byte) in bytes.iter_mut().zip(value) {
+                    *slot = *byte;
+                }
+                Some((bytes, u32::try_from(value.len()).expect("bounded effort")))
+            }
+            None => None,
+        };
+        Self::CompactionStarted {
+            opener,
+            window,
+            model: name,
+            model_bytes: u32::try_from(model.len()).expect("bounded model"),
+            model_window,
+            output,
+            effort,
+        }
+    }
 }

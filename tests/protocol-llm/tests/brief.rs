@@ -70,6 +70,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
     use run::charter::{Brief, Endpoint, Grants, Llm, Section, Tools};
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
     let llm = Llm {
+        effort: None,
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         dialect: 1,
         account: 0,
@@ -114,7 +115,7 @@ fn charter(settings: &Settings, instructions: &str) -> run::Charter {
             failure: None,
         },
         budget: settings.budget,
-        models: Box::new([Llm { model: b"fake-2".as_slice().into(), ..llm.clone() }]),
+        models: Box::new([Llm { effort: None, model: b"fake-2".as_slice().into(), ..llm.clone() }]),
         llm,
         conventions: Some(run::Conventions {
             guide: b"AGENTS.md".as_slice().into(),

@@ -98,6 +98,8 @@ pub(super) fn build(
             .map_err(|why| super::relationships::profile(settings, models, why))?,
         );
     }
+    configured.first_mut().expect("selected main model").effort =
+        settings.values.get("effort").and_then(|value| value.value.as_str()).map(|value| value.as_bytes().into());
     let directories = directories(settings, agent)?;
     let conventions = if settings.values.keys().any(|key| key.starts_with("workspace.conventions.")) {
         Some(run::Conventions {

@@ -111,6 +111,7 @@ pub(crate) fn spec(opening: Opening, receiving: Budget, progress: session::Progr
         protocol_allowance: generated_schema_bytes,
         progress,
         model: llm.model,
+        effort: llm.effort,
         system,
         authority,
         delegated: delegated.into_boxed(),
@@ -376,5 +377,16 @@ const fn completion_phase(phase: llm::Phase) -> run::Phase {
         llm::Phase::Head => run::Phase::Head,
         llm::Phase::Idle => run::Phase::Idle,
         llm::Phase::Whole => run::Phase::Whole,
+    }
+}
+
+/// Copy a model's resolved integer rates to its session's accounting.
+pub(crate) const fn prices(source: run::Prices) -> session::record::Prices {
+    session::record::Prices {
+        input: source.input,
+        cached: source.cached,
+        cache_write: source.cache_write,
+        output: source.output,
+        unit: source.unit,
     }
 }

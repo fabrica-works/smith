@@ -204,6 +204,7 @@ fn charter(restoring: bool) -> run::Charter {
         },
         budget: LIMITS.run.budget,
         llm: run::charter::Llm {
+            effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: run::charter::Endpoint(0),
@@ -567,7 +568,7 @@ fn messages_bytes(messages: &[session::llm::Message]) -> u64 {
 }
 
 fn turn_bytes(turn: &session::record::Turn) -> u64 {
-    messages_bytes(&turn.messages)
+    messages_bytes(&turn.messages) + len(&turn.model) + turn.effort.as_ref().map_or(0, |effort| len(effort))
 }
 
 fn transcript_bytes(history: &root::Transcript) -> u64 {
@@ -645,6 +646,7 @@ fn copy_prompt(prompt: &llm::Prompt) -> llm::Prompt {
         })
         .collect();
     let copied = llm::Prompt {
+        effort: None,
         purpose: prompt.purpose,
         choice: prompt.choice.clone(),
         namespace: prompt.namespace.clone(),
@@ -778,6 +780,13 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    prices: smith_domain::run::Prices {
+                        input: 1,
+                        cached: 1,
+                        cache_write: None,
+                        output: 1,
+                        unit: 1_000_000,
+                    },
                     protocol_allowance: 0,
                     endpoint: smith_domain::run::charter::Endpoint(0),
                     model: Box::from(&b"fixture-model"[..]),
@@ -1182,6 +1191,13 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    prices: smith_domain::run::Prices {
+                        input: 1,
+                        cached: 1,
+                        cache_write: None,
+                        output: 1,
+                        unit: 1_000_000,
+                    },
                     protocol_allowance: 0,
                     endpoint: smith_domain::run::charter::Endpoint(0),
                     model: Box::from(&b"fixture-model"[..]),

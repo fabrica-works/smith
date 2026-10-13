@@ -80,6 +80,7 @@ fn priced_charter() -> smith_domain::run::Charter {
         },
         budget: run::Budget { turns: 512, spend: 25_000_000, time: Duration::from_secs(3600) },
         llm: run::charter::Llm {
+            effort: None,
             prices: run::Prices {
                 input: 1_250_000,
                 cached: 125_000,
@@ -539,6 +540,7 @@ fn an_admitted_opening_fits_the_derived_request_with_escaped_host_text() {
     let Some(run::Request::Admitted { .. }) = out.pop() else { panic!("opening admitted") };
     let Some(run::Request::Open { opening, .. }) = out.pop() else { panic!("admitted opening") };
     let prompt = llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
@@ -821,8 +823,10 @@ fn a_compaction_is_a_conversation_of_kind_compaction_in_the_stream() {
     let owner = Token::new(11);
     let mut book = crate::responses::Book::new(1);
     book.opened(at(1), owner, &opened(0, 0));
-    let opened =
-        book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    let opened = book.fact(
+        Time::ZERO,
+        &fact(2, session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")), 3, None),
+    );
     assert_stream_record(opened.get(0).unwrap(), br#"{"v":1,"type":"conversation.opened","t_ms":2,"run":7,"conversation":1,"kind":"compaction","parent":0,"thread":0,"model":{"endpoint":"actual-endpoint","model":"actual-model","window_tokens":123,"output_tokens":7,"effort":"medium"}}"#);
     compaction_intent(&mut book, owner, 1);
     let started = book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
@@ -859,7 +863,10 @@ fn a_refused_compaction_closes_failed_with_no_completion_failure() {
     let owner = Token::new(11);
     let mut book = crate::responses::Book::new(1);
     book.opened(at(1), owner, &opened(0, 0));
-    book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    book.fact(
+        Time::ZERO,
+        &fact(2, session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")), 3, None),
+    );
     compaction_intent(&mut book, owner, 1);
     book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
     compaction_answer(&mut book, owner, llm::Stop::Refusal);
@@ -899,7 +906,10 @@ fn a_failed_compaction_settles_its_response_before_closing_and_keeps_the_parent_
     let owner = Token::new(11);
     let mut book = crate::responses::Book::new(1);
     book.opened(at(1), owner, &opened(0, 0));
-    book.fact(Time::ZERO, &fact(2, session::FactKind::CompactionStarted { opener: owner, window: 1 }, 3, None));
+    book.fact(
+        Time::ZERO,
+        &fact(2, session::FactKind::compaction_started(owner, 1, b"actual-model", 123, 7, Some(b"medium")), 3, None),
+    );
     compaction_intent(&mut book, owner, 1);
     book.request(at(4), Time::ZERO, Token::new(99), &prompt(0));
     book.failed(

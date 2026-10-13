@@ -161,6 +161,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
         adapter::render_outcome(&outcome, &tools::Namespace::One, 4096).expect("live feedback");
     assert!(live_text.ends_with(b"[next line 6] [window clamped: 99 bytes to 32 bytes]"));
     let history = llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
@@ -193,6 +194,7 @@ fn the_same_typed_result_renders_after_a_saved_turn_is_replayed() {
 #[test]
 fn written_text_and_mechanical_feedback_keep_their_error_flags() {
     let history = llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
@@ -244,6 +246,7 @@ fn written_text_and_mechanical_feedback_keep_their_error_flags() {
 fn oversized_write_and_edit_replay_the_same_concrete_piecewise_advice() {
     for name in [b"write".as_slice(), b"edit"] {
         let history = llm::Prompt {
+            effort: None,
             purpose: llm::Purpose::Ordinary,
             choice: smith_domain::llm::ToolChoice::Auto,
             namespace: tools::Namespace::One,
@@ -337,6 +340,7 @@ fn owed_results_prompt(purpose: llm::Purpose) -> llm::Prompt {
         },
     ]);
     llm::Prompt {
+        effort: None,
         purpose,
         choice: llm::ToolChoice::Auto,
         namespace: tools::Namespace::One,

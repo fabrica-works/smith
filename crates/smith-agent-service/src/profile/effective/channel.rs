@@ -32,6 +32,8 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
         tool_result_id,
         message_blocks,
         turn_endpoint,
+        turn_model,
+        turn_effort_some,
         turn_dialect,
         turn_messages,
     } = *limits;
@@ -62,6 +64,8 @@ pub(super) fn transcript(inventory: &mut Inventory, limits: &smith_transcript::v
     inventory.value("tool_result_id", Value::Bytes(u64::from(tool_result_id)))?;
     inventory.value("message_blocks", Value::Count(u64::from(message_blocks)))?;
     inventory.value("turn_endpoint", Value::Bytes(u64::from(turn_endpoint)))?;
+    inventory.value("turn_model", Value::Bytes(u64::from(turn_model)))?;
+    inventory.value("turn_effort_some", Value::Bytes(u64::from(turn_effort_some)))?;
     inventory.value("turn_dialect", Value::Bytes(u64::from(turn_dialect)))?;
     inventory.value("turn_messages", Value::Count(u64::from(turn_messages)))?;
     Some(())

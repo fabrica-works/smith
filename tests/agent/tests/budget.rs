@@ -134,6 +134,7 @@ fn charter(settings: &Settings, cue: &[u8], rates: &[Rate]) -> run::Charter {
     use run::outcome::{FieldRule, OutcomeSpec, TextSpec};
 
     let model = |rate: Rate| Llm {
+        effort: None,
         prices: run::Prices {
             input: rate.input,
             cached: rate.cached,

@@ -95,8 +95,9 @@ pub fn select(settings: &Settings) -> Result<Selection, super::Refusal> {
     input::text(&settings, &format!("accounts.{}.source", super::name(&main_account)))?;
     let children = input::sourced(&settings, "sub_agents")?.value.as_bool().expect("validated delegation");
     let mut models = vec![main.clone()];
-    if children {
-        for model in catalog(&settings) {
+    let main_endpoint = main.split_once('/').expect("validated main model").0;
+    for model in catalog(&settings) {
+        if children || model.split_once('/').is_some_and(|(endpoint, _)| endpoint == main_endpoint) {
             if model == main {
                 continue;
             }

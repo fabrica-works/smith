@@ -34,6 +34,8 @@ pub(super) fn transcript(limits: &smith_transcript::v3::Limits) -> Box<[Limit]> 
         tool_result_id,
         message_blocks,
         turn_endpoint,
+        turn_model,
+        turn_effort_some,
         turn_dialect,
         turn_messages,
     } = *limits;
@@ -72,6 +74,8 @@ pub(super) fn transcript(limits: &smith_transcript::v3::Limits) -> Box<[Limit]> 
         entry(Layer::Host, "process.channel.transcript.tool_result_id", Value::Bytes(u64::from(tool_result_id))),
         entry(Layer::Host, "process.channel.transcript.message_blocks", Value::Count(u64::from(message_blocks))),
         entry(Layer::Host, "process.channel.transcript.turn_endpoint", Value::Bytes(u64::from(turn_endpoint))),
+        entry(Layer::Host, "process.channel.transcript.turn_model", Value::Bytes(u64::from(turn_model))),
+        entry(Layer::Host, "process.channel.transcript.turn_effort_some", Value::Bytes(u64::from(turn_effort_some))),
         entry(Layer::Host, "process.channel.transcript.turn_dialect", Value::Bytes(u64::from(turn_dialect))),
         entry(Layer::Host, "process.channel.transcript.turn_messages", Value::Count(u64::from(turn_messages))),
     ])

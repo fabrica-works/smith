@@ -387,6 +387,7 @@ fn llm(value: &wire::Llm, endpoints: &Endpoints) -> Result<run::charter::Llm, ru
         account: endpoint.account,
         endpoint: run::charter::Endpoint(endpoint.number),
         model: Box::from(value.model()),
+        effort: value.effort().clone(),
         window: value.window(),
         output: value.output(),
     })

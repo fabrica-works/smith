@@ -16,6 +16,8 @@ fn history(input: u64) -> smith_domain::Transcript {
         endpoint: llm::Endpoint(0),
         dialect: 1,
         turns: Box::new([record::Turn {
+            model: b"fake-1".as_slice().into(),
+            effort: None,
             version: record::VERSION,
             kind: record::Kind::First { affinity: llm::Affinity { key: [0; 16], thread: 0 } },
             endpoint: llm::Endpoint(0),

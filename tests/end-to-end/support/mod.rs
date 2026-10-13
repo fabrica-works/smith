@@ -256,7 +256,7 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) {
         serde_json::json!({"number":account.number,"account_id":account.account_id,"oauth":oauth})
     }).collect();
     let mut source = serde_json::json!({
-        "agent":{"profile":{"name":"standard","declared":{"memory":2_147_483_648_u64,"llm_pool":134_217_728_u64,"conversations":2},"policy":{"group_stop":10}},
+        "agent":{"profile":{"name":"standard","declared":{"memory":4_294_967_296_u64,"llm_pool":134_217_728_u64,"conversations":2},"policy":{"group_stop":10}},
             "endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","connect":10000,"handshake":10000,"address":"127.0.0.1:34443","server_name":"skein.test","trust_der":trust,"identity":"plain"}],
             "environment":[],"trace":{"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"}},
         "chat":"chat","instructions":"@local-shell Assist",

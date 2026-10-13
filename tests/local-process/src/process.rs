@@ -216,7 +216,6 @@ pub fn lower_configuration_with(tls: bool) -> agent::Config {
                     llm: skein_llm_world::call(7).endpoint,
                 },
                 account: 0,
-                reasoning_effort: None,
                 identity: smith_protocol_llm::IdentityProfile::Plain,
                 models: Box::new([]),
             }]),

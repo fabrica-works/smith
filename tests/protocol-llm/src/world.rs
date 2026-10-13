@@ -1932,7 +1932,7 @@ fn charter(settings: &Settings) -> run::Charter {
             },
         },
         budget: settings.budget,
-        models: Box::new([Llm { model: b"fake-2".as_slice().into(), ..llm.clone() }]),
+        models: Box::new([Llm { effort: None, model: b"fake-2".as_slice().into(), ..llm.clone() }]),
         llm,
         conventions: Some(smith_domain::run::Conventions {
             guide: b"AGENTS.md".as_slice().into(),
@@ -1998,6 +1998,13 @@ fn configuration() -> agent::Config {
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .iter()
             .map(|name| smith_domain::ConfiguredModel {
+                prices: smith_domain::run::Prices {
+                    input: 1,
+                    cached: 1,
+                    cache_write: None,
+                    output: 1,
+                    unit: 1_000_000,
+                },
                 protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: (*name).into(),
@@ -2013,6 +2020,7 @@ fn configuration() -> agent::Config {
 fn main_model() -> run::charter::Llm {
     use run::charter::{Endpoint, Llm};
     Llm {
+        effort: None,
         prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
         account: 0,
         endpoint: Endpoint(0),

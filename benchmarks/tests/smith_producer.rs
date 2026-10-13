@@ -16,7 +16,7 @@ fn the_published_face_preserves_the_native_control_producers_joint_bounds() {
             "policy":{"group_stop":250,"host_tools":2}},
         "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
             "address":"127.0.0.1:443","transport":"tls","server_name":"chatgpt.com",
-            "connect":30000,"handshake":30000,"reasoning_effort":"low"}],
+            "connect":30000,"handshake":30000}],
         "environment":[],"trace":{"path":"/tmp/unused-registry-derivation","capture":"everything"}
     });
     source["models"] = serde_json::json!([{"endpoint":"codex","name":"gpt-6-luna",

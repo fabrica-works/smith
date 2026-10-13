@@ -784,7 +784,8 @@ mod tests {
     #[test]
     fn a_sub_agent_is_told_its_brief_its_tools_its_checkout_and_how_to_answer() {
         let mut charter = charter();
-        charter.models = Box::new([crate::charter::Llm { model: bytes(b"model-b"), ..charter.llm.clone() }]);
+        charter.models =
+            Box::new([crate::charter::Llm { effort: None, model: bytes(b"model-b"), ..charter.llm.clone() }]);
         let families = Families { tools: Tools { inspect: true, modify: false, shell: false }, agents: false };
         let expected: &[u8] = b"Find where tabs are parsed.
 

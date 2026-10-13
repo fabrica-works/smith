@@ -31,7 +31,6 @@ fn destination(name: u32, account: u32, provider: shared::Provider) -> Configure
             llm,
         },
         account,
-        reasoning_effort: Some(b"medium".as_slice().into()),
         identity: smith_protocol_llm::IdentityProfile::Plain,
         models: Box::new([]),
     }
@@ -61,7 +60,7 @@ fn numeric_names_resolve_the_complete_destination_and_options() {
         max_output_tokens: Some(32),
     };
     assert_eq!(endpoints.apply(llm::Endpoint(42), &mut prompt), Ok(0));
-    assert_eq!(prompt.reasoning_effort.as_deref(), Some(b"medium".as_slice()));
+    assert_eq!(prompt.reasoning_effort, None);
     assert_eq!(prompt.affinity, Some(skein_llm::Affinity { key: [0; 16], thread: 0 }));
     assert_eq!(endpoints.apply(llm::Endpoint(3), &mut prompt), Err(EndpointError::Unknown));
     let (destinations, options) = endpoints.into_parts();

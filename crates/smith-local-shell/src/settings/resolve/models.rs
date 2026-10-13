@@ -112,12 +112,14 @@ impl Model {
             profile::OversizedReasoning::Drop => "drop",
         };
         serde_json::json!({"name":String::from_utf8_lossy(&model.name),"window":model.window,"output":model.output,
+            "prices":{"input":self.prices.input,"cached":self.prices.cached,"cache_write":self.prices.cache_write,"output":self.prices.output,"unit":self.prices.unit},
             "reasoning_item":model.reasoning_item,"head":model.head.as_nanos()/1_000_000,
             "idle":model.idle.as_nanos()/1_000_000,"oversized_reasoning":policy})
     }
 
     pub fn local(&self, endpoint: u32, dialect: u32, account: u32) -> charter::Llm {
         charter::Llm {
+            effort: None,
             prices: self.prices,
             dialect,
             account,

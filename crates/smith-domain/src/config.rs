@@ -20,6 +20,8 @@ use crate::Limits;
 pub struct ConfiguredModel {
     pub endpoint: Endpoint,
     pub model: Box<[u8]>,
+    /// Startup-resolved rates for compacting a saved window.
+    pub prices: smith_domain_run::Prices,
     /// Declared usable input tokens.
     pub window: u32,
     /// Declared maximum completion tokens, thinking included.
@@ -70,7 +72,8 @@ impl Config {
         }
         let mut bytes = 0_u64;
         for (index, model) in self.models.iter().enumerate() {
-            if model.model.is_empty()
+            if model.prices.check().is_err()
+                || model.model.is_empty()
                 || model.window == 0
                 || model.output == 0
                 || model.protocol_allowance > limits.session.protocol_allowance
@@ -103,6 +106,23 @@ impl Config {
     /// Whether this endpoint name was configured.
     pub(crate) fn contains(&self, endpoint: Endpoint) -> bool {
         self.endpoints.contains(&endpoint)
+    }
+
+    /// Resolve a saved window's declared model and startup rates for its compaction.
+    pub(crate) fn window_llm(&self, endpoint: Endpoint, name: &[u8]) -> Option<crate::session::record::Llm> {
+        for model in &self.models {
+            if model.endpoint == endpoint && model.model.as_ref() == name {
+                let prices = model.prices;
+                return Some(crate::session::record::Llm {
+                    effort: None,
+                    model: model.model.clone(),
+                    window: model.window,
+                    output: model.output,
+                    prices: crate::translate::prices(prices),
+                });
+            }
+        }
+        None
     }
 
     /// Progress deadlines for an admitted model, retained only by the root.

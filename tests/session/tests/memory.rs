@@ -395,6 +395,7 @@ fn fill_service_tail(
 
 fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
     Box::new(smith_domain_session::record::Opening {
+        window_llm: None,
         spec,
         dialect: 2,
         prices: smith_domain_session::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
@@ -407,6 +408,7 @@ fn zero_opening(spec: Spec) -> Box<smith_domain_session::record::Opening> {
 /// Caller-owned input with the same exact byte charge in every fill route.
 fn fill_spec(limits: &Limits) -> Spec {
     Spec {
+        effort: None,
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -500,6 +502,7 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
         (completion, delegate)
     };
     let spec = Spec {
+        effort: None,
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -518,6 +521,7 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
     let (owner, _) = drive(Event::Open {
         opener: Token::new(1),
         opening: Box::new(record::Opening {
+            window_llm: None,
             spec,
             dialect: 2,
             prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
@@ -583,6 +587,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
     let headroom = block + 256;
     let opaque = limits.history_bytes - charge - 2 * block - 1 - reserve - headroom;
     let spec = Spec {
+        effort: None,
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -602,27 +607,16 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         version: record::VERSION,
         endpoint: Endpoint(7),
         dialect: 2,
-        turns: Box::new([record::Turn {
-            kind: smith_domain_session::record::Kind::First {
-                affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        turns: Box::new([restored_tail_turn(Box::new([
+            smith_domain_session::llm::Message {
+                role: smith_domain_session::llm::Role::User,
+                content: Box::new([Block::Text { text: bytes(1), replay: None }]),
             },
-            version: record::VERSION,
-            endpoint: Endpoint(7),
-            dialect: 2,
-            sequence: 1,
-            usage: Usage::ZERO,
-            spent: 0,
-            messages: Box::new([
-                smith_domain_session::llm::Message {
-                    role: smith_domain_session::llm::Role::User,
-                    content: Box::new([Block::Text { text: bytes(1), replay: None }]),
-                },
-                smith_domain_session::llm::Message {
-                    role: smith_domain_session::llm::Role::Assistant,
-                    content: Box::new([Block::Opaque { bytes: bytes(opaque) }]),
-                },
-            ]),
-        }]),
+            smith_domain_session::llm::Message {
+                role: smith_domain_session::llm::Role::Assistant,
+                content: Box::new([Block::Opaque { bytes: bytes(opaque) }]),
+            },
+        ]))]),
     };
     meter.start();
     while domain.pop_fact().is_some() {}
@@ -632,6 +626,7 @@ fn restoring_a_maximum_recorded_history_stays_within_the_counted_bound() {
         Event::Open {
             opener: Token::new(1),
             opening: Box::new(record::Opening {
+                window_llm: None,
                 spec,
                 dialect: 2,
                 prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
@@ -689,23 +684,13 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         version: record::VERSION,
         endpoint: Endpoint(7),
         dialect: 2,
-        turns: Box::new([record::Turn {
-            kind: smith_domain_session::record::Kind::First {
-                affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
-            },
-            version: record::VERSION,
-            endpoint: Endpoint(7),
-            dialect: 2,
-            sequence: 1,
-            usage: Usage::ZERO,
-            spent: 0,
-            messages: Box::new([
-                Message { role: Role::User, content: Box::new([Block::Text { text: bytes(1), replay: None }]) },
-                Message { role: Role::Assistant, content: tail.into() },
-            ]),
-        }]),
+        turns: Box::new([restored_tail_turn(Box::new([
+            Message { role: Role::User, content: Box::new([Block::Text { text: bytes(1), replay: None }]) },
+            Message { role: Role::Assistant, content: tail.into() },
+        ]))]),
     };
     let spec = Spec {
+        effort: None,
         final_turn: None,
         window: u32::MAX,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -729,6 +714,7 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
         Event::Open {
             opener: Token::new(1),
             opening: Box::new(record::Opening {
+                window_llm: None,
                 spec,
                 dialect: 2,
                 prices: record::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
@@ -756,6 +742,23 @@ fn an_oversized_waking_result_tail_is_refused_before_cloning_provider_ids() {
     domain.reclaim();
     assert_eq!(domain.sessions(), 0);
     assert_eq!(domain.kits(), 0);
+}
+
+fn restored_tail_turn(messages: Box<[smith_domain_session::llm::Message]>) -> smith_domain_session::record::Turn {
+    smith_domain_session::record::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
+        kind: smith_domain_session::record::Kind::First {
+            affinity: smith_domain_session::llm::Affinity { key: [0; 16], thread: 0 },
+        },
+        version: smith_domain_session::record::VERSION,
+        endpoint: Endpoint(7),
+        dialect: 2,
+        sequence: 1,
+        usage: Usage::ZERO,
+        spent: 0,
+        messages,
+    }
 }
 
 /// Minimal lower inventory isolates the large historical-ID staging peak.

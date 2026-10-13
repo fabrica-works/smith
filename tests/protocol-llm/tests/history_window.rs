@@ -102,6 +102,7 @@ fn history_edge(provider: skein_llm::Provider) {
         }
         let sent = world.prompts.last().expect("exact receiving boundary starts its completion");
         let prompt = llm::Prompt {
+            effort: None,
             purpose: llm::Purpose::Ordinary,
             choice: llm::ToolChoice::Auto,
             namespace: sent.namespace.clone(),

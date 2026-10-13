@@ -439,6 +439,7 @@ pub fn charter_value(bytes: u64) -> host::Charter {
         outcome: run::outcome::OutcomeSpec { change: None, verdicts: Box::new([]), report: None, failure: None },
         budget: run::Budget { turns: 0, spend: 0, time: Duration::ZERO },
         llm: run::charter::Llm {
+            effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 0 },
             dialect: 0,
             account: 0,
@@ -471,6 +472,8 @@ pub fn turn_value(bytes: u64) -> host::TurnValue {
     };
     host::TurnValue::new(
         record::Turn {
+            model: Box::new([]),
+            effort: None,
             kind: smith_domain::session::record::Kind::First {
                 affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
             },

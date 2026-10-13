@@ -1204,6 +1204,8 @@ fn a_saved_window_starts_at_its_recorded_place_and_keeps_its_affinity() {
         ]),
     }]);
     let window = record::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
         version: record::VERSION,
         kind: record::Kind::Window { affinity },
         endpoint: llm::Endpoint(7),

@@ -116,6 +116,9 @@ pub struct Settings {
     pub chat: String,
     pub instructions: String,
     pub models: Vec<Model>,
+    /// Main’s activation effort; absent uses the provider’s default.
+    #[serde(default)]
+    pub effort: Option<String>,
     /// Whether main may delegate; omitted settings keep children disabled.
     #[serde(default)]
     pub sub_agents: bool,
@@ -224,6 +227,7 @@ pub fn policy(
             accounts.push(endpoint.account);
         }
         models.push(run::charter::Llm {
+            effort: None,
             prices: run::Prices {
                 input: model.input_price,
                 cached: model.cached_price,
@@ -240,6 +244,9 @@ pub fn policy(
         });
     }
     let mut paths = Vec::with_capacity(settings.directories.len());
+    if let Some(main) = models.first_mut() {
+        main.effort = settings.effort.as_ref().map(|effort| effort.as_bytes().into());
+    }
     let mut directories = Vec::with_capacity(settings.directories.len());
     for (index, directory) in settings.directories.iter().enumerate() {
         let number = u64::try_from(index)
@@ -512,6 +519,7 @@ pub fn agent_document(settings: &Settings) -> Result<Vec<u8>, String> {
                     return Err("duplicate local model declaration".into());
                 }
                 models.push(serde_json::json!({"name":model.name,"window":model.window,"output":model.output,
+                    "prices":{"input":model.input_price,"cached":model.cached_price,"cache_write":model.cache_write_price,"output":model.output_price,"unit":model.price_unit},
                     "reasoning_item":model.reasoning_item,"oversized_reasoning":model.oversized_reasoning,"head":model.head,"idle":model.idle}));
             }
         }
@@ -670,14 +678,19 @@ mod tests {
         assert!(decoded.models.is_empty(), "an unnamed child uses main's model");
     }
 
-    #[test]
-    fn priced_local_policy_round_trips_through_the_child_charter() {
+    fn priced_endpoint() -> channel::Endpoints {
         let mut entries = List::with_capacity(1);
         entries
             .push(channel::Endpoint { name: Box::from(&b"main"[..]), number: 7, dialect: 1, account: 0 })
             .expect("one endpoint");
-        let endpoints = channel::Endpoints::new(entries);
+        channel::Endpoints::new(entries)
+    }
+
+    #[test]
+    fn priced_local_policy_round_trips_through_the_child_charter() {
+        let endpoints = priced_endpoint();
         let mut settings = Settings {
+            effort: None,
             agent: serde_json::json!({}),
             chat: "one".into(),
             instructions: "Assist".into(),

@@ -21,7 +21,7 @@ pub struct Limits {
 #[derive(Debug)]
 pub enum Event {
     /// A completed person line for the local domain.
-    Domain(local::Event),
+    Domain(Box<local::Event>),
     /// A second interrupt before an answer drops the selected child; its terminals still settle.
     DropRun,
     /// A bounded notice to write on the terminal.
@@ -81,7 +81,7 @@ impl Terminal {
             out.push(Event::DropRun);
         } else {
             self.cancelled = true;
-            out.push(Event::Domain(local::Event::Interrupt));
+            out.push(Event::Domain(Box::new(local::Event::Interrupt)));
         }
     }
 
@@ -92,7 +92,7 @@ impl Terminal {
 
     /// Translate terminal closure after any complete line.
     pub fn closed(&mut self, out: &mut Queue<Event>) {
-        out.push(Event::Domain(local::Event::Closed));
+        out.push(Event::Domain(Box::new(local::Event::Closed)));
     }
 
     /// Forward bounded local-domain text to the terminal.
@@ -231,7 +231,7 @@ impl Terminal {
             return;
         }
         let completed = core::mem::replace(&mut self.line, List::with_capacity(self.limits.line_bytes));
-        out.push(Event::Domain(local::Event::Line { text: completed.into_boxed() }));
+        out.push(Event::Domain(Box::new(local::Event::Line { text: completed.into_boxed() })));
     }
 
     fn pop_last(&mut self) {
@@ -469,8 +469,11 @@ mod tests {
             terminal.feed(*byte, &mut out);
         }
         match out.pop().expect("one line") {
-            Event::Domain(local::Event::Line { text }) => assert_eq!(text.as_ref(), b"helloworld"),
-            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("unexpected terminal event"),
+            Event::Domain(event) => {
+                let local::Event::Line { text } = *event else { panic!("unexpected terminal event") };
+                assert_eq!(text.as_ref(), b"helloworld");
+            }
+            Event::DropRun | Event::Write(_) => panic!("unexpected terminal event"),
         }
         assert!(out.is_empty());
     }
@@ -481,8 +484,10 @@ mod tests {
         let mut out = Queue::with_capacity(max_out());
         terminal.interrupt(&mut out);
         match out.pop().expect("first interrupt") {
-            Event::Domain(local::Event::Interrupt) => {}
-            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected cancel"),
+            Event::Domain(event) => {
+                let local::Event::Interrupt = *event else { panic!("expected cancel") };
+            }
+            Event::DropRun | Event::Write(_) => panic!("expected cancel"),
         }
         terminal.interrupt(&mut out);
         match out.pop().expect("second interrupt") {
@@ -492,8 +497,10 @@ mod tests {
         terminal.answer_finished();
         terminal.interrupt(&mut out);
         match out.pop().expect("new run interrupt") {
-            Event::Domain(local::Event::Interrupt) => {}
-            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected cancel"),
+            Event::Domain(event) => {
+                let local::Event::Interrupt = *event else { panic!("expected cancel") };
+            }
+            Event::DropRun | Event::Write(_) => panic!("expected cancel"),
         }
     }
 
@@ -512,8 +519,11 @@ mod tests {
             terminal.feed(*byte, &mut out);
         }
         match out.pop().expect("following line") {
-            Event::Domain(local::Event::Line { text }) => assert_eq!(text.as_ref(), b"ok"),
-            Event::Domain(_) | Event::DropRun | Event::Write(_) => panic!("expected line"),
+            Event::Domain(event) => {
+                let local::Event::Line { text } = *event else { panic!("expected line") };
+                assert_eq!(text.as_ref(), b"ok");
+            }
+            Event::DropRun | Event::Write(_) => panic!("expected line"),
         }
     }
 }
@@ -529,6 +539,7 @@ mod failure_tests {
 
     fn named_failure(failure: host::RunFailure, detail: &[u8]) -> Box<[u8]> {
         let models = [smith_domain::run::charter::Llm {
+            effort: None,
             prices: smith_domain::run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
             dialect: 0,
             account: 7,

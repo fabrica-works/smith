@@ -349,7 +349,7 @@ fn product_host_startup_and_complete_outer_memory_fit() {
         "endpoints":[{"name":"codex","number":1,"dialect":1,"account":0,"provider":"codex",
           "address":"127.0.0.1:443","transport":"tls","server_name":"fixture.invalid",
           "trust_der":concat!(env!("CARGO_MANIFEST_DIR"),"/../../tests/protocol-llm/fixtures/root.der"),
-          "connect":10000,"handshake":10000,"reasoning_effort":"low"}],
+          "connect":10000,"handshake":10000}],
         "environment":environment,"trace":{"path":"/unused-product-trace","capture":"everything"}},
       "chat":"fixture","instructions":"x".repeat(170),
       "models":[{"endpoint":"codex","name":"gpt-6-luna","window":272_000,"output":32000,

@@ -27,7 +27,46 @@ impl Compaction {
     }
 }
 
+/// Retain the charter model while the old window is compacted at its own rates.
+pub(super) fn change_model(conversation: &mut Conversation, llm: crate::record::Llm, limits: &Limits) -> Option<End> {
+    let effort_bytes = match &llm.effort {
+        Some(effort) => effort.len(),
+        None => 0,
+    };
+    if llm.model.is_empty()
+        || llm.model.len() > 128
+        || effort_bytes > 32
+        || llm.window == 0
+        || llm.output == 0
+        || llm.prices.unit == 0
+    {
+        return Some(End::TranscriptRefused { reason: crate::record::Refusal::Malformed });
+    }
+    let cost = match u64::try_from(llm.model.len()) {
+        Ok(bytes) => bytes.checked_add(match &llm.effort {
+            Some(effort) => u64::try_from(effort.len()).expect("bounded effort"),
+            None => 0,
+        }),
+        Err(_) => None,
+    };
+    if !super::charge(conversation, cost, limits) {
+        return Some(End::TranscriptRefused { reason: crate::record::Refusal::TooLarge });
+    }
+    conversation.next_llm = Some(crate::record::Llm {
+        effort: mem::replace(&mut conversation.effort, llm.effort),
+        model: mem::replace(&mut conversation.model, llm.model),
+        window: mem::replace(&mut conversation.model_window, llm.window),
+        output: mem::replace(&mut conversation.output, llm.output),
+        prices: mem::replace(&mut conversation.recording.prices, llm.prices),
+    });
+    conversation.window.stage = Stage::Used;
+    None
+}
+
 pub(super) fn due(conversation: &mut Conversation, limits: &Limits) -> bool {
+    if conversation.next_llm.is_some() {
+        return true;
+    }
     conversation.window.appended = Tokens(appended_bytes(conversation).unwrap_or(u64::MAX));
     match prompt_bytes(conversation) {
         Some(bytes) => {
@@ -56,7 +95,12 @@ fn appended_bytes(conversation: &Conversation) -> Option<u64> {
 
 /// Count the same owned prompt form as the session's emitted request without copying it.
 pub(super) fn prompt_bytes(conversation: &Conversation) -> Option<u64> {
-    let fixed = spec_cost(&conversation.model, &conversation.system, &conversation.delegated, &[])?;
+    let fixed = spec_cost(&conversation.model, &conversation.system, &conversation.delegated, &[])?.checked_add(
+        match &conversation.effort {
+            Some(effort) => u64::try_from(effort.len()).ok()?,
+            None => 0,
+        },
+    )?;
     let mut bytes = fixed
         .checked_add(u64::try_from(size_of::<crate::llm::Prompt>()).ok()?)?
         .checked_add(conversation.namespace.owned_bytes()?)?
@@ -179,6 +223,13 @@ pub(super) fn open_window(
             unreachable!("a compaction asks with the summary text last")
         }
     };
+    if let Some(llm) = conversation.next_llm.take() {
+        conversation.model = llm.model;
+        conversation.effort = llm.effort;
+        conversation.model_window = llm.window;
+        conversation.output = llm.output;
+        conversation.recording.prices = llm.prices;
+    }
     let Some(bytes) = new_bytes(conversation, &content) else {
         return Some(super::history::limit(limits.history_bytes));
     };
@@ -205,7 +256,11 @@ fn new_bytes(conversation: &Conversation, content: &[Block]) -> Option<u64> {
         .checked_add(super::choice_bytes(&conversation.choice))?
         .checked_add(conversation.final_turn.note_bytes()?)?
         .checked_add(u64::try_from(conversation.task.len()).ok()?)?
-        .checked_add(u64::try_from(conversation.summary.len()).ok()?)
+        .checked_add(u64::try_from(conversation.summary.len()).ok()?)?
+        .checked_add(match &conversation.effort {
+            Some(effort) => u64::try_from(effort.len()).ok()?,
+            None => 0,
+        })
 }
 
 pub(super) fn context_failure(failure: Failure) -> bool {
@@ -293,7 +348,14 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
         Request::Complete { .. } => match &mut conversation.compaction {
             Compaction::Asking { announced, .. } if !*announced => {
                 *announced = true;
-                facts.push(crate::FactKind::CompactionStarted { opener, window: conversation.window.number });
+                facts.push(crate::FactKind::compaction_started(
+                    opener,
+                    conversation.window.number,
+                    &conversation.model,
+                    conversation.model_window,
+                    conversation.output,
+                    conversation.effort.as_deref(),
+                ));
             }
             Compaction::Asking { .. } | Compaction::Idle => {}
         },

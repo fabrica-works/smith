@@ -280,6 +280,7 @@ pub fn spec(prompt: &[u8]) -> agent::Spec {
     let grants = Grants { inspect: true, modify: true, shell: true };
     let authority = Authority { cwd: io::names(b"/work"), repos: Box::new([repo]), grants };
     agent::Spec {
+        effort: None,
         final_turn: None,
         window: 65_536,
         summary: b"Summarise the work so far.".as_slice().into(),
@@ -1873,6 +1874,7 @@ impl World {
         self.agent_stage.push(agent::Event::Open {
             opener: Token::new(opener),
             opening: Box::new(agent::record::Opening {
+                window_llm: None,
                 spec,
                 dialect: 2,
                 prices: agent::record::Prices { input: 0, cached: 0, cache_write: None, output: 0, unit: 1 },
@@ -1930,7 +1932,7 @@ impl World {
             told.invalid_calls += invalid;
         }
         let count = match fact {
-            agent::FactKind::CompactionStarted { opener, window } => {
+            agent::FactKind::CompactionStarted { opener, window, .. } => {
                 self.sessions.get_mut(&opener.raw()).expect("known opener").compacting = Some(window);
                 return;
             }

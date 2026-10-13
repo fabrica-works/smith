@@ -25,6 +25,7 @@ fn configuration() -> smith::Config {
     smith::Config {
         endpoints: Box::from([run::charter::Endpoint(0)]),
         models: Box::from([smith::ConfiguredModel {
+            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             protocol_allowance: 0,
             endpoint: run::charter::Endpoint(0),
             model: b"fake-1".as_slice().into(),
@@ -107,6 +108,8 @@ fn a_told_turn_keeps_the_roots_exact_concrete_value() {
     );
     while out.pop().is_some() {}
     let turn = smith::session::record::Turn {
+        model: b"model".as_slice().into(),
+        effort: None,
         kind: smith_domain::session::record::Kind::First {
             affinity: smith_domain::llm::Affinity { key: [0; 16], thread: 0 },
         },

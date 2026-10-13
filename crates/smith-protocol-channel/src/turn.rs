@@ -70,6 +70,8 @@ pub fn encode_turn(
             kind,
             affinity,
             endpoint,
+            model: source.model.clone(),
+            effort: source.effort.clone(),
             dialect,
             place: source.sequence,
             usage,

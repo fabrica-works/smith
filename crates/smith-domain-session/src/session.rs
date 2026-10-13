@@ -169,6 +169,8 @@ struct Conversation {
     affinity: crate::llm::Affinity,
     progress: Progress,
     model: Box<[u8]>,
+    effort: Option<Box<[u8]>>,
+    next_llm: Option<crate::record::Llm>,
     system: Box<[u8]>,
     /// The families of its own tools it offers the LLM, as its kit has them.
     tools: Grants,
@@ -2000,7 +2002,12 @@ fn admit(
     limits: &Limits,
     now: Time,
 ) -> Option<(Conversation, tools::Authority)> {
-    if spec.output == 0
+    if spec.model.len() > 128
+        || match &spec.effort {
+            Some(effort) => effort.len(),
+            None => 0,
+        } > 32
+        || spec.output == 0
         || spec.protocol_allowance > limits.protocol_allowance
         || spec.progress.head == Duration::ZERO
         || spec.progress.idle == Duration::ZERO
@@ -2015,7 +2022,11 @@ fn admit(
         .checked_add(spec.authority.namespace_bytes()?)?
         .checked_add(final_turn.note_bytes()?)?
         .checked_add(len(&task)?)?
-        .checked_add(len(&spec.summary)?)?;
+        .checked_add(len(&spec.summary)?)?
+        .checked_add(match &spec.effort {
+            Some(effort) => len(effort)?,
+            None => 0,
+        })?;
     if bytes > limits.history_bytes || limits.history_blocks == 0 {
         return None;
     }
@@ -2028,6 +2039,8 @@ fn admit(
         affinity: spec.affinity,
         progress: spec.progress,
         model: spec.model,
+        effort: spec.effort,
+        next_llm: None,
         system: spec.system,
         tools: spec.authority.grants,
         namespace: spec.authority.namespace(),
@@ -2180,6 +2193,7 @@ fn complete(id: Id<Session>, conversation: &Conversation, retry: u32, limits: &L
         endpoint: conversation.endpoint,
         affinity: conversation.affinity,
         model: conversation.model.clone(),
+        effort: conversation.effort.clone(),
         system: conversation.system.clone(),
         tools: conversation.tools,
         namespace: conversation.namespace.clone(),
@@ -2654,7 +2668,7 @@ pub(crate) fn open(
         refuse(&mut domain.facts, opener, End::Busy, out);
         return;
     }
-    let crate::record::Opening { spec, dialect, prices, budget, transcript, answered } = opening;
+    let crate::record::Opening { spec, window_llm, dialect, prices, budget, transcript, answered } = opening;
     if prices.unit == 0 || budget > env.limits.spend {
         refuse(&mut domain.facts, opener, End::Invalid, out);
         return;
@@ -2699,6 +2713,12 @@ pub(crate) fn open(
                 return;
             }
         },
+    }
+    if let Some(llm) = window_llm
+        && let Some(end) = compaction::change_model(&mut conversation, llm, &env.limits)
+    {
+        refuse(&mut domain.facts, opener, end, out);
+        return;
     }
     conversation.recording.sequence = sequence;
     conversation.recording.told = told;
@@ -2799,6 +2819,9 @@ fn validate_transcript(
         }
         if turn.endpoint != transcript.endpoint {
             return Err(Refusal::Endpoint);
+        }
+        if turn.model != transcript.turns.first().expect("a turn implies nonempty history").model {
+            return Err(Refusal::Malformed);
         }
         if turn.dialect != dialect {
             return Err(Refusal::Dialect);
@@ -3151,6 +3174,8 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
             crate::record::Kind::Ordinary
         },
         endpoint: conversation.endpoint,
+        model: conversation.model.clone(),
+        effort: conversation.effort.clone(),
         dialect,
         sequence: next,
         usage,

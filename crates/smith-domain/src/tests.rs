@@ -262,6 +262,7 @@ impl Harness {
                     endpoints: Box::new([Endpoint(1), Endpoint(2)]),
                     models: Box::new([
                         crate::ConfiguredModel {
+                            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(1),
                             model: Box::from(&b"model-a"[..]),
@@ -271,6 +272,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(1),
                             model: Box::from(&b"model-b"[..]),
@@ -280,6 +282,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-a"[..]),
@@ -289,6 +292,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(2),
                             model: Box::from(&b"model-b"[..]),
@@ -498,6 +502,7 @@ fn charter() -> Charter {
         outcome: OutcomeSpec { change: None, verdicts: Box::new([rule(b"approve")]), report: None, failure: None },
         budget: BUDGET,
         llm: Llm {
+            effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(1),
@@ -544,7 +549,8 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
         let mut h = Harness::new();
         let mut requested = charter();
         requested.llm.endpoint = main;
-        requested.models = Box::new([Llm { endpoint: child, model: bytes(b"model-b"), ..requested.llm.clone() }]);
+        requested.models =
+            Box::new([Llm { effort: None, endpoint: child, model: bytes(b"model-b"), ..requested.llm.clone() }]);
         let emitted = h.step(Event::Start {
             messages: Box::default(),
             window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
@@ -571,7 +577,8 @@ fn root_refuses_unconfigured_main_and_sub_agent_endpoints_before_admission() {
     }
     let mut h = Harness::new();
     let mut requested = charter();
-    requested.models = Box::new([Llm { endpoint: Endpoint(2), model: bytes(b"model-b"), ..requested.llm.clone() }]);
+    requested.models =
+        Box::new([Llm { effort: None, endpoint: Endpoint(2), model: bytes(b"model-b"), ..requested.llm.clone() }]);
     let emitted = h.step(Event::Start {
         messages: Box::default(),
         window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
@@ -618,6 +625,8 @@ fn oversized_resume_history_is_refused_when_the_conversation_opens() {
     for sequence in 1..=17_u32 {
         turns
             .push(session::record::Turn {
+                model: b"model-a".as_slice().into(),
+                effort: None,
                 kind: if sequence == 1 {
                     session::record::Kind::First { affinity: session::llm::Affinity { key: [0; 16], thread: 0 } }
                 } else {
@@ -2183,6 +2192,8 @@ fn first_message_after_awaiting_restores_history_and_absent_host_answers_once() 
         endpoint: session::llm::Endpoint(1),
         dialect: 1,
         turns: Box::new([session::record::Turn {
+            model: b"model-a".as_slice().into(),
+            effort: None,
             kind: session::record::Kind::First { affinity: crate::llm::Affinity { key: [0; 16], thread: 0 } },
             version: session::record::VERSION,
             endpoint: session::llm::Endpoint(1),

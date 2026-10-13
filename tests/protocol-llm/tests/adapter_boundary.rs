@@ -29,6 +29,7 @@ fn limits() -> Limits {
 
 fn prompt() -> llm::Prompt {
     llm::Prompt {
+        effort: None,
         purpose: llm::Purpose::Ordinary,
         choice: smith_domain::llm::ToolChoice::Auto,
         namespace: smith_domain::tools::Namespace::One,
@@ -626,5 +627,18 @@ fn optional_child_shares_cross_both_provider_schemas_and_actual_completions() {
             }
             close_won(&mut peer);
         }
+    }
+}
+
+#[test]
+fn a_prompt_takes_its_sessions_effort_and_none_for_the_provider_default() {
+    let bounds = limits();
+    let application = schema(ToolKind::Wait, b"wait");
+    for effort in [None, Some(b"high".as_slice())] {
+        let mut requested = prompt();
+        requested.effort = effort.map(Into::into);
+        let translated = smith_protocol_llm::prompt(requested, core::slice::from_ref(&application), &bounds)
+            .expect("admitted prompt");
+        assert_eq!(translated.reasoning_effort.as_deref(), effort);
     }
 }

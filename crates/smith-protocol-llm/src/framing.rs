@@ -26,9 +26,9 @@ pub fn prompt_allowance(provider: shared::Provider, client: &client::Limits, too
         shared::Provider::OpenAiCodex => shared::Endpoint::codex(),
         shared::Provider::Anthropic => shared::Endpoint::anthropic(),
     };
-    let reasoning_effort = match provider {
-        shared::Provider::OpenAiCodex => Some(Box::<[u8]>::default()),
-        shared::Provider::Anthropic => None,
+    let reasoning_effort: Option<Box<[u8]>> = match provider {
+        shared::Provider::OpenAiCodex => Some(Box::new([0; 32])),
+        shared::Provider::Anthropic => Some(Box::from(b"medium".as_slice())),
     };
     let mut prompt = shared::Prompt {
         model: Box::from(b"a".as_slice()),

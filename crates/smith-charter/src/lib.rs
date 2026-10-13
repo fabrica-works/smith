@@ -7,6 +7,8 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
+
 #[rustfmt::skip]
 #[path = "generated/v2.rs"]
 pub mod v2;
@@ -23,3 +25,6 @@ impl Charter {
     /// The wire format version this codec writes and reads.
     pub const FORMAT_VERSION: u64 = 2;
 }
+
+/// Provider effort name, bounded to 32 UTF-8 bytes by the charter codec.
+pub type Effort = Box<[u8]>;

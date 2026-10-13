@@ -152,7 +152,7 @@ fn selection(text: &str) -> Result<super::resolve::Selection, super::Refusal> {
 fn a_codex_only_first_run_needs_no_anthropic_credential() {
     let selected =
         selection("model='codex/gpt-6-astra'\n[accounts.codex]\nsource='borrow'\n").expect("one account's run");
-    assert_eq!(selected.models, ["codex/gpt-6-astra"]);
+    assert_eq!(selected.models, ["codex/gpt-6-astra", "codex/gpt-6-luna"]);
     assert_eq!(selected.accounts.len(), 1);
     assert_eq!(selected.accounts[0].name, "codex");
     assert_eq!(selected.accounts[0].fields["source"].value.as_str(), Some("borrow"));
@@ -263,11 +263,11 @@ fn composed(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
 fn composition_derives_only_the_main_model_with_sub_agents_off() {
     let resolved = composed("[models.'anthropic/claude-opus-5-5']\nhead=0\nreasoning_item=0\n")
         .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 1);
+    assert_eq!(resolved.local.models.len(), 2);
     assert_eq!(resolved.local.models[0].model.as_ref(), b"gpt-6-luna");
     assert_eq!(resolved.accounts.len(), 1);
     assert_eq!(resolved.agent.declarations.endpoints.len(), 1);
-    assert_eq!(resolved.agent.declarations.endpoints[0].models.len(), 1);
+    assert_eq!(resolved.agent.declarations.endpoints[0].models.len(), 2);
     assert_eq!(resolved.outside_models["anthropic/claude-opus-5-5"], "sub_agents is off");
 }
 
@@ -376,7 +376,7 @@ fn an_outside_declared_model_needs_only_its_value_checks() {
         "[models.'outside/model']\nwindow=1024\noutput=16\ninput_price=1.0\ncached_price=0.1\noutput_price=2.0\n",
     )
     .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 1);
+    assert_eq!(resolved.local.models.len(), 2);
     assert_eq!(resolved.outside_models["outside/model"], "sub_agents is off");
 }
 
@@ -398,7 +398,7 @@ fn trust_paths_are_resolved_from_the_settings_workspace() {
         &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
     )
     .unwrap_or_else(|why| panic!("{}", why.line()));
-    assert_eq!(resolved.local.models.len(), 1);
+    assert_eq!(resolved.local.models.len(), 2);
 }
 
 #[test]
@@ -572,4 +572,19 @@ fn measure_product() {
     assert!(u64::try_from(measured.peak).unwrap() <= available);
     println!("PRODUCT_MEASURE whole_constructor={} memory={available}", measured.peak);
     drop(local);
+}
+
+#[test]
+fn the_configuration_holds_each_model_of_mains_endpoint_and_none_of_another() {
+    let resolved = composed("effort='high'\n").unwrap_or_else(|why| panic!("{}", why.line()));
+    let declared = &resolved.agent.declarations.endpoints;
+    assert_eq!(declared.len(), 1);
+    assert_eq!(declared[0].models.len(), 2);
+    assert!(declared[0].models.iter().any(|model| model.name.as_ref() == b"gpt-6-astra"));
+    assert!(declared[0].models.iter().any(|model| model.name.as_ref() == b"gpt-6-luna"));
+    let charter = smith_local_domain::charter(&resolved.local);
+    assert_eq!(charter.llm.model.as_ref(), b"gpt-6-luna");
+    assert_eq!(charter.llm.effort.as_deref(), Some(b"high".as_slice()));
+    assert!(charter.models.is_empty());
+    assert_eq!(resolved.accounts.len(), 1);
 }

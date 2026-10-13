@@ -401,3 +401,97 @@ fn a_final_note_due_during_a_compaction_retry_waits_for_the_new_window() {
     assert_eq!(world.yielded.last().expect("final yield").0, session::Yield::Budget);
     world.close();
 }
+
+fn saved_window(seed: u64) -> record::Transcript {
+    let mut world = World::new(seed, 256);
+    let mut start = opening(None, world.env.limits.spend);
+    start.spec.effort = Some(b"low".as_slice().into());
+    world.open(start);
+    world.complete(said(b"saved answer"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    world.close();
+    transcript(&world)
+}
+
+fn model_change(seed: u64) -> World {
+    let mut world = World::new(seed, 256);
+    let mut start = opening(Some(saved_window(seed)), world.env.limits.spend);
+    start.window_llm = Some(record::Llm {
+        model: b"model".as_slice().into(),
+        effort: Some(b"low".as_slice().into()),
+        window: 65_536,
+        output: 128,
+        prices: start.prices,
+    });
+    start.prices = record::Prices { input: 13, cached: 3, cache_write: None, output: 17, unit: 10 };
+    start.spec.model = b"another-model".as_slice().into();
+    start.spec.effort = Some(b"high".as_slice().into());
+    start.spec.window = 131_072;
+    start.spec.output = 256;
+    world.open(start);
+    world
+}
+
+#[test]
+fn a_session_resumed_with_another_model_compacts_first_with_the_windows_model() {
+    let mut world = model_change(4821);
+    assert!(is_summary(&world));
+    assert_eq!(world.prompts[0].model.as_ref(), b"model");
+    assert_eq!(world.prompts[0].effort.as_deref(), Some(b"low".as_slice()));
+    assert_eq!(world.prompts[0].max_tokens, 128);
+    world.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert_eq!(world.prompts[1].model.as_ref(), b"another-model");
+    assert_eq!(world.prompts[1].effort.as_deref(), Some(b"high".as_slice()));
+    assert_eq!(world.prompts[1].max_tokens, 256);
+    let turn = world.turns.last().expect("window turn");
+    assert!(matches!(turn.kind, record::Kind::Window { .. }));
+    assert_eq!(turn.model.as_ref(), b"another-model");
+    assert_eq!(turn.effort.as_deref(), Some(b"high".as_slice()));
+    world.close();
+}
+
+#[test]
+fn a_later_activation_with_another_effort_keeps_its_window() {
+    let history = saved_window(4822);
+    let prefix = history.turns[0].messages.clone();
+    let mut world = World::new(4822, 256);
+    let mut start = opening(Some(history), world.env.limits.spend);
+    start.spec.effort = Some(b"high".as_slice().into());
+    world.open(start);
+    assert!(!is_summary(&world));
+    assert_eq!(&world.prompts[0].messages[..prefix.len()], &*prefix);
+    assert_eq!(world.prompts[0].effort.as_deref(), Some(b"high".as_slice()));
+    world.complete(said(b"another answer"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    assert_eq!(world.turns[0].kind, record::Kind::Ordinary);
+    assert_eq!(world.turns[0].effort.as_deref(), Some(b"high".as_slice()));
+    world.close();
+}
+
+#[test]
+fn a_resume_after_a_model_change_compaction_does_not_compact_again() {
+    let mut first = model_change(4823);
+    first.complete(said(b"summary"), llm::Stop::EndTurn, llm::Usage::ZERO);
+    first.close();
+    let mut world = World::new(4823, 256);
+    let mut start = opening(Some(transcript(&first)), world.env.limits.spend);
+    start.spec.model = b"another-model".as_slice().into();
+    start.spec.effort = Some(b"high".as_slice().into());
+    start.spec.window = 131_072;
+    start.spec.output = 256;
+    world.open(start);
+    assert!(!is_summary(&world));
+    assert_eq!(world.prompts.len(), 1);
+    assert_eq!(world.prompts[0].model.as_ref(), b"another-model");
+    world.close();
+}
+
+#[test]
+fn a_model_change_compaction_is_charged_at_the_windows_prices() {
+    let mut world = model_change(4824);
+    let usage = llm::Usage { input_tokens: Some(10), output_tokens: Some(5), ..llm::Usage::ZERO };
+    world.complete(said(b"summary"), llm::Stop::EndTurn, usage);
+    assert_eq!(world.spend, [13]);
+    assert_eq!(world.turns[0].spent, 13);
+    world.complete(said(b"new answer"), llm::Stop::EndTurn, usage);
+    assert_eq!(world.spend, [13, 35]);
+    world.close();
+}

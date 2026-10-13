@@ -45,20 +45,7 @@ impl Local {
         destinations: u32,
         result_file: skein_lib::Duration,
     ) -> Result<smith_events::SessionStarted, crate::local_shell::Failure> {
-        let mut options = 0;
-        for endpoint in &configuration.declarations.endpoints {
-            let resolved = configuration
-                .service
-                .llm_endpoints
-                .resolve(smith_domain::llm::Endpoint(endpoint.number))
-                .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?;
-            if let Some(effort) = &resolved.reasoning_effort {
-                options = options.max(
-                    u32::try_from(effort.len())
-                        .map_err(|_| configuration_failure(derivation_refusal("local_header")))?,
-                );
-            }
-        }
+        let options = smith_charter::CEILINGS.llm_effort_some;
         let write_deadline = match configuration.service.limits.events {
             Some(events) => events.write_deadline,
             None => configuration.profile.policy.write_deadline,

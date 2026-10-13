@@ -171,6 +171,7 @@ fn charter(context_bytes: u64) -> Charter {
         },
         budget: run::Budget { turns: 12, ..TIGHT.run.budget },
         llm: Llm {
+            effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             account: 0,
             endpoint: Endpoint(0),
@@ -748,6 +749,13 @@ fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
         smith_domain::Config {
             endpoints: Box::new([Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                prices: smith_domain::run::Prices {
+                    input: 1,
+                    cached: 1,
+                    cache_write: None,
+                    output: 1,
+                    unit: 1_000_000,
+                },
                 protocol_allowance: 0,
                 endpoint: smith_domain::run::charter::Endpoint(0),
                 model: Box::from(&b"m"[..]),

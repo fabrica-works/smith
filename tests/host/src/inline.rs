@@ -44,6 +44,13 @@ pub fn configuration() -> smith::Config {
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .into_iter()
             .map(|model| smith::ConfiguredModel {
+                prices: smith_domain::run::Prices {
+                    input: 1,
+                    cached: 1,
+                    cache_write: None,
+                    output: 1,
+                    unit: 1_000_000,
+                },
                 protocol_allowance: 0,
                 endpoint: run::charter::Endpoint(0),
                 model: model.into(),

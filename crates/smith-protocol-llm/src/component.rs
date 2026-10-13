@@ -390,7 +390,6 @@ impl Component {
                     return;
                 }
             };
-        translated.reasoning_effort.clone_from(&options.reasoning_effort);
         match options.identity {
             IdentityProfile::Plain => {}
             IdentityProfile::ClaudeCode => match shared::anthropic::identity::instructions(&translated.instructions) {

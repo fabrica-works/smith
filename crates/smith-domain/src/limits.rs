@@ -296,6 +296,8 @@ pub(crate) fn record_payload(limits: &Limits) -> Option<u64> {
     limits
         .session
         .history_bytes
+        // Each turn copies its transcript model (128 bytes) and optional effort (32).
+        .checked_add(messages.checked_mul(160)?)?
         .checked_add(messages.checked_mul(u64::try_from(size_of::<session::record::Turn>()).ok()?)?)?
         .checked_add(messages.checked_mul(u64::try_from(size_of::<session::llm::Message>()).ok()?)?)
 }

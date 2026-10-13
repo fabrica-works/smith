@@ -263,6 +263,8 @@ pub struct Spec {
     pub progress: Progress,
     /// The provider's name for the model.
     pub model: Box<[u8]>,
+    /// Reasoning effort requested by this activation, absent for the provider default.
+    pub effort: Option<Box<[u8]>>,
     /// System instructions supplied by the opener, retained within the enclosing byte cap.
     pub system: Box<[u8]>,
     /// What the session's own tools may do and where (the families the LLM

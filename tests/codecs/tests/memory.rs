@@ -30,6 +30,7 @@ fn charter_limits() -> charter::Limits {
         conventions_guide: 0,
         conventions_checks: 0,
         llm_endpoint: 0,
+        llm_effort_some: 32,
         llm_model: 0,
         charter_instructions: charter::CEILINGS.charter_instructions,
         charter_brief: 0,
@@ -72,6 +73,8 @@ fn transcript_limits() -> transcript::Limits {
         said_text: 0,
         tool_result_id: 0,
         message_blocks: 1,
+        turn_model: 128,
+        turn_effort_some: 32,
         turn_endpoint: 0,
         turn_dialect: 0,
         turn_messages: 1,
@@ -138,6 +141,8 @@ fn turn_at_its_largest_text_payload_stays_within_the_configured_heap_bound() {
     let value = transcript::Turn::new(
         &limits,
         transcript::TurnParts {
+            model: b"model".as_slice().into(),
+            effort: None,
             kind: transcript::TurnKind::Ordinary,
             affinity: if 1 == 1 {
                 Some(
