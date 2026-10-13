@@ -583,6 +583,7 @@ fn shown_requests(out: &mut Queue<Request>) -> u32 {
                 | Request::Answered { .. }
                 | Request::Unanswered { .. }
                 | Request::Load
+                | Request::SelectChat { .. }
                 | Request::SaveState { .. }
                 | Request::SaveTurn { .. }
                 | Request::SaveDelivery { .. }

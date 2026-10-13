@@ -1045,6 +1045,8 @@ impl World {
                     | Event::Interrupt
                     | Event::Drop
                     | Event::Closed
+                    | Event::ChatSelected { .. }
+                    | Event::SelectChat { .. }
                     | Event::Loaded { .. }
                     | Event::StateSaved
                     | Event::Git { .. }
@@ -1417,6 +1419,7 @@ impl World {
                 self.agent_request(request);
             }
             Request::Process(_) => panic!("in-process local world cannot spawn an external agent"),
+            Request::SelectChat { .. } => panic!("this world's stories keep their configured chat"),
             Request::Answered { .. } | Request::Unanswered { .. } => {}
             Request::Exit { status } => {
                 self.exit = Some(status);

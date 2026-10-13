@@ -349,6 +349,22 @@ impl Local {
         self.service.pop_fact()
     }
 
+    /// Take one typed best-effort live-view record from the service's event sink.
+    pub fn pop_front(&mut self) -> Option<smith_events::Record> {
+        self.service.pop_front()
+    }
+
+    /// Ask the domain to select a chat only when activation and store work are idle.
+    pub fn select_chat(&mut self, name: Box<[u8]>, create: bool) {
+        self.service.local_event(domain::Event::SelectChat { name, create });
+    }
+
+    /// Live-view records dropped by that sink, independent of destination loss.
+    #[must_use]
+    pub fn front_lost(&mut self) -> u64 {
+        self.service.front_lost()
+    }
+
     /// Attach the product result owner before its first pass.
     pub(crate) fn result_file(&mut self, file: Option<Box<crate::compose::ResultFile>>) {
         self.result_file = file;
@@ -425,12 +441,16 @@ impl Local {
                             drop(write!(self.errors, "smith: {}", String::from_utf8_lossy(&text)));
                         }
                         domain::Notice::Failure(_) => self.operator_line(text),
-                        domain::Notice::Waiting | domain::Notice::Checking(_) | domain::Notice::NotDelivered { .. } => {
+                        domain::Notice::Waiting
+                        | domain::Notice::Checking(_)
+                        | domain::Notice::NotDelivered { .. }
+                        | domain::Notice::ChatRefused { .. } => {
                             unreachable!("only operator notices reach the shell")
                         }
                     }
                 }
                 domain::Request::Load
+                | domain::Request::SelectChat { .. }
                 | domain::Request::SaveState { .. }
                 | domain::Request::SaveTurn { .. }
                 | domain::Request::SaveDelivery { .. }

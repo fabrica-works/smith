@@ -453,6 +453,47 @@ impl Service {
         &mut self.output
     }
 
+    /// Take a typed live-view record from the same sink that owns the trace.
+    pub fn pop_front(&mut self) -> Option<smith_events::Record> {
+        match self.below.inline_mut() {
+            Some(effects) => match effects.front_sinks() {
+                Some(sinks) => sinks.pop_front(),
+                None => None,
+            },
+            None => match &mut self.stream {
+                Some(stream) => stream.producer.sinks().pop_front(),
+                None => None,
+            },
+        }
+    }
+
+    /// Whether the product has a typed record to consume on its next pass.
+    #[must_use]
+    pub fn front_pending(&self) -> bool {
+        match self.below.inline() {
+            Some(effects) => effects.front_pending(),
+            None => match &self.stream {
+                Some(stream) => stream.producer.front_pending(),
+                None => false,
+            },
+        }
+    }
+
+    /// Loss in the typed view, kept apart from every destination's own loss.
+    #[must_use]
+    pub fn front_lost(&mut self) -> u64 {
+        match self.below.inline_mut() {
+            Some(effects) => match effects.front_sinks() {
+                Some(sinks) => sinks.front_lost(),
+                None => 0,
+            },
+            None => match &mut self.stream {
+                Some(stream) => stream.producer.sinks().front_lost(),
+                None => 0,
+            },
+        }
+    }
+
     /// Lend a credential value only beside the domain's grant name.
     pub fn credential(&mut self, grant: agent::Grant, envelope: Box<[u8]>) {
         if u64::try_from(envelope.len()).expect("envelope bytes fit u64") > self.limits.envelope_bytes {
@@ -755,32 +796,17 @@ impl Service {
             }
             local::Request::Load => {
                 self.lower_agent = None;
+                self.capture_activation = None;
                 self.terminal.answer_finished();
                 self.below.process_mut().store_request(protocol::StoreRequest::Load);
+            }
+            local::Request::SelectChat { name, create } => {
+                self.below.process_mut().store_request(protocol::StoreRequest::SelectChat { name, create });
             }
             local::Request::PlainStatus { owner, directory, deadline } => {
                 self.below.process_mut().plain_status(owner, directory, deadline, &mut self.local_events);
             }
-            local::Request::SaveState { state, fresh } => {
-                if self.capture_activation != Some(state.activation) {
-                    self.capture_activation = Some(state.activation);
-                    let (charter, messages) = self.local.charter();
-                    if let Some(effects) = self.below.inline_mut() {
-                        effects.starting(state.activation, messages, &charter);
-                    }
-                    if let Some(stream) = &mut self.stream {
-                        stream.starting(now, state.activation, messages, &charter);
-                    }
-                    self.snapshot_state = SnapshotState::Capturing { saved: false };
-                    self.below
-                        .process_mut()
-                        .capture_plain(self.plain_directories.clone(), now.saturating_add(self.capture_time));
-                }
-                self.below.process_mut().store_request(protocol::StoreRequest::SaveState {
-                    state,
-                    history: if fresh { protocol::History::Fresh } else { protocol::History::Kept },
-                });
-            }
+            local::Request::SaveState { state, fresh } => self.save_state(now, state, fresh),
             local::Request::Answered { answer } => {
                 self.release_accounts(now);
                 if let Some(effects) = self.below.inline_mut() {
@@ -824,6 +850,27 @@ impl Service {
         }
     }
 
+    fn save_state(&mut self, now: Time, state: local::ChatState, fresh: bool) {
+        if self.capture_activation != Some(state.activation) {
+            self.capture_activation = Some(state.activation);
+            let (charter, messages) = self.local.charter();
+            if let Some(effects) = self.below.inline_mut() {
+                effects.starting(state.activation, messages, &charter);
+            }
+            if let Some(stream) = &mut self.stream {
+                stream.starting(now, state.activation, messages, &charter);
+            }
+            self.snapshot_state = SnapshotState::Capturing { saved: false };
+            self.below
+                .process_mut()
+                .capture_plain(self.plain_directories.clone(), now.saturating_add(self.capture_time));
+        }
+        self.below.process_mut().store_request(protocol::StoreRequest::SaveState {
+            state,
+            history: if fresh { protocol::History::Fresh } else { protocol::History::Kept },
+        });
+    }
+
     fn save_turn(&mut self, number: u32, read: Option<Token>, opens_window: bool, turn: agent::Turn) {
         if self.local.headless() {
             assert!(self.told.is_none(), "one told turn waits for the front end");
@@ -846,7 +893,8 @@ impl Service {
             | local::Notice::Warning(_)
             | local::Notice::Waiting
             | local::Notice::Checking(_)
-            | local::Notice::NotDelivered { .. } => false,
+            | local::Notice::NotDelivered { .. }
+            | local::Notice::ChatRefused { .. } => false,
         };
         if !handed && !self.local.headless() {
             self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
@@ -857,7 +905,10 @@ impl Service {
                 self.shell.push(local::Request::Notice { notice });
             }
             local::Notice::Failure(_) => self.shell.push(local::Request::Notice { notice }),
-            local::Notice::Waiting | local::Notice::Checking(_) | local::Notice::NotDelivered { .. } => {}
+            local::Notice::Waiting
+            | local::Notice::Checking(_)
+            | local::Notice::NotDelivered { .. }
+            | local::Notice::ChatRefused { .. } => {}
         }
     }
 
@@ -1079,6 +1130,8 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
             | local::Event::Interrupt
             | local::Event::Drop
             | local::Event::Closed
+            | local::Event::ChatSelected { .. }
+            | local::Event::SelectChat { .. }
             | local::Event::Loaded { .. }
             | local::Event::TurnSaved { .. }
             | local::Event::DeliverySaved { .. }

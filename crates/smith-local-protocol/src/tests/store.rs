@@ -32,6 +32,118 @@ fn io(out: &mut Queue<Action>) -> file::Request {
 fn failed(committed: bool) -> file::Event {
     file::Event::Failed { owner: OWNER, error: kernel::Error::Other(5), committed, residue: None }
 }
+
+#[test]
+fn selecting_a_new_chat_makes_a_private_directory_and_keeps_its_record_layout() {
+    let mut store = store();
+    let mut out = Queue::with_capacity(3);
+    store.request(StoreRequest::SelectChat { name: b"new".as_slice().into(), create: true }, Time::ZERO, &mut out);
+    assert!(!store.takes());
+    let file::Request::MakeDirectory { root, path, mode, .. } = io(&mut out) else { panic!("private directory") };
+    assert_eq!(root, Token::new(8));
+    assert_eq!(path.as_ref(), b"new");
+    assert_eq!(mode, 0o700);
+    store.from_io(file::Event::Made { owner: OWNER }, Time::ZERO, &mut out);
+    let file::Request::OpenDirectory { root, name, no_follow, .. } = io(&mut out) else { panic!("selected directory") };
+    assert_eq!(root, kernel::Fd::new(9));
+    assert_eq!(name.as_ref(), b"new");
+    assert!(no_follow);
+    store.opened_directory_descriptor(kernel::Fd::new(19));
+    store.from_io(file::Event::Opened { owner: OWNER, file: Token::new(10), len: 0 }, Time::ZERO, &mut out);
+    let Some(Action::Domain(local::Event::ChatSelected { name, result: Ok(()) })) = out.pop() else {
+        panic!("selection")
+    };
+    assert_eq!(name.as_ref(), b"new");
+    assert!(store.takes());
+    store.request(save(), Time::ZERO, &mut out);
+    let file::Request::Store { root, path, .. } = io(&mut out) else { panic!("same metadata layout") };
+    assert_eq!(root, Token::new(10));
+    assert_eq!(path.as_ref(), b"state");
+}
+
+#[test]
+fn resuming_an_absent_chat_names_it_and_keeps_the_current_store() {
+    let mut store = store();
+    let mut out = Queue::with_capacity(3);
+    store.request(save(), Time::ZERO, &mut out);
+    io(&mut out);
+    store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"old state") }, Time::ZERO, &mut out);
+    out.pop();
+    store.request(StoreRequest::SelectChat { name: b"absent".as_slice().into(), create: false }, Time::ZERO, &mut out);
+    let file::Request::OpenDirectory { name, .. } = io(&mut out) else { panic!("resume only opens") };
+    assert_eq!(name.as_ref(), b"absent");
+    store.from_io(
+        file::Event::Failed { owner: OWNER, error: kernel::Error::NotFound, committed: false, residue: None },
+        Time::ZERO,
+        &mut out,
+    );
+    let Some(Action::Domain(local::Event::ChatSelected { name, result: Err(local::ChatRefusal::Missing) })) = out.pop()
+    else {
+        panic!("named missing chat")
+    };
+    assert_eq!(name.as_ref(), b"absent");
+    store.request(save(), Time::ZERO, &mut out);
+    let file::Request::Store { root, expected, .. } = io(&mut out) else { panic!("old store still selected") };
+    assert_eq!(root, Token::new(8));
+    assert_eq!(expected, file::Expect::Digest(digest(b"old state")));
+}
+
+#[test]
+fn bad_chat_names_and_ephemeral_selection_open_nothing() {
+    for name in [b"../other".as_slice(), b".", b"", b"a/b"] {
+        let mut store = store();
+        let mut out = Queue::with_capacity(3);
+        store.request(StoreRequest::SelectChat { name: name.into(), create: false }, Time::ZERO, &mut out);
+        let Some(Action::Domain(local::Event::ChatSelected { name: refused, result: Err(local::ChatRefusal::Name) })) =
+            out.pop()
+        else {
+            panic!("bad name")
+        };
+        assert_eq!(refused.as_ref(), name);
+        assert!(out.is_empty());
+        assert!(store.takes());
+    }
+    let mut store = store();
+    store.ephemeral(Token::new(11), kernel::Fd::new(12), b"private".as_slice().into());
+    let mut out = Queue::with_capacity(3);
+    store.request(StoreRequest::SelectChat { name: b"other".as_slice().into(), create: true }, Time::ZERO, &mut out);
+    let Some(Action::Domain(local::Event::ChatSelected { result: Err(local::ChatRefusal::Ephemeral), .. })) = out.pop()
+    else {
+        panic!("typed terminal")
+    };
+    assert!(out.is_empty());
+}
+
+#[test]
+fn selecting_another_chat_retires_the_previous_root_before_loading_and_closes_both_roots() {
+    let (mut store, mut out) = selected_first_chat();
+    store.request(StoreRequest::SelectChat { name: b"second".as_slice().into(), create: false }, Time::ZERO, &mut out);
+    let file::Request::OpenDirectory { root, .. } = io(&mut out) else { panic!("workspace chats root") };
+    assert_eq!(root, kernel::Fd::new(9));
+    store.opened_directory_descriptor(kernel::Fd::new(29));
+    store.from_io(file::Event::Opened { owner: OWNER, file: Token::new(20), len: 0 }, Time::ZERO, &mut out);
+    closed_root(&mut out, Token::new(10));
+    assert!(!store.takes());
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    let Some(Action::Domain(local::Event::ChatSelected { result: Ok(()), .. })) = out.pop() else {
+        panic!("typed terminal")
+    };
+    store.request(save(), Time::ZERO, &mut out);
+    let file::Request::Store { root, expected, .. } = io(&mut out) else {
+        panic!("new chat starts without old versions")
+    };
+    assert_eq!(root, Token::new(20));
+    assert_eq!(expected, file::Expect::Absent);
+    store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"second state") }, Time::ZERO, &mut out);
+    out.pop().unwrap();
+    store.close(Time::ZERO, &mut out);
+    closed_root(&mut out, Token::new(20));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    closed_root(&mut out, Token::new(8));
+    store.from_io(file::Event::Closed { owner: OWNER }, Time::ZERO, &mut out);
+    let Some(Action::Closed) = out.pop() else { panic!("typed terminal") };
+    assert!(out.is_empty());
+}
 #[test]
 fn a_turn_file_is_stored_expecting_its_name_absent() {
     let mut store = store();
@@ -295,4 +407,24 @@ fn numbered_turn(turn: &smith_domain::Turn, sequence: u32) -> smith_domain::Turn
         },
         ..turn.clone()
     }
+}
+
+fn selected_first_chat() -> (Store, Queue<Action>) {
+    let mut store = store();
+    let mut out = Queue::with_capacity(3);
+    store.request(StoreRequest::SelectChat { name: b"first".as_slice().into(), create: false }, Time::ZERO, &mut out);
+    io(&mut out);
+    store.opened_directory_descriptor(kernel::Fd::new(19));
+    store.from_io(file::Event::Opened { owner: OWNER, file: Token::new(10), len: 0 }, Time::ZERO, &mut out);
+    out.pop().unwrap();
+    store.request(save(), Time::ZERO, &mut out);
+    io(&mut out);
+    store.from_io(file::Event::Stored { owner: OWNER, digest: digest(b"first state") }, Time::ZERO, &mut out);
+    out.pop().unwrap();
+    (store, out)
+}
+
+fn closed_root(out: &mut Queue<Action>, expected: Token) {
+    let file::Request::Close { file, .. } = io(out) else { panic!("close request") };
+    assert_eq!(file, expected);
 }

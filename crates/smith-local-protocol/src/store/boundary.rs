@@ -25,6 +25,8 @@ pub enum History {
 /// One local-domain request; the store emits its one domain terminal.
 #[derive(Debug)]
 pub enum StoreRequest {
+    /// Select one safe chat directory while idle; `create` makes a new private directory.
+    SelectChat { name: Box<[u8]>, create: bool },
     /// Recover the fresh journal and load the last window.
     Load,
     /// Durably reserve the chat's next activation or reset its history.

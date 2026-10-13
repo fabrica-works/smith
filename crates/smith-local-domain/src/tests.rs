@@ -10,6 +10,117 @@ use smith_domain::run::{self, charter::Endpoint, outcome};
 
 use crate::{Config, Contract, Domain, Event, Invalid, Limits, Request, charter};
 
+fn idle_chat(seed: u64) -> (Domain, Env<Limits>, Queue<Request>) {
+    let limits = limits();
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+    let mut domain = Domain::new(config(), &limits, seed).unwrap();
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    crate::resume(&mut domain, &env, &mut out);
+    drop(drain_requests(&mut out));
+    crate::step(&mut domain, &env, Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) }, &mut out);
+    (domain, env, out)
+}
+
+#[test]
+fn a_refused_selection_keeps_the_current_chat_identity() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    let identity = domain.chat.state.identity;
+    crate::step(&mut domain, &env, Event::SelectChat { name: b"absent".as_slice().into(), create: false }, &mut out);
+    let Some(Request::SelectChat { create: false, .. }) = out.pop() else { panic!("typed terminal") };
+    crate::resume(&mut domain, &env, &mut out);
+    assert!(out.is_empty(), "selection owns the next store terminal");
+    crate::step(
+        &mut domain,
+        &env,
+        Event::ChatSelected { name: b"absent".as_slice().into(), result: Err(crate::ChatRefusal::Missing) },
+        &mut out,
+    );
+    let Some(Request::Notice { notice: crate::Notice::ChatRefused { reason: crate::ChatRefusal::Missing, .. } }) =
+        out.pop()
+    else {
+        panic!("typed terminal")
+    };
+    assert_eq!(domain.chat.state.identity, identity);
+}
+
+#[test]
+fn selecting_an_idle_chat_loads_its_saved_identity_after_a_fresh_one() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    let identity = domain.chat.state.identity;
+    crate::step(&mut domain, &env, Event::SelectChat { name: b"new".as_slice().into(), create: true }, &mut out);
+    let Some(Request::SelectChat { create: true, .. }) = out.pop() else { panic!("typed terminal") };
+    crate::step(&mut domain, &env, Event::ChatSelected { name: b"new".as_slice().into(), result: Ok(()) }, &mut out);
+    let Some(Request::Load) = out.pop() else { panic!("typed terminal") };
+    assert_ne!(domain.chat.state.identity, identity);
+    assert_eq!(domain.config.chat.as_ref(), b"new");
+    let saved = crate::ChatState { identity, activation: 7, next_message: 9, read: None };
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Loaded { state: Some(saved), transcript: None, deliveries: Box::new([]) },
+        &mut out,
+    );
+    assert_eq!(domain.chat.state, saved);
+}
+
+#[test]
+fn selection_refuses_while_loading() {
+    let limits = limits();
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    let mut domain = Domain::new(config(), &limits, 11).unwrap();
+    crate::step(&mut domain, &env, Event::SelectChat { name: b"new".as_slice().into(), create: true }, &mut out);
+    let Some(Request::Notice { notice: crate::Notice::ChatRefused { reason: crate::ChatRefusal::Busy, .. } }) =
+        out.pop()
+    else {
+        panic!("typed terminal")
+    };
+    assert!(out.is_empty());
+}
+
+#[test]
+fn selection_refuses_names_beyond_the_local_bound() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    crate::step(&mut domain, &env, Event::SelectChat { name: Box::from([b'x'; 65]), create: false }, &mut out);
+    let Some(Request::Notice { notice: crate::Notice::ChatRefused { reason: crate::ChatRefusal::Name, .. } }) =
+        out.pop()
+    else {
+        panic!("typed terminal")
+    };
+    assert!(out.is_empty());
+}
+
+#[test]
+fn selection_stops_before_seed_exhaustion() {
+    let (mut domain, env, mut out) = idle_chat(u64::MAX);
+    crate::step(&mut domain, &env, Event::SelectChat { name: b"new".as_slice().into(), create: true }, &mut out);
+    let Some(Request::Notice { notice: crate::Notice::Failure(crate::Failure::NamesExhausted) }) = out.pop() else {
+        panic!("typed terminal")
+    };
+    let Some(Request::Exit { .. }) = out.pop() else { panic!("typed terminal") };
+    assert!(out.is_empty(), "no store selection follows exhausted identity names");
+}
+
+#[test]
+fn a_refused_selection_after_input_closes_finishes_the_idle_chat() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    crate::step(&mut domain, &env, Event::SelectChat { name: b"absent".as_slice().into(), create: false }, &mut out);
+    drop(drain_requests(&mut out));
+    crate::step(&mut domain, &env, Event::Closed, &mut out);
+    assert!(out.is_empty());
+    crate::step(
+        &mut domain,
+        &env,
+        Event::ChatSelected { name: b"absent".as_slice().into(), result: Err(crate::ChatRefusal::Missing) },
+        &mut out,
+    );
+    let Some(Request::Notice { notice: crate::Notice::ChatRefused { .. } }) = out.pop() else {
+        panic!("named refusal")
+    };
+    let Some(Request::Exit { status: crate::ExitStatus::Accepted }) = out.pop() else { panic!("closed idle chat") };
+    assert!(out.is_empty());
+}
+
 pub(super) fn limits() -> Limits {
     Limits {
         smith: smith_agent_world::LIMITS,

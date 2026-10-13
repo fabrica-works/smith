@@ -66,7 +66,7 @@ pub(super) fn io(inventory: &mut Inventory, limits: &skein_io::Limits) -> Option
 }
 
 pub(super) fn events(inventory: &mut Inventory, limits: &crate::EventLimits) -> Option<()> {
-    let crate::EventLimits { sinks: _, capture: _, write_deadline } = *limits;
+    let crate::EventLimits { sinks: _, capture: _, front: _, write_deadline } = *limits;
     inventory.layer = Layer::Events;
     inventory.value("write_deadline", Value::Duration(write_deadline))?;
     Some(())

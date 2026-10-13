@@ -12,7 +12,8 @@ impl Local {
             | domain::Notice::Warning(_)
             | domain::Notice::Waiting
             | domain::Notice::Checking(_)
-            | domain::Notice::NotDelivered { .. } => return None,
+            | domain::Notice::NotDelivered { .. }
+            | domain::Notice::ChatRefused { .. } => return None,
         };
         let model = match failure {
             RunFailure::Model(ModelFault::Completion { model, .. }) => {

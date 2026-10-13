@@ -123,6 +123,7 @@ impl Terminal {
     ) -> Box<[u8]> {
         let mut text = Shown { bytes: List::with_capacity(cap), cut: false };
         match notice {
+            local::Notice::ChatRefused { name, reason } => chat_refused(&mut text, name, *reason),
             local::Notice::Waiting => append(&mut text, b"Waiting for a message"),
             local::Notice::Checking(checks) => append(
                 &mut text,
@@ -656,4 +657,19 @@ mod failure_tests {
             b"account 7 has no credential: run `smith login 7`\n"
         );
     }
+}
+
+fn chat_refused(text: &mut Shown, name: &[u8], reason: local::ChatRefusal) {
+    append(text, b"Chat ");
+    append(text, name);
+    append(
+        text,
+        match reason {
+            local::ChatRefusal::Busy => b": the current chat is still busy",
+            local::ChatRefusal::Name => b": invalid name",
+            local::ChatRefusal::Missing => b": does not exist",
+            local::ChatRefusal::Ephemeral => b": the ephemeral store cannot select another chat",
+            local::ChatRefusal::Io => b": directory operation failed",
+        },
+    );
 }

@@ -31,6 +31,7 @@ pub fn max_out(limits: &Limits) -> u32 {
 #[derive(Debug)]
 pub struct Domain {
     pub(crate) config: Config,
+    chat_seed: u64,
     agent: Agent,
     pub(crate) chat: Chat,
     transcript: Option<agent::Transcript>,
@@ -174,6 +175,7 @@ impl Domain {
         }
         Ok(Domain {
             config,
+            chat_seed: seed,
             agent: Agent::new(&child_limits, agent_config, seed, max_out(limits))?,
             chat: Chat::new(seed),
             transcript: None,
@@ -311,6 +313,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         Event::Interrupt => interrupt(domain, env, out),
         Event::Drop => drop_run(domain, env),
         Event::Closed => closed(domain, out),
+        Event::SelectChat { name, create } => select_chat(domain, env, name, create, out),
+        Event::ChatSelected { name, result } => chat_selected(domain, name, result, out),
         Event::Loaded { state, transcript, deliveries } => loaded(domain, env, state, transcript, deliveries, out),
         Event::StateSaved => state_saved(domain, env, out),
         Event::TurnSaved { number } => turn_saved(domain, env, number, out),
@@ -471,6 +475,71 @@ fn stop_names(domain: &mut Domain, out: &mut Queue<Request>) {
     domain.chat.phase = Phase::Done;
     out.push(Request::Notice { notice: Notice::Failure(Failure::NamesExhausted) });
     out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
+}
+
+fn select_chat(domain: &mut Domain, env: &Env<Limits>, name: Box<[u8]>, create: bool, out: &mut Queue<Request>) {
+    let refusal = if name.len() > usize::try_from(env.limits.chat_bytes).expect("bounded chat name") {
+        Some(crate::ChatRefusal::Name)
+    } else if domain.chat.phase != Phase::Idle
+        || domain.run.is_some()
+        || domain.chat.state_pending
+        || !domain.turns.unsaved.is_empty()
+        || !domain.lines.is_empty()
+        || domain.saving.is_some()
+    {
+        Some(crate::ChatRefusal::Busy)
+    } else {
+        None
+    };
+    if let Some(reason) = refusal {
+        out.push(Request::Notice { notice: Notice::ChatRefused { name, reason } });
+        return;
+    }
+    if domain.chat_seed == u64::MAX {
+        stop_names(domain, out);
+        return;
+    }
+    domain.chat.phase = Phase::Loading;
+    domain.chat.load_requested = true;
+    out.push(Request::SelectChat { name, create });
+}
+
+fn chat_selected(
+    domain: &mut Domain,
+    name: Box<[u8]>,
+    result: Result<(), crate::ChatRefusal>,
+    out: &mut Queue<Request>,
+) {
+    if domain.stop_failed {
+        return;
+    }
+    assert!(domain.run.is_none() && !domain.chat.state_pending, "selection ends between activations");
+    assert!(domain.chat.phase == Phase::Loading && domain.chat.load_requested, "selection has one terminal");
+    match result {
+        Ok(()) => {
+            let closed = domain.chat.closed;
+            domain.chat_seed = match domain.chat_seed.checked_add(1) {
+                Some(seed) => seed,
+                None => {
+                    stop_names(domain, out);
+                    return;
+                }
+            };
+            domain.chat = Chat::new(domain.chat_seed);
+            domain.chat.closed = closed;
+            domain.chat.load_requested = true;
+            domain.config.chat = name;
+            out.push(Request::Load);
+        }
+        Err(reason) => {
+            domain.chat.phase = Phase::Idle;
+            domain.chat.load_requested = false;
+            out.push(Request::Notice { notice: Notice::ChatRefused { name, reason } });
+            if domain.chat.closed {
+                closed(domain, out);
+            }
+        }
+    }
 }
 
 fn loaded(

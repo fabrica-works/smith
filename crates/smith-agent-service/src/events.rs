@@ -7,7 +7,7 @@
 #![expect(clippy::manual_map, reason = "bounded production entries use explicit matches without closures")]
 
 use alloc::boxed::Box;
-use skein_lib::{Duration, List, Map, Time, Token};
+use skein_lib::{Duration, List, Map, Queue, Time, Token};
 use smith_domain::{self as domain, run};
 use smith_events::{Event, Record};
 use smith_protocol_channel as channel;
@@ -20,6 +20,8 @@ use crate::sinks::{Capture, SinkLimits, Sinks};
 pub struct EventLimits {
     pub sinks: SinkLimits,
     pub capture: Capture,
+    /// The product asks for a best-effort typed live view, independent of capture.
+    pub front: bool,
     /// IO's stall deadline for each adopted destination.
     pub write_deadline: Duration,
 }
@@ -101,7 +103,7 @@ impl EventLimits {
         };
         sinks.output = crate::sinks::output_bound(&sinks, capture)?;
         crate::sinks::sinks_worst_case(&sinks, capture)?;
-        Some(EventLimits { sinks, capture, write_deadline })
+        Some(EventLimits { sinks, capture, front: false, write_deadline })
     }
 }
 
@@ -139,6 +141,12 @@ impl Producer {
     /// The bounded destinations driven by the owning process's IO.
     pub fn sinks(&mut self) -> &mut Sinks {
         &mut self.sinks
+    }
+
+    /// A typed live-view record awaits its product, independently of destination work.
+    #[must_use]
+    pub fn front_pending(&self) -> bool {
+        self.sinks.front_pending()
     }
 
     /// Whether a complete destination can take another parent observation.
@@ -198,7 +206,7 @@ impl Producer {
             }
         }
         Producer {
-            sinks: Sinks::new(&events.sinks, events.capture, limits.io.output),
+            sinks: Sinks::with_front(&events.sinks, events.capture, limits.io.output, events.front),
             names,
             efforts,
             calls: crate::calls::Book::new(&limits.domain.session, events.capture),
@@ -602,7 +610,8 @@ pub fn worst_case(limits: &crate::Limits) -> Option<u64> {
     // The component moves each observed completion into the response join.
     // It stays there until the corresponding accounting/terminal fact, and
     // moves into the terminal record without a second payload copy.
-    let completions = match events.capture {
+    let observed = if events.front { Capture::Everything } else { events.capture };
+    let completions = match observed {
         Capture::None | Capture::Calls => 0,
         Capture::Everything => u64::from(events.sinks.conversations).checked_mul(
             List::<smith_events::Block>::worst_case(limits.llm.adapter.client.output_items)?
@@ -610,6 +619,7 @@ pub fn worst_case(limits: &crate::Limits) -> Option<u64> {
         )?,
     };
     crate::sinks::sinks_worst_case(&events.sinks, events.capture)?
+        .checked_add(if events.front { front_worst_case(limits)? } else { 0 })?
         .checked_add(completions)?
         .checked_add(crate::messages::worst_case(limits, events.capture)?)?
         .checked_add(crate::calls::worst_case(&limits.domain.session, events.sinks.records.string)?)?
@@ -624,6 +634,21 @@ pub fn worst_case(limits: &crate::Limits) -> Option<u64> {
             u64::from(limits.domain.run.host_tools.checked_add(1)?)
                 .checked_mul(u64::from(events.sinks.metadata_string))?,
         )
+}
+
+/// The typed queue, its largest native payload and one hand-off copy.
+#[must_use]
+pub fn front_worst_case(limits: &crate::Limits) -> Option<u64> {
+    let events = limits.events?;
+    let client = limits.llm.adapter.client;
+    let prompt = u64::from(client.request)
+        .checked_add(u64::from(client.history_items).checked_mul(128)?)?
+        .checked_add(u64::from(client.tools).checked_mul(128)?)?
+        .checked_add(u64::from(events.sinks.metadata_string).checked_mul(18)?)?
+        .checked_add(2048)?;
+    let payload = u64::from(events.sinks.line_ceiling(Capture::Everything)?).max(prompt);
+    Queue::<Record>::worst_case(crate::sinks::FRONT_RECORDS)?
+        .checked_add(payload.checked_mul(u64::from(crate::sinks::FRONT_RECORDS).checked_add(1)?)?)
 }
 
 #[cfg(test)]

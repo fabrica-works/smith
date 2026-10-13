@@ -699,6 +699,10 @@ impl ProcessAdapter {
             }
             let Some(event) = self.file_events.pop() else { break };
             if event.owner() == Token::new(u64::MAX - 1) {
+                if let file::Event::Opened { file, .. } = &event {
+                    let descriptor = self.files.descriptor(*file).expect("opened directory is owned by the file layer");
+                    self.store.as_mut().expect("store owns its directory open").opened_directory_descriptor(descriptor);
+                }
                 self.store.as_mut().expect("store owner remains until Closed").from_io(
                     event,
                     now,

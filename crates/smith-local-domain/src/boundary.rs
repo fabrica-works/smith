@@ -168,6 +168,10 @@ pub enum Event {
     Drop,
     /// The terminal closed; finish outstanding work, then leave.
     Closed,
+    /// Select another bounded chat between activations; `ChatSelected` follows.
+    SelectChat { name: Box<[u8]>, create: bool },
+    /// The idle store selected a chat, or refused it without changing its selection.
+    ChatSelected { name: Box<[u8]>, result: Result<(), ChatRefusal> },
     /// Terminal for Load, including a possibly empty saved chat.
     Loaded { state: Option<ChatState>, transcript: Option<agent::Transcript>, deliveries: Box<[DeliveryRecord]> },
     /// Terminal for `SaveState`; names and activation are now durable.
@@ -196,6 +200,21 @@ pub enum Event {
     Process(smith_host_domain::process::Event),
 }
 
+/// Why the person's request to select a chat could not be served.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChatRefusal {
+    /// The current chat still owns activation, line or store work.
+    Busy,
+    /// The chat is not a bounded single directory name.
+    Name,
+    /// No private directory with that name exists.
+    Missing,
+    /// A private ephemeral store cannot select another chat.
+    Ephemeral,
+    /// The directory operation failed.
+    Io,
+}
+
 /// Whether the terminal may demand more person input.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Reading {
@@ -208,6 +227,8 @@ pub enum Reading {
 /// A local host notice rendered by the terminal (protocol/hosts.md, section 5.1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Notice {
+    /// A local chat selection was refused, without sending a message to the run.
+    ChatRefused { name: Box<[u8]>, reason: ChatRefusal },
     /// The run is waiting for a person message.
     Waiting,
     /// The run's checks began or ended.
@@ -307,6 +328,8 @@ pub enum Request {
     Notice { notice: Notice },
     /// Load this configured chat's metadata and concrete history.
     Load,
+    /// Select one idle chat directory; answered by `ChatSelected`.
+    SelectChat { name: Box<[u8]>, create: bool },
     /// Save the updated activation or person-message counter before using it.
     /// A fresh start replaces incompatible old history in the same store operation.
     SaveState { state: ChatState, fresh: bool },

@@ -423,6 +423,23 @@ impl Effects {
         }
     }
 
+    /// The existing event sink's optional in-process view, with no destination credit.
+    pub fn front_sinks(&mut self) -> Option<&mut crate::sinks::Sinks> {
+        match &mut self.service.events {
+            Some(events) => Some(&mut events.sinks),
+            None => None,
+        }
+    }
+
+    /// A live-view record awaits its product front end.
+    #[must_use]
+    pub fn front_pending(&self) -> bool {
+        match &self.service.events {
+            Some(events) => events.sinks.front_pending(),
+            None => false,
+        }
+    }
+
     /// Whether the destinations can take another record this pass.
     #[must_use]
     pub fn takes(&self) -> bool {

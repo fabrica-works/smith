@@ -42,7 +42,8 @@ impl Store {
                 self.phase = Phase::Closing;
                 Self::io(file::Request::Close { owner: self.owner, file: self.root }, now, out);
             }
-            Phase::Journal
+            Phase::Selecting
+            | Phase::Journal
             | Phase::State
             | Phase::Scan
             | Phase::Headers

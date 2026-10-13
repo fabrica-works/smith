@@ -2,6 +2,9 @@
 //! The owner retains only record versions and bounded loading buffers. It knows
 //! neither the conversation's policy nor whether a turn was acknowledged.
 mod ephemeral;
+mod selection;
+
+use selection::Selection;
 
 use super::boundary::{Action, History, RecordName, StoreFault, StoreLimits, StoreRequest};
 use super::{File, STATE_BYTES, decode_state, decode_turns, save_state, save_turn, turn_opens_window};
@@ -19,6 +22,7 @@ use smith_protocol_channel::Endpoints;
 #[derive(Debug)]
 enum Phase {
     Idle,
+    Selecting,
     Journal,
     State,
     Scan,
@@ -49,6 +53,10 @@ pub struct Store {
     owner: Token,
     root: Token,
     descriptor: kernel::Fd,
+    chats_root: Token,
+    chats_descriptor: kernel::Fd,
+    selection: Option<Selection>,
+    opened_descriptor: Option<kernel::Fd>,
     limits: StoreLimits,
     endpoints: Endpoints,
     phase: Phase,
@@ -89,6 +97,10 @@ impl Store {
             owner,
             root,
             descriptor,
+            chats_root: root,
+            chats_descriptor: descriptor,
+            selection: None,
+            opened_descriptor: None,
             limits,
             endpoints,
             phase: Phase::Idle,
@@ -122,6 +134,7 @@ impl Store {
             // A private parent leaf and one copied known removal name.
             .checked_add(255)?
             .checked_add(42)?
+            .checked_add(255)?
             .checked_add(u64::try_from(size_of::<Self>()).ok()?)
     }
 
@@ -134,7 +147,8 @@ impl Store {
     fn idle(&self) -> bool {
         match self.phase {
             Phase::Idle => true,
-            Phase::Journal
+            Phase::Selecting
+            | Phase::Journal
             | Phase::State
             | Phase::Scan
             | Phase::Headers
@@ -155,6 +169,7 @@ impl Store {
         assert!(self.takes(), "the service reserves a serial store slot");
         self.loading = false;
         match request {
+            StoreRequest::SelectChat { name, create } => self.select_chat(name, create, now, out),
             StoreRequest::Load if self.ephemeral.is_some() => {
                 self.finish(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) }, now, out);
             }
@@ -203,12 +218,17 @@ impl Store {
     /// Consume one terminal of the last file request, reserving three output slots.
     pub fn from_io(&mut self, event: file::Event, now: Time, out: &mut Queue<Action>) {
         assert_eq!(event.owner(), self.owner, "store IO echoes its owner");
+        if self.selection.is_some() {
+            self.selection_event(event, now, out);
+            return;
+        }
         match self.phase {
             Phase::Cleaning => {
                 self.cleanup_event(event, now, out);
                 return;
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -242,6 +262,7 @@ impl Store {
             file::Event::Failed { error: kernel::Error::NotFound, committed: false, .. } => match self.phase {
                 Phase::Journal | Phase::State => self.loaded(None, now, out),
                 Phase::Idle
+                | Phase::Selecting
                 | Phase::Scan
                 | Phase::Headers
                 | Phase::Records
@@ -278,6 +299,12 @@ impl Store {
             file::Event::Removed { .. } => self.removed(now, out),
             file::Event::Synced { .. } => self.synced(now, out),
             file::Event::Closed { .. } => {
+                if self.root != self.chats_root {
+                    self.root = self.chats_root;
+                    self.descriptor = self.chats_descriptor;
+                    Self::io(file::Request::Close { owner: self.owner, file: self.root }, now, out);
+                    return;
+                }
                 self.phase = Phase::Closed;
                 out.push(Action::Closed);
             }
@@ -304,6 +331,7 @@ impl Store {
                 self.sync(now, out);
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -336,6 +364,7 @@ impl Store {
                 }
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -358,6 +387,7 @@ impl Store {
         let max = match self.phase {
             Phase::Journal | Phase::State => u32::try_from(STATE_BYTES).expect("fixed metadata"),
             Phase::Idle
+            | Phase::Selecting
             | Phase::Scan
             | Phase::Headers
             | Phase::Records
@@ -452,6 +482,7 @@ impl Store {
                 self.advance(now, out);
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Scan
             | Phase::Write
             | Phase::Remove
@@ -491,6 +522,7 @@ impl Store {
                 self.scan(now, out);
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Scan
             | Phase::Headers
             | Phase::Records
@@ -526,6 +558,7 @@ impl Store {
                         Some(RecordName::State | RecordName::Journal) | None => false,
                     },
                     Phase::Idle
+                    | Phase::Selecting
                     | Phase::Journal
                     | Phase::State
                     | Phase::Scan
@@ -587,6 +620,7 @@ impl Store {
                     self.sync(now, out);
                 }
                 Phase::Idle
+                | Phase::Selecting
                 | Phase::Journal
                 | Phase::State
                 | Phase::Scan
@@ -706,6 +740,7 @@ impl Store {
                 return;
             }
             Phase::Idle
+            | Phase::Selecting
             | Phase::Journal
             | Phase::State
             | Phase::Scan
@@ -735,6 +770,7 @@ impl Store {
             }
             Phase::Write => self.writing.as_ref().expect("pending write").file.name.clone(),
             Phase::Idle
+            | Phase::Selecting
             | Phase::State
             | Phase::Scan
             | Phase::SyncOld

@@ -173,8 +173,11 @@ pub struct Sinks {
     io_output: u32,
     counts: [u64; TYPES],
     ended: bool,
+    front: Option<Queue<Record>>,
+    front_lost: u64,
 }
 
+pub(crate) const FRONT_RECORDS: u32 = 4;
 const TYPES: usize = 18;
 const AUTHORITATIVE: u32 = 4;
 // The three authoritative records, teardown notice and two-record fact hand-off have separate slots.
@@ -199,6 +202,39 @@ impl Sinks {
             io_output,
             counts: [0; TYPES],
             ended: false,
+            front: None,
+            front_lost: 0,
+        }
+    }
+
+    pub(crate) fn with_front(limits: &SinkLimits, capture: Capture, io_output: u32, front: bool) -> Self {
+        let mut sinks = Self::new(limits, capture, io_output);
+        if front {
+            sinks.front = Some(Queue::with_capacity(FRONT_RECORDS));
+        }
+        sinks
+    }
+
+    /// Take the next typed live-view record without changing a destination's credit.
+    pub fn pop_front(&mut self) -> Option<Record> {
+        match &mut self.front {
+            Some(front) => front.pop(),
+            None => None,
+        }
+    }
+
+    /// Records the live view could not hold; destinations keep their own loss counts.
+    #[must_use]
+    pub const fn front_lost(&self) -> u64 {
+        self.front_lost
+    }
+
+    /// Whether a typed live-view record is waiting for the product.
+    #[must_use]
+    pub fn front_pending(&self) -> bool {
+        match &self.front {
+            Some(front) => !front.is_empty(),
+            None => false,
         }
     }
 
@@ -330,7 +366,8 @@ impl Sinks {
         prompt: &smith_domain::llm::Prompt,
     ) -> Option<smith_protocol_llm::Observation> {
         let record = self.responses.request(now, origin, owner, prompt);
-        match self.capture {
+        let observation = if self.front.is_some() { Capture::Everything } else { self.capture };
+        match observation {
             Capture::None | Capture::Calls => {
                 self.record(&record);
                 None
@@ -459,6 +496,13 @@ impl Sinks {
     /// The owner calls this only while takes holds, except for the three authoritative records.
     pub fn record(&mut self, record: &Record) {
         assert!(!self.ended, "no record follows the process terminal");
+        if let Some(front) = &mut self.front {
+            if front.room() == 0 {
+                self.front_lost = self.front_lost.checked_add(1).expect("bounded process record count");
+            } else {
+                front.push(record.clone());
+            }
+        }
         let capture = match &record.event {
             Event::RunCompleted(answer) => {
                 assert!(
@@ -1053,6 +1097,36 @@ pub(crate) mod tests {
             fact_extra: 0,
             conversations: 1,
         }
+    }
+
+    #[test]
+    fn the_live_view_drops_without_holding_a_none_capture_destination() {
+        let limits = limits(1);
+        let token = Token::new(400);
+        let mut sinks = Sinks::with_front(&limits, Capture::None, 7, true);
+        sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
+        for number in 0..6 {
+            sinks.record(&Record {
+                t_ms: number,
+                event: Event::TextDelta(smith_events::TextDelta {
+                    run: 1,
+                    conversation: 1,
+                    response: 1,
+                    block: 0,
+                    text: b"live".as_slice().into(),
+                }),
+            });
+        }
+        assert!(sinks.takes(), "a full live view never holds the run");
+        assert_eq!(sinks.front_lost(), 2);
+        for number in 0..4 {
+            let record = sinks.pop_front().expect("the bounded live view");
+            assert_eq!(record.t_ms, number);
+            let Event::TextDelta(delta) = record.event else { panic!("typed delta") };
+            assert_eq!(delta.text.as_ref(), b"live");
+        }
+        assert!(sinks.pop_front().is_none());
+        assert!(drain_ready(&mut sinks, token).is_empty(), "trace capture remains none");
     }
 
     #[test]

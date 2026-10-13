@@ -10,7 +10,8 @@ impl Local {
             | domain::Notice::Warning(_)
             | domain::Notice::Waiting
             | domain::Notice::Checking(_)
-            | domain::Notice::NotDelivered { .. } => return None,
+            | domain::Notice::NotDelivered { .. }
+            | domain::Notice::ChatRefused { .. } => return None,
         };
         let location = self.credential_locations.iter().find(|location| location.account == account)?;
         let expires = match reason {

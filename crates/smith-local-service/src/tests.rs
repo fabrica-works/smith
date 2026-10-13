@@ -129,6 +129,29 @@ fn the_local_service_loads_then_routes_durable_start_requests_to_the_shell() {
 }
 
 #[test]
+fn idle_chat_selection_routes_to_the_store_and_back_before_loading() {
+    let mut service = Service::new(config(), 7).unwrap();
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    let Some(smith_local_protocol::StoreRequest::Load) = service.store_requests().pop() else {
+        panic!("load selected chat")
+    };
+    service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    service.local_event(local::Event::SelectChat { name: b"next".as_slice().into(), create: true });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    let Some(smith_local_protocol::StoreRequest::SelectChat { name, create: true }) = service.store_requests().pop()
+    else {
+        panic!("typed selection")
+    };
+    assert_eq!(name.as_ref(), b"next");
+    service.local_event(local::Event::ChatSelected { name, result: Ok(()) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    let Some(smith_local_protocol::StoreRequest::Load) = service.store_requests().pop() else {
+        panic!("load selected chat")
+    };
+}
+
+#[test]
 fn a_local_service_reserves_the_selected_childs_complete_transition() {
     for mut config in [config(), colocated_config()] {
         config.limits.queue = local::max_out(&config.limits.local).checked_sub(1).expect("nonzero child output");
@@ -387,7 +410,8 @@ fn a_colocated_chat_routes_a_turn_through_the_shared_plaintext_effects_without_s
                     saved_turn = true;
                     service.local_event(local::Event::TurnSaved { number });
                 }
-                other @ smith_local_protocol::StoreRequest::SaveDelivery { .. } => {
+                other @ (smith_local_protocol::StoreRequest::SaveDelivery { .. }
+                | smith_local_protocol::StoreRequest::SelectChat { .. }) => {
                     panic!("unexpected store request {other:?}");
                 }
             }
