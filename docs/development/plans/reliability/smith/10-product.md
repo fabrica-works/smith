@@ -801,7 +801,11 @@ documentation, with the source; settings' `[models."<e>/<n>"].efforts`);
 `smith check`, `--effort`, `/effort` and the run's entrance refuse an
 effort outside the main model's list, naming it and the list; a model
 that declares none takes any effort within 32 bytes, its provider's
-refusal being the request's failure; skein holds no list;
+refusal being the request's failure; skein holds no list. `/model` to a
+model whose declared efforts lack the chat's current one applies and
+drops that effort for the provider's default, saying so, naming the
+dropped effort and the new model's list (shell.md, 4.1, as the designer
+ruled on 2026-10-13); a declared one stays;
 both take effect only once the live activation has answered or parked;
 `sub_agents`' models and the needed accounts are unchanged; 10.24's
 interim refusal of both goes. It starts from 10.24's preserved WIP (the
@@ -829,7 +833,8 @@ Test shape: unit: each `/model` and `/effort` line's choice or refusal,
 its words. World, on the scripted `Terminal` (13.119):
 `slash_model_applies_from_the_next_activation`,
 `slash_model_on_another_endpoint_is_refused_and_the_chat_kept`,
-`slash_effort_outside_the_models_efforts_is_refused_naming_them`. End to
+`slash_effort_outside_the_models_efforts_is_refused_naming_them`,
+`slash_model_drops_an_effort_the_new_model_does_not_declare`. End to
 end: `slash_effort_reaches_the_next_request`. Ceilings: 20 ms, 0.5 s, 2 s.
 Proof: process, `slash_effort_reaches_the_next_request`; once, under 2 s.
 Don't: nothing composed again within the process; no endpoint but
