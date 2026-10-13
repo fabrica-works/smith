@@ -10,6 +10,15 @@ use serde::{Deserialize, Serialize};
 use crate::arm::BuiltArm;
 use crate::isolate::{Setup, SetupStep};
 
+/// The credential arrangement selected by the arm's shipped invocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CredentialShape {
+    /// Historical local invocations need a private access-only record.
+    Converted,
+    /// Product invocations read the caller's login file directly.
+    Borrowed,
+}
+
 /// Receiving bounds pinned with the face that writes the stream.
 /// The arm supplies semantic caps and the writer-derived aggregate line ceiling.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -41,6 +50,17 @@ pub struct FaceSince {
     pub receiving: Receiving,
     /// This writer's session terminal carries the teardown-aborted field.
     pub session_ended_aborted: bool,
+}
+
+impl FaceSince {
+    /// Keep credential preparation paired with the invocation's source face.
+    #[must_use]
+    pub const fn credential(&self) -> CredentialShape {
+        match self.shape {
+            super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => CredentialShape::Converted,
+            super::events::Shape::Exec | super::events::Shape::Chat => CredentialShape::Borrowed,
+        }
+    }
 }
 
 #[derive(Deserialize)]

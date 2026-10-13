@@ -61,3 +61,6 @@ check = "completions"
 count = { at-most = 2 }
 before = "answer"
 
+
+[[variant]]
+name = "headless"

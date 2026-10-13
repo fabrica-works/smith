@@ -188,6 +188,93 @@ pub fn teardown(settings: &Value) -> Result<skein_lib::Duration, Setup> {
     Ok(skein_lib::Duration::from_nanos(nanos))
 }
 
+fn seconds(name: &str, value: &Value) -> Result<Value, Setup> {
+    let milliseconds = value.as_u64().ok_or_else(|| configuration("pinned duration must be milliseconds"))?;
+    if milliseconds % 1000 != 0 {
+        return Err(configuration(format!("product duration override {name} requires whole seconds")));
+    }
+    Ok(json!(milliseconds / 1000))
+}
+
+fn dollars(value: &Value) -> Result<Value, Setup> {
+    let micro = value.as_u64().ok_or_else(|| configuration("pinned price must be micro-dollars"))?;
+    let decimal = format!("{}.{:06}", micro / 1_000_000, micro % 1_000_000);
+    let dollars: f64 = decimal.parse().map_err(|_| configuration("pinned price exceeds dollars"))?;
+    Ok(json!(dollars))
+}
+
+/// Render the pin's instructions, endpoint and task limits as a product user layer.
+pub fn product(context: &Context<'_>, base: &Value, login: &Path) -> Result<Value, Setup> {
+    let root = context.private.root.join("smith");
+    let native = settings(context, base, "unused", &root.join("trace.jsonl"), &root.join("tokens"))?;
+    let endpoint = &native["agent"]["endpoints"][0];
+    let model = &native["models"][0];
+    let endpoint_name = endpoint["name"].as_str().ok_or_else(|| configuration("pinned endpoint name"))?;
+    let model_name = model["name"].as_str().ok_or_else(|| configuration("pinned model name"))?;
+    let selected = format!("{endpoint_name}/{model_name}");
+    let mut declared = model.clone();
+    for field in ["endpoint", "name"] {
+        declared.as_object_mut().expect("native model").remove(field);
+    }
+    for field in ["head", "idle"] {
+        declared[field] = seconds(field, &model[field])?;
+    }
+    for field in ["input_price", "cached_price", "output_price"] {
+        declared[field] = dollars(&model[field])?;
+    }
+    let headers: std::collections::BTreeMap<_, _> = endpoint["headers"]
+        .as_array()
+        .ok_or_else(|| configuration("pinned endpoint headers"))?
+        .iter()
+        .map(|header| {
+            Ok((
+                header["name"].as_str().ok_or_else(|| configuration("pinned header name"))?,
+                header["value"].as_str().ok_or_else(|| configuration("pinned header value"))?,
+            ))
+        })
+        .collect::<Result<_, Setup>>()?;
+    let mut provider = json!({"preset":endpoint_name,"account":endpoint_name,"dialect":endpoint["provider"],
+        "address":endpoint["address"],"identity":endpoint["identity"],"headers":headers,
+        "connect":seconds("connect", &endpoint["connect"])? ,"handshake":seconds("handshake", &endpoint["handshake"])?});
+    if let Some(server_name) = endpoint.get("server_name") {
+        provider["server_name"] = server_name.clone();
+    }
+    let environment: std::collections::BTreeMap<_, _> = context
+        .environment
+        .iter()
+        .map(|(name, value)| {
+            Ok((
+                name.to_str().ok_or_else(|| configuration("environment name must be UTF-8"))?,
+                value.to_str().ok_or_else(|| configuration("environment value must be UTF-8"))?,
+            ))
+        })
+        .collect::<Result<_, Setup>>()?;
+    let mut deployment = native["agent"]["profile"]["declared"].clone();
+    for (field, value) in native["agent"]["profile"]["policy"].as_object().expect("native policy") {
+        // The historical process grace belongs to its local invocation; the product uses its preset.
+        if field == "group_stop"
+            && !context.task.smith.contains_key(field)
+            && context.variant.is_none_or(|variant| !variant.smith.contains_key(field))
+        {
+            continue;
+        }
+        deployment[field] = match field.as_str() {
+            "max_time" | "max_waiting" | "connection_keep" | "tool_deadline" | "shell_timeout" | "group_stop"
+            | "close" | "write_deadline" | "cancel_grace" | "exit_grace" => seconds(field, value)?,
+            "max_spend" => dollars(value)?,
+            _ => value.clone(),
+        };
+    }
+    let mut budget = native["budget"].clone();
+    budget["spend"] = dollars(&budget["spend"])?;
+    Ok(json!({"model":selected,"effort":endpoint["reasoning_effort"],"profile":"standard",
+        "instructions":native["instructions"],"sub_agents":native["sub_agents"],"budget":budget,
+        "deployment":deployment,"models":{selected:declared},"endpoints":{endpoint_name:provider},
+        "accounts":{endpoint_name:{"source":"borrow","file":login,"format":"codex","program":"codex"}},
+        "workspace":{"directories":native["directories"],"conventions":native["conventions"],"contract":native["contract"]},
+        "environment":{"inherit":[],"set":environment},"trace":{"path":root.join("trace.jsonl"),"capture":"everything"}}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -31,7 +31,7 @@ fn bootstrap_settings() {
 
 use smith_local_process_world::referee::CheckoutRead;
 use smith_real_world::Scratch;
-use support::live_run::{Expectation, run};
+use support::live_run::{Expectation, run as run_legacy};
 
 const CHANGE: &str = "In repository repo, read original.txt, replace its content with exactly edited followed by one newline, create result.txt containing exactly new followed by one newline, and use the command tool to create command.txt containing exactly ran followed by one newline. Run the configured .smith-test/check checks without modifying that script. Finish with a change result, a short title and body, so the host delivers the checked commit. Do not run git commit or push yourself.";
 
@@ -44,16 +44,22 @@ fn a_command_reads_the_whole_configured_environment() {
     for backend in live::Environment::load(false).backends {
         let scratch = Scratch::new();
         let mut settings = backend.settings(scratch.path(), false);
-        settings["directories"] = serde_json::json!([{
-            "name":"repo","path":scratch.path().join("repo"),"writable":true,"git":false
-        }]);
-        settings["agent"]["environment"] = serde_json::json!([
-            {"name":"PATH","value":"/usr/bin:/bin"},
-            {"name":"SMITH_TEST_ENVIRONMENT","value":"configured"}
-        ]);
-        std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&settings).expect("settings JSON"))
-            .expect("configured environment settings");
+        if backend.borrowed.is_some() {
+            settings["environment"]["set"]["SMITH_TEST_ENVIRONMENT"] = serde_json::json!("configured");
+            backend.write_product(&scratch, &settings);
+        } else {
+            settings["directories"] = serde_json::json!([{
+                "name":"repo","path":scratch.path().join("repo"),"writable":true,"git":false
+            }]);
+            settings["agent"]["environment"] = serde_json::json!([
+                {"name":"PATH","value":"/usr/bin:/bin"},
+                {"name":"SMITH_TEST_ENVIRONMENT","value":"configured"}
+            ]);
+            std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&settings).expect("settings JSON"))
+                .expect("configured environment settings");
+        }
         run(
+            &backend,
             &scratch,
             "Use shell to run `printf '%s\\n' \"$SMITH_TEST_ENVIRONMENT\" > configured.txt`. Do not use a file-writing tool or substitute a literal value. Finish with a report.",
             false,
@@ -78,7 +84,7 @@ fn change(backend: &live::Backend, scratch: &Scratch, prompt: &str, extra: Optio
     if let Some(extra) = extra {
         files.push(extra);
     }
-    run(scratch, prompt, true, Expectation { before: scratch.checkout().head(), files });
+    run(backend, scratch, prompt, true, Expectation { before: scratch.checkout().head(), files });
     assert!(
         std::process::Command::new("/bin/sh")
             .arg(".smith-test/check")
@@ -88,18 +94,22 @@ fn change(backend: &live::Backend, scratch: &Scratch, prompt: &str, extra: Optio
             .success(),
         "prescribed check passes independently"
     );
-    let tokens =
-        smith_local_shell::local_tokens::Tokens::new(&backend.tokens, smith_local_shell::local_host::token_limits())
-            .expect("private test token store")
-            .load(0)
-            .expect("read test grant")
-            .expect("durable grant");
-    let trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).expect("outside trace");
-    for secret in [Some(tokens.access_token.as_ref()), tokens.refresh_token.as_deref()].into_iter().flatten() {
-        assert!(
-            !secret.is_empty() && !trace.windows(secret.len()).any(|bytes| bytes == secret),
-            "trace contains no credential value"
-        );
+    if backend.borrowed.is_none() {
+        let tokens = smith_local_shell::local_tokens::Tokens::new(
+            &backend.tokens,
+            smith_local_shell::local_host::token_limits(),
+        )
+        .expect("private test token store")
+        .load(0)
+        .expect("read test grant")
+        .expect("durable grant");
+        let trace = std::fs::read(scratch.path().join("agent-trace.jsonl")).expect("outside trace");
+        for secret in [Some(tokens.access_token.as_ref()), tokens.refresh_token.as_deref()].into_iter().flatten() {
+            assert!(
+                !secret.is_empty() && !trace.windows(secret.len()).any(|bytes| bytes == secret),
+                "trace contains no credential value"
+            );
+        }
     }
 }
 
@@ -108,7 +118,9 @@ fn a_run_refreshes_its_grant_at_the_issuer() {
     if !live::enabled() {
         return;
     }
-    let environment = live::Environment::load(false);
+    let Some(environment) = live::Environment::issuer() else {
+        return;
+    };
     for backend in environment.backends {
         eprintln!("live refresh provider={}", backend.name);
         let store = smith_local_shell::local_tokens::Tokens::new(
@@ -133,6 +145,7 @@ fn a_run_refreshes_its_grant_at_the_issuer() {
         let scratch = Scratch::new();
         backend.configure(&scratch, false, None);
         run(
+            &backend,
             &scratch,
             "Give a brief greeting and call finish with a report result.",
             false,
@@ -160,8 +173,16 @@ fn a_chat_ends_with_a_commit_in_place() {
     }
 }
 
-fn turns(scratch: &Scratch) -> Vec<(std::path::PathBuf, Vec<u8>)> {
-    let mut files: Vec<_> = std::fs::read_dir(scratch.path().join("chat"))
+fn turns(backend: &live::Backend, scratch: &Scratch) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let directory = if backend.borrowed.is_some() {
+        let mut workspaces = std::fs::read_dir(scratch.path().join("state/smith/chats")).expect("workspace store");
+        let directory = workspaces.next().expect("one workspace").expect("workspace path").path().join("chat");
+        assert!(workspaces.next().is_none(), "only the story's workspace");
+        directory
+    } else {
+        scratch.path().join("chat")
+    };
+    let mut files: Vec<_> = std::fs::read_dir(directory)
         .expect("durable chat files")
         .map(|entry| entry.expect("turn directory entry").path())
         .filter(|path| path.extension().is_some_and(|extension| extension == "turn"))
@@ -186,6 +207,7 @@ fn a_second_run_resumes_the_chat_from_its_files() {
             format!("smith-live-memory-{}-{}", std::process::id(), skein_shell::Clock::new().now().now.as_nanos());
         backend.configure(&scratch, false, None);
         run(
+            &backend,
             &scratch,
             &format!(
                 "Remember this code for our next invocation: {marker}. Do not write files. Call finish with a short report result."
@@ -193,7 +215,7 @@ fn a_second_run_resumes_the_chat_from_its_files() {
             false,
             Expectation { before: None, files: vec![] },
         );
-        let before = turns(&scratch);
+        let before = turns(&backend, &scratch);
         assert!(!before.is_empty(), "first binary wrote durable turns");
         assert!(
             !scratch.path().join("repo/remembered.txt").exists(),
@@ -204,7 +226,7 @@ fn a_second_run_resumes_the_chat_from_its_files() {
             "{CHANGE} Also create remembered.txt containing exactly the code I asked you to remember in the previous invocation, with no newline. Obtain it from the saved conversation, not from an invented value."
         );
         change(&backend, &scratch, &prompt, Some((b"remembered.txt".to_vec(), marker.into_bytes())));
-        let after = turns(&scratch);
+        let after = turns(&backend, &scratch);
         assert!(after.len() > before.len(), "second binary appended durable history");
         assert!(before.iter().all(|entry| after.contains(entry)), "earlier durable turns remain unchanged");
     }
@@ -236,7 +258,9 @@ fn a_configured_push_lands() {
         );
         assert!(git(&repo, &["checkout", "-q", "-b", &branch]).status.success(), "create unique live push branch");
         assert!(
-            git(&repo, &["remote", "add", "live", &remote]).status.success(),
+            git(&repo, &["remote", "add", if backend.borrowed.is_some() { "origin" } else { "live" }, &remote])
+                .status
+                .success(),
             "configure caller-selected test remote"
         );
         backend.configure(&scratch, true, Some(("live", &branch)));
@@ -257,5 +281,168 @@ fn a_configured_push_lands() {
         if let Err(failure) = outcome {
             std::panic::resume_unwind(failure);
         }
+    }
+}
+
+fn run(backend: &live::Backend, scratch: &Scratch, prompt: &str, change: bool, expectation: Expectation) {
+    if backend.borrowed.is_some() {
+        run_exec(scratch, prompt, change, expectation);
+    } else {
+        run_legacy(scratch, prompt, change, expectation);
+    }
+}
+
+fn run_exec(scratch: &Scratch, prompt: &str, change: bool, expectation: Expectation) {
+    use skein_lib::Duration;
+    use skein_world::end_to_end::Command;
+    use smith_bench::process::{Bounds, Capture, execute};
+    let clock = skein_shell::Clock::new();
+    let environment = vec![
+        ("HOME".into(), scratch.path().into()),
+        ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+        ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+        ("PATH".into(), live::setting("PATH").expect("live PATH").into()),
+    ];
+    let workspace = scratch.path().join("repo");
+    let command = |arguments| Command {
+        program: env!("CARGO_BIN_EXE_smith").into(),
+        arguments,
+        environment: environment.clone(),
+        directory: scratch.path().into(),
+    };
+    let bounds = |hard, teardown| Bounds {
+        hard,
+        teardown,
+        grace: Duration::from_secs(1),
+        settlement: Duration::from_secs(5),
+        stdout: 20_000_000,
+        stderr: 65_536,
+        force_walk: true,
+    };
+    let check = execute(
+        &clock,
+        command(vec!["check".into(), "--json".into(), "-C".into(), workspace.clone().into()]),
+        Box::default(),
+        Capture::Raw,
+        bounds(Duration::from_secs(15), Duration::ZERO),
+    )
+    .expect("live check settles");
+    assert_eq!(check.exit, smith_bench::Exit::Code(0), "live check must pass; credential values withheld");
+    let teardown = smith_bench::agent::smith::teardown_from_check(&check.stdout).expect("effective bound");
+    let rendered: toml::Value = toml::from_str(
+        &std::fs::read_to_string(scratch.path().join("config/smith/config.toml")).expect("scratch settings"),
+    )
+    .expect("user layer");
+    let file = rendered
+        .get("accounts")
+        .and_then(|accounts| accounts.get("codex"))
+        .and_then(|account| account.get("file"))
+        .and_then(toml::Value::as_str)
+        .expect("caller-named source");
+    let borrowed = smith_bench::credential::smith_borrowed(
+        std::path::Path::new(file),
+        clock.now().wall,
+        Duration::from_secs(140).checked_add(teardown).expect("live credential lifetime"),
+    )
+    .expect("caller credential outlives story");
+    let registry = smith_bench::agent::smith::FaceSince {
+        commit: String::new(),
+        shape: smith_bench::agent::smith::events::Shape::Exec,
+        receiving: smith_bench::agent::smith::Receiving {
+            string: 256_000,
+            content: 13_056_000,
+            items: 52_778,
+            encoded_line: 19_817_472,
+        },
+        session_ended_aborted: true,
+    };
+    let prepared = smith_bench::agent::smith::Prepared {
+        face: registry.shape,
+        registry,
+        settings: scratch.path().join("config/smith/config.toml"),
+        credential: smith_bench::agent::smith::Credential::Record(None),
+        trace: None,
+        rendered: serde_json::Value::Null,
+        program: env!("CARGO_BIN_EXE_smith").into(),
+        state: scratch.path().join("state"),
+        teardown,
+    };
+    let mut arguments =
+        vec!["exec".into(), "--json".into(), "-C".into(), workspace.into(), "--chat".into(), "chat".into()];
+    if change {
+        arguments.push("--deliver".into());
+    }
+    arguments.push("-".into());
+    let mut result = execute(
+        &clock,
+        command(arguments),
+        format!("{prompt}\n").into_bytes().into(),
+        Capture::Agent(Box::new(smith_bench::agent::Observing::Smith(
+            smith_bench::agent::smith::Observing::new(prepared).expect("outside observer"),
+        ))),
+        bounds(Duration::from_secs(130), teardown),
+    )
+    .expect("shipped live exec settles");
+    assert_exec(&mut result, scratch, expectation);
+    assert!(
+        borrowed
+            .finish(&smith_bench::guard::Guard::from_environment().expect("credential guard"))
+            .expect("source file unchanged")
+            .source_unchanged,
+        "smith leaves its borrowed login file unchanged"
+    );
+}
+
+fn assert_exec(result: &mut smith_bench::process::ProcessResult, scratch: &Scratch, expectation: Expectation) {
+    assert!(
+        result.error.is_none() && result.forced == smith_bench::Forced::No && result.tree.live_pids.is_empty(),
+        "live exec and its tree must settle; credential values withheld"
+    );
+    let Some(smith_bench::agent::Observing::Smith(observing)) = result.observing.as_deref_mut() else {
+        panic!("exec observer")
+    };
+    observing.observer.finish().expect("complete event stream");
+    assert!(
+        matches!(observing.observer.classify(result.exit, result.forced).end, smith_bench::End::Completed),
+        "typed answer and process exit agree"
+    );
+    let checkout = scratch.checkout();
+    if let Some(before) = expectation.before {
+        let head = checkout.head().expect("delivered commit");
+        assert_ne!(head, before, "exec delivered a new commit");
+        let files = checkout.files(&head);
+        for (path, content) in expectation.files {
+            assert_eq!(files.get(&path), Some(&content), "committed file matches the story");
+        }
+    } else {
+        for (path, content) in expectation.files {
+            assert_eq!(
+                std::fs::read(scratch.path().join("repo").join(std::str::from_utf8(&path).expect("path")))
+                    .expect("requested file"),
+                content,
+                "requested file matches the story"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_borrowed_login_lends_a_grant_and_keeps_its_file() {
+    if !live::enabled() {
+        return;
+    }
+    for backend in live::Environment::load(false).backends {
+        if backend.borrowed.is_none() {
+            continue;
+        }
+        let scratch = Scratch::new();
+        backend.configure(&scratch, false, None);
+        run(
+            &backend,
+            &scratch,
+            "Give a short greeting and finish with a report.",
+            false,
+            Expectation { before: None, files: vec![] },
+        );
     }
 }

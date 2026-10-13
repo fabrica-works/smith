@@ -66,6 +66,7 @@ pub struct Borrowed {
 enum Shape {
     Codex,
     Smith,
+    SmithBorrowed,
 }
 
 /// A converted record and the nonsecret account identifier for local settings.
@@ -139,6 +140,28 @@ fn login(source_home: &Path, now: Wall, lifetime: Duration) -> Result<Login, Str
         return Err("Codex access token expires before the attempt ends".into());
     }
     Ok(Login { source, auth, digest, expires })
+}
+
+/// Lend the caller's Codex file to smith without writing a private credential.
+pub fn smith_borrowed(source: &Path, now: Wall, lifetime: Duration) -> Result<Borrowed, Setup> {
+    let bytes = read_source(source).map_err(|reason| Setup { step: SetupStep::Credentials, reason })?;
+    let borrowed =
+        smith_local_protocol::decode_login(smith_local_protocol::LoginFormat::Codex, &bytes, &token_limits()).map_err(
+            |_| Setup { step: SetupStep::Credentials, reason: "Codex login cannot lend a bounded access grant".into() },
+        )?;
+    if borrowed.record.remaining(now) <= lifetime {
+        return Err(Setup {
+            step: SetupStep::Credentials,
+            reason: "Codex access token expires before the attempt ends".into(),
+        });
+    }
+    Ok(Borrowed {
+        credential: source.into(),
+        source: source.into(),
+        expires: borrowed.record.expires_at,
+        digest: format!("{:x}", Sha256::digest(&bytes)),
+        shape: Shape::SmithBorrowed,
+    })
 }
 
 fn write_record(guard: &Guard, home: &Path, name: &str, encoded: &[u8]) -> Result<PathBuf, String> {
@@ -247,6 +270,21 @@ pub fn smith(
 impl Borrowed {
     /// Remove the private auth file after settlement and verify the user login.
     pub fn finish(&self, guard: &Guard) -> Result<Proof, String> {
+        if matches!(self.shape, Shape::SmithBorrowed) {
+            let after = format!("{:x}", Sha256::digest(read_source(&self.source)?));
+            if after != self.digest {
+                return Err("borrowed Codex login changed during the attempt".into());
+            }
+            return Ok(Proof {
+                source_sha256_before: self.digest.clone(),
+                source_sha256_after: after,
+                source_unchanged: true,
+                expires_unix_seconds: self.expires.as_secs(),
+                credential_removed: false,
+                private_refresh_empty: false,
+                private_refresh_unusable: false,
+            });
+        }
         let checked: Result<(), String> = (|| {
             let bytes = read_source(&self.credential)?;
             match self.shape {
@@ -268,6 +306,7 @@ impl Borrowed {
                         return Err("private Smith refresh state is no longer unusable".into());
                     }
                 }
+                Shape::SmithBorrowed => unreachable!("borrowed source is never a private record"),
             }
             Ok(())
         })();

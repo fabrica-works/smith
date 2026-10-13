@@ -158,3 +158,17 @@ oracle and every grade command's bounded output. The five grader
 command deadlines sum to 180 seconds; focused and fuzzy nextest still
 use the frozen seed's 15 and 60 second budgets. Both arms start from the
 same unbuilt copy, with no shared attempt cache.
+
+New product arms run `smith check --json` during setup, then
+`smith exec --json -C <workspace> -m <endpoint>/<model> --effort <effort> -`.
+The attempt's XDG user layer pins settings and borrows the caller's Codex
+login file read-only. Teardown comes from check's effective `service.teardown`.
+A nonzero check refuses setup; explicit startup-refusal probes retain that
+check's exit, diagnostic and settled tree as their observation. Historical
+event arms keep their original native configuration and credential codec.
+
+The opt-in live stories use `SMITH_TEST_LIVE_CODEX_LOGIN_FILE` to name an
+absolute Codex login file. The suite leaves it unchanged and runs through
+`smith exec --json`; this plan does not run the live suite. Anthropic stories
+and the optional issuer-refresh story retain their current invocation until
+product sign-in lands (decisions.md, 13.108).

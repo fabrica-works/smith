@@ -6,7 +6,7 @@ rerun_failed = 1
 max_wall_seconds = 7200
 max_tokens = 8000000
 # budget/spend waits for its next task version: decisions.md 13.58 and later.md.
-tasks = ["probes/history", "probes/history/small-window", "probes/follow-up", "probes/follow-up/eof", "probes/follow-up/chat", "probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write", "probes/large-write/oversized", "probes/first-request", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion", "probes/failures", "probes/failures/one-turn", "probes/failures/unknown-model", "probes/failures/derived-limit", "probes/failures/bad-setting", "probes/budget", "probes/budget/child-quota", "probes/budget/wrap-up", "probes/budget/starvation", "probes/budget/visibility", "probes/cache-reuse", "probes/cache-reuse/children", "probes/cache-reuse/crossing", "probes/parallel-read", "probes/parallel-children", "probes/parallel-children/reviews"]
+tasks = ["probes/history", "probes/history/small-window", "probes/follow-up", "probes/follow-up/eof", "probes/follow-up/chat", "probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write", "probes/large-write/oversized", "probes/first-request", "probes/first-request/headless", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion", "probes/failures", "probes/failures/one-turn", "probes/failures/unknown-model", "probes/failures/derived-limit", "probes/failures/bad-setting", "probes/budget", "probes/budget/child-quota", "probes/budget/wrap-up", "probes/budget/starvation", "probes/budget/visibility", "probes/cache-reuse", "probes/cache-reuse/children", "probes/cache-reuse/crossing", "probes/parallel-read", "probes/parallel-children", "probes/parallel-children/reviews"]
 
 [[agents]]
 agent = "smith"
@@ -18,7 +18,7 @@ tasks = ["probes/smoke-tools", "probes/smoke-tools/child", "probes/large-write",
 agent = "smith"
 provider = "codex"
 config = "first-request"
-tasks = ["probes/follow-up", "probes/follow-up/eof", "probes/follow-up/chat", "probes/first-request", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion"]
+tasks = ["probes/follow-up", "probes/follow-up/eof", "probes/follow-up/chat", "probes/first-request", "probes/first-request/headless", "probes/paths", "probes/paths/single", "probes/tool-output", "probes/tool-output/test-output", "probes/tool-output/quote", "probes/tool-output/utf-8", "probes/tool-output/timeout", "probes/process-tree", "probes/slow-completion"]
 
 [[agents]]
 agent = "smith"

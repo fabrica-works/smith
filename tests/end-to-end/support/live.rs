@@ -25,6 +25,7 @@ pub struct Backend {
     pub model: String,
     account: serde_json::Value,
     pub tokens: PathBuf,
+    pub borrowed: Option<PathBuf>,
 }
 
 fn small_model(provider_name: &str) -> String {
@@ -43,6 +44,36 @@ pub struct Environment {
 
 impl Environment {
     pub fn load(bootstrap: bool) -> Self {
+        if bootstrap {
+            return Self::legacy(true, false);
+        }
+        let providers = required("SMITH_TEST_LIVE_PROVIDERS");
+        let mut backends = Vec::new();
+        for name in providers.split(',').map(str::trim) {
+            assert!(matches!(name, "codex" | "anthropic"), "selected live providers");
+            if name == "codex" {
+                let file = PathBuf::from(required("SMITH_TEST_LIVE_CODEX_LOGIN_FILE"));
+                assert!(file.is_absolute(), "caller-named Codex login file must be absolute");
+                backends.push(Backend {
+                    name: name.into(),
+                    model: setting("SMITH_TEST_LIVE_CODEX_MODEL").unwrap_or_else(|| small_model(name)),
+                    account: serde_json::Value::Null,
+                    tokens: PathBuf::new(),
+                    borrowed: Some(file),
+                });
+            } else {
+                backends.extend(Self::legacy(false, true).backends);
+            }
+        }
+        Self { backends, remote: setting("SMITH_TEST_LIVE_GIT_REMOTE") }
+    }
+
+    #[must_use]
+    pub fn issuer() -> Option<Self> {
+        setting("SMITH_TEST_LIVE_TOKEN_DIR").map(|_| Self::legacy(false, false))
+    }
+
+    fn legacy(bootstrap: bool, only_anthropic: bool) -> Self {
         let root = smith_bench::guard::write_path(Path::new(&required("SMITH_TEST_LIVE_TOKEN_DIR")))
             .expect("guarded live token directory");
         if bootstrap {
@@ -63,6 +94,9 @@ impl Environment {
         let mut backends = Vec::new();
         for name in providers.split(',').map(str::trim) {
             assert!(matches!(name, "codex" | "anthropic"), "SMITH_TEST_LIVE_PROVIDERS accepts codex,anthropic");
+            if only_anthropic && name != "anthropic" {
+                continue;
+            }
             assert!(!backends.iter().any(|backend: &Backend| backend.name == name), "each live provider appears once");
             let prefix = format!("SMITH_TEST_LIVE_{}", name.to_ascii_uppercase());
             let account_file = required(&format!("{prefix}_ACCOUNT_FILE"));
@@ -134,6 +168,7 @@ impl Environment {
                 model: setting(&format!("{prefix}_MODEL")).unwrap_or_else(|| small_model(name)),
                 account,
                 tokens,
+                borrowed: None,
             });
         }
         Self { backends, remote: setting("SMITH_TEST_LIVE_GIT_REMOTE") }
@@ -141,8 +176,30 @@ impl Environment {
 }
 
 impl Backend {
+    pub fn write_product(&self, scratch: &Scratch, settings: &serde_json::Value) {
+        let directory =
+            smith_bench::guard::write_path(&scratch.path().join("config/smith")).expect("guarded user layer");
+        std::fs::create_dir_all(&directory).expect("scratch user layer");
+        let settings: toml::Value = serde_json::from_value(settings.clone()).expect("product settings");
+        std::fs::write(directory.join("config.toml"), toml::to_string(&settings).expect("user layer TOML"))
+            .expect("private user layer");
+    }
+
     #[must_use]
     pub fn settings(&self, directory: &Path, change: bool) -> serde_json::Value {
+        if let Some(file) = &self.borrowed {
+            return serde_json::json!({"model":format!("codex/{}",self.model),"effort":"low",
+                "instructions":"Carry out the requested outcome and call finish when done.",
+                "accounts":{"codex":{"source":"borrow","file":file,"format":"codex","program":"codex"}},
+                "budget":{"turns":512,"spend":25,"seconds":3600},
+                "workspace":{"directories":[{"name":"repo","path":directory.join("repo"),"writable":true,"git":change}],
+                    "conventions":{"guide":".smith-test/guide","checks":".smith-test/check"},
+                    "contract":if change {serde_json::json!({"form":"change","checks_must_pass":true,
+                        "fields":[{"name":"title","max":256},{"name":"body","max":4096}]})}
+                        else {serde_json::json!({"form":"report","max":4096})}},
+                "environment":{"inherit":[],"set":{"PATH":required("PATH")}},
+                "trace":{"path":directory.join("agent-trace.jsonl"),"capture":"everything"}});
+        }
         let (host, identity, headers) = if self.name == "codex" {
             ("chatgpt.com", "plain", skein_llm::openai::identity::headers().iter().map(|header| serde_json::json!({"name":String::from_utf8_lossy(&header.name),"value":String::from_utf8_lossy(&header.value)})).collect::<Vec<_>>())
         } else {
@@ -179,6 +236,28 @@ impl Backend {
 
     pub fn configure(&self, scratch: &Scratch, change: bool, push: Option<(&str, &str)>) {
         let mut settings = self.settings(scratch.path(), change);
+        if self.borrowed.is_some() {
+            if push.is_some() {
+                settings
+                    .get_mut("workspace")
+                    .expect("product workspace")
+                    .as_object_mut()
+                    .expect("workspace table")
+                    .insert("delivery".into(), serde_json::json!({"pushes":true}));
+                if let Some(agent) = setting("SSH_AUTH_SOCK") {
+                    settings
+                        .get_mut("environment")
+                        .expect("product environment")
+                        .get_mut("set")
+                        .expect("set table")
+                        .as_object_mut()
+                        .expect("environment values")
+                        .insert("SSH_AUTH_SOCK".into(), serde_json::json!(agent));
+                }
+            }
+            self.write_product(scratch, &settings);
+            return;
+        }
         if let Some((remote, branch)) = push {
             settings
                 .as_object_mut()
@@ -215,6 +294,7 @@ mod tests {
                 model: "configured-model".into(),
                 account: serde_json::json!({"number":0,"account_id":"public-account","oauth":{}}),
                 tokens: scratch.path().join("dedicated-tokens"),
+                borrowed: None,
             };
             let settings = backend.settings(scratch.path(), true);
             let endpoint = &settings["agent"]["endpoints"][0];

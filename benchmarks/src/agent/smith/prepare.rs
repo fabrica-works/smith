@@ -1,5 +1,5 @@
-//! Preparation writes guarded native settings and a converted access-only record.
-//! The verified arm and append-only face registry choose the codec; user login
+//! Preparation writes guarded settings and selects access-only credential handling.
+//! The arm and append-only face registry choose the codec; user login
 //! bytes are read only by credential.rs (benchmarks.md, sections 6.2 and 10).
 
 use std::fs::{self, OpenOptions};
@@ -80,8 +80,17 @@ fn write(context: &Context<'_>, path: &Path, bytes: &[u8]) -> Result<(), Setup> 
     result.map_err(configuration)
 }
 
-/// Render the selected native arm before borrowing its existing source login.
+/// Prepare the selected arm, refusing a nonzero product startup check.
 pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
+    let (prepared, receipt) = prepare_checked(context)?;
+    if let Some(receipt) = receipt {
+        return Err(configuration(format!("Smith check refused setup with {:?}", receipt.exit)));
+    }
+    Ok(prepared)
+}
+
+/// Retain a refused check's process receipt for the runner's explicit startup stories.
+pub fn prepare_checked(context: &Context<'_>) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
     if context.pin.pin.agent != crate::Agent::Smith
         || context.pin.pin.provider != crate::Provider::Codex
         || context.pin.pin.version != "built-arm"
@@ -108,8 +117,8 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
         .ok_or_else(|| configuration("Smith pin needs its source repository for arm ancestry"))?;
     let registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
     match registry.shape {
-        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => {}
-        super::events::Shape::Exec | super::events::Shape::Chat => {
+        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace | super::events::Shape::Exec => {}
+        super::events::Shape::Chat => {
             return Err(configuration("this event front end awaits its shipped product invocation"));
         }
     }
@@ -120,6 +129,9 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
     let base = serde_json::from_slice(&bytes).map_err(|error| configuration(error.to_string()))?;
     let root = context.private.root.join("smith");
     crate::run::private_parent(context.guard, &root).map_err(configuration)?;
+    if registry.shape == super::events::Shape::Exec {
+        return exec(context, &base, program, registry);
+    }
     let tokens = root.join("tokens");
     let trace = root.join("trace.jsonl");
     let settings_path = root.join("settings.json");
@@ -134,23 +146,112 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
     write(context, &trace, &[])?;
     let state = root.join("state");
     crate::run::private_parent(context.guard, &state).map_err(configuration)?;
-    Ok(Prepared {
+    Ok((
+        Prepared {
+            face: registry.shape,
+            settings: settings_path,
+            credential: Credential::Record(Some(converted.borrowed)),
+            trace: Some(trace),
+            registry,
+            rendered,
+            program,
+            state,
+            teardown,
+        },
+        None,
+    ))
+}
+
+fn exec(
+    context: &Context<'_>,
+    base: &serde_json::Value,
+    program: PathBuf,
+    registry: FaceSince,
+) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
+    let login = context.home.join("auth.json");
+    let rendered = settings::product(context, base, &login)?;
+    let directory = context.private.config.join("smith");
+    crate::run::private_parent(context.guard, &directory).map_err(configuration)?;
+    let settings = directory.join("config.toml");
+    let document: toml::Value =
+        serde_json::from_value(rendered.clone()).map_err(|error| configuration(error.to_string()))?;
+    write(
+        context,
+        &settings,
+        toml::to_string(&document).map_err(|error| configuration(error.to_string()))?.as_bytes(),
+    )?;
+    let working =
+        crate::isolate::working_directory(context.guard, context.private, context.task).map_err(configuration)?;
+    let receipt = crate::process::execute(
+        &skein_shell::Clock::new(),
+        skein_world::end_to_end::Command {
+            program: program.clone(),
+            arguments: vec!["check".into(), "--json".into(), "-C".into(), working.into_os_string()],
+            environment: context.environment.to_vec(),
+            directory: context.private.workspace.clone(),
+        },
+        Box::default(),
+        crate::process::Capture::Raw,
+        crate::process::Bounds {
+            hard: skein_lib::Duration::from_secs(15),
+            teardown: skein_lib::Duration::ZERO,
+            grace: skein_lib::Duration::from_secs(1),
+            settlement: skein_lib::Duration::from_secs(5),
+            stdout: 1_048_576,
+            stderr: 65_536,
+            force_walk: true,
+        },
+    )
+    .map_err(configuration)?;
+    if receipt.error.is_some() || receipt.forced != crate::Forced::No {
+        return Err(configuration("Smith check did not settle within its process bounds"));
+    }
+    let refused = receipt.exit != crate::Exit::Code(0);
+    let teardown = if refused { skein_lib::Duration::ZERO } else { teardown_from_check(&receipt.stdout)? };
+    let credential = if refused {
+        Credential::Record(None)
+    } else {
+        let lifetime =
+            context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
+        Credential::Record(Some(crate::credential::smith_borrowed(&login, context.wall, lifetime)?))
+    };
+    let prepared = Prepared {
         face: registry.shape,
-        settings: settings_path,
-        credential: Credential::Record(Some(converted.borrowed)),
-        trace: Some(trace),
         registry,
         rendered,
         program,
-        state,
+        settings,
+        state: context.private.state.clone(),
+        credential,
+        trace: None,
         teardown,
-    })
+    };
+    Ok((prepared, refused.then_some(receipt)))
 }
 
 impl Prepared {
     /// Invoke the frozen native local front end with its own private state.
     #[must_use]
     pub fn command(&self) -> Invocation {
+        if self.face == super::events::Shape::Exec {
+            return Invocation {
+                program: self.program.clone(),
+                arguments: vec![
+                    "exec".into(),
+                    "--json".into(),
+                    "-C".into(),
+                    self.rendered["workspace"]["directories"][0]["path"].as_str().expect("rendered workspace").into(),
+                    "-m".into(),
+                    self.rendered["model"].as_str().expect("rendered model").into(),
+                    "--effort".into(),
+                    self.rendered["effort"].as_str().expect("rendered effort").into(),
+                    "-".into(),
+                ],
+                environment: Vec::new(),
+                mode: skein_world::end_to_end::Mode::Pipes,
+                teardown: self.teardown,
+            };
+        }
         Invocation {
             program: self.program.clone(),
             arguments: vec![

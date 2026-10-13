@@ -707,6 +707,7 @@ dependencies = [
  "smith-protocol-machine",
  "smith-real-world",
  "smith-transcript",
+ "toml",
 ]
 
 [[package]]
@@ -834,6 +835,7 @@ dependencies = [
  "smith-domain-run",
  "smith-domain-session",
  "smith-events",
+ "smith-local-protocol",
  "smith-local-shell",
  "time",
  "toml",

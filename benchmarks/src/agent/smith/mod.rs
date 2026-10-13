@@ -13,8 +13,8 @@ mod prepare;
 
 mod observe;
 
-pub use faces::{FaceSince, Receiving, face, read as read_faces};
+pub use faces::{CredentialShape, FaceSince, Receiving, face, read as read_faces};
 
-pub use prepare::{Credential, Prepared, prepare, teardown_from_check};
+pub use prepare::{Credential, Prepared, prepare, prepare_checked, teardown_from_check};
 
 pub use observe::Observing;

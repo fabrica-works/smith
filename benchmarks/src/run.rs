@@ -782,7 +782,10 @@ fn source_arm(work: Work<'_>, identity: &Identity) -> Result<(crate::arm::ArmRef
     }
 }
 
-fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Capture, Duration), Setup> {
+fn invocation(
+    work: Work<'_>,
+    result: &mut AttemptResult,
+) -> Result<(Command, Capture, Duration, Option<crate::process::ProcessResult>), Setup> {
     let mut step = SetupStep::Configuration;
     let attempt = (|| {
         let mut environment = crate::isolate::environment(work.machine, work.private, &work.task.environment)?;
@@ -799,6 +802,7 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
                 },
                 Capture::Codex,
                 Duration::from_millis(work.prepared.teardown_ms),
+                None,
             ));
         };
         if !work.prepared.arguments.is_empty() {
@@ -818,28 +822,37 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
             model: Some(result.identity.model.requested_model.clone()),
             effort: Some(result.identity.model.requested_effort.clone()),
         };
-        let prepared = result
-            .identity
-            .agent
-            .prepare(&crate::agent::Context {
-                guard: work.guard,
-                private: work.private,
-                pin: &pin,
-                pin_file,
-                task: work.task,
-                variant: None,
-                model: &model,
-                arm: &arm,
-                installed_version: &version,
-                home,
-                wall: work.clock.now().wall,
-                lifetime: credential_lifetime(work)?,
-                environment: &environment,
-            })
-            .map_err(|error| {
-                step = error.step;
-                error.reason
-            })?;
+        let context = crate::agent::Context {
+            guard: work.guard,
+            private: work.private,
+            pin: &pin,
+            pin_file,
+            task: work.task,
+            variant: None,
+            model: &model,
+            arm: &arm,
+            installed_version: &version,
+            home,
+            wall: work.clock.now().wall,
+            lifetime: credential_lifetime(work)?,
+            environment: &environment,
+        };
+        let (prepared, receipt) = match result.identity.agent {
+            crate::Agent::Smith => crate::agent::smith::prepare_checked(&context)
+                .map(|(prepared, receipt)| (crate::agent::Prepared::Smith(prepared), receipt)),
+            crate::Agent::Codex | crate::Agent::ClaudeCode => {
+                result.identity.agent.prepare(&context).map(|prepared| (prepared, None))
+            }
+        }
+        .map_err(|error| {
+            step = error.step;
+            error.reason
+        })?;
+        if let Some(receipt) = &receipt
+            && !work.task.event.contains(&crate::EventCheck::NoRun)
+        {
+            return Err(format!("Smith check refused setup with {:?}", receipt.exit));
+        }
         if let crate::agent::Prepared::Smith(_) = &prepared {
             let selected = crate::SmithFace::Events;
             if result.identity.smith_face != Some(selected) {
@@ -858,6 +871,7 @@ fn invocation(work: Work<'_>, result: &mut AttemptResult) -> Result<(Command, Ca
             },
             Capture::Agent(Box::new(prepared.observe().map_err(|error| error.what)?)),
             invocation.teardown,
+            receipt,
         ))
     })();
     attempt.map_err(|reason| Setup { step, reason })
@@ -1016,7 +1030,7 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             })?;
         setup_step = SetupStep::Configuration;
         let seed = crate::grade::snapshot(&task_directory.join("seed"))?;
-        let (command, capture, teardown) = invocation(
+        let (command, capture, teardown, receipt) = invocation(
             Work { clock: &clock, guard, machine, private: &private, task: &task, prepared, directory: &directory },
             &mut result,
         )
@@ -1025,21 +1039,27 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
             error.reason
         })?;
         let script = script(&task, &capture);
-        let mut process = crate::process::execute_script(
-            &clock,
-            command,
-            script,
-            capture,
-            Bounds {
-                hard: Duration::from_secs(task.deadline_seconds),
-                teardown,
-                grace: Duration::from_millis(prepared.grace_ms),
-                settlement: Duration::from_millis(prepared.settlement_ms),
-                stdout: prepared.max_stdout_bytes,
-                stderr: prepared.max_stderr_bytes,
-                force_walk: prepared.force_walk,
-            },
-        )?;
+        let mut process = if let Some(mut receipt) = receipt {
+            let Capture::Agent(observing) = capture else { return Err("Smith check needs its event observer".into()) };
+            receipt.observing = Some(observing);
+            receipt
+        } else {
+            crate::process::execute_script(
+                &clock,
+                command,
+                script,
+                capture,
+                Bounds {
+                    hard: Duration::from_secs(task.deadline_seconds),
+                    teardown,
+                    grace: Duration::from_millis(prepared.grace_ms),
+                    settlement: Duration::from_millis(prepared.settlement_ms),
+                    stdout: prepared.max_stdout_bytes,
+                    stderr: prepared.max_stderr_bytes,
+                    force_walk: prepared.force_walk,
+                },
+            )?
+        };
         inference = true;
         let observed = observe(guard, &directory, &private.workspace, &mut result, &mut process, &task);
         let ended = neutral.observed(observed, &process, &result.outcome)?;
@@ -1072,7 +1092,10 @@ pub fn attempt(guard: &Guard, machine: &Machine, state: &Path, prepared: &Prepar
 #[must_use]
 pub fn script(task: &Task, capture: &Capture) -> crate::agent::Script {
     let default = match capture {
-        Capture::Agent(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
+        Capture::Agent(observing)
+            if matches!(observing.as_ref(), crate::agent::Observing::Smith(observing)
+            if observing.prepared.face != crate::agent::smith::events::Shape::Exec) =>
+        {
             crate::agent::Close::AfterAnswer
         }
         Capture::Agent(_) | Capture::Raw | Capture::Codex => crate::agent::Close::AfterPrompt,

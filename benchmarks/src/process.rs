@@ -582,6 +582,9 @@ fn trace_file(capture: &Capture, agent: bool) -> Result<Option<std::fs::File>, S
         Capture::Agent(observing) => match observing.as_ref() {
             crate::agent::Observing::Codex(_) => None,
             crate::agent::Observing::Smith(observing) => {
+                if observing.prepared.face == crate::agent::smith::events::Shape::Exec {
+                    return Ok(None);
+                }
                 let path = observing.prepared.trace.as_ref().ok_or("Smith native face requires a trace path")?;
                 if agent {
                     if !matches!(observing.prepared.face, crate::agent::smith::events::Shape::LocalAgentTrace) {
@@ -613,7 +616,10 @@ pub fn execute(
     bounds: Bounds,
 ) -> Result<ProcessResult, String> {
     let close = match &capture {
-        Capture::Agent(observing) if matches!(observing.as_ref(), crate::agent::Observing::Smith(_)) => {
+        Capture::Agent(observing)
+            if matches!(observing.as_ref(), crate::agent::Observing::Smith(observing)
+            if observing.prepared.face != crate::agent::smith::events::Shape::Exec) =>
+        {
             crate::agent::Close::AfterAnswer
         }
         Capture::Agent(_) | Capture::Raw | Capture::Codex => crate::agent::Close::AfterPrompt,
