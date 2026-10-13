@@ -749,6 +749,7 @@ fn churn(limits: &Limits, seed: u64, rounds: u32) -> [u32; 18] {
         smith_domain::Config {
             endpoints: Box::new([Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                efforts: Box::new([]),
                 prices: smith_domain::run::Prices {
                     input: 1,
                     cached: 1,

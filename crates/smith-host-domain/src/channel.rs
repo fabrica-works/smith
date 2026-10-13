@@ -562,6 +562,8 @@ pub enum RunInvalid {
     Price(Rate),
     /// A model declaration is invalid.
     Llm,
+    /// The charter’s effort is outside the model’s declared values.
+    Effort,
     /// The main conversation cannot fit.
     Conversation,
     /// An endpoint name is not configured.

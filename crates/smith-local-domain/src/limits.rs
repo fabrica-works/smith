@@ -105,6 +105,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let accounts = u64::from(limits.smith.accounts).checked_mul(u64::try_from(size_of::<u32>()).ok()?)?;
     let targets = u64::from(limits.smith.run.directories).checked_mul(u64::from(limits.text_bytes))?.checked_mul(2)?;
     let configuration = u64::from(limits.chat_bytes)
+        .checked_add(limits.smith.configured_model_bytes)?
         .checked_add(u64::from(limits.text_bytes).checked_mul(2)?)?
         .checked_add(endpoints)?
         .checked_add(accounts)?
@@ -152,6 +153,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(configuration)?
         .checked_add(lines)?
         .checked_add(u64::from(limits.line_bytes.max(20)))?
+        .checked_add(32)?
         .checked_add(Queue::<smith_host_domain::Message>::worst_case(inbox)?)?
         .checked_add(u64::from(inbox).checked_mul(u64::try_from(crate::person::LABEL.len()).ok()?)?)?
         .checked_add(unsaved)?

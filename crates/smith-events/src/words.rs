@@ -26,6 +26,58 @@ pub fn clip(detail: &[u8]) -> &[u8] {
     }
 }
 
+/// Name an effort refused by its model and the model's declared alternatives.
+#[must_use]
+pub fn effort_words(effort: &[u8], choices: &[Box<[u8]>], cap: u32, dropped: bool) -> Box<[u8]> {
+    let mut line = List::with_capacity(cap);
+    bounded_put(&mut line, b"Effort ");
+    bounded_put(&mut line, clip(effort));
+    if dropped {
+        bounded_put(&mut line, b" dropped for the provider default; accepted: ");
+    } else {
+        bounded_put(&mut line, b" is not declared; accepted: ");
+    }
+    if choices.is_empty() {
+        bounded_put(&mut line, b"any effort within 32 bytes");
+    }
+    for (index, choice) in choices.iter().enumerate() {
+        if line.room() < u32::try_from(choice.len()).expect("effort fits u32").saturating_add(5) {
+            bounded_put(&mut line, b"...");
+            break;
+        }
+        if index > 0 {
+            put(&mut line, b", ");
+        }
+        put(&mut line, choice);
+    }
+    line.into_boxed()
+}
+
+fn bounded_put(line: &mut List<u8>, bytes: &[u8]) {
+    for (index, byte) in bytes.iter().enumerate() {
+        if byte & 0xc0 == 0x80 {
+            continue;
+        }
+        let width = if *byte < 0x80 {
+            1
+        } else if *byte < 0xe0 {
+            2
+        } else if *byte < 0xf0 {
+            3
+        } else {
+            4
+        };
+        if line.room() < width {
+            return;
+        }
+        let end = index.checked_add(usize::try_from(width).expect("UTF-8 width fits usize")).expect("bounded text");
+        let Some(character) = bytes.get(index..end) else { return };
+        for byte in character {
+            line.push(*byte).expect("complete character fits");
+        }
+    }
+}
+
 /// Render one failure, using its named account and the host clock at its answer when known.
 #[must_use]
 pub fn words(failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: Option<Wall>) -> Box<[u8]> {
@@ -188,5 +240,13 @@ fn named(line: &mut List<u8>, prefix: &[u8], value: Option<&[u8]>, absent: &[u8]
 fn put(line: &mut List<u8>, text: &[u8]) {
     for byte in text {
         line.push(*byte).expect("fixed words and clipped names fit the operator word bound");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn effort_words_keep_whole_characters_at_the_host_bound() {
+        assert_eq!(super::effort_words("中文".as_bytes(), &[], 10, false).as_ref(), "Effort 中".as_bytes());
     }
 }

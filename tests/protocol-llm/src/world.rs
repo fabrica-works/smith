@@ -1998,6 +1998,7 @@ fn configuration() -> agent::Config {
         models: [b"fake-1".as_slice(), b"fake-2".as_slice(), b"fake-3".as_slice()]
             .iter()
             .map(|name| smith_domain::ConfiguredModel {
+                efforts: Box::new([]),
                 prices: smith_domain::run::Prices {
                     input: 1,
                     cached: 1,

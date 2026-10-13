@@ -262,6 +262,7 @@ impl Harness {
                     endpoints: Box::new([Endpoint(1), Endpoint(2)]),
                     models: Box::new([
                         crate::ConfiguredModel {
+                            efforts: Box::new([]),
                             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(1),
@@ -272,6 +273,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            efforts: Box::new([]),
                             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(1),
@@ -282,6 +284,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            efforts: Box::new([]),
                             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(2),
@@ -292,6 +295,7 @@ impl Harness {
                             idle: Duration::from_secs(30),
                         },
                         crate::ConfiguredModel {
+                            efforts: Box::new([]),
                             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
                             protocol_allowance: 0,
                             endpoint: Endpoint(2),
@@ -2351,4 +2355,30 @@ fn command_span_ends_at_the_actual_io_terminal_after_cancel() {
     else {
         panic!("only actual IO settlement permits the cancellation answer: {ended:?}");
     };
+}
+
+#[test]
+fn an_unchecked_charter_effort_is_refused_before_any_run_work() {
+    let mut harness = Harness::new();
+    for model in &mut harness.domain.config.models {
+        model.efforts = Box::new([b"low".as_slice().into()]);
+    }
+    let mut requested = charter();
+    requested.llm.effort = Some(b"high".as_slice().into());
+    let emitted = harness.step(Event::Start {
+        messages: Box::new([]),
+        reply_to: ReplyTo::new(Token::new(7)),
+        host_run: Token::new(7),
+        identity: None,
+        activation: 1,
+        window: crate::Window { turns: u32::MAX, bytes: u64::MAX },
+        charter: requested,
+        workspace: None,
+        grants: Box::new([]),
+        transcript: None,
+        answered: Box::new([]),
+    });
+    let [Request::Answer { answer, .. }] = emitted.as_ref() else { panic!("one refusal") };
+    assert_eq!(answer, &run::Answer::Refused(run::Refusal::Invalid(run::Invalid::Effort)));
+    assert!(harness.turns.is_empty());
 }

@@ -43,6 +43,7 @@ mod tests {
                 connect: skein_lib::Duration::from_secs(10),
                 handshake: skein_lib::Duration::from_secs(10),
                 models: Box::new([Model {
+                    efforts: Box::new([]),
                     name: b"gpt-6-luna".as_slice().into(),
                     window: 272_000,
                     output: 32000,

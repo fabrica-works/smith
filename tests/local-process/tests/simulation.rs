@@ -546,3 +546,92 @@ fn a_forced_exit_after_a_failed_answer_keeps_its_code_and_last_line() {
         assert_eq!(errors.contains("warning: agent forced to exit after answering"), placement == Placement::Spawned);
     }
 }
+
+#[test]
+fn slash_model_applies_from_the_next_activation() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::finishing(57, &files, Placement::InProcess);
+    world.interactive();
+    world.scenario.launch.choices = true;
+    world.scenario.ending = Ending::Report(b"First answer".to_vec());
+    world.scenario.commands = vec![
+        Action::Send(b"hello\n".as_slice().into()),
+        Action::Wait(b"Finishing now".as_slice().into()),
+        Action::Send(b"/model main/alternate\nnext\n".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(57);
+    let queries = world.queries();
+    assert_eq!(queries.len(), 3);
+    assert_eq!(queries[0].model.as_ref(), b"fake");
+    assert_eq!(queries[1].model.as_ref(), b"fake");
+    assert_eq!(queries[2].model.as_ref(), b"alternate");
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+}
+
+#[test]
+fn slash_model_on_another_endpoint_is_refused_and_the_chat_kept() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::new(59, &files, Placement::InProcess, b"Second answer");
+    world.interactive();
+    world.scenario.launch.choices = true;
+    world.scenario.commands = vec![
+        Action::Send(b"hello\n".as_slice().into()),
+        Action::Wait(b"First answer".as_slice().into()),
+        Action::Send(b"/model elsewhere/model\nnext\n".as_slice().into()),
+        Action::Wait(b"Second answer".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"Second answer".to_vec())).assert_passed(59);
+    assert!(
+        world
+            .shown()
+            .windows(b"smith --chat main -m elsewhere/model".len())
+            .any(|text| text == b"smith --chat main -m elsewhere/model")
+    );
+    assert_eq!(world.queries().len(), 2);
+    assert!(!world.chat_files(b"main").is_empty());
+}
+
+#[test]
+fn slash_effort_outside_the_models_efforts_is_refused_naming_them() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::new(61, &files, Placement::InProcess, b"First answer");
+    world.interactive();
+    world.scenario.launch.choices = true;
+    world.scenario.commands = vec![
+        Action::Send(b"/effort mystery\n".as_slice().into()),
+        Action::Wait(b"Effort mystery is not declared; accepted: low, high".as_slice().into()),
+        Action::Send(b"hello\n".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(61);
+    assert_eq!(world.queries().len(), 1);
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+}
+
+#[test]
+fn slash_model_drops_an_effort_the_new_model_does_not_declare() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::new(63, &files, Placement::InProcess, b"First answer");
+    world.interactive();
+    world.scenario.launch.choices = true;
+    world.scenario.commands = vec![
+        Action::Send(b"/effort high\n/model main/alternate\n".as_slice().into()),
+        Action::Wait(b"Effort high dropped for the provider default; accepted: low".as_slice().into()),
+        Action::Send(b"hello\n".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"First answer".to_vec())).assert_passed(63);
+    assert_eq!(world.queries().len(), 1);
+    assert_eq!(world.queries()[0].model.as_ref(), b"alternate");
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+}

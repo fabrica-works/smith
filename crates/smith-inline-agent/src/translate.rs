@@ -188,6 +188,7 @@ const fn invalid(value: run::Invalid) -> host::RunInvalid {
         run::Invalid::Budget(refusal) => host::RunInvalid::Budget(budget_refusal(refusal)),
         run::Invalid::Price(rate) => host::RunInvalid::Price(price_rate(rate)),
         run::Invalid::Llm => host::RunInvalid::Llm,
+        run::Invalid::Effort => host::RunInvalid::Effort,
         run::Invalid::Conversation => host::RunInvalid::Conversation,
         run::Invalid::HostPart { bound } => host::RunInvalid::HostPart { bound },
         run::Invalid::Room { bound } => host::RunInvalid::Room { bound },

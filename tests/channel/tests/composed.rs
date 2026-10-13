@@ -347,6 +347,7 @@ fn configuration() -> agent::Config {
     agent::Config {
         endpoints: Box::new([agent::run::charter::Endpoint(0)]),
         models: Box::new([smith_domain::ConfiguredModel {
+            efforts: Box::new([]),
             prices: smith_domain::run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             protocol_allowance: 0,
             endpoint: smith_domain::run::charter::Endpoint(0),

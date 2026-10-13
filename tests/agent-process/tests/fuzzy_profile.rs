@@ -28,6 +28,7 @@ fn seeded_profiles_refuse_without_wrapping_or_keep_the_checked_relationships() {
                     connect: Duration::from_secs(2),
                     handshake: Duration::from_secs(3),
                     models: Box::new([Model {
+                        efforts: Box::new([]),
                         name: Box::from(b"one".as_slice()),
                         window,
                         output,

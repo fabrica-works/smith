@@ -3443,6 +3443,8 @@ pub enum InvalidStart {
     HostPart(WindowBound),
     /// `room` carrying `WindowBound`.
     Room(WindowBound),
+    /// `effort` without a payload.
+    Effort,
 }
 
 impl InvalidStart {
@@ -6830,7 +6832,7 @@ impl InvalidStart {
             Self::Budget(record) => 1_u32.checked_add(BudgetRefusalValue::measure(record)).expect("schema ceilings fit u32"),
             Self::Price(record) => 1_u32.checked_add(PriceRateValue::measure(record)).expect("schema ceilings fit u32"),
             Self::HostPart(record) | Self::Room(record) => 1_u32.checked_add(WindowBound::measure(record)).expect("schema ceilings fit u32"),
-            Self::CharterVersion | Self::MalformedCharter | Self::Activation | Self::Window | Self::Conventions | Self::TooLarge | Self::Workspace | Self::Grants | Self::Outcome | Self::Llm | Self::Conversation | Self::Endpoint | Self::Messages => 1,
+            Self::CharterVersion | Self::MalformedCharter | Self::Activation | Self::Window | Self::Conventions | Self::TooLarge | Self::Workspace | Self::Grants | Self::Outcome | Self::Llm | Self::Conversation | Self::Endpoint | Self::Messages | Self::Effort => 1,
         }
     }
 
@@ -6854,6 +6856,7 @@ impl InvalidStart {
             Self::Messages => writer.put(&[14_u8])?,
             Self::HostPart(record) => { writer.put(&[15_u8])?; record.encode(writer)?; }
             Self::Room(record) => { writer.put(&[16_u8])?; record.encode(writer)?; }
+            Self::Effort => writer.put(&[17_u8])?,
         }
         Ok(())
     }
@@ -6885,6 +6888,7 @@ impl InvalidStart {
             14 => Self::Messages,
             15 => Self::HostPart(WindowBound::decode_from(limits, reader)?),
             16 => Self::Room(WindowBound::decode_from(limits, reader)?),
+            17 => Self::Effort,
             _ => return Err(Problem { path: Path::InvalidStartTag, reason: skein_codec::Reason::Tag }),
         };
         Ok(value)
@@ -9712,7 +9716,7 @@ mod golden_tests {
 
     #[test]
     fn golden_6() {
-        const CASES: [Case; 56] = [
+        const CASES: [Case; 58] = [
         ("enum_invalid_start_charter_version_smallest", || { let value = InvalidStart::CharterVersion; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_invalid_start_charter_version_full", || { let value = InvalidStart::CharterVersion; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_invalid_start_malformed_charter_smallest", || { let value = InvalidStart::MalformedCharter; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -9747,6 +9751,8 @@ mod golden_tests {
         ("enum_invalid_start_host_part_full", || { let value = InvalidStart::HostPart(WindowBound::new(&CEILINGS, WindowBoundParts { bound: u64::MAX }).expect("golden within ceilings")); let bytes: &[u8] = &[15, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_invalid_start_room_smallest", || { let value = InvalidStart::Room(WindowBound::new(&CEILINGS, WindowBoundParts { bound: 0_u64 }).expect("golden within ceilings")); let bytes: &[u8] = &[16, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_invalid_start_room_full", || { let value = InvalidStart::Room(WindowBound::new(&CEILINGS, WindowBoundParts { bound: u64::MAX }).expect("golden within ceilings")); let bytes: &[u8] = &[16, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_invalid_start_effort_smallest", || { let value = InvalidStart::Effort; let bytes: &[u8] = &[17]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_invalid_start_effort_full", || { let value = InvalidStart::Effort; let bytes: &[u8] = &[17]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStart::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_invalid_start_value_smallest", || { let value = InvalidStartValue::new(&CEILINGS, InvalidStartValueParts { value: InvalidStart::CharterVersion }).expect("golden within ceilings"); let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStartValue::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_invalid_start_value_full", || { let value = InvalidStartValue::new(&CEILINGS, InvalidStartValueParts { value: InvalidStart::CharterVersion }).expect("golden within ceilings"); let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, InvalidStartValue::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_start_refusal_busy_smallest", || { let value = StartRefusal::Busy; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, StartRefusal::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),

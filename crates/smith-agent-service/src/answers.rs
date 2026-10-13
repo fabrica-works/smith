@@ -195,6 +195,7 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
         },
         run::Invalid::Price(_) => b"price",
         run::Invalid::Llm => b"llm",
+        run::Invalid::Effort => b"effort",
         run::Invalid::Conversation => b"conversation",
     }
 }

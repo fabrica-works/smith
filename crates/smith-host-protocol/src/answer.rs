@@ -56,6 +56,7 @@ fn invalid_start(invalid: &wire::InvalidStart) -> host::RunInvalid {
         wire::InvalidStart::Budget(record) => host::RunInvalid::Budget(budget_refusal(record.value())),
         wire::InvalidStart::Price(record) => host::RunInvalid::Price(price_rate(record.value())),
         wire::InvalidStart::Llm => host::RunInvalid::Llm,
+        wire::InvalidStart::Effort => host::RunInvalid::Effort,
         wire::InvalidStart::Conversation => host::RunInvalid::Conversation,
         wire::InvalidStart::HostPart(bound) => host::RunInvalid::HostPart { bound: bound.bound() },
         wire::InvalidStart::Room(bound) => host::RunInvalid::Room { bound: bound.bound() },

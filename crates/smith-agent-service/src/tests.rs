@@ -41,6 +41,7 @@ pub(crate) fn declarations(environment_bytes: u32) -> crate::profile::Configurat
             connect: skein_lib::Duration::from_secs(1),
             handshake: skein_lib::Duration::from_secs(1),
             models: Box::new([Model {
+                efforts: Box::new([]),
                 name: Box::from(b"fake".as_slice()),
                 window: 2_097_152,
                 output: 65_536,

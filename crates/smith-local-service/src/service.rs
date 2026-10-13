@@ -11,6 +11,7 @@ use smith_agent_service as agent_service;
 use smith_agent_service::{Close, Step};
 
 mod accounts;
+mod choices;
 mod ending;
 use ending::Ending;
 use smith_domain as agent;
@@ -434,6 +435,22 @@ impl Service {
     #[must_use]
     pub fn chat_name(&self) -> &[u8] {
         self.local.chat_name()
+    }
+
+    /// Words for an entrance refusal, from the sent charter and startup declarations.
+    #[must_use]
+    pub fn effort_notice(&self, notice: &local::Notice) -> Option<Box<[u8]>> {
+        match notice {
+            local::Notice::Failure(local::Failure::Refused(host::Refusal::Invalid(host::RunInvalid::Effort))) => {
+                Some(self.local.effort_words())
+            }
+            local::Notice::Failure(_)
+            | local::Notice::Warning(_)
+            | local::Notice::Waiting
+            | local::Notice::Checking(_)
+            | local::Notice::NotDelivered { .. }
+            | local::Notice::ChatRefused { .. } => None,
+        }
     }
 
     /// Feed one standard-input byte to the bounded line translator.
@@ -916,7 +933,15 @@ impl Service {
             | local::Notice::ChatRefused { .. } => false,
         };
         if !handed && !self.local.headless() {
-            self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
+            match self.effort_notice(&notice) {
+                Some(text) => self.terminal.show(text, &mut self.terminal_events),
+                None => self.terminal.notice(
+                    &notice,
+                    self.local.chat_name(),
+                    self.local.models(),
+                    &mut self.terminal_events,
+                ),
+            }
         }
         match notice {
             local::Notice::Warning(local::Warning::ForcedExit { exit, forced }) => {
@@ -957,7 +982,10 @@ impl Service {
                 protocol::TerminalEvent::Domain(event) => match *event {
                     local::Event::Line { text } if self.line_mode.is_some() => match protocol::entered(text) {
                         protocol::Entered::Message(text) => self.local_events.push(local::Event::Line { text }),
-                        protocol::Entered::Slash(choice) => self.local_events.push(local::Event::Slash(choice)),
+                        protocol::Entered::Slash(choice) => match choices::resolve(self, choice) {
+                            Ok(choice) => self.local_events.push(local::Event::Slash(choice)),
+                            Err(text) => self.terminal.show(text, &mut self.terminal_events),
+                        },
                         protocol::Entered::Refused => self
                             .terminal
                             .show(b"Unknown or incomplete command".as_slice().into(), &mut self.terminal_events),

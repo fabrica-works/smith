@@ -92,6 +92,14 @@ pub(super) fn resolve(settings: &mut Settings, active: &[String]) -> Result<Vec<
             prices,
             declared: profile::Model {
                 name: name.as_bytes().into(),
+                efforts: settings
+                    .values
+                    .get(&model_key(&full, "efforts"))
+                    .and_then(|value| value.value.as_array())
+                    .into_iter()
+                    .flatten()
+                    .map(|value| value.as_str().expect("schema effort").as_bytes().into())
+                    .collect(),
                 window,
                 output,
                 reasoning_item: count(settings, &model_key(&full, "reasoning_item"))?,
@@ -114,7 +122,8 @@ impl Model {
         serde_json::json!({"name":String::from_utf8_lossy(&model.name),"window":model.window,"output":model.output,
             "prices":{"input":self.prices.input,"cached":self.prices.cached,"cache_write":self.prices.cache_write,"output":self.prices.output,"unit":self.prices.unit},
             "reasoning_item":model.reasoning_item,"head":model.head.as_nanos()/1_000_000,
-            "idle":model.idle.as_nanos()/1_000_000,"oversized_reasoning":policy})
+            "idle":model.idle.as_nanos()/1_000_000,"oversized_reasoning":policy,
+            "efforts":self.declared.efforts.iter().map(|name|std::str::from_utf8(name).expect("settings UTF-8")).collect::<Vec<_>>()})
     }
 
     pub fn local(&self, endpoint: u32, dialect: u32, account: u32) -> charter::Llm {

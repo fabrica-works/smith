@@ -559,6 +559,7 @@ pub(crate) fn invalid_start(invalid: run::Invalid, limits: &channel::Limits) -> 
             channel::PriceRateValueParts { value: price_rate(rate) },
         )?),
         run::Invalid::Llm => channel::InvalidStart::Llm,
+        run::Invalid::Effort => channel::InvalidStart::Effort,
         run::Invalid::Conversation => channel::InvalidStart::Conversation,
         run::Invalid::HostPart { bound } => {
             channel::InvalidStart::HostPart(channel::WindowBound::new(limits, channel::WindowBoundParts { bound })?)

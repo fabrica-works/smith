@@ -39,6 +39,9 @@ pub struct Launch {
     /// Select the product's line-mode front on the same local composition.
     #[serde(default)]
     pub interactive: bool,
+    /// Compose the alternate model and model-owned efforts for local-choice stories.
+    #[serde(default)]
+    pub choices: bool,
     /// Admit three tool turns, so the fourth would exceed the budget.
     #[serde(default)]
     pub budget_failure: bool,
@@ -724,12 +727,39 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
     }
     roots
 }
+fn configure_choices(config: &mut service::Config, lower: &mut agent::Config) {
+    let mut main = lower.domain.models[0].clone();
+    main.efforts = Box::new([b"low".as_slice().into(), b"high".as_slice().into()]);
+    let mut other = main.clone();
+    other.model = b"alternate".as_slice().into();
+    other.efforts = Box::new([b"low".as_slice().into()]);
+    lower.domain.models = Box::new([main, other]);
+    let mut names = skein_lib::List::with_capacity(1);
+    names
+        .push(smith_protocol_channel::Endpoint { name: b"main".as_slice().into(), number: 0, dialect: 0, account: 0 })
+        .unwrap();
+    lower.channel_endpoints = smith_protocol_channel::Endpoints::new(names);
+    config.endpoints = lower.channel_endpoints.clone();
+    let main = config.local.models[0].clone();
+    let mut other = main.clone();
+    other.model = b"alternate".as_slice().into();
+    config.local.models = Box::new([main, other]);
+    config.local.efforts = lower.domain.models.iter().map(|model| model.efforts.clone()).collect();
+    config.local.progress = Box::new([config.local.progress[0], config.local.progress[0]]);
+    config.local.protocol_allowances =
+        Box::new([config.local.protocol_allowances[0], config.local.protocol_allowances[0]]);
+    config.limits.local.models = 2;
+}
+
 /// Adopt local startup resources without any backend-specific operations.
 #[must_use]
 pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
     let (mut config, mut lower) =
         configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
+    if launch.choices {
+        configure_choices(&mut config, &mut lower);
+    }
     if launch.headless {
         config.local.mode = local::Mode::Headless { prompt: b"hello".as_slice().into() };
     }

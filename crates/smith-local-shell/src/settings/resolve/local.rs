@@ -76,6 +76,20 @@ pub(super) fn limits(
     })
 }
 
+fn checked_effort(settings: &Settings, model: &Model) -> Result<Option<charter::Effort>, Refusal> {
+    let effort = settings.values.get("effort").and_then(|value| value.value.as_str());
+    if !smith_domain::ConfiguredModel::accepts_effort(&model.declared.efforts, effort.map(str::as_bytes)) {
+        let words = smith_events::effort_words(
+            effort.unwrap_or_default().as_bytes(),
+            &model.declared.efforts,
+            u32::try_from(smith_events::DETAIL_BYTES).expect("operator word bound fits"),
+            false,
+        );
+        return Err(input::refuse(settings, "effort", std::str::from_utf8(&words).expect("effort words UTF-8")));
+    }
+    Ok(effort.map(|value| value.as_bytes().into()))
+}
+
 pub(super) fn build(
     settings: &Settings,
     models: &[Model],
@@ -98,8 +112,9 @@ pub(super) fn build(
             .map_err(|why| super::relationships::profile(settings, models, why))?,
         );
     }
+    let efforts = models.iter().map(|model| model.declared.efforts.clone()).collect();
     configured.first_mut().expect("selected main model").effort =
-        settings.values.get("effort").and_then(|value| value.value.as_str()).map(|value| value.as_bytes().into());
+        checked_effort(settings, models.first().expect("selected main model"))?;
     let directories = directories(settings, agent)?;
     let conventions = if settings.values.keys().any(|key| key.starts_with("workspace.conventions.")) {
         Some(run::Conventions {
@@ -136,6 +151,7 @@ pub(super) fn build(
             .into(),
         brief: charter::Brief { sections: Box::new([]) },
         models: configured.into_boxed_slice(),
+        efforts,
         sub_agents: settings
             .values
             .get("sub_agents")

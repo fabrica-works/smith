@@ -122,6 +122,8 @@ struct ModelDocument {
     oversized_reasoning: Option<String>,
     head: u64,
     idle: u64,
+    #[serde(default)]
+    efforts: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -385,6 +387,7 @@ fn build_parts(document: Document) -> Result<Configuration, ConfigurationRefusal
                 prices: *prices.get(models.len()).expect("one resolved price per declared model"),
                 endpoint: run::charter::Endpoint(endpoint.number),
                 model: model.name.clone(),
+                efforts: model.efforts.clone(),
                 window: model.window,
                 output: model.output,
                 protocol_allowance: service::profile::endpoint_allowance(
@@ -809,6 +812,9 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
     let mut names = std::collections::BTreeSet::new();
     let mut prepared = Vec::with_capacity(models.len());
     for (index, model) in models.iter().enumerate() {
+        if model.efforts.iter().any(|name| name.is_empty() || name.len() > 32) {
+            return Err("model efforts must be names within 32 bytes".into());
+        }
         let index = u32::try_from(index).map_err(|_| {
             ConfigurationRefusal::Profile(Refusal::Derived {
                 limit: LimitName::deployment(Layer::Service, "configured_models"),
@@ -830,6 +836,7 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
         model.prices.rates().check().map_err(|_| "model prices must be positive")?;
         prepared.push(service::profile::Model {
             name: model.name.as_bytes().into(),
+            efforts: model.efforts.iter().map(|name| name.as_bytes().into()).collect(),
             window: model.window,
             output: model.output,
             reasoning_item: model.reasoning_item,
@@ -1047,6 +1054,7 @@ mod tests {
                 oversized_reasoning: None,
                 head: 60_000,
                 idle: 30_000,
+                efforts: Vec::new(),
             }],
             name: "test".into(),
             number: 42,

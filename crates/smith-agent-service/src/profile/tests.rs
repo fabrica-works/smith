@@ -27,6 +27,7 @@ pub(super) fn declarations() -> Configuration {
             connect: Duration::from_secs(2),
             handshake: Duration::from_secs(3),
             models: Box::new([Model {
+                efforts: Box::new([]),
                 name: Box::from(b"one".as_slice()),
                 window: 65_536,
                 output: 512,

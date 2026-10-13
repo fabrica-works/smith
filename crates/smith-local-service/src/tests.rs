@@ -73,6 +73,7 @@ pub(super) fn config() -> Config {
             chat: Box::from(&b"main"[..]),
             instructions: Box::from(&b"Assist"[..]),
             brief: run::charter::Brief { sections: Box::new([]) },
+            efforts: Box::new([Box::new([])]),
             models: Box::new([run::charter::Llm {
                 effort: None,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
@@ -244,14 +245,17 @@ fn model_and_effort_are_refused_in_words_without_changing_the_chat() {
     iterate(&mut service, Time::ZERO, Wall::EPOCH);
     while service.output().pop().is_some() {}
     for (line, words) in [
-        (b"/model other/small\n".as_slice(), b"/model is not yet available".as_slice()),
-        (b"/effort high\n", b"/effort is not yet available"),
+        (
+            b"/model other/small\n".as_slice(),
+            Some(b"Model other/small needs another invocation: smith --chat main -m other/small".as_slice()),
+        ),
+        (b"/effort high\n", None),
     ] {
         for byte in line {
             service.feed(*byte);
         }
         iterate(&mut service, Time::ZERO, Wall::EPOCH);
-        assert_eq!(service.output().pop().unwrap().as_ref(), words);
+        assert_eq!(service.output().pop().as_deref(), words);
         assert_eq!(service.chat_name(), b"main");
         assert!(service.shell_requests().is_empty());
         assert!(service.store_requests().is_empty());

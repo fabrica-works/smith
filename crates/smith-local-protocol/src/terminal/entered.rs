@@ -30,7 +30,7 @@ pub fn entered(line: Box<[u8]>) -> Entered {
         b"/quit" => Entered::Slash(Slash::Quit),
         _ => {
             if let Some(model) = value(command, b"/model ") {
-                return Entered::Slash(Slash::Model { model });
+                return Entered::Slash(Slash::Model { model, selected: None });
             }
             if let Some(level) = value(command, b"/effort ") {
                 return Entered::Slash(Slash::Effort { level });
@@ -66,7 +66,10 @@ mod tests {
     #[test]
     fn every_slash_line_is_a_local_command() {
         for (line, expected) in [
-            (b"/model codex/small".as_slice(), Slash::Model { model: b"codex/small".as_slice().into() }),
+            (
+                b"/model codex/small".as_slice(),
+                Slash::Model { model: b"codex/small".as_slice().into(), selected: None },
+            ),
             (b"/effort high".as_slice(), Slash::Effort { level: b"high".as_slice().into() }),
             (b"/new".as_slice(), Slash::New),
             (b"/resume work".as_slice(), Slash::Resume { name: b"work".as_slice().into() }),

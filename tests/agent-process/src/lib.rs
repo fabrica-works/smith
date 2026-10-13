@@ -70,6 +70,7 @@ pub fn declarations(environment_bytes: u32) -> agent::profile::Configuration {
             connect: skein_lib::Duration::from_secs(1),
             handshake: skein_lib::Duration::from_secs(1),
             models: Box::new([Model {
+                efforts: Box::new([]),
                 name: Box::from(b"fake".as_slice()),
                 window: 1_048_576,
                 output: 512,
@@ -214,6 +215,7 @@ fn configuration_with_limits(anthropic: bool, limits: &agent::Limits) -> agent::
         domain: smith_domain::Config {
             endpoints: Box::new([smith_domain::run::charter::Endpoint(0)]),
             models: Box::new([smith_domain::ConfiguredModel {
+                efforts: Box::new([]),
                 prices: smith_domain::run::Prices {
                     input: 1,
                     cached: 1,

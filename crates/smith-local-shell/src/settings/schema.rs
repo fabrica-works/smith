@@ -12,6 +12,7 @@ pub(super) enum Kind {
     Number,
     Boolean,
     Strings,
+    Efforts,
     Directories,
     Fields,
 }
@@ -20,7 +21,9 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
     let parts: Vec<_> = path.iter().map(String::as_str).collect();
     match parts.as_slice() {
         ["model"] => Some(Kind::Text(193)),
-        ["effort" | "chat"]
+        ["effort"] | ["workspace", "contract", "form"] => Some(Kind::Text(32)),
+        ["models", _, "efforts"] => Some(Kind::Efforts),
+        ["chat"]
         | ["models", _, "oversized_reasoning"]
         | ["workspace", "delivery", "title"]
         | ["build", "preset"]
@@ -84,7 +87,6 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         ["accounts", _, "format"] => Some(Kind::Choice(&["codex"])),
         ["deployment", "memory" | "llm_pool"] => Some(Kind::Integer(i64::MAX.unsigned_abs())),
         ["workspace", "directories"] => Some(Kind::Directories),
-        ["workspace", "contract", "form"] => Some(Kind::Text(32)),
         ["workspace", "contract" | "delivery", "fields"] => Some(Kind::Fields),
         ["environment", "set", _] => Some(Kind::Text(1 << 20)),
         _ => None,
@@ -113,6 +115,9 @@ pub(super) fn check(value: &Value, kind: Kind) -> Result<(), Problem> {
             .is_some_and(|number| number.is_finite() && number >= 0.0),
         Kind::Boolean => value.is_bool(),
         Kind::Strings => value.as_array().is_some_and(|values| values.iter().all(Value::is_str)),
+        Kind::Efforts => value.as_array().is_some_and(|values| {
+            values.iter().all(|value| value.as_str().is_some_and(|name| !name.is_empty() && name.len() <= 32))
+        }),
         Kind::Directories | Kind::Fields => value.as_array().is_some_and(|array| array.iter().all(Value::is_table)),
     };
     if holds { Ok(()) } else { Err(Problem::WrongValue) }
@@ -136,7 +141,8 @@ pub(super) fn field(kind: Kind, key: &str) -> Option<Kind> {
         | Kind::Integer(_)
         | Kind::Number
         | Kind::Boolean
-        | Kind::Strings => None,
+        | Kind::Strings
+        | Kind::Efforts => None,
     }
 }
 

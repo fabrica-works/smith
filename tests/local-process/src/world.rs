@@ -658,6 +658,7 @@ impl World {
                     read_report: false,
                     headless: false,
                     interactive: false,
+                    choices: false,
                     budget_failure: false,
                     in_process: placement == Placement::InProcess,
                     keep_facts,
@@ -1070,6 +1071,18 @@ impl Scenario {
         } else {
             scripts()
         };
+        if self.launch.choices {
+            let mut combined = vec![api::Script {
+                cue: b"Summarise the work so far".as_slice().into(),
+                turns: Box::new([api::Turn {
+                    lines: Box::new([api::Line::Text { text: b"The task is kept".as_slice().into() }]),
+                    finish: api::Finish::Stop,
+                    tokens: 1,
+                }]),
+            }];
+            combined.extend(Vec::from(provider_scripts));
+            provider_scripts = combined.into();
+        }
         if matches!(self.ending, Ending::HostFailureBeforeAnswer) {
             for turn in &mut provider_scripts[0].turns {
                 turn.lines = Box::new([api::Line::Call {

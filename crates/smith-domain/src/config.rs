@@ -20,6 +20,8 @@ use crate::Limits;
 pub struct ConfiguredModel {
     pub endpoint: Endpoint,
     pub model: Box<[u8]>,
+    /// Accepted effort names; an empty list leaves them to the provider.
+    pub efforts: Box<[smith_domain_run::charter::Effort]>,
     /// Startup-resolved rates for compacting a saved window.
     pub prices: smith_domain_run::Prices,
     /// Declared usable input tokens.
@@ -35,10 +37,41 @@ pub struct ConfiguredModel {
 }
 
 impl ConfiguredModel {
-    /// Owned cell and model-name bytes for this declaration.
+    /// Owned declaration, model name and effort-name cells and bytes.
     #[must_use]
-    pub fn worst_case(model_bytes: usize) -> Option<u64> {
-        u64::try_from(size_of::<Self>()).ok()?.checked_add(u64::try_from(model_bytes).ok()?)
+    pub fn worst_case(model_bytes: usize, efforts: &[smith_domain_run::charter::Effort]) -> Option<u64> {
+        let mut bytes = u64::try_from(size_of::<Self>()).ok()?.checked_add(u64::try_from(model_bytes).ok()?)?;
+        for effort in efforts {
+            if effort.is_empty() || effort.len() > 32 {
+                return None;
+            }
+            bytes = bytes
+                .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?
+                .checked_add(u64::try_from(effort.len()).ok()?)?;
+        }
+        Some(bytes)
+    }
+
+    /// Whether an optional effort fits the model's declaration and text bound.
+    #[must_use]
+    pub fn accepts_effort(efforts: &[smith_domain_run::charter::Effort], effort: Option<&[u8]>) -> bool {
+        match effort {
+            None => true,
+            Some(value) => {
+                if value.len() > 32 {
+                    return false;
+                }
+                if efforts.is_empty() {
+                    return true;
+                }
+                for effort in efforts {
+                    if effort.as_ref() == value {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
     }
 }
 
@@ -83,7 +116,7 @@ impl Config {
             {
                 return false;
             }
-            let owned = match ConfiguredModel::worst_case(model.model.len()) {
+            let owned = match ConfiguredModel::worst_case(model.model.len(), &model.efforts) {
                 Some(owned) => owned,
                 None => return false,
             };
@@ -153,6 +186,9 @@ impl Config {
             if llm.endpoint == model.endpoint && llm.model == model.model {
                 if llm.window == 0 || llm.output == 0 || llm.window > model.window || llm.output > model.output {
                     return Err(Invalid::Llm);
+                }
+                if !ConfiguredModel::accepts_effort(&model.efforts, llm.effort.as_deref()) {
+                    return Err(Invalid::Effort);
                 }
                 return Ok(());
             }

@@ -25,6 +25,7 @@ fn configuration() -> smith::Config {
     smith::Config {
         endpoints: Box::from([run::charter::Endpoint(0)]),
         models: Box::from([smith::ConfiguredModel {
+            efforts: Box::new([]),
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
             protocol_allowance: 0,
             endpoint: run::charter::Endpoint(0),

@@ -38,6 +38,7 @@ fn a_local_domain_with_every_line_slot_full_stays_within_its_worst_case() {
             head: Duration::from_secs(60),
             idle: Duration::from_secs(30),
         }]),
+        efforts: Box::new([Box::new([])]),
         models: Box::new([run::charter::Llm {
             effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },

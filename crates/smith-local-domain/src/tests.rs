@@ -22,6 +22,36 @@ fn idle_chat(seed: u64) -> (Domain, Env<Limits>, Queue<Request>) {
 }
 
 #[test]
+fn the_next_charter_keeps_the_startup_sub_agent_models_and_accounts() {
+    let limits = limits();
+    let mut configured = config();
+    let first = configured.models[0].clone();
+    let mut second = first.clone();
+    second.model = b"other".as_slice().into();
+    configured.models = Box::new([first, second]);
+    configured.efforts = Box::new([Box::new([]), Box::new([])]);
+    configured.progress = Box::new([configured.progress[0], configured.progress[0]]);
+    configured.protocol_allowances = Box::new([0, 0]);
+    configured.sub_agents = true;
+    let mut domain = Domain::new(configured, &limits, 11).unwrap();
+    let before = domain.charter().0;
+    domain.main_model = 1;
+    let after = domain.charter().0;
+    assert_eq!(after.llm.model.as_ref(), b"other");
+    assert_eq!(after.models, before.models);
+    assert_eq!(domain.config.accounts.as_ref(), &[7]);
+    assert_eq!(domain.config.models[0].model.as_ref(), b"small");
+}
+
+#[test]
+fn the_next_charters_effort_leaves_the_startup_inventory_unchanged() {
+    let (mut domain, _, _) = idle_chat(11);
+    domain.effort = Some(b"high".as_slice().into());
+    assert_eq!(domain.charter().0.llm.effort.as_deref(), Some(b"high".as_slice()));
+    assert!(domain.config.models[0].effort.is_none());
+}
+
+#[test]
 fn a_refused_selection_keeps_the_current_chat_identity() {
     let (mut domain, env, mut out) = idle_chat(11);
     let identity = domain.chat.state.identity;
@@ -158,6 +188,7 @@ pub(super) fn config() -> Config {
             head: Duration::from_secs(60),
             idle: Duration::from_secs(30),
         }]),
+        efforts: Box::new([Box::new([])]),
         models: Box::new([run::charter::Llm {
             effort: None,
             prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },
@@ -227,6 +258,7 @@ fn change_and_second_model_map_to_distinct_charter_choices() {
     let mut second = config.models[0].clone();
     second.model = Box::from(&b"large"[..]);
     config.models = Box::new([config.models[0].clone(), second.clone()]);
+    config.efforts = Box::new([Box::new([]), Box::new([])]);
     config.contract = Contract::Change(outcome::ChangeSpec { checks_must_pass: true, fields: Box::new([]) });
     config.sub_agents = true;
     config.resume = false;
@@ -659,4 +691,128 @@ fn an_inline_runs_facts_wait_for_the_service() {
     }
     assert!(facts > 0, "ordinary local entrances retained the native run facts");
     assert!(domain.pop_run_fact().is_none());
+}
+
+#[test]
+fn slash_effort_with_no_declared_names_accepts_a_bounded_name() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    crate::step(&mut domain, &env, Event::Slash(crate::Slash::Effort { level: b"future".as_slice().into() }), &mut out);
+    assert_eq!(domain.charter().0.llm.effort.as_deref(), Some(b"future".as_slice()));
+}
+
+#[test]
+fn slash_effort_refuses_a_name_outside_the_declared_list_in_words() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    domain.config.efforts[0] = Box::new([b"low".as_slice().into(), b"high".as_slice().into()]);
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Slash(crate::Slash::Effort { level: b"mystery".as_slice().into() }),
+        &mut out,
+    );
+    assert!(domain.charter().0.llm.effort.is_none());
+    let outputs = drain_requests(&mut out);
+    let text = outputs
+        .iter()
+        .find_map(|request| if let Request::Show { text } = request { Some(text) } else { None })
+        .expect("refusal words");
+    assert!(text.as_ref() == b"Effort mystery is not declared; accepted: low, high");
+}
+
+#[test]
+fn slash_effort_without_a_list_still_refuses_more_than_32_bytes() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    crate::step(&mut domain, &env, Event::Slash(crate::Slash::Effort { level: Box::new([b'x'; 33]) }), &mut out);
+    assert!(domain.charter().0.llm.effort.is_none());
+    let outputs = drain_requests(&mut out);
+    let text = outputs
+        .iter()
+        .find_map(|request| if let Request::Show { text } = request { Some(text) } else { None })
+        .expect("refusal words");
+    assert!(text.ends_with(b"any effort within 32 bytes"));
+}
+
+#[test]
+fn slash_effort_waits_for_the_live_activation_to_end() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    domain.chat.phase = crate::chat::Phase::Running;
+    crate::step(&mut domain, &env, Event::Slash(crate::Slash::Effort { level: b"high".as_slice().into() }), &mut out);
+    assert!(domain.charter().0.llm.effort.is_none());
+    domain.chat.phase = crate::chat::Phase::Idle;
+    crate::choices::apply(&mut domain, &env, &mut out);
+    assert_eq!(domain.charter().0.llm.effort.as_deref(), Some(b"high".as_slice()));
+}
+
+#[test]
+fn slash_model_on_another_endpoint_names_the_kept_chats_invocation() {
+    let (mut domain, env, mut out) = idle_chat(11);
+    let identity = domain.chat.state.identity;
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Slash(crate::Slash::Model { model: b"elsewhere/model".as_slice().into(), selected: None }),
+        &mut out,
+    );
+    assert_eq!(domain.chat.state.identity, identity);
+    let outputs = drain_requests(&mut out);
+    let text = outputs
+        .iter()
+        .find_map(|request| if let Request::Show { text } = request { Some(text) } else { None })
+        .expect("refusal words");
+    assert!(text.as_ref() == b"Model elsewhere/model needs another invocation: smith --chat main -m elsewhere/model");
+}
+
+#[test]
+fn slash_model_selects_a_startup_model_only_at_idle() {
+    let limits = limits();
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+    let mut configured = config();
+    let first = configured.models[0].clone();
+    let mut other = first.clone();
+    other.model = b"other".as_slice().into();
+    configured.models = Box::new([first, other]);
+    configured.efforts = Box::new([Box::new([]), Box::new([])]);
+    configured.progress = Box::new([configured.progress[0], configured.progress[0]]);
+    configured.protocol_allowances = Box::new([0, 0]);
+    let mut domain = Domain::new(configured, &limits, 11).unwrap();
+    let mut out = Queue::with_capacity(crate::max_out(&limits));
+    domain.chat.phase = crate::chat::Phase::Running;
+    crate::step(
+        &mut domain,
+        &env,
+        Event::Slash(crate::Slash::Model { model: b"endpoint/other".as_slice().into(), selected: Some(1) }),
+        &mut out,
+    );
+    assert_eq!(domain.charter().0.llm.model.as_ref(), b"small");
+    domain.chat.phase = crate::chat::Phase::Idle;
+    crate::choices::apply(&mut domain, &env, &mut out);
+    assert_eq!(domain.charter().0.llm.model.as_ref(), b"other");
+}
+
+#[test]
+fn slash_model_keeps_an_effort_the_new_model_accepts() {
+    for efforts in [Box::<[run::charter::Effort]>::default(), Box::new([b"high".as_slice().into()])] {
+        let limits = limits();
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.clone() };
+        let mut configured = config();
+        let first = configured.models[0].clone();
+        let mut other = first.clone();
+        other.model = b"other".as_slice().into();
+        configured.models = Box::new([first, other]);
+        configured.efforts = Box::new([Box::new([]), efforts]);
+        configured.progress = Box::new([configured.progress[0], configured.progress[0]]);
+        configured.protocol_allowances = Box::new([0, 0]);
+        let mut domain = Domain::new(configured, &limits, 11).unwrap();
+        let mut out = Queue::with_capacity(crate::max_out(&limits));
+        domain.chat.phase = crate::chat::Phase::Idle;
+        domain.effort = Some(b"high".as_slice().into());
+        crate::step(
+            &mut domain,
+            &env,
+            Event::Slash(crate::Slash::Model { model: b"endpoint/other".as_slice().into(), selected: Some(1) }),
+            &mut out,
+        );
+        assert_eq!(domain.charter().0.llm.model.as_ref(), b"other");
+        assert_eq!(domain.charter().0.llm.effort.as_deref(), Some(b"high".as_slice()));
+    }
 }

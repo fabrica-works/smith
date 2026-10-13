@@ -1008,6 +1008,8 @@ pub enum Invalid {
     /// A model is undeclared, its effective window/output are zero or above its
     /// declaration, or the charter repeats a model or exceeds its model count.
     Llm,
+    /// The requested effort is outside the model’s declared values.
+    Effort,
     /// The main conversation was refused: its opening does not fit the
     /// conversations' limits.
     Conversation,

@@ -31,6 +31,8 @@ pub fn max_out(limits: &Limits) -> u32 {
 #[derive(Debug)]
 pub struct Domain {
     pub(crate) config: Config,
+    pub(crate) main_model: usize,
+    pub(crate) effort: Option<agent::run::charter::Effort>,
     chat_seed: u64,
     pub(crate) choice: Option<crate::Slash>,
     pub(crate) interactive: bool,
@@ -164,6 +166,7 @@ impl Domain {
                 .push(agent::ConfiguredModel {
                     endpoint: model.endpoint,
                     model: model.model.clone(),
+                    efforts: config.efforts.get(index).expect("validated per-model efforts").clone(),
                     prices: model.prices,
                     window: model.window,
                     output: model.output,
@@ -196,7 +199,10 @@ impl Domain {
             crate::Mode::Headless { prompt } => lines.receive(mem::replace(prompt, Box::new([]))).expect("one prompt"),
             crate::Mode::Chat { .. } => {}
         }
+        let effort = config.models.first().expect("validated main model").effort.clone();
         Ok(Domain {
+            main_model: 0,
+            effort,
             config,
             chat_seed: seed,
             choice: None,
@@ -254,6 +260,17 @@ impl Domain {
         &self.config.chat
     }
 
+    /// Render the sent charter's refused effort using startup's model declaration.
+    #[must_use]
+    pub fn effort_words(&self) -> Box<[u8]> {
+        smith_events::effort_words(
+            self.effort.as_deref().unwrap_or_default(),
+            self.config.efforts.get(self.main_model).expect("selected startup efforts"),
+            self.show_bytes,
+            false,
+        )
+    }
+
     /// Whether initial loading or the child has deferred work.
     #[must_use]
     pub fn is_ready(&self) -> bool {
@@ -307,7 +324,10 @@ impl Domain {
     /// Current run policy for its service's event producer.
     #[must_use]
     pub fn charter(&self) -> (agent::run::Charter, u64) {
-        (charter(&self.config), self.lines.named_count())
+        let mut charter = charter(&self.config);
+        charter.llm = self.config.models.get(self.main_model).expect("selected startup model").clone();
+        charter.llm.effort.clone_from(&self.effort);
+        (charter, self.lines.named_count())
     }
 
     /// Configured model names used only to render an operator notice.
@@ -791,7 +811,7 @@ fn maybe_start(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>)
         messages,
         identity: domain.chat.state.identity,
         activation: domain.chat.state.activation,
-        charter: charter(&domain.config),
+        charter: domain.charter().0,
         workspace: domain.config.workspace.clone(),
         transcript: history,
         answered: answered.into_boxed(),

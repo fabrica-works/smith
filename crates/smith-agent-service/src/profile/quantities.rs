@@ -114,6 +114,8 @@ pub struct Profile {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Model {
     pub name: Box<[u8]>,
+    /// Accepted model effort names, empty for the provider's own validation.
+    pub efforts: Box<[smith_domain::run::charter::Effort]>,
     /// Declared usable input tokens.
     pub window: u32,
     /// Declared maximum completion tokens, thinking included.

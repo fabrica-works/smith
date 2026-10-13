@@ -657,6 +657,7 @@ impl World {
                 head: Duration::from_secs(60),
                 idle: Duration::from_secs(30),
             }]),
+            efforts: Box::new([Box::new([])]),
             models: Box::new([run::charter::Llm {
                 effort: None,
                 prices: run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1_000_000 },

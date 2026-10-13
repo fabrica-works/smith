@@ -60,6 +60,8 @@ pub struct Config {
     pub brief: charter::Brief,
     /// Main model first, followed by models available to sub-agents.
     pub models: Box<[charter::Llm]>,
+    /// Accepted effort names in the same order as the startup models.
+    pub efforts: Box<[Box<[charter::Effort]>]>,
     /// Whether main may open sub-agents; children cannot delegate.
     pub sub_agents: bool,
     /// Declared deadlines in the same order as `models`, kept outside charters.
@@ -275,7 +277,7 @@ impl Config {
 
     #[expect(clippy::manual_let_else, reason = "strict subset keeps checked construction exhaustive")]
     fn check_models(&self, limits: &Limits) -> Result<(), Invalid> {
-        if self.protocol_allowances.len() != self.models.len() {
+        if self.protocol_allowances.len() != self.models.len() || self.efforts.len() != self.models.len() {
             return Err(Invalid::Models);
         }
         for allowance in &self.protocol_allowances {
@@ -297,7 +299,10 @@ impl Config {
                     return Err(Invalid::Models);
                 }
             }
-            let owned = match smith_domain::ConfiguredModel::worst_case(model.model.len()) {
+            let owned = match smith_domain::ConfiguredModel::worst_case(
+                model.model.len(),
+                self.efforts.get(index).expect("matched effort inventory"),
+            ) {
                 Some(owned) => owned,
                 None => return Err(Invalid::Limits),
             };

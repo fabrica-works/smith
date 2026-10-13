@@ -548,7 +548,7 @@ fn derive_domain(
         let count = u32::try_from(endpoint.models.len()).or(Err(derived(Layer::Run, "models")))?;
         model_count = model_count.checked_add(count).ok_or(derived(Layer::Run, "models"))?;
         for model in &endpoint.models {
-            let owned = domain::ConfiguredModel::worst_case(model.name.len())
+            let owned = domain::ConfiguredModel::worst_case(model.name.len(), &model.efforts)
                 .ok_or(derived(Layer::Service, "configured_model_bytes"))?;
             configured_model_bytes =
                 configured_model_bytes.checked_add(owned).ok_or(derived(Layer::Service, "configured_model_bytes"))?;

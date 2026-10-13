@@ -188,6 +188,7 @@ fn invalid_name(invalid: host::RunInvalid) -> &'static [u8] {
         },
         host::RunInvalid::Price(_) => b"price",
         host::RunInvalid::Llm => b"llm",
+        host::RunInvalid::Effort => b"effort",
         host::RunInvalid::Conversation => b"conversation",
     }
 }

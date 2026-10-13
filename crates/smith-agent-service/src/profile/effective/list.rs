@@ -424,8 +424,16 @@ fn models(inventory: &mut Inventory, profile: &Profile, configuration: &Configur
         inventory.value("connection_keep", Value::Duration(profile.policy.connection_keep))?;
         inventory.layer = Layer::Declared;
         for (index, model) in models.iter().enumerate() {
-            let super::super::Model { name: _, window, output, reasoning_item, oversized_reasoning: _, head, idle } =
-                model;
+            let super::super::Model {
+                name: _,
+                efforts: _,
+                window,
+                output,
+                reasoning_item,
+                oversized_reasoning: _,
+                head,
+                idle,
+            } = model;
             inventory.per = Per::Model { endpoint: *number, model: u32::try_from(index).ok()? };
             inventory.value("window", Value::Tokens(u64::from(*window)))?;
             inventory.value("output", Value::Tokens(u64::from(*output)))?;

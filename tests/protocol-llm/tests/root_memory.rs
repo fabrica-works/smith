@@ -780,6 +780,7 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    efforts: Box::new([]),
                     prices: smith_domain::run::Prices {
                         input: 1,
                         cached: 1,
@@ -1191,6 +1192,7 @@ impl Counted {
             root::Config {
                 endpoints: Box::new([run::charter::Endpoint(0)]),
                 models: Box::new([smith_domain::ConfiguredModel {
+                    efforts: Box::new([]),
                     prices: smith_domain::run::Prices {
                         input: 1,
                         cached: 1,

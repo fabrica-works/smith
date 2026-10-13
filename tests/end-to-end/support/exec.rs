@@ -47,6 +47,18 @@ pub fn chat(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_ll
 }
 
 #[must_use]
+pub fn chat_traced(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
+    run_fixture(
+        scratch,
+        &["--trace", "effort.jsonl"],
+        Some(provider(scratch, Reply::Accepted)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+    )
+}
+
+#[must_use]
 pub fn chat_waiting(scratch: &Scratch, commands: Vec<Action>) -> Ran {
     run_fixture(scratch, &[], Some(provider(scratch, Reply::Wait)), false, (Mode::Terminal, commands), false).0
 }

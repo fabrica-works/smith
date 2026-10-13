@@ -264,7 +264,8 @@ impl Expectations for Meeting {
                 judge.check(queries.len() <= 64, "bounded observed provider requests");
                 for query in &queries {
                     judge.check(
-                        query.model.as_ref() == b"fake" && query.max_tokens > 0,
+                        (query.model.as_ref() == b"fake" || query.model.as_ref() == b"alternate")
+                            && query.max_tokens > 0,
                         "configured model reaches the provider and its declared ceiling is positive",
                     );
                     judge.check(

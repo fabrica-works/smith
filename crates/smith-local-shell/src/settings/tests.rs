@@ -588,3 +588,76 @@ fn the_configuration_holds_each_model_of_mains_endpoint_and_none_of_another() {
     assert!(charter.models.is_empty());
     assert_eq!(resolved.accounts.len(), 1);
 }
+
+fn effort_settings(extra: &str) -> Result<super::resolve::Resolved, super::Refusal> {
+    effort_settings_shared(extra, &Shared::default())
+}
+
+fn effort_settings_shared(extra: &str, shared: &Shared) -> Result<super::resolve::Resolved, super::Refusal> {
+    let certificate = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/protocol-llm/fixtures/root.der");
+    let base = format!(
+        "model='test/model'\n[accounts.test]\nsource='env'\nvariable='SYNTHETIC'\n[endpoints.test]\ndialect='codex'\nconnect=10\nhandshake=10\naccount='test'\naddress='127.0.0.1:443'\nserver_name='example.test'\ntrust.system=false\ntrust.der=['{certificate}']\n[models.\"test/model\"]\nwindow=262144\noutput=32768\ninput_price=1.0\ncached_price=1.0\noutput_price=1.0\n"
+    );
+    let extra = extra.replace("codex/gpt-6-luna", "test/model");
+    let decoded =
+        merge(shared, PathBuf::from("/workspace"), &[source(Layer::User, &base), source(Layer::User, &extra)])?;
+    super::resolve::resolve(
+        &decoded,
+        &crate::command::Command::Check { shared: Shared::default(), json: false, execution: None },
+    )
+}
+
+#[test]
+fn the_settings_effort_is_refused_with_its_models_declared_names() {
+    let why = effort_settings("effort='mystery'\n[models.\"codex/gpt-6-luna\"]\nefforts=['low','high']\n")
+        .err()
+        .expect("undeclared effort");
+    assert_eq!(why.key, "effort");
+    assert!(why.line().contains("Effort mystery is not declared; accepted: low, high"));
+}
+
+#[test]
+fn a_model_with_no_effort_list_passes_any_bounded_name_to_the_provider() {
+    let resolved = effort_settings("effort='future'\n").unwrap();
+    assert_eq!(resolved.local.models[0].effort.as_deref(), Some(b"future".as_slice()));
+    assert!(resolved.agent.service.domain.models.iter().all(|model| model.efforts.is_empty()));
+}
+
+#[test]
+fn declared_efforts_reach_the_local_and_agent_startup_owners() {
+    let resolved = effort_settings("effort='high'\n[models.\"codex/gpt-6-luna\"]\nefforts=['low','high']\n").unwrap();
+    assert_eq!(
+        resolved.local.efforts[0].as_ref(),
+        &[Box::<[u8]>::from(b"low".as_slice()), Box::<[u8]>::from(b"high".as_slice())]
+    );
+    assert!(
+        resolved
+            .agent
+            .service
+            .domain
+            .models
+            .iter()
+            .any(|model| model.model.as_ref() == b"model" && model.efforts.len() == 2)
+    );
+}
+
+#[test]
+fn model_effort_names_are_bounded_at_the_settings_entrance() {
+    let why = effort_settings("[models.\"codex/gpt-6-luna\"]\nefforts=['abcdefghijklmnopqrstuvwxyz0123456']\n")
+        .err()
+        .unwrap();
+    assert!(why.key.ends_with("efforts"));
+}
+
+#[test]
+fn the_effort_flag_is_checked_against_the_models_declared_names() {
+    let why = effort_settings_shared(
+        "[models.\"test/model\"]\nefforts=['low']\n",
+        &Shared { effort: Some("high".into()), ..Shared::default() },
+    )
+    .err()
+    .expect("undeclared flag effort");
+    assert_eq!(why.key, "effort");
+    assert_eq!(why.origin, Origin::Flag { flag: "--effort".into() });
+    assert!(why.line().contains("Effort high is not declared; accepted: low"));
+}

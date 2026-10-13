@@ -23,6 +23,7 @@ fn the_frozen_control_is_refused_at_startup_or_services_finish_after_four_turns(
             connect: Duration::from_secs(30),
             handshake: Duration::from_secs(30),
             models: Box::new([Model {
+                efforts: Box::new([]),
                 name: b"gpt-6-luna".as_slice().into(),
                 window: 131_072,
                 output: 4096,

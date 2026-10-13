@@ -933,3 +933,32 @@ fn smith_check_and_startup_refuse_missing_sign_in_registration_keys_by_name() {
     }
     assert!(!scratch.path().join("state/smith/tokens").exists());
 }
+
+#[test]
+fn slash_effort_reaches_the_next_request() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let mut settings = support::fake_provider_settings(&scratch);
+    settings.extend_from_slice(b"\n[models.\"codex/gpt-6-luna\"]\nefforts=['low','high']\n");
+    let _file = support::user_layer(&scratch, &settings);
+    let (ran, queries) = support::chat_traced(
+        &scratch,
+        vec![
+            Action::Send(b"hello\n".as_slice().into()),
+            Action::Wait(b"First answer".as_slice().into()),
+            Action::Send(b"/effort high\nnext\n".as_slice().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(queries.len(), 2);
+    let trace = std::fs::read(scratch.path().join("effort.jsonl")).unwrap();
+    let efforts: Vec<_> = trace
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .filter(|record| record["type"] == "response.started")
+        .map(|record| record["model"]["effort"].clone())
+        .collect();
+    assert_eq!(efforts, vec![serde_json::json!("low"), serde_json::json!("high")]);
+}

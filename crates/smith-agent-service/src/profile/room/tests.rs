@@ -24,6 +24,7 @@ fn declarations(window: u32, output: u32) -> Configuration {
             connect: Duration::from_secs(1),
             handshake: Duration::from_secs(1),
             models: Box::new([Model {
+                efforts: Box::new([]),
                 name: Box::from(b"model".as_slice()),
                 window,
                 output,

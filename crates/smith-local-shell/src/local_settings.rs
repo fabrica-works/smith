@@ -297,6 +297,7 @@ pub fn policy(
         chat: settings.chat.as_bytes().into(),
         instructions: settings.instructions.as_bytes().into(),
         brief: run::charter::Brief { sections: brief.into() },
+        efforts: models.iter().map(|_| Box::<[run::charter::Effort]>::default()).collect(),
         models: models.into(),
         sub_agents: settings.sub_agents,
         protocol_allowances,
@@ -645,6 +646,7 @@ mod tests {
                         .models
                         .iter()
                         .map(|model| smith_agent_service::profile::Model {
+                            efforts: Box::new([]),
                             name: model.name.as_bytes().into(),
                             window: model.window,
                             output: model.output,

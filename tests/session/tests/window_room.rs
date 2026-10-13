@@ -24,6 +24,7 @@ fn a_window_opened_at_its_largest_makes_its_first_completion() {
                 connect: Duration::from_secs(1),
                 handshake: Duration::from_secs(1),
                 models: Box::new([Model {
+                    efforts: Box::new([]),
                     name: b"model".as_slice().into(),
                     window,
                     output: 512,
