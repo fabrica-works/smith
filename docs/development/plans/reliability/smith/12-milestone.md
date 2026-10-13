@@ -314,7 +314,7 @@ Scope: once the `main` this plan ships has landed, the `smoke` and
   its answer. A probe session 13 recorded as not calibrated (decisions.md,
   12.4), or a quarantined one, is reported and gates nothing.
 Needs: smith 00, 03 to 08, 10 and 13's steps landed or dropped (`plan
-  status`); smith 00's `probes` suite and baselines on events
+  status`); 12.s1 (decisions.md, 13.128); smith 00's `probes` suite and baselines on events
   [00.21]; smith 00's one command per probe run [00.27].
 Files: `benchmarks/summaries/<run>.json` (new). Shape: none, a run.
 Test shape: none new; tests/offline.rs:28 reads the summary.
@@ -325,6 +325,25 @@ Proof: live, `heavy --gate cargo run -p smith-bench -- suite smoke --arm
   calibrated probe printed as `Regression`.
 Don't: rerun beyond section 9's one rerun; calibrate a probe.
 Size: no production code. Removes: nothing.
+
+### 12.s1 The five probe tasks at six conversations take five
+Added (decisions.md, 13.128), before 12.3 runs again. Scope: `[smith]
+conversations` goes from 6 to 5 in `benchmarks/tasks/probes/{budget,
+cache-reuse,follow-up,large-write,paths}/task.toml`, as the unblock of
+2026-10-13T06:01:28Z did for `failures`, `first-request` and
+`smoke-tools` after the designer lowered the standard profile's
+(09deb036); task versions, seeds, prompts, budgets, outcomes and every
+other limit unchanged.
+Needs: nothing.
+Files: those five `task.toml` files.
+Shape: none.
+Test shape: none new; the offline tests that read tasks stay green.
+Proof: offline: for each of the five tasks (and `budget`'s variants), the
+harness's prepared settings pass `smith check` on the current arm (exit
+0), each worst case recorded in the body; once. No live run.
+Don't: change a task's version, outcome, budget or any other limit; touch
+smith's code.
+Size: no production code.
 
 ### 12.4 The comparison against Codex
 Scope: `suites/compare.toml` with 03 included (benchmarks.md, 9, 11.5):

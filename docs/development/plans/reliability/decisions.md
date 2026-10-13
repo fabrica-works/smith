@@ -2154,3 +2154,19 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    behaviour, types' shapes and tests' names unchanged. Proof: the Done
    when's search prints nothing, and the gate. Smoke as for any code
    landing.
+128. **smith-12.s1: the five probe tasks still at six conversations take
+   five; then 12.3 runs again** (block of 2026-10-13T20:32:43Z, smith
+   12.3). 12.3's smoke and probes suites stopped at setup:
+   `service.worst_case` 2,281,755,414 B against `memory` 2,147,463,810 B
+   on `probes/budget` (and its `child-quota` variant). The designer
+   lowered the standard profile's `conversations` from 6 to 5 so the
+   product fits 2 GiB (09deb036), and the unblock of 06:01:28Z moved only
+   the three tasks 10.15 ran (`failures`, `first-request`, `smoke-tools`)
+   to 5, versions unchanged. Five tasks still pin 6: `budget`,
+   `cache-reuse`, `follow-up`, `large-write`, `paths`. Ruling: a step not
+   in the plan, 12.s1, sets their `[smith] conversations` to 5, as those
+   three, versions and everything else unchanged; its Proof is each
+   task's prepared settings passing `smith check` on the current arm.
+   Then 12.3 runs once more, both suites, as its card says; that rerun
+   is not section 9's rerun of a failed probe, since no probe ran. 12.3
+   still fixes nothing in smith.
