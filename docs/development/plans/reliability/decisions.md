@@ -2205,3 +2205,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    (probes-0305f2fd-20261013T202925Z, probes-62acc437-20261013T212404Z)
    are named in its body as records. That run is a setup completion, not
    section 9's rerun of a failed probe.
+131. **12.4's audit and session 12's attempts** (block of
+   2026-10-13T22:08:48Z, smith 12.4). The audit: as session 12's
+   Questions to raise propose, the summary's three seeded sampled attempts
+   and every grader or check disagreement, audited by the session's model
+   against each attempt's archived diff and calls (the task asked, no
+   grader read, protected files and scope), the IDs, verdicts and evidence
+   in the step's logs and commit body, the list shown in 12.7. The
+   attempts: session 12 has used 103 of its line's 126 (README's budget
+   table) for $2.59 of $45, the setup refusals and 13.130's whole probes
+   call among them. Its line goes to 149 attempts, 103 plus 12.4's 30,
+   12.5's 6 and 12.6's 10, the $45 and every suite's per-call attempts,
+   wall, tokens and no-rerun settings unchanged; README's "past its
+   line's budget by half stops on a question" now counts from 149.
