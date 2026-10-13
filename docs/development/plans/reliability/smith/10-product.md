@@ -862,6 +862,15 @@ the harness tests reading `local_settings`
 `benchmarks/tests/{smith_adapter.rs:536,smith_producer.rs:29}`);
 `docs/development/{local-host.md,workflow.md}`.
 Shape: `compose::AgentKind::Spawned { program: PathBuf }`.
+Gathered crossings (decisions.md, 13.126): `Resources.accounts`,
+`token_directory`, `credentials/legacy.rs` and `prepare_legacy` go, with
+the legacy account's memory share; a startup function beside
+`settings::resolve` returns the generated JSON bytes it builds; the sample
+host (`tests/hosts`) launches `smith-agent` through the existing `Launch`.
+Files add `local_host/memory.rs`, `credentials.rs`,
+`credentials/legacy.rs`, `settings/resolve.rs`,
+`tests/hosts/src/{lib,world}.rs` and its tests, and
+`crates/smith-local-shell/README.md`.
 Test shape: the moved stories keep their names (`end_to_end.rs:7`, :15,
 :36); `smith_agent_spawned_by_the_sample_host_answers` (testing.md,
 2.3). Ceilings: 2 s.

@@ -2117,3 +2117,27 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `profile::Model` carries the model's `efforts` so the startup
    derivation prices them exactly. These owners, their codecs (generated
    by the pinned generator, 13.105) and goldens join 10.25's Files.
+126. **10.16's gathered crossings** (block of 2026-10-13T17:16:39Z, smith
+   10.16; dossier `logs/smith-10/10.16-crossings-question.md`). All four
+   proposals, as the plan's Shape and Files, under shell.md 5.4 (inline
+   configuration a value with no file; spawned, generated JSON with its
+   derived `exit_grace`) and the card's "no compatibility path":
+   1. `Resources.accounts` and `token_directory`, `credentials/legacy.rs`,
+      `prepare_legacy` and the legacy account's share of the memory parts
+      go; worlds use the existing `credentials::Prepared` and native
+      sources with synthetic registration. `local_host/memory.rs`,
+      `credentials.rs` and `credentials/legacy.rs` join the Files.
+   2. One startup function beside `settings::resolve` returns the
+      `Resolved` and the generated JSON bytes it already builds;
+      `resolve` keeps its signature; no `Resolved` field is added; the
+      spawned path writes the bytes through the existing whole-file owner
+      before launch. `settings/resolve.rs` joins the Files.
+   3. The sample host is `tests/hosts`: `src/{lib,world}.rs` and its tests
+      join the Files; its launch uses the existing
+      `smith_local_service::Launch` with `smith-agent` and the generated
+      JSON, and its other scenarios only take the new signature.
+   4. `crates/smith-local-shell/README.md` joins the Files, rewritten for
+      the product.
+   The body states the default presets' interactive and exec worst cases
+   before and after (the legacy parts leaving should lower them).
+   README rule 9 holds: 700 in all.
