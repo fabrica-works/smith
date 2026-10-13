@@ -1922,3 +1922,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    host and the trace, as 06.7 and 06.13 did; 10.21 needs it, and
    renders with `words` as one function of the failure, each account's
    name and the host's clock at the answer.
+110. **smith-10.s3: `-o`'s file in the teardown bound** (block of
+   2026-10-13T05:32:30Z, smith 10.15). The designer's answer of 05:23:27Z
+   has `smith check ... exec` report `exec`'s teardown bound, `-o`'s file
+   among its destinations; the product's `service.teardown` counts only
+   the agent's closes and events write, not the result file's FileIo
+   deadlines (10.20). 10.15 reports the existing bound through the one
+   limits owner; a step not in the plan, 10.s3, adds the file's deadlines
+   when `-o` is given. The harness gives `exec` no `-o`, so 10.15's Proof
+   does not wait for it.

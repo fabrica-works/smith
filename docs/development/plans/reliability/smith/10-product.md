@@ -426,6 +426,27 @@ by part (the designer then lowers a provisional value, `conversations`
 first).
 Size: README rule 9's.
 
+### 10.s3 `-o`'s file in the teardown bound
+Added during the run (decisions.md, 13.110). Scope: shell.md 4.4 has
+`smith check ... exec -o FILE` report the teardown bound `smith exec`
+with those flags would have, `-o`'s file among its destinations; the
+product's `service.teardown` today is the agent's alone (two io closes
+and the events write deadline), while `-o`'s result file has its own
+FileIo write and close deadlines before `session.ended` (10.20). The
+local effective limits gain the result file's deadlines in the product's
+teardown bound when `-o` is given, through the one limits owner, and
+`smith check` reports it.
+Needs: 10.15 (the invocation-aware check).
+Files: the local effective limits' owner and the result file's
+preparation; their tests.
+Shape: no new type.
+Test shape: a unit test: `smith check ... exec -o FILE` reports a
+teardown bound that includes the file's deadlines, and without `-o` the
+bound is unchanged; it fails on the parent. Under 20 ms.
+Proof: that test, once.
+Don't: change the agent's teardown bound or a deadline's value.
+Size: README rule 9's.
+
 ### 10.5 `smith exec`
 Scope (shell.md, 4.2 and 4.3; events.md, 5.2): the command and its usage
 errors; the headless local domain composed inline (`compose`); chats by
