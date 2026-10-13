@@ -183,6 +183,14 @@ what its host's protocol layer would do:
 
 - **Each chat** has a directory under smith's state directory
   (`docs/design/shell.md`).
+- **One store, one chat at a time.** The chat store's root is the
+  workspace's chats, under smith's state directory, and it holds one chat
+  at a time, named by one path component within its bounds. It selects
+  another only when idle, no activation live and no store work in
+  flight: it forgets what it remembered of the old chat, then loads the
+  other, making it, private, when `/new` starts it
+  (`docs/design/shell.md`, 4.1). An `--ephemeral` chat's store holds its
+  one chat in its private directory, and selects no other.
 - **Each turn** is a file of its own, numbered by its place in the
   conversation, and written durably: the file and its directory are
   flushed before the turn is acknowledged (channel.md, section 7).

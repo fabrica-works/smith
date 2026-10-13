@@ -269,13 +269,25 @@ The interactive chat, the local host of domain/host.md, section 8:
   - a status line after each response: the model, tokens in, cached and
     out, notional spend, elapsed time and what is left of the budget.
 
+  This is the live view. The front end asks the one event sink for the
+  records it shows, typed and in process (protocol/events.md, 5.2),
+  whatever any destination's capture, and never reads a destination
+  back. It is best effort: a front end that falls behind drops what it
+  cannot hold, counts it, and never holds the run back, and what it
+  missed the told turn shows. What decides the outcome, the answer and
+  its failure in words, comes from what the local host hears (4.2).
+
   A waiting prompt appears only once every relayed line has been read.
 - **Commands** begin with `/`. They are the local host's, never
   messages:
   - `/model ENDPOINT/NAME` and `/effort LEVEL` apply from the next
     activation, since a conversation's model is fixed for its life. A
     model on another endpoint starts a new chat, and says so;
-  - `/new` starts a new chat, and `/resume NAME` reopens one;
+  - `/new` starts a new chat, and `/resume NAME` reopens one, once the
+    live activation has answered or parked; the chat store then holds
+    the other chat (protocol/hosts.md, 5.3). `/resume` of a chat that
+    does not exist, or of a name past the store's bounds, is refused,
+    naming it;
   - `/quit` ends input.
 
   A line that begins `//` is a message that begins `/`.
@@ -335,11 +347,12 @@ One run, then exit:
   - standard error carries a human status: the chat's name, each tool
     call and its verdict, notices, and a failure in words, with provider
     text clipped;
-  - **the product reads none of its own records.** The result and the
-    status are rendered from what the local host hears of the run, its
-    told turns, its notices and its answer, as a chat's lines are, in
-    either placement of its agent (domain/host.md, section 8). The event
-    stream is only written;
+  - **the product reads back none of its own records.** The result, the
+    status and the last line are rendered from what the local host hears
+    of the run, its told turns, its notices and its answer, in either
+    placement of its agent (domain/host.md, section 8). No destination
+    is read back. The one thing a front end takes from the event sink is
+    a chat's live view, which it asks for in process (4.1);
   - **standard output under `--json`** is the event sink's destination
     of its own (protocol/events.md, 5.2), adopted by what it is: a
     regular file as an append stream, a pipe or a terminal as a write

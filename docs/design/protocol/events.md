@@ -502,6 +502,12 @@ projection.
 - **One destination, one sink.** With standard output and a trace file,
   each has its own policy state and its own count, and each gets its own
   `session.ended`.
+- **A front end in the process is not a destination.** It asks the sink
+  for the records it shows (`text.delta`, a tool's records, a response's
+  usage), typed, through a bounded queue, whatever the destinations'
+  capture. It is best effort: what it cannot hold is dropped and counted,
+  and it never holds the run back. Nothing it takes is serialized or read
+  back from a destination (`docs/design/shell.md`, 4.1).
 
 ### 5.3 The capture policy
 
