@@ -751,7 +751,25 @@ record showing its address through the existing driver, and the
 harness's Chat face running `probes/first-request` at `smith --trace
 <file>` on a pseudo-terminal. It starts from 10.8's preserved drafts:
 the screen and the entered parser of `6e6790d1` (on `2834aedf`).
-Needs: 10.8.
+`/model` and `/effort`, as the designer ruled on 2026-10-13 (shell.md,
+4.1 and 5.2; charter.md, section 2; agent.md, section 4; session.md,
+sections 3 and 8.2; transcript.md, section 2):
+- the agent's configuration holds every model main's endpoint declares,
+  checked and priced at startup with main's account; `/model` chooses
+  among them for the next activation's charter, and a model on another
+  endpoint is refused, the chat kept, naming `smith --chat NAME -m
+  ENDPOINT/NAME`; nothing is composed again in the process;
+- effort is a run's choice, the charter LLM's `effort`, no longer an
+  endpoint option; `smith-protocol-llm` sets each prompt's effort from
+  it, and skein's `Prompt` already carries one;
+- a turn records its model and effort (transcript 3 in place); a
+  session opened from a window whose last turn's model is not its
+  charter's compacts first with the window's model.
+
+Those crossings (the charter, the agent configuration, the transcript,
+the session's trigger, `smith-protocol-llm`) are a step its supervisor
+names, which 10.24's `/model` and `/effort` need.
+Needs: 10.8; for `/model` and `/effort`, that step.
 Files: 10.8's.
 Shape: 10.8's.
 Test shape: 10.8's units of each `/` line and of the renderer per record
