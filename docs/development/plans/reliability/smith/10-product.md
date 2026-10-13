@@ -953,6 +953,26 @@ screen (10.24).
 Size: README rule 9's; past 700, it stops and asks.
 Removes: the view's whole-record slots.
 
+### 10.s5 The old shell's names go
+Added (decisions.md, 13.127), for session 10's Done when. Scope:
+`smith-local-shell`'s `local_shell` module, which now holds the product's
+shared refusals, OAuth entropy, service-limit derivation and stream
+header, takes a name for what it holds (or its parts move into `compose`
+and `local_host`), with its users and `lib.rs`'s re-export; the test
+variable `in_process` in `tests/real/tests/stories.rs` becomes
+`colocated`. Behaviour, types' shapes and tests' names unchanged.
+Needs: 10.10.
+Files: `crates/smith-local-shell/src/` (the module, `lib.rs` and its users
+`check.rs`, `compose.rs`, `compose/files.rs`, `credentials/login.rs`,
+`local_host.rs`, `local_host/header.rs`, `local_host/memory.rs`,
+`settings/tests.rs`); `tests/real/tests/stories.rs`.
+Shape: no new type; the module's new name.
+Test shape: none new.
+Proof: `rg -n '\blocal_(auth|tokens|store|settings|shell)\b|\bin_process\b|rustls_native_certs' crates src tests --type rust`
+prints nothing; the gate.
+Don't: change behaviour or a test's name.
+Size: README rule 9's.
+
 ### 10.10 The terminal's window size
 Scope (shell.md, 2 and 4.1; skein shell.md, 6.3), as the designer ruled
 on 2026-10-13: the chat stays in the terminal's own line mode, which

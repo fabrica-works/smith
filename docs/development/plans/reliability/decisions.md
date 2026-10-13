@@ -2141,3 +2141,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    The body states the default presets' interactive and exec worst cases
    before and after (the legacy parts leaving should lower them).
    README rule 9 holds: 700 in all.
+127. **smith-10.s5: the old shell's names go** (block of
+   2026-10-13T20:14:26Z, session 10's closing). Session 10's Done when,
+   "No module of the old local shell is left", finds 40 lines: the
+   `smith-local-shell` module `local_shell` (111 lines, now the product's
+   shared refusals, OAuth entropy, service-limit derivation and stream
+   header) and its 34 users, and a test variable `in_process` in
+   `tests/real/tests/stories.rs`. Ruling: the condition stands; a step
+   not in the plan, 10.s5, renames them: the module to a name for what it
+   holds (or its parts into `compose` and `local_host`, if that reads
+   better), its users with it, and the test variable to `colocated`;
+   behaviour, types' shapes and tests' names unchanged. Proof: the Done
+   when's search prints nothing, and the gate. Smoke as for any code
+   landing.
