@@ -4,12 +4,14 @@
 //! charter, drive the typed fake LLM, inject parent input, and return host
 //! terminals. Only public counters are read for final quiescence checks.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 
 use skein_fake_checkout::Checkout;
 use skein_fake_llm_domain as provider;
 use skein_lib::{Duration, ReplyTo, Rng, Time, Token, Wall};
 use skein_world::domain::{Key, Ledger, Referee, Schedule, Span, Stage, Trace};
+use smith_domain::session::llm::Block as SavedBlock;
 use smith_domain::{self as agent, Event, Fact, Grant, GrantName, Limits, Request, llm, run, tools};
 use smith_tools_world::translate as io;
 
@@ -999,9 +1001,9 @@ impl World {
                 self.gather();
             }
             while self.agent.facts_room() >= agent::max_facts(&self.stage.env.limits)
-                && let Some(event) = self.stage.next_event()
+                && let Some(mut event) = self.stage.next_event()
             {
-                self.trace.log(self.now, format!("agent <- {event:?}"));
+                self.log_event(&mut event);
                 if matches!(&event, Event::Cancel { .. }) {
                     self.messages_seen.push((self.now, crate::messages_referee::Seen::ParentCancelled));
                 }
@@ -1067,6 +1069,38 @@ impl World {
             }
         }
         false
+    }
+
+    fn log_event(&mut self, event: &mut Event) {
+        let saved = if let Event::Start { transcript, .. } = event { transcript.clone() } else { None };
+        let mut lengths = Vec::new();
+        let mut digest = DefaultHasher::new();
+        if let Event::Start { transcript: Some(transcript), .. } = event {
+            for block in
+                transcript.turns.iter_mut().flat_map(|turn| &mut turn.messages).flat_map(|message| &mut message.content)
+            {
+                let payload = match block {
+                    SavedBlock::Text { text, .. }
+                    | SavedBlock::Refusal { text, .. }
+                    | SavedBlock::Opaque { bytes: text }
+                    | SavedBlock::ToolCall { input: text, .. } => Some(text),
+                    SavedBlock::ToolResult { .. } => None,
+                };
+                let Some(payload) = payload.filter(|payload| payload.len() > 1024) else { continue };
+                (payload.len(), &payload[..512], &payload[payload.len() - 512..]).hash(&mut digest);
+                lengths.push(payload.len());
+                *payload = Box::new([]);
+            }
+            transcript.hash(&mut digest);
+        }
+        if lengths.is_empty() {
+            self.trace.log(self.now, format!("agent <- {event:?}"));
+        } else {
+            self.trace.log(self.now, format!("agent <- {event:?}; large payload lengths {lengths:?}, envelope and first/last 512-byte fingerprint {:016x}", digest.finish()));
+        }
+        if let Event::Start { transcript, .. } = event {
+            *transcript = saved;
+        }
     }
 
     fn advance_provider(&mut self) -> bool {
