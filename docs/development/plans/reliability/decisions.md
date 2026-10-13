@@ -1938,3 +1938,12 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    with its constructor and the agent service's consumer, changes nothing
    else. The second such box (00.21 boxed `Observing.prepared`): README
    rule 8 gains it.
+112. **smith 10.6 splits; 10.23 takes the registration, login and the old
+   accounts' removal** (block of 2026-10-13T07:15:16Z). 10.6's candidate
+   (`95b4f6d1`) holds 727 production lines with only the native driver's
+   routing and the registration module, the rest of its Scope unstarted.
+   Ruling: the implementer's split: 10.6 lands the driver's private-file
+   and sign-in routing with its tests, removing nothing; 10.23 takes the
+   registration from settings, `smith login`, the legacy migration and
+   removal, and both live-arm moves, with 10.6's process Proof; it stops
+   past 700.

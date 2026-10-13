@@ -634,6 +634,7 @@ under `$XDG_STATE_HOME/smith/tokens`; the account id from the claims.
 `smith login ACCOUNT` exits 0, 3, or 2 for an unknown account; `smith
 local`'s accounts move onto the driver; at the end a waiting sign-in is
 cancelled before the driver closes.
+Split (decisions.md, 13.112): 10.6 lands the native account driver's private-file and sign-in routing with its tests, removing nothing; 10.23 takes the registration from settings (the designer's 4d808f08), `smith login`, the legacy accounts' migration and the old mechanism's removal, and both live-arm moves to `exec` (13.108).
 Needs: the harness on `smith exec` with a borrowed login (10.15).
 Files: `smith-local-service`; `smith-local-shell` (`credentials.rs`,
 `command.rs`, `local_host.rs`, `local_shell.rs:260`, `lib.rs`);
@@ -657,6 +658,23 @@ Removes: `local_auth.rs`, `local_auth_http.rs`, `local_auth_tests.rs`,
 `local_tokens.rs` and its two `#[expect]`s, `smith-local-protocol`'s
 `credential.rs`, and the `$XDG_CONFIG_HOME/smith/tokens` default.
 
+
+### 10.23 Sign-in's registration from settings, `smith login`, the old accounts gone
+Split from 10.6 (decisions.md, 13.112). Scope: 10.6's Scope for the
+registration under `[accounts.<name>]` (shell.md 7, the designer's
+4d808f08: `client_id`, `authorization_url`, `token_url`, `redirect_uri`,
+`scope`, `token_format`, `trust`), missing keys refused by name at
+`smith check` and startup, `smith login` and its words, the legacy
+accounts' consumers migrated and the old mechanism removed whole, the
+issuer-refresh story and the ordinary live stories' Anthropic arms moved
+to `exec` (13.108); the 168-line registration module of 10.6's candidate
+(`95b4f6d1`) starts it.
+Needs: 10.6.
+Files: 10.6's.
+Test shape: 10.6's named authentication stories and process tests, as
+they concern these.
+Proof: 10.6's process Proof.
+Size: README rule 9's; past 700, it stops and asks.
 ### 10.8 The interactive `smith`
 Scope (shell.md, 4.1), in line mode: the workspace's chat resumed; lines
 as messages, a backslash continuing one, `//`; the run shown from its
