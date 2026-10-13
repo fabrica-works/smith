@@ -2089,3 +2089,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    it now" is withdrawn: settings did not check effort. No preset
    declares efforts in 10.25: the repository holds no provider's list,
    and none is fetched.
+124. **10.25's effort check lives where configured models do** (block of
+   2026-10-13T16:02:33Z, smith 10.25). 13.123 named `smith-domain-run`
+   for the run's entrance check; the configured models and the entrance
+   comparison are `smith-domain`'s (`config.rs`: `ConfiguredModel`,
+   `Config::check_model`; `route.rs`), which the root runs before
+   `smith-domain-run` admits. Ruling, as the plan's Shape: the root's
+   `ConfiguredModel` carries the model's `efforts`, and `check_model`
+   refuses a charter effort outside a non-empty list; the local
+   `Config` keeps each model's efforts beside its `models`, one list per
+   model in the same order (or in one entry with it, if that changes no
+   crossing type), its ownership counted, copied into the root's
+   configuration at startup. `smith-domain` (`config.rs`, `route.rs`)
+   and the local `Config` join 10.25's Files; `smith-domain-run` leaves
+   them unless its tests need the new field (README rule 8).
