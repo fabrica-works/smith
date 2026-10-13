@@ -22,6 +22,7 @@ skein-llm-world.workspace = true
 skein-io.workspace = true
 skein-lib.workspace = true
 skein-oauth.workspace = true
+skein-oauth-accounts.workspace = true
 skein-tls-world.workspace = true
 skein-tls.workspace = true
 skein-world.workspace = true

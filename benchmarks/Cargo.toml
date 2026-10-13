@@ -31,6 +31,7 @@ skein-shell.workspace = true
 skein-oauth.workspace = true
 
 [dev-dependencies]
+smith-agent-service.workspace = true
 smith-domain-run.workspace = true
 smith-domain-session.workspace = true
 smith-agent-shell = { path = "../crates/smith-agent-shell" }

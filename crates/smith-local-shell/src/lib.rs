@@ -9,10 +9,9 @@ pub mod compose;
 pub mod credentials;
 pub mod front;
 pub mod local_host;
-pub mod local_settings;
 pub mod local_shell;
 pub mod presets;
 pub mod settings;
 
 pub use local_host::{Local, Resources};
-pub use local_shell::{Failure, run};
+pub use local_shell::Failure;

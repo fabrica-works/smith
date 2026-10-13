@@ -7,8 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use smith_local_domain::{DeliveryState, Event, Fact};
-use smith_local_process_world::referee::Seen;
 use smith_local_process_world::world::Scenario;
+use smith_local_process_world::{Placement, referee::Seen};
 
 use crate::git;
 
@@ -59,23 +59,36 @@ impl Before {
         let root = &scenario.launch.root_path;
         let mut after = BTreeMap::new();
         entries(root, root, &mut after);
-        let mut expected = BTreeSet::from([PathBuf::from("chat/state")]);
-        if binary {
-            expected.extend([PathBuf::from("agent.json"), PathBuf::from("agent-trace.jsonl")]);
-            if !scenario.launch.in_process {
-                expected.insert(PathBuf::from("agent-trace.jsonl.agent"));
-            }
-        }
-        let endpoints = if binary {
-            smith_agent_shell::config::read(&root.join("agent.json"))
-                .expect("actual child config")
-                .service
-                .channel_endpoints
+        let (chat, endpoints) = if binary {
+            let source = smith_local_shell::settings::Source {
+                layer: smith_local_shell::settings::Layer::User,
+                path: root.join("config/smith/config.toml"),
+                text: std::fs::read_to_string(root.join("config/smith/config.toml")).unwrap(),
+            };
+            let settings = smith_local_shell::settings::from_sources(
+                &smith_local_shell::command::Shared::default(),
+                root.clone(),
+                &[source],
+            )
+            .unwrap();
+            let resolved = smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap().0;
+            let workspace = root.canonicalize().unwrap();
+            let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
+            let key = digest.0.iter().map(|part| format!("{part:016x}")).collect::<String>();
+            let chat =
+                PathBuf::from("state/smith/chats").join(key).join(std::str::from_utf8(&resolved.local.chat).unwrap());
+            (chat, resolved.agent.service.channel_endpoints)
         } else {
-            smith_local_process_world::process::lower_configuration().channel_endpoints
+            (PathBuf::from("chat"), smith_local_process_world::process::lower_configuration().channel_endpoints)
         };
+        let mut expected = BTreeSet::from([chat.join("state")]);
+        if binary {
+            expected.insert(PathBuf::from("agent-trace.jsonl"));
+        } else if scenario.launch.placement == Placement::Spawned {
+            expected.extend([PathBuf::from("agent.json"), PathBuf::from("launch.json")]);
+        }
         let Event::Loaded { state, transcript, deliveries } =
-            smith_local_process_world::world::load_chat(&scenario.launch.state_directory, &endpoints)
+            smith_local_process_world::world::load_chat(&root.join(&chat), &endpoints)
         else {
             unreachable!("chat codecs return Loaded")
         };
@@ -85,8 +98,7 @@ impl Before {
             .entries
             .keys()
             .filter(|path| {
-                path.parent() == Some(Path::new("chat"))
-                    && path.extension().is_some_and(|extension| extension == "turn")
+                path.parent() == Some(chat.as_path()) && path.extension().is_some_and(|extension| extension == "turn")
             })
             .count();
         assert_eq!(
@@ -102,12 +114,17 @@ impl Before {
         let mut returned = BTreeSet::new();
         for fact in &seen.facts {
             if let Fact::DeliveryReturned { name } = fact {
-                returned.insert(format!("chat/{:020}.{:010}.{:010}", name.activation, name.completion, name.position));
+                returned.insert(
+                    chat.join(format!("{:020}.{:010}.{:010}", name.activation, name.completion, name.position))
+                        .to_str()
+                        .unwrap()
+                        .to_owned(),
+                );
             }
         }
         let mut new_deliveries = BTreeSet::new();
         for turn in &transcript.turns {
-            let path = PathBuf::from(format!("chat/{:010}.turn", turn.sequence));
+            let path = chat.join(format!("{:010}.turn", turn.sequence));
             // A resumed run appends; already durable turns cannot be rewritten.
             if !self.entries.contains_key(&path) {
                 expected.insert(path);
@@ -116,8 +133,7 @@ impl Before {
         for delivery in &deliveries {
             assert!(matches!(delivery.state, DeliveryState::Answer(_)), "every durable intent has its terminal");
             let name = delivery.name;
-            let path =
-                PathBuf::from(format!("chat/{:020}.{:010}.{:010}", name.activation, name.completion, name.position));
+            let path = chat.join(format!("{:020}.{:010}.{:010}", name.activation, name.completion, name.position));
             if !self.entries.contains_key(&path) {
                 new_deliveries.insert(path.to_str().expect("fixture record name").to_owned());
                 expected.insert(path);
@@ -133,7 +149,7 @@ impl Before {
             assert_eq!(new_deliveries, returned, "only observed delivery terminals were persisted");
         }
         if scenario.launch.authenticated {
-            expected.insert(PathBuf::from("tokens/0.json"));
+            expected.insert(PathBuf::from(if binary { "state/smith/tokens/66616b65.token" } else { "tokens/0.json" }));
         }
         let repo = root.join("repo");
         if scenario.launch.change {

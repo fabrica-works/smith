@@ -1,233 +1,122 @@
-# Running the local host
+# Running the product
 
-The local host reads JSON settings, opens a chat's saved files, obtains model
-credentials and runs the agent. Its contracts are
-[protocol/hosts.md, section 5](../design/protocol/hosts.md) and
-[domain/host.md, sections 7–10](../design/domain/host.md).
+`smith` resumes a workspace chat and runs its agent in the same process.
+The contracts are [shell.md](../design/shell.md),
+[protocol/hosts.md](../design/protocol/hosts.md) and
+[domain/host.md](../design/domain/host.md).
 
-## Commands and terminal
+## Commands
 
 ```sh
-smith local SETTINGS.json STATE_DIR [WORKSPACE_SETTINGS.json]
-smith agent CONFIG.json
+smith [--plain] [SHARED FLAGS]
+smith exec [--json] [--deliver] [--ephemeral] [-o FILE] [SHARED FLAGS] [PROMPT | -]
+smith check [--json] [SHARED FLAGS] [exec [EXEC FLAGS]]
+smith login ACCOUNT [SHARED FLAGS]
 ```
 
-These are positional arguments. The optional workspace settings file is
-explicit; Smith does not search for it. Settings are read once at startup.
-Objects merge recursively, and arrays and scalar values replace the global
-value. Unknown fields and missing required fields are refused. Each input
-settings file is limited to 1 MiB. Relative paths are relative to the process's
-working directory.
+Shared flags are `-C DIR`, `-m ENDPOINT/MODEL`, `--effort EFFORT`,
+`--chat NAME`, `--trace FILE` and repeated `-c KEY=VALUE` overrides.
+`-C` selects the workspace. The product composes the native configuration
+in memory; it writes no agent configuration file.
 
-One completed terminal line is one message. A backslash at the end continues
-the message on the next line. The terminal shows the run's text, tool names,
-ending and waiting prompt. The first interrupt cancels the run; a second asks
-its child to stop. Closing input lets the host settle its run and lower IO
-before exiting. Startup and failure reasons go to standard error.
+In line mode, a completed line is one message. A trailing backslash continues
+it on the next line. A line beginning `//` sends one literal slash. Other
+slash lines are local commands: `/model ENDPOINT/MODEL`, `/effort EFFORT`,
+`/new [NAME]`, `/resume NAME` and `/quit`. They run only after the live
+activation has answered or parked and its store work is idle. `/resume`
+refuses an absent chat or a bad name. A model on another endpoint is refused
+with the invocation to start it. An incompatible effort is dropped on a
+model switch, with a line naming it and the new model's declared values.
 
-The default launches the same executable as `smith agent STATE_DIR/agent.json`.
-Set `in_process` to `true` to run the agent domain and its components in the
-host process. Both placements use the shared local shell library.
+The screen shows text, tool verdicts and durations, notices, usage, spend and
+budget standing. The waiting prompt appears when the input read fence is
+open. `--plain`, and input without a terminal, select plain line output.
+The first interrupt cancels the run; a second drops it. End of input lets a
+run answer or park, then exits; one unread message can start the next
+activation before that exit.
 
-## Settings
+`exec` reads its one prompt argument, or all standard input for `-` (also the
+default when no prompt is supplied). It prints the last model text;
+`--json` prints the event stream instead. `-o` durably replaces a result
+file with that text. `--deliver` enables a change result and its checked
+commit; an ordinary exec produces a report. `--ephemeral` uses a private
+chat directory and removes its own files after settlement. Foreign files
+are kept and named in a warning.
 
-The required top-level fields are `agent`, `chat`, `instructions`, `models`,
-`budget` and `waiting_seconds`. `agent` is an inline configuration object in
-the format described in [the agent configuration](../../crates/smith/README.md).
-It is written durably to `STATE_DIR/agent.json` for the child.
+`check` resolves and validates the interactive invocation, or the exec
+invocation after `exec`, without opening its destinations or starting a
+run. Its own `--json` chooses the report format. The report lists sourced
+settings, account availability and effective limits by name and unit.
 
-For example, this workspace override selects a chat and a change contract
-while inheriting the global agent, model, budget and account settings:
+## Settings and accounts
 
-```json
-{
-  "chat": "review",
-  "instructions": "Make the requested change and explain it.",
-  "directories": [
-    { "name": "project", "path": ".", "writable": true, "git": true }
-  ],
-  "conventions": { "guide": "AGENTS.md", "checks": "checks" },
-  "contract": {
-    "form": "change",
-    "checks_must_pass": true,
-    "fields": [
-      { "name": "title", "max": 256 },
-      { "name": "body", "max": 4096 }
-    ]
-  }
-}
+Settings are strict TOML. Built-ins are followed by the user layer
+`$XDG_CONFIG_HOME/smith/config.toml` (or `$HOME/.config/smith/config.toml`),
+the workspace's `.smith/config.toml`, ordered `-c` overrides and flags.
+Tables merge and values replace. A repository layer can shape the run but
+cannot configure accounts, endpoints, trust, inherited environment,
+deployment limits, writable caches or trace destinations. Refusals name
+the key and its source.
+
+```toml
+model = 'codex/gpt-6-luna'
+effort = 'low'
+
+[accounts.codex]
+source = 'borrow'
+file = '/path/to/login.json'
+format = 'codex'
+program = 'codex'
 ```
 
-| Field | Meaning and default |
-| --- | --- |
-| `agent` | Inline agent configuration; required. Endpoint names and account numbers resolve the local models. |
-| `chat` | Required nonempty directory name beneath `STATE_DIR`; no slash, backslash, NUL, `.` or `..`. |
-| `instructions` | Required instruction text for each activation. |
-| `models` | Required nonempty array of priced models, described below. |
-| `sub_agents` | Offer main the native `sub_agent` tool; default `false`. Children share the workspace and run budget and cannot delegate. |
-| `budget` | Required positive `{ "turns", "spend", "seconds" }`. The usual run uses 512 turns, 25,000,000 micro-dollars ($25) and 3,600 seconds. Its optional `reserve: { "turns", "seconds" }` defaults to 2 turns and 300 seconds for finishing. Children receive only what remains above it. The reserve must be smaller than the total in both parts; a change-capable chat also reserves at least the agent's `check_timeout`. Each total part must fit the agent's ceiling; standard admits 4,096 turns, 1,000,000,000 micro-dollars and 86,400 seconds. |
-| `waiting_seconds` | Required positive waiting interval, in seconds. |
-| `brief` | Ordered `{ "title", "text" }` context sections; default `[]`. |
-| `directories` | Ordered `{ "name", "path", "writable", "git" }` workspace roots; default `[]`. The binary's host profile allows two directories. |
-| `conventions` | Optional `{ "guide", "checks" }` paths within the workspace. |
-| `contract` | `{ "form": "report", "max": N }` or the change shape above. Omitted means a report with at most 4,096 bytes. Field `max` values bound bytes. |
-| `deliver` | Optional array of `{ "name", "max" }` fields for mid-run changes; these require passing checks. |
-| `title_field` | Result field used as a commit subject; default `"title"`. |
-| `delivery_environment` | Git child environment as `NAME=VALUE` strings; default `[]`. At most 64 entries and 4,096 bytes in total, with no NUL. |
-| `in_process` | Agent placement; default `false` (spawned). |
-| `token_directory` | Optional private OAuth record directory; default described below. |
-| `accounts` | Account descriptors, described below; default `[]`. |
-| `push` | Optional ordered array matching `directories`, each entry `null` or `{ "remote", "branch" }`. Omitted means no push. |
+A `borrow` source reads another tool's access token without writing or
+refreshing its login. An `env` source names its variable. A `sign_in`
+source supplies its public-client registration under `[accounts.NAME]`:
+`client_id`, `authorization_url`, `token_url`, loopback `redirect_uri`,
+`scope` and `token_format` (`json` or `form`). Optional `trust` chooses
+DER or PEM roots for the token endpoint; otherwise machine roots apply.
+No preset supplies a registration. Missing keys are refused at check and
+startup. See [shell.md, section 7](../design/shell.md) for those fields.
 
-An interactive run waits for its first terminal message before opening a
-provider conversation. Later messages arrive when the model ends a turn
-without tool calls; `wait` retains its result until messages arrive and returns
-with them in one request.
+`login` shows the authorization address for a sign-in account and waits for
+the browser redirect. Private records live under
+`$XDG_STATE_HOME/smith/tokens`, or `$HOME/.local/state/smith/tokens`.
+The native keeper owns their format and durable replacement. The shell
+neither stores tokens in settings nor prints them. Exec never signs in;
+without a usable record it names `smith login ACCOUNT` and exits 3.
 
-Each model has this shape:
+Unknown models need declarations, including positive prices, under
+`[models."ENDPOINT/MODEL"]`. Optional `efforts` declares accepted names,
+each within 32 bytes. A model declaring none accepts any bounded effort;
+a provider refusal then becomes the request's failure. Presets declare
+no effort lists. Profiles derive limits and check memory before a run.
+The defaults remain five conversations and 2 GiB.
 
-```json
-{
-  "endpoint": "codex",
-  "name": "gpt-5",
-  "window": 131072,
-  "output": 8192,
-  "reasoning_item": 65536,
-  "head": 60000,
-  "idle": 120000,
-  "input_price": 1250000,
-  "cached_price": 125000,
-  "output_price": 10000000,
-  "price_unit": 1000000
-}
-```
+## Durable chats, traces and exits
 
-`endpoint` names an endpoint in `agent.endpoints`; `name` is the provider's
-model name. `window` and `output` are tokens, `reasoning_item` is bytes, and
-`head` and `idle` are positive milliseconds. The generated agent configuration
-puts these declarations in each endpoint's `models`. Each endpoint also needs
-positive `connect` and `handshake` milliseconds. Local settings leave endpoint
-`models` out of `agent`; the local host generates them from this list. The three prices are integer currency units per `price_unit`
-tokens, which must be positive. The endpoint name is the operator's
-registration; model names and prices are supplied explicitly. The settings do not discover
-models or prices from the provider. Every rate is positive, including notional
-rates for a subscription or free model. A zero rate is refused with its settings
-key before the agent starts. These example rates are the
-[GPT-5 list prices](https://developers.openai.com/api/docs/models/gpt-5), checked
-on 2026-10-09, in micro-dollars per million tokens; they also bound subscription
-usage notionally.
+Chats live in private directories under
+`$XDG_STATE_HOME/smith/chats/<workspace-key>/<chat>`, or the same suffix
+under `$HOME/.local/state`. The workspace key derives from its resolved
+path. State, numbered turn files and delivery records retain their layout
+within each chat. Acknowledgements follow file sync, rename and directory
+sync. Restart preserves unknown delivery intents for reconciliation.
 
-The agent profile is `{"name":"standard","declared":{"memory":N},"policy":{}}`;
-each declared quantity or policy can be overridden by name. `memory` defaults to
-2 GiB; an override declares the process's real memory. Policy durations,
-including `group_stop`, are milliseconds. Raw derived limits and the former
-`memory_bytes` and `grace_ms` keys are refused.
+Git deliveries use the configured result fields and a stable
+`Smith-Delivery` trailer. An uncertain effect is inspected before another
+commit can be attempted. Tools use the selected workspace roots and the
+explicit configured environment.
 
-`cache_write_price` is optional in each model and must be positive when given.
-Cache writes use it, or `input_price` when it is omitted. Each completion rounds
-the combined input, cache-read, cache-write and output charge upwards once.
-Reservations price prompt input at the highest input, cached-input and cache-write rate.
+`--trace FILE` appends product records to that private path. Its destination
+capture and delivery policy remain independent of the screen's bounded
+best-effort live view. A host using the library's spawned agent capability
+runs `smith-agent CONFIG.json` with generated configuration and derived
+`exit_grace`; its agent trace appends `.agent` to the product trace path.
+That generated agent JSON is a host-to-agent format.
 
-With `sub_agents` enabled, an unnamed child uses the main model and endpoint.
-Models after the first are the choices a child may name explicitly; repeat the
-main model there to allow selecting it by name. A child's workspace tools stay
-within the requested families, and children cannot open more sub-agents.
-
-The agent configuration's `environment` is an array of `{ "name", "value" }`
-for agent commands. It is separate from the host's `delivery_environment`.
-Both default to the explicit configured environment rather than inheriting
-the host shell's environment.
-
-## Accounts and sign-in
-
-Every model account needs an entry whose `number` matches the endpoint's
-`account`. `account_id` is the opaque account identifier lent to the agent;
-it is not a bearer token. An account can use an existing saved record without
-an OAuth descriptor. To support fresh sign-in and refresh, supply `oauth`:
-
-```json
-{
-  "number": 0,
-  "account_id": "registered-account",
-  "oauth": {
-    "authorization_url": "https://issuer.example/authorize",
-    "token_endpoint": "https://issuer.example/token",
-    "client_id": "registered-public-client",
-    "redirect_uri": "http://127.0.0.1:8123/return",
-    "scope": "registered-scope",
-    "address": "issuer.example:443",
-    "server_name": "issuer.example",
-    "json": false
-  }
-}
-```
-
-Replace the example registration and destinations with the issuer's values.
-`address` is the token connection's startup-resolved destination;
-`server_name` is its TLS name. `token_endpoint` uses HTTPS, or HTTP to a
-numeric loopback issuer, and contains a path. Both issuer URLs may use HTTP
-when their authority is numeric loopback; HTTP also requires `address` to
-resolve to loopback. Omit `server_name` and `trust_der` for an HTTP token
-endpoint, which uses plaintext. The redirect must use HTTP to a loopback
-address with a fixed nonzero port and a path, without a query or fragment.
-`scope` defaults to an empty string. `json` selects JSON token requests;
-omitted or `false` uses form encoding. Optional `trust_der` names one DER
-trust certificate; omitted uses the system trust store.
-
-The host opens the loopback listener before showing the authorization URL.
-Visit that URL in a browser; the host receives the redirect and exchanges the
-code using Skein's OAuth client and PKCE. It saves the candidate token record
-before lending the grant. A lent grant is refreshed 60 seconds before expiry.
-An uncertain token POST is not repeated. A refused credential shows account
-unavailability and starts no run.
-
-Unless `token_directory` is set, records live in
-`$XDG_STATE_HOME/smith/tokens`, or `$HOME/.local/state/smith/tokens` when
-`XDG_STATE_HOME` is absent. The directory is private (0700); files are private
-(0600) and named `<account-number>.json`. Skein's saved-token codec owns their
-format. The host refuses symbolic links, nonregular records, extra hard links,
-public permissions and account/filename mismatches. Replacement syncs the file,
-renames it, and syncs the directory before acknowledging. Tokens are not stored
-in settings or displayed on the terminal.
-
-## Chat files and deliveries
-
-`STATE_DIR/<chat>` contains `state`, numbered `0000000001.turn` files, and
-delivery records named by activation, completion and position. Turn filenames
-use the conversation position across runs, independently of each activation's
-channel numbering. Turns and answers after the last turn are acknowledged only
-after file sync, rename and directory sync. Restart loads those files and
-preserves unknown delivery intents for reconciliation. Temporary replacements
-are not conversation records. A pending `fresh` reset journal is completed
-when the store reopens.
-
-The startup reader bounds aggregate chat bytes to 64 MiB, retained records to
-4,096, directory entries to 8,192 and each delivery record to 1 MiB. It refuses
-malformed or unsupported records and nonregular files. The service and codecs
-also impose their receiving limits; exceeding a bound produces a failure
-instead of a partial transcript.
-
-Git deliveries run `/usr/bin/git` as a child of the host. A result's configured
-subject field becomes the commit subject; other fields form its body. The
-message includes the stable `Smith-Delivery: activation/completion/position`
-trailer. A moved head is stale. A push runs only for a configured destination
-in the corresponding directory's `push` entry.
-
-Git effects distinguish done, proved no effect and uncertain. Before answering
-an uncertain effect, the host searches for the delivery trailer. It never
-commits again on doubt. If inspection cannot settle it, the saved unknown
-intent remains available on restart.
-
-Plain directories have a sorted bounded tree snapshot before activation and
-are compared again at delivery. A snapshot admits at most 256 nodes, paths of
-4,096 bytes and files of 65,536 bytes. Omitted entries, unsupported files,
-symbolic links, oversize and IO errors refuse the comparison. Original conflict
-paths are checked through bounded file reads before a git delivery; deleted
-paths are resolved, and a surviving marker refuses the delivery.
-
-## Limits of the binary
-
-Children use Skein's supervised process trees. The agent profile derives
-its checked memory bound from the deployment and model declarations;
-`profile.declared.memory` must exceed that bound. It is checked accounting,
-not an allocation.
+Exit codes are 0 for accepted, 1 for run/host/output failure, 2 for usage or
+configuration, 3 for credentials, 4 for budget, 5 for needs input and 130
+for interruption. Standard error ends with the typed outcome in words.
+An accepted run whose result file cannot be written exits 1; other answers
+keep their code and show that file failure as a warning before the last
+line. `session.ended` carries the process's resulting exit code after its
+output and lower owners have settled.

@@ -6,16 +6,41 @@ use crate::{
     credentials, local_shell, settings,
 };
 mod files;
+mod spawned;
 pub(crate) use files::{Failure as ResultFileFailure, Files, ResultFile};
 
 use skein_lib::Wall;
 use skein_shell::{Clock, Config, Kernel};
+use std::path::{Path, PathBuf};
 
 /// The product's child placement; exec composes the inline kind.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum AgentKind {
     /// The local domain owns its agent and the native effects in this process.
     Inline,
+    /// A library host launches the named agent binary with generated configuration.
+    Spawned { program: PathBuf },
+}
+
+impl AgentKind {
+    /// Build a launch from the caller's root and the generated configuration's path.
+    #[must_use]
+    pub fn launch(&self, root: skein_io::kernel::Fd, document: &Path) -> smith_local_service::Launch {
+        let (program, arguments) = match self {
+            Self::Inline => (Box::<[u8]>::default(), Box::<[Box<[u8]>]>::default()),
+            Self::Spawned { program } => (
+                program.as_os_str().as_encoded_bytes().into(),
+                Box::from([document.as_os_str().as_encoded_bytes().into()]),
+            ),
+        };
+        smith_local_service::Launch {
+            program,
+            arguments,
+            environment: Box::new([]),
+            root,
+            directory: b".".as_slice().into(),
+        }
+    }
 }
 
 /// A typed startup refusal, rendered once by the product binary.
@@ -61,11 +86,12 @@ pub(crate) struct Opened {
     pub wall: Wall,
     pub input_closed: bool,
     pub interactive: Option<bool>,
+    document: Option<Box<[u8]>>,
 }
 
 /// Read the product layers and one complete prompt before any credentials are inspected.
-pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<(Opened, Kernel), Refused> {
-    open_mode(invocation, wall, clock, None)
+pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock, kind: &AgentKind) -> Result<(Opened, Kernel), Refused> {
+    open_mode(invocation, wall, clock, None, kind)
 }
 
 fn open_mode(
@@ -73,13 +99,20 @@ fn open_mode(
     wall: Wall,
     clock: &Clock,
     interactive: Option<bool>,
+    kind: &AgentKind,
 ) -> Result<(Opened, Kernel), Refused> {
     let settings = settings::read(&invocation.shared).map_err(Refused::Settings)?;
     let command = Command::Exec(invocation);
-    let resolved = settings::resolve::resolve(&settings, &command).map_err(Refused::Settings)?;
+    let (resolved, document) = match kind {
+        AgentKind::Inline => (settings::resolve::resolve(&settings, &command).map_err(Refused::Settings)?, None),
+        AgentKind::Spawned { .. } => {
+            let (resolved, document) = settings::resolve::resolve_startup(&settings).map_err(Refused::Settings)?;
+            (resolved, Some(document))
+        }
+    };
     let mut invocation = match command {
         Command::Exec(invocation) => invocation,
-        Command::Check { .. } | Command::Legacy(_) | Command::Login { .. } | Command::Interactive { .. } => {
+        Command::Check { .. } | Command::Login { .. } | Command::Interactive { .. } => {
             unreachable!("one exec invocation")
         }
     };
@@ -122,19 +155,23 @@ fn open_mode(
     let seed = skein_shell::seed().map_err(|why| {
         Refused::Local(local_shell::Failure::Host { detail: format!("local seed failed (errno {why})") })
     })?;
-    Ok((Opened { resolved, invocation, seed, wall, input_closed, interactive }, kernel))
+    Ok((Opened { resolved, invocation, seed, wall, input_closed, interactive, document }, kernel))
 }
 
 struct Composed {
     local: crate::Local,
 }
 
-/// Compose the selected native values with their roots and source driver, without a configuration file.
-fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Files) -> Result<Composed, Refused> {
-    let Opened { mut resolved, invocation, seed, wall, input_closed, interactive } = opened;
-    match kind {
-        AgentKind::Inline => {}
-    }
+/// Compose native roots and the account driver; a spawned child receives generated JSON.
+fn compose(
+    opened: Opened,
+    kind: &AgentKind,
+    now: skein_lib::Time,
+    files: &mut Files,
+    kernel: &mut Kernel,
+    clock: &Clock,
+) -> Result<Composed, Refused> {
+    let Opened { mut resolved, invocation, seed, wall, input_closed, interactive, document } = opened;
     files.prepare_output(seed)?;
     files.create_temporary()?;
     if interactive.is_none()
@@ -155,7 +192,7 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
     let (workspace, chat_path) =
         chat_paths(&resolved.settings.workspace, &resolved.local.chat, files.temporary.as_deref())?;
     deliver_contract(&mut resolved.local, invocation.deliver);
-    let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local)?;
+    let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local, kind)?;
     let host_limits =
         smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits).map_err(
             |why| {
@@ -164,6 +201,9 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
                 })
             },
         )?;
+    if matches!(kind, AgentKind::Spawned { .. }) {
+        resolved.limits.agent = smith_local_domain::AgentLimits::Spawned(host_limits);
+    }
     let mut limits = local_shell::service_limits(resolved.limits, host_limits, &resolved.agent.service)
         .map_err(|detail| Refused::Local(local_shell::Failure::Configuration { detail }))?;
     let (trace, header, available) = files.prepare_stream(
@@ -177,27 +217,67 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
     let (front, available) =
         prepare_front(interactive, input_closed, invocation.json, &resolved.agent, &limits, files, available)?;
     let environment = resolved.agent.service.environment.command_entries();
+    let launch = spawned::Startup {
+        document,
+        kind,
+        chat: &chat_path,
+        workspace: &workspace,
+        trace: trace.as_ref(),
+        exit_grace: host_limits.exit_grace,
+        timeout: resolved.agent.service.limits.file_timeout,
+        seed,
+    }
+    .launch(kernel, clock)?;
+    let endpoints = resolved.agent.service.channel_endpoints.clone();
+    let (lower, producer) = match kind {
+        AgentKind::Inline => (Some(resolved.agent.service), None),
+        AgentKind::Spawned { .. } => (None, Some(resolved.agent.service)),
+    };
     let config = smith_local_service::Config {
         local: resolved.local,
         limits,
-        endpoints: resolved.agent.service.channel_endpoints.clone(),
+        endpoints,
         paths,
-        launch: smith_local_service::Launch {
-            program: Box::new([]),
-            arguments: Box::new([]),
-            environment: Box::new([]),
-            root: root(&workspace)?,
-            directory: b".".as_slice().into(),
-        },
+        launch,
         agent: smith_local_service::AgentConfig::Spawned,
     };
-    let resources = crate::Resources {
-        state_root: files.store_root(if interactive.is_some() {
+    let resources =
+        startup_resources(files, &chat_path, interactive.is_some(), delivery_roots, effect_roots, environment, seed)?;
+    let mut local = crate::Local::within_memory(
+        config,
+        lower,
+        resources,
+        Box::new(std::io::stderr()),
+        available,
+        Some(prepared),
+        Some(front),
+    )
+    .map_err(Refused::Local)?;
+    if let Some(producer) = producer {
+        local.prepare_trace(&producer, available).map_err(Refused::Local)?;
+    }
+    files.attach_private(&mut local)?;
+    start_stream(&mut local, trace, header, now)?;
+    local.result_file(files.output.take());
+    files.composed();
+    Ok(Composed { local })
+}
+
+fn startup_resources(
+    files: &mut Files,
+    chat_path: &Path,
+    interactive: bool,
+    delivery_roots: Box<[skein_io::kernel::Fd]>,
+    effect_roots: Box<[skein_io::kernel::Fd]>,
+    environment: Box<[Box<[u8]>]>,
+    seed: u64,
+) -> Result<crate::Resources, Refused> {
+    Ok(crate::Resources {
+        state_root: files.store_root(if interactive {
             chat_path.parent().expect("workspace chats parent")
         } else {
-            &chat_path
+            chat_path
         })?,
-        token_directory: chat_path.join("unused-tokens"),
         input: skein_io::kernel::Fd::new(0),
         output: skein_io::kernel::Fd::new(1),
         signals: skein_shell::open_termination_signals().map_err(|errno| {
@@ -206,26 +286,10 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
         delivery_roots,
         effect_roots,
         delivery_environment: environment,
-        accounts: Box::new([]),
         seed,
         oauth_entropy: local_shell::oauth_entropy()
             .map_err(|detail| Refused::Local(local_shell::Failure::Host { detail }))?,
-    };
-    let mut local = crate::Local::within_memory(
-        config,
-        Some(resolved.agent.service),
-        resources,
-        Box::new(std::io::stderr()),
-        available,
-        Some(prepared),
-        Some(front),
-    )
-    .map_err(Refused::Local)?;
-    files.attach_private(&mut local)?;
-    start_stream(&mut local, trace, header, now)?;
-    local.result_file(files.output.take());
-    files.composed();
-    Ok(Composed { local })
+    })
 }
 
 fn deliver_contract(local: &mut smith_local_domain::Config, deliver: bool) {
@@ -274,8 +338,7 @@ fn start_stream(
     now: skein_lib::Time,
 ) -> Result<(), Refused> {
     if let Some(trace) = trace {
-        let parent =
-            trace.path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+        let parent = trace.path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
         let name =
             trace.path.file_name().ok_or_else(|| Refused::Usage(Usage("the trace requires a file name".into())))?;
         let descriptor = root(parent)?;
@@ -300,34 +363,31 @@ struct WorkspaceRoots {
     effect_roots: Box<[skein_io::kernel::Fd]>,
 }
 
-fn workspace_roots(local: &smith_local_domain::Config) -> Result<WorkspaceRoots, Refused> {
+fn workspace_roots(local: &smith_local_domain::Config, kind: &AgentKind) -> Result<WorkspaceRoots, Refused> {
     let directories = local.workspace.as_ref().expect("resolved workspace").directories.as_ref();
     let paths = directories.iter().map(|directory| directory.host.clone()).collect();
     let roots = || {
         directories
             .iter()
             .map(|directory| {
-                skein_shell::open_root(std::path::Path::new(
-                    std::str::from_utf8(&directory.host).expect("resolved host path"),
-                ))
-                .map_err(|errno| {
-                    Refused::Local(local_shell::Failure::Host {
-                        detail: format!("workspace root failed (errno {errno})"),
+                skein_shell::open_root(Path::new(std::str::from_utf8(&directory.host).expect("resolved host path")))
+                    .map_err(|errno| {
+                        Refused::Local(local_shell::Failure::Host {
+                            detail: format!("workspace root failed (errno {errno})"),
+                        })
                     })
-                })
             })
             .collect::<Result<Vec<_>, _>>()
     };
     let delivery_roots = roots()?.into_boxed_slice();
-    let effect_roots = roots()?.into_boxed_slice();
+    let effect_roots = match kind {
+        AgentKind::Inline => roots()?.into_boxed_slice(),
+        AgentKind::Spawned { .. } => Box::new([]),
+    };
     Ok(WorkspaceRoots { paths, delivery_roots, effect_roots })
 }
 
-fn chat_paths(
-    workspace: &std::path::Path,
-    chat_name: &[u8],
-    temporary: Option<&std::path::Path>,
-) -> Result<(std::path::PathBuf, std::path::PathBuf), Refused> {
+fn chat_paths(workspace: &Path, chat_name: &[u8], temporary: Option<&Path>) -> Result<(PathBuf, PathBuf), Refused> {
     use std::{fmt::Write, os::unix::fs::DirBuilderExt, path::PathBuf};
     let chat = std::str::from_utf8(chat_name).expect("decoded chat");
     if chat == "." || chat == ".." || chat.contains(['/', '\\', '\0']) {
@@ -398,7 +458,7 @@ fn host(why: &std::io::Error) -> Refused {
     Refused::Local(local_shell::Failure::Host { detail: why.to_string() })
 }
 
-fn root(path: &std::path::Path) -> Result<skein_io::kernel::Fd, Refused> {
+fn root(path: &Path) -> Result<skein_io::kernel::Fd, Refused> {
     skein_shell::open_root(path).map_err(|errno| {
         Refused::Local(local_shell::Failure::Host {
             detail: format!("directory {} failed (errno {errno})", path.display()),
@@ -422,7 +482,7 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
             },
             Some(plain || skein_shell::terminal_modes(skein_io::kernel::Fd::new(0)).is_err()),
         ),
-        Ok(Command::Check { .. } | Command::Legacy(_) | Command::Login { .. }) => {
+        Ok(Command::Check { .. } | Command::Login { .. }) => {
             return None;
         }
         Err(why) => {
@@ -430,7 +490,7 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
             return Some(2);
         }
     };
-    let result = run(invocation, at, clock, interactive);
+    let result = run(invocation, at, clock, interactive, &AgentKind::Inline);
     Some(match result {
         Ok(code) => code,
         Err(why) => {
@@ -440,14 +500,21 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
     })
 }
 
-fn run(invocation: Exec, at: skein_shell::Now, clock: &Clock, interactive: Option<bool>) -> Result<u8, Refused> {
+/// Compose and drive a library invocation with the chosen child placement.
+pub fn run(
+    invocation: Exec,
+    at: skein_shell::Now,
+    clock: &Clock,
+    interactive: Option<bool>,
+    kind: &AgentKind,
+) -> Result<u8, Refused> {
     let (opened, mut kernel) = if interactive.is_none() {
-        open(invocation, at.wall, clock)?
+        open(invocation, at.wall, clock, kind)?
     } else {
-        open_mode(invocation, at.wall, clock, interactive)?
+        open_mode(invocation, at.wall, clock, interactive, kind)?
     };
     let mut files = Files::prepare(&opened.invocation, &opened.resolved, opened.seed)?;
-    let result = compose(opened, AgentKind::Inline, at.now, &mut files).map(|mut started| {
+    let result = compose(opened, kind, at.now, &mut files, &mut kernel, clock).map(|mut started| {
         match skein_shell::drive(&mut kernel, clock, &mut started.local) {
             skein_io::kernel::Exit::Code(code) => code,
             skein_io::kernel::Exit::Signal(_) => 130,

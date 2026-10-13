@@ -39,6 +39,15 @@ pub struct Resolved {
 
 /// Compose selected models through the native configuration and local policy owners.
 pub fn resolve(settings: &Settings, _command: &crate::command::Command) -> Result<Resolved, super::Refusal> {
+    build(settings, false).map(|(resolved, _document)| resolved)
+}
+
+/// Resolve startup once and return its generated agent document for a spawned child.
+pub fn resolve_startup(settings: &Settings) -> Result<(Resolved, Box<[u8]>), super::Refusal> {
+    build(settings, true)
+}
+
+fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), super::Refusal> {
     let Selection { models: active, accounts, mut settings } = select(settings)?;
     let models = models::resolve(&mut settings, &active)?;
     let mut outside_models = BTreeMap::new();
@@ -66,6 +75,11 @@ pub fn resolve(settings: &Settings, _command: &crate::command::Command) -> Resul
             .expect("configuration object")
             .insert("trace".into(), serde_json::to_value(trace).expect("trace settings"));
     }
+    let bytes = if document {
+        serde_json::to_vec(&generated).expect("generated agent document").into_boxed_slice()
+    } else {
+        Box::new([])
+    };
     let agent = smith_agent_shell::config::from_value(generated)
         .map_err(|why| relationships::native(&settings, &models, why))?;
     smith_local_service::profile::host_limits(&agent.profile, &agent.service.limits)
@@ -83,7 +97,7 @@ pub fn resolve(settings: &Settings, _command: &crate::command::Command) -> Resul
             )?;
         }
     }
-    Ok(resolved)
+    Ok((resolved, bytes))
 }
 
 /// Expand preset defaults, then select only models whose account names a source.

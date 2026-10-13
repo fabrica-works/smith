@@ -6,8 +6,6 @@ use skein_lib::Wall;
 use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
 use std::{collections::BTreeMap, path::PathBuf};
 
-mod legacy;
-pub use legacy::prepare as prepare_legacy;
 mod login;
 mod product;
 mod sign_in;

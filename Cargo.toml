@@ -195,6 +195,7 @@ smith-agent-shell.workspace = true
 smith-local-shell.workspace = true
 
 [dev-dependencies]
+smith-hosts-world = { path = "tests/hosts" }
 toml = "0.9"
 smith-events.workspace = true
 smith-bench = { path = "benchmarks" }

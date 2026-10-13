@@ -38,8 +38,8 @@ mod tests {
         let mut below = Queue::with_capacity(8);
         process.spawn(
             host::Launch {
-                program: Box::from(&b"smith"[..]),
-                arguments: Box::from([Box::from(&b"agent"[..])]),
+                program: Box::from(&b"smith-agent"[..]),
+                arguments: Box::from([Box::from(&b"generated.json"[..])]),
                 environment: Box::new([]),
                 root: kernel::Fd::new(3),
                 directory: Box::from(&b"."[..]),

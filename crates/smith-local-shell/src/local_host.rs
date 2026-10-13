@@ -5,7 +5,6 @@
 //! passes. Every store acknowledgement follows file and directory sync.
 
 use std::io::Write;
-use std::path::PathBuf;
 
 mod credentials;
 mod header;
@@ -16,12 +15,10 @@ mod words;
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{OutputDown, OutputOutcome, OutputUp};
 use skein_lib::{Env, Map, Queue, Time, Token, Wall};
-use skein_shell::{Clock, Config as KernelConfig, Host, Kernel, drive};
+use skein_shell::Host;
 use smith_agent_service as agent;
 use smith_local_domain as domain;
 use smith_local_service as service;
-
-use crate::local_settings::Account;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Route {
@@ -49,14 +46,12 @@ enum Announcement {
 /// Paths and inherited descriptors owned by one invocation's shared shell.
 pub struct Resources {
     pub state_root: kernel::Fd,
-    pub token_directory: PathBuf,
     pub input: kernel::Fd,
     pub output: kernel::Fd,
     pub signals: kernel::Fd,
     pub delivery_roots: Box<[kernel::Fd]>,
     pub effect_roots: Box<[kernel::Fd]>,
     pub delivery_environment: Box<[Box<[u8]>]>,
-    pub accounts: Box<[Account]>,
     pub seed: u64,
     /// Unpredictable bytes from the binary shell; worlds supply deterministic bytes.
     pub oauth_entropy: [u8; 32],
@@ -97,25 +92,6 @@ pub struct Local {
 }
 
 impl Local {
-    /// Adopt the prepared product stream and drive all local owners to their terminal.
-    pub fn run_traced(
-        mut self,
-        trace: Option<smith_agent_shell::trace::TraceConfig>,
-        header: Option<smith_events::SessionStarted>,
-        lower: Option<agent::Config>,
-        available: u64,
-    ) -> Result<kernel::Exit, crate::local_shell::Failure> {
-        if let Some(configuration) = lower
-            && trace.is_some()
-        {
-            self.prepare_trace(&configuration, available)?;
-        }
-        crate::local_shell::adopt_trace(&mut self, trace, header)?;
-        let mut kernel = Kernel::open(KernelConfig { operations: self.operations() })
-            .map_err(|error| host_failure(format!("local kernel: {error}")))?;
-        Ok(drive(&mut kernel, &Clock::new(), &mut self))
-    }
-
     /// Compose either agent kind with the same file and terminal shell pass.
     pub fn new(
         config: service::Config,
@@ -178,39 +154,13 @@ impl Local {
             None if resources.effect_roots.is_empty() => service::AgentConfig::Spawned,
             None => return Err(configuration_failure("spawned mode cannot adopt inline roots".into())),
         };
-        if resources.accounts.len() > usize::try_from(config.limits.local.smith.accounts).expect("account bound fits")
-            || resources.accounts.iter().any(|account| account.account_id.len() > 1024)
-        {
-            return Err(configuration_failure("local accounts exceed their configured bounds".into()));
-        }
-        for (position, account) in resources.accounts.iter().enumerate() {
-            if resources
-                .accounts
-                .get(..position)
-                .expect("enumerated prior accounts")
-                .iter()
-                .any(|prior| prior.number == account.number)
-            {
-                return Err(configuration_failure("local account numbers must be unique".into()));
-            }
-        }
         let launch_root = config.launch.root;
         let queue = config.limits.queue;
         let outer_queue =
             queue.checked_mul(2).ok_or_else(|| configuration_failure(derivation_refusal("local_queue")))?;
         let io_limits = config.limits.process.io;
-        let handed = match handed {
-            Some(prepared) => Some(prepared),
-            None if resources.accounts.is_empty() => None,
-            None => Some(
-                crate::credentials::prepare_legacy(&resources.accounts, &resources.token_directory, io_limits, None)
-                    .map_err(configuration_failure)?,
-            ),
-        };
         let (worst, operations) = Self::startup_memory(
             &config.limits,
-            u32::try_from(resources.accounts.len())
-                .map_err(|_| configuration_failure(derivation_refusal("account_worst_case")))?,
             lower_routes,
             handed.as_ref(),
             headless.as_ref(),

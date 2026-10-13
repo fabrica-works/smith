@@ -14,7 +14,7 @@ pub struct Shared {
     pub overrides: Vec<String>,
 }
 
-/// One product invocation, or the legacy arguments retained until their replacements ship.
+/// One product invocation, parsed before settings are read.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// The workspace chat in line mode, with optional plain output.
@@ -25,8 +25,6 @@ pub enum Command {
     Exec(Exec),
     /// Sign in to a named account, or inspect its handed-in source.
     Login { shared: Shared, account: String },
-    /// The existing agent and local entry points, removed by product migration.
-    Legacy(Vec<OsString>),
 }
 
 /// A headless invocation's prompt and output choices, before any startup reads.
@@ -53,11 +51,8 @@ pub enum Prompt {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Usage(pub String);
 
-/// Parse product flags and the single exec prompt, preserving legacy invocations.
+/// Parse product flags and the single exec prompt.
 pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
-    if arguments.first().is_some_and(|argument| argument == "agent" || argument == "local") {
-        return Ok(Command::Legacy(arguments));
-    }
     if arguments.first().is_some_and(|argument| argument == "login") {
         return login(arguments);
     }
@@ -280,9 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_arguments_are_preserved_until_the_product_replaces_them() {
-        let original = arguments(&["local", "settings.json", "state"]);
-        assert_eq!(parse(original.clone()), Ok(Command::Legacy(original)));
+    fn the_removed_local_and_agent_commands_are_usage_refusals() {
+        for name in ["local", "agent"] {
+            assert!(parse(arguments(&[name, "settings.json", "state"])).is_err());
+        }
     }
 
     #[test]

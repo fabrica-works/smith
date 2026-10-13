@@ -5,11 +5,11 @@ landing a branch that passed every check below, or that changes only
 documentation, with `land` (skein's `docs/foundation/development.md`,
 section 9).
 
-For the executable's local mode, see [local-host settings and commands](local-host.md).
+For the product, see [local-host settings and commands](local-host.md).
 The root package builds `src/main.rs`; its end-to-end and live targets live
 under `tests/end-to-end/`. Bare cargo commands include every workspace member.
-Run the local command with `cargo run -- local SETTINGS STATE [WS]`, or install
-the binary with `cargo install --path .`.
+Run the workspace chat with `cargo run --`, or one headless activation with
+`cargo run -- exec PROMPT`. Install the binaries with `cargo install --path .`.
 
 ## 1. Before merging to main
 

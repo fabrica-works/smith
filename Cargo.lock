@@ -697,6 +697,7 @@ dependencies = [
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",
+ "smith-hosts-world",
  "smith-local-domain",
  "smith-local-process-world",
  "smith-local-protocol",
@@ -831,6 +832,7 @@ dependencies = [
  "skein-oauth",
  "skein-shell",
  "skein-world",
+ "smith-agent-service",
  "smith-agent-shell",
  "smith-domain-run",
  "smith-domain-session",
@@ -980,6 +982,7 @@ dependencies = [
 name = "smith-hosts-world"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
  "skein-fake-machine",
  "skein-fake-peers",
  "skein-io",
@@ -996,7 +999,9 @@ dependencies = [
  "smith-host-domain",
  "smith-host-protocol",
  "smith-host-world",
+ "smith-local-process-world",
  "smith-local-service",
+ "smith-local-shell",
  "smith-protocol-channel",
 ]
 
@@ -1041,6 +1046,7 @@ dependencies = [
  "skein-llm-connection",
  "skein-llm-world",
  "skein-oauth",
+ "skein-oauth-accounts",
  "skein-shell",
  "skein-sim",
  "skein-tls",

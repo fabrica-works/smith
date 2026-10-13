@@ -29,7 +29,7 @@ pub use borrowed::{Borrowing, login_at};
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
 /// Both placements enter the same shell and local policy.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Placement {
     Spawned,
     InProcess,
@@ -660,7 +660,7 @@ impl World {
                     interactive: false,
                     choices: false,
                     budget_failure: false,
-                    in_process: placement == Placement::InProcess,
+                    placement,
                     keep_facts,
                     traced: false,
                     authenticated: false,
@@ -1017,6 +1017,19 @@ impl Scenario {
     /// Provider scripts and credentials are scenario data, shared across tiers.
     #[must_use]
     pub fn provider(&self) -> crate::llm::Peer {
+        let token = if self.launch.borrowing.is_some() {
+            login_token(false)
+        } else if self.launch.authenticated {
+            b"access-new".as_slice().into()
+        } else {
+            b"token".as_slice().into()
+        };
+        self.provider_with(skein_llm::Credential { access_token: token, account_id: b"acc".as_slice().into() })
+    }
+
+    /// Use the same scripts with the synthetic credential selected by the binary tier.
+    #[must_use]
+    pub fn provider_with(&self, credential: skein_llm::Credential) -> crate::llm::Peer {
         let mut provider_scripts = if matches!(&self.ending, Ending::Report(text) if text.as_slice() == b"After three tools")
             || matches!(self.ending, Ending::Budget)
         {
@@ -1093,16 +1106,7 @@ impl Scenario {
         }
         smith_agent_process_world::fake::configured_transport(
             provider_scripts,
-            skein_llm::Credential {
-                access_token: if self.launch.borrowing.is_some() {
-                    login_token(false)
-                } else if self.launch.authenticated {
-                    b"access-new".as_slice().into()
-                } else {
-                    b"token".as_slice().into()
-                },
-                account_id: b"acc".as_slice().into(),
-            },
+            credential,
             if self.interrupt_on_query {
                 Duration::from_secs(3600)
             } else if self.authentication == Some(Authentication::Proactive) {

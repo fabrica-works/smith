@@ -45,7 +45,7 @@ impl Referee<Process> for Judge {
                     }
                 }
                 Process::Script(Proc::Peer(peer)) if exit.is_some() => peer.shutdown(),
-                Process::Binary(_) | Process::Script(_) => {}
+                Process::Binary(_) | Process::Script(_) | Process::Sample(_) => {}
             }
         }
     }
@@ -61,7 +61,9 @@ impl Referee<Process> for Judge {
                         .starts_with("smith: local host started; worst case ")
                         || line.starts_with("smith: agent started; worst case ")
                         || line == "smith: commands run in process groups and are not contained"
-                        || trust_notice(line))),
+                        || line == "smith: chat chat"
+                        || trust_notice(line)
+                        || unused_preset_notice(line))),
                     "live Smith emitted an unexpected diagnostic; credential-bearing bytes are withheld"
                 );
             }
@@ -132,7 +134,7 @@ pub fn run(scratch: &Scratch, prompt: &str, change: bool, expectation: Expectati
 
 /// Offline control of exactly the live outcome policy and shared binary driver.
 pub fn run_fake(scratch: &Scratch, scenario: &smith_local_process_world::world::Scenario) {
-    super::settings(scratch, scenario);
+    let token = super::settings(scratch, scenario);
     let change = scenario.launch.change;
     let files = if change {
         [
@@ -152,7 +154,9 @@ pub fn run_fake(scratch: &Scratch, scenario: &smith_local_process_world::world::
         if change { "change it" } else { "hello" },
         change,
         Expectation { before: change.then(|| scratch.checkout().head().expect("initial head")), files },
-        Some(scenario.provider()),
+        Some(
+            scenario.provider_with(skein_llm::Credential { access_token: token, account_id: b"acc".as_slice().into() }),
+        ),
     );
 }
 
@@ -167,11 +171,7 @@ fn run_with_peer(
     let clock = Clock::new();
     let now = clock.now().now;
     let budget = if peer.is_some() { Duration::from_secs(5) } else { Duration::from_secs(130) };
-    let mut binary = start(
-        vec!["local".into(), scratch.path().join("settings.json").into(), scratch.path().into()],
-        scratch.path(),
-        Mode::Terminal,
-    );
+    let mut binary = start(Vec::new(), scratch.path(), Mode::Terminal);
     let streams = binary.take_streams().expect("live controlling terminal");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("live person on terminal") };
@@ -181,7 +181,7 @@ fn run_with_peer(
         checkout: scratch.checkout(),
         expectation,
         directory: scratch.path().into(),
-        trace_prefix: std::fs::read(super::trace_path(scratch.path(), false)).unwrap_or_default(),
+        trace_prefix: std::fs::read(super::trace_path(scratch.path())).unwrap_or_default(),
         reviewed: false,
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
@@ -193,7 +193,7 @@ fn run_with_peer(
                 Action::Wait(if change {
                     b"Change delivered".as_slice().into()
                 } else {
-                    b"Tool: finish".as_slice().into()
+                    b"tool finish".as_slice().into()
                 }),
                 Action::Eof,
             ],
@@ -216,5 +216,11 @@ fn trust_notice(line: &str) -> bool {
                 .iter()
                 .zip([" taken", " skipped", " malformed blocks", " other blocks"])
                 .all(|(field, suffix)| field.strip_suffix(suffix).is_some_and(|count| count.parse::<u32>().is_ok()))
+    })
+}
+
+fn unused_preset_notice(line: &str) -> bool {
+    ["codex", "anthropic"].iter().any(|account| {
+        line == format!("smith: warning: {}", smith_local_shell::credentials::Credential::NotSignedIn.line(account))
     })
 }

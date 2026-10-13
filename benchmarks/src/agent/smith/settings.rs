@@ -207,6 +207,12 @@ fn dollars(value: &Value) -> Result<Value, Setup> {
 pub fn product(context: &Context<'_>, base: &Value, login: &Path) -> Result<Value, Setup> {
     let root = context.private.root.join("smith");
     let native = settings(context, base, "unused", &root.join("trace.jsonl"), &root.join("tokens"))?;
+    let explicit_group_stop = context.task.smith.contains_key("group_stop")
+        || context.variant.is_some_and(|variant| variant.smith.contains_key("group_stop"));
+    product_document(&native, login, explicit_group_stop)
+}
+
+fn product_document(native: &Value, login: &Path, explicit_group_stop: bool) -> Result<Value, Setup> {
     let endpoint = &native["agent"]["endpoints"][0];
     let model = &native["models"][0];
     let endpoint_name = endpoint["name"].as_str().ok_or_else(|| configuration("pinned endpoint name"))?;
@@ -239,23 +245,16 @@ pub fn product(context: &Context<'_>, base: &Value, login: &Path) -> Result<Valu
     if let Some(server_name) = endpoint.get("server_name") {
         provider["server_name"] = server_name.clone();
     }
-    let environment: std::collections::BTreeMap<_, _> = context
-        .environment
+    let environment: std::collections::BTreeMap<_, _> = native["agent"]["environment"]
+        .as_array()
+        .expect("rendered environment")
         .iter()
-        .map(|(name, value)| {
-            Ok((
-                name.to_str().ok_or_else(|| configuration("environment name must be UTF-8"))?,
-                value.to_str().ok_or_else(|| configuration("environment value must be UTF-8"))?,
-            ))
-        })
-        .collect::<Result<_, Setup>>()?;
+        .map(|entry| (entry["name"].as_str().expect("rendered name"), entry["value"].as_str().expect("rendered value")))
+        .collect();
     let mut deployment = native["agent"]["profile"]["declared"].clone();
     for (field, value) in native["agent"]["profile"]["policy"].as_object().expect("native policy") {
         // The historical process grace belongs to its local invocation; the product uses its preset.
-        if field == "group_stop"
-            && !context.task.smith.contains_key(field)
-            && context.variant.is_none_or(|variant| !variant.smith.contains_key(field))
-        {
+        if field == "group_stop" && !explicit_group_stop {
             continue;
         }
         deployment[field] = match field.as_str() {
@@ -357,7 +356,7 @@ mod tests {
                 &root.join("tokens"),
             )
         };
-        task.budget.spend = Some(1.25);
+        task.budget.spend = Some(2.0);
         task.smith.insert("read_window".into(), toml::Value::Integer(4096));
         // This startup control declares its small task's actual payload and
         // call count, so current native InputAnswer/WindowFirst checks apply.
@@ -373,17 +372,14 @@ mod tests {
         assert_eq!(current["agent"]["environment"][0]["value"], "exact-value");
         assert_eq!(current["agent"]["trace"]["capture"], "everything");
         assert_eq!(current["in_process"], false);
-        let local: smith_local_shell::local_settings::Settings =
-            serde_json::from_value(current.clone()).expect("shipped local settings");
-        let configured = native_agent_configuration(&local);
+        let configured = native_agent_configuration(&current);
         native_failure_settings(&current, configured.profile.declared.file_bytes);
         native_parallel_profiles(&directory, &root, &render);
         task.smith.insert("output".into(), toml::Value::Integer(1024));
         let changed = render(&task).expect("declared output override");
         assert_eq!(changed["models"][0]["output"], 1024);
         assert!(changed["agent"]["endpoints"][0].get("models").is_none());
-        let local = serde_json::from_value(changed).expect("changed local settings");
-        let encoded = smith_local_shell::local_settings::agent_document(&local).expect("changed agent document");
+        let (_, encoded) = native_startup(&changed).expect("changed product settings");
         let agent: Value = serde_json::from_slice(&encoded).expect("generated JSON");
         assert_eq!(agent["endpoints"][0]["models"][0]["output"], 1024);
         assert_eq!(teardown(&current).expect("two close deadlines"), skein_lib::Duration::from_secs(10));
@@ -406,11 +402,8 @@ mod tests {
             let path = std::env::temp_dir().join(format!("smith-failure-settings-{}-{name}.json", std::process::id()));
             assert!(!path.exists(), "fixture path is owned by this test");
             std::fs::write(&path, serde_json::to_vec(&settings).expect("native JSON")).expect("private fixture");
-            let local = smith_local_shell::local_settings::read(&path, None);
+            let result = native_startup(&settings).map(|(resolved, _)| resolved.agent);
             std::fs::remove_file(path).expect("remove own input fixture");
-            let result = local
-                .and_then(|local| smith_local_shell::local_settings::agent_document(&local))
-                .and_then(|encoded| smith_agent_shell::config::parse(&encoded));
             if name == "unknown-model" {
                 let configured = result.expect("fully declared model reaches provider selection");
                 assert_eq!(configured.service.limits.llm.adapter.client.detail_bytes, 1024);
@@ -431,15 +424,7 @@ mod tests {
             let rendered = render(&task).expect("history settings");
             let path = root.join("history.json");
             std::fs::write(&path, serde_json::to_vec(&rendered).expect("native JSON")).expect("private fixture");
-            let local = smith_local_shell::local_settings::read(&path, None).expect("native settings reader");
-            let configured = native_agent_configuration(&local);
-            smith_local_shell::local_settings::policy(
-                &local,
-                &configured.service.channel_endpoints,
-                configured.service.limits.domain,
-                vec![0; local.models.len()].into(),
-            )
-            .expect("native policy admits its finishing reserve");
+            let configured = native_agent_configuration(&rendered);
             assert_eq!(configured.profile.declared.calls_per_response, 1);
         }
         for name in ["parallel-read", "parallel-children"] {
@@ -448,17 +433,32 @@ mod tests {
             let rendered = render(&parallel).expect("native parallel profile");
             let path = root.join(format!("{name}.json"));
             std::fs::write(&path, serde_json::to_vec(&rendered).expect("native JSON")).expect("private fixture");
-            let local = smith_local_shell::local_settings::read(&path, None).expect("shipped public settings reader");
-            let configured = native_agent_configuration(&local);
+            let configured = native_agent_configuration(&rendered);
             assert_eq!(configured.profile.declared.calls_per_response, if name == "parallel-read" { 20 } else { 16 });
             assert_eq!(configured.profile.declared.conversations, if name == "parallel-read" { 1 } else { 5 });
         }
     }
 
-    fn native_agent_configuration(
-        local: &smith_local_shell::local_settings::Settings,
-    ) -> smith_agent_shell::config::Configuration {
-        let encoded = smith_local_shell::local_settings::agent_document(local).expect("native agent document");
-        smith_agent_shell::config::parse(&encoded).expect("native declarations admitted")
+    fn native_agent_configuration(native: &Value) -> smith_agent_shell::config::Configuration {
+        native_startup(native).expect("native product declarations admitted").0.agent
+    }
+
+    fn native_startup(native: &Value) -> Result<(smith_local_shell::settings::resolve::Resolved, Box<[u8]>), String> {
+        let mut product =
+            product_document(native, Path::new("/synthetic/auth.json"), false).map_err(|why| why.reason)?;
+        product["trace"] = native["agent"]["trace"].clone();
+        let value: toml::Value = serde_json::from_value(product).map_err(|why| why.to_string())?;
+        let source = smith_local_shell::settings::Source {
+            layer: smith_local_shell::settings::Layer::User,
+            path: "fixture.toml".into(),
+            text: toml::to_string(&value).expect("product fixture TOML"),
+        };
+        let settings = smith_local_shell::settings::from_sources(
+            &smith_local_shell::command::Shared::default(),
+            "/synthetic".into(),
+            &[source],
+        )
+        .map_err(|why| why.line())?;
+        smith_local_shell::settings::resolve::resolve_startup(&settings).map_err(|why| why.line())
     }
 }

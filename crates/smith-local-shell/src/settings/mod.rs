@@ -11,9 +11,17 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
 pub(crate) use layers::merge;
 pub use layers::read;
+
+/// Resolve supplied startup layers through the same strict merge as file startup.
+pub fn from_sources(
+    shared: &crate::command::Shared,
+    workspace: PathBuf,
+    sources: &[Source],
+) -> Result<Settings, Refusal> {
+    merge(shared, workspace, sources)
+}
 
 pub(crate) fn name(part: &str) -> String {
     if part.contains('.') { serde_json::to_string(part).expect("setting name") } else { part.into() }

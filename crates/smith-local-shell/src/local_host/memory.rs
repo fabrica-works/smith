@@ -12,7 +12,6 @@ impl Local {
     /// Price the same startup owners for composition and invocation-aware check.
     pub(crate) fn startup_memory(
         limits: &service::Limits,
-        accounts: u32,
         lower_routes: u32,
         handed: Option<&crate::credentials::Prepared>,
         headless: Option<&crate::front::headless::Headless>,
@@ -25,8 +24,7 @@ impl Local {
         let operations = base_operations
             .checked_add(file_operations)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        let mut worst = accounted_memory(limits, if handed.is_some() { 0 } else { accounts }, lower_routes)
-            .map_err(configuration_failure)?;
+        let mut worst = accounted_memory(limits, lower_routes).map_err(configuration_failure)?;
         if let Some(prepared) = handed {
             worst = worst
                 .checked_add(
@@ -59,18 +57,17 @@ impl Local {
     }
 
     /// Price the selected local service and every outer shell owner before adopting resources.
-    /// `accounts` counts actual configured OAuth owners; `lower_routes` is zero for a spawned child.
+    /// `lower_routes` is zero for a spawned child; handed sources are priced at startup.
     /// Contract: protocol/limits.md, sections 3 and 4.
     #[must_use]
-    pub fn required_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Option<u64> {
-        accounted_memory(limits, accounts, lower_routes).ok()
+    pub fn required_memory(limits: &service::Limits, lower_routes: u32) -> Option<u64> {
+        accounted_memory(limits, lower_routes).ok()
     }
 
     /// The inline product's admitted ownership by part, including its front and routing.
     pub fn memory_parts(
         limits: &service::Limits,
         lower: &agent::Config,
-        accounts: u32,
         lower_routes: u32,
     ) -> Result<Vec<(&'static str, u64)>, String> {
         let mut parts = Vec::new();
@@ -91,27 +88,24 @@ impl Local {
         }
         parts.extend(effects);
         parts.push(("io", io));
-        parts.extend(shell_parts(limits, accounts, lower_routes)?);
+        parts.extend(shell_parts(limits, lower_routes)?);
         Ok(parts)
     }
 }
 
 /// The constructor and offline startup checks share one complete shell accounting entrance.
-fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<u64, String> {
+fn accounted_memory(limits: &service::Limits, lower_routes: u32) -> Result<u64, String> {
     let mut total = service::worst_case(limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    for (_, value) in shell_parts(limits, accounts, lower_routes)? {
+    for (_, value) in shell_parts(limits, lower_routes)? {
         total = total.checked_add(value).ok_or_else(|| derivation_refusal("local_worst_case"))?;
     }
     Ok(total)
 }
 
-fn shell_parts(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<[(&'static str, u64); 4], String> {
+fn shell_parts(limits: &service::Limits, lower_routes: u32) -> Result<[(&'static str, u64); 3], String> {
     let queue = limits.queue;
     let show_bytes = limits.local.show_bytes;
     let io_limits = limits.process.io;
-    let accounts = service::accounts_worst_case(&crate::credentials::limits(io_limits, accounts.max(1)))
-        .map(|bound| if accounts == 0 { 0 } else { bound })
-        .ok_or_else(|| derivation_refusal("account_worst_case"))?;
     let operations = io::operations(&io_limits)
         .and_then(|count| count.checked_mul(2))
         .and_then(|count| count.checked_add(64))
@@ -135,5 +129,5 @@ fn shell_parts(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Re
         .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
         .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
         .ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    Ok([("accounts", accounts), ("shell_io", io), ("front", front), ("shell_routing", routing)])
+    Ok([("shell_io", io), ("front", front), ("shell_routing", routing)])
 }

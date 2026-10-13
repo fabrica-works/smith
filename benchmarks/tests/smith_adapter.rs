@@ -547,25 +547,10 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
         let context = Context { variant, ..context };
         let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
         assert_eq!(prepared.rendered["instructions"], "");
-        let local = smith_local_shell::local_settings::read(&prepared.settings, None).expect("public startup settings");
-        let document = smith_local_shell::local_settings::agent_document(&local).expect("native translation");
-        let configured = smith_agent_shell::config::parse(&document).expect("native profile admission");
-        let allowances = configured
-            .service
-            .domain
-            .models
-            .iter()
-            .map(|model| model.protocol_allowance)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let policy = smith_local_shell::local_settings::policy(
-            &local,
-            &configured.service.channel_endpoints,
-            configured.service.limits.domain,
-            allowances,
-        )
-        .expect("actual mounted run policy");
-        let mounts = &policy.config.workspace.as_ref().expect("workspace").directories;
+        let resolved = native_product(&context);
+        let local = resolved.local;
+        local.validate(&resolved.limits).expect("actual mounted run policy");
+        let mounts = &local.workspace.as_ref().expect("workspace").directories;
         assert_eq!(mounts.len(), if variant.is_some() { 1 } else { 2 });
         assert_eq!(mounts[0].name.as_ref(), b"app");
         assert!(mounts[0].writable);
@@ -682,13 +667,13 @@ fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
         let settings_path = private.root.join("settings.json");
         std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
             .expect("private settings");
-        let local = smith_local_shell::local_settings::read(&settings_path, None).expect("public startup settings");
-        let document = smith_local_shell::local_settings::agent_document(&local).expect("actual agent translation");
-        let configured = smith_agent_shell::config::parse(&document).expect("native profile admitted");
+        let resolved = native_product(&context);
+        let local = resolved.local;
+        let configured = resolved.agent;
         if variant.name == "timeout" {
             assert_eq!(configured.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
             assert_eq!(configured.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_millis(250));
+            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_secs(1));
         }
         let allowances = configured
             .service
@@ -698,15 +683,9 @@ fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 1);
-        assert_eq!(allowances.len(), 1);
-        smith_local_shell::local_settings::policy(
-            &local,
-            &configured.service.channel_endpoints,
-            configured.service.limits.domain,
-            allowances,
-        )
-        .expect("actual run policy admitted");
+        assert_eq!(local.models.len(), 2);
+        assert_eq!(allowances.len(), 2);
+        local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {
                 assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
@@ -767,13 +746,13 @@ fn process_tree_profile_renders_and_passes_the_actual_public_startup_derivation(
         let settings_path = private.root.join("settings.json");
         std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
             .expect("private settings");
-        let local = smith_local_shell::local_settings::read(&settings_path, None).expect("public startup settings");
-        let document = smith_local_shell::local_settings::agent_document(&local).expect("actual agent translation");
-        let configured = smith_agent_shell::config::parse(&document).expect("native profile admitted");
+        let resolved = native_product(&context);
+        let local = resolved.local;
+        let configured = resolved.agent;
         {
             assert_eq!(configured.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
             assert_eq!(configured.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_millis(250));
+            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_secs(1));
         }
         let allowances = configured
             .service
@@ -783,15 +762,9 @@ fn process_tree_profile_renders_and_passes_the_actual_public_startup_derivation(
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 1);
-        assert_eq!(allowances.len(), 1);
-        smith_local_shell::local_settings::policy(
-            &local,
-            &configured.service.channel_endpoints,
-            configured.service.limits.domain,
-            allowances,
-        )
-        .expect("actual run policy admitted");
+        assert_eq!(local.models.len(), 2);
+        assert_eq!(allowances.len(), 2);
+        local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {
                 assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
@@ -858,13 +831,16 @@ fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivati
         let settings_path = private.root.join("settings.json");
         std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
             .expect("private settings");
-        let local = smith_local_shell::local_settings::read(&settings_path, None).expect("public startup settings");
-        let document = smith_local_shell::local_settings::agent_document(&local).expect("actual agent translation");
-        let configured = smith_agent_shell::config::parse(&document).expect("native profile admitted");
-        assert_eq!(local.models[0].head, 60000);
-        assert_eq!(local.models[0].idle, 300_000);
-        assert_eq!(local.models[0].reasoning_item, 65536);
-        assert!(local.models[0].oversized_reasoning.is_none());
+        let resolved = native_product(&context);
+        let local = resolved.local;
+        let configured = resolved.agent;
+        assert_eq!(local.progress[0].head, Duration::from_millis(60000));
+        assert_eq!(local.progress[0].idle, Duration::from_millis(300_000));
+        assert_eq!(configured.declarations.endpoints[0].models[0].reasoning_item, 65536);
+        assert_eq!(
+            configured.declarations.endpoints[0].models[0].oversized_reasoning,
+            smith_agent_service::profile::OversizedReasoning::Fail
+        );
         assert_eq!(prepared.rendered["effort"], "high");
         let allowances = configured
             .service
@@ -874,15 +850,9 @@ fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivati
             .map(|model| model.protocol_allowance)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        assert_eq!(local.models.len(), 1);
-        assert_eq!(allowances.len(), 1);
-        smith_local_shell::local_settings::policy(
-            &local,
-            &configured.service.channel_endpoints,
-            configured.service.limits.domain,
-            allowances,
-        )
-        .expect("actual run policy admitted");
+        assert_eq!(local.models.len(), 2);
+        assert_eq!(allowances.len(), 2);
+        local.validate(&resolved.limits).expect("actual run policy admitted");
         match prepared.credential {
             Credential::Record(Some(borrowed)) => {
                 assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
@@ -944,4 +914,63 @@ fn the_current_source_arm_selects_the_exec_face() {
     let selected = smith_bench::agent::smith::face(&arm, &entries, repository).expect("source face");
     assert_eq!(selected.shape, smith_bench::agent::smith::events::Shape::Chat);
     assert_eq!(selected.credential(), smith_bench::agent::smith::CredentialShape::Borrowed);
+}
+
+/// Resolve the authored pin through the product's settings and native startup owners.
+fn native_product(context: &smith_bench::agent::Context<'_>) -> smith_local_shell::settings::resolve::Resolved {
+    let path = context.pin_file.parent().expect("product fixture").join(&context.pin.pin.configuration);
+    let mut base: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).expect("product fixture")).expect("product fixture");
+    base["agent"]["endpoints"][0]["address"] = serde_json::json!("127.0.0.1:443");
+    let mut task = context.task.clone();
+    let mut variant = context.variant.cloned();
+    for fields in std::iter::once(&mut task.smith).chain(variant.iter_mut().map(|variant| &mut variant.smith)) {
+        if fields.get("group_stop").and_then(toml::Value::as_integer) == Some(250) {
+            fields.insert("group_stop".into(), toml::Value::Integer(1000));
+        }
+    }
+    let context = smith_bench::agent::Context { task: &task, variant: variant.as_ref(), ..*context };
+    let product = smith_bench::agent::smith::product_settings(&context, &base, &context.private.root.join("auth.json"))
+        .expect("product renderer");
+    resolve_product(product, &context.private.root)
+}
+
+fn resolve_product(
+    mut document: serde_json::Value,
+    workspace: &std::path::Path,
+) -> smith_local_shell::settings::resolve::Resolved {
+    omit_null(&mut document);
+    let value: toml::Value = serde_json::from_value(document).expect("product TOML values");
+    let source = smith_local_shell::settings::Source {
+        layer: smith_local_shell::settings::Layer::User,
+        path: workspace.join("fixture.toml"),
+        text: toml::to_string(&value).expect("product fixture"),
+    };
+    let settings = smith_local_shell::settings::from_sources(
+        &smith_local_shell::command::Shared::default(),
+        workspace.into(),
+        &[source],
+    )
+    .unwrap_or_else(|why| panic!("{}", why.line()));
+    smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line())).0
+}
+
+fn omit_null(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            object.retain(|_, value| !value.is_null());
+            for value in object.values_mut() {
+                omit_null(value);
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for value in array {
+                omit_null(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
 }

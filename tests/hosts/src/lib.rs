@@ -8,6 +8,7 @@ use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use smith_agent_process_world as agent_fixture;
 use smith_host_domain as host;
 use smith_host_protocol as protocol;
+use std::os::unix::ffi::OsStrExt;
 
 pub mod referee;
 
@@ -76,6 +77,7 @@ pub struct HostService {
     domain_owner: Option<Token>,
     process_limits: protocol::Limits,
     root: kernel::Fd,
+    launch: Option<smith_local_service::Launch>,
     domain_events: Queue<host::Input>,
     domain_requests: Queue<host::Output>,
     process_events: Queue<protocol::ProcessEvent>,
@@ -159,7 +161,7 @@ fn start() -> host::Start {
 impl HostService {
     /// Construct one host slot and queue a parent Spawn.
     #[must_use]
-    pub fn new(root: kernel::Fd, now: Time, wall: Wall, detail_bytes: u32) -> HostService {
+    pub fn new(launch: smith_local_service::Launch, now: Time, wall: Wall, detail_bytes: u32) -> HostService {
         let mut domain_limits = host_limits();
         domain_limits.detail_bytes = detail_bytes;
         let io_limits = io_limits();
@@ -180,7 +182,8 @@ impl HostService {
                 start_bytes: agent_limits.channel.start_bytes,
                 calls: domain_limits.calls,
             },
-            root,
+            root: launch.root,
+            launch: Some(launch),
             domain_events: Queue::with_capacity(256),
             domain_requests: Queue::with_capacity(256),
             process_events: Queue::with_capacity(256),
@@ -373,20 +376,24 @@ impl HostService {
         match request {
             host::Output::Process(host::process::Request::Spawn { owner, deadline, .. }) => {
                 self.domain_owner = Some(owner);
-                let mut process = protocol::Process::new(
-                    owner,
-                    &self.process_limits,
-                    self.domain_env.limits.detail_bytes,
-                    agent_fixture::configuration().channel_endpoints,
-                )
-                .expect("bounded host process");
+                let launch = self.launch.take().expect("one agent launch");
+                let document = std::path::Path::new(std::ffi::OsStr::from_bytes(
+                    launch.arguments.first().expect("generated configuration argument"),
+                ));
+                let endpoints = smith_agent_shell::config::read(document)
+                    .expect("generated agent configuration")
+                    .service
+                    .channel_endpoints;
+                let mut process =
+                    protocol::Process::new(owner, &self.process_limits, self.domain_env.limits.detail_bytes, endpoints)
+                        .expect("bounded host process");
                 process.spawn(
                     protocol::Launch {
-                        program: Box::from(&b"smith"[..]),
-                        arguments: Box::from([Box::from(&b"agent"[..])]),
-                        environment: Box::new([]),
-                        root: self.root,
-                        directory: Box::from(&b"."[..]),
+                        program: launch.program,
+                        arguments: launch.arguments,
+                        environment: launch.environment,
+                        root: launch.root,
+                        directory: launch.directory,
                     },
                     deadline,
                     &mut self.io_requests,

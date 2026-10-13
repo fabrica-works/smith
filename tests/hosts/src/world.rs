@@ -8,6 +8,7 @@ use skein_shell::Host;
 use skein_world::{HostedProgram, Inherited, Memory, Outcome};
 use smith_agent_process_world as fixture;
 use smith_agent_shell::Agent;
+use std::os::unix::ffi::OsStrExt;
 
 use crate::{HostService, Observation, Program, Seen, referee};
 
@@ -142,6 +143,29 @@ impl Host for HostService {
             // Eight finite boundary queues may retain maximal charter/turn payloads.
             .and_then(|bound| bound.checked_add(134_217_728))
             .and_then(|bound| bound.checked_add(u64::try_from(size_of::<Self>()).ok()?))
+            .and_then(|bound| {
+                bound.checked_add(self.launch.as_ref().map_or(0, |launch| {
+                    let strings = launch
+                        .program
+                        .len()
+                        .checked_add(launch.directory.len())
+                        .and_then(|bytes| {
+                            launch
+                                .arguments
+                                .iter()
+                                .chain(&launch.environment)
+                                .try_fold(bytes, |bytes, argument| bytes.checked_add(argument.len()))
+                        })
+                        .expect("bounded launch strings");
+                    let slots = launch
+                        .arguments
+                        .len()
+                        .checked_add(launch.environment.len())
+                        .and_then(|slots| slots.checked_mul(size_of::<Box<[u8]>>()))
+                        .expect("bounded launch slots");
+                    u64::try_from(strings.checked_add(slots).expect("bounded launch ownership")).expect("launch memory")
+                }))
+            })
             .expect("complete parent bound")
     }
 
@@ -214,10 +238,28 @@ impl Host for ErrorTail {
     }
 }
 
-fn make_agent(_spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
+fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (errors, capture) = fixture::AgentErrors::pipe(fd);
-    let agent = fixture::configured(fixture::configuration(), 7, inherited, errors.clone());
+    let path = std::path::Path::new(std::ffi::OsStr::from_bytes(
+        spawn.args.first().expect("generated configuration argument"),
+    ));
+    let configuration = smith_agent_shell::config::read(path).expect("generated agent configuration");
+    let agent = Agent::new(
+        configuration,
+        smith_agent_shell::Resources {
+            input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
+            output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,
+            error: Some(inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1),
+            signals: inherited.signal,
+            seed: 7,
+            pid: 101,
+            trace: None,
+            roots: Some(inherited.roots.iter().map(|(_, fd)| *fd).collect()),
+        },
+        Box::new(errors.clone()),
+    )
+    .expect("spawned agent");
     Proc::Agent { agent: Box::new(capture.host(agent)), errors, paused: false }
 }
 
@@ -239,7 +281,7 @@ struct Machine {
 
 impl skein_world::Machine for Machine {
     fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
-        if matches!(&call.ask, skein_sim::Ask::Spawn { program, .. } if program.as_ref() == b"smith") {
+        if matches!(&call.ask, skein_sim::Ask::Spawn { program, .. } if program.as_ref() == b"smith-agent") {
             let result = match self.program {
                 Program::Refused => Err(kernel::Error::NotFound),
                 Program::Silent => Ok(skein_sim::Reply::Program(skein_sim::Program::Never)),
@@ -395,6 +437,22 @@ impl World {
 
     /// Run the shared harness through complete process and descriptor settlement.
     pub fn settle(&mut self) {
+        let scratch = smith_local_process_world::Files::new();
+        let scenario = smith_local_process_world::world::World::new(
+            self.seed,
+            &scratch,
+            smith_local_process_world::Placement::Spawned,
+            b"First answer",
+        )
+        .scenario;
+        let document = scratch.path().join("agent.json");
+        std::fs::write(
+            &document,
+            serde_json::to_vec(&smith_local_process_world::process::agent_document(&scenario.launch))
+                .expect("generated JSON"),
+        )
+        .expect("agent configuration");
+        let kind = smith_local_shell::compose::AgentKind::Spawned { program: "smith-agent".into() };
         let mut config = skein_sim::Config::calm();
         config.wall = skein_tls_world::pki::VALID;
         let mut machine = skein_fake_machine::Machine::new();
@@ -412,7 +470,7 @@ impl World {
             .with_machine(Machine { files: machine, program: self.program });
         if self.program == Program::Service || self.program == Program::ErrorTail {
             harness.host(HostedProgram {
-                program: b"smith".as_slice().into(),
+                program: b"smith-agent".as_slice().into(),
                 make: if self.program == Program::Service { make_agent } else { make_error },
                 instances: 1,
                 operations: fixture::limits().routes.checked_add(2).expect("agent operations"),
@@ -420,7 +478,7 @@ impl World {
         }
         harness.spawn_root(skein_sim::Handle::new(root.raw()), |root| {
             Proc::Parent(Box::new(HostService::new(
-                root,
+                kind.launch(root, &document),
                 Time::ZERO,
                 config.wall,
                 if self.program == Program::Service { 4096 } else { super::host_limits().detail_bytes },

@@ -24,7 +24,7 @@ impl Referee<Process> for LoginJudge {
         let exit = binary.exit_status();
         let issuer_listening = procs.iter().any(|proc| match proc {
             Process::Script(Proc::Issuer(issuer)) => issuer.peer().address().is_some(),
-            Process::Binary(_) | Process::Script(_) => false,
+            Process::Binary(_) | Process::Script(_) | Process::Sample(_) => false,
         });
         let url = if self.visited || !issuer_listening { None } else { sign_in_url(binary.stderr()) };
         if url.is_some() {
@@ -41,7 +41,7 @@ impl Referee<Process> for LoginJudge {
                     }
                 }
                 Process::Script(Proc::Issuer(issuer)) if exit.is_some() => issuer.shutdown(),
-                Process::Binary(_) | Process::Script(_) => {}
+                Process::Binary(_) | Process::Script(_) | Process::Sample(_) => {}
             }
         }
     }

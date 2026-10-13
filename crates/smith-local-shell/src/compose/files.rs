@@ -227,6 +227,27 @@ pub(crate) struct ResultFile {
 }
 
 impl ResultFile {
+    pub(super) fn write_startup(
+        path: &Path,
+        bytes: Box<[u8]>,
+        timeout: Duration,
+        seed: u64,
+        kernel: &mut Kernel,
+        clock: &Clock,
+    ) -> Result<(), Refused> {
+        check_path(path)?;
+        let maximum = u32::try_from(bytes.len()).expect("bounded generated configuration").max(1);
+        let mut file = Self::open(path, maximum, timeout, seed)?;
+        file.begin(bytes);
+        let _exit = skein_shell::drive(kernel, clock, &mut file);
+        match file.failure() {
+            None => Ok(()),
+            Some(Failure::Write(why) | Failure::Close(why)) => Err(Refused::Local(crate::local_shell::Failure::Host {
+                detail: format!("generated agent configuration: {why:?}"),
+            })),
+        }
+    }
+
     fn new(io: file_layer::FileIo, directory: Option<Token>, path: &Path, maximum: u32) -> Self {
         Self {
             io,

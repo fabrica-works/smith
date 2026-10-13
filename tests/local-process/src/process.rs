@@ -17,8 +17,15 @@ use smith_agent_service as agent;
 use smith_local_domain as local;
 use smith_local_service as service;
 use smith_local_shell::local_host::{Local, Resources, token_limits};
-use smith_local_shell::local_settings;
-use std::path::PathBuf;
+use std::{os::unix::ffi::OsStrExt, path::PathBuf};
+
+mod configuration;
+
+pub use configuration::{
+    agent_document, configuration, configuration_with, configuration_with_tools, lower_configuration,
+    lower_configuration_with, prepared_accounts,
+};
+use configuration::{configuration_for_launch, specialize};
 
 /// Immutable configuration sent by the terminal and passed to a spawned agent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -45,7 +52,7 @@ pub struct Launch {
     /// Admit three tool turns, so the fourth would exceed the budget.
     #[serde(default)]
     pub budget_failure: bool,
-    pub in_process: bool,
+    pub placement: crate::Placement,
     pub keep_facts: bool,
     #[serde(default)]
     pub traced: bool,
@@ -68,212 +75,9 @@ impl Launch {
     }
 }
 
-/// The bounded agent settings shared by both local placements.
-pub fn lower_configuration() -> agent::Config {
-    let mut lower = smith_agent_process_world::configuration();
-    for model in &mut lower.domain.models {
-        model.head = Duration::from_secs(10);
-    }
-    lower.limits.domain.session.tools.file_bytes = 4096;
-    lower.limits.domain.session.tools.list_entries = 32;
-    lower.limits.domain.session.tools.list_bytes = 512;
-    lower.limits.machine.file_bytes = lower.limits.domain.session.tools.file_bytes;
-    lower.limits.machine.path_bytes = lower.limits.domain.session.tools.path_bytes;
-    lower.limits.machine.search_hits = lower.limits.domain.session.tools.search_hits;
-    lower.limits.machine.search_bytes = lower.limits.domain.session.tools.search_bytes;
-    lower.limits.machine.output_bytes = lower
-        .limits
-        .domain
-        .run
-        .check_tail
-        .max(lower.limits.domain.session.tools.shell_head)
-        .max(lower.limits.domain.session.tools.shell_tail);
-    lower.limits.machine.entries = 32;
-    lower.limits.file_bytes = 8192;
-    lower.limits.file_entries = 32;
-    lower.limits.file_slots = 8;
-    lower
-}
-
-/// Plaintext local configuration for a replayable simulated invocation.
-pub fn configuration(root: kernel::Fd, change: bool) -> (service::Config, agent::Config) {
-    configuration_with(root, change, false)
-}
-
-/// Same bounded local policy with transport selected by immutable scenario settings.
-#[must_use]
-pub fn configuration_with(root: kernel::Fd, change: bool, tls: bool) -> (service::Config, agent::Config) {
-    configuration_with_tools(root, change, tls, false)
-}
-
-/// The shared policy optionally requires the extended tool story's real checks.
-#[must_use]
-pub fn configuration_with_tools(
-    root: kernel::Fd,
-    change: bool,
-    tls: bool,
-    tools: bool,
-) -> (service::Config, agent::Config) {
-    let lower = lower_configuration_with(tls);
-    let mut source = serde_json::json!({
-        "agent": {}, "chat": "main", "instructions": "@local-shell Assist",
-        "models": [{"endpoint": "", "name": "fake", "window":1_048_576,"output":512,"reasoning_item":64,"head":60000,"idle":30000,
-            "input_price": 1_250_000, "cached_price": 125_000, "output_price": 10_000_000, "price_unit": 1_000_000}],
-        "budget": {"turns": 512, "spend": 25_000_000, "seconds": 3600}, "waiting_seconds": 30,
-        "contract": {"form": "report", "max": 128}
-    });
-    if change {
-        source["directories"] = serde_json::json!([{ "name": "repo", "path": "repo", "writable": true, "git": true }]);
-        source["contract"] = serde_json::json!({ "form": "change", "checks_must_pass": tools, "fields": [{"name": "title", "max": 256}, {"name": "body", "max": 1024}] });
-    }
-    if tools {
-        assert!(change, "tool story has a writable repository");
-        source["conventions"] = serde_json::json!({"guide": ".smith-test/guide", "checks": ".smith-test/check"});
-    }
-    let settings: local_settings::Settings = serde_json::from_value(source).expect("host settings");
-    let endpoints = lower.channel_endpoints.clone();
-    let allowances = lower.domain.models.iter().map(|model| model.protocol_allowance).collect();
-    let mut policy =
-        local_settings::policy(&settings, &endpoints, lower.limits.domain, allowances).expect("host charter policy");
-    let mut host = smith_host_world::limits();
-    host.cancel_grace = agent::profile::standard().policy.cancel_grace;
-    host.accounts = 1;
-    host.charter_bytes = 65_536;
-    host.transcript_bytes = 1_048_576;
-    host.answered_bytes = 65_536;
-    host.message_bytes = 4096;
-    host.messages = 8;
-    host.call_bytes = 32_768;
-    host.turns = 8;
-    host.turn_bytes = 65_536;
-    host.unacknowledged_bytes = 1_000_000_000;
-    host.fact_bytes = 512;
-    host.outcome_bytes = 4096;
-    // A workspace's host path is the checkout's absolute path: production's
-    // bound keeps the story independent of where the checkout lives.
-    host.path_bytes = 4096;
-    // Actual provider spans carry the charter's whole-session deadline.
-    host.long_span = policy.config.budget.time;
-    let inline_out = local::max_out(&policy.limits);
-    policy.limits.agent = local::AgentLimits::Spawned(host);
-    let queue = local::max_out(&policy.limits).max(inline_out).max(smith_host_domain::max_out(&host)).max(256);
-    let mut process = service::ProcessLimits {
-        io: lower.limits.io,
-        channel: smith_host_protocol::Limits {
-            bodies: lower.limits.channel.bodies,
-            charter: lower.limits.channel.charter,
-            transcript: lower.limits.channel.transcript,
-            endpoints: lower.limits.channel.endpoints,
-            channel: lower.limits.channel.channel,
-            start_bytes: lower.limits.channel.start_bytes,
-            calls: host.calls,
-        },
-        detail_bytes: host.detail_bytes,
-        queue,
-    };
-    process.channel.channel.output_bytes =
-        smith_host_protocol::output_bytes(&process.channel).expect("host directional frame");
-    (
-        service::Config {
-            agent: service::AgentConfig::Spawned,
-            local: policy.config,
-            limits: service::Limits {
-                local: policy.limits,
-                inline: None,
-                envelope_bytes: host.answer_bytes,
-                process,
-                queue,
-            },
-            endpoints,
-            paths: policy.paths,
-            launch: service::Launch {
-                program: b"smith-agent".as_slice().into(),
-                arguments: Box::new([]),
-                environment: Box::new([]),
-                root,
-                directory: b".".as_slice().into(),
-            },
-        },
-        lower,
-    )
-}
-
-/// The same agent policy, with loopback plaintext or trust in the test root.
-#[must_use]
-pub fn lower_configuration_with(tls: bool) -> agent::Config {
-    let mut lower = lower_configuration();
-    if tls {
-        lower.llm_endpoints = smith_protocol_llm::Endpoints::new(
-            Box::new([smith_protocol_llm::ConfiguredEndpoint {
-                connect: skein_lib::Duration::from_secs(1),
-                handshake: skein_lib::Duration::from_secs(1),
-                name: smith_domain::llm::Endpoint(0),
-                destination: skein_llm_connection::Endpoint {
-                    limits: lower.limits.llm.adapter.client,
-                    credential: skein_llm::client::CredentialLimits {
-                        access_token: lower.limits.llm.grant_value_bytes,
-                        account_id: lower.limits.llm.grant_value_bytes,
-                    },
-                    address: kernel::Addr::from((std::net::Ipv4Addr::LOCALHOST, 34_443)),
-                    transport: skein_llm_connection::Transport::Tls {
-                        server_name: skein_tls_world::pki::name(),
-                        trust: skein_tls_world::pki::client(&[]),
-                    },
-                    llm: skein_llm_world::call(7).endpoint,
-                },
-                account: 0,
-                identity: smith_protocol_llm::IdentityProfile::Plain,
-                models: Box::new([]),
-            }]),
-            1,
-            1,
-        )
-        .expect("one TLS endpoint");
-    }
-    lower
-}
-
-/// Account configuration shared by simulated and real hosted startup.
-#[must_use]
-pub fn accounts(authenticated: bool) -> Box<[local_settings::Account]> {
-    accounts_with(authenticated, false, None)
-}
-
-/// Accounts configured for the same issuer face in either tier.
-#[must_use]
-pub fn accounts_with(
-    authenticated: bool,
-    tls: bool,
-    trust_der: Option<&std::path::Path>,
-) -> Box<[local_settings::Account]> {
-    if authenticated {
-        let mut accounts = Box::new([local_settings::Account {
-            number: 0,
-            account_id: "acc".into(),
-            oauth: Some(local_settings::OAuth {
-                authorization_url: "http://127.0.0.1:444/authorize".into(),
-                token_endpoint: "http://127.0.0.1:444/token".into(),
-                client_id: "client".into(),
-                redirect_uri: "http://127.0.0.1:2345/callback".into(),
-                scope: "read".into(),
-                address: "127.0.0.1:444".into(),
-                server_name: String::new(),
-                trust_der: None,
-                json: false,
-            }),
-        }]);
-        if tls {
-            let oauth = accounts[0].oauth.as_mut().expect("OAuth account");
-            oauth.authorization_url = "https://127.0.0.1:34444/authorize".into();
-            oauth.token_endpoint = "https://127.0.0.1:34444/token".into();
-            oauth.address = "127.0.0.1:34444".into();
-            oauth.server_name = "skein.test".into();
-            oauth.trust_der = Some(trust_der.expect("test trust file").to_str().expect("UTF-8 trust path").into());
-        }
-        accounts
-    } else {
-        Box::new([local_settings::Account { number: 0, account_id: "acc".into(), oauth: None }])
-    }
+fn agent_launch(spawn: &kernel::Spawn) -> Launch {
+    let path = std::path::Path::new(std::ffi::OsStr::from_bytes(&spawn.args[0]));
+    serde_json::from_slice(&std::fs::read(path.with_file_name("launch.json")).unwrap()).expect("fixture launch")
 }
 
 // Observe emitted trace bytes at the public kernel boundary, preserving every submission.
@@ -718,7 +522,7 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
             name: b"delivery".as_slice().into(),
             path: path.as_os_str().as_encoded_bytes().into(),
         });
-        if launch.in_process {
+        if launch.placement == crate::Placement::InProcess {
             roots.push(StartupRoot {
                 name: b"effect".as_slice().into(),
                 path: path.as_os_str().as_encoded_bytes().into(),
@@ -755,8 +559,7 @@ fn configure_choices(config: &mut service::Config, lower: &mut agent::Config) {
 #[must_use]
 pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let launch = Launch::read(spawn);
-    let (mut config, mut lower) =
-        configuration_with_tools(root(inherited, b"launch"), launch.change, launch.tls, launch.tools);
+    let (mut config, mut lower) = configuration_for_launch(root(inherited, b"launch"), &launch);
     if launch.choices {
         configure_choices(&mut config, &mut lower);
     }
@@ -770,7 +573,16 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         config.local.contract =
             local::Contract::Report(smith_domain::run::outcome::TextSpec { max: 128, fields: Box::new([]) });
     }
-    config.launch.arguments = launch.arguments();
+    let kind = match launch.placement {
+        crate::Placement::InProcess => smith_local_shell::compose::AgentKind::Inline,
+        crate::Placement::Spawned => smith_local_shell::compose::AgentKind::Spawned { program: "smith-agent".into() },
+    };
+    let document = launch.token_directory.parent().unwrap().join("agent.json");
+    if launch.placement == crate::Placement::Spawned {
+        std::fs::write(&document, serde_json::to_vec(&agent_document(&launch)).unwrap()).unwrap();
+        std::fs::write(document.with_file_name("launch.json"), serde_json::to_vec(&launch).unwrap()).unwrap();
+    }
+    config.launch = kind.launch(config.launch.root, &document);
     if launch.traced {
         lower.limits.events = Some(
             smith_agent_service::EventLimits::derive(
@@ -797,45 +609,38 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
             smith_local_shell::front::interactive::Interactive::new(true, &lower.limits).expect("bounded screen"),
         )
     });
-    let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
-    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io).or_else(|| {
-        launch.authenticated.then(|| {
-            smith_local_shell::credentials::prepare_legacy(
-                &accounts_with(true, launch.tls, launch.trust_der.as_deref()),
-                &launch.token_directory,
-                config.limits.process.io,
-                Some(&[root(inherited, b"credential")]),
-            )
-            .expect("native authenticated sources")
-        })
+    let (lower, spawned) =
+        if launch.placement == crate::Placement::InProcess { (Some(lower), None) } else { (None, Some(lower)) };
+    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io).unwrap_or_else(|| {
+        prepared_accounts(
+            &launch.token_directory,
+            launch.authenticated,
+            launch.tls,
+            launch.authenticated.then(|| root(inherited, b"credential")),
+            config.limits.process.io,
+        )
     });
     let mut local = Local::within_memory(
         config,
         lower,
         Resources {
             state_root: root(inherited, b"state"),
-            token_directory: launch.token_directory,
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
             output: inherited.pipes.iter().find(|(child, _)| *child == 1).expect("stdout").1,
             signals: inherited.signal,
             delivery_roots: if launch.change { Box::new([root(inherited, b"delivery")]) } else { Box::new([]) },
-            effect_roots: if launch.change && launch.in_process {
+            effect_roots: if launch.change && launch.placement == crate::Placement::InProcess {
                 Box::new([root(inherited, b"effect")])
             } else {
                 Box::new([])
             },
             delivery_environment: Box::new([]),
-            accounts: if handed.is_some() {
-                Box::new([])
-            } else {
-                accounts_with(launch.authenticated, launch.tls, launch.trust_der.as_deref())
-            },
             seed: launch.seed,
             oauth_entropy: [31; 32],
         },
         Box::new(writer),
         u64::MAX,
-        handed,
+        Some(handed),
         interactive,
     )
     .expect("actual shared local shell");
@@ -860,7 +665,7 @@ fn product_header(
     lower: agent::Config,
     launch: &Launch,
 ) -> (agent::Config, smith_events::SessionStarted) {
-    if launch.in_process {
+    if launch.placement == crate::Placement::InProcess {
         let cancel = match config.limits.local.agent {
             local::AgentLimits::Inline(bounds) => bounds.cancel_grace,
             local::AgentLimits::Spawned(bounds) => bounds.cancel_grace,
@@ -873,13 +678,10 @@ fn product_header(
         )
         .expect("inline startup bounds");
     }
-    let mut configuration = smith_agent_shell::config::Configuration {
-        service: lower,
-        memory: smith_agent_process_world::profile().declared.memory,
-        trace: None,
-        profile: smith_agent_process_world::profile(),
-        declarations: smith_agent_process_world::declarations(0),
-    };
+    let mut configuration =
+        smith_agent_shell::config::from_value(agent_document(launch)).expect("generated fixture JSON");
+    configuration.service = lower;
+    configuration.trace = None;
     let trace = smith_agent_shell::trace::TraceConfig {
         path: launch.root_path.join("events.jsonl"),
         capture: agent::sinks::Capture::Everything,
@@ -900,7 +702,7 @@ fn product_header(
 /// The agent's declared workspace directories, each owned by this child.
 #[must_use]
 pub fn agent_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
-    let launch = Launch::read(spawn);
+    let launch = agent_launch(spawn);
     if launch.change {
         let path = launch.root_path.join("repo");
         vec![StartupRoot { name: b"repo".as_slice().into(), path: path.as_os_str().as_encoded_bytes().into() }]
@@ -911,10 +713,12 @@ pub fn agent_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
 /// Construct the actual agent service with the local scenario's settings.
 #[must_use]
 pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
-    let launch = Launch::read(spawn);
+    let launch = agent_launch(spawn);
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (errors, capture) = smith_agent_process_world::AgentErrors::pipe(fd);
-    let mut configuration = lower_configuration_with(launch.tls);
+    let document = std::path::Path::new(std::ffi::OsStr::from_bytes(&spawn.args[0]));
+    let parsed = smith_agent_shell::config::read(document).expect("generated child JSON");
+    let mut configuration = specialize(parsed.service);
     let trace = if launch.traced {
         configuration.limits.events = Some(
             agent::EventLimits::derive(
@@ -935,14 +739,13 @@ pub fn make_agent(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     } else {
         None
     };
-    let environment_bytes = configuration.limits.machine.env_bytes;
     let agent = smith_agent_shell::Agent::new(
         smith_agent_shell::config::Configuration {
             service: configuration,
-            memory: smith_agent_process_world::profile().declared.memory,
+            memory: parsed.memory,
             trace,
-            profile: smith_agent_process_world::profile(),
-            declarations: smith_agent_process_world::declarations(environment_bytes),
+            profile: parsed.profile,
+            declarations: parsed.declarations,
         },
         smith_agent_shell::Resources {
             input: inherited.pipes.iter().find(|(child, _)| *child == 0).expect("stdin").1,
@@ -979,7 +782,17 @@ pub fn local_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
 /// The spawned agent's own stream, distinct from the product's append.
 #[must_use]
 pub fn agent_appends(spawn: &kernel::Spawn) -> Vec<skein_world::StartupAppend> {
-    let mut appends = local_appends(spawn);
+    let launch = agent_launch(spawn);
+    let mut appends = if launch.traced {
+        vec![skein_world::StartupAppend {
+            name: b"product-trace".as_slice().into(),
+            root: launch.root_path.as_os_str().as_encoded_bytes().into(),
+            path: b"events.jsonl".as_slice().into(),
+            mode: 0o600,
+        }]
+    } else {
+        Vec::new()
+    };
     if let Some(append) = appends.first_mut() {
         append.path = b"events.jsonl.agent".as_slice().into();
     }

@@ -369,7 +369,6 @@ fn derive_invocation(
     };
     let (required, _) = crate::Local::startup_memory(
         &limits,
-        0,
         resolved.agent.service.limits.routes,
         Some(&handed),
         if interactive { None } else { Some(&front) },
@@ -409,7 +408,7 @@ fn interactive_header(
 #[must_use]
 pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
     let (shared, json, execution) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
-        Ok(Command::Legacy(_) | Command::Exec(_) | Command::Login { .. } | Command::Interactive { .. }) => return None,
+        Ok(Command::Exec(_) | Command::Login { .. } | Command::Interactive { .. }) => return None,
         Ok(Command::Check { shared, json, execution }) => (shared, json, execution),
         Err(usage) => {
             eprintln!("smith: usage: {}", usage.0);

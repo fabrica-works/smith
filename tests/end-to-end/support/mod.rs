@@ -20,23 +20,26 @@ use smith_real_world::{
     Scratch,
     settled::{Before, assert_no_children},
 };
-use std::path::Path;
+use std::{fmt::Write as _, path::Path};
 
 pub enum Process {
     Binary(Box<Binary>),
     Script(Proc),
+    Sample(Box<smith_hosts_world::HostService>),
 }
 impl Process {
     fn host(&self) -> &dyn Host {
         match self {
             Self::Binary(p) => p.as_ref(),
             Self::Script(p) => p,
+            Self::Sample(p) => p.as_ref(),
         }
     }
     fn host_mut(&mut self) -> &mut dyn Host {
         match self {
             Self::Binary(p) => p.as_mut(),
             Self::Script(p) => p,
+            Self::Sample(p) => p.as_mut(),
         }
     }
 }
@@ -118,7 +121,7 @@ impl Referee<Process> for Judge {
                         p.shutdown();
                     }
                 }
-                Process::Binary(_) | Process::Script(_) => {}
+                Process::Binary(_) | Process::Script(_) | Process::Sample(_) => {}
             }
         }
     }
@@ -139,21 +142,23 @@ impl Referee<Process> for Judge {
                     Process::Script(Proc::Peer(p)) => {
                         eprintln!("queries={:?}", smith_local_process_world::llm::queries(p).count());
                     }
-                    Process::Script(_) => {}
+                    Process::Script(_) | Process::Sample(_) => {}
                 }
             }
         }
         let authenticated = procs.iter().any(|p| matches!(p, Process::Script(Proc::Issuer(_))));
         if authenticated && !self.saved && procs.iter().any(|p| matches!(p, Process::Script(Proc::Peer(p)) if smith_local_process_world::llm::queries(p).next().is_some())) {
-            let store = smith_local_process_world::credential_fixture::Tokens::new(&self.tokens, smith_local_shell::local_host::token_limits()).expect("private tokens");
-            assert_eq!(store.load(0).expect("token read").expect("saved before grant use").access_token.as_ref(), b"access-new", "token persists before provider query");
+            let bytes = std::fs::read(&self.tokens).expect("saved before grant use");
+            let record = skein_oauth::decode_record(&bytes, &smith_local_shell::local_host::token_limits()).expect("private token record");
+            let directory = self.tokens.ancestors().nth(4).expect("scratch state path");
+            assert_eq!(record.access_token, fixture_access(directory), "token persists before provider query");
             self.saved = true;
         }
         let shown = procs
             .iter()
             .find_map(|proc| match proc {
                 Process::Script(Proc::Terminal(person)) => Some(person.shown()),
-                Process::Binary(_) | Process::Script(_) => None,
+                Process::Binary(_) | Process::Script(_) | Process::Sample(_) => None,
             })
             .unwrap_or_default();
         for proc in procs {
@@ -220,66 +225,77 @@ pub fn start(arguments: Vec<std::ffi::OsString>, directory: &Path, mode: Mode) -
 
 fn start_program(program: &Path, arguments: Vec<std::ffi::OsString>, directory: &Path, mode: Mode) -> Binary {
     Binary::start(
-        Command { program: program.into(), arguments, environment: vec![], directory: directory.into() },
+        Command {
+            program: program.into(),
+            arguments,
+            environment: vec![
+                ("HOME".into(), directory.into()),
+                ("XDG_CONFIG_HOME".into(), directory.join("config").into()),
+                ("XDG_STATE_HOME".into(), directory.join("state").into()),
+                ("PATH".into(), "/usr/bin:/bin".into()),
+            ],
+            directory: directory.into(),
+        },
         mode,
         65_536,
     )
     .unwrap_or_else(|why| panic!("shipped Smith end to end requires usable io_uring and binary startup: {why:?}"))
 }
 
-pub fn settings(scratch: &Scratch, scenario: &Scenario) {
-    let trust = scratch.path().join("root.der");
-    if !scenario.launch.authenticated {
-        let tokens = smith_local_process_world::credential_fixture::Tokens::new(
-            &scenario.launch.token_directory,
-            smith_local_shell::local_host::token_limits(),
+fn fixture_access(directory: &Path) -> Box<[u8]> {
+    let login: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("auth.json")).expect("synthetic login file"))
+            .expect("synthetic login JSON");
+    login
+        .pointer("/tokens/access_token")
+        .and_then(serde_json::Value::as_str)
+        .expect("synthetic access token")
+        .as_bytes()
+        .into()
+}
+
+#[must_use]
+pub fn settings(scratch: &Scratch, scenario: &Scenario) -> Box<[u8]> {
+    let token = smith_local_process_world::world::login_at(Clock::new().now().wall, false);
+    let login = serde_json::json!({"tokens":{"access_token":std::str::from_utf8(&token).expect("synthetic token text"),"account_id":"acc"}});
+    std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&login).expect("synthetic login JSON"))
+        .expect("synthetic login file");
+    let mut text = format!(
+        "model='fake/fake'\nchat='chat'\ninstructions='@local-shell Assist'\nwaiting_seconds=30\n\
+        [budget]\nturns=512\nspend=25.0\nseconds=3600\n\
+        [deployment]\nmemory=4294967296\nconversations=2\nllm_pool=134217728\ngroup_stop=1\n\
+        [models.'fake/fake']\nwindow=2097152\noutput=65536\nreasoning_item=2048\nhead=60\nidle=30\n\
+        input_price=1.25\ncached_price=0.125\noutput_price=10.0\nprice_unit=1000000\n\
+        [endpoints.fake]\npreset='codex'\naccount='fake'\naddress='127.0.0.1:34443'\nserver_name='skein.test'\n\
+        identity='plain'\ntrust.system=false\ntrust.der=['{}']\n\
+        [environment]\ninherit=[]\n[trace]\npath='{}'\ncapture='calls'\n",
+        scratch.path().join("root.der").display(),
+        scratch.path().join("agent-trace.jsonl").display()
+    );
+    if scenario.launch.authenticated {
+        text.push_str("[accounts.fake]\nsource='sign_in'\nclient_id='client'\nauthorization_url='http://127.0.0.1:34444/authorize'\n\
+            token_url='http://127.0.0.1:34444/token'\nredirect_uri='http://127.0.0.1:2345/callback'\nscope='read'\ntoken_format='form'\n");
+    } else {
+        write!(
+            text,
+            "[accounts.fake]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n",
+            scratch.path().join("auth.json").display()
         )
-        .expect("private tokens");
-        let mut saved = tokens.load(0).expect("token load").expect("fixture token");
-        let now = Clock::new().now().wall;
-        if saved.expires_at <= Wall::from_nanos(now.as_nanos().saturating_add(Duration::from_secs(60).as_nanos())) {
-            saved.expires_at = Wall::from_nanos(
-                Clock::new().now().wall.as_nanos().saturating_add(Duration::from_secs(7200).as_nanos()),
-            );
-            tokens
-                .save(
-                    0,
-                    &skein_oauth::encode_record(&saved, &smith_local_shell::local_host::token_limits())
-                        .expect("token encoding"),
-                )
-                .expect("fresh fixture grant");
-        }
+        .expect("fixture string");
     }
-    let accounts = process::accounts_with(scenario.launch.authenticated, true, Some(&trust));
-    let accounts: Vec<_> = accounts.iter().map(|account| {
-        let oauth = account.oauth.as_ref().map(|o| serde_json::json!({"authorization_url":o.authorization_url,"token_endpoint":o.token_endpoint,"client_id":o.client_id,"redirect_uri":o.redirect_uri,"scope":o.scope,"address":o.address,"server_name":o.server_name,"trust_der":o.trust_der,"json":o.json}));
-        serde_json::json!({"number":account.number,"account_id":account.account_id,"oauth":oauth})
-    }).collect();
-    let mut source = serde_json::json!({
-        "agent":{"profile":{"name":"standard","declared":{"memory":4_294_967_296_u64,"llm_pool":134_217_728_u64,"conversations":2},"policy":{"group_stop":10}},
-            "endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","connect":10000,"handshake":10000,"address":"127.0.0.1:34443","server_name":"skein.test","trust_der":trust,"identity":"plain"}],
-            "environment":[],"trace":{"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"}},
-        "chat":"chat","instructions":"@local-shell Assist",
-        "models":[{"endpoint":"fake","name":"fake","window":2_097_152,"output":65536,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
-        "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30,
-        "contract":{"form":"report","max":128},"token_directory":scenario.launch.token_directory,
-        "accounts":accounts
-    });
     if scenario.launch.change {
-        source.as_object_mut().expect("settings object").insert(
-            "directories".into(),
-            serde_json::json!([{"name":"repo","path":scratch.path().join("repo"),"writable":true,"git":true}]),
-        );
-        source.as_object_mut().expect("settings object").insert("contract".into(), serde_json::json!({"form":"change","checks_must_pass":scenario.launch.tools,"fields":[{"name":"title","max":256},{"name":"body","max":1024}]}));
+        write!(text, "[[workspace.directories]]\nname='repo'\npath='{}'\nwritable=true\ngit=true\n\
+            [workspace.contract]\nform='change'\nchecks_must_pass={}\n\
+            [[workspace.contract.fields]]\nname='title'\nmax=256\n[[workspace.contract.fields]]\nname='body'\nmax=1024\n",
+            scratch.path().join("repo").display(),scenario.launch.tools).expect("fixture string");
+    } else {
+        text.push_str("[workspace.contract]\nform='report'\nmax=128\n");
     }
     if scenario.launch.tools {
-        source.as_object_mut().expect("settings object").insert(
-            "conventions".into(),
-            serde_json::json!({"guide":".smith-test/guide","checks":".smith-test/check"}),
-        );
+        text.push_str("[workspace.conventions]\nguide='.smith-test/guide'\nchecks='.smith-test/check'\n");
     }
-    std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&source).expect("settings"))
-        .expect("settings fixture");
+    let _path = user_layer(scratch, text.as_bytes());
+    token
 }
 
 #[must_use]
@@ -294,17 +310,13 @@ pub fn run_with_provider(
 ) -> Seen {
     assert_no_children();
     scenario.launch.tls = true;
-    settings(scratch, &scenario);
-    let path = trace_path(scratch.path(), scenario.launch.in_process);
+    let token = if provider.is_some() { fixture_access(scratch.path()) } else { settings(scratch, &scenario) };
+    let path = trace_path(scratch.path());
     let old_trace = std::fs::read(&path).unwrap_or_default();
     let before = Before::new(scratch.path());
     let clock = Clock::new();
     let now = clock.now().now;
-    let mut binary = start(
-        vec!["local".into(), scratch.path().join("settings.json").into(), scratch.path().into()],
-        scratch.path(),
-        Mode::Terminal,
-    );
+    let mut binary = start(Vec::new(), scratch.path(), Mode::Terminal);
     let streams = binary.take_streams().expect("scripted terminal");
     let descriptors = streams.descriptors();
     let Streams::Terminal { stream } = streams else { unreachable!("person on terminal") };
@@ -312,7 +324,7 @@ pub fn run_with_provider(
         now,
         deadline: now.saturating_add(Duration::from_secs(5)),
         saved: false,
-        tokens: scenario.launch.token_directory.clone(),
+        tokens: scratch.path().join("state/smith/tokens/66616b65.token"),
         checkout: if scenario.launch.change { scratch.checkout() } else { smith_real_world::Checkout::default() },
         ending: scenario.ending.clone(),
         seed: scenario.launch.seed,
@@ -322,11 +334,20 @@ pub fn run_with_provider(
     world.spawn_with_fds(descriptors, || {
         Process::Script(Proc::Terminal(Box::new(Terminal::attached(stream, scenario.commands.clone()))))
     });
-    world.spawn(|| Process::Script(Proc::Peer(Box::new(provider.unwrap_or_else(|| scenario.provider())))));
+    world.spawn(|| {
+        Process::Script(Proc::Peer(Box::new(provider.unwrap_or_else(|| {
+            scenario.provider_with(skein_llm::Credential {
+                access_token: token.clone(),
+                account_id: b"acc".as_slice().into(),
+            })
+        }))))
+    });
     if scenario.launch.authenticated {
         world.spawn(|| {
-            Process::Script(Proc::Issuer(Box::new(process::IssuerProcess::configured(
-                skein_fake_peers::Transport::Tls,
+            Process::Script(Proc::Issuer(Box::new(process::IssuerProcess::with_token(
+                skein_fake_peers::Transport::Plaintext,
+                34_444,
+                token.clone(),
             ))))
         });
         world.spawn(|| Process::Script(Proc::Browser(Box::default())));
@@ -353,13 +374,27 @@ pub fn run_with_provider(
 /// Each appended invocation is checked independently; a prior prefix stays untouched.
 #[must_use]
 pub fn read_trace(directory: &Path, prefix: &[u8]) -> Vec<smith_events::Record> {
-    let document = std::fs::read(directory.join("agent.json")).expect("actual agent configuration");
-    let configuration = smith_agent_shell::config::parse(&document).expect("actual producer configuration");
+    let source = smith_local_shell::settings::Source {
+        layer: smith_local_shell::settings::Layer::User,
+        path: directory.join("config/smith/config.toml"),
+        text: std::fs::read_to_string(directory.join("config/smith/config.toml")).expect("product settings"),
+    };
+    let settings = smith_local_shell::settings::from_sources(
+        &smith_local_shell::command::Shared::default(),
+        directory.into(),
+        &[source],
+    )
+    .expect("merged product settings");
+    let mut resolved = smith_local_shell::settings::resolve::resolve_startup(&settings)
+        .unwrap_or_else(|why| panic!("{}", why.line()))
+        .0;
+    let trace = resolved.agent.trace.as_ref().expect("configured agent destination").path.clone();
+    let _limits = smith_local_shell::check::interactive_limits(&mut resolved).expect("actual producer limits");
+    let configuration = resolved.agent;
     let events = configuration.service.limits.events.expect("configured event producer");
     let limits = events.sinks.records;
     let ceiling = events.sinks.line_ceiling(events.capture).expect("actual writer-derived line ceiling");
-    let bytes =
-        std::fs::read(configuration.trace.expect("configured agent destination").path).expect("actual append trace");
+    let bytes = std::fs::read(trace).expect("actual append trace");
     assert!(bytes.starts_with(prefix), "durable trace prefix stays unchanged");
     let mut reader = smith_events::Reader::with_ceiling(&limits, ceiling)
         .unwrap_or_else(|why| panic!("configured receiving bounds {limits:?}: {why:?}"));
@@ -423,7 +458,7 @@ impl Referee<Process> for Refusal {
                 .shown()
                 .split_inclusive(|byte| *byte == b'\n')
                 .find_map(|line| line.trim_ascii_end().strip_prefix(b"Sign in: ").map(Vec::from)),
-            Process::Script(_) => None,
+            Process::Script(_) | Process::Sample(_) => None,
         });
         let listening = procs.iter().any(|process| {
             matches!(process,
@@ -436,7 +471,7 @@ impl Referee<Process> for Refusal {
                     Process::Script(Proc::Peer(p)) => p.shutdown(),
                     Process::Script(Proc::Issuer(p)) => p.shutdown(),
                     Process::Script(Proc::Browser(p)) => p.shutdown(),
-                    Process::Binary(_) | Process::Script(_) => {}
+                    Process::Binary(_) | Process::Script(_) | Process::Sample(_) => {}
                 }
             }
         } else if listening {
@@ -472,7 +507,7 @@ impl Referee<Process> for Refusal {
                         person.is_empty(),
                         String::from_utf8_lossy(person.shown())
                     ),
-                    Process::Script(_) => {}
+                    Process::Script(_) | Process::Sample(_) => {}
                 }
             }
         }
@@ -489,14 +524,8 @@ impl Referee<Process> for Refusal {
 }
 
 #[must_use]
-pub fn refusal(scratch: &Scratch, arguments: Vec<std::ffi::OsString>) -> Vec<u8> {
-    refusal_program(Path::new(env!("CARGO_BIN_EXE_smith")), scratch, arguments)
-}
-
-#[must_use]
 pub fn refusal_program(program: &Path, scratch: &Scratch, arguments: Vec<std::ffi::OsString>) -> Vec<u8> {
-    let refusal_code = if arguments.first().is_some_and(|command| command == "local") { 2 } else { 1 };
-    refusal_program_code(program, scratch, arguments, refusal_code)
+    refusal_program_code(program, scratch, arguments, 1)
 }
 
 #[must_use]
@@ -546,56 +575,10 @@ fn refusal_program_code(
 
 pub mod live_run;
 
-/// Drive the actual local child to a refused run, without any provider process.
-#[must_use]
-pub fn refused_run(scratch: &Scratch) -> Vec<smith_events::Record> {
-    assert_no_children();
-    let clock = Clock::new();
-    let now = clock.now().now;
-    let mut binary = start(
-        vec!["local".into(), scratch.path().join("settings.json").into(), scratch.path().into()],
-        scratch.path(),
-        Mode::Terminal,
-    );
-    let streams = binary.take_streams().expect("actual local terminal");
-    let descriptors = streams.descriptors();
-    let Streams::Terminal { stream } = streams else { unreachable!("local terminal") };
-    let mut world = real::World::new(Refusal {
-        now,
-        foreign: None,
-        deadline: now.saturating_add(Duration::from_secs(3)),
-        trace: None,
-    });
-    world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
-    world.spawn_with_fds(descriptors, || {
-        Process::Script(Proc::Terminal(Box::new(Terminal::attached(
-            stream,
-            vec![
-                smith_local_process_world::terminal::Action::Send(Box::from(&b"A refused run\n"[..])),
-                smith_local_process_world::terminal::Action::Eof,
-            ],
-        ))))
-    });
-    let outcome = world.run(&clock, Duration::from_secs(4));
-    assert!(outcome.procs.iter().all(Host::is_empty), "local and actual agent drain");
-    let Process::Binary(binary) = outcome.procs.first().expect("binary process") else {
-        unreachable!("binary observer")
-    };
-    assert_eq!(
-        binary.exit_status(),
-        Some(Exit::Code(0)),
-        "input EOF exits the interactive host: {}",
-        String::from_utf8_lossy(binary.stderr())
-    );
-    let records = read_trace(scratch.path(), &[]);
-    assert_no_children();
-    records
-}
-
 /// The agent's expected destination from the story's selected placement.
 #[must_use]
-pub fn trace_path(directory: &Path, in_process: bool) -> std::path::PathBuf {
-    directory.join(if in_process { "agent-trace.jsonl" } else { "agent-trace.jsonl.agent" })
+pub fn trace_path(directory: &Path) -> std::path::PathBuf {
+    directory.join("agent-trace.jsonl")
 }
 
 /// Outside observations of one product invocation on pipes.
@@ -684,3 +667,7 @@ pub use exec::{
 };
 
 pub mod login;
+
+pub mod sample_host;
+
+pub mod actor_refusal;

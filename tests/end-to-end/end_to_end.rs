@@ -191,32 +191,26 @@ fn smith_on_a_terminal_signs_in_and_commits_in_place() {
 #[test]
 fn the_startup_refusals_of_both_commands_are_observed_outside() {
     let scratch = Scratch::new();
-    for command in ["agent", "local"] {
-        let arguments = if command == "agent" {
-            vec![command.into(), "".into()]
-        } else {
-            vec![command.into(), "".into(), scratch.path().into()]
-        };
-        let errors = support::refusal(&scratch, arguments);
-        assert!(String::from_utf8_lossy(&errors).contains(if command == "agent" {
-            "configuration metadata"
-        } else {
-            "settings metadata"
-        }));
-    }
+    let agent = std::path::Path::new(env!("CARGO_BIN_EXE_smith-agent"));
+    let errors = support::refusal_program(agent, &scratch, vec!["".into()]);
+    assert!(String::from_utf8_lossy(&errors).contains("configuration metadata"));
+    let config = scratch.path().join("config/smith/config.toml");
+    std::fs::create_dir_all(&config).expect("settings metadata refusal");
+    let errors = support::refusal_code(&scratch, Vec::new(), 2);
+    assert!(String::from_utf8_lossy(&errors).contains("regular file"));
     let path = scratch.path().join("agent-config.json");
     std::fs::write(
         &path,
         br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"conversations":1,"calls_per_response":2,"tool_payload":256,"read_window":256},"policy":{"group_stop":10}},"endpoints":[{"name":"fake","number":0,"dialect":0,"account":0,"provider":"codex","address":"127.0.0.1:8080","transport":"plaintext","connect":1000,"handshake":1000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"prices":{"input":1,"cached":1,"output":1,"unit":1},"head":1000,"idle":1000}]}],"environment":[]}"#,
     )
     .expect("valid agent fixture");
-    let errors = support::refusal(&scratch, vec!["agent".into(), path.clone().into()]);
+    let errors = support::refusal_program(agent, &scratch, vec![path.clone().into()]);
     assert_eq!(
         String::from_utf8_lossy(&errors).lines().last(),
         Some("smith: the run could not answer: the channel ended before the answer")
     );
     std::fs::write(&path, br#"{"profile":{"name":"standard","declared":{"memory":1099511627776,"conversations":1,"calls_per_response":2,"tool_payload":256,"read_window":256},"policy":{"group_stop":10}},"endpoints":[{"name":"invalid","number":1,"dialect":1,"account":0,"provider":"codex","connect":10000,"handshake":10000,"models":[{"name":"fake","window":65536,"output":512,"reasoning_item":64,"prices":{"input":1,"cached":1,"output":1,"unit":1},"head":60000,"idle":30000}],"address":"192.0.2.1:8080","transport":"plaintext"}],"environment":[]}"#).expect("invalid transport fixture");
-    let errors = support::refusal(&scratch, vec!["agent".into(), path.into()]);
+    let errors = support::refusal_program(agent, &scratch, vec![path.into()]);
     assert_eq!(
         String::from_utf8_lossy(&errors).lines().last(),
         Some("smith: plaintext endpoint address must be loopback")
@@ -317,6 +311,7 @@ fn standard_profile_runs_a_large_coding_write_and_the_following_checks() {
     ] {
         turns.push((name.as_bytes(), arguments.as_bytes().to_vec()));
     }
+    let token = support::settings(&scratch, &scenario);
     let peer = smith_agent_process_world::fake::configured_transport(
         Box::new([api::Script {
             cue: b"@local-shell".as_slice().into(),
@@ -329,7 +324,7 @@ fn standard_profile_runs_a_large_coding_write_and_the_following_checks() {
                 })
                 .collect(),
         }]),
-        skein_llm::Credential { access_token: b"token".as_slice().into(), account_id: b"acc".as_slice().into() },
+        skein_llm::Credential { access_token: token, account_id: b"acc".as_slice().into() },
         skein_lib::Duration::ZERO,
         skein_fake_peers::Transport::Tls,
     );
@@ -349,39 +344,31 @@ fn standard_profile_runs_a_large_coding_write_and_the_following_checks() {
     assert_eq!(files[b"checks-ran.txt".as_slice()], b"checked\n");
 }
 
-fn refusal_settings(output: u32, read_window: u32) -> serde_json::Value {
-    serde_json::json!({
-        "agent": {"profile": {"name":"standard", "declared":{
-            "memory":2_147_483_648_u64,"conversations":6,"calls_per_response":16,
-            "tool_payload":40960,"file_bytes":1_048_576,"read_window":read_window}},
-            "endpoints":[{"name":"fake","number":1,"dialect":1,"account":0,"provider":"codex",
-                "address":"127.0.0.1:1","transport":"tls","server_name":"fixture.invalid",
-                "connect":10000,"handshake":10000}],"environment":[]},
-        "chat":"refused","instructions":"No run may start",
-        "models":[{"endpoint":"fake","name":"fake","window":272_000,"output":output,
-            "reasoning_item":65536,"head":60000,"idle":300_000,
-            "input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
-        "budget":{"turns":4096,"spend":1_000_000_000_u64,"seconds":300,"reserve":{"turns":2,"seconds":150}},
-        "waiting_seconds":30,"contract":{"form":"report","max":4096},"in_process":false
-    })
+fn refusal_settings(output: u32, read_window: u32) -> Vec<u8> {
+    format!(
+        "model='codex/gpt-6-luna'\nchat='refused'\ninstructions='No run may start'\n\
+        [accounts.codex]\nsource='env'\n\
+        [models.'codex/gpt-6-luna']\noutput={output}\n\
+        [deployment]\nread_window={read_window}\ntool_payload=40960\n"
+    )
+    .into_bytes()
 }
 
-fn local_refusal_output(settings: &serde_json::Value) -> (Vec<u8>, Scratch) {
+fn local_refusal_output(settings: &[u8]) -> (Vec<u8>, Scratch) {
     let scratch = Scratch::new();
-    let path = scratch.path().join("settings.json");
-    std::fs::write(&path, serde_json::to_vec(settings).expect("settings fixture")).expect("write settings");
-    let state = scratch.path().join("absent-state");
-    let output = support::refusal_code(&scratch, vec!["local".into(), path.into(), state.clone().into()], 2);
-    assert!(!state.exists(), "configuration refusal precedes chat/state and a run");
-    (output, scratch)
+    let _file = support::user_layer(&scratch, settings);
+    let ran = support::smith(&scratch, &["check"], b"");
+    assert_eq!(ran.code, 2, "product startup refused");
+    assert!(!scratch.path().join("state").exists(), "configuration refusal precedes chat/state and a run");
+    (ran.stderr, scratch)
 }
 
 #[test]
 fn local_bad_setting_exits_2_and_names_output_before_a_run() {
     let (output, _scratch) = local_refusal_output(&refusal_settings(0, 32768));
     let stderr = std::str::from_utf8(&output).expect("refusal is UTF-8");
-    assert!(stderr.contains("models[0].output"), "{stderr}");
-    assert!(stderr.contains('0') && stderr.contains("positive"), "{stderr}");
+    assert!(stderr.contains("output"), "{stderr}");
+    assert!(stderr.contains("positive"), "{stderr}");
 }
 
 #[test]
@@ -395,29 +382,33 @@ fn local_derived_limit_exits_2_and_names_both_values_before_a_run() {
 #[test]
 fn local_host_io_failure_keeps_exit_1() {
     let scratch = Scratch::new();
-    let settings_path = scratch.path().join("settings.json");
-    std::fs::write(&settings_path, serde_json::to_vec(&refusal_settings(32_000, 32_768)).expect("fixture JSON"))
-        .expect("write settings");
-    let state = scratch.path().join("blocked-state");
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let state = scratch.path().join("state");
     std::fs::write(&state, b"a file cannot be the state directory").expect("block state directory");
-    let output = support::refusal_code(&scratch, vec!["local".into(), settings_path.into(), state.clone().into()], 1);
-    assert!(String::from_utf8_lossy(&output).contains("state directory"));
+    let ran = support::smith(&scratch, &["exec", "hello", "--chat", "refused"], b"");
+    assert_eq!(ran.code, 1);
+    assert!(String::from_utf8_lossy(&ran.stderr).contains("Not a directory"));
     assert_eq!(std::fs::read(state).expect("unchanged state file"), b"a file cannot be the state directory");
 }
 
 #[test]
 fn local_chat_store_io_failure_keeps_exit_1() {
+    use std::fmt::Write as _;
     let scratch = Scratch::new();
-    let settings_path = scratch.path().join("settings.json");
-    let mut settings = refusal_settings(32_000, 32_768);
-    settings["token_directory"] = serde_json::json!(scratch.path().join("tokens"));
-    std::fs::write(&settings_path, serde_json::to_vec(&settings).expect("fixture JSON")).expect("write settings");
-    let state = scratch.path().join("state");
-    std::fs::create_dir(&state).expect("state root");
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let workspace = scratch.path().canonicalize().unwrap();
+    let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
+    let mut key = String::new();
+    for part in digest.0 {
+        write!(&mut key, "{part:016x}").expect("fixture workspace key");
+    }
+    let state = scratch.path().join("state/smith/chats").join(key);
+    std::fs::create_dir_all(&state).expect("state root");
     let chat = state.join("refused");
     std::fs::write(&chat, b"a file cannot be the chat directory").expect("block chat directory");
-    let output = support::refusal_code(&scratch, vec!["local".into(), settings_path.into(), state.clone().into()], 1);
-    assert!(String::from_utf8_lossy(&output).contains("chat directory"), "{}", String::from_utf8_lossy(&output));
+    let ran = support::smith(&scratch, &["exec", "hello", "--chat", "refused"], b"");
+    assert_eq!(ran.code, 1);
+    assert!(String::from_utf8_lossy(&ran.stderr).contains("File exists"), "{}", String::from_utf8_lossy(&ran.stderr));
     assert_eq!(std::fs::read(chat).expect("unchanged chat file"), b"a file cannot be the chat directory");
 }
 
@@ -425,47 +416,12 @@ fn local_chat_store_io_failure_keeps_exit_1() {
 fn a_one_turn_local_run_is_refused_by_the_actor_before_any_completion() {
     let scratch = Scratch::new();
     let scenario = World::new(63, &scratch, Placement::Spawned, b"Unused").scenario;
-    support::settings(&scratch, &scenario);
-    let mut settings: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(scratch.path().join("settings.json")).expect("fixture settings"))
-            .expect("fixture JSON");
-    settings["agent"]["profile"]["declared"] = serde_json::json!({
-        "memory":2_147_483_648_u64,"conversations":6,"calls_per_response":16,
-        "tool_payload":40960,"file_bytes":1_048_576,"read_window":32768});
-    settings["models"][0]["window"] = serde_json::json!(272_000);
-    settings["models"][0]["output"] = serde_json::json!(32_000);
-    settings["models"][0]["reasoning_item"] = serde_json::json!(65_536);
-    settings["models"][0]["idle"] = serde_json::json!(300_000);
-    settings["budget"] = serde_json::json!({"turns":1,"spend":1_000_000_000_u64,"seconds":600,
-        "reserve":{"turns":2,"seconds":300}});
-    settings["agent"]["trace"] = serde_json::json!({"path":scratch.path().join("agent-trace.jsonl"),"capture":"calls"});
-    std::fs::write(scratch.path().join("settings.json"), serde_json::to_vec(&settings).expect("settings fixture"))
-        .expect("write local settings");
-    let records = support::refused_run(&scratch);
-    let completed: Vec<_> = records
-        .iter()
-        .filter_map(|record| match &record.event {
-            smith_events::Event::RunCompleted(completed) => Some(completed),
-            smith_events::Event::Budget(_)
-            | smith_events::Event::SessionStarted(_)
-            | smith_events::Event::SessionEnded(_)
-            | smith_events::Event::RunStarted(_)
-            | smith_events::Event::ConversationOpened(_)
-            | smith_events::Event::ConversationClosed(_)
-            | smith_events::Event::ResponseStarted(_)
-            | smith_events::Event::ResponseCompleted(_)
-            | smith_events::Event::TextDelta(_)
-            | smith_events::Event::ToolStarted(_)
-            | smith_events::Event::ToolCompleted(_)
-            | smith_events::Event::CheckStarted(_)
-            | smith_events::Event::CheckCompleted(_)
-            | smith_events::Event::MessageReceived(_)
-            | smith_events::Event::MessageRead(_)
-            | smith_events::Event::MessageUnread(_)
-            | smith_events::Event::Notice(_) => None,
-        })
-        .collect();
-    assert_eq!(completed.len(), 1, "one genuine actor terminal");
+    support::actor_refusal::configure(&scratch, &scenario);
+    let ran = support::smith(&scratch, &["exec", "A refused run"], b"");
+    assert_eq!(ran.code, 2);
+    let records = support::read_trace(scratch.path(), &[]);
+    let completed = support::actor_refusal::completed(&records);
+    assert_eq!(completed.len(), 1, "one actor terminal");
     let completed = completed.first().expect("actual refused run");
     assert_eq!(completed.status, smith_events::Status::Refused);
     let failure = completed.failure.as_ref().expect("typed reserve refusal");
@@ -476,6 +432,11 @@ fn a_one_turn_local_run_is_refused_by_the_actor_before_any_completion() {
         !records.iter().any(|record| matches!(&record.event, smith_events::Event::ResponseStarted(_))),
         "reserve refusal starts no completion or provider request"
     );
+}
+
+#[test]
+fn smith_agent_spawned_by_the_sample_host_answers() {
+    support::sample_host::run();
 }
 
 #[test]

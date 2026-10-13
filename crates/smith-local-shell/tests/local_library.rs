@@ -6,65 +6,9 @@ use smith_local_domain as local;
 use smith_local_process_world::credential_fixture;
 use smith_local_service as service;
 use smith_local_shell::local_host::{Local, Resources, token_limits};
-use smith_local_shell::local_settings;
 
 fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_service::Config) {
-    let lower = smith_agent_process_world::configuration();
-    let settings: local_settings::Settings = serde_json::from_value(serde_json::json!({
-        "agent": {}, "chat": "main", "instructions": "Assist",
-        "models": [{"endpoint": "", "name": "fake", "window":1_048_576,"output":512,"reasoning_item":64,"head":60000,"idle":30000,
-            "input_price": 1_250_000, "cached_price": 125_000, "output_price": 10_000_000, "price_unit": 1_000_000}],
-        "budget": {"turns": 512, "spend": 25_000_000, "seconds": 3600}, "waiting_seconds": 30,
-        "contract": {"form": "report", "max": 128}
-    }))
-    .expect("local settings");
-    let endpoints = lower.channel_endpoints.clone();
-    let allowances = lower.domain.models.iter().map(|model| model.protocol_allowance).collect();
-    let mut policy =
-        local_settings::policy(&settings, &endpoints, lower.limits.domain, allowances).expect("local policy");
-    let host = smith_host_world::limits();
-    let inline_out = local::max_out(&policy.limits);
-    policy.limits.agent = local::AgentLimits::Spawned(host);
-    let queue = local::max_out(&policy.limits).max(inline_out).max(smith_host_domain::max_out(&host)).max(256);
-    let mut process = service::ProcessLimits {
-        io: lower.limits.io,
-        channel: smith_host_protocol::Limits {
-            bodies: lower.limits.channel.bodies,
-            charter: lower.limits.channel.charter,
-            transcript: lower.limits.channel.transcript,
-            endpoints: lower.limits.channel.endpoints,
-            channel: lower.limits.channel.channel,
-            start_bytes: lower.limits.channel.start_bytes,
-            calls: host.calls,
-        },
-        detail_bytes: host.detail_bytes,
-        queue,
-    };
-    process.channel.channel.output_bytes =
-        smith_host_protocol::output_bytes(&process.channel).expect("host directional frame");
-    (
-        service::Config {
-            agent: service::AgentConfig::Spawned,
-            local: policy.config,
-            limits: service::Limits {
-                local: policy.limits,
-                inline: None,
-                envelope_bytes: host.answer_bytes,
-                process,
-                queue,
-            },
-            endpoints,
-            paths: policy.paths,
-            launch: service::Launch {
-                program: b"smith".as_slice().into(),
-                arguments: Box::new([]),
-                environment: Box::new([]),
-                root,
-                directory: b".".as_slice().into(),
-            },
-        },
-        lower,
-    )
+    smith_local_process_world::process::configuration(root, false)
 }
 
 struct Invocation {
@@ -116,23 +60,31 @@ impl Invocation {
         tokens.save(0, &token).expect("token durable");
         let (config, lower) = configuration(root);
         let state = machine.lay(&[]);
-        let local = Local::new(
+        let prepared = smith_local_process_world::process::prepared_accounts(
+            &token_directory,
+            false,
+            false,
+            None,
+            config.limits.process.io,
+        );
+        let local = Local::within_memory(
             config,
             Some(lower),
             Resources {
                 state_root: { sim.root(pid, skein_sim::Handle::new(state.raw())) },
-                token_directory,
                 input,
                 output,
                 signals,
                 delivery_roots: Box::new([]),
                 effect_roots: Box::new([]),
                 delivery_environment: Box::new([]),
-                accounts: Box::new([local_settings::Account { number: 0, account_id: "acc".into(), oauth: None }]),
                 seed,
                 oauth_entropy: [17; 32],
             },
             Box::new(std::io::sink()),
+            u64::MAX,
+            Some(prepared),
+            None,
         )
         .expect("shared local shell");
         Self {

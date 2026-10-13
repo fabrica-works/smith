@@ -466,8 +466,8 @@ fn inline_default() -> (super::resolve::Resolved, smith_local_service::Limits) {
 fn the_default_inline_product_parts_fit_two_gibibytes() {
     let (resolved, limits) = inline_default();
     let rows =
-        crate::Local::memory_parts(&limits, &resolved.agent.service, 0, resolved.agent.service.limits.routes).unwrap();
-    let total = crate::Local::required_memory(&limits, 0, resolved.agent.service.limits.routes).unwrap();
+        crate::Local::memory_parts(&limits, &resolved.agent.service, resolved.agent.service.limits.routes).unwrap();
+    let total = crate::Local::required_memory(&limits, resolved.agent.service.limits.routes).unwrap();
     assert_eq!(rows.iter().map(|(_, bytes)| bytes).sum::<u64>(), total);
     assert!(total <= 2_147_483_648, "default product {total}");
     for (name, bytes) in &rows {
@@ -521,7 +521,6 @@ fn measure_common(limits: &smith_local_service::Limits, rows: &[(&str, u64)]) {
 
 fn measure_product() {
     use skein_io::kernel::Fd;
-    let scratch = smith_real_world::Scratch::new();
     let (resolved, limits) = inline_default();
     let count = resolved.local.workspace.as_ref().unwrap().directories.len();
     let roots = |first: u32| {
@@ -546,14 +545,12 @@ fn measure_product() {
     let available = resolved.agent.memory;
     let resources = crate::Resources {
         state_root: Fd::new(511),
-        token_directory: scratch.path().join("tokens"),
         input: Fd::new(512),
         output: Fd::new(513),
         signals: Fd::new(514),
         delivery_roots: roots(520),
         effect_roots: roots(530),
         delivery_environment: Box::new([]),
-        accounts: Box::new([]),
         seed: 1,
         oauth_entropy: [0; 32],
     };

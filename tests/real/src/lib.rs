@@ -156,11 +156,6 @@ impl World {
         scenario.launch.tls = true;
         scenario.launch.trust_der = Some(scratch.path().join("root.der"));
         scenario.launch.root_path = scratch.path().to_path_buf();
-        std::fs::write(
-            scratch.path().join("settings.json"),
-            serde_json::to_vec(&scenario.launch).expect("settings fixture"),
-        )
-        .expect("scratch settings");
         Self {
             checkout: Checkout { path: scenario.launch.change.then(|| scratch.path().join("repo")) },
             scenario,

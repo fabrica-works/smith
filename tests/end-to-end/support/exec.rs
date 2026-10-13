@@ -191,7 +191,7 @@ fn run_fixture(
         .iter()
         .find_map(|process| match process {
             Process::Script(Proc::Peer(peer)) => Some(smith_local_process_world::llm::queries(peer).cloned().collect()),
-            Process::Binary(_) | Process::Script(_) => None,
+            Process::Binary(_) | Process::Script(_) | Process::Sample(_) => None,
         })
         .unwrap_or_default();
     (Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }, queries)
