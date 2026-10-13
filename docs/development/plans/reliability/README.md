@@ -210,7 +210,8 @@ do not already say.
    gives, but at most 700, lands without asking; its commit body gives
    the count by file and what took the lines. Past 700, it stops and
    asks: the plan splits it. Never fold, inline or compress code to fit
-   a count. This replaces "at most" in every Size line, and
+   a count. Code a pinned generator writes (`src/generated/`) is not
+   counted (decisions.md, 13.105). This replaces "at most" in every Size line, and
    code-organization.md 8's "about 600", for this run; the exceptions
    already ruled (10.1's 1,050) stand.
 10. **A landed step's check** (decisions.md, 13.21). The coordinator

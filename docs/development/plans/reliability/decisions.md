@@ -1870,3 +1870,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    total) and smith-10.s2 (each part counted once, the repin, the
    breakdown by part); 10.5 needs both, and lands nothing until the
    default product fits.
+105. **Code the pinned codegen regenerates is not counted** (block of
+   2026-10-13T02:06:13Z, smith 10.s2). 10.s2's repin moves skein-codegen
+   (67c1e6e, d135339, 4e6f274, 86385dd), so the charter's, transcript's and
+   channel's generated sources drift from what the codegen now writes:
+   about 751 lines, beside 10.s2's 576. Generated code is not production
+   code a person writes; 06.7's Size line already excepted it
+   ("generated code excepted"), and code-organization.md section 8
+   excepts `src/generated/`. Ruling: README rule 9 counts no regenerated
+   code, for every session; 10.s2 regenerates the three sources with the
+   pinned codegen, schemas and goldens unchanged, the gate's drift
+   checks its Proof; the generated files join 10.s2's Files.
