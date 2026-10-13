@@ -9,5 +9,6 @@ cd "$(dirname "$0")/.."
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
+export NEXTEST_DOUBLE_SPAWN=0
 cargo nextest run --workspace
 cargo nextest run --workspace --profile fuzzy

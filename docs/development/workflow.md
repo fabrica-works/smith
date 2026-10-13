@@ -57,8 +57,8 @@ Raising a budget is a decision to take explicitly, not a fix. To see what
 each test costs on its own, the `measure` profile has no budget:
 
 ```sh
-cargo nextest run --workspace --profile measure -j 1
-cargo nextest run --workspace --profile measure -j 1 --ignore-default-filter -E 'binary(/^fuzzy_/)'
+NEXTEST_DOUBLE_SPAWN=0 cargo nextest run --workspace --profile measure -j 1
+NEXTEST_DOUBLE_SPAWN=0 cargo nextest run --workspace --profile measure -j 1 --ignore-default-filter -E 'binary(/^fuzzy_/)'
 ```
 
 The budgets are wall time on the development machine (4 cores, 8 threads,
