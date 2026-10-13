@@ -307,7 +307,7 @@ fn value_agent(_name: &str, _spelling: &str) -> Agent {
 }
 
 fn value_versions(_name: &str, _spelling: &str) -> Versions {
-    Versions { events: u64::MAX, channel: u64::MAX, charter: u64::MAX, transcript: u64::MAX }
+    Versions { events: u64::MAX, channel: u64::MAX, charter: u64::MAX, transcript: u64::MAX, chat_store: None }
 }
 
 fn value_loss(_name: &str, _spelling: &str) -> Loss {

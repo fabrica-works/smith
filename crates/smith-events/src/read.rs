@@ -734,7 +734,22 @@ fn read_versions(tokens: &[Token], _limits: &Limits) -> Result<Versions, Error> 
         channel: unsigned(required(tokens, b"channel")?)?,
         charter: unsigned(required(tokens, b"charter")?)?,
         transcript: unsigned(required(tokens, b"transcript")?)?,
+        chat_store: match field(tokens, b"chat_store")? {
+            Some(value) => Some(unsigned(value)?),
+            None => None,
+        },
     })
+}
+
+#[cfg(test)]
+#[test]
+fn the_product_announces_its_chat_store_version() {
+    let wire = b"{\"v\":1,\"type\":\"session.started\",\"t_ms\":0,\"wall_ms\":0,\"agent\":{\"name\":\"smith\",\"version\":\"0\",\"build\":\"fixture\"},\"mode\":\"exec\",\"chat\":\"plan\",\"containment\":\"groups\",\"pid\":1,\"profile\":\"standard\",\"capture\":\"none\",\"delivery\":\"complete\",\"versions\":{\"events\":1,\"channel\":2,\"charter\":2,\"transcript\":3,\"chat_store\":1},\"limits\":{}}\n";
+    let limits = Limits { string: 32, content: 1024, items: 16 };
+    let record = read(wire, &limits).unwrap().unwrap();
+    let Event::SessionStarted(started) = &record.event else { panic!("startup record") };
+    assert_eq!(started.versions.chat_store, Some(1));
+    assert_eq!(crate::write(&record, &Capture::None, &limits).unwrap().unwrap().as_ref(), wire);
 }
 
 fn read_loss(tokens: &[Token], _limits: &Limits) -> Result<Loss, Error> {

@@ -16,10 +16,11 @@ impl Local {
         trace: Option<&TraceConfig>,
         chat: &[u8],
         pid: u64,
+        destinations: u32,
     ) -> Result<(Option<smith_events::SessionStarted>, u64), crate::local_shell::Failure> {
         match trace {
             Some(trace) => {
-                let header = Self::trace_header(configuration, limits, trace, chat.into(), pid)?;
+                let header = Self::trace_header(configuration, limits, trace, chat.into(), pid, destinations)?;
                 let bytes = Self::header_memory(&header)
                     .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?;
                 smith_agent_service::profile::validate::memory(bytes, configuration.memory)
@@ -39,6 +40,7 @@ impl Local {
         trace: &TraceConfig,
         chat: Box<[u8]>,
         pid: u64,
+        destinations: u32,
     ) -> Result<smith_events::SessionStarted, crate::local_shell::Failure> {
         let mut options = 0;
         for endpoint in &configuration.declarations.endpoints {
@@ -65,7 +67,7 @@ impl Local {
                 smith_agent_service::EventLimits::derive(
                     &configuration.service.limits,
                     trace.capture,
-                    1,
+                    destinations,
                     options,
                     header.as_slice(),
                     write_deadline,

@@ -225,13 +225,23 @@ impl Expectations for Meeting {
                 });
                 let expected_diagnostic = diagnostic.is_some_and(|bytes| {
                     bytes.is_empty()
+                        || bytes.strip_prefix(b"smith: chat main\n").is_some_and(|tail| {
+                            tail.split_inclusive(|byte| *byte == b'\n')
+                                .all(|line| line == b"smith: tool finish\n" || line == b"smith: tool read\n")
+                        })
                         || bytes
                             .strip_prefix(start)
                             .and_then(|tail| tail.strip_suffix(b" bytes\n"))
                             .is_some_and(|count| !count.is_empty() && count.iter().all(u8::is_ascii_digit))
                 });
                 judge.check(expected_diagnostic, "only the expected local operator start and failure lines");
-                judge.check(shown.windows(expected.len()).any(|part| part == expected), "expected terminal text");
+                judge.check(
+                    shown.windows(expected.len()).any(|part| part == expected)
+                        || (matches!(self.ending, Ending::Budget)
+                            && errors.starts_with(b"smith: chat main\n")
+                            && errors.ends_with(b"smith: run failed: out of turns\n")),
+                    "expected terminal text",
+                );
                 let private = borrowed_text.and_then(|line| shown.strip_suffix(line)).unwrap_or(&shown);
                 judge.check(
                     !private.windows(7).any(|part| part == b"refresh")

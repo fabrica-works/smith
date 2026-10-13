@@ -236,7 +236,7 @@ pub fn render_text(report: &Report) -> String {
 #[must_use]
 pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
     let (shared, json) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
-        Ok(Command::Legacy(_)) => return None,
+        Ok(Command::Legacy(_) | Command::Exec(_)) => return None,
         Ok(Command::Check { shared, json }) => (shared, json),
         Err(usage) => {
             eprintln!("smith: usage: {}", usage.0);

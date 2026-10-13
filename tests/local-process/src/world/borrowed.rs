@@ -12,7 +12,13 @@ pub enum Borrowing {
 }
 
 pub(crate) fn login_token(expired: bool) -> Box<[u8]> {
-    let wall = skein_tls_world::pki::VALID.as_nanos();
+    login_at(skein_tls_world::pki::VALID, expired)
+}
+
+/// Access-only synthetic login for a real-loop story's clock.
+#[must_use]
+pub fn login_at(wall: skein_lib::Wall, expired: bool) -> Box<[u8]> {
+    let wall = wall.as_nanos();
     let nanos =
         if expired { wall - Duration::from_secs(1).as_nanos() } else { wall + Duration::from_secs(7200).as_nanos() };
     let claims = serde_json::to_vec(&serde_json::json!({

@@ -1,0 +1,100 @@
+//! Headless product stories reuse the shipped binary, person and provider hosts.
+use super::{Process, Ran, Refusal};
+use skein_io::kernel::Exit;
+use skein_lib::Duration;
+use skein_shell::{Clock, Host};
+use skein_world::{
+    end_to_end::{Binary, Command, Mode, Streams},
+    real,
+};
+use smith_local_process_world::{
+    process::Proc,
+    terminal::{Action, Terminal},
+    world,
+};
+use smith_real_world::{Scratch, settled::assert_no_children};
+
+#[derive(Clone, Copy)]
+pub enum Reply {
+    Wait,
+    Accepted,
+}
+
+#[must_use]
+pub fn fake_provider_settings(scratch: &Scratch) -> Vec<u8> {
+    let clock = Clock::new();
+    let token = world::login_at(clock.now().wall, false);
+    let document = serde_json::json!({"tokens": {"access_token": std::str::from_utf8(&token).expect("scratch token text"), "account_id": "acc", "refresh_token": "UNISSUED_NEVER_COPY"}});
+    std::fs::write(scratch.path().join("auth.json"), serde_json::to_vec(&document).expect("scratch login encoding"))
+        .expect("scratch login file");
+    format!("model='codex/gpt-6-luna'\neffort='low'\ninstructions='@local-shell Assist'\n[accounts.codex]\nsource='borrow'\nfile='{}'\nformat='codex'\nprogram='codex'\n[endpoints.codex]\naddress='127.0.0.1:34443'\nserver_name='skein.test'\ntrust.system=false\ntrust.der=['{}']\n", scratch.path().join("auth.json").display(), scratch.path().join("root.der").display()).into_bytes()
+}
+
+#[must_use]
+pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], reply: Reply) -> Ran {
+    let login = std::fs::read(scratch.path().join("auth.json")).expect("scratch login");
+    let document: serde_json::Value = serde_json::from_slice(&login).expect("scratch login document");
+    let credential = skein_llm::Credential {
+        access_token: document
+            .get("tokens")
+            .and_then(|tokens| tokens.get("access_token"))
+            .and_then(serde_json::Value::as_str)
+            .expect("scratch access token")
+            .as_bytes()
+            .into(),
+        account_id: b"acc".as_slice().into(),
+    };
+    let peer = world::headless_provider(matches!(reply, Reply::Wait), credential);
+    run(scratch, arguments, input, Some(peer))
+}
+
+pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option<skein_fake_peers::llm::Peer>) -> Ran {
+    assert_no_children();
+    let mut binary = Binary::start(
+        Command {
+            program: env!("CARGO_BIN_EXE_smith").into(),
+            arguments: arguments.iter().map(std::ffi::OsString::from).collect(),
+            environment: vec![
+                ("HOME".into(), scratch.path().into()),
+                ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+                ("XDG_STATE_HOME".into(), scratch.path().join("state").into()),
+                ("PATH".into(), "/usr/bin:/bin".into()),
+            ],
+            directory: scratch.path().into(),
+        },
+        Mode::Pipes,
+        1_048_576,
+    )
+    .expect("headless product pipes");
+    let streams = binary.take_streams().expect("product streams");
+    let descriptors = streams.descriptors();
+    let Streams::Pipes { input: stdin, output } = streams else { unreachable!("pipes") };
+    let clock = Clock::new();
+    let now = clock.now().now;
+    let mut world = real::World::new(Refusal {
+        now,
+        deadline: now.saturating_add(Duration::from_secs(1)),
+        trace: arguments
+            .windows(2)
+            .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))
+            .map(|pair| (scratch.path().join(pair.get(1).expect("trace path")), false)),
+    });
+    world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
+    world.spawn_with_fds(descriptors, || {
+        Process::Script(Proc::Terminal(Box::new(Terminal::piped(
+            stdin,
+            output,
+            if input.is_empty() { vec![Action::Eof] } else { vec![Action::Send(input.into()), Action::Eof] },
+        ))))
+    });
+    if let Some(peer) = provider {
+        world.spawn(|| Process::Script(Proc::Peer(Box::new(peer))));
+    }
+    let outcome = world.run(&clock, Duration::from_secs(2));
+    assert!(outcome.procs.iter().all(Host::is_empty), "product and peers drain");
+    let Process::Binary(binary) = outcome.procs.first().expect("binary") else { unreachable!("binary") };
+    let Process::Script(Proc::Terminal(person)) = outcome.procs.get(1).expect("person") else { unreachable!("person") };
+    let Some(Exit::Code(code)) = binary.exit_status() else { panic!("exit code") };
+    assert_no_children();
+    Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }
+}

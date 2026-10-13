@@ -407,6 +407,8 @@ pub struct Versions {
     pub channel: u64,
     pub charter: u64,
     pub transcript: u64,
+    /// The product's chat-store format; absent in a standalone agent stream.
+    pub chat_store: Option<u64>,
 }
 
 /// One per-type emission count the event sink reports at process end.

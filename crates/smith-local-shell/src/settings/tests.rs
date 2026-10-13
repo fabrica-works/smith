@@ -560,6 +560,7 @@ fn measure_product() {
         Box::new(Vec::<u8>::new()),
         available,
         None,
+        None,
     )
     .unwrap();
     let measured = span.end();

@@ -234,7 +234,7 @@ pub(crate) fn turn_text(turn: &agent::Turn, cap: u32) -> Box<[u8]> {
     shown.into_boxed()
 }
 
-fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
+pub(crate) fn tool_end(result: &session::llm::Returned) -> &'static [u8] {
     match result {
         session::llm::Returned::Owned { outcome } => match outcome {
             tools::Outcome::Read { .. }

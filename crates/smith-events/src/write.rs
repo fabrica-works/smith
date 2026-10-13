@@ -397,6 +397,10 @@ fn write_versions(json: &mut Encoder, value: &Versions, _capture: &Capture) {
     json.unsigned(value.charter);
     json.key(b"transcript");
     json.unsigned(value.transcript);
+    if let Some(version) = value.chat_store {
+        json.key(b"chat_store");
+        json.unsigned(version);
+    }
     json.object_end();
 }
 

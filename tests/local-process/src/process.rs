@@ -767,6 +767,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         Box::new(writer),
         u64::MAX,
         handed,
+        None,
     )
     .expect("actual shared local shell");
     if let Some(configuration) = &spawned
@@ -813,7 +814,7 @@ fn product_header(
         capture: agent::sinks::Capture::Everything,
         delivery: agent::sinks::Delivery::Complete,
     };
-    let header = Local::trace_header(&mut configuration, &mut config.limits, &trace, b"main".as_slice().into(), 101)
+    let header = Local::trace_header(&mut configuration, &mut config.limits, &trace, b"main".as_slice().into(), 101, 1)
         .expect("product effective header");
     (configuration.service, header)
 }

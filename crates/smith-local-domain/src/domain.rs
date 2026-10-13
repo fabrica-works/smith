@@ -118,6 +118,18 @@ impl Reconcile {
 }
 
 impl Domain {
+    /// The existing terminal's verdict for one told tool result.
+    #[must_use]
+    pub fn tool_verdict(result: &smith_domain::session::llm::Returned) -> &'static [u8] {
+        crate::person::tool_end(result)
+    }
+
+    /// The existing local result renderer for a typed accepted answer.
+    #[must_use]
+    pub fn result_text(answer: &smith_host_domain::Answer) -> Box<[u8]> {
+        crate::agent::answer_text(answer)
+    }
+
     /// Validate local choices and build the agent with the configured endpoints.
     pub fn new(mut config: Config, limits: &Limits, seed: u64) -> Result<Domain, Invalid> {
         config.validate(limits)?;

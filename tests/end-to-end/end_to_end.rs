@@ -509,3 +509,73 @@ fn smith_check_json_lists_the_effective_limits_by_name() {
     );
     assert!(limits.iter().all(|limit| !limit["name"].as_str().expect("limit name").contains("endpoint=0")));
 }
+
+#[test]
+fn a_headless_run_that_would_wait_exits_5_naming_its_chat() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran =
+        support::exec_with_provider(&scratch, &["exec", "--chat", "plan", "-"], b"Ask first\n", support::Reply::Wait);
+    assert_eq!(ran.code, 5, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(ran.stderr.ends_with(b"smith: needs input: answer with `smith exec --chat plan`\n"));
+}
+
+#[test]
+fn smith_exec_json_ends_accepted_with_its_events_and_exit_0() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_provider(&scratch, &["exec", "--json", "-"], b"Ask first\n", support::Reply::Accepted);
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    let records: Vec<serde_json::Value> = ran
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).unwrap())
+        .collect();
+    assert_eq!(records.first().unwrap()["type"], "session.started");
+    assert_eq!(records.first().unwrap()["mode"], "exec");
+    assert_eq!(records.first().unwrap()["versions"]["chat_store"], 1);
+    assert_eq!(records.last().unwrap()["type"], "session.ended");
+    assert_eq!(records.last().unwrap()["exit"], 0);
+    assert!(records.iter().any(|r| r["type"] == "run.completed"));
+    assert!(ran.stderr.windows(18).any(|bytes| bytes == b"smith: accepted in"));
+}
+
+#[test]
+fn an_account_without_a_credential_exits_3_before_any_request() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    std::fs::remove_file(scratch.path().join("auth.json")).unwrap();
+    let ran = support::smith(&scratch, &["exec", "Ask first"], b"");
+    assert_eq!(ran.code, 3);
+    assert!(ran.stdout.is_empty());
+    assert!(!scratch.path().join("state/smith/chats").exists());
+}
+
+#[test]
+fn an_empty_prompt_is_a_usage_error_exiting_2() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::smith(&scratch, &["exec", "-"], b" \n");
+    assert_eq!(ran.code, 2);
+    assert!(ran.stderr.ends_with(b"smith: usage: the prompt is empty\n"));
+}
+
+#[test]
+fn the_trace_file_is_read_as_it_grows() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--trace", "events.jsonl", "-"],
+        b"Ask first\n",
+        support::Reply::Accepted,
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(ran.stdout, b"First answer");
+    let bytes = std::fs::read(scratch.path().join("events.jsonl")).unwrap();
+    assert!(bytes.ends_with(b"\n"));
+    for line in bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
+        let _record: serde_json::Value = serde_json::from_slice(line).unwrap();
+    }
+}

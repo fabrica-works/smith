@@ -65,12 +65,13 @@ pub struct Resources {
 /// The local service and its shell effects, independent of the driving loop.
 pub struct Local {
     service: service::Service,
-    tokens: Tokens,
+    tokens: Option<Tokens>,
+    headless: Option<crate::front::headless::Headless>,
     accounts: Box<[Auth]>,
     credential_locations: skein_lib::List<crate::credentials::Location>,
     writer: Option<io::Io>,
     env: Env<io::Limits>,
-    output: Token,
+    output: Option<Token>,
     launch_root: Option<kernel::Fd>,
     launch_closing: bool,
     routes: Map<Token, Route>,
@@ -121,7 +122,7 @@ impl Local {
         resources: Resources,
         errors: Box<dyn Write>,
     ) -> Result<Self, String> {
-        Self::within_memory(config, lower, resources, errors, u64::MAX, None)
+        Self::within_memory(config, lower, resources, errors, u64::MAX, None, None)
             .map_err(|failure| failure.detail().to_owned())
     }
 
@@ -138,7 +139,17 @@ impl Local {
         errors: Box<dyn Write>,
         available_bytes: u64,
         handed: Option<crate::credentials::Prepared>,
+        front: Option<crate::front::headless::Headless>,
     ) -> Result<Self, crate::local_shell::Failure> {
+        let headless = front.or_else(|| match &config.local.mode {
+            domain::Mode::Headless { .. } => Some(crate::front::headless::Headless::new(
+                false,
+                skein_shell::OutputKind::Pipe,
+                config.limits.local.show_bytes,
+                config.limits.local.smith.run.outcome_bytes,
+            )),
+            domain::Mode::Chat { .. } => None,
+        });
         let lower_routes = lower.as_ref().map_or(0, |configuration| configuration.limits.routes);
         config.agent = match lower {
             Some(configuration) => {
@@ -185,11 +196,7 @@ impl Local {
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
             return Err(configuration_failure("local IO limits cannot carry OAuth TLS records".into()));
         }
-        let operations = io::operations(&io_limits)
-            .and_then(|count| count.checked_mul(2))
-            .and_then(|count| count.checked_add(64))
-            .and_then(|count| count.checked_add(lower_routes))
-            .and_then(|count| count.checked_add(if handed.is_some() { 8 } else { 0 }))
+        let operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
         let mut worst = accounted_memory(
             &config.limits,
@@ -208,6 +215,15 @@ impl Local {
                 .and_then(|bytes| bytes.checked_add(Map::<Token, Route>::worst_case(8)?))
                 .ok_or_else(|| configuration_failure(derivation_refusal("account_worst_case")))?;
         }
+        if let Some(front) = &headless {
+            worst = worst
+                .checked_add(
+                    front
+                        .worst_case()
+                        .ok_or_else(|| configuration_failure(derivation_refusal("headless_worst_case")))?,
+                )
+                .ok_or_else(|| configuration_failure(derivation_refusal("headless_worst_case")))?;
+        }
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
@@ -223,13 +239,23 @@ impl Local {
             }
             None => skein_lib::List::with_capacity(0),
         };
-        let tokens = Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?;
+        let tokens = if resources.accounts.is_empty() {
+            None
+        } else {
+            Some(Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?)
+        };
         let mut writer = if service.inline() { None } else { Some(io::Io::new(&io_limits)) };
-        let output = match &mut writer {
-            Some(writer) => writer.adopt_write_pipe(resources.output, None),
-            None => service.adopt_writer(resources.output),
-        }
-        .map_err(|_| host_failure("terminal output cannot be adopted".into()))?;
+        let output = if headless.as_ref().is_some_and(|front| front.json) {
+            None
+        } else {
+            Some(
+                match &mut writer {
+                    Some(writer) => writer.adopt_write_pipe(resources.output, None),
+                    None => service.adopt_writer(resources.output),
+                }
+                .map_err(|_| host_failure("terminal output cannot be adopted".into()))?,
+            )
+        };
         let requests = Queue::with_capacity(queue);
         let accounts = resources
             .accounts
@@ -242,6 +268,7 @@ impl Local {
         let mut local = Self {
             service,
             tokens,
+            headless,
             accounts: accounts.into(),
             credential_locations,
             writer,
@@ -271,8 +298,27 @@ impl Local {
         };
         local
             .service
-            .adopt_terminal(resources.input, resources.signals)
+            .adopt_terminal(
+                if local.headless.as_ref().is_some_and(|front| front.input_closed) {
+                    None
+                } else {
+                    Some(resources.input)
+                },
+                resources.signals,
+            )
             .map_err(|fd| host_failure(format!("local terminal {} cannot be adopted", fd.raw())))?;
+        if let Some(front) = &local.headless
+            && front.json
+        {
+            local
+                .service
+                .adopt_output(
+                    resources.output,
+                    front.output_kind == skein_shell::OutputKind::Append,
+                    agent::sinks::Delivery::Complete,
+                )
+                .map_err(|_| host_failure("JSON output cannot be adopted".into()))?;
+        }
         local
             .service
             .adopt_delivery_roots(resources.delivery_roots, resources.delivery_environment)
@@ -318,6 +364,21 @@ impl Local {
     #[must_use]
     pub fn required_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Option<u64> {
         accounted_memory(limits, accounts, lower_routes).ok()
+    }
+
+    /// The same checked operation bound used before opening the product's one kernel.
+    #[must_use]
+    pub fn kernel_operations(limits: &io::Limits, lower_routes: u32, handed: bool) -> Option<u32> {
+        io::operations(limits)?.checked_mul(2)?.checked_add(64)?.checked_add(lower_routes)?.checked_add(if handed {
+            8
+        } else {
+            0
+        })
+    }
+
+    /// Emit the startup record once all configured destinations have been adopted.
+    pub fn start_session(&mut self, now: Time, header: smith_events::SessionStarted) {
+        self.service.start_session(now, header);
     }
 
     /// Content-free service facts available to the caller's independent referee.
@@ -367,6 +428,11 @@ impl Local {
     }
 
     fn files(&mut self) {
+        if let Some(turn) = self.service.take_told_turn()
+            && let Some(front) = &mut self.headless
+        {
+            front.told(&turn, self.errors.as_mut());
+        }
         for _ in 0..self.service.shell_requests().capacity() {
             if !self.credential_locations.is_empty() && self.service.output().room() == 0 {
                 break;
@@ -379,32 +445,17 @@ impl Local {
                 domain::Request::Exit { status } => {
                     self.exit = Some(status);
                 }
-                domain::Request::Answered { answer } => match answer.result {
-                    smith_host_domain::RunResult::Accepted { .. } => {
-                        let elapsed = self.env.now.saturating_since(self.started.unwrap_or(self.env.now));
-                        self.operator_line(
-                            format!(
-                                "accepted in {} turns, {} notional, {} ms\n",
-                                answer.turns,
-                                answer.spent,
-                                elapsed.as_nanos() / 1_000_000
-                            )
-                            .into_bytes()
-                            .into_boxed_slice(),
-                        );
+                domain::Request::Answered { answer } => {
+                    let Some(front) = &mut self.headless else { continue };
+                    let elapsed = self.env.now.saturating_since(self.started.unwrap_or(self.env.now));
+                    let ending = front.answered(&answer, self.service.chat_name(), elapsed);
+                    if !front.json && !ending.text.is_empty() {
+                        self.service.output().push(ending.text);
                     }
-                    smith_host_domain::RunResult::Parked => {
-                        self.operator_line(
-                            format!(
-                                "needs input: answer with `smith exec --chat {}`\n",
-                                String::from_utf8_lossy(self.service.chat_name())
-                            )
-                            .into_bytes()
-                            .into_boxed_slice(),
-                        );
+                    if let Some(line) = ending.line {
+                        self.operator_line(line);
                     }
-                    smith_host_domain::RunResult::Failed { .. } | smith_host_domain::RunResult::Refused { .. } => {}
-                },
+                }
                 domain::Request::Notice { notice } => {
                     let text = if let Some(text) = self.credential_notice(&notice) {
                         self.service.output().push(text.clone());
@@ -468,7 +519,7 @@ impl Local {
             }
             auth.due(self.env.now);
             if auth.wants() {
-                match self.tokens.load(auth.account()) {
+                match self.tokens.as_ref().expect("legacy auth owns its tokens").load(auth.account()) {
                     Ok(saved) => auth.begin(saved, self.env.now, self.env.wall),
                     Err(_) => {
                         auth.load_failed();
@@ -492,7 +543,7 @@ impl Local {
                     smith_local_protocol::CredentialRequest::Visit { url } => auth.visit(url, &mut self.requests),
                     smith_local_protocol::CredentialRequest::Http(request) => auth.http(request),
                     smith_local_protocol::CredentialRequest::Save { account, bytes } => {
-                        match self.tokens.save(account, &bytes) {
+                        match self.tokens.as_ref().expect("legacy auth owns its tokens").save(account, &bytes) {
                             Ok(()) => auth.stored(self.env.wall),
                             Err(_) => auth.store_failed(),
                         }
@@ -555,12 +606,12 @@ impl Local {
                 continue;
             }
             match event {
-                io::Event::Output { owner, up: OutputUp::Settled { right, outcome } } if owner == self.output => {
+                io::Event::Output { owner, up: OutputUp::Settled { right, outcome } } if Some(owner) == self.output => {
                     let (wanted, text) = self.pending.take().expect("terminal has one output right");
                     assert_eq!(right, wanted, "terminal settled its sole output right");
                     match outcome {
                         OutputOutcome::Granted => self.requests.push(io::Request::Output {
-                            stream: self.output,
+                            stream: self.output.expect("terminal owns its output"),
                             down: OutputDown::Send { right, bytes: text },
                         }),
                         OutputOutcome::Cancelled | OutputOutcome::Failed(_) => self.write_failed(),
@@ -570,7 +621,7 @@ impl Local {
                     self.write_failed();
                 }
                 io::Event::Closed { owner } => {
-                    if owner == self.output {
+                    if Some(owner) == self.output {
                         self.terminal = Terminal::Closed;
                     }
                 }
@@ -605,8 +656,10 @@ impl Local {
             let bytes = u32::try_from(text.len()).expect("bounded show text");
             if bytes > 0 {
                 self.pending = Some((right, text));
-                self.requests
-                    .push(io::Request::Output { stream: self.output, down: OutputDown::Room { right, bytes } });
+                self.requests.push(io::Request::Output {
+                    stream: self.output.expect("terminal owns its output"),
+                    down: OutputDown::Room { right, bytes },
+                });
             }
         }
         if self.service.closing()
@@ -615,7 +668,11 @@ impl Local {
             && self.service.output().is_empty()
         {
             self.terminal = Terminal::Closing(agent::Close::Graceful);
-            self.requests.push(io::Request::Close { entity: self.output });
+            if let Some(output) = self.output {
+                self.requests.push(io::Request::Close { entity: output });
+            } else {
+                self.terminal = Terminal::Closed;
+            }
             let fd = self.launch_root.take().expect("one launch root");
             self.launch_closing = true;
             self.submit(kernel::Submit { op: Token::new(0), kind: kernel::Op::Close { fd } }, Route::Launch);
@@ -623,7 +680,7 @@ impl Local {
         match self.terminal {
             Terminal::Closing(agent::Close::Graceful) if self.service.aborted() => {
                 self.terminal = Terminal::Closing(agent::Close::Aborted);
-                self.requests.push(io::Request::Abort { entity: self.output });
+                self.requests.push(io::Request::Abort { entity: self.output.expect("terminal owns its output") });
             }
             Terminal::Live | Terminal::Closing(_) | Terminal::Closed => {}
         }
@@ -695,7 +752,11 @@ impl Host for Local {
     fn drain(&mut self) {
         if self.announcement == Announcement::BeforeStart {
             self.announcement = Announcement::Running;
-            drop(writeln!(self.errors, "smith: local host started; worst case {} bytes", self.worst));
+            if self.headless.is_some() {
+                drop(writeln!(self.errors, "smith: chat {}", String::from_utf8_lossy(self.service.chat_name())));
+            } else {
+                drop(writeln!(self.errors, "smith: local host started; worst case {} bytes", self.worst));
+            }
         }
         if self.is_empty() && self.announcement != Announcement::Ended {
             self.announcement = Announcement::Ended;
@@ -817,13 +878,8 @@ impl Host for Local {
     fn exit(&self) -> Option<kernel::Exit> {
         self.result().map(|result| {
             kernel::Exit::Code(match result {
-                Ok(domain::ExitStatus::Accepted) => 0,
-                Ok(domain::ExitStatus::RunFailed) | Err(_) => 1,
-                Ok(domain::ExitStatus::Refused) => 2,
-                Ok(domain::ExitStatus::Credentials { .. }) => 3,
-                Ok(domain::ExitStatus::Budget) => 4,
-                Ok(domain::ExitStatus::NeedsInput) => 5,
-                Ok(domain::ExitStatus::Interrupted) => 130,
+                Ok(status) => crate::front::headless::ExitCode::from_status(status).code(),
+                Err(_) => 1,
             })
         })
     }

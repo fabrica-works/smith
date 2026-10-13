@@ -236,13 +236,24 @@ impl ProcessAdapter {
         &mut self.io_requests
     }
 
-    pub(crate) fn adopt_terminal(&mut self, input: kernel::Fd, signals: kernel::Fd) -> Result<(), kernel::Fd> {
-        let stream = self.io.adopt_read_pipe(input)?;
-        self.terminal_input = Some(stream);
+    pub(crate) fn adopt_terminal(
+        &mut self,
+        input: Option<kernel::Fd>,
+        signals: kernel::Fd,
+        read_input: bool,
+    ) -> Result<(), kernel::Fd> {
+        if let Some(input) = input {
+            let stream = self.io.adopt_read_pipe(input)?;
+            self.terminal_input = Some(stream);
+            if read_input {
+                self.io_requests.push(io::Request::Stream {
+                    stream,
+                    down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },
+                });
+            }
+        }
         let signal = self.io.adopt_signals(signals)?;
         self.signals = Some(signal);
-        self.io_requests
-            .push(io::Request::Stream { stream, down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 } });
         Ok(())
     }
 

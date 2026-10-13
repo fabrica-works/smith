@@ -14,30 +14,55 @@ pub struct Shared {
     pub overrides: Vec<String>,
 }
 
-/// A check invocation, or the legacy arguments retained until their replacements ship.
+/// One product invocation, or the legacy arguments retained until their replacements ship.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     /// Resolve and validate settings without starting a run.
     Check { shared: Shared, json: bool },
+    /// One headless run, with its prompt supplied before the activation starts.
+    Exec(Exec),
     /// The existing agent and local entry points, removed by product migration.
     Legacy(Vec<OsString>),
+}
+
+/// A headless invocation's prompt and output choices, before any startup reads.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Exec {
+    pub shared: Shared,
+    pub prompt: Prompt,
+    pub deliver: bool,
+    pub json: bool,
+}
+
+/// Where the headless front end obtains its one bounded person message.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Prompt {
+    /// The argument's UTF-8 bytes are the whole message.
+    Argument(Box<[u8]>),
+    /// Read standard input to its end before starting a run.
+    Stdin,
 }
 
 /// An invalid argument form, rendered by the binary with exit 2.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Usage(pub String);
 
-/// Parse a product check and its shared flags, preserving legacy invocations.
+/// Parse product flags and the single exec prompt, preserving legacy invocations.
 pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     if arguments.first().is_some_and(|argument| argument == "agent" || argument == "local") {
         return Ok(Command::Legacy(arguments));
     }
     let mut arguments = arguments.into_iter();
-    if arguments.next().as_deref() != Some(std::ffi::OsStr::new("check")) {
-        return Err(Usage("expected `smith check [--json]`, `smith agent`, or `smith local`".into()));
-    }
+    let name = arguments.next();
+    let exec = match name.as_deref().and_then(std::ffi::OsStr::to_str) {
+        Some("exec") => true,
+        Some("check") => false,
+        _ => return Err(Usage("expected `smith exec [FLAGS] [PROMPT | -]` or `smith check [--json]`".into())),
+    };
     let mut shared = Shared::default();
     let mut json = false;
+    let mut prompt = None;
+    let mut deliver = false;
     while let Some(argument) = arguments.next() {
         let argument = argument.to_str().ok_or_else(|| Usage("a flag is not UTF-8".into()))?;
         match argument {
@@ -48,10 +73,29 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             "--effort" => shared.effort = Some(text(&mut arguments, "--effort")?),
             "--chat" => shared.chat = Some(text(&mut arguments, "--chat")?),
             "-c" => shared.overrides.push(text(&mut arguments, "-c")?),
+            "--deliver" if exec => deliver = true,
+            "-" if exec => set_prompt(&mut prompt, Prompt::Stdin)?,
+            value if exec && !value.starts_with('-') => {
+                if value.trim().is_empty() {
+                    return Err(Usage("the prompt is empty".into()));
+                }
+                set_prompt(&mut prompt, Prompt::Argument(value.as_bytes().into()))?;
+            }
             _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
         }
     }
-    Ok(Command::Check { shared, json })
+    if exec {
+        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), deliver, json }))
+    } else {
+        Ok(Command::Check { shared, json })
+    }
+}
+
+fn set_prompt(place: &mut Option<Prompt>, prompt: Prompt) -> Result<(), Usage> {
+    if place.replace(prompt).is_some() {
+        return Err(Usage("supply one prompt argument or `-`, not both".into()));
+    }
+    Ok(())
 }
 
 fn value(arguments: &mut std::vec::IntoIter<OsString>, flag: &str) -> Result<OsString, Usage> {
@@ -115,5 +159,36 @@ mod tests {
     fn legacy_arguments_are_preserved_until_the_product_replaces_them() {
         let original = arguments(&["local", "settings.json", "state"]);
         assert_eq!(parse(original.clone()), Ok(Command::Legacy(original)));
+    }
+
+    #[test]
+    fn exec_collects_its_prompt_and_output_choices() {
+        let Command::Exec(exec) =
+            parse(arguments(&["exec", "--chat", "plan", "--deliver", "--json", "Ask first"])).expect("exec arguments")
+        else {
+            panic!("exec command")
+        };
+        assert_eq!(exec.shared.chat.as_deref(), Some("plan"));
+        assert_eq!(exec.prompt, Prompt::Argument(b"Ask first".as_slice().into()));
+        assert!(exec.deliver && exec.json);
+    }
+
+    #[test]
+    fn a_dash_supplies_the_prompt_from_standard_input() {
+        let Command::Exec(exec) = parse(arguments(&["exec", "-"])).unwrap() else { panic!("exec command") };
+        assert_eq!(exec.prompt, Prompt::Stdin);
+    }
+
+    #[test]
+    fn two_prompt_inputs_are_a_usage_refusal() {
+        assert_eq!(
+            parse(arguments(&["exec", "message", "-"])),
+            Err(Usage("supply one prompt argument or `-`, not both".into()))
+        );
+    }
+
+    #[test]
+    fn an_empty_prompt_argument_is_a_usage_refusal() {
+        assert_eq!(parse(arguments(&["exec", " "])), Err(Usage("the prompt is empty".into())));
     }
 }

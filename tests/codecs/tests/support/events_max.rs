@@ -20,7 +20,13 @@ fn max_agent(limits: &smith_events::Limits) -> Agent {
 }
 
 fn max_versions(_limits: &smith_events::Limits) -> Versions {
-    Versions { events: u64::MAX, channel: u64::MAX, charter: u64::MAX, transcript: u64::MAX }
+    Versions {
+        events: u64::MAX,
+        channel: u64::MAX,
+        charter: u64::MAX,
+        transcript: u64::MAX,
+        chat_store: Some(u64::MAX),
+    }
 }
 
 fn max_loss(_limits: &smith_events::Limits) -> Loss {

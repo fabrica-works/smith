@@ -22,8 +22,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod borrowed;
-pub use borrowed::Borrowing;
 pub(crate) use borrowed::login_token;
+pub use borrowed::{Borrowing, login_at};
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -1086,4 +1086,15 @@ pub fn load_chat(path: &Path, endpoints: &smith_protocol_channel::Endpoints) -> 
         .collect::<Vec<_>>()
         .into_boxed_slice();
     local::Event::Loaded { state, transcript, deliveries }
+}
+
+/// Existing report or waiting script, with the product story's synthetic credential.
+#[must_use]
+pub fn headless_provider(wait: bool, credential: skein_llm::Credential) -> crate::llm::Peer {
+    smith_agent_process_world::fake::configured_transport(
+        if wait { waiting_scripts() } else { scripts() },
+        credential,
+        Duration::ZERO,
+        skein_fake_peers::Transport::Tls,
+    )
 }

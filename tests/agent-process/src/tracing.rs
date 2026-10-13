@@ -108,7 +108,7 @@ impl Host for Tracing {
             if complete.op.raw() == u64::MAX {
                 let Ok(kernel::Done::Fd(fd)) = complete.result else { panic!("trace file opens beneath its root") };
                 self.service
-                    .adopt_destination(fd, agent::Destination::Trace, agent::sinks::Delivery::Complete)
+                    .adopt_destination(fd, agent::Destination::Trace, agent::sinks::Delivery::Complete, true)
                     .expect("trace adopted");
                 let root = self.opening.take().expect("one startup trace open");
                 self.close(root);
@@ -143,7 +143,13 @@ impl Host for Tracing {
                     profile: b"standard".as_slice().into(),
                     capture: self.capture.encoded(),
                     delivery: smith_events::Delivery::Complete,
-                    versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
+                    versions: smith_events::Versions {
+                        events: 1,
+                        channel: 2,
+                        charter: 2,
+                        transcript: 3,
+                        chat_store: None,
+                    },
                     limits: self.header.take().expect("one startup header"),
                 },
             );

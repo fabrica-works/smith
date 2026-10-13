@@ -179,6 +179,7 @@ pub fn memory_parts(limits: &Limits) -> Option<[(&'static str, u64); 6]> {
         .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)?
         .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
         .checked_add(List::<u32>::worst_case(64)?)?
+        .checked_add(agent::max_turn_bytes(&limits.local.smith)?)?
         .checked_add(u64::try_from(size_of::<Service>()).ok()?)?
         .checked_add(*process.get(2)?)?;
     Some([
@@ -202,6 +203,7 @@ enum SnapshotState {
 #[expect(missing_debug_implementations, reason = "the handed-in account owner contains credentials")]
 pub struct Service {
     accounts: Option<crate::Accounts>,
+    told: Option<agent::Turn>,
     limits: Limits,
     local: local::Domain,
     below: Effects,
@@ -317,6 +319,7 @@ impl Service {
             start_values: None,
             failed: false,
             stream: None,
+            told: None,
         })
     }
 
@@ -346,7 +349,7 @@ impl Service {
         }
         match &mut self.below {
             Effects::Inline { agent, local } => {
-                agent.adopt_destination(fd, agent_service::Destination::Trace, delivery, local.io())?;
+                agent.adopt_destination(fd, agent_service::Destination::Trace, delivery, true, local.io())?;
                 agent.start_session(now, header);
             }
             Effects::Spawned(_) => return Err(fd),
@@ -379,6 +382,26 @@ impl Service {
             effects.fact(&fact);
         }
         false
+    }
+
+    /// Adopt JSON standard output through the inline product's existing sink owner.
+    pub fn adopt_output(
+        &mut self,
+        descriptor: kernel::Fd,
+        append: bool,
+        delivery: agent_service::sinks::Delivery,
+    ) -> Result<(), kernel::Fd> {
+        match &mut self.below {
+            Effects::Inline { agent, local } => {
+                agent.adopt_destination(descriptor, agent_service::Destination::Output, delivery, append, local.io())
+            }
+            Effects::Spawned(_) => Err(descriptor),
+        }
+    }
+
+    /// Start an inline product stream after all its destinations are adopted.
+    pub fn start_session(&mut self, now: Time, header: smith_events::SessionStarted) {
+        self.below.inline_mut().expect("exec composes inline effects").start_session(now, header);
     }
 
     /// Queue a terminal, store, git or OAuth outcome from the shell.
@@ -569,8 +592,8 @@ impl Service {
     }
 
     /// Adopt terminal input and blocked termination signals into the IO pass.
-    pub fn adopt_terminal(&mut self, input: kernel::Fd, signals: kernel::Fd) -> Result<(), kernel::Fd> {
-        self.below.process_mut().adopt_terminal(input, signals)?;
+    pub fn adopt_terminal(&mut self, input: Option<kernel::Fd>, signals: kernel::Fd) -> Result<(), kernel::Fd> {
+        self.below.process_mut().adopt_terminal(input, signals, !self.local.headless())?;
         self.ending = Ending::Live { shell_closed: false };
         Ok(())
     }
@@ -607,6 +630,11 @@ impl Service {
     /// Content-free local observations for the shell or an independent referee.
     pub fn pop_fact(&mut self) -> Option<local::Fact> {
         self.local.pop_fact()
+    }
+
+    /// One headless told turn, retained until the shell renders its status.
+    pub fn take_told_turn(&mut self) -> Option<agent::Turn> {
+        self.told.take()
     }
 
     fn route_completions(&mut self) {
@@ -698,7 +726,11 @@ impl Service {
             }
             local::Request::Input { reading } => self.below.process_mut().input(reading),
             local::Request::Notice { notice } => self.notice(now, notice),
-            local::Request::Show { text } => self.terminal.show(text, &mut self.terminal_events),
+            local::Request::Show { text } => {
+                if !self.local.headless() {
+                    self.terminal.show(text, &mut self.terminal_events);
+                }
+            }
             local::Request::Load => {
                 self.lower_agent = None;
                 self.terminal.answer_finished();
@@ -760,15 +792,22 @@ impl Service {
                     effects.close();
                 }
             }
-            local::Request::SaveTurn { number, read, opens_window, turn } => self
-                .below
-                .process_mut()
-                .store_request(protocol::StoreRequest::SaveTurn { number, read, opens_window, turn }),
+            local::Request::SaveTurn { number, read, opens_window, turn } => {
+                self.save_turn(number, read, opens_window, turn);
+            }
             local::Request::SaveDelivery { record } => {
                 self.below.process_mut().store_request(protocol::StoreRequest::SaveDelivery { record });
             }
             local::Request::Credential { account } => self.account_request(account),
         }
+    }
+
+    fn save_turn(&mut self, number: u32, read: Option<Token>, opens_window: bool, turn: agent::Turn) {
+        if self.local.headless() {
+            assert!(self.told.is_none(), "one told turn waits for the front end");
+            self.told = Some(turn.clone());
+        }
+        self.below.process_mut().store_request(protocol::StoreRequest::SaveTurn { number, read, opens_window, turn });
     }
 
     fn notice(&mut self, now: Time, notice: local::Notice) {
@@ -787,7 +826,7 @@ impl Service {
             | local::Notice::Checking(_)
             | local::Notice::NotDelivered { .. } => false,
         };
-        if !handed {
+        if !handed && !self.local.headless() {
             self.terminal.notice(&notice, self.local.chat_name(), self.local.models(), &mut self.terminal_events);
         }
         match notice {
@@ -1047,7 +1086,8 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
         local::resume(&mut service.local, &local_env, &mut service.local_requests);
     }
     for _ in 0..service.local_requests.capacity() {
-        if !service.drain_run_facts()
+        if service.told.is_some()
+            || !service.drain_run_facts()
             || service.shell.room() == 0
             || service.host_events.room() == 0
             || service.local_events.room() == 0

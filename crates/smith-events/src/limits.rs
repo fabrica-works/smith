@@ -474,6 +474,7 @@ fn size_versions(_capture: &Capture, _limits: &Limits) -> Option<u64> {
     length = length.checked_add(11)?.checked_add(20_u64)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;
     length = length.checked_add(14)?.checked_add(20_u64)?;
+    length = length.checked_add(14)?.checked_add(20_u64)?;
     Some(length)
 }
 

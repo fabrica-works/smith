@@ -218,7 +218,13 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
         profile: profile.into(),
         capture: trace.capture.encoded(),
         delivery: trace.delivery.encoded(),
-        versions: smith_events::Versions { events: smith_events::VERSION, channel: 2, charter: 2, transcript: 3 },
+        versions: smith_events::Versions {
+            events: smith_events::VERSION,
+            channel: 2,
+            charter: 2,
+            transcript: 3,
+            chat_store: None,
+        },
         limits: header_limits,
     });
     let mut service = service::Service::new(configuration.service, resources.seed)
@@ -240,7 +246,7 @@ fn prepare(configuration: config::Configuration, resources: &Resources) -> Resul
                 .map_err(|error| format!("trace append: {error:?}"))?
         };
         service
-            .adopt_destination(fd, service::Destination::Trace, trace.delivery)
+            .adopt_destination(fd, service::Destination::Trace, trace.delivery, true)
             .map_err(|fd| format!("trace descriptor {} cannot be adopted", fd.raw()))?;
     } else if resources.trace.is_some() {
         return Err("an inherited trace requires a configured destination".into());

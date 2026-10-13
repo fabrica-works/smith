@@ -344,6 +344,7 @@ impl Effects {
         fd: kernel::Fd,
         destination: crate::Destination,
         delivery: crate::sinks::Delivery,
+        append: bool,
         io: &mut io::Io,
     ) -> Result<(), kernel::Fd> {
         let service = &mut self.service;
@@ -352,7 +353,7 @@ impl Effects {
             return Err(fd);
         }
         let deadline = service.limits.events.expect("configured producer").write_deadline;
-        let token = io.adopt_append(fd, deadline)?;
+        let token = if append { io.adopt_append(fd, deadline)? } else { io.adopt_write_pipe(fd, Some(deadline))? };
         events.sinks.add(destination, token, delivery).expect("destination room checked");
         Ok(())
     }
@@ -662,6 +663,7 @@ impl Service {
         fd: kernel::Fd,
         destination: crate::sinks::Destination,
         delivery: crate::sinks::Delivery,
+        append: bool,
     ) -> Result<(), kernel::Fd> {
         let events = match &mut self.events {
             Some(events) => events,
@@ -671,7 +673,8 @@ impl Service {
             return Err(fd);
         }
         let deadline = self.limits.events.expect("producer has configured ownership").write_deadline;
-        let token = self.io.as_mut().expect("standalone IO").adopt_append(fd, deadline)?;
+        let io = self.io.as_mut().expect("standalone IO");
+        let token = if append { io.adopt_append(fd, deadline)? } else { io.adopt_write_pipe(fd, Some(deadline))? };
         events.sinks.add(destination, token, delivery).expect("destination room checked before descriptor adoption");
         Ok(())
     }
@@ -2832,7 +2835,7 @@ mod tests {
                 profile: b"test".as_slice().into(),
                 capture: smith_events::Capture::Calls,
                 delivery: smith_events::Delivery::Complete,
-                versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
+                versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3, chat_store: None },
                 limits: List::with_capacity(0),
             },
         );

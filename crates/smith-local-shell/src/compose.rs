@@ -1,0 +1,355 @@
+//! Product startup and the inline local composition (shell.md, sections 4 and 9).
+//! Resolution owns model/account selection; the shell opens named resources and
+//! carries one kernel from the stdin phase into the local host's run.
+use crate::{
+    command::{Command, Exec, Prompt, Usage},
+    credentials, local_shell, settings,
+};
+use skein_lib::Wall;
+use skein_shell::{Clock, Config, Kernel};
+
+/// The product's child placement; exec composes the inline kind.
+#[derive(Clone, Copy)]
+pub enum AgentKind {
+    /// The local domain owns its agent and the native effects in this process.
+    Inline,
+}
+
+/// A typed startup refusal, rendered once by the product binary.
+pub enum Refused {
+    /// The invocation cannot supply one bounded prompt.
+    Usage(Usage),
+    /// A settings value or relationship refused.
+    Settings(settings::Refusal),
+    /// A selected source has no usable credential.
+    Credentials(credentials::Refusal),
+    /// Resource opening or complete memory admission refused.
+    Local(local_shell::Failure),
+}
+
+impl Refused {
+    /// The product's code for this startup terminal.
+    #[must_use]
+    pub const fn code(&self) -> u8 {
+        match self {
+            Self::Usage(_) | Self::Settings(_) => 2,
+            Self::Credentials(why) => why.exit_code(),
+            Self::Local(why) => why.exit_code(),
+        }
+    }
+
+    /// One clipped operator line, with settings and source origins preserved.
+    #[must_use]
+    pub fn line(&self) -> String {
+        let line = match self {
+            Self::Usage(why) => format!("smith: usage: {}", why.0),
+            Self::Settings(why) => why.line(),
+            Self::Credentials(why) => why.line(),
+            Self::Local(why) => format!("smith: {}", why.detail()),
+        };
+        String::from_utf8_lossy(smith_events::clip(line.as_bytes())).into_owned()
+    }
+}
+
+pub(crate) struct Opened {
+    pub resolved: settings::resolve::Resolved,
+    pub invocation: Exec,
+    pub kernel: Kernel,
+    pub seed: u64,
+    pub wall: Wall,
+    pub input_closed: bool,
+}
+
+/// Read the product layers and one complete prompt before any credentials are inspected.
+pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<Opened, Refused> {
+    let settings = settings::read(&invocation.shared).map_err(Refused::Settings)?;
+    let command = Command::Exec(invocation);
+    let resolved = settings::resolve::resolve(&settings, &command).map_err(Refused::Settings)?;
+    let mut invocation = match command {
+        Command::Exec(invocation) => invocation,
+        Command::Check { .. } | Command::Legacy(_) => unreachable!("one exec invocation"),
+    };
+    let operations =
+        crate::Local::kernel_operations(&resolved.agent.service.limits.io, resolved.agent.service.limits.routes, true)
+            .ok_or_else(|| {
+                Refused::Local(local_shell::Failure::Configuration { detail: "local operation bound overflows".into() })
+            })?;
+    let mut kernel = Kernel::open(Config { operations })
+        .map_err(|why| Refused::Local(local_shell::Failure::Host { detail: format!("local kernel: {why}") }))?;
+    let maximum = resolved.limits.line_bytes;
+    let input_closed = match &invocation.prompt {
+        Prompt::Stdin => true,
+        Prompt::Argument(_) => false,
+    };
+    let prompt = match invocation.prompt {
+        Prompt::Argument(bytes) => bytes,
+        Prompt::Stdin => crate::front::headless::read_prompt(
+            &mut kernel,
+            clock,
+            resolved.agent.service.limits.io,
+            maximum,
+            resolved.agent.memory,
+        )
+        .map_err(Refused::Usage)?,
+    };
+    if prompt.len() > usize::try_from(maximum).expect("message bound fits usize") {
+        return Err(Refused::Usage(Usage("the prompt exceeds the message bound".into())));
+    }
+    if prompt.trim_ascii().is_empty() {
+        return Err(Refused::Usage(Usage("the prompt is empty".into())));
+    }
+    if std::str::from_utf8(&prompt).is_err() {
+        return Err(Refused::Usage(Usage("the prompt is not UTF-8".into())));
+    }
+    invocation.prompt = Prompt::Argument(prompt);
+    let seed = skein_shell::seed().map_err(|why| {
+        Refused::Local(local_shell::Failure::Host { detail: format!("local seed failed (errno {why})") })
+    })?;
+    Ok(Opened { resolved, invocation, kernel, seed, wall, input_closed })
+}
+
+struct Composed {
+    local: crate::Local,
+    kernel: Kernel,
+}
+
+/// Compose the selected native values with their roots and source driver, without a configuration file.
+fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time) -> Result<Composed, Refused> {
+    let Opened { mut resolved, invocation, kernel, seed, wall, input_closed } = opened;
+    match kind {
+        AgentKind::Inline => {}
+    }
+    let prepared = credentials::prepare(&resolved, wall).map_err(Refused::Credentials)?;
+    if invocation.shared.chat.is_none() {
+        resolved.local.chat = format!("exec-{seed:016x}").into_bytes().into();
+    }
+    let (workspace, chat_path) = chat_paths(&resolved.settings.workspace, &resolved.local.chat)?;
+    let prompt = match invocation.prompt {
+        Prompt::Argument(prompt) => prompt,
+        Prompt::Stdin => unreachable!("stdin phase ended"),
+    };
+    resolved.local.mode = smith_local_domain::Mode::Headless { prompt };
+    if invocation.deliver
+        && let smith_local_domain::Contract::Report(_) = resolved.local.contract
+    {
+        resolved.local.contract = smith_local_domain::Contract::Change(smith_domain::run::outcome::ChangeSpec {
+            checks_must_pass: true,
+            fields: Box::new([
+                smith_domain::run::outcome::FieldRule { name: b"title".as_slice().into(), max: 256 },
+                smith_domain::run::outcome::FieldRule { name: b"body".as_slice().into(), max: 1024 },
+            ]),
+        });
+    }
+    let WorkspaceRoots { paths, delivery_roots, effect_roots } = workspace_roots(&resolved.local)?;
+    let host_limits =
+        smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits).map_err(
+            |why| {
+                Refused::Local(local_shell::Failure::Configuration {
+                    detail: String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned(),
+                })
+            },
+        )?;
+    let mut limits = local_shell::service_limits(resolved.limits, host_limits, &resolved.agent.service)
+        .map_err(|detail| Refused::Local(local_shell::Failure::Configuration { detail }))?;
+    let (trace, header, available) =
+        prepare_stream(&mut resolved.agent, &resolved.local.chat, &mut limits, invocation.json, wall)?;
+    let mut front = crate::front::headless::Headless::new(
+        invocation.json,
+        skein_shell::prepare_output(skein_io::kernel::Fd::new(1)).map_err(|why| {
+            Refused::Local(local_shell::Failure::Host { detail: format!("standard output: {why:?}") })
+        })?,
+        limits.local.show_bytes,
+        limits.local.smith.run.outcome_bytes,
+    );
+    front.input_closed = input_closed;
+    let environment = resolved.agent.service.environment.command_entries();
+    let config = smith_local_service::Config {
+        local: resolved.local,
+        limits,
+        endpoints: resolved.agent.service.channel_endpoints.clone(),
+        paths,
+        launch: smith_local_service::Launch {
+            program: Box::new([]),
+            arguments: Box::new([]),
+            environment: Box::new([]),
+            root: root(&workspace)?,
+            directory: b".".as_slice().into(),
+        },
+        agent: smith_local_service::AgentConfig::Spawned,
+    };
+    let resources = crate::Resources {
+        state_root: root(&chat_path)?,
+        token_directory: chat_path.join("unused-tokens"),
+        input: skein_io::kernel::Fd::new(0),
+        output: skein_io::kernel::Fd::new(1),
+        signals: skein_shell::open_termination_signals().map_err(|errno| {
+            Refused::Local(local_shell::Failure::Host { detail: format!("termination signals failed (errno {errno})") })
+        })?,
+        delivery_roots,
+        effect_roots,
+        delivery_environment: environment,
+        accounts: Box::new([]),
+        seed,
+        oauth_entropy: local_shell::oauth_entropy()
+            .map_err(|detail| Refused::Local(local_shell::Failure::Host { detail }))?,
+    };
+    let mut local = crate::Local::within_memory(
+        config,
+        Some(resolved.agent.service),
+        resources,
+        Box::new(std::io::stderr()),
+        available,
+        Some(prepared),
+        Some(front),
+    )
+    .map_err(Refused::Local)?;
+    start_stream(&mut local, trace, header, now)?;
+    Ok(Composed { local, kernel })
+}
+
+fn start_stream(
+    local: &mut crate::Local,
+    trace: Option<smith_agent_shell::trace::TraceConfig>,
+    mut header: Option<smith_events::SessionStarted>,
+    now: skein_lib::Time,
+) -> Result<(), Refused> {
+    if let Some(trace) = trace {
+        let parent =
+            trace.path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+        let name =
+            trace.path.file_name().ok_or_else(|| Refused::Usage(Usage("the trace requires a file name".into())))?;
+        let descriptor = root(parent)?;
+        let fd = skein_shell::open_append(descriptor, name.as_encoded_bytes(), 0o600)
+            .map_err(|why| Refused::Local(local_shell::Failure::Host { detail: format!("trace append: {why:?}") }))?;
+        local
+            .adopt_trace(fd, Some(descriptor), now, header.take().expect("configured header"), trace.delivery)
+            .map_err(|why| {
+                Refused::Local(local_shell::Failure::Host {
+                    detail: format!("trace descriptor {} cannot be adopted", why.raw()),
+                })
+            })?;
+    } else if let Some(header) = header {
+        local.start_session(now, header);
+    }
+    Ok(())
+}
+
+struct WorkspaceRoots {
+    paths: Box<[Box<[u8]>]>,
+    delivery_roots: Box<[skein_io::kernel::Fd]>,
+    effect_roots: Box<[skein_io::kernel::Fd]>,
+}
+
+fn workspace_roots(local: &smith_local_domain::Config) -> Result<WorkspaceRoots, Refused> {
+    let directories = local.workspace.as_ref().expect("resolved workspace").directories.as_ref();
+    let paths = directories.iter().map(|directory| directory.host.clone()).collect();
+    let roots = || {
+        directories
+            .iter()
+            .map(|directory| {
+                skein_shell::open_root(std::path::Path::new(
+                    std::str::from_utf8(&directory.host).expect("resolved host path"),
+                ))
+                .map_err(|errno| {
+                    Refused::Local(local_shell::Failure::Host {
+                        detail: format!("workspace root failed (errno {errno})"),
+                    })
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let delivery_roots = roots()?.into_boxed_slice();
+    let effect_roots = roots()?.into_boxed_slice();
+    Ok(WorkspaceRoots { paths, delivery_roots, effect_roots })
+}
+
+fn chat_paths(
+    workspace: &std::path::Path,
+    chat_name: &[u8],
+) -> Result<(std::path::PathBuf, std::path::PathBuf), Refused> {
+    use std::{fmt::Write, os::unix::fs::DirBuilderExt, path::PathBuf};
+    let chat = std::str::from_utf8(chat_name).expect("decoded chat");
+    if chat == "." || chat == ".." || chat.contains(['/', '\\', '\0']) {
+        return Err(Refused::Usage(Usage("the chat must be one directory name".into())));
+    }
+    let workspace = workspace.canonicalize().map_err(|why| host(&why))?;
+    let digest = skein_io::digest::digest(workspace.as_os_str().as_encoded_bytes());
+    let mut key = String::new();
+    for part in digest.0 {
+        write!(&mut key, "{part:016x}").expect("writing a string");
+    }
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .ok_or_else(|| Refused::Usage(Usage("HOME or XDG_STATE_HOME is required for chats".into())))?;
+    let chat_path = base.join("smith/chats").join(key).join(chat);
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&chat_path).map_err(|why| host(&why))?;
+    Ok((workspace, chat_path))
+}
+
+fn prepare_stream(
+    agent: &mut smith_agent_shell::config::Configuration,
+    chat: &[u8],
+    limits: &mut smith_local_service::Limits,
+    json: bool,
+    wall: Wall,
+) -> Result<(Option<smith_agent_shell::trace::TraceConfig>, Option<smith_events::SessionStarted>, u64), Refused> {
+    use std::path::PathBuf;
+    let trace = agent.trace.take();
+    let specification = smith_agent_shell::trace::TraceConfig {
+        path: trace.as_ref().map_or_else(|| PathBuf::from("stdout"), |trace| trace.path.clone()),
+        capture: trace.as_ref().map_or(smith_agent_service::sinks::Capture::Everything, |trace| trace.capture),
+        delivery: trace.as_ref().map_or(smith_agent_service::sinks::Delivery::Complete, |trace| trace.delivery),
+    };
+    let destinations = u32::from(trace.is_some()).checked_add(u32::from(json)).expect("two destinations");
+    let (mut header, available) = crate::Local::prepare_header(
+        agent,
+        limits,
+        (destinations != 0).then_some(&specification),
+        chat,
+        u64::from(std::process::id()),
+        destinations,
+    )
+    .map_err(Refused::Local)?;
+    if let Some(header) = &mut header {
+        header.mode = smith_events::Mode::Exec;
+        header.wall_ms = wall.as_nanos() / 1_000_000;
+    }
+    Ok((trace, header, available))
+}
+
+fn host(why: &std::io::Error) -> Refused {
+    Refused::Local(local_shell::Failure::Host { detail: why.to_string() })
+}
+
+fn root(path: &std::path::Path) -> Result<skein_io::kernel::Fd, Refused> {
+    skein_shell::open_root(path).map_err(|errno| {
+        Refused::Local(local_shell::Failure::Host {
+            detail: format!("directory {} failed (errno {errno})", path.display()),
+        })
+    })
+}
+
+/// Run an exec invocation on its one kernel; leave other commands to their owners.
+#[must_use]
+pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clock) -> Option<u8> {
+    let invocation = match crate::command::parse(arguments.iter().skip(1).cloned().collect()) {
+        Ok(Command::Exec(invocation)) => invocation,
+        Ok(Command::Check { .. } | Command::Legacy(_)) => return None,
+        Err(why) => {
+            eprintln!("{}", Refused::Usage(why).line());
+            return Some(2);
+        }
+    };
+    let started = open(invocation, at.wall, clock).and_then(|opened| compose(opened, AgentKind::Inline, at.now));
+    match started {
+        Ok(mut started) => Some(match skein_shell::drive(&mut started.kernel, clock, &mut started.local) {
+            skein_io::kernel::Exit::Code(code) => code,
+            skein_io::kernel::Exit::Signal(_) => 130,
+        }),
+        Err(why) => {
+            eprintln!("{}", why.line());
+            Some(why.code())
+        }
+    }
+}

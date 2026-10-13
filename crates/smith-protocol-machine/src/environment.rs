@@ -37,6 +37,12 @@ pub enum Unencodable {
 }
 
 impl Environment {
+    /// Copy the already encoded environment for a host's delivery command.
+    #[must_use]
+    pub fn command_entries(&self) -> Box<[Box<[u8]>]> {
+        self.for_process(Purpose::Shell)
+    }
+
     /// Validate the complete configuration and encode its entries within `env_bytes`.
     pub fn encode(variables: &[Variable], limits: &Limits) -> Result<Environment, Unencodable> {
         let mut bytes = 0_u64;

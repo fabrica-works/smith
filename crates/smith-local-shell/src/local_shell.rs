@@ -113,6 +113,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         trace.as_ref(),
         settings.chat.as_bytes(),
         u64::from(std::process::id()),
+        1,
     )?;
     service::profile::memory(&limits, trace_memory).map_err(profile_refusal).map_err(configuration)?;
     let seed = skein_shell::seed().map_err(|error| host_failure(format!("local seed failed (errno {error})")))?;
@@ -156,6 +157,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         },
         Box::new(std::io::stderr()),
         trace_memory,
+        None,
         None,
     )?;
     local_service.run_traced(trace, header, spawned_trace, trace_memory)
@@ -224,7 +226,7 @@ fn validate_delivery_environment(entries: &[String]) -> Result<(), Failure> {
 }
 
 /// Collect the fixed startup entropy required by the OAuth composition.
-fn oauth_entropy() -> Result<[u8; 32], String> {
+pub(super) fn oauth_entropy() -> Result<[u8; 32], String> {
     let mut entropy = [0_u8; 32];
     for part in entropy.chunks_exact_mut(8) {
         let seed = skein_shell::seed().map_err(|error| format!("OAuth entropy failed (errno {error})"))?;
@@ -419,7 +421,13 @@ pub fn stream_header(
         profile: b"standard".as_slice().into(),
         capture: capture.encoded(),
         delivery: delivery.encoded(),
-        versions: smith_events::Versions { events: 1, channel: 2, charter: 2, transcript: 3 },
+        versions: smith_events::Versions {
+            events: 1,
+            channel: 2,
+            charter: 2,
+            transcript: 3,
+            chat_store: Some(smith_local_protocol::CHAT_STORE_VERSION),
+        },
         limits,
     }
 }
