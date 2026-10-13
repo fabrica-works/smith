@@ -814,6 +814,11 @@ a model's declared `efforts` in the settings schema, the presets, the
 agent configuration's models (`smith-agent-shell`) and the run's
 entrance check (`smith-domain-run`), Files beyond 10.24's, which the
 supervisor sizes.
+`Slash::Model.selected: Option<usize>` (decisions.md, 13.123): the named
+model's position among main's endpoint's models, `None` when it is not
+one. Files beyond 10.24's: `smith-local-shell` (`settings/`, `presets.rs`,
+`check.rs`), `smith-agent-shell` (`config.rs`), `smith-domain-run` (the
+entrance check). No preset declares efforts in 10.25 (13.123).
 Test shape: unit: each `/model` and `/effort` line's choice or refusal,
 its words. World, on the scripted `Terminal` (13.119):
 `slash_model_applies_from_the_next_activation`,

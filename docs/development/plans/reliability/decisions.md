@@ -2072,3 +2072,20 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    64 MiB to spare, recording each number; and `smith check --json` on
    those defaults, for the interactive invocation, exits 0. No effective
    limit, JSON field or version is added.
+123. **10.25: the model `/model` names, and its efforts' Files and size**
+   (block of 2026-10-13T15:56:00Z, smith 10.25; the designer's answer of
+   15:58:37Z, ed131362 and 024d71fb). The service resolves `/model`'s
+   `ENDPOINT/NAME` text against the configuration; the domain knows
+   models only by position. Ruling, as the plan's Shape:
+   `Slash::Model` gains `selected: Option<usize>`, the position among the
+   configuration's models of main's endpoint, `None` when the name is not
+   one of them (the refusal naming `smith --chat NAME -m ENDPOINT/NAME`
+   for another endpoint, or naming the model otherwise). The designer's
+   `efforts` take Files beyond 10.24's: `smith-local-shell`'s settings
+   (`settings/`, `presets.rs`, `check.rs`), `smith-agent-shell`'s
+   `config.rs`, `smith-domain-run`'s entrance check, and their tests and
+   users under README rule 8. Size: README rule 9's, 700 in all; past it,
+   10.25 stops and proposes a split. 13.116's "stays where settings check
+   it now" is withdrawn: settings did not check effort. No preset
+   declares efforts in 10.25: the repository holds no provider's list,
+   and none is fetched.
