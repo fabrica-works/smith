@@ -414,6 +414,7 @@ provider text clipped (shell.md, 4.2, settled 2026-10-12); the last line from sm
 sinks, standard output under `--json` adopted by what it is (a regular
 file by `adopt_append`, a pipe or a terminal by `adopt_write_pipe` under
 the same write deadline) through the agent service's one sink owner; `session.started` with mode `exec` and `versions.chat_store`.
+Split (decisions.md, 13.101): 10.5 lands the command, its parser and versions, the inline startup, typed headless rendering, the one bounded stdin phase and standard output adopted by its kind, with its process Proof; 10.20 takes `-o`'s durable output and `--ephemeral`'s private files and their cleanup, with their memory and close accounting and tests.
 Needs: smith 03's product stream [03.7]; smith 06's words function,
 `smith_events::words` [06.2]; for `--json` on a pipe only, skein's write
 pipe with a stated write deadline (skein's `io.md`, 5.1), a skein step
@@ -451,6 +452,19 @@ records, and no in-process pipe or second producer for them.
 Size: at most 600.
 Removes: nothing.
 
+
+### 10.20 `smith exec`'s `-o` output and `--ephemeral` files
+Split from 10.5 (decisions.md, 13.101). Scope: 10.5's Scope for `-o`
+(the result written durably to a file) and `--ephemeral` (a private chat
+directory, removed at exit), with their memory and close accounting;
+its candidate's parts start from 10.5's (`b92c18a0` pin).
+Needs: 10.5.
+Files: 10.5's, as they concern these two.
+Test shape: unit or process tests of each: `-o`'s file holds the result
+and nothing else; `--ephemeral` leaves no file behind, on success and on
+failure. Under 0.5 s.
+Proof: process, those tests, once.
+Size: README rule 9's.
 ### 10.15 The harness on `smith exec`
 Scope (benchmarks.md, 6 and 10): for commits from this one, the smith
 adapter writes its pinned settings as the attempt's user layer, state in

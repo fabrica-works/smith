@@ -1836,3 +1836,10 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the stream's write deadline. skein-07.s6 gives `adopt_write_pipe` that
    deadline; 10.5 repins for it (its `--json`-on-a-pipe part only) and
    goes on meanwhile.
+101. **smith 10.5 splits; 10.20 takes `-o` and `--ephemeral`** (block of
+   2026-10-13T00:11:30Z). 10.5's draft holds 662 production lines, 38
+   short of README rule 9's 700, with the resource composition, `-o`'s
+   durable output and `--ephemeral`'s cleanup still to write. Ruling: the
+   implementer's boundary: 10.5 keeps the command, startup and headless
+   rendering with its process Proof; 10.20 takes `-o` and `--ephemeral`
+   with their accounting and tests.
