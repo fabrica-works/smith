@@ -421,10 +421,18 @@ spawned agent's failure above.
 ### 4.4 `smith check`
 
 ```sh
-smith check [--json]
+smith check [--json] [SHARED FLAGS] [exec [EXEC FLAGS]]
 ```
 
-What a run would start with, resolved and checked without starting one:
+What a run would start with, resolved and checked without starting one.
+The run is the invocation named: the interactive `smith` with the shared
+flags, or, after `exec`, the headless run its flags make, with no prompt.
+Its event destinations are among what it would start with: standard
+output under `exec --json`, a trace under `--trace` or `[trace]`, and
+`-o`'s file. They are derived as that invocation would derive them, and
+none is opened. So the effective limits and the teardown bound are the
+ones `smith exec` with the same flags would have. `check`'s own
+`--json` chooses only its report's form:
 
 - the resolved settings, credentials redacted, each value with the layer
   it came from;

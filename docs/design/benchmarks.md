@@ -1,6 +1,6 @@
 # Benchmarks
 
-Provisional, 2026-10-09. How smith shows that a change has the effect it
+Provisional, 2026-10-09, revised 2026-10-13. How smith shows that a change has the effect it
 claims and keeps it, and how smith compares with other agents. Tests are
 testing.md's; the events smith is observed through are
 protocol/events.md's; its commands, settings and exit codes are
@@ -316,7 +316,7 @@ files.
 
 | Step | Smith | Codex | Claude Code |
 |---|---|---|---|
-| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts); `XDG_STATE_HOME` the state; the account borrows the user's `~/.codex` login, read-only and access-token-only (shell.md, section 7). Before an arm's first attempt, `smith check --json` records the effective limits, schema versions and credentials; a nonzero exit refuses the arm as setup | a `CODEX_HOME` of the attempt's own, holding only an access-only `auth.json` the harness writes from the user's `~/.codex` login (section 10), so none of the user's instructions, skills, plugins, memories or configuration reach it and its rollouts are the attempt's; every key that shapes behaviour pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort; its background service disabled where it can be, or ended with the tree | the user's own Claude login, the same way as Codex's; pinned settings and an empty MCP configuration passed on the command line, edits and commands allowed without asking |
+| prepare | `XDG_CONFIG_HOME` holds the pinned settings as the user's layer, capturing `calls` so the scope gate sees each call's input (`everything` where a task needs prompts); `XDG_STATE_HOME` the state; the account borrows the user's `~/.codex` login, read-only and access-token-only (shell.md, section 7). Before an arm's first attempt, `smith check --json exec` with the attempt's own `exec` flags records the effective limits, the teardown bound, schema versions and credentials of the run it will start; a nonzero exit refuses the arm as setup. The attempt's events are its standard output's, under `--json`: the harness gives `exec` no trace file, so the run has one event destination | a `CODEX_HOME` of the attempt's own, holding only an access-only `auth.json` the harness writes from the user's `~/.codex` login (section 10), so none of the user's instructions, skills, plugins, memories or configuration reach it and its rollouts are the attempt's; every key that shapes behaviour pinned by `-c` overrides: no MCP servers, the attempt root trusted, workspace edits allowed, no approvals, the model and effort; its background service disabled where it can be, or ended with the tree | the user's own Claude login, the same way as Codex's; pinned settings and an empty MCP configuration passed on the command line, edits and commands allowed without asking |
 | command | `smith exec --json -C <workspace> -m <endpoint>/<model> --effort <effort> -`, overrides as `-c KEY=VALUE` (shell.md, section 4.2); interactive, `smith --trace <file>` at a pseudo-terminal | `codex exec --json -m <model> -c model_reasoning_effort=<effort> -C <workspace> -o <final> -` | `claude -p --output-format stream-json --verbose --model <model> --effort <effort> --max-budget-usd <ceiling> --settings <pinned> --mcp-config <empty>`; `--input-format stream-json` for later messages |
 | observe | the event stream, through `smith-events`; standard error is never parsed | JSON lines: thread, turns, items, and each turn's usage, of the root thread only, cached input within input | the opening record, assistant messages with usage, sub-agent messages with their parent's call, the result with durations, turns, cost and per-model usage, in the pinned version's recorded shapes |
 | collect | nothing beyond the stream | the rollouts of the thread named: per-response usage and child threads; where a child is not linked to its parent, child scopes are unavailable and totals lower bounds | nothing; transcripts are archived |
@@ -519,7 +519,8 @@ answer is a warning on a completed attempt.
 - **Process trees.** An attempt ends when its whole tree has ended. At
   the hard deadline the tree is terminated, then killed after a grace;
   after an observed answer, the deadline is the agent's teardown bound
-  (smith's from its effective limits, read by `smith check --json`;
+  (smith's from its effective limits, read by `smith check --json exec`
+  with the attempt's flags;
   another agent's from its pinned configuration)
   plus that grace. Accounting of a whole tree (a cgroup scope, its CPU
   and peak memory) is skein's to add first; until then each attempt runs
