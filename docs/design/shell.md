@@ -281,14 +281,16 @@ The interactive chat, the local host of domain/host.md, section 8:
 - **Commands** begin with `/`. They are the local host's, never
   messages:
   - `/model ENDPOINT/NAME` chooses another model of main's endpoint,
-    and `/effort LEVEL` another effort, from the next activation, since
+    and `/effort LEVEL` another effort, one the main model declares
+    when it declares any (6.1), from the next activation, since
     a conversation's model and effort are fixed for its life. A window
     opened with another model is compacted first, with that model
     (domain/session.md, 8.2); another effort takes no compaction. A model
     on another endpoint is refused, and the chat kept: an endpoint is
     resolved, derived and signed in to at startup (5.2), so another
     endpoint is another invocation, and the refusal names it: `smith
-    --chat NAME -m ENDPOINT/NAME`;
+    --chat NAME -m ENDPOINT/NAME`. An effort the model does not declare
+    is refused, naming those it does;
   - `/new` starts a new chat, and `/resume NAME` reopens one, once the
     live activation has answered or parked; the chat store then holds
     the other chat (protocol/hosts.md, 5.3). `/resume` of a chat that
@@ -549,14 +551,14 @@ source = "borrow"
 
 | Key | What it is | Default |
 |---|---|---|
-| `model`, `effort` | the main model, `endpoint/name`, and its effort | none; the provider's effort |
+| `model`, `effort` | the main model, `endpoint/name`, and its effort, one the model declares when it declares any (6.1) | none; the provider's effort |
 | `profile` | the named bundle of deployment values | `standard` |
 | `instructions` | the role (domain/run.md, section 3.1) | smith's own, for a chat or for a task |
 | `chat` | the interactive chat | `default` |
 | `waiting_seconds` | how long an interactive run waits before it parks | 6.4 |
 | `sub_agents` | whether runs may delegate | off (domain/run.md, section 5.3) |
 | `[budget]` | spend, seconds, turns and the reserve | 6.4 |
-| `[models."<endpoint>/<name>"]` | a model's declared values, and its prices | the preset's, 6.1 |
+| `[models."<endpoint>/<name>"]` | a model's declared values, its efforts and its prices | the preset's, 6.1 |
 | `[endpoints.<name>]` | a preset, or its dialect, address, TLS name, trust, headers, identity and account | `codex` and `anthropic` |
 | `[accounts.<name>]` | the credential source and its fields (section 7) | none: each account names its source; `sign_in` takes its registration from these fields, never from a preset |
 | `[deployment]` | declared deployment values | the profile's, 6.3 |
@@ -669,6 +671,16 @@ profile (2.1).
 - **`window`** is usable input tokens; **`output`** is the most output
   tokens, the wire's cap where the dialect sends one and the reservation
   in the window check (domain/session.md, section 8.1).
+- **`efforts`** are the reasoning efforts a model accepts, each a name
+  within 32 bytes, as its provider documents them for that model. They
+  are the model's, not the dialect's: a provider's models differ, and
+  their names change with the provider. `smith check`, `--effort`,
+  `/effort` and the run's entrance refuse an effort outside the list,
+  naming it and the list. A model that declares none takes any effort
+  within the bound, and a provider that refuses it says so as the
+  request's failure. A preset declares a model's efforts only from its
+  provider's documentation, with that source, and until it does the
+  model declares none.
 - **The Anthropic models take 1,000,000 input and 128,000 output
   tokens.** The preset declares less, so that a window is compacted
   before its cost grows and the check reserves a likely output. Settings

@@ -143,8 +143,10 @@ product's own settings are `docs/design/shell.md`'s.
   - its connect and handshake deadlines;
   - **its models,** each with its declared quantities: `window`,
     `output`, `reasoning_item`, `head` and `idle` (limits.md, section
-    2.1). A charter may name only a declared model, at most its declared
-    window and output (charter.md, section 2).
+    2.1); and its efforts, the reasoning efforts it accepts, optional. A
+    charter may name only a declared model, at most its declared window
+    and output, and one of its declared efforts when it declares any
+    (charter.md, section 2).
 - **A profile:** its name, and the deployment's declared quantities and
   policy values (limits.md, sections 2.2 and 2.3). A profile is a named
   bundle, kept as step code in the service crate, which the configuration

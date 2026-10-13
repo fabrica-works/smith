@@ -36,7 +36,7 @@ workers carry unread, and its version must be the one its agents read
   - **the domain** checks the rest at the entrance: an endpoint not
     configured, a model its configuration does not declare or a window
     or output beyond what it declares or too small for the agent's
-    limits, text too large for a window's host part, a host tool named
+    limits, an effort outside the efforts it declares for the model, text too large for a window's host part, a host tool named
     like one of smith's or named twice, a contract that cannot be met, a
     reserve its budget cannot hold (domain/run.md, section 4).
 - **A writer needs only this crate.** It depends on no domain, no channel
@@ -84,9 +84,11 @@ A versioned record (skein's `codec.md`, section 3):
   - an endpoint's name;
   - a model, one the agent's configuration declares for that endpoint;
   - **`effort`,** optional: the reasoning effort its completions ask
-    for, one of the dialect's; without it, the provider's default. It is
-    fixed for the conversation's life and may differ in the next
-    activation (domain/session.md, section 3);
+    for, one of those the agent's configuration declares for the model
+    when it declares any, and any within its bound when it declares none;
+    without it, the provider's default. It is fixed for the
+    conversation's life and may differ in the next activation
+    (domain/session.md, section 3);
   - **`window`:** its usable input tokens, the most one prompt may hold.
     The session compacts its conversation before a prompt would pass it
     (domain/session.md, section 8);
