@@ -188,7 +188,8 @@ impl World {
                 CredentialRequest::Failed { event: local::Event::NoCredential { reason, .. } } => {
                     self.terminal = Some(Err(reason));
                 }
-                CredentialRequest::Closed
+                CredentialRequest::SignedIn { .. }
+                | CredentialRequest::Closed
                 | CredentialRequest::Notice { .. }
                 | CredentialRequest::Ready { .. }
                 | CredentialRequest::Failed { .. } => {

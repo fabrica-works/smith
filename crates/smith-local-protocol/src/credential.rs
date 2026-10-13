@@ -65,6 +65,8 @@ pub enum CredentialRequest {
     Notice { account: u32, reason: CredentialFailure },
     /// Show this authorization page's address to the person.
     Visit { url: Box<[u8]> },
+    /// The native driver's explicit sign-in completed after its record was kept.
+    SignedIn { account: u32 },
     /// Make one token endpoint request with exact send evidence in its terminal.
     Http(oauth::HttpRequest),
     /// Atomically replace the user's token file with mode 0600, sync file and directory, then answer Stored.
@@ -490,7 +492,8 @@ mod tests {
                 CredentialRequest::Failed { event: local::Event::NoCredential { reason, .. } } if !fresh => {
                     assert_eq!(reason, CredentialFailure::Refresh);
                 }
-                CredentialRequest::Closed
+                CredentialRequest::SignedIn { .. }
+                | CredentialRequest::Closed
                 | CredentialRequest::Notice { .. }
                 | CredentialRequest::Visit { .. }
                 | CredentialRequest::Http(_)

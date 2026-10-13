@@ -1,17 +1,17 @@
-//! Handed-in grants and read-only login operations in the service's kernel namespace.
+//! Account grants, visits and source operations in the service's kernel namespace.
 //! The source driver owns expiry; the service owns envelopes and local-domain events.
-use super::{Close, Error, Service, local, protocol};
+use super::{Close, Error, Service, local};
 use skein_lib::{List, Queue, Time, Wall, Writer};
 
 impl Service {
-    /// Install the selected handed-in sources before the first service pass.
+    /// Install the selected account sources before the first service pass.
     pub fn handed_accounts(
         &mut self,
         sources: List<crate::Source>,
         limits: skein_oauth_accounts::Limits,
         entropy: [u8; 32],
     ) -> Result<(), Error> {
-        assert!(self.accounts.is_none(), "one handed-in driver");
+        assert!(self.accounts.is_none(), "one account driver");
         if self.limits.queue < crate::ACCOUNTS_MAX_OUT {
             return Err(Error::Queue);
         }
@@ -36,7 +36,10 @@ impl Service {
     }
 
     pub(super) fn accounts_pass(&mut self, now: Time, wall: Wall) {
-        if self.local_events.room() < crate::ACCOUNTS_MAX_OUT || self.shell.room() < crate::ACCOUNTS_MAX_OUT {
+        if self.local_events.room() < crate::ACCOUNTS_MAX_OUT
+            || self.shell.room() < crate::ACCOUNTS_MAX_OUT
+            || self.output.room() < crate::ACCOUNTS_MAX_OUT
+        {
             return;
         }
         let Some(mut accounts) = self.accounts.take() else { return };
@@ -47,7 +50,7 @@ impl Service {
         accounts.advance(now, wall, &mut out);
         for _ in 0..crate::ACCOUNTS_MAX_OUT {
             match out.pop() {
-                Some(protocol::CredentialRequest::Ready { event: local::Event::Credential { grant }, value }) => {
+                Some(crate::CredentialRequest::Ready { event: local::Event::Credential { grant }, value }) => {
                     let identifier = accounts.account_id(grant.name.account).expect("selected account");
                     let bytes = identifier.len().checked_add(value.len()).expect("bounded credential fields");
                     let length = bytes.checked_add(2).expect("bounded envelope");
@@ -59,17 +62,24 @@ impl Service {
                     envelope.put(&value).expect("envelope access value");
                     self.credential(grant, envelope.finish());
                 }
-                Some(protocol::CredentialRequest::Notice { account, reason }) => {
+                Some(crate::CredentialRequest::Notice { account, reason }) => {
                     self.notice(now, local::Notice::Failure(local::Failure::Credential { account, reason }));
                 }
-                Some(protocol::CredentialRequest::Failed { event }) => self.local_events.push(event),
-                Some(protocol::CredentialRequest::Closed) | None => break,
+                Some(crate::CredentialRequest::Failed { event }) => self.local_events.push(event),
+                Some(crate::CredentialRequest::Closed) | None => break,
+                Some(crate::CredentialRequest::Visit { url, .. }) => {
+                    let mut line = Writer::new(url.len().checked_add(10).expect("bounded sign-in address"));
+                    line.put(b"Sign in: ").expect("visit prefix");
+                    line.put(&url).expect("visit address");
+                    line.put(b"\n").expect("visit newline");
+                    self.output.push(line.finish());
+                }
+                Some(crate::CredentialRequest::SignedIn { .. }) => {}
                 Some(
-                    protocol::CredentialRequest::Visit { .. }
-                    | protocol::CredentialRequest::Http(_)
-                    | protocol::CredentialRequest::Save { .. }
-                    | protocol::CredentialRequest::Ready { .. },
-                ) => unreachable!("handed-in accounts perform no sign-in"),
+                    crate::CredentialRequest::Http(_)
+                    | crate::CredentialRequest::Save { .. }
+                    | crate::CredentialRequest::Ready { .. },
+                ) => unreachable!("the native driver owns its exchange and keeper"),
             }
         }
         self.accounts = Some(accounts);

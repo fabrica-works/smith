@@ -27,6 +27,8 @@ smith-transcript.workspace = true
 smith-channel.workspace = true
 
 [dev-dependencies]
+skein-fake-oauth.workspace = true
+smith-local-process-world.workspace = true
 skein-fake-peers.workspace = true
 skein-world.workspace = true
 skein-tls-world.workspace = true

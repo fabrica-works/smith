@@ -109,7 +109,8 @@ impl Browser {
             }
             Up::Bytes(bytes) => {
                 if self.body {
-                    self.seen = bytes.as_ref() == b"Redirect received\n";
+                    self.seen = bytes.as_ref() == b"Redirect received\n"
+                        || bytes.as_ref() == b"Sign-in received. You may close this page.\n";
                     self.close();
                 } else {
                     if bytes.starts_with(b"HTTP/1.1 302") {
@@ -125,7 +126,17 @@ impl Browser {
                     } else {
                         assert!(bytes.starts_with(b"HTTP/1.1 200"));
                         self.body = true;
-                        self.stream_down(Down::Demand { read: Read::Fill(18), room: 0 });
+                        let head = std::str::from_utf8(&bytes).expect("callback head");
+                        let length = head
+                            .split("\r\n")
+                            .find_map(|line| {
+                                line.strip_prefix("Content-Length: ").or_else(|| line.strip_prefix("content-length: "))
+                            })
+                            .expect("callback body length")
+                            .parse::<u32>()
+                            .expect("bounded callback page");
+                        assert!(length == 18 || length == 43, "the legacy or native callback page");
+                        self.stream_down(Down::Demand { read: Read::Fill(length), room: 0 });
                     }
                 }
             }

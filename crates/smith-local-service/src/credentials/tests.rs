@@ -1,6 +1,6 @@
 use super::*;
+use crate::CredentialRequest;
 use skein_lib::Duration;
-use smith_local_protocol::CredentialRequest;
 
 fn fixture(name: &str) -> Box<[u8]> {
     let path = std::path::Path::new("../smith-local-protocol/src/login-fixtures").join(name);
@@ -273,3 +273,5 @@ fn closing_cancels_a_login_read_before_closing_its_root() {
     assert!(owner.closed());
     assert_eq!(closed.as_slice(), &[kernel::Fd::new(70)]);
 }
+
+mod private;

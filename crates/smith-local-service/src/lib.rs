@@ -22,6 +22,8 @@ pub mod profile;
 #[cfg(test)]
 mod tests;
 
+pub use smith_local_protocol::CredentialRequest;
+
 pub use credentials::{ACCOUNTS_MAX_OUT, Accounts, Source, accounts_worst_case};
 pub use process::{Launch, ProcessLimits, to_host_exit};
 pub use service::{

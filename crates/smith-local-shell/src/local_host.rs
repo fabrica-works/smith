@@ -535,7 +535,8 @@ impl Local {
                         self.service.credential(grant, envelope.into());
                     }
                     smith_local_protocol::CredentialRequest::Failed { event } => self.service.local_event(event),
-                    smith_local_protocol::CredentialRequest::Closed
+                    smith_local_protocol::CredentialRequest::SignedIn { .. }
+                    | smith_local_protocol::CredentialRequest::Closed
                     | smith_local_protocol::CredentialRequest::Notice { .. }
                     | smith_local_protocol::CredentialRequest::Ready { .. } => {
                         unreachable!("credential translator lends only a grant")
