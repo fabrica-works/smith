@@ -2046,3 +2046,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    the dialect's, `sub_agents`' models unchanged, with unit tests and a
    process Proof. 10.16 and 10.10 still follow 10.24 only. Each stops
    past 700.
+121. **smith-10.s4: the live view holds only what the screen shows,
+   before 10.24 lands** (block of 2026-10-13T13:11:31Z, smith 10.24).
+   10.24's end-to-end stories refuse startup: `service.worst_case`
+   2,149,786,966 B against `memory` 2,147,463,818 B, because 10.8's
+   bounded live-view queue retains whole records, a request's full prompt
+   among them, and prices each slot so, though the screen shows only
+   deltas, tools, notices and the response's metadata (shell.md, 4.1:
+   "the records it shows"). Fixing it took 10.24 to 723 lines. Ruling:
+   the implementer's prerequisite, as a step not in the plan, 10.s4, in
+   session 10's file: the sink's view queues a projection of each record
+   the screen shows, never a prompt, and the footprint prices the view
+   from the projection's bound; 10.24 needs it and keeps 700 once the
+   projection work leaves its diff. No limit, default or design changes.

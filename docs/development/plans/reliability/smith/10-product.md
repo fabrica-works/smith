@@ -772,7 +772,7 @@ names, which 10.24's `/model` and `/effort` need.
 Split (decisions.md, 13.120): 10.24 lands all but `/model` and
 `/effort`'s execution: it parses them as local commands and refuses them
 in words, naming them, as not yet available; 10.25 executes them.
-Needs: 10.8; for `/model` and `/effort`, that step: 08.s1 (decisions.md, 13.114).
+Needs: 10.8; 10.s4 (decisions.md, 13.121); for `/model` and `/effort`, that step: 08.s1 (decisions.md, 13.114).
 Files: 10.8's, and `benchmarks/agents/smith/faces.toml` for one appended
 Chat entry (decisions.md, 13.118).
 Shape: 10.8's.
@@ -877,6 +877,40 @@ Proof: the gate and the smoke, once; then 13.6's `slow-completion` once,
 as 13.70 says.
 Don't: implement 10.10's raw terminal input here.
 Size: README rule 9's.
+
+### 10.s4 The live view holds only what the screen shows
+Added (decisions.md, 13.121), before 10.24 lands. Scope (shell.md, 4.1;
+events.md, 5.2): 10.8's live view queues, for each record the screen
+shows (`text.delta`, a tool's start and terminal with its verdict and
+duration, notices and failures, a response's model, usage and spend, the
+budget's standing), a typed projection of what it shows, bounded on its
+own; a request's prompt and any record the screen does not show never
+enter the queue; the startup footprint prices the view as its slots
+times the projection's bound, not a record's encoded line. Destinations,
+their capture and `smith exec` are unchanged. It starts from 10.24's
+uncompiled one-sink projection work, which leaves 10.24's diff.
+Needs: 10.8.
+Files: `smith-agent-service` (`src/sinks.rs`, `src/events.rs`, the
+profile's footprint owner and its tests); `smith-events` (the projection
+type, if the screen's records need one); `smith-local-shell`
+(`local_host.rs`, `local_host/memory.rs`, `check.rs`, where the view's
+part is priced); their tests.
+Shape: `sinks::View` (the projection) and its bound beside
+`FRONT_RECORDS`; the front end pops `View`s, not `Record`s.
+Test shape: unit: a request's record never enters the view; each shown
+record's projection stays within its bound; the footprint's view part is
+`FRONT_RECORDS` times that bound. Process:
+`the_interactive_default_fits_its_memory`: `smith check --json` for the
+interactive invocation, on each preset's default settings in scratch
+`HOME` and `XDG_*`, reports a worst case within the default `memory`.
+Ceilings: 20 ms, 2 s.
+Proof: process, `the_interactive_default_fits_its_memory`; once, under
+2 s. The body states each preset's interactive worst case and its
+margin under 2 GiB.
+Don't: no change to `memory` or any default; no destination change; no
+screen (10.24).
+Size: README rule 9's; past 700, it stops and asks.
+Removes: the view's whole-record slots.
 
 ### 10.10 Raw terminal input
 Scope (shell.md, 4.1; skein shell.md, 6.3): with a terminal and without
