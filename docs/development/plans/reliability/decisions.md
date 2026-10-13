@@ -1996,3 +1996,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `Effort` alias of bounded bytes keeping the provider's names; no
    catalog. Checking that an effort is one of the dialect's stays where
    settings check it now, and at `/effort` in 10.24.
+117. **08.s1: the compaction's model in its starting fact** (block of
+   2026-10-13T11:27:58Z, smith 08.s1). The designer's answer of 11:25:23Z
+   puts the compaction's own model, usage and cost in its conversation's
+   records (events.md, 3.4 and 3.5); the agent service's
+   `responses::Book` keeps the charter's opening model and asserts every
+   request matches it, and `FactKind::CompactionStarted` carries only the
+   opener and the window. Ruling: the implementer's first option, as the
+   plan's Shape: `FactKind::CompactionStarted` carries the compaction's
+   model identity (model, window, output, effort), the window's own on a
+   model change and the current one otherwise; `Book` opens that
+   compaction's conversation and checks its requests against it, and
+   returns to the charter's for the window it opens. The run's `Opening`
+   fact is unchanged. No channel or events version change: the
+   conversation's records already carry a model.

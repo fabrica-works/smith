@@ -537,6 +537,11 @@ The run's root's `ConfiguredModel` gains the model's prices, from those
 resolved at startup; the charter's `effort` is schema `text32`, with a
 public `Effort` alias of bounded bytes keeping the provider's names
 (decisions.md, 13.116).
+`smith-domain-session`'s `FactKind::CompactionStarted` carries the
+compaction's model, window, output and effort, and `smith-agent-service`'s
+`responses::Book` opens and checks that compaction's conversation with
+them (decisions.md, 13.117); `smith-agent-service` (`responses.rs`) joins
+Files.
 Test shape: unit: a prompt takes its session's effort, and none when the
 charter names none; a turn's model and effort round-trip in the
 transcript; the configuration holds each model of main's endpoint and
