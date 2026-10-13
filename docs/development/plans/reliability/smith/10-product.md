@@ -490,14 +490,23 @@ directory is removed as the designer ruled on 2026-10-13 (shell.md, 4.2,
 "Removed by the names it wrote"): the store's known names through
 FileIo's `Remove`, then the directory with `directory: true`, never a
 listing or a traversal, and never `std::fs`; a directory left behind is
-a warning before the last line.
+a warning before the last line. `-o`'s file, as the designer ruled on
+2026-10-13 (shell.md, 4.3, "The result's file is the product's, not the
+run's"): written and synced after the answer and before
+`session.ended`; after an accepted answer a write or sync failure exits
+1 with `smith: run accepted, but its result could not be written to
+<file>: <the kernel's error>`, `run.completed` unchanged and
+`session.ended`'s `exit` 1; after any other answer, a warning before
+the answer's last line.
 Needs: 10.5; skein's `Remove` with `directory` (skein's `io.md`, 5), a
 skein step its supervisor names, pinned.
 Files: 10.5's, as they concern these two.
 Test shape: unit or process tests of each: `-o`'s file holds the result
 and nothing else; `--ephemeral` leaves no file behind, on success and on
 failure; and a file the store did not write, placed in the directory,
-keeps the directory with a warning naming it. Under 0.5 s.
+keeps the directory with a warning naming it; an `-o` file that cannot
+be written after an accepted answer exits 1 with that last line, and
+`session.ended`'s `exit` is 1. Under 0.5 s.
 Proof: process, those tests, once.
 Size: README rule 9's.
 
