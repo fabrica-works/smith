@@ -625,8 +625,11 @@ Removes: the "awaits its shipped product invocation" refusal for `Exec`.
 
 ### 10.6 Sign-in on skein's driver, and `smith login`
 Scope (shell.md, 4.5 and 7; hosts.md, 5.4): the service's component
-takes `sign_in` accounts: the preset's registration where the provider
-sanctions its public client, settings' otherwise; `Keeper::Private`
+takes `sign_in` accounts with the registration their settings give,
+never a preset's (shell.md, 7, as the designer ruled on 2026-10-13:
+`client_id`, `authorization_url`, `token_url`, `redirect_uri`, `scope`,
+`token_format` and `trust`, a missing key refused naming it);
+`Keeper::Private`
 under `$XDG_STATE_HOME/smith/tokens`; the account id from the claims.
 `smith login ACCOUNT` exits 0, 3, or 2 for an unknown account; `smith
 local`'s accounts move onto the driver; at the end a waiting sign-in is
@@ -854,9 +857,9 @@ failed, `RunFailed` (shell.md, 4.3).
 
 ## Questions to raise when reached
 
-- **Public clients** (shell.md, 11; 10.6): until a provider sanctions
-  smith's use of its public client, propose that `sign_in` takes a
-  registration from settings.
+- ~~**Public clients** (shell.md, 11; 10.6)~~: settled by the designer on
+  2026-10-13 (shell.md, 7): no preset carries a registration; `sign_in`
+  takes it from the account's settings.
 - ~~**Repository trust** (11; 10.3)~~: settled by the designer on
   2026-10-12 (shell.md, 5.1, "The line" and "No approval"): the
   authority keys are refused, and nothing else; no approval step.
