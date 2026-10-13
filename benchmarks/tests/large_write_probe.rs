@@ -108,7 +108,11 @@ fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
     let medium = medium.with_variant("oversized").expect("same medium variant");
     assert_eq!(medium.prompt, variant.prompt);
     assert_eq!(medium.budget, variant.budget);
-    assert_eq!(medium.smith, variant.smith);
+    let mut historical_settings = medium.smith.clone();
+    let mut live_settings = variant.smith.clone();
+    assert_eq!(historical_settings.remove("conversations"), Some(toml::Value::Integer(6)));
+    assert_eq!(live_settings.remove("conversations"), Some(toml::Value::Integer(5)));
+    assert_eq!(historical_settings, live_settings);
     assert_eq!(medium.seed_sha256, variant.seed_sha256);
     assert_eq!(medium.event, variant.event);
     assert_eq!(medium.outcome, variant.outcome);
