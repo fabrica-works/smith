@@ -2170,3 +2170,23 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    Then 12.3 runs once more, both suites, as its card says; that rerun
    is not section 9's rerun of a failed probe, since no probe ran. 12.3
    still fixes nothing in smith.
+129. **smith-12.s2: `process-tree` follows the product's `group_stop`;
+   12.3 finishes the undispatched entries** (block of
+   2026-10-13T21:35:28Z, smith 12.3). The probes call stopped at setup on
+   attempt 36: `probes/process-tree` pins `group_stop = 250` (ms), and
+   the product's settings take durations in whole seconds ("product
+   duration override group_stop requires whole seconds"). shell.md 6.4's
+   table gives `group_stop` "1 s for each of its three steps |
+   provisional; the process-tree probe", and README rule 4 has the
+   harness follow the binary. Ruling: a step not in the plan, 12.s2,
+   drops `process-tree`'s `group_stop` pin so the product's 1 s applies,
+   and its `tool-timeout` check's `grace_ms` follows (1000); its version
+   goes to 2, since its checks change (benchmarks.md, 3: "results of
+   different versions are never compared"), so it is not calibrated and
+   gates nothing in 12.3. `tool-output`'s `timeout` variant also pins
+   `group_stop = 250`: 12.s2 says whether it reached the product's
+   settings (it ran before attempt 36) and, if it did not, treats it the
+   same way. No product change. Then 12.3 runs the probes suite's
+   entries not dispatched (from `process-tree` on) once, with `suite
+   probes --include`, on the same arm, and summarises both runs together;
+   the 35 attempts already run stand.
