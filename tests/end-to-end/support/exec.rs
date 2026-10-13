@@ -185,10 +185,24 @@ fn run_fixture(
     watching: window::Story,
 ) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
     assert_no_children();
+    let mut command_arguments: Vec<std::ffi::OsString> = arguments.iter().map(std::ffi::OsString::from).collect();
+    let program = match watching {
+        window::Story::Resize => {
+            let mut setup: Vec<std::ffi::OsString> =
+                ["-c", "stty rows 24 cols 80; exec \"$@\"", "smith-window", env!("CARGO_BIN_EXE_smith")]
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
+            setup.append(&mut command_arguments);
+            command_arguments = setup;
+            "/bin/sh"
+        }
+        window::Story::None | window::Story::Modes => env!("CARGO_BIN_EXE_smith"),
+    };
     let mut binary = Binary::start(
         Command {
-            program: env!("CARGO_BIN_EXE_smith").into(),
-            arguments: arguments.iter().map(std::ffi::OsString::from).collect(),
+            program: program.into(),
+            arguments: command_arguments,
             environment: vec![
                 ("HOME".into(), scratch.path().into()),
                 ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
@@ -213,7 +227,7 @@ fn run_fixture(
         Refusal {
             now,
             foreign: foreign.then(|| scratch.path().join("state")),
-            deadline: now.saturating_add(Duration::from_secs(1)),
+            deadline: now.saturating_add(Duration::from_secs(if sign_in { 5 } else { 1 })),
             trace: arguments
                 .windows(2)
                 .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))

@@ -15,7 +15,6 @@ pub(super) enum Story {
 
 enum Resize {
     None,
-    Initial,
     Response,
     Done,
 }
@@ -45,7 +44,7 @@ impl Judge {
                     during: None,
                     after: None,
                     resize: match story {
-                        Story::Resize => Resize::Initial,
+                        Story::Resize => Resize::Response,
                         Story::None | Story::Modes => Resize::None,
                     },
                 })
@@ -81,10 +80,6 @@ impl Watch {
         assert_eq!(modes, self.before, "smith leaves running terminal modes alone");
         self.during = Some(modes);
         match self.resize {
-            Resize::Initial => {
-                resize_terminal(self.master, Size { rows: 24, columns: 80 }).expect("initial window change");
-                self.resize = Resize::Response;
-            }
             Resize::Response if shown.windows(21).any(|bytes| bytes == b"codex/gpt-6-luna: in ") => {
                 resize_terminal(self.master, Size { rows: 24, columns: 20 }).expect("second window change");
                 self.resize = Resize::Done;

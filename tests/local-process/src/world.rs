@@ -600,7 +600,7 @@ impl World {
         behavior: (bool, bool, bool),
     ) -> Self {
         let (interrupt_on_query, keep_facts, change) = behavior;
-        let mut disk = Filesystem::new();
+        let mut disk = Filesystem::for_user(skein_shell::effective_user());
         std::fs::create_dir_all(files.path.join("chat")).expect("chat fixture");
         let mut items =
             vec![skein_fake_machine::Item::directory(b".smith-test"), skein_fake_machine::Item::directory(b"chat")];
