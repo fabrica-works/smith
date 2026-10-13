@@ -515,7 +515,11 @@ mod failure_tests {
             (host::Exhausted::Time, b"run failed: out of time\n".as_slice()),
         ] {
             assert_eq!(
-                shown(local::Failure::Run { failure: host::RunFailure::Budget(kind), detail: Box::new([]) }).as_ref(),
+                shown(local::Failure::Run {
+                    failure: host::RunFailure::Budget { exhausted: kind, used: None, bound: None },
+                    detail: Box::new([])
+                })
+                .as_ref(),
                 expected
             );
         }

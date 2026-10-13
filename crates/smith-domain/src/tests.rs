@@ -869,13 +869,7 @@ fn no_grant_fails_locally_and_exhaustion_reports_the_account() {
         if let Request::Answer {
             answer:
                 run::Answer::Failed {
-                    failure:
-                        run::Failure::Model(run::Fault::Completion {
-                            failure: run::CompletionFailure::Exhausted { .. },
-                            evidence: run::CompletionEvidence::Unknown,
-                            model: 0,
-                            attempts: 1,
-                        }),
+                    failure: run::Failure::Model(run::Fault::Exhausted { account: 0, retry_at: Some(_) }),
                     ..
                 },
             ..
@@ -1353,7 +1347,10 @@ fn the_runs_deadline_fires_before_the_sessions_expiry_at_the_same_instant() {
     else {
         panic!("expected the run failed, got {emitted:?}");
     };
-    assert_eq!(failure, &run::Failure::Budget(run::Exhausted::Time));
+    assert_eq!(
+        failure,
+        &run::Failure::Budget { exhausted: run::Exhausted::Time, used: Some(600_000), bound: Some(600_000) }
+    );
 }
 
 #[test]
@@ -1983,7 +1980,10 @@ fn a_provider_charge_above_its_reserved_maximum_fails_without_recording_it() {
     let [Request::Answer { answer: run::Answer::Failed { failure, spent, turns }, .. }] = emitted.as_ref() else {
         panic!("overbound terminal fails the run: {emitted:?}");
     };
-    assert_eq!(*failure, run::Failure::Budget(run::Exhausted::Overflow(run::Overflow::Spend)));
+    assert_eq!(
+        *failure,
+        run::Failure::Budget { exhausted: run::Exhausted::Overflow(run::Overflow::Spend), used: None, bound: None }
+    );
     assert_eq!((*spent, *turns), (run::Spend::ZERO, 0));
     assert!(harness.turns.is_empty());
 }

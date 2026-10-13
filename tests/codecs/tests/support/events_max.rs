@@ -88,6 +88,9 @@ fn max_completion_failure(limits: &smith_events::Limits) -> CompletionFailure {
 
 fn max_answer_failure(limits: &smith_events::Limits) -> AnswerFailure {
     AnswerFailure {
+        retry_after_ms: Some(u64::MAX),
+        used: Some(u64::MAX),
+        bound: Some(u64::MAX),
         endpoint: Some(payload(limits.string)),
         model: Some(payload(limits.string)),
         attempts: Some(u64::MAX),

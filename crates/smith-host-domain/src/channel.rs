@@ -348,7 +348,7 @@ pub enum ModelFault {
     },
 
     /// The account spent its provider allowance. The host decides whether to retry after cooldown.
-    Exhausted,
+    Exhausted { account: u32, retry_after_ms: Option<u64> },
     /// Its provider failed for good: unreachable, overloaded past the
     /// retries, or refusing the call or its credentials.
     Provider,
@@ -442,7 +442,12 @@ pub enum RunFailure {
     /// The LLM could not do the work.
     Model(ModelFault),
     /// The run's budget ran out.
-    Budget(Exhausted),
+    Budget {
+        exhausted: Exhausted,
+        /// Turns, host spend units, or milliseconds of run wall time; absent for receiving/overflow failures.
+        used: Option<u64>,
+        bound: Option<u64>,
+    },
     /// The LLM did not keep to the run's rules.
     Policy(Policy),
     /// The host parent cancelled the run.

@@ -161,7 +161,8 @@ fn a_child_asking_for_sub_agents_is_refused() {
 fn the_shared_budget_ends_the_run_after_every_conversation_settles() {
     let world =
         settled(&Settings { job: Job::Spending, budget: run::Budget { turns: 8, ..BUDGET }, ..Settings::calm(4) });
-    let Answer::Failed { failure: Failure::Budget(Exhausted::Turns), spent, .. } = world.answer() else {
+    let Answer::Failed { failure: Failure::Budget { exhausted: Exhausted::Turns, .. }, spent, .. } = world.answer()
+    else {
         panic!("the run spends its shared turns")
     };
     assert_eq!(spent.turns, 7, "wind-down closes the pending ordinary attempt before its callback reports usage");
@@ -245,7 +246,10 @@ fn a_deadline_mid_tree_answers_only_after_the_tree_settles() {
             },
             ..Settings::calm(700 + seed)
         });
-        assert!(matches!(world.answer(), Answer::Failed { failure: Failure::Budget(Exhausted::Time), .. }));
+        assert!(matches!(
+            world.answer(),
+            Answer::Failed { failure: Failure::Budget { exhausted: Exhausted::Time, .. }, .. }
+        ));
         nested += usize::from(
             count(&world, |fact| {
                 matches!(fact, run::facts::FactKind::Opened { kind: run::facts::Kind::Child { .. }, .. })

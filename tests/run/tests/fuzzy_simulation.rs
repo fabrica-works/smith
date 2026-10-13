@@ -104,15 +104,17 @@ fn random_worlds_settle_with_every_start_answered_once() {
                 Answer::Refused(Refusal::Invalid(Invalid::Conversation)) => "conversation invalid",
                 Answer::Refused(Refusal::Invalid(_)) => "invalid",
                 Answer::Failed { failure, .. } => match failure {
-                    Failure::Model(Fault::Completion { .. } | Fault::Provider | Fault::Exhausted) => "fault",
+                    Failure::Model(Fault::Completion { .. } | Fault::Provider | Fault::Exhausted { .. }) => "fault",
                     Failure::Model(Fault::Truncated | Fault::Refused | Fault::Malformed) => "stopped",
-                    Failure::Budget(Exhausted::Turns) => "turns",
-                    Failure::Budget(Exhausted::Time) => "time",
-                    Failure::Budget(Exhausted::Spend) => "spend",
-                    Failure::Budget(Exhausted::Overflow(_)) => {
+                    Failure::Budget { exhausted: Exhausted::Turns, .. } => "turns",
+                    Failure::Budget { exhausted: Exhausted::Time, .. } => "time",
+                    Failure::Budget { exhausted: Exhausted::Spend, .. } => "spend",
+                    Failure::Budget { exhausted: Exhausted::Overflow(_), .. } => {
                         panic!("bounded random partner usage and prices remain representable")
                     }
-                    Failure::Budget(Exhausted::Tokens(_)) => panic!("source random partner has no receiving refusal"),
+                    Failure::Budget { exhausted: Exhausted::Tokens(_), .. } => {
+                        panic!("source random partner has no receiving refusal")
+                    }
                     Failure::Policy(Policy::Unfinished { .. }) => "unfinished",
                     Failure::Cancelled => "cancelled",
                     Failure::Stale => "stale",

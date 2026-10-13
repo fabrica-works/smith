@@ -578,6 +578,18 @@ fn write_completion_failure(json: &mut Encoder, value: &CompletionFailure, captu
 
 fn write_answer_failure(json: &mut Encoder, value: &AnswerFailure, capture: &Capture) {
     json.object_start();
+    if let Some(item) = value.retry_after_ms {
+        json.key(b"retry_after_ms");
+        json.unsigned(item);
+    }
+    if let Some(item) = value.used {
+        json.key(b"used");
+        json.unsigned(item);
+    }
+    if let Some(item) = value.bound {
+        json.key(b"bound");
+        json.unsigned(item);
+    }
     json.key(b"class");
     write_answer_class(json, &value.class, capture);
     if let Some(item) = &value.endpoint {

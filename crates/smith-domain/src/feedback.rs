@@ -454,7 +454,7 @@ fn render_fault(text: &mut Text, fault: run::Fault) {
                 run::CompletionEvidence::Response { .. } => b"response",
             });
         }
-        run::Fault::Exhausted => text.put(b"exhausted"),
+        run::Fault::Exhausted { .. } => text.put(b"exhausted"),
         run::Fault::Provider => text.put(b"provider"),
         run::Fault::Refused => text.put(b"refused"),
         run::Fault::Truncated => text.put(b"truncated"),

@@ -182,7 +182,8 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
     let mut agent =
         Agent::new(Settings { job: Job::Spending, budget: run::Budget { turns: 8, ..BUDGET }, ..Settings::calm(4) });
     agent.run(20_000);
-    let run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Turns), spent, turns } = agent.answer()
+    let run::Answer::Failed { failure: run::Failure::Budget { exhausted: run::Exhausted::Turns, .. }, spent, turns } =
+        agent.answer()
     else {
         panic!("the original parallel-child budget story settles with its actual global prefix")
     };
@@ -235,7 +236,9 @@ fn child_completions_and_raw_usage_cross_the_host_final_answer_once() {
             }
             Seen::Answer { turns: observed, spent: actual, parked, .. } => {
                 assert_eq!((*observed, *actual, *parked), (turns, spent, false));
-                let result = RunResult::Failed { failure: host::RunFailure::Budget(host::Exhausted::Turns) };
+                let result = RunResult::Failed {
+                    failure: host::RunFailure::Budget { exhausted: host::Exhausted::Turns, used: None, bound: None },
+                };
                 host.up(Up::Answer { answer: final_accounting(turns, spent, result, host.seen.read) });
             }
             Seen::Waiting { read } => host.up(Up::Waiting { read: *read }),

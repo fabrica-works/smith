@@ -943,7 +943,14 @@ pub(crate) fn largest_line(
         Capture::Everything => {
             // The record kind controls the size formula; no answer content is allocated here.
             let answer = crate::answer_record(
-                crate::AnswerMeta { run: 0, wind_down: false, read: None, unread: 0, elapsed: Duration::ZERO },
+                crate::AnswerMeta {
+                    now: Time::ZERO,
+                    run: 0,
+                    wind_down: false,
+                    read: None,
+                    unread: 0,
+                    elapsed: Duration::ZERO,
+                },
                 &smith_domain::run::Answer::Parked { spent: smith_domain::run::Spend::ZERO, turns: 0 },
                 Capture::None,
             );
@@ -1095,6 +1102,7 @@ pub(crate) mod tests {
             sinks.add(Destination::Trace, token, Delivery::Complete).unwrap();
             let answer = crate::answer_record(
                 crate::AnswerMeta {
+                    now: Time::ZERO,
                     run: 7,
                     wind_down: true,
                     read: Some(31),

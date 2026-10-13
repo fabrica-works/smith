@@ -307,7 +307,7 @@ impl HostService {
                 self.domain_events.push(host::Input::Process(host::process::Event::Reaped { owner: agent, detail }));
             }
             protocol::ProcessEvent::Channel { agent, event } => {
-                self.route_channel(agent, event);
+                self.route_channel(agent, *event);
             }
         }
     }

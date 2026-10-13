@@ -33,7 +33,7 @@ pub fn last(service: &crate::Service) -> Option<Last> {
         return Some(Last::Unanswered(crate::failure(service).expect("an unanswered end keeps its first cause")));
     }
     let failure = match service.final_failure {
-        Some(why) => failed(why),
+        Some(why) => failed(why, service.final_answer_at),
         None => match service.final_refusal {
             Some(why) => refused(why),
             None => return Some(Last::Quiet),
@@ -42,8 +42,9 @@ pub fn last(service: &crate::Service) -> Option<Last> {
     Some(Last::Failed { failure: Box::new(failure), detail: service.final_detail.clone() })
 }
 
-pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer, detail: Box<[u8]>) {
+pub(crate) fn remember(service: &mut crate::Service, answer: &run::Answer, detail: Box<[u8]>, now: skein_lib::Time) {
     service.final_detail = detail;
+    service.final_answer_at = now;
     match answer {
         run::Answer::Failed { failure, .. } => service.final_failure = Some(*failure),
         run::Answer::Refused(refusal) => service.final_refusal = Some(*refusal),
@@ -65,6 +66,7 @@ pub struct Answered {
 /// The run owner's final fence and measurements, supplied with its actual answer.
 #[derive(Clone, Copy, Debug)]
 pub struct AnswerMeta {
+    pub now: skein_lib::Time,
     pub run: u64,
     pub wind_down: bool,
     pub read: Option<u64>,
@@ -81,7 +83,9 @@ pub fn answer_record(meta: AnswerMeta, answer: &run::Answer, capture: Capture) -
         run::Answer::Accepted { outcome, spent, turns } => {
             (Status::Accepted, None, Some(accepted(outcome, capture)), *turns, *spent)
         }
-        run::Answer::Failed { failure, spent, turns } => (Status::Failed, Some(failed(*failure)), None, *turns, *spent),
+        run::Answer::Failed { failure, spent, turns } => {
+            (Status::Failed, Some(failed(*failure, meta.now)), None, *turns, *spent)
+        }
     };
     RunCompleted {
         run: meta.run,
@@ -136,6 +140,9 @@ pub fn accepted(outcome: &run::outcome::Declared, capture: Capture) -> RunResult
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
+        retry_after_ms: None,
+        used: None,
+        bound: None,
         dropped: None,
         ended: None,
         turn: None,
@@ -192,7 +199,7 @@ fn invalid_name(invalid: run::Invalid) -> &'static [u8] {
     }
 }
 
-fn failed(why: run::Failure) -> AnswerFailure {
+fn failed(why: run::Failure, now: skein_lib::Time) -> AnswerFailure {
     match why {
         run::Failure::Model(fault) => match fault {
             run::Fault::Completion { failure: why, evidence, model: _, attempts: _ } => {
@@ -200,13 +207,21 @@ fn failed(why: run::Failure) -> AnswerFailure {
                 result.completion = Some(completion(why, evidence));
                 result
             }
-            run::Fault::Exhausted => failure(AnswerClass::Model, Some(b"exhausted")),
+            run::Fault::Exhausted { account, retry_at } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(u64::from(account));
+                result.retry_after_ms = match retry_at {
+                    Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
+                    None => None,
+                };
+                result
+            }
             run::Fault::Provider => failure(AnswerClass::Model, Some(b"provider")),
             run::Fault::Refused => failure(AnswerClass::Model, Some(b"refused")),
             run::Fault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             run::Fault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
-        run::Failure::Budget(exhausted) => {
+        run::Failure::Budget { exhausted, used, bound } => {
             let which: &[u8] = match exhausted {
                 run::Exhausted::Turns => b"turns",
                 run::Exhausted::Spend => b"spend",
@@ -222,7 +237,10 @@ fn failed(why: run::Failure) -> AnswerFailure {
                     run::Overflow::Usage => b"usage_overflow",
                 },
             };
-            failure(AnswerClass::Budget, Some(which))
+            let mut result = failure(AnswerClass::Budget, Some(which));
+            result.used = used;
+            result.bound = bound;
+            result
         }
         run::Failure::Policy(run::Policy::Unfinished { .. }) => failure(AnswerClass::Policy, None),
         run::Failure::Cancelled => failure(AnswerClass::Cancelled, None),
@@ -350,7 +368,14 @@ mod tests {
     use super::*;
 
     fn meta() -> AnswerMeta {
-        AnswerMeta { run: 7, wind_down: false, read: Some(13), unread: 1, elapsed: Duration::from_millis(17) }
+        AnswerMeta {
+            now: skein_lib::Time::ZERO,
+            run: 7,
+            wind_down: false,
+            read: Some(13),
+            unread: 1,
+            elapsed: Duration::from_millis(17),
+        }
     }
 
     fn cases(spent: run::Spend) -> [(run::Answer, Status, Option<AnswerClass>, u64); 9] {
@@ -376,7 +401,11 @@ mod tests {
                 19,
             ),
             (
-                run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Spend), spent, turns: 2 },
+                run::Answer::Failed {
+                    failure: run::Failure::Budget { exhausted: run::Exhausted::Spend, used: None, bound: None },
+                    spent,
+                    turns: 2,
+                },
                 Status::Failed,
                 Some(AnswerClass::Budget),
                 19,
@@ -450,12 +479,15 @@ mod tests {
                 );
             }
         }
-        let why = failed(run::Failure::Model(run::Fault::Completion {
-            failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
-            evidence: run::CompletionEvidence::Response { status: None },
-            model: 0,
-            attempts: 1,
-        }));
+        let why = failed(
+            run::Failure::Model(run::Fault::Completion {
+                failure: run::CompletionFailure::RateLimited { retry_after: Duration::from_millis(23) },
+                evidence: run::CompletionEvidence::Response { status: None },
+                model: 0,
+                attempts: 1,
+            }),
+            meta().now,
+        );
         assert_eq!(
             why.completion,
             Some(CompletionFailure {
@@ -469,8 +501,46 @@ mod tests {
             })
         );
         assert_eq!(
-            failed(run::Failure::Transcript(run::TranscriptRefusal::Unresolved)).reason.as_deref(),
+            failed(run::Failure::Transcript(run::TranscriptRefusal::Unresolved), meta().now).reason.as_deref(),
             Some(b"unresolved".as_slice())
         );
+    }
+
+    #[test]
+    fn an_exhausted_accounts_wait_is_measured_at_the_answer() {
+        for (retry_at, expected) in [
+            (Some(skein_lib::Time::from_nanos(100_000_000)), Some(80)),
+            (Some(skein_lib::Time::ZERO), Some(0)),
+            (None, None),
+        ] {
+            let mut meta = meta();
+            meta.now = skein_lib::Time::from_nanos(20_000_000);
+            meta.elapsed = Duration::from_secs(999);
+            let answer = run::Answer::Failed {
+                failure: run::Failure::Model(run::Fault::Exhausted { account: 23, retry_at }),
+                spent: run::Spend::ZERO,
+                turns: 0,
+            };
+            let record = answer_record(meta, &answer, Capture::None);
+            let failure = record.failure.expect("failed answer");
+            assert_eq!(failure.account, Some(23));
+            assert_eq!(failure.retry_after_ms, expected);
+            assert!(failure.completion.is_none());
+        }
+    }
+
+    #[test]
+    fn a_budget_failure_keeps_run_usage_instead_of_product_elapsed_time() {
+        let answer = run::Answer::Failed {
+            failure: run::Failure::Budget { exhausted: run::Exhausted::Time, used: Some(1073), bound: Some(1000) },
+            spent: run::Spend::ZERO,
+            turns: 0,
+        };
+        let record = answer_record(meta(), &answer, Capture::None);
+        let failure = record.failure.expect("failed answer");
+        assert_eq!(failure.which.as_deref(), Some(b"time".as_slice()));
+        assert_eq!(failure.used, Some(1073));
+        assert_eq!(failure.bound, Some(1000));
+        assert_eq!(record.duration_ms, 17);
     }
 }

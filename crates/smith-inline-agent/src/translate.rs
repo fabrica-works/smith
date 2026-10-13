@@ -103,7 +103,7 @@ pub(crate) fn host_reply(value: host::Reply) -> Option<run::HostReply> {
     }
 }
 
-pub(crate) fn answer(value: run::Answer, read: Option<Token>) -> host::Answer {
+pub(crate) fn answer(value: run::Answer, read: Option<Token>, now: skein_lib::Time) -> host::Answer {
     match value {
         run::Answer::Parked { spent, turns } => {
             host::Answer { read, turns, spent: spent.units, result: host::RunResult::Parked }
@@ -123,7 +123,7 @@ pub(crate) fn answer(value: run::Answer, read: Option<Token>) -> host::Answer {
             read,
             turns,
             spent: spent.units,
-            result: host::RunResult::Failed { failure: failure(value) },
+            result: host::RunResult::Failed { failure: failure(value, now) },
         },
     }
 }
@@ -135,11 +135,13 @@ const fn refusal(value: run::Refusal) -> host::Refusal {
     }
 }
 
-const fn failure(value: run::Failure) -> host::RunFailure {
+const fn failure(value: run::Failure, now: skein_lib::Time) -> host::RunFailure {
     match value {
         run::Failure::Transcript(value) => host::RunFailure::Transcript(transcript_refusal(value)),
-        run::Failure::Model(value) => host::RunFailure::Model(model_fault(value)),
-        run::Failure::Budget(value) => host::RunFailure::Budget(exhausted(value)),
+        run::Failure::Model(value) => host::RunFailure::Model(model_fault(value, now)),
+        run::Failure::Budget { exhausted: value, used, bound } => {
+            host::RunFailure::Budget { exhausted: exhausted(value), used, bound }
+        }
         run::Failure::Policy(run::Policy::Unfinished { nudges, rejected }) => {
             host::RunFailure::Policy(host::Policy::Unfinished { nudges, rejected })
         }
@@ -148,7 +150,7 @@ const fn failure(value: run::Failure) -> host::RunFailure {
     }
 }
 
-const fn model_fault(value: run::Fault) -> host::ModelFault {
+const fn model_fault(value: run::Fault, now: skein_lib::Time) -> host::ModelFault {
     match value {
         run::Fault::Completion { failure, evidence, model, attempts } => host::ModelFault::Completion {
             failure: completion_failure(failure),
@@ -156,7 +158,13 @@ const fn model_fault(value: run::Fault) -> host::ModelFault {
             model,
             attempts,
         },
-        run::Fault::Exhausted => host::ModelFault::Exhausted,
+        run::Fault::Exhausted { account, retry_at } => host::ModelFault::Exhausted {
+            account,
+            retry_after_ms: match retry_at {
+                Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
+                None => None,
+            },
+        },
         run::Fault::Provider => host::ModelFault::Provider,
         run::Fault::Refused => host::ModelFault::Refused,
         run::Fault::Truncated => host::ModelFault::Truncated,
@@ -362,7 +370,7 @@ pub(crate) fn route(agent: &mut Domain, env: &Env<Limits>, id: Id<Slot>, out: &m
                 slot.inbox.fence(read);
                 out.push(Output::Parent(parent::Request::Answered {
                     client,
-                    answer: self::answer(answer, read),
+                    answer: self::answer(answer, read, env.now),
                     detail,
                 }));
                 if let Some(names) = slot.inbox.report() {

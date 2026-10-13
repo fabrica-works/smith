@@ -741,7 +741,16 @@ fn a_run_whose_main_conversation_runs_out_of_budget_fails_for_budget() {
     let (_, conversation) = h.running(1, 100);
     let end = End::Budget(Exhausted::Turns);
     let emitted = h.step(Event::Ended { conversation, end, spend: Spend::ZERO, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Turns), Spend::ZERO)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Turns, used: Some(0), bound: Some(u64::from(BUDGET.turns)) },
+                Spend::ZERO
+            )
+        )
+    );
 }
 
 #[test]
@@ -829,7 +838,16 @@ fn an_llm_with_no_input_or_output_left_is_not_nudged() {
     assert_eq!(&*h.step(end_turn(conversation)), &[Request::Close { peer: Token::new(100) }]);
     let emitted =
         h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend), detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend))));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Spend, used: Some(BUDGET.spend), bound: Some(BUDGET.spend) },
+                spend(BUDGET.spend)
+            )
+        )
+    );
 }
 
 #[test]
@@ -841,7 +859,20 @@ fn an_llm_with_no_turn_left_is_not_nudged() {
     let yielded = Event::Yielded { conversation, stop: Stop::EndTurn, text: bytes(b"") };
     assert_eq!(&*h.step(yielded), &[Request::Close { peer: Token::new(100) }]);
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: all, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Turns), all)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget {
+                    exhausted: Exhausted::Turns,
+                    used: Some(u64::from(BUDGET.turns)),
+                    bound: Some(u64::from(BUDGET.turns))
+                },
+                all
+            )
+        )
+    );
 }
 
 #[test]
@@ -862,7 +893,20 @@ fn spending_past_the_budget_keeps_admitted_turns_stable_until_yield() {
         reasoning: None,
     };
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: total, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), total)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget {
+                    exhausted: Exhausted::Spend,
+                    used: Some(BUDGET.spend + 2),
+                    bound: Some(BUDGET.spend)
+                },
+                total
+            )
+        )
+    );
 
     // Or it yields, and is closed then.
     let (_, conversation) = h.running(2, 101);
@@ -911,7 +955,16 @@ fn the_deadline_closes_main_and_fails_the_run_for_time() {
         spend: Spend::ZERO,
         detail: Box::default(),
     });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Time, used: Some(600_000), bound: Some(600_000) },
+                Spend::ZERO
+            )
+        )
+    );
 }
 
 #[test]
@@ -1233,7 +1286,20 @@ fn past_the_budget_the_deadline_fails_the_run_for_the_part_it_went_past() {
     assert_eq!(&*h.fire(), &[Request::Close { peer: Token::new(100) }]);
     let emitted =
         h.step(Event::Ended { conversation, end: End::Closed, spend: spend(BUDGET.spend + 1), detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend + 1))));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget {
+                    exhausted: Exhausted::Spend,
+                    used: Some(BUDGET.spend + 1),
+                    bound: Some(BUDGET.spend)
+                },
+                spend(BUDGET.spend + 1)
+            )
+        )
+    );
 }
 
 #[test]
@@ -1346,7 +1412,10 @@ fn a_run_out_of_time_while_it_prepares_answers_once_its_look_has_ended() {
     h.after(BUDGET.time);
     assert!(h.fire().is_empty(), "the look is in flight");
     let emitted = h.step(Event::Read { owner: run, read: Read::Missing });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
+    assert_eq!(
+        answered(emitted),
+        (1, failed(Failure::Budget { exhausted: Exhausted::Time, used: None, bound: None }, Spend::ZERO))
+    );
 }
 
 // A cancel in every state.
@@ -1528,7 +1597,16 @@ fn checks_that_pass_once_the_run_winds_down_push_nothing() {
     // this pre-submission check returns timeout without any host delivery.
     assert_eq!(&*h.step(Event::Checked { owner, ran: ran(0, b"") }), &[returned(7, Returned::TimedOut)]);
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Time, used: Some(600_000), bound: Some(600_000) },
+                Spend::ZERO
+            )
+        )
+    );
 }
 
 #[test]
@@ -1539,7 +1617,16 @@ fn a_cancel_while_the_run_winds_down_changes_nothing() {
     drop(h.fire());
     assert!(h.step(Event::Cancel { run }).is_empty(), "the ending is decided");
     let emitted = h.step(Event::Ended { conversation, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Time), Spend::ZERO)));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Time, used: Some(600_000), bound: Some(600_000) },
+                Spend::ZERO
+            )
+        )
+    );
 
     // Winding down to an accepted outcome, too.
     let (run, conversation) = h.running(2, 101);
@@ -2255,7 +2342,20 @@ fn a_sub_agent_that_spends_past_the_budget_winds_the_run_down() {
     assert_eq!(&*h.step(end_turn(main)), &[Request::Close { peer: Token::new(100) }]);
     let emitted =
         h.step(Event::Ended { conversation: main, end: End::Closed, spend: Spend::ZERO, detail: Box::default() });
-    assert_eq!(answered(emitted), (1, failed(Failure::Budget(Exhausted::Spend), spend(BUDGET.spend + 1))));
+    assert_eq!(
+        answered(emitted),
+        (
+            1,
+            failed(
+                Failure::Budget {
+                    exhausted: Exhausted::Spend,
+                    used: Some(BUDGET.spend + 1),
+                    bound: Some(BUDGET.spend)
+                },
+                spend(BUDGET.spend + 1)
+            )
+        )
+    );
 }
 
 // Facts.
@@ -2718,10 +2818,10 @@ fn time_and_spend_shutdown_keep_an_already_submitted_mid_landing() {
                     drop(harness.fire());
                 }
             }
-            Failure::Budget(Exhausted::Time)
+            Failure::Budget { exhausted: Exhausted::Time, used: Some(600_000), bound: Some(600_000) }
         } else {
             drop(harness.step(Event::Used { conversation, spend: spend(BUDGET.spend + 1) }));
-            Failure::Budget(Exhausted::Spend)
+            Failure::Budget { exhausted: Exhausted::Spend, used: Some(BUDGET.spend + 1), bound: Some(BUDGET.spend) }
         };
         let expected_spend = if timed { Spend::ZERO } else { spend(BUDGET.spend + 1) };
         let requests = harness.step(Event::Delivered { owner, delivery: delivered() });
@@ -3672,7 +3772,13 @@ fn reaching_the_scalar_cap_settles_wait_and_fails_only_after_yield() {
         detail: Box::default(),
     }))
     .1;
-    assert_eq!(answer, failed(Failure::Budget(Exhausted::Spend), Spend { units: BUDGET.spend, ..Spend::ZERO }));
+    assert_eq!(
+        answer,
+        failed(
+            Failure::Budget { exhausted: Exhausted::Spend, used: Some(BUDGET.spend), bound: Some(BUDGET.spend) },
+            Spend { units: BUDGET.spend, ..Spend::ZERO }
+        )
+    );
 }
 
 #[test]
@@ -3758,7 +3864,7 @@ fn run_wide_overflow_preflight_preserves_charged_prefix() {
     assert!(harness.step(priced(main, u64::MAX, u64::MAX)).is_empty());
     assert_eq!(
         crate::completion_overflow(&harness.domain, main, 1, Spend::ZERO),
-        Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)))
+        Some(Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Spend), used: None, bound: None })
     );
     assert_eq!(crate::completion_overflow(&harness.domain, main, 0, Spend { turns: 1, ..Spend::ZERO }), None);
     let answer = answered(harness.step(Event::Ended {
@@ -3770,7 +3876,10 @@ fn run_wide_overflow_preflight_preserves_charged_prefix() {
     .1;
     assert_eq!(
         answer,
-        failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)), Spend { units: u64::MAX, ..Spend::ZERO })
+        failed(
+            Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Spend), used: None, bound: None },
+            Spend { units: u64::MAX, ..Spend::ZERO }
+        )
     );
 }
 
@@ -3785,7 +3894,7 @@ fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
         assert!(harness.step(Event::Used { conversation: main, spend: full }).is_empty());
         assert_eq!(
             crate::completion_overflow(&harness.domain, main, 0, overflow),
-            Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)))
+            Some(Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Usage), used: None, bound: None })
         );
         assert_eq!(
             harness.step(Event::Used { conversation: main, spend: overflow }).as_ref(),
@@ -3798,7 +3907,13 @@ fn raw_usage_overflow_ends_with_only_the_charged_prefix() {
             detail: Box::default(),
         }))
         .1;
-        assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), full));
+        assert_eq!(
+            answer,
+            failed(
+                Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Usage), used: None, bound: None },
+                full
+            )
+        );
     }
 }
 
@@ -3813,7 +3928,13 @@ fn a_session_usage_overflow_becomes_the_run_failure() {
         detail: Box::default(),
     }))
     .1;
-    assert_eq!(answer, failed(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), Spend::ZERO));
+    assert_eq!(
+        answer,
+        failed(
+            Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Usage), used: None, bound: None },
+            Spend::ZERO
+        )
+    );
 }
 
 #[test]
@@ -4509,7 +4630,7 @@ fn final_turns_ignore_ordinary_nudges_and_fail_once_only_after_the_last() {
         spend: actual,
         detail: Box::default(),
     }));
-    assert_eq!(answer, failed(Failure::Budget(Exhausted::Turns), actual));
+    assert_eq!(answer, failed(Failure::Budget { exhausted: Exhausted::Turns, used: Some(4), bound: Some(4) }, actual));
 }
 
 #[test]

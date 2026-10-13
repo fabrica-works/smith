@@ -266,15 +266,39 @@ fn a_live_run_calls_tells_waits_and_finishes() {
 fn a_run_may_fail_as_it_reports_it() {
     for failure in [
         RunFailure::Model(ModelFault::Provider),
-        RunFailure::Budget(smith_host_domain::Exhausted::Time),
-        RunFailure::Budget(smith_host_domain::Exhausted::Turns),
-        RunFailure::Budget(smith_host_domain::Exhausted::Spend),
-        RunFailure::Budget(smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Spend)),
-        RunFailure::Budget(smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Usage)),
-        RunFailure::Budget(smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::Input)),
-        RunFailure::Budget(smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::Output)),
-        RunFailure::Budget(smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::CacheRead)),
-        RunFailure::Budget(smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::CacheWrite)),
+        RunFailure::Budget { exhausted: smith_host_domain::Exhausted::Time, used: None, bound: None },
+        RunFailure::Budget { exhausted: smith_host_domain::Exhausted::Turns, used: None, bound: None },
+        RunFailure::Budget { exhausted: smith_host_domain::Exhausted::Spend, used: None, bound: None },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Spend),
+            used: None,
+            bound: None,
+        },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Usage),
+            used: None,
+            bound: None,
+        },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::Input),
+            used: None,
+            bound: None,
+        },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::Output),
+            used: None,
+            bound: None,
+        },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::CacheRead),
+            used: None,
+            bound: None,
+        },
+        RunFailure::Budget {
+            exhausted: smith_host_domain::Exhausted::Tokens(smith_host_domain::ReceivingLimit::CacheWrite),
+            used: None,
+            bound: None,
+        },
         RunFailure::Policy(smith_host_domain::Policy::Unfinished { nudges: 2, rejected: 3 }),
         RunFailure::Stale,
     ] {
@@ -1135,7 +1159,14 @@ fn final_answers_cannot_abandon_parent_or_queued_delivery_terminals() {
     world.live();
     call(&mut world, 20, 1, true, 100);
     reply(&mut world, 20, Reply::Delivery(Delivery::Delivered(receipts(b"landed"))));
-    last(&mut world, RunResult::Failed { failure: RunFailure::Budget(smith_host_domain::Exhausted::Time) }, 0, 1);
+    last(
+        &mut world,
+        RunResult::Failed {
+            failure: RunFailure::Budget { exhausted: smith_host_domain::Exhausted::Time, used: None, bound: None },
+        },
+        0,
+        1,
+    );
     assert!(world.seen.answer.is_some());
     world.cleanup(Some(smith_host_domain::Exit::Code(0)));
     world.settled();

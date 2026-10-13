@@ -369,6 +369,9 @@ fn value_completion_failure(name: &str, spelling: &str) -> CompletionFailure {
 
 fn value_answer_failure(name: &str, spelling: &str) -> AnswerFailure {
     AnswerFailure {
+        retry_after_ms: None,
+        used: None,
+        bound: None,
         dropped: if name == "AnswerClass" && spelling == "cancelled" { Some(false) } else { None },
         ended: None,
         turn: None,
@@ -1560,6 +1563,7 @@ pub fn samples() -> Vec<(&'static str, Record, Capture)> {
     }
     samples.extend(failure_samples());
     samples.extend(end_samples());
+    samples.extend(answer_field_samples());
     samples.extend(budget_samples());
     samples.extend(message_samples());
     samples.extend(samples_0());
@@ -1917,6 +1921,9 @@ fn end_samples() -> Vec<(&'static str, Record, Capture)> {
                     unread: 0,
                     status: Status::Failed,
                     failure: Some(AnswerFailure {
+                        retry_after_ms: None,
+                        used: None,
+                        bound: None,
                         endpoint: None,
                         model: None,
                         attempts: None,
@@ -2020,4 +2027,28 @@ fn reasoning_dropped_sample() -> (&'static str, Record, Capture) {
         },
         Capture::Everything,
     )
+}
+
+fn answer_field_samples() -> Vec<(&'static str, Record, Capture)> {
+    let mut samples = Vec::new();
+    for (name, which, used, bound, account, retry_after_ms) in [
+        ("run_account_exhausted", None, None, None, Some(17), Some(73)),
+        ("run_account_exhausted_unknown_wait", None, None, None, Some(17), None),
+        ("run_budget_turns_fields", Some("turns"), Some(8), Some(8), None, None),
+        ("run_budget_spend_fields", Some("spend"), Some(19), Some(17), None, None),
+        ("run_budget_time_fields", Some("time"), Some(1073), Some(1000), None, None),
+    ] {
+        let mut run = value_run_completed("Status", "failed");
+        let failure = run.failure.as_mut().expect("failed fixture");
+        failure.class = if account.is_some() { AnswerClass::Model } else { AnswerClass::Budget };
+        failure.completion = None;
+        failure.account = account;
+        failure.retry_after_ms = retry_after_ms;
+        failure.which = which.map(|which| Box::from(which.as_bytes()));
+        failure.reason = None;
+        failure.used = used;
+        failure.bound = bound;
+        samples.push((name, Record { t_ms: 0, event: Event::RunCompleted(run) }, Capture::None));
+    }
+    samples
 }

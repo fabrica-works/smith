@@ -1651,6 +1651,25 @@ pub(crate) mod tests {
         }
     }
 
+    fn unlocated_failure(completion: CompletionFailure) -> smith_events::AnswerFailure {
+        smith_events::AnswerFailure {
+            retry_after_ms: None,
+            used: None,
+            bound: None,
+            dropped: None,
+            ended: None,
+            turn: None,
+            class: smith_events::AnswerClass::Model,
+            endpoint: None,
+            model: None,
+            attempts: None,
+            completion: Some(completion),
+            account: None,
+            which: None,
+            reason: None,
+        }
+    }
+
     #[test]
     fn actual_failure_joins_keep_retry_identity_and_child_diagnostics_out_of_the_run() {
         for kind in [smith_events::ConversationKind::Main, smith_events::ConversationKind::Child] {
@@ -1699,22 +1718,10 @@ pub(crate) mod tests {
                     run: 7,
                     wind_down: false,
                     status: smith_events::Status::Failed,
-                    failure: Some(smith_events::AnswerFailure {
-                        dropped: None,
-                        ended: None,
-                        turn: None,
-                        class: smith_events::AnswerClass::Model,
-                        endpoint: None,
-                        model: None,
-                        attempts: None,
-                        completion: Some(completion_failure(
-                            llm::Failure::Invalid,
-                            llm::Evidence::Response { status: None },
-                        )),
-                        account: None,
-                        which: None,
-                        reason: None,
-                    }),
+                    failure: Some(unlocated_failure(completion_failure(
+                        llm::Failure::Invalid,
+                        llm::Evidence::Response { status: None },
+                    ))),
                     result: None,
                     turns: 0,
                     spent: 0,

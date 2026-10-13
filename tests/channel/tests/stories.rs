@@ -243,8 +243,9 @@ fn a_model_failure_keeps_transport_evidence_and_cooldown() {
         spent: smith_domain::run::Spend::ZERO,
         turns: 2,
     };
-    let record = smith_protocol_channel::answer_record(answer, None, &CEILINGS, &smith_charter::CEILINGS)
-        .expect("bounded failure");
+    let record =
+        smith_protocol_channel::answer_record(skein_lib::Time::ZERO, answer, None, &CEILINGS, &smith_charter::CEILINGS)
+            .expect("bounded failure");
     assert_eq!(record.turns(), 2);
     let smith_channel::RunResult::Failed(failed) = record.result() else {
         panic!("expected failure");

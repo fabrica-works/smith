@@ -61,7 +61,7 @@ fn every_session_end_and_budget_dimension_keeps_its_class() {
         ),
     ];
     for (from, to) in rows {
-        assert_eq!(translate::end(from, 0), to);
+        assert_eq!(translate::end(from, 0, 0, None), to);
     }
 }
 
@@ -76,7 +76,7 @@ fn every_transcript_refusal_keeps_its_reason() {
         (session::record::Refusal::TooLarge, run::TranscriptRefusal::TooLarge),
     ] {
         assert_eq!(
-            translate::end(session::End::TranscriptRefused { reason: from }, 0),
+            translate::end(session::End::TranscriptRefused { reason: from }, 0, 0, None),
             run::End::TranscriptRefused { reason: to }
         );
     }
@@ -114,12 +114,21 @@ fn every_completion_failure_and_transport_evidence_maps_without_inference() {
             (llm::Evidence::Response { status: None }, run::CompletionEvidence::Response { status: None }),
         ] {
             assert_eq!(
-                translate::end(session::End::Failed { failure, evidence, attempts: 1 }, 0),
-                run::End::Fault(run::Fault::Completion {
-                    failure: mapped,
-                    evidence: mapped_evidence,
-                    model: 0,
-                    attempts: 1
+                translate::end(session::End::Failed { failure, evidence, attempts: 1 }, 0, 0, None),
+                run::End::Fault(match mapped {
+                    run::CompletionFailure::Exhausted { .. } => run::Fault::Exhausted { account: 0, retry_at: None },
+                    run::CompletionFailure::Limit { .. }
+                    | run::CompletionFailure::ApplicationLimit
+                    | run::CompletionFailure::Protocol
+                    | run::CompletionFailure::Cancelled
+                    | run::CompletionFailure::Overloaded
+                    | run::CompletionFailure::Unavailable
+                    | run::CompletionFailure::TimedOut { .. }
+                    | run::CompletionFailure::ContextTooLong
+                    | run::CompletionFailure::Invalid
+                    | run::CompletionFailure::Unauthorized
+                    | run::CompletionFailure::RateLimited { .. } =>
+                        run::Fault::Completion { failure: mapped, evidence: mapped_evidence, model: 0, attempts: 1 },
                 })
             );
         }

@@ -77,8 +77,23 @@ fn failure(source: &wire::RunFailure) -> Result<host::RunFailure, Error> {
             };
             host::RunFailure::Transcript(reason)
         }
-        wire::RunFailure::Model(record) => host::RunFailure::Model(model_fault(record.value())?),
-        wire::RunFailure::Budget(record) => host::RunFailure::Budget(budget(record.value())),
+        wire::RunFailure::Model(record) => host::RunFailure::Model(model_fault(record)?),
+        wire::RunFailure::Budget(record) => {
+            let exhausted = budget(record.value());
+            match exhausted {
+                host::Exhausted::Turns | host::Exhausted::Spend | host::Exhausted::Time => {
+                    if record.used().is_none() || record.bound().is_none() {
+                        return Err(Error::InvalidAnswer);
+                    }
+                }
+                host::Exhausted::Tokens(_) | host::Exhausted::Overflow(_) => {
+                    if record.used().is_some() || record.bound().is_some() {
+                        return Err(Error::InvalidAnswer);
+                    }
+                }
+            }
+            host::RunFailure::Budget { exhausted, used: *record.used(), bound: *record.bound() }
+        }
         wire::RunFailure::Policy(record) => {
             host::RunFailure::Policy(host::Policy::Unfinished { nudges: record.nudges(), rejected: record.rejected() })
         }
@@ -88,8 +103,8 @@ fn failure(source: &wire::RunFailure) -> Result<host::RunFailure, Error> {
     Ok(result)
 }
 
-fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
-    let result = match source {
+fn model_fault(record: &wire::ModelFaultValue) -> Result<host::ModelFault, Error> {
+    let result = match record.value() {
         wire::ModelFault::Completion(record) => {
             let failure = match record.failure() {
                 wire::CompletionFailure::Limit(record) => {
@@ -122,7 +137,10 @@ fn model_fault(source: &wire::ModelFault) -> Result<host::ModelFault, Error> {
             };
             host::ModelFault::Completion { failure, evidence, model: record.model(), attempts: record.attempts() }
         }
-        wire::ModelFault::Exhausted => host::ModelFault::Exhausted,
+        wire::ModelFault::Exhausted => host::ModelFault::Exhausted {
+            account: (*record.account()).ok_or(Error::InvalidAnswer)?,
+            retry_after_ms: *record.retry_after_ms(),
+        },
         wire::ModelFault::Provider => host::ModelFault::Provider,
         wire::ModelFault::Refused => host::ModelFault::Refused,
         wire::ModelFault::Truncated => host::ModelFault::Truncated,

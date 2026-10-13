@@ -496,6 +496,7 @@ fn copy_fields(
 /// Translate the domain's single Start terminal into the channel's last word.
 #[expect(clippy::manual_map, reason = "the protocol subset keeps option projection exhaustive")]
 pub fn answer_record(
+    now: skein_lib::Time,
     answer: run::Answer,
     read: Option<Token>,
     bodies: &channel::Limits,
@@ -523,7 +524,7 @@ pub fn answer_record(
             (turns, spent.units, channel::RunResult::Accepted(accepted))
         }
         run::Answer::Failed { failure, spent, turns } => {
-            let reason = failure_record(failure, bodies)?;
+            let reason = failure_record(failure, bodies, now)?;
             let failed = channel::Failed::new(bodies, channel::FailedParts { reason })?;
             (turns, spent.units, channel::RunResult::Failed(failed))
         }
@@ -567,7 +568,12 @@ pub(crate) fn invalid_start(invalid: run::Invalid, limits: &channel::Limits) -> 
     })
 }
 
-fn failure_record(failure: run::Failure, limits: &channel::Limits) -> Result<channel::RunFailure, Error> {
+#[expect(clippy::manual_map, reason = "the protocol subset projects the optional cooldown without a closure")]
+fn failure_record(
+    failure: run::Failure,
+    limits: &channel::Limits,
+    now: skein_lib::Time,
+) -> Result<channel::RunFailure, Error> {
     let record = match failure {
         run::Failure::Transcript(refusal) => {
             let value = match refusal {
@@ -585,13 +591,30 @@ fn failure_record(failure: run::Failure, limits: &channel::Limits) -> Result<cha
         }
         run::Failure::Model(fault) => {
             let value = model_fault(fault, limits)?;
-            channel::RunFailure::Model(channel::ModelFaultValue::new(limits, channel::ModelFaultValueParts { value })?)
+            let (account, retry_after_ms) = match fault {
+                run::Fault::Exhausted { account, retry_at } => (
+                    Some(account),
+                    match retry_at {
+                        Some(at) => Some(at.saturating_since(now).as_nanos() / 1_000_000),
+                        None => None,
+                    },
+                ),
+                run::Fault::Completion { .. }
+                | run::Fault::Provider
+                | run::Fault::Refused
+                | run::Fault::Truncated
+                | run::Fault::Malformed => (None, None),
+            };
+            channel::RunFailure::Model(channel::ModelFaultValue::new(
+                limits,
+                channel::ModelFaultValueParts { value, account, retry_after_ms },
+            )?)
         }
-        run::Failure::Budget(exhausted) => {
+        run::Failure::Budget { exhausted, used, bound } => {
             let value = budget_failure(exhausted, limits)?;
             channel::RunFailure::Budget(channel::BudgetFailureValue::new(
                 limits,
-                channel::BudgetFailureValueParts { value },
+                channel::BudgetFailureValueParts { value, used, bound },
             )?)
         }
         run::Failure::Policy(run::Policy::Unfinished { nudges, rejected }) => channel::RunFailure::Policy(
@@ -648,7 +671,7 @@ fn model_fault(fault: run::Fault, limits: &channel::Limits) -> Result<channel::M
                 channel::CompletionFaultParts { failure, evidence, retry_after, model, attempts },
             )?)
         }
-        run::Fault::Exhausted => channel::ModelFault::Exhausted,
+        run::Fault::Exhausted { .. } => channel::ModelFault::Exhausted,
         run::Fault::Provider => channel::ModelFault::Provider,
         run::Fault::Refused => channel::ModelFault::Refused,
         run::Fault::Truncated => channel::ModelFault::Truncated,

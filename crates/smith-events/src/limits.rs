@@ -566,6 +566,9 @@ fn size_completion_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
 
 fn size_answer_failure(capture: &Capture, limits: &Limits) -> Option<u64> {
     let mut length = 2_u64;
+    length = length.checked_add(18)?.checked_add(20)?;
+    length = length.checked_add(8)?.checked_add(20)?;
+    length = length.checked_add(9)?.checked_add(20)?;
     length = length.checked_add(9)?.checked_add(size_answer_class(capture, limits)?)?;
     length = length.checked_add(14)?.checked_add(size_completion_failure(capture, limits)?)?;
     length = length.checked_add(11)?.checked_add(20_u64)?;

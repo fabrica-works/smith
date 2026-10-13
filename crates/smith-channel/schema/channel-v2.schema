@@ -131,8 +131,8 @@ enum ModelFault {
 }
 enum TranscriptRefusal { version, endpoint, dialect, malformed, unresolved, too_large }
 record TranscriptRefusalValue { value: TranscriptRefusal }
-record ModelFaultValue { value: ModelFault }
-record BudgetFailureValue { value: BudgetFailure }
+record ModelFaultValue { value: ModelFault account: option u32 retry_after_ms: option u64 }
+record BudgetFailureValue { value: BudgetFailure used: option u64 bound: option u64 }
 record PolicyFailure { nudges: u32 rejected: u32 }
 enum RunFailure {
     transcript: TranscriptRefusalValue, model: ModelFaultValue,

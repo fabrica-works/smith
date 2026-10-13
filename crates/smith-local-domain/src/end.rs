@@ -47,7 +47,7 @@ pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) ->
             Refusal::Invalid(_) => ExitStatus::Refused,
         },
         RunResult::Failed { failure } => match failure {
-            RunFailure::Budget(_) => ExitStatus::Budget,
+            RunFailure::Budget { exhausted: _, .. } => ExitStatus::Budget,
             RunFailure::Cancelled => ExitStatus::Interrupted,
             RunFailure::Model(fault) => match fault {
                 smith_host_domain::ModelFault::Completion {
@@ -55,7 +55,7 @@ pub(crate) fn answer_status(answer: &smith_host_domain::Answer, account: u32) ->
                     ..
                 } => ExitStatus::Credentials { account },
                 smith_host_domain::ModelFault::Completion { .. }
-                | smith_host_domain::ModelFault::Exhausted
+                | smith_host_domain::ModelFault::Exhausted { .. }
                 | smith_host_domain::ModelFault::Provider
                 | smith_host_domain::ModelFault::Refused
                 | smith_host_domain::ModelFault::Truncated

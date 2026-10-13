@@ -625,9 +625,13 @@ pub(crate) fn yielded(
             if run.wind_down.is_some() {
                 match final_remaining(run, env.now) {
                     Ok(()) => say(reply_to, main, peer, prompt::finish_now(), out),
-                    Err(exhausted) => {
-                        wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out)
-                    }
+                    Err(exhausted) => wind_down(
+                        conversations,
+                        reply_to,
+                        main,
+                        Ending::Failed(Failure::Budget { exhausted, used: None, bound: None }),
+                        out,
+                    ),
                 }
             } else if run.inbox.has_queued() {
                 continue_messages(run, reply_to, main, peer, &env.limits, out)
@@ -659,12 +663,20 @@ pub fn completion_overflow(domain: &Domain, conversation: Token, price: u64, usa
         domain.conversations.get(Id::from_token(conversation)).expect("provider owner has a live run conversation");
     let run = domain.runs.get(conversation.run).expect("conversation retains its run");
     if run.spent.units.checked_add(price).is_none() {
-        return Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)));
+        return Some(Failure::Budget {
+            exhausted: Exhausted::Overflow(crate::Overflow::Spend),
+            used: None,
+            bound: None,
+        });
     }
     let raw_total = Spend { units: 0, ..run.spent };
     let raw_increment = Spend { units: 0, ..usage };
     if raw_total.accumulate(raw_increment).is_none() {
-        return Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)));
+        return Some(Failure::Budget {
+            exhausted: Exhausted::Overflow(crate::Overflow::Usage),
+            used: None,
+            bound: None,
+        });
     }
     None
 }
@@ -691,7 +703,7 @@ pub(crate) fn priced(domain: &mut Domain, conversation: Token, own: u64, subtree
         run.state = hard_stop(
             state,
             &mut domain.conversations,
-            Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)),
+            Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Spend), used: None, bound: None },
             out,
         );
         follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
@@ -729,7 +741,7 @@ pub(crate) fn used(domain: &mut Domain, conversation: Token, spend: Spend, out: 
         run.state = hard_stop(
             state,
             &mut domain.conversations,
-            Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)),
+            Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Usage), used: None, bound: None },
             out,
         );
         follow(&mut domain.runs, &mut domain.alarms, &mut domain.facts, &mut domain.ready, run_id);
@@ -822,10 +834,10 @@ fn hard_stop(
 
 fn hard_ending(ending: Ending, failure: Failure) -> Ending {
     match failure {
-        Failure::Budget(Exhausted::Overflow(_)) => Ending::Failed(failure),
+        Failure::Budget { exhausted: Exhausted::Overflow(_), .. } => Ending::Failed(failure),
         Failure::Transcript(_)
         | Failure::Model(_)
-        | Failure::Budget(_)
+        | Failure::Budget { exhausted: _, .. }
         | Failure::Policy(_)
         | Failure::Cancelled
         | Failure::Stale => match ending {
@@ -1257,8 +1269,12 @@ fn child_ready(run: &Run, out: &mut Queue<Request>) {
 
 fn terminal_failure(end: End) -> Option<Failure> {
     match end {
-        End::PriceOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend))),
-        End::UsageOverflow => Some(Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage))),
+        End::PriceOverflow => {
+            Some(Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Spend), used: None, bound: None })
+        }
+        End::UsageOverflow => {
+            Some(Failure::Budget { exhausted: Exhausted::Overflow(crate::Overflow::Usage), used: None, bound: None })
+        }
         End::Receiving(_)
         | End::TranscriptRefused { .. }
         | End::Closed
@@ -1360,14 +1376,16 @@ pub(crate) fn ended(
     run.state = match state {
         State::Working { reply_to, main } | State::Waiting { reply_to, main, call: _, until: _ } => {
             assert!(main == id, "a conversation with no asker is main");
-            answer(reply_to, ending(end, run.spent, run.turns), run.inbox.fence(), detail, out)
+            let completed = budget_answer(ending(end, run.spent, run.turns), run, facts.now());
+            answer(reply_to, completed, run.inbox.fence(), detail, out)
         }
         State::Winding { reply_to, ending } => {
             let ending = match failure {
                 Some(failure) => Ending::Failed(failure),
                 None => ending,
             };
-            answer(reply_to, finished(ending, run.spent, run.turns), run.inbox.fence(), detail, out)
+            let completed = budget_answer(finished(ending, run.spent, run.turns), run, facts.now());
+            answer(reply_to, completed, run.inbox.fence(), detail, out)
         }
         State::Awaiting { .. } | State::Preparing { .. } | State::Stopping { .. } | State::Closed => {
             unreachable!("a run's conversation ends only once the run has opened it")
@@ -1380,7 +1398,11 @@ pub(crate) fn deadline(domain: &mut Domain, id: Id<Run>, out: &mut Queue<Request
     let Domain { rng: _, runs, conversations, calls: _, alarms, facts, ready } = domain;
     let run = runs.get_mut(id).expect("an alarm is cancelled before its run closes");
     facts.about(id.token());
-    let failure = Failure::Budget(run.charter.budget.exhausted(run.spent).unwrap_or(Exhausted::Time));
+    let failure = Failure::Budget {
+        exhausted: run.charter.budget.exhausted(run.spent).unwrap_or(Exhausted::Time),
+        used: None,
+        bound: None,
+    };
     let state = mem::replace(&mut run.state, State::Closed);
     run.state = match state {
         State::Awaiting { reply_to, main, until: _ } => {
@@ -2080,7 +2102,13 @@ fn working_again(
 ) -> State {
     match final_remaining(run, now) {
         Ok(()) => State::Working { reply_to, main },
-        Err(exhausted) => wind_down(conversations, reply_to, main, Ending::Failed(Failure::Budget(exhausted)), out),
+        Err(exhausted) => wind_down(
+            conversations,
+            reply_to,
+            main,
+            Ending::Failed(Failure::Budget { exhausted, used: None, bound: None }),
+            out,
+        ),
     }
 }
 
@@ -2137,22 +2165,62 @@ fn answer(
 
 // Helpers.
 
+fn budget_answer(answer: Answer, run: &Run, now: Time) -> Answer {
+    match answer {
+        Answer::Failed { failure: Failure::Budget { exhausted, .. }, spent, turns } => {
+            let fields = match exhausted {
+                Exhausted::Turns => Some((u64::from(run.spent.turns), u64::from(run.charter.budget.turns))),
+                Exhausted::Spend => Some((run.spent.units, run.charter.budget.spend)),
+                Exhausted::Time => Some((
+                    now.saturating_since(run.started_at).as_nanos() / 1_000_000,
+                    run.charter.budget.time.as_nanos() / 1_000_000,
+                )),
+                Exhausted::Tokens(_) | Exhausted::Overflow(_) => None,
+            };
+            let (used, bound) = match fields {
+                Some((used, bound)) => (Some(used), Some(bound)),
+                None => (None, None),
+            };
+            Answer::Failed { failure: Failure::Budget { exhausted, used, bound }, spent, turns }
+        }
+        other @ (Answer::Failed { .. } | Answer::Accepted { .. } | Answer::Parked { .. } | Answer::Refused(_)) => other,
+    }
+}
+
 /// The answer of a run whose main conversation ended on its own, the run
 /// having spent `spent`.
 fn ending(end: End, spent: Spend, turns: u32) -> Answer {
     match end {
-        End::PriceOverflow => {
-            Answer::Failed { failure: Failure::Budget(Exhausted::Overflow(crate::Overflow::Spend)), spent, turns }
-        }
-        End::UsageOverflow => {
-            Answer::Failed { failure: Failure::Budget(Exhausted::Overflow(crate::Overflow::Usage)), spent, turns }
-        }
-        End::Receiving(limit) => Answer::Failed { failure: Failure::Budget(Exhausted::Tokens(limit)), spent, turns },
+        End::PriceOverflow => Answer::Failed {
+            failure: Failure::Budget {
+                exhausted: Exhausted::Overflow(crate::Overflow::Spend),
+                used: None,
+                bound: None,
+            },
+            spent,
+            turns,
+        },
+        End::UsageOverflow => Answer::Failed {
+            failure: Failure::Budget {
+                exhausted: Exhausted::Overflow(crate::Overflow::Usage),
+                used: None,
+                bound: None,
+            },
+            spent,
+            turns,
+        },
+        End::Receiving(limit) => Answer::Failed {
+            failure: Failure::Budget { exhausted: Exhausted::Tokens(limit), used: None, bound: None },
+            spent,
+            turns,
+        },
         End::TranscriptRefused { reason } => Answer::Failed { failure: Failure::Transcript(reason), spent, turns },
         End::Busy => Answer::Refused(Refusal::Busy),
         End::Invalid => Answer::Refused(Refusal::Invalid(Invalid::Conversation)),
         End::Fault(fault) => Answer::Failed { failure: Failure::Model(fault), spent, turns },
-        End::Budget(exhausted) => Answer::Failed { failure: Failure::Budget(exhausted), spent, turns },
+        End::Budget(exhausted) => {
+            Answer::Failed { failure: Failure::Budget { exhausted, used: None, bound: None }, spent, turns }
+        }
         End::Closed => unreachable!("a conversation ends closed only once its run has closed it, winding down"),
     }
 }
@@ -2178,10 +2246,10 @@ fn nudge(run: &mut Run, stop: Stop, limits: &Limits) -> Result<(), Failure> {
     let spent = run.spent;
     let budget = &run.charter.budget;
     if spent.turns >= budget.turns {
-        return Err(Failure::Budget(Exhausted::Turns));
+        return Err(Failure::Budget { exhausted: Exhausted::Turns, used: None, bound: None });
     }
     if spent.units >= budget.spend {
-        return Err(Failure::Budget(Exhausted::Spend));
+        return Err(Failure::Budget { exhausted: Exhausted::Spend, used: None, bound: None });
     }
     run.nudges = run.nudges.saturating_add(1);
     Ok(())

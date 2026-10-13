@@ -670,6 +670,7 @@ impl World {
                 .expect("bounded admitted");
             agent
                 .send_answer(
+                    skein_lib::Time::ZERO,
                     smith_domain::run::Answer::Parked { spent: smith_domain::run::Spend::ZERO, turns: 0 },
                     None,
                     skein_lib::Token::new(4),
@@ -695,6 +696,7 @@ impl World {
         if let Half::Agent(agent) = &mut self.agent.half {
             agent
                 .send_answer(
+                    skein_lib::Time::ZERO,
                     answer,
                     read,
                     skein_lib::Token::new(33),

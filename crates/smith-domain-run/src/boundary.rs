@@ -903,7 +903,7 @@ pub enum Fault {
     },
 
     /// The account spent its provider allowance. The engine retries after cooldown.
-    Exhausted,
+    Exhausted { account: u32, retry_at: Option<Time> },
     /// Its provider failed for good: unreachable, overloaded past the
     /// retries, or refusing the call or its credentials.
     Provider,
@@ -1025,7 +1025,12 @@ pub enum Failure {
     /// The LLM could not do the work.
     Model(Fault),
     /// The run's budget ran out.
-    Budget(Exhausted),
+    Budget {
+        exhausted: Exhausted,
+        /// Turns, host spend units, or milliseconds of run wall time; absent for receiving/overflow failures.
+        used: Option<u64>,
+        bound: Option<u64>,
+    },
     /// The LLM did not keep to the run's rules.
     Policy(Policy),
     /// The host cancelled the run.

@@ -152,6 +152,9 @@ fn measured_resource_objects_round_trip_with_exact_values() {
 
 fn word_failure(class: crate::AnswerClass) -> crate::AnswerFailure {
     crate::AnswerFailure {
+        retry_after_ms: None,
+        used: None,
+        bound: None,
         class,
         endpoint: None,
         model: None,

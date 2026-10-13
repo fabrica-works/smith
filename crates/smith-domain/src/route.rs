@@ -133,6 +133,9 @@ fn failed(
             }
         }
         crate::llm::Failure::Exhausted { retry_after } => {
+            let peer = domain.peers.get_mut(id).expect("failed completion retains its peer");
+            peer.retry_at =
+                if retry_after == Duration::ZERO { None } else { Some(env.now.saturating_add(retry_after)) };
             domain.notices.push(Request::Exhausted { account: grant.account, retry_after });
         }
         crate::llm::Failure::Overloaded
@@ -197,8 +200,12 @@ fn acknowledge(domain: &mut Domain, env: &Env<Limits>, run: Token, turn: u32) {
 
 fn priced_overflow(failure: Option<run::Failure>) -> Option<session::End> {
     match failure {
-        Some(run::Failure::Budget(run::Exhausted::Overflow(run::Overflow::Spend))) => Some(session::End::PriceOverflow),
-        Some(run::Failure::Budget(run::Exhausted::Overflow(run::Overflow::Usage))) => Some(session::End::UsageOverflow),
+        Some(run::Failure::Budget { exhausted: run::Exhausted::Overflow(run::Overflow::Spend), .. }) => {
+            Some(session::End::PriceOverflow)
+        }
+        Some(run::Failure::Budget { exhausted: run::Exhausted::Overflow(run::Overflow::Usage), .. }) => {
+            Some(session::End::UsageOverflow)
+        }
         Some(_) | None => None,
     }
 }
@@ -422,14 +429,17 @@ fn ended_session(
 ) -> run::Event {
     let run = run::owner(&domain.run, opener).expect("run outlives its conversation");
     let id = peer(domain, opener);
-    let model = domain.peers.get(id).expect("session retains peer").model;
+    let peer = domain.peers.get(id).expect("session retains peer");
+    let model = peer.model;
+    let account = peer.account;
+    let retry_at = peer.retry_at;
     if domain.peers.get(id).expect("session retains peer").is_main() {
         domain.pending.remove(&run);
     }
     free(domain, id);
     run::Event::Ended {
         conversation: opener,
-        end: translate::end(end, model),
+        end: translate::end(end, model, account, retry_at),
         spend: translate::spend(turns, reported),
         detail,
     }

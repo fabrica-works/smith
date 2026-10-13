@@ -63,11 +63,10 @@ fn the_ordinary_time_running_out_during_a_sub_agent_winds_the_run_down() {
     world.run(1_000_000);
     assert!(world.stats().children > 0);
     assert!(world.facts_seen().iter().any(|fact| matches!(fact.kind, smith_domain_run::facts::FactKind::Budget { standing, .. } if standing.stage == smith_domain_run::Stage::WindDown)));
-    assert!(
-        world
-            .answers()
-            .any(|answer| matches!(answer, Some(Answer::Failed { failure: Failure::Budget(Exhausted::Time), .. })))
-    );
+    assert!(world.answers().any(|answer| matches!(
+        answer,
+        Some(Answer::Failed { failure: Failure::Budget { exhausted: Exhausted::Time, .. }, .. })
+    )));
 }
 
 #[test]
@@ -97,11 +96,10 @@ fn final_turns_ignored_fail_once_for_the_budget() {
     let mut world = World::new(settings);
     world.run(1_000_000);
     assert_eq!(world.answers().count(), 1);
-    assert!(
-        world
-            .answers()
-            .any(|answer| matches!(answer, Some(Answer::Failed { failure: Failure::Budget(Exhausted::Turns), .. })))
-    );
+    assert!(world.answers().any(|answer| matches!(
+        answer,
+        Some(Answer::Failed { failure: Failure::Budget { exhausted: Exhausted::Turns, .. }, .. })
+    )));
     assert_eq!(world.wind_down_seen().iter().filter(|(_, _, seen)| matches!(seen, Seen::Final { .. })).count(), 3);
     assert!(judge(world.wind_down_seen()).iter().all(|verdict| *verdict == Verdict::Passed));
     for violation in 0..3 {

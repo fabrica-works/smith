@@ -411,6 +411,7 @@ fn invalid_start_round_trip_keeps_every_budget_reason_and_price_rate() {
     ];
     for (reason, expected) in reasons {
         let record = smith_protocol_channel::answer_record(
+            skein_lib::Time::ZERO,
             run::Answer::Refused(run::Refusal::Invalid(reason)),
             None,
             &smith_channel::CEILINGS,
@@ -453,5 +454,69 @@ fn the_host_reserves_its_joint_start_frame_in_its_sending_direction() {
     match Component::new(&limits, StreamMode::Two, endpoints()) {
         Err(error) => assert_eq!(error, crate::Error::Channel(skein_channel::SchemaError::Kind)),
         Ok(_) => panic!("short host output was admitted"),
+    }
+}
+
+#[test]
+fn the_answer_carries_the_exhausted_account_and_its_remaining_wait() {
+    use skein_lib::Time;
+    use smith_domain::run;
+    use smith_host_domain as host;
+    for (retry_at, expected) in
+        [(Some(Time::from_nanos(100_000_000)), Some(80)), (Some(Time::ZERO), Some(0)), (None, None)]
+    {
+        let answer = run::Answer::Failed {
+            failure: run::Failure::Model(run::Fault::Exhausted { account: 23, retry_at }),
+            spent: run::Spend::ZERO,
+            turns: 0,
+        };
+        let record = smith_protocol_channel::answer_record(
+            Time::from_nanos(20_000_000),
+            answer,
+            None,
+            &smith_channel::CEILINGS,
+            &smith_charter::CEILINGS,
+        )
+        .expect("bounded answer");
+        let decoded = crate::answer::decode_answer(&record, &smith_charter::CEILINGS).expect("host answer");
+        assert_eq!(
+            decoded.result,
+            host::RunResult::Failed {
+                failure: host::RunFailure::Model(host::ModelFault::Exhausted { account: 23, retry_after_ms: expected }),
+            }
+        );
+    }
+}
+
+#[test]
+fn the_answer_carries_budget_usage_and_bound_in_the_runs_unit() {
+    use skein_lib::Time;
+    use smith_domain::run;
+    use smith_host_domain as host;
+    for (exhausted, expected) in [
+        (run::Exhausted::Turns, host::Exhausted::Turns),
+        (run::Exhausted::Spend, host::Exhausted::Spend),
+        (run::Exhausted::Time, host::Exhausted::Time),
+    ] {
+        let answer = run::Answer::Failed {
+            failure: run::Failure::Budget { exhausted, used: Some(1073), bound: Some(1000) },
+            spent: run::Spend::ZERO,
+            turns: 0,
+        };
+        let record = smith_protocol_channel::answer_record(
+            Time::ZERO,
+            answer,
+            None,
+            &smith_channel::CEILINGS,
+            &smith_charter::CEILINGS,
+        )
+        .expect("bounded answer");
+        let decoded = crate::answer::decode_answer(&record, &smith_charter::CEILINGS).expect("host answer");
+        assert_eq!(
+            decoded.result,
+            host::RunResult::Failed {
+                failure: host::RunFailure::Budget { exhausted: expected, used: Some(1073), bound: Some(1000) },
+            }
+        );
     }
 }

@@ -36,7 +36,7 @@ pub enum ProcessEvent {
     /// The child, its pipes and its bounded error tail settled.
     Reaped { agent: Token, detail: Box<[u8]> },
     /// One event from the opened channel, for the host-domain translation.
-    Channel { agent: Token, event: OpenEvent },
+    Channel { agent: Token, event: Box<OpenEvent> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -440,13 +440,13 @@ impl Process {
                     if let Some(output) = self.output {
                         below.push(IoRequest::Close { entity: output });
                     }
-                    above.push(ProcessEvent::Channel { agent: self.agent, event });
+                    above.push(ProcessEvent::Channel { agent: self.agent, event: Box::new(event) });
                 }
                 event @ OpenEvent::Answer { .. } => {
                     if let Some(input) = self.input {
                         below.push(IoRequest::Stream { stream: input, down: stream::Down::Finish });
                     }
-                    above.push(ProcessEvent::Channel { agent: self.agent, event });
+                    above.push(ProcessEvent::Channel { agent: self.agent, event: Box::new(event) });
                 }
                 event @ (OpenEvent::Opened { .. }
                 | OpenEvent::Hangup { .. }
@@ -463,7 +463,9 @@ impl Process {
                 | OpenEvent::Exhausted { .. }
                 | OpenEvent::WriteFailed
                 | OpenEvent::Call { .. }
-                | OpenEvent::Withdraw { .. }) => above.push(ProcessEvent::Channel { agent: self.agent, event }),
+                | OpenEvent::Withdraw { .. }) => {
+                    above.push(ProcessEvent::Channel { agent: self.agent, event: Box::new(event) });
+                }
             }
         }
     }

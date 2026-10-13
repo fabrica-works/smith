@@ -500,6 +500,7 @@ impl Producer {
         self.answer_at = Some(now);
         let mut record = crate::answer_record(
             crate::AnswerMeta {
+                now,
                 run: self.activation(),
                 wind_down: self.wind_down,
                 read: match read {
@@ -516,7 +517,7 @@ impl Producer {
         self.sinks.answer_failure(&mut record);
         self.overflow_notice = match answer {
             run::Answer::Failed { failure, .. } => match failure {
-                run::Failure::Budget(exhausted) => match exhausted {
+                run::Failure::Budget { exhausted, .. } => match exhausted {
                     run::Exhausted::Overflow(overflow) => Some(*overflow),
                     run::Exhausted::Turns
                     | run::Exhausted::Spend
@@ -740,7 +741,11 @@ mod tests {
                 at(7),
                 at(1),
                 &run::Answer::Failed {
-                    failure: run::Failure::Budget(run::Exhausted::Overflow(cause)),
+                    failure: run::Failure::Budget {
+                        exhausted: run::Exhausted::Overflow(cause),
+                        used: None,
+                        bound: None,
+                    },
                     spent: run::Spend::ZERO,
                     turns: u32::from(overflow),
                 },

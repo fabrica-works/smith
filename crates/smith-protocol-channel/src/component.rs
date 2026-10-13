@@ -229,6 +229,7 @@ impl Component {
     /// Send the domain's final answer and finish the write stream after it.
     pub fn send_answer(
         &mut self,
+        now: Time,
         answer: run::Answer,
         read: Option<Token>,
         token: Token,
@@ -244,7 +245,7 @@ impl Component {
         if !permitted {
             return Err(Error::Order);
         }
-        let record = answer_record(answer, read, &self.bodies, &self.charter)?;
+        let record = answer_record(now, answer, read, &self.bodies, &self.charter)?;
         let Ok(length) = usize::try_from(record.measure()) else {
             return Err(Error::ResultCapacity);
         };
@@ -934,6 +935,7 @@ impl Component {
         let admitted = self.send_admitted(Token::new(0), to_service, below);
         let answered = match admitted {
             Ok(()) => self.send_answer(
+                Time::ZERO,
                 run::Answer::Failed { failure: run::Failure::Transcript(reason), spent: run::Spend::ZERO, turns: 0 },
                 None,
                 Token::new(0),

@@ -226,7 +226,7 @@ fn every_unanswered_end_and_transcript_refusal_is_visible() {
 #[test]
 fn every_model_fault_and_completion_failure_keeps_its_evidence() {
     for (fault, label) in [
-        (run::Fault::Exhausted, "exhausted"),
+        (run::Fault::Exhausted { account: 0, retry_at: None }, "exhausted"),
         (run::Fault::Provider, "provider"),
         (run::Fault::Refused, "refused"),
         (run::Fault::Truncated, "truncated"),
@@ -287,11 +287,20 @@ fn failure_fields() -> Vec<(smith_domain::llm::Failure, run::CompletionFailure)>
         (llm::Failure::Unauthorized, run::CompletionFailure::Unauthorized),
         (llm::Failure::RateLimited { retry_after }, run::CompletionFailure::RateLimited { retry_after }),
         (llm::Failure::Exhausted { retry_after }, run::CompletionFailure::Exhausted { retry_after }),
+        (
+            llm::Failure::Exhausted { retry_after: Duration::ZERO },
+            run::CompletionFailure::Exhausted { retry_after: Duration::ZERO },
+        ),
     ]
 }
 
 #[test]
 fn every_completion_failure_reaches_the_answer_with_its_fields() {
+    completion_answer_fields();
+    budget_answer_fields();
+}
+
+fn completion_answer_fields() {
     use smith_agent_world::{Settings, World};
     use smith_domain::llm;
     for (source, expected) in failure_fields() {
@@ -300,26 +309,60 @@ fn every_completion_failure_reaches_the_answer_with_its_fields() {
         let charter = smith_agent_world::scripted_charter(&settings);
         let mut world = World::with_failure(settings, source, llm::Evidence::Response { status: Some(503) });
         world.run(20_000);
+        let fault = expected_fault(expected, &world);
         assert_eq!(
             world.answer(),
-            &run::Answer::Failed {
-                failure: run::Failure::Model(run::Fault::Completion {
-                    failure: expected,
-                    evidence: run::CompletionEvidence::Response { status: Some(503) },
-                    model: 0,
-                    attempts: 1
-                }),
-                spent: run::Spend::ZERO,
-                turns: 0,
-            }
+            &run::Answer::Failed { failure: run::Failure::Model(fault), spent: run::Spend::ZERO, turns: 0 }
         );
-        let run::Answer::Failed { failure: run::Failure::Model(run::Fault::Completion { model, .. }), .. } =
-            world.answer()
-        else {
-            panic!("completion failure");
-        };
-        let resolved = charter.model(*model).expect("parent resolves the failed completion's model");
-        assert_eq!(resolved.endpoint, charter.llm.endpoint);
-        assert_eq!(resolved.model, charter.llm.model);
+        match fault {
+            run::Fault::Completion { model, .. } => {
+                let resolved = charter.model(model).expect("parent resolves the failed completion's model");
+                assert_eq!(resolved.endpoint, charter.llm.endpoint);
+                assert_eq!(resolved.model, charter.llm.model);
+            }
+            run::Fault::Exhausted { .. } => {}
+            run::Fault::Provider | run::Fault::Refused | run::Fault::Truncated | run::Fault::Malformed => {
+                unreachable!()
+            }
+        }
     }
+}
+
+fn expected_fault(expected: run::CompletionFailure, world: &smith_agent_world::World) -> run::Fault {
+    match expected {
+        run::CompletionFailure::Exhausted { retry_after } => {
+            let at = world.completions()[0].terminal.expect("provider failed").0;
+            run::Fault::Exhausted {
+                account: 0,
+                retry_at: if retry_after == Duration::ZERO { None } else { Some(at.saturating_add(retry_after)) },
+            }
+        }
+        run::CompletionFailure::Limit { .. }
+        | run::CompletionFailure::ApplicationLimit
+        | run::CompletionFailure::Protocol
+        | run::CompletionFailure::Cancelled
+        | run::CompletionFailure::Overloaded
+        | run::CompletionFailure::Unavailable
+        | run::CompletionFailure::TimedOut { .. }
+        | run::CompletionFailure::ContextTooLong
+        | run::CompletionFailure::Invalid
+        | run::CompletionFailure::Unauthorized
+        | run::CompletionFailure::RateLimited { .. } => run::Fault::Completion {
+            failure: expected,
+            evidence: run::CompletionEvidence::Response { status: Some(503) },
+            model: 0,
+            attempts: 1,
+        },
+    }
+}
+
+fn budget_answer_fields() {
+    use smith_agent_world::{Job, Settings, World};
+    let mut settings = Settings::calm(4);
+    settings.job = Job::Spending;
+    settings.budget.turns = 8;
+    let mut world = World::new(settings);
+    world.run(20_000);
+    let run::Answer::Failed { failure, .. } = world.answer() else { panic!("shared turns spent") };
+    assert_eq!(*failure, run::Failure::Budget { exhausted: run::Exhausted::Turns, used: Some(7), bound: Some(8) });
 }

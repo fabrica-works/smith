@@ -905,6 +905,18 @@ fn read_agent_exit(tokens: &[Token]) -> Result<AgentExit, Error> {
 fn read_answer_failure(tokens: &[Token], limits: &Limits) -> Result<AnswerFailure, Error> {
     object(tokens)?;
     Ok(AnswerFailure {
+        retry_after_ms: match field(tokens, b"retry_after_ms")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
+        used: match field(tokens, b"used")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
+        bound: match field(tokens, b"bound")? {
+            Some(item) => Some(unsigned(item)?),
+            None => None,
+        },
         dropped: match field(tokens, b"dropped")? {
             Some(item) => Some(boolean(item)?),
             None => None,

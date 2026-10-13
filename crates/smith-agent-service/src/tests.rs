@@ -195,7 +195,14 @@ fn actual_reserve_refusals_keep_their_part_through_every_capture() {
             (crate::sinks::Capture::Everything, smith_events::Capture::Everything),
         ] {
             let projected = crate::answer_record(
-                crate::AnswerMeta { run: 1, wind_down: false, read: None, unread: 0, elapsed: Duration::ZERO },
+                crate::AnswerMeta {
+                    now: skein_lib::Time::ZERO,
+                    run: 1,
+                    wind_down: false,
+                    read: None,
+                    unread: 0,
+                    elapsed: Duration::ZERO,
+                },
                 &answer,
                 capture,
             );

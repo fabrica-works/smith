@@ -76,6 +76,9 @@ pub fn unanswered(
 
 fn failure(class: AnswerClass, which: Option<&[u8]>) -> AnswerFailure {
     AnswerFailure {
+        retry_after_ms: None,
+        used: None,
+        bound: None,
         dropped: None,
         ended: None,
         turn: None,
@@ -140,13 +143,18 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
                 result.completion = Some(completion(why, evidence));
                 result
             }
-            host::ModelFault::Exhausted => failure(AnswerClass::Model, Some(b"exhausted")),
+            host::ModelFault::Exhausted { account, retry_after_ms } => {
+                let mut result = failure(AnswerClass::Model, None);
+                result.account = Some(u64::from(account));
+                result.retry_after_ms = retry_after_ms;
+                result
+            }
             host::ModelFault::Provider => failure(AnswerClass::Model, Some(b"provider")),
             host::ModelFault::Refused => failure(AnswerClass::Model, Some(b"refused")),
             host::ModelFault::Truncated => failure(AnswerClass::Model, Some(b"truncated")),
             host::ModelFault::Malformed => failure(AnswerClass::Model, Some(b"malformed")),
         },
-        host::RunFailure::Budget(exhausted) => {
+        host::RunFailure::Budget { exhausted, used, bound } => {
             let which: &[u8] = match exhausted {
                 host::Exhausted::Turns => b"turns",
                 host::Exhausted::Spend => b"spend",
@@ -162,7 +170,10 @@ fn failed(why: host::RunFailure) -> AnswerFailure {
                     host::Overflow::Usage => b"usage_overflow",
                 },
             };
-            failure(AnswerClass::Budget, Some(which))
+            let mut result = failure(AnswerClass::Budget, Some(which));
+            result.used = used;
+            result.bound = bound;
+            result
         }
         host::RunFailure::Policy(host::Policy::Unfinished { .. }) => failure(AnswerClass::Policy, None),
         host::RunFailure::Cancelled => {

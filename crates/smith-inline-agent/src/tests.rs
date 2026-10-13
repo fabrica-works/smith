@@ -522,3 +522,23 @@ fn a_dropped_slot_keeps_a_command_right_until_its_terminal() {
     );
     assert!(out.is_empty());
 }
+
+#[test]
+fn the_inline_answer_measures_the_exhausted_accounts_wait() {
+    for (retry_at, expected) in
+        [(Some(Time::from_nanos(100_000_000)), Some(80)), (Some(Time::ZERO), Some(0)), (None, None)]
+    {
+        let answer = run::Answer::Failed {
+            failure: run::Failure::Model(run::Fault::Exhausted { account: 23, retry_at }),
+            spent: run::Spend::ZERO,
+            turns: 0,
+        };
+        let translated = translate::answer(answer, None, Time::from_nanos(20_000_000));
+        assert_eq!(
+            translated.result,
+            host::RunResult::Failed {
+                failure: host::RunFailure::Model(host::ModelFault::Exhausted { account: 23, retry_after_ms: expected }),
+            }
+        );
+    }
+}

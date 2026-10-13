@@ -609,6 +609,11 @@ pub struct AnswerFailure {
     pub attempts: Option<u64>,
     pub completion: Option<CompletionFailure>,
     pub account: Option<u64>,
+    /// Remaining provider cooldown measured when the run answers, in milliseconds.
+    pub retry_after_ms: Option<u64>,
+    /// Budget usage and ceiling in turns, host spend units, or run wall milliseconds.
+    pub used: Option<u64>,
+    pub bound: Option<u64>,
     pub which: Option<Box<[u8]>>,
     pub reason: Option<Box<[u8]>>,
     /// Whether cancellation dropped an unanswering run, rather than receiving its answer.

@@ -23,7 +23,11 @@ fn ended(turns: u32, spent: u64) -> Up {
             turns,
             spent,
             result: RunResult::Failed {
-                failure: RunFailure::Budget(smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Spend)),
+                failure: RunFailure::Budget {
+                    exhausted: smith_host_domain::Exhausted::Overflow(smith_host_domain::Overflow::Spend),
+                    used: None,
+                    bound: None,
+                },
             },
         },
     }

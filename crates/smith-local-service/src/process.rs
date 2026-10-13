@@ -215,6 +215,7 @@ impl ProcessAdapter {
             .checked_add(Queue::<io::Event>::worst_case(limits.queue)?.checked_mul(2)?)?
             .checked_add(Queue::<io::Request>::worst_case(limits.queue)?)?
             .checked_add(Queue::<protocol::ProcessEvent>::worst_case(limits.queue)?)?
+            .checked_add(u64::try_from(size_of::<protocol::OpenEvent>()).ok()?.checked_mul(u64::from(limits.queue))?)?
             .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
             .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)?;
         Some([store, delivery, routing])
@@ -903,9 +904,26 @@ impl ProcessAdapter {
                 continue;
             }
             match &event {
-                protocol::ProcessEvent::Channel { event: protocol::OpenEvent::WriteFailed, .. } => continue,
-                protocol::ProcessEvent::Channel { .. }
-                | protocol::ProcessEvent::Spawned { .. }
+                protocol::ProcessEvent::Channel { event, .. } => match event.as_ref() {
+                    protocol::OpenEvent::WriteFailed => continue,
+                    protocol::OpenEvent::Opened { .. }
+                    | protocol::OpenEvent::Sent { .. }
+                    | protocol::OpenEvent::Unsent { .. }
+                    | protocol::OpenEvent::Hangup { .. }
+                    | protocol::OpenEvent::Answer { .. }
+                    | protocol::OpenEvent::Admitted
+                    | protocol::OpenEvent::MessageRefused { .. }
+                    | protocol::OpenEvent::Waiting { .. }
+                    | protocol::OpenEvent::Long { .. }
+                    | protocol::OpenEvent::LongDone
+                    | protocol::OpenEvent::Turn { .. }
+                    | protocol::OpenEvent::Fact { .. }
+                    | protocol::OpenEvent::Rejected { .. }
+                    | protocol::OpenEvent::Exhausted { .. }
+                    | protocol::OpenEvent::Call { .. }
+                    | protocol::OpenEvent::Withdraw { .. } => {}
+                },
+                protocol::ProcessEvent::Spawned { .. }
                 | protocol::ProcessEvent::Unspawned { .. }
                 | protocol::ProcessEvent::Exited { .. }
                 | protocol::ProcessEvent::Reaped { .. } => {}
@@ -1137,7 +1155,7 @@ impl ProcessAdapter {
 
 fn read_terminal(event: &protocol::ProcessEvent) -> bool {
     match event {
-        protocol::ProcessEvent::Channel { event, .. } => match event {
+        protocol::ProcessEvent::Channel { event, .. } => match event.as_ref() {
             protocol::OpenEvent::Opened { .. }
             | protocol::OpenEvent::Sent { .. }
             | protocol::OpenEvent::Unsent { .. }
@@ -1177,7 +1195,7 @@ fn to_host_event(event: protocol::ProcessEvent) -> host::Input {
         protocol::ProcessEvent::Reaped { agent, detail } => {
             host::Input::Process(host::process::Event::Reaped { owner: agent, detail })
         }
-        protocol::ProcessEvent::Channel { agent, event } => channel_event(agent, event),
+        protocol::ProcessEvent::Channel { agent, event } => channel_event(agent, *event),
     }
 }
 
@@ -1302,15 +1320,15 @@ mod tests {
             ProcessAdapter::new(&config.limits.process, config.launch, config.endpoints, 1).expect("adapter");
         adapter
             .process_events
-            .push(protocol::ProcessEvent::Channel { agent: owner, event: protocol::OpenEvent::WriteFailed });
+            .push(protocol::ProcessEvent::Channel { agent: owner, event: Box::new(protocol::OpenEvent::WriteFailed) });
         adapter.process_events.push(protocol::ProcessEvent::Channel {
             agent: owner,
-            event: protocol::OpenEvent::Fact { body: b"first".as_slice().into() },
+            event: Box::new(protocol::OpenEvent::Fact { body: b"first".as_slice().into() }),
         });
         adapter.process_events.push(protocol::ProcessEvent::Exited { agent: owner, exit: None });
         adapter.process_events.push(protocol::ProcessEvent::Channel {
             agent: owner,
-            event: protocol::OpenEvent::Fact { body: b"second".as_slice().into() },
+            event: Box::new(protocol::OpenEvent::Fact { body: b"second".as_slice().into() }),
         });
         adapter
     }

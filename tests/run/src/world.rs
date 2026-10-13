@@ -1600,11 +1600,17 @@ impl World {
                 crate::wind_down_referee::Seen::Answer {
                     turns_failure: matches!(
                         answer,
-                        run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Turns), .. }
+                        run::Answer::Failed {
+                            failure: run::Failure::Budget { exhausted: run::Exhausted::Turns, .. },
+                            ..
+                        }
                     ),
                     time_failure: matches!(
                         answer,
-                        run::Answer::Failed { failure: run::Failure::Budget(run::Exhausted::Time), .. }
+                        run::Answer::Failed {
+                            failure: run::Failure::Budget { exhausted: run::Exhausted::Time, .. },
+                            ..
+                        }
                     ),
                     time_expired: self.now >= self.views[run].deadline,
                 },
