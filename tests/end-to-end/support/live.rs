@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(result.exit, smith_bench::Exit::Code(0), "pinned product settings pass check");
         assert!(
             smith_bench::agent::smith::teardown_from_check(&result.stdout)
-                .is_ok_and(|bound| bound == skein_lib::Duration::from_secs(40)),
+                .is_ok_and(|bound| bound == skein_lib::Duration::from_secs(100)),
             "check reports its teardown bound"
         );
     }

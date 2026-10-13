@@ -159,7 +159,7 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time, files: &mut Fi
     let mut limits = local_shell::service_limits(resolved.limits, host_limits, &resolved.agent.service)
         .map_err(|detail| Refused::Local(local_shell::Failure::Configuration { detail }))?;
     let (trace, header, available) =
-        prepare_stream(&mut resolved.agent, &resolved.local.chat, &mut limits, invocation.json, wall)?;
+        files.prepare_stream(&mut resolved.agent, &resolved.local.chat, &mut limits, invocation.json, wall)?;
     let mut front = crate::front::headless::Headless::new(
         invocation.json,
         skein_shell::prepare_output(skein_io::kernel::Fd::new(1)).map_err(|why| {
@@ -312,6 +312,7 @@ pub(crate) fn prepare_stream(
     limits: &mut smith_local_service::Limits,
     json: bool,
     wall: Wall,
+    result_file: skein_lib::Duration,
 ) -> Result<(Option<smith_agent_shell::trace::TraceConfig>, Option<smith_events::SessionStarted>, u64), Refused> {
     use std::path::PathBuf;
     let trace = agent.trace.take();
@@ -328,6 +329,7 @@ pub(crate) fn prepare_stream(
         chat,
         u64::from(std::process::id()),
         destinations,
+        result_file,
     )
     .map_err(Refused::Local)?;
     if let Some(header) = &mut header {

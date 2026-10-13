@@ -17,10 +17,12 @@ impl Local {
         chat: &[u8],
         pid: u64,
         destinations: u32,
+        result_file: skein_lib::Duration,
     ) -> Result<(Option<smith_events::SessionStarted>, u64), crate::local_shell::Failure> {
         match trace {
             Some(trace) => {
-                let header = Self::trace_header(configuration, limits, trace, chat.into(), pid, destinations)?;
+                let header =
+                    Self::trace_header(configuration, limits, trace, chat.into(), pid, destinations, result_file)?;
                 let bytes = Self::header_memory(&header)
                     .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?;
                 smith_agent_service::profile::validate::memory(bytes, configuration.memory)
@@ -41,6 +43,7 @@ impl Local {
         chat: Box<[u8]>,
         pid: u64,
         destinations: u32,
+        result_file: skein_lib::Duration,
     ) -> Result<smith_events::SessionStarted, crate::local_shell::Failure> {
         let mut options = 0;
         for endpoint in &configuration.declarations.endpoints {
@@ -62,7 +65,7 @@ impl Local {
         };
         // The second admission includes the sink's own named limits.
         for _ in 0..2 {
-            let header = names(configuration, limits)?;
+            let header = names(configuration, limits, result_file)?;
             configuration.service.limits.events = Some(
                 smith_agent_service::EventLimits::derive(
                     &configuration.service.limits,
@@ -84,7 +87,13 @@ impl Local {
                 AgentLimits::Spawned(_) => {}
             }
         }
-        Ok(crate::local_shell::stream_header(chat, trace.capture, trace.delivery, pid, names(configuration, limits)?))
+        Ok(crate::local_shell::stream_header(
+            chat,
+            trace.capture,
+            trace.delivery,
+            pid,
+            names(configuration, limits, result_file)?,
+        ))
     }
 
     /// Price the startup record and its inventory while the product owners are live.
@@ -111,12 +120,14 @@ impl Local {
 fn names(
     configuration: &config::Configuration,
     limits: &service::Limits,
+    result_file: skein_lib::Duration,
 ) -> Result<List<smith_events::EffectiveLimit>, crate::local_shell::Failure> {
     let inventory = service::profile::effective(
         &configuration.profile,
         &configuration.declarations,
         &configuration.service,
         limits,
+        result_file,
     )
     .ok_or_else(|| configuration_failure(derivation_refusal("local_header")))?;
     smith_agent_service::profile::header(

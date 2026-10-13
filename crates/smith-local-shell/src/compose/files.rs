@@ -83,6 +83,29 @@ impl Files {
             .ok_or_else(|| Refused::Usage(Usage("the file choices exceed declared memory".into())))
     }
 
+    pub(crate) fn teardown_bound(&self) -> Result<Duration, Refused> {
+        if self.target.is_some() {
+            // The whole-file store and the directory close each use FileIo's timeout.
+            self.timeout
+                .checked_add(self.timeout)
+                .ok_or_else(|| Refused::Usage(Usage("the result file teardown bound overflows".into())))
+        } else {
+            Ok(Duration::ZERO)
+        }
+    }
+
+    pub(crate) fn prepare_stream(
+        &self,
+        agent: &mut smith_agent_shell::config::Configuration,
+        chat: &[u8],
+        limits: &mut smith_local_service::Limits,
+        json: bool,
+        wall: Wall,
+    ) -> Result<(Option<smith_agent_shell::trace::TraceConfig>, Option<smith_events::SessionStarted>, u64), Refused>
+    {
+        super::prepare_stream(agent, chat, limits, json, wall, self.teardown_bound()?)
+    }
+
     pub(super) fn live_memory(&self) -> Option<u64> {
         if self.target.is_some() { ResultFile::footprint(self.maximum) } else { Some(0) }
     }

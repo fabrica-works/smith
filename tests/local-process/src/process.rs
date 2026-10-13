@@ -814,8 +814,16 @@ fn product_header(
         capture: agent::sinks::Capture::Everything,
         delivery: agent::sinks::Delivery::Complete,
     };
-    let header = Local::trace_header(&mut configuration, &mut config.limits, &trace, b"main".as_slice().into(), 101, 1)
-        .expect("product effective header");
+    let header = Local::trace_header(
+        &mut configuration,
+        &mut config.limits,
+        &trace,
+        b"main".as_slice().into(),
+        101,
+        1,
+        skein_lib::Duration::ZERO,
+    )
+    .expect("product effective header");
     (configuration.service, header)
 }
 /// The agent's declared workspace directories, each owned by this child.

@@ -2,25 +2,32 @@
 //! It retains no configuration. Contract: protocol/limits.md, section 9.
 
 use alloc::boxed::Box;
-use skein_lib::List;
+use skein_lib::{Duration, List};
 use smith_agent_service::profile::{Configuration, Layer, Limit, LimitName, Profile, Value};
 
 mod channel;
 
-/// Keep the agent's names, followed by the selected local, inline or spawned bounds.
+/// Keep the selected host bounds, adding its result file to the product's teardown.
 #[must_use]
 pub fn effective(
     profile: &Profile,
     declarations: &Configuration,
     configuration: &smith_agent_service::Config,
     limits: &crate::Limits,
+    result_file: Duration,
 ) -> Option<Box<[Limit]>> {
-    let agent = smith_agent_service::profile::effective(
+    let mut agent = smith_agent_service::profile::effective(
         profile,
         declarations,
         &configuration.limits,
         &configuration.llm_endpoints,
     )?;
+    let teardown = smith_agent_service::profile::teardown_bound(&configuration.limits)?.checked_add(result_file)?;
+    for limit in &mut agent {
+        if limit.name == LimitName::deployment(Layer::Service, "teardown") {
+            limit.value = Value::Duration(teardown);
+        }
+    }
     let local = local_domain(&limits.local);
     let selected = match limits.local.agent {
         smith_local_domain::AgentLimits::Inline(bounds) => inline_domain(&bounds),

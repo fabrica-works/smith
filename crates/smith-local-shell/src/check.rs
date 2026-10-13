@@ -240,9 +240,13 @@ fn invocation_limits(
     };
     let agent = &resolved.agent;
     Ok(match &local {
-        Some(local) => {
-            smith_local_service::profile::effective(&agent.profile, &agent.declarations, &agent.service, local)
-        }
+        Some((local, result_file)) => smith_local_service::profile::effective(
+            &agent.profile,
+            &agent.declarations,
+            &agent.service,
+            local,
+            *result_file,
+        ),
         None => smith_agent_service::profile::effective(
             &agent.profile,
             &agent.declarations,
@@ -278,17 +282,24 @@ fn derive_execution(
     resolved: &mut settings::resolve::Resolved,
     invocation: &command::Exec,
     wall: skein_lib::Wall,
-) -> Result<smith_local_service::Limits, String> {
+) -> Result<(smith_local_service::Limits, skein_lib::Duration), String> {
     if let Some(chat) = crate::compose::invocation_chat(&invocation.shared, 0) {
         resolved.local.chat = chat;
     }
     let files = crate::compose::Files::prepare(invocation, resolved, 0).map_err(|why| why.line())?;
+    let result_file = files.teardown_bound().map_err(|why| why.line())?;
     let host = smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits)
         .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
     let mut limits = crate::local_shell::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
-    let (_, _, available) =
-        crate::compose::prepare_stream(&mut resolved.agent, &resolved.local.chat, &mut limits, invocation.json, wall)
-            .map_err(|why| why.line())?;
+    let (_, _, available) = crate::compose::prepare_stream(
+        &mut resolved.agent,
+        &resolved.local.chat,
+        &mut limits,
+        invocation.json,
+        wall,
+        result_file,
+    )
+    .map_err(|why| why.line())?;
     match limits.local.agent {
         smith_local_domain::AgentLimits::Inline(_) => {
             limits.inline = Some(
@@ -323,7 +334,7 @@ fn derive_execution(
             .map_err(|why| why.detail().to_owned())?;
     smith_agent_service::profile::validate::memory(required, available)
         .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
-    Ok(limits)
+    Ok((limits, result_file))
 }
 
 /// Handle product arguments, leaving legacy invocations to their existing glue.
@@ -377,6 +388,55 @@ mod tests {
     }
 
     #[test]
+    fn check_execs_teardown_includes_only_its_result_file_deadlines() {
+        let mut resolved = execution_fixture();
+        for (output, milliseconds) in [(false, 10_000), (true, 12_000)] {
+            let mut arguments = vec!["check", "--json", "exec"];
+            if output {
+                arguments.extend(["-o", "/unopened-output-parent/result"]);
+            }
+            let Command::Check { execution: Some(execution), .. } =
+                command::parse(arguments.into_iter().map(OsString::from).collect()).expect("check exec arguments")
+            else {
+                panic!("invocation-aware check");
+            };
+            let inventory = invocation_limits(&mut resolved, Some(&execution), skein_lib::Wall::from_nanos(0))
+                .expect("pure invocation derivation")
+                .expect("effective inventory");
+            let document = named_limits(&inventory, &resolved.agent).expect("check's named JSON limits");
+            let teardown = document.iter().find(|limit| limit["name"] == "service.teardown").expect("teardown bound");
+            assert_eq!(teardown["unit"], "ms");
+            assert_eq!(teardown["value"], milliseconds);
+        }
+    }
+
+    fn execution_fixture() -> settings::resolve::Resolved {
+        let (mut local, service) =
+            smith_local_process_world::process::configuration(skein_io::kernel::Fd::new(41), false);
+        local.limits.local.agent = smith_local_domain::AgentLimits::inline(
+            service.limits.domain,
+            2,
+            skein_lib::Duration::from_secs(3600),
+            smith_agent_process_world::profile().policy.cancel_grace,
+        )
+        .expect("product inline fixture");
+        settings::resolve::Resolved {
+            agent: smith_agent_shell::config::Configuration {
+                service,
+                memory: 8_589_934_592,
+                trace: None,
+                profile: smith_agent_process_world::profile(),
+                declarations: smith_agent_process_world::declarations(0),
+            },
+            local: local.local,
+            limits: local.limits.local,
+            settings: Settings { workspace: "/workspace".into(), values: BTreeMap::new() },
+            accounts: Vec::new(),
+            outside_models: BTreeMap::new(),
+        }
+    }
+
+    #[test]
     fn check_derives_execs_event_destinations_through_its_stream_owner() {
         for (trace, json, destinations) in [(false, false, 0), (false, true, 1), (true, false, 1), (true, true, 2)] {
             let mut resolved = resolved(trace);
@@ -388,14 +448,19 @@ mod tests {
                 deliver: false,
                 json,
             };
-            let limits = derive_execution(&mut resolved, &invocation, skein_lib::Wall::from_nanos(0))
+            let (limits, result_file) = derive_execution(&mut resolved, &invocation, skein_lib::Wall::from_nanos(0))
                 .expect("pure invocation derivation");
             let agent = &resolved.agent;
             let events = agent.service.limits.events.as_ref();
             assert_eq!(events.map_or(0, |events| events.sinks.destinations), destinations);
-            let inventory =
-                smith_local_service::profile::effective(&agent.profile, &agent.declarations, &agent.service, &limits)
-                    .expect("one effective limits owner");
+            let inventory = smith_local_service::profile::effective(
+                &agent.profile,
+                &agent.declarations,
+                &agent.service,
+                &limits,
+                result_file,
+            )
+            .expect("one effective limits owner");
             assert!(inventory.iter().any(|limit| limit.name.field == "teardown"));
         }
     }

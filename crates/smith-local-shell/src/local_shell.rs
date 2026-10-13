@@ -51,6 +51,23 @@ impl Failure {
     }
 }
 
+fn prepare_header(
+    configuration: &mut config::Configuration,
+    limits: &mut service::Limits,
+    trace: Option<&smith_agent_shell::trace::TraceConfig>,
+    chat: &str,
+) -> Result<(Option<smith_events::SessionStarted>, u64), Failure> {
+    Local::prepare_header(
+        configuration,
+        limits,
+        trace,
+        chat.as_bytes(),
+        u64::from(std::process::id()),
+        1,
+        skein_lib::Duration::ZERO,
+    )
+}
+
 fn configuration(detail: String) -> Failure {
     Failure::Configuration { detail }
 }
@@ -107,14 +124,7 @@ pub fn run(settings_path: &Path, state_root: &Path, workspace_settings: Option<&
         );
     }
     let trace = product_trace(&settings, agent_config.trace.take());
-    let (header, trace_memory) = Local::prepare_header(
-        &mut agent_config,
-        &mut limits,
-        trace.as_ref(),
-        settings.chat.as_bytes(),
-        u64::from(std::process::id()),
-        1,
-    )?;
+    let (header, trace_memory) = prepare_header(&mut agent_config, &mut limits, trace.as_ref(), &settings.chat)?;
     service::profile::memory(&limits, trace_memory).map_err(profile_refusal).map_err(configuration)?;
     let seed = skein_shell::seed().map_err(|error| host_failure(format!("local seed failed (errno {error})")))?;
     let local_config = service::Config {
