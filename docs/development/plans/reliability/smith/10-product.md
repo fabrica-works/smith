@@ -770,7 +770,8 @@ Those crossings (the charter, the agent configuration, the transcript,
 the session's trigger, `smith-protocol-llm`) are a step its supervisor
 names, which 10.24's `/model` and `/effort` need.
 Needs: 10.8; for `/model` and `/effort`, that step: 08.s1 (decisions.md, 13.114).
-Files: 10.8's.
+Files: 10.8's, and `benchmarks/agents/smith/faces.toml` for one appended
+Chat entry (decisions.md, 13.118).
 Shape: 10.8's.
 Test shape: 10.8's units of each `/` line and of the renderer per record
 kind, its four world stories and its three end-to-end tests.

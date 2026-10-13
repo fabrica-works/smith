@@ -2010,3 +2010,11 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    returns to the charter's for the window it opens. The run's `Opening`
    fact is unchanged. No channel or events version change: the
    conversation's records already carry a model.
+118. **10.24 registers the Chat face** (block of 2026-10-13T11:48:36Z,
+   smith 10.24). 10.8's Files, which 10.24 takes, name `faces.rs` but not
+   the append-only registry it reads, `benchmarks/agents/smith/faces.toml`,
+   which 10.15's Files named for the Exec face. Ruling: 10.24's Files gain
+   the registry for one appended Chat entry, anchored to a preserved
+   complete candidate commit as 10.15's Exec entry was, with the Exec
+   entry's receiving caps and `session.ended` policy; no earlier entry
+   changes, and `first-request/headless` stays on the Exec face.
