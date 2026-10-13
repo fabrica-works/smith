@@ -8,6 +8,44 @@ use smith_local_domain as local;
 
 use crate::{Config, Launch, Limits, ProcessLimits, Service, iterate};
 
+fn windows(service: &mut Service) -> skein_lib::Queue<skein_io::kernel::Submit> {
+    iterate(service, Time::ZERO, Wall::EPOCH);
+    let mut windows = skein_lib::Queue::with_capacity(2);
+    for _ in 0..service.submissions().capacity() {
+        let Some(submit) = service.submissions().pop() else { break };
+        if let skein_io::kernel::Op::Window { .. } = submit.kind {
+            windows.push(submit);
+        }
+    }
+    windows
+}
+
+#[test]
+fn a_resize_during_a_window_read_is_read_after_its_terminal() {
+    use skein_io::kernel::{Complete, Done, Fd, Size};
+    let mut service = Service::new(config(), 7).unwrap();
+    service.adopt_terminal(Some(Fd::new(10)), Fd::new(11)).unwrap();
+    service.read_window();
+    service.read_window();
+    let mut first = windows(&mut service);
+    assert_eq!(first.len(), 1, "startup has one window read");
+    service.read_window();
+    service.read_window();
+    assert!(windows(&mut service).is_empty(), "only one window read is in flight");
+    let submit = first.pop().unwrap();
+    service.completions().push(Complete {
+        op: submit.op,
+        kind: submit.kind,
+        result: Ok(Done::Window(Size { rows: 24, columns: 80 })),
+    });
+    assert_eq!(windows(&mut service).len(), 1, "the later resize is read next");
+    let Some(skein_io::Event::Window { window: skein_io::Window::Size(size), .. }) = service.writer_events().pop()
+    else {
+        panic!("the shell hears the first window's size")
+    };
+    assert_eq!(size.columns, 80);
+}
+
 pub(super) fn config() -> Config {
     let mut local_limits = local::Limits {
         smith: smith_agent_world::LIMITS,

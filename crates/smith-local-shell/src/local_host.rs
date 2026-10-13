@@ -241,6 +241,9 @@ impl Local {
                 resources.signals,
             )
             .map_err(|fd| host_failure(format!("local terminal {} cannot be adopted", fd.raw())))?;
+        if local.interactive.as_ref().is_some_and(|front| !front.plain()) {
+            local.service.read_window();
+        }
         if let Some(front) = &local.headless
             && front.json
         {
@@ -439,6 +442,9 @@ impl Local {
     }
 
     fn writer_up(&mut self) {
+        while let Some(event) = self.service.writer_events().pop() {
+            self.events.push(event);
+        }
         if let Some(writer) = &mut self.writer {
             while writer.is_ready() {
                 io::resume(writer, &self.env, &mut self.events, &mut self.store_submissions);
@@ -455,13 +461,22 @@ impl Local {
                     io::fire(writer, &self.env, &mut self.events, &mut self.store_submissions);
                 }
             }
-        } else {
-            while let Some(event) = self.service.writer_events().pop() {
-                self.events.push(event);
-            }
         }
         while let Some(event) = self.events.pop() {
             match event {
+                io::Event::Resized => {
+                    if self.interactive.as_ref().is_some_and(|front| !front.plain()) {
+                        self.service.read_window();
+                    }
+                }
+                io::Event::Window { window, .. } => match window {
+                    io::Window::Size(size) => {
+                        if let Some(front) = &mut self.interactive {
+                            front.columns(size.columns);
+                        }
+                    }
+                    io::Window::Gone => {}
+                },
                 io::Event::Output { owner, up: OutputUp::Settled { right, outcome } } if Some(owner) == self.output => {
                     let (wanted, text) = self.pending.take().expect("terminal has one output right");
                     assert_eq!(right, wanted, "terminal settled its sole output right");
@@ -490,8 +505,6 @@ impl Local {
                 | io::Event::Spawned { .. }
                 | io::Event::Exited { .. }
                 | io::Event::Usage { .. }
-                | io::Event::Resized
-                | io::Event::Window { .. }
                 | io::Event::Shutdown { .. }) => panic!("unexpected terminal writer event: {other:?}"),
             }
         }
@@ -605,7 +618,7 @@ impl Local {
             return Some(text);
         }
         let front = self.interactive.as_mut()?;
-        front.screen.record(self.service.pop_front()?)
+        front.record(self.service.pop_front()?)
     }
 
     fn live_pending(&self) -> bool {

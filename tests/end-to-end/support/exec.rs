@@ -1,5 +1,5 @@
 //! Headless product stories reuse the shipped binary, person and provider hosts.
-use super::{Process, Ran, Refusal};
+use super::{Process, Ran, Refusal, window};
 use skein_io::kernel::Exit;
 use skein_lib::Duration;
 use skein_shell::{Clock, Host};
@@ -38,12 +38,55 @@ pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], r
 
 #[must_use]
 pub fn exec_with_foreign_file(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
-    run_fixture(scratch, arguments, Some(provider(scratch, Reply::Accepted)), true, person(input), false).0
+    run_fixture(
+        scratch,
+        arguments,
+        Some(provider(scratch, Reply::Accepted)),
+        true,
+        person(input),
+        false,
+        window::Story::None,
+    )
+    .0
 }
 
 #[must_use]
 pub fn chat(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
-    run_fixture(scratch, &[], Some(provider(scratch, Reply::Accepted)), false, (Mode::Terminal, commands), false)
+    run_fixture(
+        scratch,
+        &[],
+        Some(provider(scratch, Reply::Accepted)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+        window::Story::None,
+    )
+}
+
+#[must_use]
+pub fn chat_modes(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
+    run_fixture(
+        scratch,
+        &[],
+        Some(provider(scratch, Reply::Accepted)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+        window::Story::Modes,
+    )
+}
+
+#[must_use]
+pub fn chat_resized(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
+    run_fixture(
+        scratch,
+        &[],
+        Some(provider(scratch, Reply::Accepted)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+        window::Story::Resize,
+    )
 }
 
 #[must_use]
@@ -55,12 +98,22 @@ pub fn chat_traced(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_
         false,
         (Mode::Terminal, commands),
         false,
+        window::Story::None,
     )
 }
 
 #[must_use]
 pub fn chat_waiting(scratch: &Scratch, commands: Vec<Action>) -> Ran {
-    run_fixture(scratch, &[], Some(provider(scratch, Reply::Wait)), false, (Mode::Terminal, commands), false).0
+    run_fixture(
+        scratch,
+        &[],
+        Some(provider(scratch, Reply::Wait)),
+        false,
+        (Mode::Terminal, commands),
+        false,
+        window::Story::None,
+    )
+    .0
 }
 
 #[must_use]
@@ -72,6 +125,7 @@ pub fn chat_signed_in(scratch: &Scratch, commands: Vec<Action>) -> Ran {
         false,
         (Mode::Terminal, commands),
         true,
+        window::Story::None,
     )
     .0
 }
@@ -114,7 +168,7 @@ fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
 
 #[must_use]
 pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option<skein_fake_peers::llm::Peer>) -> Ran {
-    run_fixture(scratch, arguments, provider, false, person(input), false).0
+    run_fixture(scratch, arguments, provider, false, person(input), false, window::Story::None).0
 }
 
 fn person(input: &[u8]) -> (Mode, Vec<Action>) {
@@ -128,6 +182,7 @@ fn run_fixture(
     foreign: bool,
     person: (Mode, Vec<Action>),
     sign_in: bool,
+    watching: window::Story,
 ) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
     assert_no_children();
     let mut binary = Binary::start(
@@ -150,15 +205,23 @@ fn run_fixture(
     let descriptors = streams.descriptors();
     let clock = Clock::new();
     let now = clock.now().now;
-    let mut world = real::World::new(Refusal {
-        now,
-        foreign: foreign.then(|| scratch.path().join("state")),
-        deadline: now.saturating_add(Duration::from_secs(1)),
-        trace: arguments
-            .windows(2)
-            .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))
-            .map(|pair| (scratch.path().join(pair.get(1).expect("trace path")), false)),
-    });
+    let master = match &streams {
+        Streams::Terminal { stream } => Some(*stream),
+        Streams::Pipes { .. } => None,
+    };
+    let mut world = real::World::new(window::Judge::new(
+        Refusal {
+            now,
+            foreign: foreign.then(|| scratch.path().join("state")),
+            deadline: now.saturating_add(Duration::from_secs(1)),
+            trace: arguments
+                .windows(2)
+                .find(|pair| pair.first().is_some_and(|flag| *flag == "--trace"))
+                .map(|pair| (scratch.path().join(pair.get(1).expect("trace path")), false)),
+        },
+        watching,
+        master,
+    ));
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
         let terminal = match streams {

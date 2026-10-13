@@ -4,6 +4,60 @@ use smith_local_process_world::{Placement, referee::CheckoutRead};
 use smith_real_world::{Scratch, World};
 
 #[test]
+fn the_terminal_modes_are_unchanged_after_smith_exits() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let (ran, queries) = support::chat_modes(
+        &scratch,
+        vec![Action::Wait(b"> ".as_slice().into()), Action::Send(b"Ask first\n".as_slice().into()), Action::Eof],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(queries.len(), 1);
+}
+
+#[test]
+fn end_of_input_at_the_terminal_lets_the_run_answer_then_exits_0() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let (ran, queries) = support::chat(
+        &scratch,
+        vec![Action::Wait(b"> ".as_slice().into()), Action::Send(b"Ask first\n".as_slice().into()), Action::Eof],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(queries.len(), 1);
+    assert!(ran.stdout.windows(12).any(|bytes| bytes == b"First answer"));
+}
+
+#[test]
+fn a_window_size_change_reaches_the_status_line() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let (ran, queries) = support::chat_resized(
+        &scratch,
+        vec![
+            Action::Wait(b"> ".as_slice().into()),
+            Action::Send(b"Ask first\n".as_slice().into()),
+            Action::Wait(b"codex/gpt-6-luna: in ".as_slice().into()),
+            Action::Send(b"Again\n".as_slice().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(queries.len(), 2);
+    let widths: Vec<_> = ran
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+        .filter(|line| line.starts_with(b"codex/gpt-6-luna:"))
+        .map(<[u8]>::len)
+        .collect();
+    assert_eq!(widths, [80, 20]);
+}
+
+#[test]
 fn the_interactive_default_fits_its_memory() {
     use smith_local_shell::{check, command, settings};
 

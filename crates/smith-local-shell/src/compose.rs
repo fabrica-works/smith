@@ -172,6 +172,8 @@ fn compose(
     clock: &Clock,
 ) -> Result<Composed, Refused> {
     let Opened { mut resolved, invocation, seed, wall, input_closed, interactive, document } = opened;
+    let interactive =
+        interactive.map(|plain| plain || skein_shell::terminal_modes(skein_io::kernel::Fd::new(0)).is_err());
     files.prepare_output(seed)?;
     files.create_temporary()?;
     if interactive.is_none()
@@ -241,8 +243,7 @@ fn compose(
         launch,
         agent: smith_local_service::AgentConfig::Spawned,
     };
-    let resources =
-        startup_resources(files, &chat_path, interactive.is_some(), delivery_roots, effect_roots, environment, seed)?;
+    let resources = startup_resources(files, &chat_path, interactive, delivery_roots, effect_roots, environment, seed)?;
     let mut local = crate::Local::within_memory(
         config,
         lower,
@@ -266,21 +267,26 @@ fn compose(
 fn startup_resources(
     files: &mut Files,
     chat_path: &Path,
-    interactive: bool,
+    interactive: Option<bool>,
     delivery_roots: Box<[skein_io::kernel::Fd]>,
     effect_roots: Box<[skein_io::kernel::Fd]>,
     environment: Box<[Box<[u8]>]>,
     seed: u64,
 ) -> Result<crate::Resources, Refused> {
     Ok(crate::Resources {
-        state_root: files.store_root(if interactive {
+        state_root: files.store_root(if interactive.is_some() {
             chat_path.parent().expect("workspace chats parent")
         } else {
             chat_path
         })?,
         input: skein_io::kernel::Fd::new(0),
         output: skein_io::kernel::Fd::new(1),
-        signals: skein_shell::open_termination_signals().map_err(|errno| {
+        signals: skein_shell::open_signals(if interactive == Some(false) {
+            skein_shell::Watch::TerminationAndWindow
+        } else {
+            skein_shell::Watch::Termination
+        })
+        .map_err(|errno| {
             Refused::Local(local_shell::Failure::Host { detail: format!("termination signals failed (errno {errno})") })
         })?,
         delivery_roots,
@@ -480,7 +486,7 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
                 deliver: false,
                 ephemeral: false,
             },
-            Some(plain || skein_shell::terminal_modes(skein_io::kernel::Fd::new(0)).is_err()),
+            Some(plain),
         ),
         Ok(Command::Check { .. } | Command::Login { .. }) => {
             return None;

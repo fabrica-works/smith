@@ -662,8 +662,8 @@ pub fn smith_with_environment(
 
 mod exec;
 pub use exec::{
-    Reply, chat, chat_signed_in, chat_traced, chat_waiting, exec_with_foreign_file, exec_with_provider,
-    fake_provider_settings, run as run_product,
+    Reply, chat, chat_modes, chat_resized, chat_signed_in, chat_traced, chat_waiting, exec_with_foreign_file,
+    exec_with_provider, fake_provider_settings, run as run_product,
 };
 
 pub mod login;
@@ -671,3 +671,5 @@ pub mod login;
 pub mod sample_host;
 
 pub mod actor_refusal;
+
+mod window;

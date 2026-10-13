@@ -56,18 +56,31 @@ fn count(value: Option<u64>) -> String {
     value.map_or_else(|| "unknown".into(), |value| value.to_string())
 }
 
+/// The presentation selected at startup, with a terminal's current width.
+pub enum Screen {
+    /// Told text without the live response status.
+    Plain,
+    /// A terminal status fits the most recently observed window.
+    Terminal { columns: u16 },
+}
+
 /// One bounded model join and the last budget snapshot, independent of any trace.
-pub struct Screen {
-    plain: bool,
+struct Live {
+    screen: Screen,
     models: Map<Token, Model>,
     remaining: Option<Remaining>,
 }
 
-impl Screen {
+impl Live {
     /// Reserve the live conversations before the product's startup admission.
     #[must_use]
     pub fn new(plain: bool, conversations: u32) -> Self {
-        Self { plain, models: Map::with_capacity(conversations), remaining: None }
+        let screen = if plain { Screen::Plain } else { Screen::Terminal { columns: u16::MAX } };
+        Self { screen, models: Map::with_capacity(conversations), remaining: None }
+    }
+
+    fn plain(&self) -> bool {
+        matches!(self.screen, Screen::Plain)
     }
 
     /// Price the model names and one retained budget snapshot beside the typed queue.
@@ -84,7 +97,7 @@ impl Screen {
     /// Move streamed text into the terminal; status joins tolerate a dropped opening.
     pub fn record(&mut self, record: View) -> Option<Box<[u8]>> {
         match record {
-            View::TextDelta { delta, .. } if !self.plain => Some(delta.text),
+            View::TextDelta { delta, .. } if !self.plain() => Some(delta.text),
             View::RunStarted => {
                 for _ in 0..self.models.capacity() {
                     let Some((name, _)) = self.models.iter().next() else { break };
@@ -102,17 +115,19 @@ impl Screen {
                 self.models.remove(&Token::new(conversation));
                 None
             }
-            View::ResponseCompleted { conversation, usage, spent, duration_ms, .. } if !self.plain => {
+            View::ResponseCompleted { conversation, usage, spent, duration_ms, .. } if !self.plain() => {
                 let model = self.models.get(&Token::new(conversation))?.clone();
                 Some(
-                    StatusLine {
-                        model,
-                        usage,
-                        spent,
-                        elapsed: Duration::from_nanos(duration_ms.saturating_mul(1_000_000)),
-                        remaining: self.remaining.clone(),
-                    }
-                    .text(),
+                    self.status(
+                        StatusLine {
+                            model,
+                            usage,
+                            spent,
+                            elapsed: Duration::from_nanos(duration_ms.saturating_mul(1_000_000)),
+                            remaining: self.remaining.clone(),
+                        }
+                        .text(),
+                    ),
                 )
             }
             View::Budget { turns, spend, time_ms } => {
@@ -122,7 +137,7 @@ impl Screen {
             View::ToolStarted { tool } => {
                 Some(format!("\ntool {}\n", String::from_utf8_lossy(smith_events::clip(&tool))).into_bytes().into())
             }
-            View::ToolCompleted { tool, verdict: terminal, duration_ms } if !self.plain => Some(
+            View::ToolCompleted { tool, verdict: terminal, duration_ms } if !self.plain() => Some(
                 format!(
                     "tool {}: {} ({} ms)\n",
                     String::from_utf8_lossy(smith_events::clip(&tool)),
@@ -135,6 +150,20 @@ impl Screen {
             View::Notice(notice) => notice_text(notice),
             View::Failure(_) | View::ResponseCompleted { .. } | View::ToolCompleted { .. } | View::TextDelta { .. } => {
                 None
+            }
+        }
+    }
+
+    fn status(&self, text: Box<[u8]>) -> Box<[u8]> {
+        match self.screen {
+            Screen::Plain => text,
+            Screen::Terminal { columns } => {
+                let line = std::str::from_utf8(&text).expect("status is UTF-8").trim_matches('\n');
+                let mut end = line.len().min(usize::from(columns));
+                while !line.is_char_boundary(end) {
+                    end = end.checked_sub(1).expect("zero is a character boundary");
+                }
+                format!("\n{}\n", &line[..end]).into_bytes().into()
             }
         }
     }
@@ -201,7 +230,7 @@ fn verdict(value: &Verdict) -> &str {
 
 /// One product front end, holding its screen and its startup reservation.
 pub struct Interactive {
-    pub screen: Screen,
+    screen: Live,
     memory: u64,
 }
 
@@ -209,7 +238,7 @@ impl Interactive {
     /// Whether told text, without live pieces or response status, is the selected presentation.
     #[must_use]
     pub fn plain(&self) -> bool {
-        self.screen.plain
+        self.screen.plain()
     }
 
     /// Prepare the bounded screen before any resource is adopted.
@@ -219,9 +248,19 @@ impl Interactive {
         let name_bytes = u32::try_from(smith_events::DETAIL_BYTES).ok()?;
         let client = limits.llm.adapter.client;
         // The writer can retain one popped view while the sink fills its slots.
-        let memory = Screen::worst_case(conversations, name_bytes)?
+        let memory = Live::worst_case(conversations, name_bytes)?
             .checked_add(View::worst_case(client.answer.max(client.strings))?)?;
-        Some(Self { screen: Screen::new(plain, conversations), memory })
+        Some(Self { screen: Live::new(plain, conversations), memory })
+    }
+
+    /// Update the status width from startup or an io window terminal.
+    pub(crate) fn columns(&mut self, columns: u16) {
+        self.screen.screen = Screen::Terminal { columns };
+    }
+
+    /// Render the next typed record from the one sink's live queue.
+    pub(crate) fn record(&mut self, record: View) -> Option<Box<[u8]>> {
+        self.screen.record(record)
     }
 
     /// The outer shell's retained live-view footprint.
@@ -299,6 +338,14 @@ mod tests {
         })
     }
 
+    #[test]
+    fn a_terminal_status_fits_its_observed_width() {
+        let mut live = Live::new(false, 5);
+        live.screen = Screen::Terminal { columns: 12 };
+        assert!(live.record(record(opened())).is_none());
+        assert_eq!(live.record(record(completed())).unwrap().as_ref(), b"\nfake/small: \n");
+    }
+
     fn started() -> Event {
         Event::RunStarted(smith_events::RunStarted {
             run: 2,
@@ -323,7 +370,7 @@ mod tests {
 
     #[test]
     fn a_response_start_also_supplies_the_status_model_when_its_opening_was_lost() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         screen.record(record(Event::ResponseStarted(smith_events::ResponseStarted {
             run: 1,
             conversation: 2,
@@ -345,7 +392,7 @@ mod tests {
 
     #[test]
     fn a_conversation_close_retires_its_status_model() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         screen.record(record(opened()));
         screen.record(record(Event::ConversationClosed(smith_events::ConversationClosed {
             run: 1,
@@ -363,7 +410,7 @@ mod tests {
 
     #[test]
     fn the_next_run_forgets_old_status_models() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         screen.record(record(opened()));
         screen.record(record(started()));
         assert!(screen.record(record(completed())).is_none());
@@ -383,7 +430,7 @@ mod tests {
             input: None,
         };
         assert_eq!(
-            Screen::new(true, 5).record(record(Event::ToolStarted(tool))).unwrap().as_ref(),
+            Live::new(true, 5).record(record(Event::ToolStarted(tool))).unwrap().as_ref(),
             b"\ntool read_file\n"
         );
     }
@@ -403,7 +450,7 @@ mod tests {
 
     #[test]
     fn an_opening_and_budget_join_the_next_response_status() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         assert!(screen.record(record(opened())).is_none());
         assert!(
             screen
@@ -426,12 +473,12 @@ mod tests {
 
     #[test]
     fn a_lost_opening_omits_a_status_instead_of_guessing_its_model() {
-        assert!(Screen::new(false, 5).record(record(completed())).is_none());
+        assert!(Live::new(false, 5).record(record(completed())).is_none());
     }
 
     #[test]
     fn a_plain_screen_omits_live_deltas_and_response_status() {
-        let mut screen = Screen::new(true, 5);
+        let mut screen = Live::new(true, 5);
         let delta = Event::TextDelta(smith_events::TextDelta {
             run: 1,
             conversation: 2,
@@ -447,7 +494,7 @@ mod tests {
     #[test]
     fn a_reasoning_notice_keeps_its_observed_byte_count() {
         assert_eq!(
-            Screen::new(false, 5)
+            Live::new(false, 5)
                 .record(record(notice(smith_events::NoticeKind::ReasoningDropped, Some(19))))
                 .unwrap()
                 .as_ref(),
@@ -457,7 +504,7 @@ mod tests {
 
     #[test]
     fn the_containment_notice_has_words_and_unknown_notice_names_are_clipped() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         assert_eq!(
             screen
                 .record(record(notice(smith_events::NoticeKind::Unknown(b"not_contained".as_slice().into()), None)))
@@ -482,13 +529,13 @@ mod tests {
             smith_events::NoticeKind::ForcedExit,
             smith_events::NoticeKind::TeardownAborted,
         ] {
-            assert!(Screen::new(false, 5).record(record(notice(kind, None))).is_none());
+            assert!(Live::new(false, 5).record(record(notice(kind, None))).is_none());
         }
     }
 
     #[test]
     fn a_screen_shows_the_streamed_text_without_a_trace() {
-        let mut screen = Screen::new(false, 5);
+        let mut screen = Live::new(false, 5);
         let record = Record {
             t_ms: 0,
             event: Event::TextDelta(smith_events::TextDelta {
@@ -543,9 +590,9 @@ mod tests {
             }),
         };
         assert_eq!(
-            Screen::new(false, 5).record(View::project(&record).unwrap()).unwrap().as_ref(),
+            Live::new(false, 5).record(View::project(&record).unwrap()).unwrap().as_ref(),
             b"tool read_file: read (19 ms)\n"
         );
-        assert!(Screen::new(true, 5).record(View::project(&record).unwrap()).is_none());
+        assert!(Live::new(true, 5).record(View::project(&record).unwrap()).is_none());
     }
 }

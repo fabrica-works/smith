@@ -73,6 +73,14 @@ struct Closing {
     shutdown_pending: bool,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum WindowRead {
+    Idle,
+    Requested,
+    Pending,
+    Again,
+}
+
 #[derive(Debug)]
 pub(crate) struct ProcessAdapter {
     limits: ProcessLimits,
@@ -114,6 +122,7 @@ pub(crate) struct ProcessAdapter {
     failed: bool,
     terminal_input: Option<Token>,
     terminal_reading: local::Reading,
+    window_read: WindowRead,
     signals: Option<Token>,
     closing: Option<Closing>,
     signal_operation: Option<Token>,
@@ -173,6 +182,7 @@ impl ProcessAdapter {
             failed: false,
             terminal_input: None,
             terminal_reading: local::Reading::Open,
+            window_read: WindowRead::Idle,
             signals: None,
             closing: None,
             signal_operation: None,
@@ -258,6 +268,15 @@ impl ProcessAdapter {
         let signal = self.io.adopt_signals(signals)?;
         self.signals = Some(signal);
         Ok(())
+    }
+
+    pub(crate) fn read_window(&mut self) {
+        if self.closing.is_none() && self.terminal_input.is_some() {
+            self.window_read = match self.window_read {
+                WindowRead::Idle | WindowRead::Requested => WindowRead::Requested,
+                WindowRead::Pending | WindowRead::Again => WindowRead::Again,
+            };
+        }
     }
 
     pub(crate) fn input(&mut self, reading: local::Reading) {
@@ -632,6 +651,7 @@ impl ProcessAdapter {
             || !self.io_events.is_empty()
             || !self.shell_events.is_empty()
             || !self.io_requests.is_empty()
+            || self.window_read == WindowRead::Requested
             || self.process_work_pending()
             || !self.completions.is_empty()
             || !self.file_events.is_empty()
@@ -814,7 +834,14 @@ impl ProcessAdapter {
                 continue;
             }
             match event {
-                io::Event::Resized | io::Event::Window { .. } => {}
+                io::Event::Resized => self.shell_events.push(io::Event::Resized),
+                event @ io::Event::Window { .. } => {
+                    self.window_read = match self.window_read {
+                        WindowRead::Again => WindowRead::Requested,
+                        WindowRead::Idle | WindowRead::Requested | WindowRead::Pending => WindowRead::Idle,
+                    };
+                    self.shell_events.push(event);
+                }
                 io::Event::Shutdown { .. } => {
                     if let Some(closing) = &mut self.closing {
                         closing.shutdown_pending = true;
@@ -957,6 +984,15 @@ impl ProcessAdapter {
         trace: &mut Option<crate::stream::Spawned>,
     ) {
         let now = env.now;
+        if self.window_read == WindowRead::Requested && self.io_requests.room() > 0 {
+            self.window_read = WindowRead::Idle;
+            if self.closing.is_none()
+                && let Some(stream) = self.terminal_input
+            {
+                self.window_read = WindowRead::Pending;
+                self.io_requests.push(io::Request::Window { owner: stream, stream });
+            }
+        }
         if let Some(trace) = trace {
             if self.settled(trace.producer.streams().checked_add(self.signal_streams()).expect("bounded signal stream"))
             {

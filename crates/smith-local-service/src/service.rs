@@ -674,6 +674,11 @@ impl Service {
         self.below.process_mut().shell_events()
     }
 
+    /// Read the adopted input's size after the shell hears a window change.
+    pub fn read_window(&mut self) {
+        self.below.process_mut().read_window();
+    }
+
     /// Adopt terminal input and blocked termination signals into the IO pass.
     pub fn adopt_terminal(&mut self, input: Option<kernel::Fd>, signals: kernel::Fd) -> Result<(), kernel::Fd> {
         self.below.process_mut().adopt_terminal(input, signals, !self.local.headless())?;
