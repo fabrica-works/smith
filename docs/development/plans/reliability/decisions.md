@@ -1960,3 +1960,14 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    screen and parser drafts, with 10.8's world and end-to-end stories and
    its live Proof. 10.16 follows 10.24 and 10.10 needs it. Each stops
    past 700.
+114. **smith-08.s1: a run's model and effort per activation, before
+   10.24's `/model` and `/effort`** (block of 2026-10-13T11:00:52Z, smith
+   10.24). The designer's answer of 11:05:21Z (363a1189, c0a956df): the
+   agent's configuration holds every model main's endpoint declares;
+   effort moves from the endpoint's options to the charter LLM's
+   `effort`; a turn records its model and effort; a session opened from a
+   window whose last model is not its charter's compacts first with the
+   window's model; a model on another endpoint is refused. The crossings
+   are a step not in the plan, 08.s1, in session 08's file, since the
+   compaction trigger and the transcript are 08's; it needs nothing and
+   may run beside 10.24, whose `/model` and `/effort` need it.

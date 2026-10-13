@@ -490,6 +490,55 @@ Removes: `End::TranscriptFull`, `Fault::ContextFull`, `ModelFault::ContextFull`,
 `context_full` in the channel and in `run.completed`'s failure, their goldens
 and tests.
 
+### 08.s1 A run's model and effort per activation
+Added (decisions.md, 13.114), as the designer ruled on 2026-10-13
+(363a1189: shell.md, 4.1 and 5.2; charter.md, section 2; agent.md,
+section 4; session.md, sections 3 and 8.2; transcript.md, section 2), for
+10.24's `/model` and `/effort`. Scope:
+- the charter's LLM gains an optional `effort` (`smith-charter`'s schema,
+  under charter 2); `smith-protocol-llm` sets each prompt's reasoning
+  effort from the session's LLM, no longer copying the endpoint's option
+  (`endpoints.rs:206`);
+- the agent configuration's endpoint loses `reasoning_effort`
+  (`smith-agent-shell`'s config, the local resolver); the configuration
+  holds every model main's endpoint declares, checked and priced at
+  startup with main's account, the derivation the largest of them; the
+  run's charter still names main's model;
+- the transcript's `Turn` records its `model` and `effort` (transcript 3,
+  in place);
+- `smith-domain-session`: a session opened from a window whose last
+  turn's model is not its charter's main model compacts first, with the
+  window's own model, and opens the new window with the charter's; a
+  window model the configuration no longer declares is the existing
+  refusal to resume; a change of effort needs no window boundary.
+Needs: nothing (10.8 landed).
+Files: `smith-charter` (schema, generated code by its generator);
+`smith-agent-shell` (`config.rs`, `README.md`); `smith-local-shell`
+(`settings/resolve.rs`, `settings/resolve/document.rs`,
+`local_host/header.rs`, `local_shell.rs`); `smith-protocol-llm`
+(`endpoints.rs`, `prompt.rs`, `component.rs`, `framing.rs`,
+`capture.rs`); `smith-transcript`; `smith-domain-session`
+(`session.rs`, `compaction.rs`); `smith-agent-service` (`events.rs`,
+the profile's tests); the tests and harness files of `rg -l
+reasoning_effort tests benchmarks` (README rule 8).
+Shape: `charter::Llm.effort: Option<Effort>`; `transcript::Turn { model,
+effort, .. }`; no endpoint option named effort.
+Test shape: unit: a prompt takes its session's effort, and none when the
+charter names none; a turn's model and effort round-trip in the
+transcript; the configuration holds each model of main's endpoint and
+none of another's. World:
+`a_session_resumed_with_another_model_compacts_first_with_the_windows_model`,
+`a_later_activation_with_another_effort_keeps_its_window`. Ceilings:
+20 ms, 0.5 s.
+Proof: world,
+`a_session_resumed_with_another_model_compacts_first_with_the_windows_model`;
+once, under 0.5 s.
+Don't: no `/` command (10.24); no endpoint but main's composed, nothing
+composed again within a process; no change to `sub_agents`' models,
+needed accounts or `memory`.
+Size: README rule 9's; past 700, it stops and asks.
+Removes: the endpoint's `reasoning_effort` option and its consumers.
+
 ## Interface sketches
 
 `smith-domain-session` owns the window and the compaction; the run owns

@@ -769,7 +769,7 @@ sections 3 and 8.2; transcript.md, section 2):
 Those crossings (the charter, the agent configuration, the transcript,
 the session's trigger, `smith-protocol-llm`) are a step its supervisor
 names, which 10.24's `/model` and `/effort` need.
-Needs: 10.8; for `/model` and `/effort`, that step.
+Needs: 10.8; for `/model` and `/effort`, that step: 08.s1 (decisions.md, 13.114).
 Files: 10.8's.
 Shape: 10.8's.
 Test shape: 10.8's units of each `/` line and of the renderer per record
