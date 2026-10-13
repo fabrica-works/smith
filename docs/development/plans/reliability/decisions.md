@@ -2190,3 +2190,18 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    entries not dispatched (from `process-tree` on) once, with `suite
    probes --include`, on the same arm, and summarises both runs together;
    the 35 attempts already run stand.
+130. **13.129 corrected: `tool-output/timeout` too, and one whole probes
+   call** (block of 2026-10-13T21:40:12Z, smith 12.s2 and 12.3). Two of
+   13.129's premises were wrong: `tool-output`'s `timeout` variant had not
+   run (the suite stopped at `process-tree` before it), and neither
+   `suite probes --include` (it adds only `when_asked` entries) nor
+   `summarise` (one run identity) can select or join a remainder. Ruling:
+   12.s2 treats `tool-output/timeout` as `process-tree`: its `group_stop`
+   pin goes, so the product's 1 s applies, any check value derived from
+   the 250 ms follows, and `tool-output`'s version goes up (its variants
+   with it, uncalibrated, gating nothing here). 12.3 then runs the whole
+   `probes` suite once more on an arm built after 12.s2, and commits that
+   run's summary alone; the two earlier probes runs
+   (probes-0305f2fd-20261013T202925Z, probes-62acc437-20261013T212404Z)
+   are named in its body as records. That run is a setup completion, not
+   section 9's rerun of a failed probe.

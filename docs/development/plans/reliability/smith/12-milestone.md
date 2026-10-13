@@ -314,8 +314,8 @@ Scope: once the `main` this plan ships has landed, the `smoke` and
   its answer. A probe session 13 recorded as not calibrated (decisions.md,
   12.4), or a quarantined one, is reported and gates nothing.
 Needs: smith 00, 03 to 08, 10 and 13's steps landed or dropped (`plan
-  status`); 12.s1 (decisions.md, 13.128); 12.s2 for the entries not
-  dispatched by its first probes call (13.129); smith 00's `probes` suite and baselines on events
+  status`); 12.s1 (decisions.md, 13.128); 12.s2, before one more whole
+  probes call (13.129, 13.130); smith 00's `probes` suite and baselines on events
   [00.21]; smith 00's one command per probe run [00.27].
 Files: `benchmarks/summaries/<run>.json` (new). Shape: none, a run.
 Test shape: none new; tests/offline.rs:28 reads the summary.
@@ -350,10 +350,10 @@ Size: no production code.
 Added (decisions.md, 13.129), before 12.3 finishes. Scope:
 `benchmarks/tasks/probes/process-tree/task.toml` drops its `group_stop`
 pin, so the product's 1 s applies (shell.md 6.4), and its `tool-timeout`
-check's `grace_ms` becomes 1000; its `version` goes to 2. If
-`tool-output`'s `timeout` variant's `group_stop = 250` reached the
-product's settings, it is treated the same way (its task's version with
-it); the body says which.
+check's `grace_ms` becomes 1000; its `version` goes to 2.
+`tool-output`'s `timeout` variant is treated the same way: its
+`group_stop` pin goes and its task's version goes up (decisions.md,
+13.130).
 Needs: nothing.
 Files: those task files; benchmark tests that read them (README rule 8).
 Shape: none.
