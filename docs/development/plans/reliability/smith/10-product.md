@@ -485,12 +485,19 @@ Removes: nothing.
 Split from 10.5 (decisions.md, 13.101). Scope: 10.5's Scope for `-o`
 (the result written durably to a file) and `--ephemeral` (a private chat
 directory, removed at exit), with their memory and close accounting;
-its candidate's parts start from 10.5's (`b92c18a0` pin).
-Needs: 10.5.
+its candidate's parts start from 10.5's (`b92c18a0` pin). `--ephemeral`'s
+directory is removed as the designer ruled on 2026-10-13 (shell.md, 4.2,
+"Removed by the names it wrote"): the store's known names through
+FileIo's `Remove`, then the directory with `directory: true`, never a
+listing or a traversal, and never `std::fs`; a directory left behind is
+a warning before the last line.
+Needs: 10.5; skein's `Remove` with `directory` (skein's `io.md`, 5), a
+skein step its supervisor names, pinned.
 Files: 10.5's, as they concern these two.
 Test shape: unit or process tests of each: `-o`'s file holds the result
 and nothing else; `--ephemeral` leaves no file behind, on success and on
-failure. Under 0.5 s.
+failure; and a file the store did not write, placed in the directory,
+keeps the directory with a warning naming it. Under 0.5 s.
 Proof: process, those tests, once.
 Size: README rule 9's.
 
