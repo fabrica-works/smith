@@ -158,9 +158,11 @@ Each lands in skein, with its design, before its smith consumer
   127.0.0.1 and compared exactly.
 - **Trust roots:** the machine's roots, or one DER file, loaded at
   startup (skein's `tls.md`).
-- **Terminal modes:** raw input, its restoration at exit, and the
-  window's size, as shell effects. Until skein has them, the interactive
-  front end runs in line mode (4.1).
+- **Terminal modes:** the window's size, as a shell effect, for the
+  status line. Raw input, and its restoration at exit, wait for a view
+  that reads a key at a time (protocol/hosts.md, open questions: a
+  richer terminal). The line-mode chat (4.1) leaves the terminal in its
+  own line mode.
 
 ## 3. The root package
 
@@ -303,6 +305,11 @@ The interactive chat, the local host of domain/host.md, section 8:
   - `/quit` ends input.
 
   A line that begins `//` is a message that begins `/`.
+- **The terminal's own line mode.** The front end reads whole lines, and
+  changes no terminal mode: the terminal echoes and edits the line, its
+  end-of-input key ends input, and its interrupt key is the signal the
+  next bullet names. smith reads the window's size for the status line,
+  and again when the window changes.
 - **Interrupts.** The first is the run's cancel; a second drops it now
   (section 9). After an accepted or parked answer, unread lines are
   carried to the next activation. After a cancel, a failure or a
