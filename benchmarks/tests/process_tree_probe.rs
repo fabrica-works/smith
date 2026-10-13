@@ -14,14 +14,14 @@ fn nested_process_task_freezes_the_command_profile_and_tree_criterion() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let task = smith_bench::check_task(&root.join("tasks/probes/process-tree/task.toml"), &root.join("../docs/design"))
         .expect("frozen seed and task");
-    assert_eq!(task.version, 1);
+    assert_eq!(task.version, 2);
     assert!(task.prompt.contains(COMMAND));
     assert!(task.deciding.iter().any(|name| name == "tree-ended"));
     assert!(task.event.contains(&EventCheck::ToolTimeout {
         requested_seconds: 1,
         deadline_ms: 1000,
         clamped: false,
-        grace_ms: 250,
+        grace_ms: 1000,
         command: Some(COMMAND.into()),
     }));
     let suite_file = root.join("suites/probes.toml");

@@ -1,5 +1,5 @@
 id = "process-tree"
-version = 1
+version = 2
 kind = "probe"
 tier = "small"
 effort = "low"
@@ -33,7 +33,6 @@ llm_pool = 134217728
 memory = 2147483648
 tool_deadline = 1000
 shell_timeout = 1000
-group_stop = 250
 [[outcome]]
 check = "end"
 end = "completed"
@@ -56,7 +55,7 @@ check = "tool-timeout"
 requested_seconds = 1
 deadline_ms = 1000
 clamped = false
-grace_ms = 250
+grace_ms = 1000
 command = "sh -c 'sleep 600 & wait'"
 [[event]]
 check = "run-completed"

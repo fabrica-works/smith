@@ -1,5 +1,5 @@
 id = "tool-output"
-version = 2
+version = 3
 kind = "probe"
 tier = "small"
 effort = "low"
@@ -135,7 +135,7 @@ count = { exactly = 0 }
 [[variant]]
 name = "timeout"
 replace_checks = true
-smith = { tool_deadline = 1000, shell_timeout = 1000, group_stop = 250 }
+smith = { tool_deadline = 1000, shell_timeout = 1000 }
 prompt = "Run exactly two shell calls: sleep 600 with timeout_seconds=1, then sleep 600 with timeout_seconds=9999. Omit output_bytes in both calls. The declared tool ceiling is one second; both commands must time out, and the excessive request must be clamped. Do not read or edit files or delegate. After both results finish with TIMEOUTS VERIFIED.\n"
 deciding = ["end", "exit-code", "answer", "tool-call", "tool-timeout", "protected-unchanged", "stream-whole", "tree-ended"]
 [[variant.outcome]]
@@ -157,10 +157,10 @@ check = "tool-timeout"
 requested_seconds = 1
 deadline_ms = 1000
 clamped = false
-grace_ms = 250
+grace_ms = 1000
 [[variant.event]]
 check = "tool-timeout"
 requested_seconds = 9999
 deadline_ms = 1000
 clamped = true
-grace_ms = 250
+grace_ms = 1000
