@@ -483,6 +483,32 @@ or a timer. If the arm's 18 runs show no silence, stop and ask with
 them.
 Size: README rule 9's.
 
+### 06.s3 An exhausted account's wait, and a budget's used and bound, in the answer
+Added during the run (decisions.md, 13.109), from the designer's answer
+of 2026-10-13T05:06:58Z (smith 7fd205d5: run.md 10, channel.md 4,
+events.md 3.10, shell.md 4.3, host.md 8). Scope: the answer's failure
+carries, on an exhausted account, its number and, when the provider
+said, `retry_after_ms` measured when the run answers; on a budget
+failure, what ran out with `used` and `bound` in its unit (turns, spend
+in the host's unit, or milliseconds of the run's wall time); through
+`smith-domain-run`'s `Fault::Exhausted` and budget failure, the channel
+schema's `ModelFault` and budget failure (channel 2, codecs and goldens
+regenerated), `smith-protocol-channel`'s translation, `smith-host-domain`
+and `smith-host-protocol`, `smith-inline-agent`'s translation,
+`smith-agent-service`'s `answers.rs`, and `smith-events`' `AnswerFailure`
+(events 1), as 06.7 and 06.13 carried theirs. README rule 5 keeps the
+versions.
+Needs: nothing.
+Files: those named; their tests and goldens.
+Shape: fields on existing types; no new type.
+Test shape: 06.7's `every_completion_failure_reaches_the_answer_with_its_fields`
+gains the exhausted account's wait and a budget's used and bound; the
+channel goldens through `tests/codecs/tests/drift.rs`. Ceilings: 0.5 s.
+Proof: world, that test, once.
+Don't: change the `exhausted` and `rejected` notices or any other class's
+fields; add a words owner.
+Size: README rule 9's (regenerated code not counted, 13.105).
+
 ### 06.12 The last failure's kept detail
 Scope: the session keeps the detail of the last failure it met, within
 `failure_bytes`, each later failure replacing it, and hands it up with

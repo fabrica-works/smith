@@ -1912,3 +1912,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    `Exec` face, each a match arm. (3) The live issuer-refresh story stays
    on its current face until 10.6 brings sign-in to `exec`, and 10.6 moves
    it. Those files join 10.15's Files.
+109. **smith-06.s3 carries the named forms' values; 10.21 renders them**
+   (block of 2026-10-13T05:04:29Z, smith 10.21; the designer's answer of
+   05:06:58Z, smith 7fd205d5 and b8aaee51). The last line renders from
+   the answer's failure, so the failure carries what shell.md 4.3's forms
+   need: an exhausted account's number and wait, a budget's used and
+   bound in its unit (time as the run's wall time). A step not in the
+   plan, 06.s3, in session 06's file, carries them from the run to the
+   host and the trace, as 06.7 and 06.13 did; 10.21 needs it, and
+   renders with `words` as one function of the failure, each account's
+   name and the host's clock at the answer.
