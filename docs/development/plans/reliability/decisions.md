@@ -1896,3 +1896,19 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    10.20 lands `-o`'s durable output with its failure policy; 10.22 takes
    `--ephemeral`'s private files and their known-name cleanup. Each has
    its own process Proof.
+108. **10.15's harness on `smith exec`: check's receipt, stdin, the trace,
+   and the sign-in story's move** (blocks of 2026-10-13T04:38:24Z and
+   04:39:08Z, smith 10.15). (1) benchmarks.md's prepare row has a nonzero
+   `smith check --json` refuse the arm as setup; the `failures/bad-setting`
+   and derived-limit tasks expect a startup refusal (exit 2, the last
+   line, no run), which on `exec` is that check's refusal. Ruling: for a
+   task whose expected end is a startup refusal, the runner records the
+   check's process receipt (exit, last line, no run, tree ended) as the
+   attempt's observation; every other task's nonzero check stays a setup
+   refusal; the tasks are unchanged. (2) `exec` reads its prompt until
+   end of input and writes its events on standard output:
+   `benchmarks/src/process.rs` (`trace_file` none for `Exec`, `execute`)
+   and `run.rs` (`script`) select `AfterPrompt` and no trace file for the
+   `Exec` face, each a match arm. (3) The live issuer-refresh story stays
+   on its current face until 10.6 brings sign-in to `exec`, and 10.6 moves
+   it. Those files join 10.15's Files.
