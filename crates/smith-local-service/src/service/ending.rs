@@ -26,6 +26,11 @@ impl Service {
                     Some(stream) => stream.producer.streams(),
                     None => 0,
                 }
+                .checked_add(match self.below.inline() {
+                    Some(effects) => effects.streams(),
+                    None => 0,
+                })
+                .expect("bounded destination count")
                 .checked_add(self.below.process().signal_streams())
                 .expect("bounded retained streams");
                 let lower_closed = match self.below.inline() {
@@ -118,6 +123,11 @@ impl Service {
                     Some(stream) => stream.producer.streams(),
                     None => 0,
                 }
+                .checked_add(match self.below.inline() {
+                    Some(effects) => effects.streams(),
+                    None => 0,
+                })
+                .expect("bounded destination count")
                 .checked_add(self.below.process().signal_streams())
                 .expect("bounded retained streams");
                 let lower_closed = match self.below.inline() {

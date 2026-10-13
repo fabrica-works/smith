@@ -79,6 +79,8 @@ pub(crate) struct ProcessAdapter {
     launch: Launch,
     endpoints: smith_protocol_channel::Endpoints,
     io: io::Io,
+    shell_output: Option<Token>,
+    shell_events: Queue<io::Event>,
     process: Option<protocol::Process>,
     git: Option<local_protocol::GitChild>,
     markers: Option<(Token, local_protocol::Markers)>,
@@ -132,6 +134,8 @@ impl ProcessAdapter {
         files.seed_randomness(seed);
         Some(Self {
             io: io::Io::new(&limits.io),
+            shell_output: None,
+            shell_events: Queue::with_capacity(limits.queue),
             limits: *limits,
             launch,
             endpoints,
@@ -174,38 +178,62 @@ impl ProcessAdapter {
         })
     }
 
-    pub(crate) fn worst_case(limits: &ProcessLimits) -> Option<u64> {
-        io::worst_case(&limits.io)?
-            .checked_add(smith_protocol_channel::Endpoints::worst_case(
-                limits.channel.endpoints,
-                limits.channel.charter.llm_endpoint,
-            )?)?
-            .checked_add(file_layer::FileIo::worst_case(66, 4096, 8194, 64 << 20)?)?
-            .checked_add(local_protocol::plain_worst_case(&plain_limits())?.checked_mul(65)?)?
+    pub(crate) fn memory_parts(limits: &ProcessLimits, framed: bool) -> Option<[u64; 3]> {
+        let child = if framed {
+            io::worst_case(&limits.io)?
+                .checked_add(protocol::process_worst_case(&limits.channel, limits.detail_bytes)?)?
+        } else {
+            0
+        };
+        let store = file_layer::FileIo::worst_case(66, 4096, 8194, 64 << 20)?
             .checked_add(local_protocol::Store::worst_case(store_limits())?)?
+            .checked_add(
+                smith_protocol_channel::Endpoints::worst_case(
+                    limits.channel.endpoints,
+                    limits.channel.charter.llm_endpoint,
+                )?
+                .checked_mul(2)?,
+            )?
             .checked_add(Queue::<local_protocol::StoreRequest>::worst_case(limits.queue)?)?
-            .checked_add(Queue::<local_protocol::Action>::worst_case(3)?)?
+            .checked_add(Queue::<local_protocol::Action>::worst_case(3)?)?;
+        let delivery = local_protocol::plain_worst_case(&plain_limits())?
+            .checked_mul(65)?
             .checked_add(Map::<u32, local_protocol::Snapshot>::worst_case(64)?)?
             .checked_add(List::<u32>::worst_case(64)?)?
             .checked_add(local_protocol::markers_worst_case(&git_limits(limits))?)?
+            .checked_add(local_protocol::git_child_worst_case(&git_limits(limits))?)?
+            .checked_add(4096)?
+            .checked_add(List::<Box<[u8]>>::worst_case(64)?)?;
+        let routing = child
             .checked_add(Queue::<(file::Request, Time)>::worst_case(limits.queue)?)?
             .checked_add(Queue::<file::Event>::worst_case(limits.queue)?)?
             .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?.checked_mul(2)?)?
             .checked_add(Map::<Token, Operation>::worst_case(limits.queue)?)?
             .checked_add(64_u64.checked_mul(u64::try_from(size_of::<Token>()).ok()?)?)?
-            .checked_add(local_protocol::git_child_worst_case(&git_limits(limits))?)?
-            .checked_add(4096)?
-            .checked_add(List::<Box<[u8]>>::worst_case(64)?)?
-            .checked_add(protocol::process_worst_case(&limits.channel, limits.detail_bytes)?)?
-            .checked_add(Queue::<io::Event>::worst_case(limits.queue)?)?
+            .checked_add(Queue::<io::Event>::worst_case(limits.queue)?.checked_mul(2)?)?
             .checked_add(Queue::<io::Request>::worst_case(limits.queue)?)?
             .checked_add(Queue::<protocol::ProcessEvent>::worst_case(limits.queue)?)?
             .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
-            .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)
+            .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)?;
+        Some([store, delivery, routing])
     }
 
     pub(crate) fn completions(&mut self) -> &mut Queue<kernel::Complete> {
         &mut self.completions
+    }
+
+    pub(crate) fn io(&mut self) -> &mut io::Io {
+        &mut self.io
+    }
+
+    pub(crate) fn adopt_writer(&mut self, fd: kernel::Fd) -> Result<Token, kernel::Fd> {
+        let token = self.io.adopt_write_pipe(fd, None)?;
+        self.shell_output = Some(token);
+        Ok(token)
+    }
+
+    pub(crate) fn io_requests(&mut self) -> &mut Queue<io::Request> {
+        &mut self.io_requests
     }
 
     pub(crate) fn adopt_terminal(&mut self, input: kernel::Fd, signals: kernel::Fd) -> Result<(), kernel::Fd> {
@@ -573,6 +601,7 @@ impl ProcessAdapter {
         self.io.is_ready()
             || self.io.is_due(now)
             || !self.io_events.is_empty()
+            || !self.shell_events.is_empty()
             || !self.io_requests.is_empty()
             || self.process_work_pending()
             || !self.completions.is_empty()
@@ -667,16 +696,17 @@ impl ProcessAdapter {
         }
     }
 
-    pub(crate) fn up(
-        &mut self,
-        env: &Env<io::Limits>,
-        host_events: &mut Queue<host::Input>,
-        terminal: &mut local_protocol::Terminal,
-        terminal_events: &mut Queue<local_protocol::TerminalEvent>,
-        local_events: &mut Queue<smith_local_domain::Event>,
-        trace: &mut Option<crate::stream::Spawned>,
-    ) {
+    pub(crate) fn io_up(&mut self, env: &Env<io::Limits>) {
         let now = env.now;
+        for _ in 0..self.limits.io.sockets {
+            if !self.io.is_ready()
+                || self.io_events.room() < io::MAX_OUT_RESUME.events
+                || self.io_submissions.room() < io::MAX_OUT_RESUME.submissions
+            {
+                break;
+            }
+            io::resume(&mut self.io, env, &mut self.io_events, &mut self.io_submissions);
+        }
         self.reap(env);
         for _ in 0..self.limits.io.sockets {
             if self.io_events.room() < io::MAX_OUT_UP.events || self.io_submissions.room() < io::MAX_OUT_UP.submissions
@@ -693,16 +723,52 @@ impl ProcessAdapter {
                 io::fire(&mut self.io, env, &mut self.io_events, &mut self.io_submissions);
             }
         }
+    }
+
+    pub(crate) fn shell_events(&mut self) -> &mut Queue<io::Event> {
+        &mut self.shell_events
+    }
+
+    pub(crate) fn effects_up(&mut self, effects: &mut smith_agent_service::Effects) {
+        for _ in 0..self.io_events.len() {
+            if !effects.io_takes() {
+                break;
+            }
+            let event = self.io_events.pop().expect("bounded native terminals");
+            if effects.owns_io(&event) {
+                effects.io_event(event);
+            } else {
+                self.io_events.push(event);
+            }
+        }
+    }
+
+    pub(crate) fn up(
+        &mut self,
+        env: &Env<io::Limits>,
+        host_events: &mut Queue<host::Input>,
+        terminal: &mut local_protocol::Terminal,
+        terminal_events: &mut Queue<local_protocol::TerminalEvent>,
+        local_events: &mut Queue<smith_local_domain::Event>,
+        trace: &mut Option<crate::stream::Spawned>,
+    ) {
+        let now = env.now;
         self.markers_up(now, local_events);
         for _ in 0..self.io_events.capacity() {
             if !self.output_room()
                 || terminal_events.room() < local_protocol::terminal_max_out()
                 || local_events.room() == 0
+                || self.shell_events.room() == 0
             {
                 break;
             }
             let Some(event) = self.io_events.pop() else { break };
             let Some(event) = trace_up(trace, now, event) else { continue };
+            if self.shell_output.is_some() && io_owner(&event) == self.shell_output {
+                self.writer_up(event);
+                continue;
+            }
+
             let git_owned = match &self.git {
                 Some(git) => match io_owner(&event) {
                     Some(owner) => git.owns(owner),
@@ -750,12 +816,10 @@ impl ProcessAdapter {
                 | io::Event::Exited { .. }
                 | io::Event::Usage { .. }
                 | io::Event::Failed { .. }
-                | io::Event::Closed { .. }) => self.process.as_mut().expect("spawn precedes process IO").from_io(
-                    now,
-                    other,
-                    &mut self.process_events,
-                    &mut self.io_requests,
-                ),
+                | io::Event::Closed { .. }) => match &mut self.process {
+                    Some(process) => process.from_io(now, other, &mut self.process_events, &mut self.io_requests),
+                    None => self.shell_events.push(other),
+                },
             }
         }
         if self.output_room()
@@ -776,6 +840,26 @@ impl ProcessAdapter {
             process.fire(now, &mut self.process_events, &mut self.io_requests);
         }
         self.drain_process(host_events);
+    }
+
+    fn writer_up(&mut self, event: io::Event) {
+        match &event {
+            io::Event::Closed { .. } => self.shell_output = None,
+            io::Event::Listening { .. }
+            | io::Event::Accepted { .. }
+            | io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Stream { .. }
+            | io::Event::Output { .. }
+            | io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
+            | io::Event::Shutdown { .. }
+            | io::Event::Failed { .. } => {}
+        }
+        self.shell_events.push(event);
     }
 
     fn process_work_pending(&self) -> bool {

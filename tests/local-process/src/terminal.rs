@@ -161,7 +161,7 @@ impl Terminal {
         while person.requests.pop().is_some() {}
         person.root = None;
         person.root_closed = true;
-        person.input = Some(person.io.adopt_write_pipe(input).expect("person input pipe"));
+        person.input = Some(person.io.adopt_write_pipe(input, None).expect("person input pipe"));
         let output = person.io.adopt_read_pipe(output).expect("person output pipe");
         person.output = Some(output);
         person.read(output);

@@ -8,8 +8,12 @@
 
 use alloc::boxed::Box;
 
+mod memory;
 #[path = "teardown.rs"]
 pub mod teardown;
+
+pub use memory::effects_parts;
+use memory::parts_worst_case;
 
 use teardown::{Step, Teardown};
 
@@ -122,7 +126,7 @@ pub struct Service {
     channel: Option<channel::Component>,
     llm: llm::Component,
     machine: machine::Component,
-    io: io::Io,
+    io: Option<io::Io>,
     files: file_layer::FileIo,
     domain_env: Env<domain::Limits>,
     llm_env: Env<llm::ComponentLimits>,
@@ -182,15 +186,22 @@ pub struct Effects {
 
 impl Effects {
     /// Build the shared lower stages, retaining neither a root domain nor a channel.
-    pub fn new(config: Config, seed: u64) -> Result<Self, ConfigError> {
+    pub fn new(config: Config, _seed: u64) -> Result<Self, ConfigError> {
         let accounts = config.limits.llm.accounts;
+        if !config.limits.io.is_usable()
+            || config.limits.file_slots < config.limits.machine.roots
+            || config.limits.queue
+                < domain::max_out(&config.limits.domain)
+                    .max(llm::MAX_OUT.above)
+                    .max(machine::max_out(&config.limits.machine).below)
+        {
+            return Err(ConfigError::Queue);
+        }
         if effects_worst_case(&config.limits, &config.llm_endpoints).ok_or(ConfigError::Memory)? > config.limits.memory
         {
             return Err(ConfigError::MemoryCeiling);
         }
-        let mut service = Service::new(config, seed)?;
-        service.domain = None;
-        service.channel = None;
+        let service = Service::parts(config, None)?;
         Ok(Self { service, installed: Map::with_capacity(accounts) })
     }
 
@@ -298,7 +309,9 @@ impl Effects {
             events.sinks.down(&mut service.io_requests);
         }
         io_down(service);
-        service.io.reclaim();
+        if let Some(io) = &mut service.io {
+            io.reclaim();
+        }
         service.llm.reclaim();
         service.owners.reclaim();
     }
@@ -331,8 +344,59 @@ impl Effects {
         fd: kernel::Fd,
         destination: crate::Destination,
         delivery: crate::sinks::Delivery,
+        io: &mut io::Io,
     ) -> Result<(), kernel::Fd> {
-        self.service.adopt_destination(fd, destination, delivery)
+        let service = &mut self.service;
+        let Some(events) = &mut service.events else { return Err(fd) };
+        if !events.sinks.room_for_destination(destination) {
+            return Err(fd);
+        }
+        let deadline = service.limits.events.expect("configured producer").write_deadline;
+        let token = io.adopt_append(fd, deadline)?;
+        events.sinks.add(destination, token, delivery).expect("destination room checked");
+        Ok(())
+    }
+
+    /// Requests for the product's one IO owner.
+    pub fn io_requests(&mut self) -> &mut Queue<io::Request> {
+        &mut self.service.io_requests
+    }
+
+    /// Room for one terminal from the common IO owner.
+    #[must_use]
+    pub fn io_takes(&self) -> bool {
+        self.service.io_events.room() > 0
+    }
+
+    /// A native IO terminal routed by the product to these effects.
+    pub fn io_event(&mut self, event: io::Event) {
+        self.service.io_events.push(event);
+    }
+
+    /// Whether an IO terminal names a live effect or destination.
+    #[must_use]
+    pub fn owns_io(&self, event: &io::Event) -> bool {
+        let service = &self.service;
+        let Some(owner) = io_event_owner(event) else { return false };
+        if owner == USAGE_OWNER || service.pipe_routes.contains_key(&owner) {
+            return true;
+        }
+        if let Some(events) = &service.events
+            && events.sinks.owns(owner)
+        {
+            return true;
+        }
+        owner.raw() & COMPONENT_OWNER_BIT != 0
+            && service.owners.get(Id::from_token(Token::new(owner.raw() & !COMPONENT_OWNER_BIT))).is_some()
+    }
+
+    /// Open destinations retained while the common owner closes its other entities.
+    #[must_use]
+    pub fn streams(&self) -> u32 {
+        match &self.service.events {
+            Some(events) => events.sinks.open_streams(),
+            None => 0,
+        }
     }
 
     /// Record the product's startup before its first pass.
@@ -431,9 +495,11 @@ impl Effects {
 /// with its configured endpoint request heads.
 #[must_use]
 pub fn effects_worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
-    worst_case(limits, endpoints)?
-        .checked_add(Map::<u32, domain::GrantName>::worst_case(limits.llm.accounts)?)?
-        .checked_add(u64::try_from(size_of::<Effects>()).ok()?)
+    let mut total = 0_u64;
+    for (_, part) in effects_parts(limits, endpoints)? {
+        total = total.checked_add(part)?;
+    }
+    Some(total)
 }
 
 /// Checked maximum of every owned layer and inter-layer queue. The file
@@ -441,63 +507,19 @@ pub fn effects_worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option
 /// endpoints supply the request-head and credential bounds.
 #[must_use]
 pub fn worst_case(limits: &Limits, endpoints: &llm::Endpoints) -> Option<u64> {
-    let queue = limits.queue;
-    // Facts pass directly from the domain into the bounded event producer.
-    // No second trace queue retains their rich observations.
-    let stages = Queue::<channel::OpenEvent>::worst_case(queue)?
-        .checked_add(Queue::<ChannelLower>::worst_case(queue)?)?
-        .checked_add(Queue::<PendingMessage>::worst_case(queue)?)?
-        .checked_add(Queue::<llm::ToDomain>::worst_case(queue)?)?
-        .checked_add(Queue::<io::Request>::worst_case(queue)?.checked_mul(2)?)?
-        .checked_add(Queue::<machine::ToDomain>::worst_case(queue)?)?
-        .checked_add(Queue::<machine::Below>::worst_case(queue)?)?
-        .checked_add(Queue::<domain::Event>::worst_case(queue)?)?
-        .checked_add(Queue::<domain::Request>::worst_case(queue)?)?
-        .checked_add(Queue::<io::Event>::worst_case(queue)?)?
-        .checked_add(Queue::<file::Event>::worst_case(queue)?)?
-        .checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?)?
-        .checked_add(Queue::<kernel::Complete>::worst_case(queue)?)?
-        .checked_add(Slab::<Owner>::worst_case(limits.routes)?)?
-        .checked_add(Map::<Token, Operation>::worst_case(limits.routes)?)?;
-    // Spawn commands transferred to IO still belong to this composed owner.
-    let environment_copies = u64::from(limits.machine.env_bytes / 2)
-        .checked_mul(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?
-        .checked_add(u64::from(limits.machine.env_bytes))?
-        .checked_mul(u64::from(limits.machine.processes))?;
-    let pipe_routes = Map::<Token, Token>::worst_case(limits.machine.processes.checked_mul(2)?)?;
-    let host_bytes = u64::from(limits.machine.roots).checked_mul(u64::from(limits.domain.run.host_path_bytes))?;
-    let roots = List::<run::Directory>::worst_case(limits.machine.roots)?
-        .checked_add(host_bytes)?
-        .checked_add(List::<Token>::worst_case(limits.machine.roots)?)?;
-    // The service drains the legacy observer after every root entrance.
-    // Typed event capture has separate ownership in the LLM and event sinks.
-    domain::worst_case_drained_content(&limits.domain, limits.llm.receiving.max_completion_bytes)?
+    parts_worst_case(limits, endpoints, true)?
+        .checked_add(domain::worst_case_drained_content(&limits.domain, limits.llm.receiving.max_completion_bytes)?)?
         .checked_add(channel::worst_case(&limits.channel)?)?
-        .checked_add(llm::component_worst_case(&limits.llm, endpoints)?)?
-        .checked_add(machine::worst_case(&limits.machine)?)?
-        .checked_add(io_ownership(limits)?)?
-        .checked_add(file_layer::FileIo::worst_case(
-            limits.file_slots,
-            limits.file_read,
-            limits.file_entries,
-            limits.file_bytes,
-        )?)?
-        .checked_add(stages)?
-        .checked_add(environment_copies)?
-        .checked_add(roots)?
-        .checked_add(pipe_routes)?
-        .checked_add(u64::from(limits.domain.session.failure_bytes).checked_mul(2)?)?
-        .checked_add(match limits.events {
-            Some(_) => crate::events::worst_case(limits)?,
-            None => 0,
-        })
+        .checked_add(io_worst_case(limits)?)
 }
 
 // One physical LLM socket is already included by its connection owner. The
 // service owns IO's tables once. Its other producers are read-only process
 // pipes/input/signals and the single host-channel writer; only that writer
 // can retain output payload outside the LLM sockets (limits.md, section 3).
-fn io_ownership(limits: &Limits) -> Option<u64> {
+/// The single native IO ownership, excluding the connection owners' socket buffers.
+#[must_use]
+pub fn io_worst_case(limits: &Limits) -> Option<u64> {
     let physical = limits.llm.connection.connections;
     let other = limits.io.sockets.checked_sub(physical)?;
     let child = limits.llm.connection.io;
@@ -547,27 +569,40 @@ impl Service {
         if memory > limits.memory {
             return Err(ConfigError::MemoryCeiling);
         }
+        Self::parts(config, Some(seed))
+    }
+
+    fn parts(config: Config, seed: Option<u64>) -> Result<Self, ConfigError> {
         let events = crate::events::Producer::configured(&config);
-        let channel = match channel::Component::new(&limits.channel, config.stream_mode, config.channel_endpoints) {
-            Ok(channel) => channel,
-            Err(error) => return Err(ConfigError::Channel(error)),
+        let Config { limits, domain, channel_endpoints, llm_endpoints, environment, stream_mode } = config;
+        let (domain, channel, io, frames) = match seed {
+            Some(seed) => (
+                Some(domain::Domain::new(&limits.domain, domain, seed)),
+                Some(match channel::Component::new(&limits.channel, stream_mode, channel_endpoints) {
+                    Ok(channel) => channel,
+                    Err(why) => return Err(ConfigError::Channel(why)),
+                }),
+                Some(io::Io::new(&limits.io)),
+                limits.queue,
+            ),
+            None => (None, None, None, 0),
         };
-        let llm = match llm::Component::new(&limits.llm, config.llm_endpoints) {
+        let llm = match llm::Component::new(&limits.llm, llm_endpoints) {
             Ok(llm) => llm,
             Err(error) => return Err(ConfigError::Llm(error)),
         };
-        let machine = machine::Component::new(&limits.machine, config.environment);
+        let machine = machine::Component::new(&limits.machine, environment);
         Ok(Service {
             limits,
             events,
             teardown: Teardown::Live,
             product_exit: None,
             usage_unread: false,
-            domain: Some(domain::Domain::new(&limits.domain, config.domain, seed)),
-            channel: Some(channel),
+            domain,
+            channel,
             llm,
             machine,
-            io: io::Io::new(&limits.io),
+            io,
             files: file_layer::FileIo::with_whole_limit(
                 limits.file_slots,
                 limits.file_read,
@@ -579,9 +614,9 @@ impl Service {
             llm_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.llm },
             machine_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.machine },
             io_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.io },
-            channel_events: Queue::with_capacity(limits.queue),
-            pending_messages: Queue::with_capacity(limits.queue),
-            channel_below: Queue::with_capacity(limits.queue),
+            channel_events: Queue::with_capacity(frames),
+            pending_messages: Queue::with_capacity(frames),
+            channel_below: Queue::with_capacity(frames),
             llm_events: Queue::with_capacity(limits.queue),
             llm_below: Queue::with_capacity(limits.queue),
             machine_events: Queue::with_capacity(limits.queue),
@@ -636,7 +671,7 @@ impl Service {
             return Err(fd);
         }
         let deadline = self.limits.events.expect("producer has configured ownership").write_deadline;
-        let token = self.io.adopt_append(fd, deadline)?;
+        let token = self.io.as_mut().expect("standalone IO").adopt_append(fd, deadline)?;
         events.sinks.add(destination, token, delivery).expect("destination room checked before descriptor adoption");
         Ok(())
     }
@@ -693,11 +728,11 @@ impl Service {
         output: kernel::Fd,
         signals: kernel::Fd,
     ) -> Result<(), kernel::Fd> {
-        let input = self.io.adopt_read_pipe(input)?;
+        let input = self.io.as_mut().expect("standalone IO").adopt_read_pipe(input)?;
         self.input = Some(input);
-        let output = self.io.adopt_write_pipe(output)?;
+        let output = self.io.as_mut().expect("standalone IO").adopt_write_pipe(output, None)?;
         self.output = Some(output);
-        let signals = self.io.adopt_signals(signals)?;
+        let signals = self.io.as_mut().expect("standalone IO").adopt_signals(signals)?;
         self.signals = Some(signals);
         Ok(())
     }
@@ -871,7 +906,9 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
         events.sinks.down(&mut service.io_requests);
     }
     io_down(service);
-    service.io.reclaim();
+    if let Some(io) = &mut service.io {
+        io.reclaim();
+    }
     service.llm.reclaim();
     service.domain.as_mut().expect("framed agent owns its domain").reclaim();
     service.owners.reclaim();
@@ -889,14 +926,16 @@ fn clocks(service: &mut Service, now: Time, wall: Wall) {
 }
 
 fn io_up(service: &mut Service) {
-    for _ in 0..service.limits.io.sockets {
-        if !service.io.is_ready()
-            || service.io_events.room() < io::MAX_OUT_RESUME.events
-            || service.io_submissions.room() < io::MAX_OUT_RESUME.submissions
-        {
-            break;
+    if let Some(io) = &mut service.io {
+        for _ in 0..service.limits.io.sockets {
+            if !io.is_ready()
+                || service.io_events.room() < io::MAX_OUT_RESUME.events
+                || service.io_submissions.room() < io::MAX_OUT_RESUME.submissions
+            {
+                break;
+            }
+            io::resume(io, &service.io_env, &mut service.io_events, &mut service.io_submissions);
         }
-        io::resume(&mut service.io, &service.io_env, &mut service.io_events, &mut service.io_submissions);
     }
     for _ in 0..service.completions.capacity() {
         let complete = match service.completions.pop() {
@@ -907,7 +946,13 @@ fn io_up(service: &mut Service) {
         match route {
             Operation::Io(original) | Operation::Signals(original) => {
                 let complete = kernel::Complete { op: original, kind: complete.kind, result: complete.result };
-                io::up(&mut service.io, &service.io_env, complete, &mut service.io_events, &mut service.io_submissions);
+                io::up(
+                    service.io.as_mut().expect("standalone IO completion"),
+                    &service.io_env,
+                    complete,
+                    &mut service.io_events,
+                    &mut service.io_submissions,
+                );
             }
             Operation::File(original) => {
                 let complete = kernel::Complete { op: original, kind: complete.kind, result: complete.result };
@@ -915,14 +960,16 @@ fn io_up(service: &mut Service) {
             }
         }
     }
-    for _ in 0..service.limits.io.sockets {
-        if !service.io.is_due(service.io_env.now)
-            || service.io_events.room() < io::MAX_OUT_FIRE.events
-            || service.io_submissions.room() < io::MAX_OUT_FIRE.submissions
-        {
-            break;
+    if let Some(io) = &mut service.io {
+        for _ in 0..service.limits.io.sockets {
+            if !io.is_due(service.io_env.now)
+                || service.io_events.room() < io::MAX_OUT_FIRE.events
+                || service.io_submissions.room() < io::MAX_OUT_FIRE.submissions
+            {
+                break;
+            }
+            io::fire(io, &service.io_env, &mut service.io_events, &mut service.io_submissions);
         }
-        io::fire(&mut service.io, &service.io_env, &mut service.io_events, &mut service.io_submissions);
     }
     if service.files.is_due(service.io_env.now) && service.file_submissions.room() >= 2 {
         file_layer::expire(&mut service.files, service.io_env.now, &mut service.file_submissions);
@@ -932,8 +979,9 @@ fn io_up(service: &mut Service) {
 fn lower_events(service: &mut Service) {
     for _ in 0..service.io_events.capacity() {
         if service.domain_events.room() == 0
-            || service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
-            || service.channel_below.room() < channel::max_out(&service.limits.channel).below
+            || (service.channel.is_some()
+                && (service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
+                    || service.channel_below.room() < channel::max_out(&service.limits.channel).below))
             || service.llm_events.room() < llm::MAX_OUT.above
             || service.llm_below.room() < llm::MAX_OUT.below
             || service.machine_events.room() < machine::max_out(&service.limits.machine).to_domain
@@ -1375,8 +1423,9 @@ fn llm_events_up(service: &mut Service) {
         }
         if !service.llm.measures_drained()
             || service.domain_events.room() == 0
-            || service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
-            || service.channel_below.room() < channel::max_out(&service.limits.channel).below
+            || (service.channel.is_some()
+                && (service.channel_events.room() < channel::max_out(&service.limits.channel).to_domain
+                    || service.channel_below.room() < channel::max_out(&service.limits.channel).below))
         {
             break;
         }
@@ -1647,8 +1696,9 @@ fn domain_down(service: &mut Service) {
         }
         if !channel_takes(service)
             || !service.llm.measures_drained()
-            || service.channel_events.room() < channel_max.to_domain
-            || service.channel_below.room() < channel_max.below
+            || (service.channel.is_some()
+                && (service.channel_events.room() < channel_max.to_domain
+                    || service.channel_below.room() < channel_max.below))
             || service.llm_events.room() < llm::MAX_OUT.above
             || service.llm_below.room() < llm::MAX_OUT.below
             || service.machine_events.room() < machine_max.to_domain
@@ -2121,15 +2171,17 @@ fn component_down(service: &mut Service) {
 }
 
 fn io_down(service: &mut Service) {
-    for _ in 0..service.io_requests.capacity() {
-        if !service.io.takes() || service.io_submissions.room() < io::MAX_OUT_DOWN.submissions {
-            break;
+    if let Some(io) = &mut service.io {
+        for _ in 0..service.io_requests.capacity() {
+            if !io.takes() || service.io_submissions.room() < io::MAX_OUT_DOWN.submissions {
+                break;
+            }
+            let request = match service.io_requests.pop() {
+                Some(request) => request,
+                None => break,
+            };
+            io::down(io, &service.io_env, request, &mut service.io_submissions);
         }
-        let request = match service.io_requests.pop() {
-            Some(request) => request,
-            None => break,
-        };
-        io::down(&mut service.io, &service.io_env, request, &mut service.io_submissions);
     }
     for _ in 0..service.io_submissions.capacity() {
         if service.submissions.room() == 0 || service.operations.len() >= service.operations.capacity() {
@@ -2198,7 +2250,10 @@ pub fn next_deadline(service: &Service) -> Option<Time> {
     for deadline in [
         service.llm.next_deadline(),
         service.machine.next_deadline(),
-        service.io.next_deadline(),
+        match &service.io {
+            Some(io) => io.next_deadline(),
+            None => None,
+        },
         service.files.next_deadline(),
     ] {
         earliest = match deadline {
@@ -2244,7 +2299,10 @@ pub fn work_pending(service: &Service, now: Time) -> bool {
         None => false,
     };
     due || teardown::work_pending(service)
-        || service.io.is_ready()
+        || match &service.io {
+            Some(io) => io.is_ready(),
+            None => false,
+        }
         || (takes && (service.llm.has_work() || !service.llm.measures_drained()))
         || match &service.events {
             Some(events) => events.sinks.has_work(),
@@ -2315,7 +2373,10 @@ fn settled(service: &Service, streams: u32) -> bool {
         && service.io_submissions.is_empty()
         && service.file_submissions.is_empty()
         && service.completions.is_empty()
-        && service.io.sockets() == streams
+        && match &service.io {
+            Some(io) => io.sockets() == streams,
+            None => true,
+        }
         && service.files.takes()
         && service.files.open_files() == 0
         && service.roots.is_empty()

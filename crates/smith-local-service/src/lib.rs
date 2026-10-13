@@ -24,4 +24,6 @@ mod tests;
 
 pub use credentials::{ACCOUNTS_MAX_OUT, Accounts, Source, accounts_worst_case};
 pub use process::{Launch, ProcessLimits, to_host_exit};
-pub use service::{AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, worst_case};
+pub use service::{
+    AgentConfig, Config, Error, InlineLimits, Limits, Service, StartValues, iterate, memory_parts, worst_case,
+};

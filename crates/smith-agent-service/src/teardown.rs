@@ -112,7 +112,11 @@ fn stream_closed(service: &Service) -> bool {
     };
     destinations
         && settled(service, u32::from(service.signals.is_some()))
-        && (service.signals.is_some() || service.io.is_empty())
+        && (service.signals.is_some()
+            || match &service.io {
+                Some(io) => io.is_empty(),
+                None => true,
+            })
 }
 
 pub(super) fn shutdown_room(service: &Service) -> bool {

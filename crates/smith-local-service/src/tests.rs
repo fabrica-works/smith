@@ -193,6 +193,7 @@ fn original_conflict_files_are_read_through_the_services_kernel_routes() {
     );
     for _ in 0_u32..100 {
         sim.reap(pid, process.completions());
+        process.io_up(&process.at(sim.now(), sim.wall()));
         process.up(
             &process.at(sim.now(), sim.wall()),
             &mut host_events,
@@ -249,6 +250,7 @@ fn settle_file_io(
             .unwrap();
     for _ in 0_u32..400 {
         sim.reap(pid, process.completions());
+        process.io_up(&process.at(sim.now(), sim.wall()));
         process.up(
             &process.at(sim.now(), sim.wall()),
             &mut host_events,
@@ -467,6 +469,7 @@ fn colocated_config() -> Config {
     let lower = smith_agent_process_world::configuration();
     let mut config = config();
     config.limits.local.smith = lower.limits.domain;
+    config.limits.process.io = lower.limits.io;
     config.limits.local.line_bytes =
         local::max_line_bytes(lower.limits.domain.run.message_bytes).expect("line allowance");
     config.limits.local.endpoints = lower.domain.endpoints.clone();
@@ -540,4 +543,11 @@ fn the_standard_no_progress_is_silence_and_one_close() {
         crate::profile::host_limits(&smith_agent_service::profile::standard(), &agent).expect("derived watchdog");
     assert_eq!(host.silence, Duration::from_secs(30));
     assert_eq!(host.no_progress, Duration::from_secs(35));
+}
+
+#[test]
+fn an_inline_service_refuses_a_different_common_io_capacity() {
+    let mut config = colocated_config();
+    config.limits.process.io.intake = config.limits.process.io.intake.checked_sub(1).unwrap();
+    let Err(crate::Error::Process) = Service::new(config, 1) else { panic!("one common IO configuration") };
 }

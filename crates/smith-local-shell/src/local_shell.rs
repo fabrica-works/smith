@@ -256,7 +256,7 @@ fn policy(
 }
 
 /// Bound the common local IO and the selected child before constructing either.
-fn service_limits(
+pub(crate) fn service_limits(
     local: local::Limits,
     host: host::Limits,
     agent: &smith_agent_service::Config,

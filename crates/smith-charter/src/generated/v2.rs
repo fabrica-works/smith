@@ -270,6 +270,46 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
+/// Checks the family limits, naming the first limit past its ceiling.
+pub fn check_limits(limits: &Limits) -> Result<(), Problem> {
+    check_limits_0(limits)?;
+    Ok(())
+}
+
+fn check_limits_0(limits: &Limits) -> Result<(), Problem> {
+    if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
+    if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
+    if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
+    if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
+    if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
+    if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
+    if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
+    if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
+    if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
+    if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
+    if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
+    if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
+    if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
+    if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
+    if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
+    if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
+    if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
+    if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
+    if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
+    if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
+    if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
+    if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
+    if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
+    if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
+    if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
+    if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
+    if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
+    if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
+    if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
+    if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
+    Ok(())
+}
+
 /// Movable fields of `Section`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SectionParts {
@@ -308,36 +348,6 @@ impl Section {
     pub fn into_parts(self) -> SectionParts { SectionParts { title: self.title, body: self.body } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.title.len() > usize::try_from(limits.section_title.min(CEILINGS.section_title)).expect("u32 fits usize") { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.title.as_ref()) { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Utf8 }); }
         if self.body.len() > usize::try_from(limits.section_body.min(CEILINGS.section_body)).expect("u32 fits usize") { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
@@ -361,10 +371,9 @@ pub struct Families {
 
 impl Families {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: FamiliesParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: FamiliesParts) -> Result<Self, Problem> {
         let FamiliesParts { skein_bools } = parts;
         let value = Self { skein_bools };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -388,40 +397,6 @@ impl Families {
     #[must_use]
     pub fn into_parts(self) -> FamiliesParts { FamiliesParts { skein_bools: self.skein_bools } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
 }
 
 /// `Effect` in this codec family.
@@ -435,47 +410,10 @@ pub enum Effect {
 
 impl Effect {
     /// Checks the payload against the given limits.
-    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        value.check(limits)?;
+    pub fn new(_limits: &Limits, value: Self) -> Result<Self, Problem> {
         Ok(value)
     }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        match self {
-            Self::Read | Self::Write => Ok(()),
-        }?;
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
 }
 
 /// Movable fields of `HostTool`.
@@ -537,42 +475,11 @@ impl HostTool {
     pub fn into_parts(self) -> HostToolParts { HostToolParts { name: self.name, description: self.description, input: self.input, effect: self.effect, deadline: self.deadline } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.name.len() > usize::try_from(limits.host_tool_name.min(CEILINGS.host_tool_name)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.name.as_ref()) { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Utf8 }); }
         if self.description.len() > usize::try_from(limits.host_tool_description.min(CEILINGS.host_tool_description)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.description.as_ref()) { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Utf8 }); }
         if self.input.len() > usize::try_from(limits.host_tool_input.min(CEILINGS.host_tool_input)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        self.effect.check(limits)?;
         Ok(())
     }
 }
@@ -615,36 +522,6 @@ impl FieldRule {
     pub fn into_parts(self) -> FieldRuleParts { FieldRuleParts { name: self.name, max: self.max } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.name.len() > usize::try_from(limits.field_rule_name.min(CEILINGS.field_rule_name)).expect("u32 fits usize") { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.name.as_ref()) { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Utf8 }); }
         Ok(())
@@ -689,36 +566,6 @@ impl TextRule {
     pub fn into_parts(self) -> TextRuleParts { TextRuleParts { max: self.max, fields: self.fields } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.fields.capacity() > limits.text_rule_fields.min(CEILINGS.text_rule_fields) { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.fields.as_slice() {
         item_0.check(limits)?;
@@ -765,36 +612,6 @@ impl ItemKind {
     pub fn into_parts(self) -> ItemKindParts { ItemKindParts { kind: self.kind, fields: self.fields } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.kind.len() > usize::try_from(limits.item_kind_kind.min(CEILINGS.item_kind_kind)).expect("u32 fits usize") { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.kind.as_ref()) { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Utf8 }); }
         if self.fields.capacity() > limits.item_kind_fields.min(CEILINGS.item_kind_fields) { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
@@ -871,36 +688,6 @@ impl VerdictRule {
     pub fn into_parts(self) -> VerdictRuleParts { VerdictRuleParts { label: self.label, text_max: self.text_max, fields: self.fields, least: self.least, most: self.most, kinds: self.kinds } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.label.len() > usize::try_from(limits.verdict_rule_label.min(CEILINGS.verdict_rule_label)).expect("u32 fits usize") { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.label.as_ref()) { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Utf8 }); }
         if self.fields.capacity() > limits.verdict_rule_fields.min(CEILINGS.verdict_rule_fields) { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
@@ -953,36 +740,6 @@ impl ChangeRule {
     pub fn into_parts(self) -> ChangeRuleParts { ChangeRuleParts { checks_must_pass: self.checks_must_pass, fields: self.fields } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.fields.capacity() > limits.change_rule_fields.min(CEILINGS.change_rule_fields) { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.fields.as_slice() {
         item_0.check(limits)?;
@@ -1043,36 +800,6 @@ impl Contract {
     pub fn into_parts(self) -> ContractParts { ContractParts { report: self.report, verdicts: self.verdicts, change: self.change, failure: self.failure } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if let Some(some_0) = self.report.as_ref() {
         some_0.check(limits)?;
         }
@@ -1142,37 +869,6 @@ impl Tools {
     pub fn into_parts(self) -> ToolsParts { ToolsParts { families: self.families, wait: self.wait, deliver: self.deliver, host: self.host } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        self.families.check(limits)?;
         if let Some(some_0) = self.deliver.as_ref() {
         some_0.check(limits)?;
         }
@@ -1222,36 +918,6 @@ impl Conventions {
     pub fn into_parts(self) -> ConventionsParts { ConventionsParts { guide: self.guide, checks: self.checks } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.guide.len() > usize::try_from(limits.conventions_guide.min(CEILINGS.conventions_guide)).expect("u32 fits usize") { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.guide.as_ref()) { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Utf8 }); }
         if self.checks.len() > usize::try_from(limits.conventions_checks.min(CEILINGS.conventions_checks)).expect("u32 fits usize") { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
@@ -1287,10 +953,9 @@ pub struct Prices {
 
 impl Prices {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: PricesParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: PricesParts) -> Result<Self, Problem> {
         let PricesParts { input, cached, cache_write, output, unit } = parts;
         let value = Self { input, cached, cache_write, output, unit };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -1318,40 +983,6 @@ impl Prices {
     #[must_use]
     pub fn into_parts(self) -> PricesParts { PricesParts { input: self.input, cached: self.cached, cache_write: self.cache_write, output: self.output, unit: self.unit } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
 }
 
 /// Movable fields of `Llm`.
@@ -1413,41 +1044,10 @@ impl Llm {
     pub fn into_parts(self) -> LlmParts { LlmParts { endpoint: self.endpoint, model: self.model, window: self.window, output: self.output, prices: self.prices } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.endpoint.len() > usize::try_from(limits.llm_endpoint.min(CEILINGS.llm_endpoint)).expect("u32 fits usize") { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.endpoint.as_ref()) { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Utf8 }); }
         if self.model.len() > usize::try_from(limits.llm_model.min(CEILINGS.llm_model)).expect("u32 fits usize") { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.model.as_ref()) { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Utf8 }); }
-        self.prices.check(limits)?;
         Ok(())
     }
 }
@@ -1470,10 +1070,9 @@ pub struct Reserve {
 
 impl Reserve {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: ReserveParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: ReserveParts) -> Result<Self, Problem> {
         let ReserveParts { turns, time } = parts;
         let value = Self { turns, time };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -1489,40 +1088,6 @@ impl Reserve {
     #[must_use]
     pub fn into_parts(self) -> ReserveParts { ReserveParts { turns: self.turns, time: self.time } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
 }
 
 /// Movable fields of `Budget`.
@@ -1549,10 +1114,9 @@ pub struct Budget {
 
 impl Budget {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: BudgetParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: BudgetParts) -> Result<Self, Problem> {
         let BudgetParts { turns, spend, time, reserve } = parts;
         let value = Self { turns, spend, time, reserve };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -1576,40 +1140,6 @@ impl Budget {
     #[must_use]
     pub fn into_parts(self) -> BudgetParts { BudgetParts { turns: self.turns, spend: self.spend, time: self.time, reserve: self.reserve } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        self.reserve.check(limits)?;
-        Ok(())
-    }
 }
 
 /// Movable fields of `Charter`.
@@ -1706,36 +1236,6 @@ impl Charter {
     pub fn into_parts(self) -> CharterParts { CharterParts { instructions: self.instructions, brief: self.brief, tools: self.tools, contract: self.contract, conventions: self.conventions, budget: self.budget, main: self.main, models: self.models, waiting: self.waiting, resume: self.resume } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.instructions.len() > usize::try_from(limits.charter_instructions.min(CEILINGS.charter_instructions)).expect("u32 fits usize") { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.instructions.as_ref()) { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Utf8 }); }
         if self.brief.capacity() > limits.charter_brief.min(CEILINGS.charter_brief) { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
@@ -1747,7 +1247,6 @@ impl Charter {
         if let Some(some_0) = self.conventions.as_ref() {
         some_0.check(limits)?;
         }
-        self.budget.check(limits)?;
         self.main.check(limits)?;
         if self.models.capacity() > limits.charter_models.min(CEILINGS.charter_models) { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.models.as_slice() {
@@ -1795,36 +1294,6 @@ impl Field {
     pub fn into_parts(self) -> FieldParts { FieldParts { name: self.name, text: self.text } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.name.len() > usize::try_from(limits.field_name.min(CEILINGS.field_name)).expect("u32 fits usize") { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.name.as_ref()) { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Utf8 }); }
         if self.text.len() > usize::try_from(limits.field_text.min(CEILINGS.field_text)).expect("u32 fits usize") { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
@@ -1871,36 +1340,6 @@ impl Item {
     pub fn into_parts(self) -> ItemParts { ItemParts { kind: self.kind, fields: self.fields } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
         if self.kind.len() > usize::try_from(limits.item_kind.min(CEILINGS.item_kind)).expect("u32 fits usize") { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(self.kind.as_ref()) { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Utf8 }); }
         if self.fields.capacity() > limits.item_fields.min(CEILINGS.item_fields) { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
@@ -1926,47 +1365,10 @@ pub enum Form {
 
 impl Form {
     /// Checks the payload against the given limits.
-    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        value.check(limits)?;
+    pub fn new(_limits: &Limits, value: Self) -> Result<Self, Problem> {
         Ok(value)
     }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        match self {
-            Self::Report | Self::Verdict | Self::Change | Self::Failure => Ok(()),
-        }?;
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
 }
 
 /// Movable fields of `RunResult`.
@@ -2028,37 +1430,6 @@ impl RunResult {
     pub fn into_parts(self) -> RunResultParts { RunResultParts { form: self.form, label: self.label, text: self.text, fields: self.fields, items: self.items } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.section_title > CEILINGS.section_title { return Err(Problem { path: Path::SectionTitle, reason: skein_codec::Reason::Bound }); }
-        if limits.section_body > CEILINGS.section_body { return Err(Problem { path: Path::SectionBody, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_name > CEILINGS.host_tool_name { return Err(Problem { path: Path::HostToolName, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_description > CEILINGS.host_tool_description { return Err(Problem { path: Path::HostToolDescription, reason: skein_codec::Reason::Bound }); }
-        if limits.host_tool_input > CEILINGS.host_tool_input { return Err(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Bound }); }
-        if limits.field_rule_name > CEILINGS.field_rule_name { return Err(Problem { path: Path::FieldRuleName, reason: skein_codec::Reason::Bound }); }
-        if limits.text_rule_fields > CEILINGS.text_rule_fields { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_kind > CEILINGS.item_kind_kind { return Err(Problem { path: Path::ItemKindKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind_fields > CEILINGS.item_kind_fields { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_label > CEILINGS.verdict_rule_label { return Err(Problem { path: Path::VerdictRuleLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_fields > CEILINGS.verdict_rule_fields { return Err(Problem { path: Path::VerdictRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.verdict_rule_kinds > CEILINGS.verdict_rule_kinds { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Bound }); }
-        if limits.change_rule_fields > CEILINGS.change_rule_fields { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Bound }); }
-        if limits.contract_verdicts > CEILINGS.contract_verdicts { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Bound }); }
-        if limits.tools_host > CEILINGS.tools_host { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_guide > CEILINGS.conventions_guide { return Err(Problem { path: Path::ConventionsGuide, reason: skein_codec::Reason::Bound }); }
-        if limits.conventions_checks > CEILINGS.conventions_checks { return Err(Problem { path: Path::ConventionsChecks, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_endpoint > CEILINGS.llm_endpoint { return Err(Problem { path: Path::LlmEndpoint, reason: skein_codec::Reason::Bound }); }
-        if limits.llm_model > CEILINGS.llm_model { return Err(Problem { path: Path::LlmModel, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_instructions > CEILINGS.charter_instructions { return Err(Problem { path: Path::CharterInstructions, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_brief > CEILINGS.charter_brief { return Err(Problem { path: Path::CharterBrief, reason: skein_codec::Reason::Bound }); }
-        if limits.charter_models > CEILINGS.charter_models { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Bound }); }
-        if limits.field_name > CEILINGS.field_name { return Err(Problem { path: Path::FieldName, reason: skein_codec::Reason::Bound }); }
-        if limits.field_text > CEILINGS.field_text { return Err(Problem { path: Path::FieldText, reason: skein_codec::Reason::Bound }); }
-        if limits.item_kind > CEILINGS.item_kind { return Err(Problem { path: Path::ItemKind, reason: skein_codec::Reason::Bound }); }
-        if limits.item_fields > CEILINGS.item_fields { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_label_some > CEILINGS.run_result_label_some { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_text > CEILINGS.run_result_text { return Err(Problem { path: Path::RunResultText, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_fields > CEILINGS.run_result_fields { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Bound }); }
-        if limits.run_result_items > CEILINGS.run_result_items { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Bound }); }
-        self.form.check(limits)?;
         if let Some(some_0) = self.label.as_ref() {
         if some_0.len() > usize::try_from(limits.run_result_label_some.min(CEILINGS.run_result_label_some)).expect("u32 fits usize") { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Bound }); }
         if !skein_codec::text_is_valid(some_0.as_ref()) { return Err(Problem { path: Path::RunResultLabel, reason: skein_codec::Reason::Utf8 }); }
@@ -2112,7 +1483,7 @@ impl Section {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_title = match skein_codec::read_text(reader, limits.section_title.min(CEILINGS.section_title)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::SectionTitle, reason }), };
         let decoded_body = match skein_codec::read_text(reader, limits.section_body.min(CEILINGS.section_body)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::SectionBody, reason }), };
-        Self::new(limits, SectionParts { title: decoded_title, body: decoded_body })
+        Ok(Self { title: decoded_title, body: decoded_body })
     }
 }
 
@@ -2148,12 +1519,12 @@ impl Families {
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_inspect = match reader.u8().ok_or(Problem { path: Path::FamiliesInspect, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::FamiliesInspect, reason: skein_codec::Reason::Bool }) };
         let decoded_modify = match reader.u8().ok_or(Problem { path: Path::FamiliesModify, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::FamiliesModify, reason: skein_codec::Reason::Bool }) };
         let decoded_shell = match reader.u8().ok_or(Problem { path: Path::FamiliesShell, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::FamiliesShell, reason: skein_codec::Reason::Bool }) };
         let decoded_agents = match reader.u8().ok_or(Problem { path: Path::FamiliesAgents, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::FamiliesAgents, reason: skein_codec::Reason::Bool }) };
-        Self::new(limits, FamiliesParts { skein_bools: [decoded_inspect, decoded_modify, decoded_shell, decoded_agents] })
+        Ok(Self { skein_bools: [decoded_inspect, decoded_modify, decoded_shell, decoded_agents] })
     }
 }
 
@@ -2182,14 +1553,14 @@ impl Effect {
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let tag = reader.u8().ok_or(Problem { path: Path::EffectTag, reason: skein_codec::Reason::Short })?;
         let value = match tag {
             0 => Self::Read,
             1 => Self::Write,
             _ => return Err(Problem { path: Path::EffectTag, reason: skein_codec::Reason::Tag }),
         };
-        Self::new(limits, value)
+        Ok(value)
     }
 }
 
@@ -2244,7 +1615,7 @@ impl HostTool {
         let decoded_input = { let length = match skein_codec::read_len(reader, limits.host_tool_input.min(CEILINGS.host_tool_input)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::HostToolInput, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::HostToolInput, reason: skein_codec::Reason::Short })?) };
         let decoded_effect = Effect::decode_from(limits, reader)?;
         let decoded_deadline = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::HostToolDeadline, reason: skein_codec::Reason::Short })?);
-        Self::new(limits, HostToolParts { name: decoded_name, description: decoded_description, input: decoded_input, effect: decoded_effect, deadline: decoded_deadline })
+        Ok(Self { name: decoded_name, description: decoded_description, input: decoded_input, effect: decoded_effect, deadline: decoded_deadline })
     }
 }
 
@@ -2280,7 +1651,7 @@ impl FieldRule {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_name = match skein_codec::read_text(reader, limits.field_rule_name.min(CEILINGS.field_rule_name)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::FieldRuleName, reason }), };
         let decoded_max = reader.u32().ok_or(Problem { path: Path::FieldRuleMax, reason: skein_codec::Reason::Short })?;
-        Self::new(limits, FieldRuleParts { name: decoded_name, max: decoded_max })
+        Ok(Self { name: decoded_name, max: decoded_max })
     }
 }
 
@@ -2320,7 +1691,7 @@ impl TextRule {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_max = reader.u32().ok_or(Problem { path: Path::TextRuleMax, reason: skein_codec::Reason::Short })?;
         let decoded_fields = { let count = match skein_codec::read_count(reader, limits.text_rule_fields.min(CEILINGS.text_rule_fields)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::TextRuleFields, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::TextRuleFields, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = FieldRule::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, TextRuleParts { max: decoded_max, fields: decoded_fields })
+        Ok(Self { max: decoded_max, fields: decoded_fields })
     }
 }
 
@@ -2363,7 +1734,7 @@ impl ItemKind {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_kind = match skein_codec::read_text(reader, limits.item_kind_kind.min(CEILINGS.item_kind_kind)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::ItemKindKind, reason }), };
         let decoded_fields = { let count = match skein_codec::read_count(reader, limits.item_kind_fields.min(CEILINGS.item_kind_fields)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::ItemKindFields, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::ItemKindFields, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = FieldRule::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, ItemKindParts { kind: decoded_kind, fields: decoded_fields })
+        Ok(Self { kind: decoded_kind, fields: decoded_fields })
     }
 }
 
@@ -2429,7 +1800,7 @@ impl VerdictRule {
         let decoded_least = reader.u32().ok_or(Problem { path: Path::VerdictRuleLeast, reason: skein_codec::Reason::Short })?;
         let decoded_most = reader.u32().ok_or(Problem { path: Path::VerdictRuleMost, reason: skein_codec::Reason::Short })?;
         let decoded_kinds = { let count = match skein_codec::read_count(reader, limits.verdict_rule_kinds.min(CEILINGS.verdict_rule_kinds)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::VerdictRuleKinds, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::VerdictRuleKinds, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = ItemKind::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, VerdictRuleParts { label: decoded_label, text_max: decoded_text_max, fields: decoded_fields, least: decoded_least, most: decoded_most, kinds: decoded_kinds })
+        Ok(Self { label: decoded_label, text_max: decoded_text_max, fields: decoded_fields, least: decoded_least, most: decoded_most, kinds: decoded_kinds })
     }
 }
 
@@ -2469,7 +1840,7 @@ impl ChangeRule {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_checks_must_pass = match reader.u8().ok_or(Problem { path: Path::ChangeRuleChecksMustPass, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::ChangeRuleChecksMustPass, reason: skein_codec::Reason::Bool }) };
         let decoded_fields = { let count = match skein_codec::read_count(reader, limits.change_rule_fields.min(CEILINGS.change_rule_fields)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::ChangeRuleFields, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::ChangeRuleFields, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = FieldRule::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, ChangeRuleParts { checks_must_pass: decoded_checks_must_pass, fields: decoded_fields })
+        Ok(Self { checks_must_pass: decoded_checks_must_pass, fields: decoded_fields })
     }
 }
 
@@ -2547,7 +1918,7 @@ impl Contract {
         let decoded_verdicts = { let count = match skein_codec::read_count(reader, limits.contract_verdicts.min(CEILINGS.contract_verdicts)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::ContractVerdicts, reason }), }; if count > reader.remaining() / 24 { return Err(Problem { path: Path::ContractVerdicts, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = VerdictRule::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_change = match reader.u8().ok_or(Problem { path: Path::ContractChange, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(ChangeRule::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::ContractChange, reason: skein_codec::Reason::Tag }) };
         let decoded_failure = match reader.u8().ok_or(Problem { path: Path::ContractFailure, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(TextRule::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::ContractFailure, reason: skein_codec::Reason::Tag }) };
-        Self::new(limits, ContractParts { report: decoded_report, verdicts: decoded_verdicts, change: decoded_change, failure: decoded_failure })
+        Ok(Self { report: decoded_report, verdicts: decoded_verdicts, change: decoded_change, failure: decoded_failure })
     }
 }
 
@@ -2606,7 +1977,7 @@ impl Tools {
         let decoded_wait = match reader.u8().ok_or(Problem { path: Path::ToolsWait, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::ToolsWait, reason: skein_codec::Reason::Bool }) };
         let decoded_deliver = match reader.u8().ok_or(Problem { path: Path::ToolsDeliver, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(ChangeRule::decode_from(limits, reader)?), _ => return Err(Problem { path: Path::ToolsDeliver, reason: skein_codec::Reason::Tag }) };
         let decoded_host = { let count = match skein_codec::read_count(reader, limits.tools_host.min(CEILINGS.tools_host)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::ToolsHost, reason }), }; if count > reader.remaining() / 21 { return Err(Problem { path: Path::ToolsHost, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = HostTool::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, ToolsParts { families: decoded_families, wait: decoded_wait, deliver: decoded_deliver, host: decoded_host })
+        Ok(Self { families: decoded_families, wait: decoded_wait, deliver: decoded_deliver, host: decoded_host })
     }
 }
 
@@ -2645,7 +2016,7 @@ impl Conventions {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_guide = match skein_codec::read_text(reader, limits.conventions_guide.min(CEILINGS.conventions_guide)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::ConventionsGuide, reason }), };
         let decoded_checks = match skein_codec::read_text(reader, limits.conventions_checks.min(CEILINGS.conventions_checks)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::ConventionsChecks, reason }), };
-        Self::new(limits, ConventionsParts { guide: decoded_guide, checks: decoded_checks })
+        Ok(Self { guide: decoded_guide, checks: decoded_checks })
     }
 }
 
@@ -2694,13 +2065,13 @@ impl Prices {
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_input = reader.u64().ok_or(Problem { path: Path::PricesInput, reason: skein_codec::Reason::Short })?;
         let decoded_cached = reader.u64().ok_or(Problem { path: Path::PricesCached, reason: skein_codec::Reason::Short })?;
         let decoded_cache_write = match reader.u8().ok_or(Problem { path: Path::PricesCacheWrite, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some(reader.u64().ok_or(Problem { path: Path::PricesCacheWrite, reason: skein_codec::Reason::Short })?), _ => return Err(Problem { path: Path::PricesCacheWrite, reason: skein_codec::Reason::Tag }) };
         let decoded_output = reader.u64().ok_or(Problem { path: Path::PricesOutput, reason: skein_codec::Reason::Short })?;
         let decoded_unit = reader.u32().ok_or(Problem { path: Path::PricesUnit, reason: skein_codec::Reason::Short })?;
-        Self::new(limits, PricesParts { input: decoded_input, cached: decoded_cached, cache_write: decoded_cache_write, output: decoded_output, unit: decoded_unit })
+        Ok(Self { input: decoded_input, cached: decoded_cached, cache_write: decoded_cache_write, output: decoded_output, unit: decoded_unit })
     }
 }
 
@@ -2752,7 +2123,7 @@ impl Llm {
         let decoded_window = reader.u32().ok_or(Problem { path: Path::LlmWindow, reason: skein_codec::Reason::Short })?;
         let decoded_output = reader.u32().ok_or(Problem { path: Path::LlmOutput, reason: skein_codec::Reason::Short })?;
         let decoded_prices = Prices::decode_from(limits, reader)?;
-        Self::new(limits, LlmParts { endpoint: decoded_endpoint, model: decoded_model, window: decoded_window, output: decoded_output, prices: decoded_prices })
+        Ok(Self { endpoint: decoded_endpoint, model: decoded_model, window: decoded_window, output: decoded_output, prices: decoded_prices })
     }
 }
 
@@ -2782,10 +2153,10 @@ impl Reserve {
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_turns = reader.u32().ok_or(Problem { path: Path::ReserveTurns, reason: skein_codec::Reason::Short })?;
         let decoded_time = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::ReserveTime, reason: skein_codec::Reason::Short })?);
-        Self::new(limits, ReserveParts { turns: decoded_turns, time: decoded_time })
+        Ok(Self { turns: decoded_turns, time: decoded_time })
     }
 }
 
@@ -2827,7 +2198,7 @@ impl Budget {
         let decoded_spend = reader.u64().ok_or(Problem { path: Path::BudgetSpend, reason: skein_codec::Reason::Short })?;
         let decoded_time = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::BudgetTime, reason: skein_codec::Reason::Short })?);
         let decoded_reserve = Reserve::decode_from(limits, reader)?;
-        Self::new(limits, BudgetParts { turns: decoded_turns, spend: decoded_spend, time: decoded_time, reserve: decoded_reserve })
+        Ok(Self { turns: decoded_turns, spend: decoded_spend, time: decoded_time, reserve: decoded_reserve })
     }
 }
 
@@ -2927,7 +2298,7 @@ impl Charter {
         let decoded_models = { let count = match skein_codec::read_count(reader, limits.charter_models.min(CEILINGS.charter_models)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::CharterModels, reason }), }; if count > reader.remaining() / 45 { return Err(Problem { path: Path::CharterModels, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Llm::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_waiting = skein_lib::Duration::from_nanos(reader.u64().ok_or(Problem { path: Path::CharterWaiting, reason: skein_codec::Reason::Short })?);
         let decoded_resume = match reader.u8().ok_or(Problem { path: Path::CharterResume, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::CharterResume, reason: skein_codec::Reason::Bool }) };
-        Self::new(limits, CharterParts { instructions: decoded_instructions, brief: decoded_brief, tools: decoded_tools, contract: decoded_contract, conventions: decoded_conventions, budget: decoded_budget, main: decoded_main, models: decoded_models, waiting: decoded_waiting, resume: decoded_resume })
+        Ok(Self { instructions: decoded_instructions, brief: decoded_brief, tools: decoded_tools, contract: decoded_contract, conventions: decoded_conventions, budget: decoded_budget, main: decoded_main, models: decoded_models, waiting: decoded_waiting, resume: decoded_resume })
     }
 }
 
@@ -2966,7 +2337,7 @@ impl Field {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_name = match skein_codec::read_text(reader, limits.field_name.min(CEILINGS.field_name)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::FieldName, reason }), };
         let decoded_text = match skein_codec::read_text(reader, limits.field_text.min(CEILINGS.field_text)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::FieldText, reason }), };
-        Self::new(limits, FieldParts { name: decoded_name, text: decoded_text })
+        Ok(Self { name: decoded_name, text: decoded_text })
     }
 }
 
@@ -3009,7 +2380,7 @@ impl Item {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_kind = match skein_codec::read_text(reader, limits.item_kind.min(CEILINGS.item_kind)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::ItemKind, reason }), };
         let decoded_fields = { let count = match skein_codec::read_count(reader, limits.item_fields.min(CEILINGS.item_fields)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::ItemFields, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::ItemFields, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Field::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, ItemParts { kind: decoded_kind, fields: decoded_fields })
+        Ok(Self { kind: decoded_kind, fields: decoded_fields })
     }
 }
 
@@ -3040,7 +2411,7 @@ impl Form {
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let tag = reader.u8().ok_or(Problem { path: Path::FormTag, reason: skein_codec::Reason::Short })?;
         let value = match tag {
             0 => Self::Report,
@@ -3049,7 +2420,7 @@ impl Form {
             3 => Self::Failure,
             _ => return Err(Problem { path: Path::FormTag, reason: skein_codec::Reason::Tag }),
         };
-        Self::new(limits, value)
+        Ok(value)
     }
 }
 
@@ -3128,19 +2499,15 @@ impl RunResult {
         let decoded_text = match skein_codec::read_text(reader, limits.run_result_text.min(CEILINGS.run_result_text)) { Ok(text) => text, Err(reason) => return Err(Problem { path: Path::RunResultText, reason }), };
         let decoded_fields = { let count = match skein_codec::read_count(reader, limits.run_result_fields.min(CEILINGS.run_result_fields)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::RunResultFields, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::RunResultFields, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Field::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_items = { let count = match skein_codec::read_count(reader, limits.run_result_items.min(CEILINGS.run_result_items)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::RunResultItems, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::RunResultItems, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Item::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, RunResultParts { form: decoded_form, label: decoded_label, text: decoded_text, fields: decoded_fields, items: decoded_items })
+        Ok(Self { form: decoded_form, label: decoded_label, text: decoded_text, fields: decoded_fields, items: decoded_items })
     }
-}
-
-fn limits_valid(limits: &Limits) -> bool {
-    limits.section_title <= CEILINGS.section_title && limits.section_body <= CEILINGS.section_body && limits.host_tool_name <= CEILINGS.host_tool_name && limits.host_tool_description <= CEILINGS.host_tool_description && limits.host_tool_input <= CEILINGS.host_tool_input && limits.field_rule_name <= CEILINGS.field_rule_name && limits.text_rule_fields <= CEILINGS.text_rule_fields && limits.item_kind_kind <= CEILINGS.item_kind_kind && limits.item_kind_fields <= CEILINGS.item_kind_fields && limits.verdict_rule_label <= CEILINGS.verdict_rule_label && limits.verdict_rule_fields <= CEILINGS.verdict_rule_fields && limits.verdict_rule_kinds <= CEILINGS.verdict_rule_kinds && limits.change_rule_fields <= CEILINGS.change_rule_fields && limits.contract_verdicts <= CEILINGS.contract_verdicts && limits.tools_host <= CEILINGS.tools_host && limits.conventions_guide <= CEILINGS.conventions_guide && limits.conventions_checks <= CEILINGS.conventions_checks && limits.llm_endpoint <= CEILINGS.llm_endpoint && limits.llm_model <= CEILINGS.llm_model && limits.charter_instructions <= CEILINGS.charter_instructions && limits.charter_brief <= CEILINGS.charter_brief && limits.charter_models <= CEILINGS.charter_models && limits.field_name <= CEILINGS.field_name && limits.field_text <= CEILINGS.field_text && limits.item_kind <= CEILINGS.item_kind && limits.item_fields <= CEILINGS.item_fields && limits.run_result_label_some <= CEILINGS.run_result_label_some && limits.run_result_text <= CEILINGS.run_result_text && limits.run_result_fields <= CEILINGS.run_result_fields && limits.run_result_items <= CEILINGS.run_result_items
 }
 
 impl Section {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.section_title))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.section_body))?)?;
@@ -3150,7 +2517,7 @@ impl Section {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.section_title))?;
         heap = heap.checked_add(u64::from(limits.section_body))?;
@@ -3162,7 +2529,7 @@ impl Families {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
         size = size.checked_add(1_u64)?;
@@ -3174,7 +2541,7 @@ impl Families {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -3188,7 +2555,7 @@ impl Effect {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         1_u64.checked_add(biggest)
     }
@@ -3196,7 +2563,7 @@ impl Effect {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         Some(biggest)
     }
@@ -3206,7 +2573,7 @@ impl HostTool {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.host_tool_name))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.host_tool_description))?)?;
@@ -3219,7 +2586,7 @@ impl HostTool {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.host_tool_name))?;
         heap = heap.checked_add(u64::from(limits.host_tool_description))?;
@@ -3234,7 +2601,7 @@ impl FieldRule {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.field_rule_name))?)?;
         size = size.checked_add(4_u64)?;
@@ -3244,7 +2611,7 @@ impl FieldRule {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.field_rule_name))?;
         heap = heap.checked_add(0_u64)?;
@@ -3256,7 +2623,7 @@ impl TextRule {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.text_rule_fields).checked_mul(FieldRule::worst_case_bytes(limits)?)?)?)?;
@@ -3266,7 +2633,7 @@ impl TextRule {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(List::<FieldRule>::worst_case(limits.text_rule_fields)?.checked_add(u64::from(limits.text_rule_fields).checked_mul(FieldRule::worst_case_heap(limits)?)?)?)?;
@@ -3278,7 +2645,7 @@ impl ItemKind {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.item_kind_kind))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.item_kind_fields).checked_mul(FieldRule::worst_case_bytes(limits)?)?)?)?;
@@ -3288,7 +2655,7 @@ impl ItemKind {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.item_kind_kind))?;
         heap = heap.checked_add(List::<FieldRule>::worst_case(limits.item_kind_fields)?.checked_add(u64::from(limits.item_kind_fields).checked_mul(FieldRule::worst_case_heap(limits)?)?)?)?;
@@ -3300,7 +2667,7 @@ impl VerdictRule {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.verdict_rule_label))?)?;
         size = size.checked_add(4_u64)?;
@@ -3314,7 +2681,7 @@ impl VerdictRule {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.verdict_rule_label))?;
         heap = heap.checked_add(0_u64)?;
@@ -3330,7 +2697,7 @@ impl ChangeRule {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.change_rule_fields).checked_mul(FieldRule::worst_case_bytes(limits)?)?)?)?;
@@ -3340,7 +2707,7 @@ impl ChangeRule {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(List::<FieldRule>::worst_case(limits.change_rule_fields)?.checked_add(u64::from(limits.change_rule_fields).checked_mul(FieldRule::worst_case_heap(limits)?)?)?)?;
@@ -3352,7 +2719,7 @@ impl Contract {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64.checked_add(TextRule::worst_case_bytes(limits)?)?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.contract_verdicts).checked_mul(VerdictRule::worst_case_bytes(limits)?)?)?)?;
@@ -3364,7 +2731,7 @@ impl Contract {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(TextRule::worst_case_heap(limits)?)?;
         heap = heap.checked_add(List::<VerdictRule>::worst_case(limits.contract_verdicts)?.checked_add(u64::from(limits.contract_verdicts).checked_mul(VerdictRule::worst_case_heap(limits)?)?)?)?;
@@ -3378,7 +2745,7 @@ impl Tools {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(Families::worst_case_bytes(limits)?)?;
         size = size.checked_add(1_u64)?;
@@ -3390,7 +2757,7 @@ impl Tools {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(Families::worst_case_heap(limits)?)?;
         heap = heap.checked_add(0_u64)?;
@@ -3404,7 +2771,7 @@ impl Conventions {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.conventions_guide))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.conventions_checks))?)?;
@@ -3414,7 +2781,7 @@ impl Conventions {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.conventions_guide))?;
         heap = heap.checked_add(u64::from(limits.conventions_checks))?;
@@ -3426,7 +2793,7 @@ impl Prices {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(8_u64)?;
         size = size.checked_add(8_u64)?;
@@ -3439,7 +2806,7 @@ impl Prices {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -3454,7 +2821,7 @@ impl Llm {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.llm_endpoint))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.llm_model))?)?;
@@ -3467,7 +2834,7 @@ impl Llm {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.llm_endpoint))?;
         heap = heap.checked_add(u64::from(limits.llm_model))?;
@@ -3482,7 +2849,7 @@ impl Reserve {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
         size = size.checked_add(8_u64)?;
@@ -3492,7 +2859,7 @@ impl Reserve {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -3504,7 +2871,7 @@ impl Budget {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
         size = size.checked_add(8_u64)?;
@@ -3516,7 +2883,7 @@ impl Budget {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -3530,7 +2897,7 @@ impl Charter {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 2_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.charter_instructions))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.charter_brief).checked_mul(Section::worst_case_bytes(limits)?)?)?)?;
@@ -3548,7 +2915,7 @@ impl Charter {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.charter_instructions))?;
         heap = heap.checked_add(List::<Section>::worst_case(limits.charter_brief)?.checked_add(u64::from(limits.charter_brief).checked_mul(Section::worst_case_heap(limits)?)?)?)?;
@@ -3568,7 +2935,7 @@ impl Field {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.field_name))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.field_text))?)?;
@@ -3578,7 +2945,7 @@ impl Field {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.field_name))?;
         heap = heap.checked_add(u64::from(limits.field_text))?;
@@ -3590,7 +2957,7 @@ impl Item {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.item_kind))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.item_fields).checked_mul(Field::worst_case_bytes(limits)?)?)?)?;
@@ -3600,7 +2967,7 @@ impl Item {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.item_kind))?;
         heap = heap.checked_add(List::<Field>::worst_case(limits.item_fields)?.checked_add(u64::from(limits.item_fields).checked_mul(Field::worst_case_heap(limits)?)?)?)?;
@@ -3612,7 +2979,7 @@ impl Form {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         1_u64.checked_add(biggest)
     }
@@ -3620,7 +2987,7 @@ impl Form {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         Some(biggest)
     }
@@ -3630,7 +2997,7 @@ impl RunResult {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 2_u64;
         size = size.checked_add(Form::worst_case_bytes(limits)?)?;
         size = size.checked_add(1_u64.checked_add(4_u64.checked_add(u64::from(limits.run_result_label_some))?)?)?;
@@ -3643,7 +3010,7 @@ impl RunResult {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(Form::worst_case_heap(limits)?)?;
         heap = heap.checked_add(u64::from(limits.run_result_label_some))?;
@@ -3657,7 +3024,7 @@ impl RunResult {
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Section::worst_case_bytes(limits)?);
     biggest = biggest.max(Families::worst_case_bytes(limits)?);
@@ -3686,7 +3053,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 /// Maximum heap held by one decoded top-level value.
 #[must_use]
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Section::worst_case_heap(limits)?);
     biggest = biggest.max(Families::worst_case_heap(limits)?);
@@ -3714,1087 +3081,151 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Section, SectionParts, Families, FamiliesParts, Effect, HostTool, HostToolParts, FieldRule, FieldRuleParts, TextRule, TextRuleParts, ItemKind, ItemKindParts, VerdictRule, VerdictRuleParts, ChangeRule, ChangeRuleParts, Contract, ContractParts, Tools, ToolsParts, Conventions, ConventionsParts, Prices, PricesParts, Llm, LlmParts, Reserve, ReserveParts, Budget, BudgetParts, Charter, CharterParts, Field, FieldParts, Item, ItemParts, Form, RunResult, RunResultParts};
+    use super::{CEILINGS, Section, SectionParts, Families, FamiliesParts, Effect, HostTool, HostToolParts, FieldRule, FieldRuleParts, TextRule, TextRuleParts, ItemKind, ItemKindParts, VerdictRule, VerdictRuleParts, ChangeRule, ChangeRuleParts, Contract, ContractParts, Tools, ToolsParts, Conventions, ConventionsParts, Prices, PricesParts, Llm, LlmParts, Reserve, ReserveParts, Budget, BudgetParts, Charter, CharterParts, Field, FieldParts, Item, ItemParts, Form, RunResult, RunResultParts, Path};
+    use super::Limits;
+
     use alloc::boxed::Box;
 
-    #[test]
-    fn record_section_smallest() {
-        let value = Section::new(&CEILINGS, SectionParts { title: Box::from([].as_slice()), body: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Section::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
+    type Case = (&'static str, fn() -> bool);
 
-    #[test]
-    fn record_section_full() {
-        let value = Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Section::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_families_smallest() {
-        let value = Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Families::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_families_full() {
-        let value = Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 1, 1, 1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Families::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_effect_read_smallest() {
-        let value = Effect::Read;
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_effect_read_full() {
-        let value = Effect::Read;
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_effect_write_smallest() {
-        let value = Effect::Write;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_effect_write_full() {
-        let value = Effect::Write;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_host_tool_smallest() {
-        let value = HostTool::new(&CEILINGS, HostToolParts { name: Box::from([].as_slice()), description: Box::from([].as_slice()), input: Box::from([].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_host_tool_full() {
-        let value = HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_field_rule_smallest() {
-        let value = FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([].as_slice()), max: 0_u32 }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_field_rule_full() {
-        let value = FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_text_rule_smallest() {
-        let value = TextRule::new(&CEILINGS, TextRuleParts { max: 0_u32, fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_text_rule_full() {
-        let value = TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_item_kind_smallest() {
-        let value = ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_item_kind_full() {
-        let value = ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_verdict_rule_smallest() {
-        let value = VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([].as_slice()), text_max: 0_u32, fields: skein_lib::List::with_capacity(0), least: 0_u32, most: 0_u32, kinds: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_verdict_rule_full() {
-        let value = VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_change_rule_smallest() {
-        let value = ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: false, fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_change_rule_full() {
-        let value = ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_contract_smallest() {
-        let value = Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_contract_full() {
-        let value = Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_tools_smallest() {
-        let value = Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_tools_full() {
-        let value = Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_conventions_smallest() {
-        let value = Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([].as_slice()), checks: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_conventions_full() {
-        let value = Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_prices_smallest() {
-        let value = Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Prices::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_prices_full() {
-        let value = Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Prices::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_llm_smallest() {
-        let value = Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_llm_full() {
-        let value = Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_reserve_smallest() {
-        let value = Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_reserve_full() {
-        let value = Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_budget_smallest() {
-        let value = Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Budget::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_budget_full() {
-        let value = Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Budget::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_charter_smallest() {
-        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([].as_slice()), brief: skein_lib::List::with_capacity(0), tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings"), conventions: None, budget: Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings"), models: skein_lib::List::with_capacity(0), waiting: skein_lib::Duration::from_nanos(0_u64), resume: false }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_charter_full() {
-        let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([97_u8, 98_u8, 99_u8].as_slice()), brief: { let mut items = skein_lib::List::with_capacity(1); items.push(Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings"), conventions: Some(Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")), budget: Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings"), models: { let mut items = skein_lib::List::with_capacity(1); items.push(Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, waiting: skein_lib::Duration::from_nanos(u64::MAX), resume: true }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_field_smallest() {
-        let value = Field::new(&CEILINGS, FieldParts { name: Box::from([].as_slice()), text: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Field::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_field_full() {
-        let value = Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Field::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_item_smallest() {
-        let value = Item::new(&CEILINGS, ItemParts { kind: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Item::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_item_full() {
-        let value = Item::new(&CEILINGS, ItemParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Item::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_report_smallest() {
-        let value = Form::Report;
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_report_full() {
-        let value = Form::Report;
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_verdict_smallest() {
-        let value = Form::Verdict;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_verdict_full() {
-        let value = Form::Verdict;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_change_smallest() {
-        let value = Form::Change;
-        let golden: &[u8] = &[2];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_change_full() {
-        let value = Form::Change;
-        let golden: &[u8] = &[2];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_failure_smallest() {
-        let value = Form::Failure;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_form_failure_full() {
-        let value = Form::Failure;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Form::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_run_result_smallest() {
-        let value = RunResult::new(&CEILINGS, RunResultParts { form: Form::Report, label: None, text: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), items: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_run_result_full() {
-        let value = RunResult::new(&CEILINGS, RunResultParts { form: Form::Report, label: Some(Box::from([97_u8, 98_u8, 99_u8].as_slice())), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, items: { let mut items = skein_lib::List::with_capacity(1); items.push(Item::new(&CEILINGS, ItemParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 2, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn bound_section_title() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
+    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+        let mut failures = [None; N];
+        let mut passed = true;
+        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+            if !case() {
+                *failure = Some(name);
+                passed = false;
             }
-            writer.finish()
         }
-        Section::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_024, true))).expect("field at ceiling");
-        let problem = Section::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_025, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::SectionTitle, skein_codec::Reason::Bound));
+        assert!(passed, "{failures:?}");
+    }
+
+    pub(super) fn golden<T: PartialEq, E, D>(
+        value: T,
+        bytes: &[u8],
+        encoded: Result<Box<[u8]>, E>,
+        decoded: Result<T, D>,
+    ) -> bool {
+        let encoded = match encoded {
+            Ok(encoded) => encoded.as_ref() == bytes,
+            Err(_) => false,
+        };
+        let decoded = match decoded {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        };
+        encoded && decoded
+    }
+
+    type BoundDecode<T, L, P, R> = fn(&L, &[u8]) -> Result<T, (P, R)>;
+
+    pub(super) fn bound<T, L, P: PartialEq, R: PartialEq>(
+        label: (P, R),
+        limits: &L,
+        at: &[u8],
+        past: &[u8],
+        decode: BoundDecode<T, L, P, R>,
+    ) -> bool {
+        let (path, reason) = label;
+        let at = decode(limits, at).is_ok();
+        let past = match decode(limits, past) {
+            Err((found_path, found_reason)) => found_path == path && found_reason == reason,
+            Ok(_) => false,
+        };
+        at && past
+    }
+    #[test]
+    fn golden_0() {
+        const CASES: [Case; 50] = [
+        ("record_section_smallest", || { let value = Section::new(&CEILINGS, SectionParts { title: Box::from([].as_slice()), body: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Section::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_section_full", || { let value = Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Section::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_families_smallest", || { let value = Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Families::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_families_full", || { let value = Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 1, 1, 1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Families::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_read_smallest", || { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_read_full", || { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_write_smallest", || { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_write_full", || { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_host_tool_smallest", || { let value = HostTool::new(&CEILINGS, HostToolParts { name: Box::from([].as_slice()), description: Box::from([].as_slice()), input: Box::from([].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_host_tool_full", || { let value = HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_field_rule_smallest", || { let value = FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([].as_slice()), max: 0_u32 }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_field_rule_full", || { let value = FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_text_rule_smallest", || { let value = TextRule::new(&CEILINGS, TextRuleParts { max: 0_u32, fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_text_rule_full", || { let value = TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_item_kind_smallest", || { let value = ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_item_kind_full", || { let value = ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_verdict_rule_smallest", || { let value = VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([].as_slice()), text_max: 0_u32, fields: skein_lib::List::with_capacity(0), least: 0_u32, most: 0_u32, kinds: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_verdict_rule_full", || { let value = VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_change_rule_smallest", || { let value = ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: false, fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_change_rule_full", || { let value = ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_contract_smallest", || { let value = Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_contract_full", || { let value = Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_tools_smallest", || { let value = Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_tools_full", || { let value = Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_conventions_smallest", || { let value = Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([].as_slice()), checks: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_conventions_full", || { let value = Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_prices_smallest", || { let value = Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Prices::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_prices_full", || { let value = Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Prices::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_llm_smallest", || { let value = Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_llm_full", || { let value = Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_reserve_smallest", || { let value = Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_reserve_full", || { let value = Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Reserve::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_budget_smallest", || { let value = Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Budget::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_budget_full", || { let value = Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Budget::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_charter_smallest", || { let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([].as_slice()), brief: skein_lib::List::with_capacity(0), tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [false, false, false, false] }).expect("golden within ceilings"), wait: false, deliver: None, host: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: None, verdicts: skein_lib::List::with_capacity(0), change: None, failure: None }).expect("golden within ceilings"), conventions: None, budget: Budget::new(&CEILINGS, BudgetParts { turns: 0_u32, spend: 0_u64, time: skein_lib::Duration::from_nanos(0_u64), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: 0_u32, time: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([].as_slice()), model: Box::from([].as_slice()), window: 0_u32, output: 0_u32, prices: Prices::new(&CEILINGS, PricesParts { input: 0_u64, cached: 0_u64, cache_write: None, output: 0_u64, unit: 0_u32 }).expect("golden within ceilings") }).expect("golden within ceilings"), models: skein_lib::List::with_capacity(0), waiting: skein_lib::Duration::from_nanos(0_u64), resume: false }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_charter_full", || { let value = Charter::new(&CEILINGS, CharterParts { instructions: Box::from([97_u8, 98_u8, 99_u8].as_slice()), brief: { let mut items = skein_lib::List::with_capacity(1); items.push(Section::new(&CEILINGS, SectionParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), body: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, tools: Tools::new(&CEILINGS, ToolsParts { families: Families::new(&CEILINGS, FamiliesParts { skein_bools: [true, true, true, true] }).expect("golden within ceilings"), wait: true, deliver: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), host: { let mut items = skein_lib::List::with_capacity(1); items.push(HostTool::new(&CEILINGS, HostToolParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), description: Box::from([97_u8, 98_u8, 99_u8].as_slice()), input: Box::from([0_u8, 127_u8, 255_u8].as_slice()), effect: Effect::Read, deadline: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"), contract: Contract::new(&CEILINGS, ContractParts { report: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), verdicts: { let mut items = skein_lib::List::with_capacity(1); items.push(VerdictRule::new(&CEILINGS, VerdictRuleParts { label: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text_max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items }, least: u32::MAX, most: u32::MAX, kinds: { let mut items = skein_lib::List::with_capacity(1); items.push(ItemKind::new(&CEILINGS, ItemKindParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items }, change: Some(ChangeRule::new(&CEILINGS, ChangeRuleParts { checks_must_pass: true, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")), failure: Some(TextRule::new(&CEILINGS, TextRuleParts { max: u32::MAX, fields: { let mut items = skein_lib::List::with_capacity(1); items.push(FieldRule::new(&CEILINGS, FieldRuleParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), max: u32::MAX }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")) }).expect("golden within ceilings"), conventions: Some(Conventions::new(&CEILINGS, ConventionsParts { guide: Box::from([97_u8, 98_u8, 99_u8].as_slice()), checks: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")), budget: Budget::new(&CEILINGS, BudgetParts { turns: u32::MAX, spend: u64::MAX, time: skein_lib::Duration::from_nanos(u64::MAX), reserve: Reserve::new(&CEILINGS, ReserveParts { turns: u32::MAX, time: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings") }).expect("golden within ceilings"), main: Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings"), models: { let mut items = skein_lib::List::with_capacity(1); items.push(Llm::new(&CEILINGS, LlmParts { endpoint: Box::from([97_u8, 98_u8, 99_u8].as_slice()), model: Box::from([97_u8, 98_u8, 99_u8].as_slice()), window: u32::MAX, output: u32::MAX, prices: Prices::new(&CEILINGS, PricesParts { input: u64::MAX, cached: u64::MAX, cache_write: Some(u64::MAX), output: u64::MAX, unit: u32::MAX }).expect("golden within ceilings") }).expect("golden within ceilings")).expect("one slot"); items }, waiting: skein_lib::Duration::from_nanos(u64::MAX), resume: true }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 2, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 1, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_field_smallest", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([].as_slice()), text: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_field_full", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_item_smallest", || { let value = Item::new(&CEILINGS, ItemParts { kind: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Item::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_item_full", || { let value = Item::new(&CEILINGS, ItemParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Item::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_report_smallest", || { let value = Form::Report; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_report_full", || { let value = Form::Report; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_verdict_smallest", || { let value = Form::Verdict; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_verdict_full", || { let value = Form::Verdict; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_change_smallest", || { let value = Form::Change; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_change_full", || { let value = Form::Change; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_failure_smallest", || { let value = Form::Failure; let bytes: &[u8] = &[3]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_form_failure_full", || { let value = Form::Failure; let bytes: &[u8] = &[3]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Form::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_run_result_smallest", || { let value = RunResult::new(&CEILINGS, RunResultParts { form: Form::Report, label: None, text: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), items: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_run_result_full", || { let value = RunResult::new(&CEILINGS, RunResultParts { form: Form::Report, label: Some(Box::from([97_u8, 98_u8, 99_u8].as_slice())), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, items: { let mut items = skein_lib::List::with_capacity(1); items.push(Item::new(&CEILINGS, ItemParts { kind: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), text: Box::from([97_u8, 98_u8, 99_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings")).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 2, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 97, 98, 99]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ];
+        table(CASES);
     }
 
     #[test]
-    fn bound_section_body() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Section::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_144, true))).expect("field at ceiling");
-        let problem = Section::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_145, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::SectionBody, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_host_tool_name() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(17_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::HostToolName, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_host_tool_description() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(13_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(8_192, true))).expect("field at ceiling");
-        let problem = HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(8_193, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::HostToolDescription, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_host_tool_input() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(9_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65_536, true))).expect("field at ceiling");
-        let problem = HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65_537, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::HostToolInput, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_field_rule_name() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = FieldRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::FieldRuleName, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_text_rule_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = TextRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::TextRuleFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_item_kind_kind() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ItemKindKind, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_item_kind_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = ItemKind::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ItemKindFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_verdict_rule_label() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(20_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::VerdictRuleLabel, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_verdict_rule_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(12_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::VerdictRuleFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_verdict_rule_kinds() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 20_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = VerdictRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::VerdictRuleKinds, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_change_rule_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 1_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = ChangeRule::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ChangeRuleFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_contract_verdicts() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(24).expect("schema ceiling");
-            let header = 1_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(2_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = Contract::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ContractVerdicts, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_tools_host() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(21).expect("schema ceiling");
-            let header = 6_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(128, true))).expect("field at ceiling");
-        let problem = Tools::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(129, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ToolsHost, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_conventions_guide() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_024, true))).expect("field at ceiling");
-        let problem = Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_025, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ConventionsGuide, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_conventions_checks() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_024, true))).expect("field at ceiling");
-        let problem = Conventions::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(1_025, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ConventionsChecks, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_llm_endpoint() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(41_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LlmEndpoint, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_llm_model() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(37_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(128, true))).expect("field at ceiling");
-        let problem = Llm::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(129, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LlmModel, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_charter_instructions() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 2_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(112_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_144, true))).expect("field at ceiling");
-        let problem = Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_145, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::CharterInstructions, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_charter_brief() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 6_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(108_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::CharterBrief, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_charter_models() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(45).expect("schema ceiling");
-            let header = 105_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(9_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(16, true))).expect("field at ceiling");
-        let problem = Charter::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(17, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::CharterModels, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_field_name() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Field::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Field::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::FieldName, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_field_text() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Field::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_144, true))).expect("field at ceiling");
-        let problem = Field::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_145, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::FieldText, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_item_kind() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Item::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(64, true))).expect("field at ceiling");
-        let problem = Item::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(65, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ItemKind, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_item_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Item::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = Item::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::ItemFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_run_result_text() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(8_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_144, true))).expect("field at ceiling");
-        let problem = RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(262_145, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::RunResultText, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_run_result_fields() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(32, true))).expect("field at ceiling");
-        let problem = RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(33, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::RunResultFields, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_run_result_items() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 12_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(256, true))).expect("field at ceiling");
-        let problem = RunResult::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(257, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::RunResultItems, skein_codec::Reason::Bound));
+    fn bounds_0() {
+        const CASES: [Case; 30] = [
+        ("bound_section_title", || bound((Path::SectionTitle, skein_codec::Reason::Bound), &Limits { section_title: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Section::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_section_body", || bound((Path::SectionBody, skein_codec::Reason::Bound), &Limits { section_body: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Section::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_host_tool_name", || bound((Path::HostToolName, skein_codec::Reason::Bound), &Limits { host_tool_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match HostTool::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_host_tool_description", || bound((Path::HostToolDescription, skein_codec::Reason::Bound), &Limits { host_tool_description: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match HostTool::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_host_tool_input", || bound((Path::HostToolInput, skein_codec::Reason::Bound), &Limits { host_tool_input: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match HostTool::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_field_rule_name", || bound((Path::FieldRuleName, skein_codec::Reason::Bound), &Limits { field_rule_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match FieldRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_text_rule_fields", || bound((Path::TextRuleFields, skein_codec::Reason::Bound), &Limits { text_rule_fields: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match TextRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_item_kind_kind", || bound((Path::ItemKindKind, skein_codec::Reason::Bound), &Limits { item_kind_kind: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match ItemKind::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_item_kind_fields", || bound((Path::ItemKindFields, skein_codec::Reason::Bound), &Limits { item_kind_fields: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match ItemKind::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_verdict_rule_label", || bound((Path::VerdictRuleLabel, skein_codec::Reason::Bound), &Limits { verdict_rule_label: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match VerdictRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_verdict_rule_fields", || bound((Path::VerdictRuleFields, skein_codec::Reason::Bound), &Limits { verdict_rule_fields: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match VerdictRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_verdict_rule_kinds", || bound((Path::VerdictRuleKinds, skein_codec::Reason::Bound), &Limits { verdict_rule_kinds: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match VerdictRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_change_rule_fields", || bound((Path::ChangeRuleFields, skein_codec::Reason::Bound), &Limits { change_rule_fields: 3, ..CEILINGS }, &[0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match ChangeRule::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_contract_verdicts", || bound((Path::ContractVerdicts, skein_codec::Reason::Bound), &Limits { contract_verdicts: 3, ..CEILINGS }, &[0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Contract::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_tools_host", || bound((Path::ToolsHost, skein_codec::Reason::Bound), &Limits { tools_host: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Tools::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_conventions_guide", || bound((Path::ConventionsGuide, skein_codec::Reason::Bound), &Limits { conventions_guide: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Conventions::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_conventions_checks", || bound((Path::ConventionsChecks, skein_codec::Reason::Bound), &Limits { conventions_checks: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Conventions::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_llm_endpoint", || bound((Path::LlmEndpoint, skein_codec::Reason::Bound), &Limits { llm_endpoint: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Llm::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_llm_model", || bound((Path::LlmModel, skein_codec::Reason::Bound), &Limits { llm_model: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Llm::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_charter_instructions", || bound((Path::CharterInstructions, skein_codec::Reason::Bound), &Limits { charter_instructions: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Charter::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_charter_brief", || bound((Path::CharterBrief, skein_codec::Reason::Bound), &Limits { charter_brief: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Charter::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_charter_models", || bound((Path::CharterModels, skein_codec::Reason::Bound), &Limits { charter_models: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Charter::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_field_name", || bound((Path::FieldName, skein_codec::Reason::Bound), &Limits { field_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_field_text", || bound((Path::FieldText, skein_codec::Reason::Bound), &Limits { field_text: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_item_kind", || bound((Path::ItemKind, skein_codec::Reason::Bound), &Limits { item_kind: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Item::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_item_fields", || bound((Path::ItemFields, skein_codec::Reason::Bound), &Limits { item_fields: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Item::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_run_result_label_some", || bound((Path::RunResultLabel, skein_codec::Reason::Bound), &Limits { run_result_label_some: 3, ..CEILINGS }, &[0, 2, 0, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match RunResult::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_run_result_text", || bound((Path::RunResultText, skein_codec::Reason::Bound), &Limits { run_result_text: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match RunResult::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_run_result_fields", || bound((Path::RunResultFields, skein_codec::Reason::Bound), &Limits { run_result_fields: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match RunResult::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_run_result_items", || bound((Path::RunResultItems, skein_codec::Reason::Bound), &Limits { run_result_items: 3, ..CEILINGS }, &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match RunResult::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ];
+        table(CASES);
     }
 
 }

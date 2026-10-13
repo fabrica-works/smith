@@ -68,7 +68,7 @@ pub struct Local {
     tokens: Tokens,
     accounts: Box<[Auth]>,
     credential_locations: skein_lib::List<crate::credentials::Location>,
-    writer: io::Io,
+    writer: Option<io::Io>,
     env: Env<io::Limits>,
     output: Token,
     launch_root: Option<kernel::Fd>,
@@ -224,10 +224,12 @@ impl Local {
             None => skein_lib::List::with_capacity(0),
         };
         let tokens = Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?;
-        let mut writer = io::Io::new(&io_limits);
-        let output = writer
-            .adopt_write_pipe(resources.output)
-            .map_err(|_| host_failure("terminal output cannot be adopted".into()))?;
+        let mut writer = if service.inline() { None } else { Some(io::Io::new(&io_limits)) };
+        let output = match &mut writer {
+            Some(writer) => writer.adopt_write_pipe(resources.output, None),
+            None => service.adopt_writer(resources.output),
+        }
+        .map_err(|_| host_failure("terminal output cannot be adopted".into()))?;
         let requests = Queue::with_capacity(queue);
         let accounts = resources
             .accounts
@@ -321,6 +323,35 @@ impl Local {
     /// Content-free service facts available to the caller's independent referee.
     pub fn pop_fact(&mut self) -> Option<domain::Fact> {
         self.service.pop_fact()
+    }
+
+    /// The inline product's admitted ownership by part, including its front and routing.
+    pub fn memory_parts(
+        limits: &service::Limits,
+        lower: &agent::Config,
+        accounts: u32,
+        lower_routes: u32,
+    ) -> Result<Vec<(&'static str, u64)>, String> {
+        let mut parts = Vec::new();
+        for (name, value) in service::memory_parts(limits).ok_or_else(|| derivation_refusal("local_parts"))? {
+            if name != "effects_and_io" {
+                parts.push((name, value));
+            }
+        }
+        let effects = agent::effects_parts(&lower.limits, &lower.llm_endpoints)
+            .ok_or_else(|| derivation_refusal("effects_parts"))?;
+        let io = agent::io_worst_case(&lower.limits).ok_or_else(|| derivation_refusal("io_parts"))?;
+        let expected = effects
+            .iter()
+            .try_fold(io, |total, (_, value)| total.checked_add(*value))
+            .ok_or_else(|| derivation_refusal("effects_parts"))?;
+        if limits.inline.as_ref().map(|inline| inline.memory) != Some(expected) {
+            return Err(derivation_refusal("inline_parts"));
+        }
+        parts.extend(effects);
+        parts.push(("io", io));
+        parts.extend(shell_parts(limits, accounts, lower_routes)?);
+        Ok(parts)
     }
 
     /// The completed invocation's status after every lower close settles.
@@ -496,19 +527,25 @@ impl Local {
     }
 
     fn writer_up(&mut self) {
-        while self.writer.is_ready() {
-            io::resume(&mut self.writer, &self.env, &mut self.events, &mut self.store_submissions);
-        }
-        for _ in 0..self.store_completions.capacity() {
-            let Some(complete) = self.store_completions.pop() else { break };
-            io::up(&mut self.writer, &self.env, complete, &mut self.events, &mut self.store_submissions);
-        }
-        for _ in 0..self.env.limits.sockets {
-            if self.writer.is_ready() {
-                io::resume(&mut self.writer, &self.env, &mut self.events, &mut self.store_submissions);
+        if let Some(writer) = &mut self.writer {
+            while writer.is_ready() {
+                io::resume(writer, &self.env, &mut self.events, &mut self.store_submissions);
             }
-            if self.writer.is_due(self.env.now) {
-                io::fire(&mut self.writer, &self.env, &mut self.events, &mut self.store_submissions);
+            for _ in 0..self.store_completions.capacity() {
+                let Some(complete) = self.store_completions.pop() else { break };
+                io::up(writer, &self.env, complete, &mut self.events, &mut self.store_submissions);
+            }
+            for _ in 0..self.env.limits.sockets {
+                if writer.is_ready() {
+                    io::resume(writer, &self.env, &mut self.events, &mut self.store_submissions);
+                }
+                if writer.is_due(self.env.now) {
+                    io::fire(writer, &self.env, &mut self.events, &mut self.store_submissions);
+                }
+            }
+        } else {
+            while let Some(event) = self.service.writer_events().pop() {
+                self.events.push(event);
             }
         }
         while let Some(event) = self.events.pop() {
@@ -590,11 +627,18 @@ impl Local {
             }
             Terminal::Live | Terminal::Closing(_) | Terminal::Closed => {}
         }
-        while self.writer.takes() {
-            let Some(request) = self.requests.pop() else { break };
-            io::down(&mut self.writer, &self.env, request, &mut self.store_submissions);
+        if let Some(writer) = &mut self.writer {
+            while writer.takes() {
+                let Some(request) = self.requests.pop() else { break };
+                io::down(writer, &self.env, request, &mut self.store_submissions);
+            }
+            writer.reclaim();
+        } else {
+            while self.service.writer_requests().room() > 0 {
+                let Some(request) = self.requests.pop() else { break };
+                self.service.writer_requests().push(request);
+            }
         }
-        self.writer.reclaim();
     }
     fn submit(&mut self, submit: kernel::Submit, route: Route) {
         let kind = match submit.kind {
@@ -706,7 +750,7 @@ impl Host for Local {
         self.writer_down();
         if self.service.closing()
             && self.terminal == Terminal::Closed
-            && self.writer.is_empty()
+            && self.writer.as_ref().is_none_or(io::Io::is_empty)
             && self.accounts.iter().all(Auth::closed)
             && self.launch_root.is_none()
             && !self.launch_closing
@@ -734,8 +778,8 @@ impl Host for Local {
     fn work_pending(&self, now: Time) -> bool {
         self.service.work_pending(now)
             || self.accounts.iter().any(Auth::pending)
-            || self.writer.is_ready()
-            || self.writer.is_due(now)
+            || self.writer.as_ref().is_some_and(io::Io::is_ready)
+            || self.writer.as_ref().is_some_and(|writer| writer.is_due(now))
             || !self.completions.is_empty()
             || !self.store_completions.is_empty()
             || !self.store_submissions.is_empty()
@@ -743,7 +787,7 @@ impl Host for Local {
             || !self.requests.is_empty()
     }
     fn next_deadline(&self) -> Option<Time> {
-        [self.service.next_deadline(), self.writer.next_deadline()]
+        [self.service.next_deadline(), self.writer.as_ref().and_then(io::Io::next_deadline)]
             .into_iter()
             .flatten()
             .chain(self.accounts.iter().filter_map(Auth::deadline))
@@ -758,7 +802,7 @@ impl Host for Local {
     fn is_empty(&self) -> bool {
         self.exit.is_some()
             && self.terminal == Terminal::Closed
-            && self.writer.is_empty()
+            && self.writer.as_ref().is_none_or(io::Io::is_empty)
             && self.pending.is_none()
             && self.routes.is_empty()
             && !self.launch_closing
@@ -819,34 +863,44 @@ fn derivation_refusal(field: &'static str) -> String {
 
 /// The constructor and offline startup checks share one complete shell accounting entrance.
 fn accounted_memory(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<u64, String> {
-    let mut worst = service::worst_case(limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
+    let mut total = service::worst_case(limits).ok_or_else(|| derivation_refusal("local_worst_case"))?;
+    for (_, value) in shell_parts(limits, accounts, lower_routes)? {
+        total = total.checked_add(value).ok_or_else(|| derivation_refusal("local_worst_case"))?;
+    }
+    Ok(total)
+}
+
+fn shell_parts(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Result<[(&'static str, u64); 4], String> {
     let queue = limits.queue;
     let show_bytes = limits.local.show_bytes;
     let io_limits = limits.process.io;
-    worst = worst
-        .checked_add(
-            local_auth::worst_case()
-                .and_then(|bound| bound.checked_mul(u64::from(accounts)))
-                .ok_or_else(|| derivation_refusal("account_worst_case"))?,
-        )
+    let accounts = local_auth::worst_case()
+        .and_then(|bound| bound.checked_mul(u64::from(accounts)))
         .ok_or_else(|| derivation_refusal("account_worst_case"))?;
     let operations = io::operations(&io_limits)
         .and_then(|count| count.checked_mul(2))
         .and_then(|count| count.checked_add(64))
         .and_then(|count| count.checked_add(lower_routes))
         .ok_or_else(|| derivation_refusal("local_routes"))?;
-    worst = worst
-        .checked_add(io::worst_case(&io_limits).ok_or_else(|| derivation_refusal("local_worst_case"))?)
-        .and_then(|count| count.checked_add(u64::from(queue).checked_mul(u64::from(show_bytes.max(8192)))?))
+    let io = match limits.local.agent {
+        domain::AgentLimits::Inline(_) => 0,
+        domain::AgentLimits::Spawned(_) => {
+            io::worst_case(&io_limits).ok_or_else(|| derivation_refusal("local_worst_case"))?
+        }
+    };
+    let front = u64::from(queue)
+        .checked_mul(u64::from(show_bytes.max(8192)))
         .and_then(|count| count.checked_add(u64::from(show_bytes.max(512))))
-        .and_then(|count| count.checked_add(Queue::<kernel::Complete>::worst_case(queue)?.checked_mul(3)?))
+        .ok_or_else(|| derivation_refusal("front_worst_case"))?;
+    let routing = Queue::<kernel::Complete>::worst_case(queue)
+        .and_then(|count| count.checked_mul(3))
         .and_then(|count| count.checked_add(Queue::<kernel::Submit>::worst_case(queue)?.checked_mul(3)?))
         .and_then(|count| count.checked_add(Queue::<io::Event>::worst_case(queue)?))
         .and_then(|count| count.checked_add(Queue::<io::Request>::worst_case(queue)?))
         .and_then(|count| count.checked_add(Map::<Token, Route>::worst_case(operations)?))
         .and_then(|count| count.checked_add(u64::try_from(size_of::<Local>()).ok()?))
         .ok_or_else(|| derivation_refusal("local_worst_case"))?;
-    Ok(worst)
+    Ok([("accounts", accounts), ("shell_io", io), ("front", front), ("shell_routing", routing)])
 }
 
 fn configuration_failure(detail: String) -> crate::local_shell::Failure {

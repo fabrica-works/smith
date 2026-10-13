@@ -55,7 +55,10 @@ impl InlineLimits {
     /// Price the exact LLM and machine configuration before moving its endpoint inventory.
     #[must_use]
     pub fn new(configuration: &agent_service::Config) -> Option<Self> {
-        Some(Self { memory: agent_service::effects_worst_case(&configuration.limits, &configuration.llm_endpoints)? })
+        Some(Self {
+            memory: agent_service::effects_worst_case(&configuration.limits, &configuration.llm_endpoints)?
+                .checked_add(agent_service::io_worst_case(&configuration.limits)?)?,
+        })
     }
 }
 
@@ -128,25 +131,41 @@ pub enum Error {
 /// Checked memory bound for both domains and their routing queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    local::worst_case(&limits.local)?
-        .checked_add(match limits.local.agent {
-            local::AgentLimits::Inline(_) => {
-                let bounds = limits.inline.as_ref()?;
-                bounds.memory
+    let mut total = 0_u64;
+    for (_, part) in memory_parts(limits)? {
+        total = total.checked_add(part)?;
+    }
+    Some(total)
+}
+
+/// Local ownership by part, with the inline effects' single IO priced by their admission.
+#[must_use]
+pub fn memory_parts(limits: &Limits) -> Option<[(&'static str, u64); 6]> {
+    let effects = match limits.local.agent {
+        local::AgentLimits::Inline(_) => {
+            let bounds = limits.inline.as_ref()?;
+            bounds.memory
+        }
+        local::AgentLimits::Spawned(_) => {
+            if limits.inline.is_some() {
+                return None;
             }
-            local::AgentLimits::Spawned(_) => {
-                if limits.inline.is_some() {
-                    return None;
-                }
-                0
-            }
-        })?
-        .checked_add(protocol::terminal_worst_case(&protocol::TerminalLimits {
-            line_bytes: limits.local.line_bytes,
-            show_bytes: limits.local.show_bytes,
-        })?)?
-        .checked_add(ProcessAdapter::worst_case(&limits.process)?)?
-        .checked_add(Queue::<local::Event>::worst_case(limits.queue)?)?
+            0
+        }
+    };
+
+    let process = ProcessAdapter::memory_parts(
+        &limits.process,
+        match limits.local.agent {
+            local::AgentLimits::Inline(_) => false,
+            local::AgentLimits::Spawned(_) => true,
+        },
+    )?;
+    let terminal = protocol::terminal_worst_case(&protocol::TerminalLimits {
+        line_bytes: limits.local.line_bytes,
+        show_bytes: limits.local.show_bytes,
+    })?;
+    let routing = Queue::<local::Event>::worst_case(limits.queue)?
         .checked_add(Queue::<local::Request>::worst_case(limits.queue)?.checked_mul(2)?)?
         .checked_add(Queue::<host::Input>::worst_case(limits.queue)?)?
         .checked_add(Queue::<host::process::Request>::worst_case(limits.queue)?)?
@@ -160,7 +179,16 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<kernel::Complete>::worst_case(limits.queue)?)?
         .checked_add(Queue::<kernel::Submit>::worst_case(limits.queue)?)?
         .checked_add(List::<u32>::worst_case(64)?)?
-        .checked_add(u64::try_from(size_of::<Service>()).ok()?)
+        .checked_add(u64::try_from(size_of::<Service>()).ok()?)?
+        .checked_add(*process.get(2)?)?;
+    Some([
+        ("local_domain", local::worst_case(&limits.local)?),
+        ("effects_and_io", effects),
+        ("store", *process.first()?),
+        ("terminal", terminal),
+        ("delivery", *process.get(1)?),
+        ("local_routing", routing),
+    ])
 }
 
 #[derive(Debug)]
@@ -316,9 +344,13 @@ impl Service {
             stream.producer.started(now, header);
             return Ok(());
         }
-        let Some(effects) = self.below.inline_mut() else { return Err(fd) };
-        effects.adopt_destination(fd, agent_service::Destination::Trace, delivery)?;
-        effects.start_session(now, header);
+        match &mut self.below {
+            Effects::Inline { agent, local } => {
+                agent.adopt_destination(fd, agent_service::Destination::Trace, delivery, local.io())?;
+                agent.start_session(now, header);
+            }
+            Effects::Spawned(_) => return Err(fd),
+        }
         Ok(())
     }
 
@@ -510,6 +542,30 @@ impl Service {
     /// Adopt the separately opened chat root into the store's IO owner.
     pub fn adopt_store(&mut self, root: kernel::Fd) -> Result<(), Error> {
         self.below.process_mut().adopt_store(root).ok_or(Error::Memory)
+    }
+
+    /// Whether the local domain and effects live in this process.
+    #[must_use]
+    pub fn inline(&self) -> bool {
+        match self.below {
+            Effects::Inline { .. } => true,
+            Effects::Spawned(_) => false,
+        }
+    }
+
+    /// Adopt the shell writer into the inline product's single IO.
+    pub fn adopt_writer(&mut self, fd: kernel::Fd) -> Result<Token, kernel::Fd> {
+        self.below.process_mut().adopt_writer(fd)
+    }
+
+    /// Shell-owned IO requests share the same native owner as the effects.
+    pub fn writer_requests(&mut self) -> &mut Queue<skein_io::Request> {
+        self.below.process_mut().io_requests()
+    }
+
+    /// Terminals of the shell's adopted output stream.
+    pub fn writer_events(&mut self) -> &mut Queue<skein_io::Event> {
+        self.below.process_mut().shell_events()
     }
 
     /// Adopt terminal input and blocked termination signals into the IO pass.
@@ -847,7 +903,7 @@ fn inline_effects(
     limits: &Limits,
     seed: u64,
 ) -> Result<agent_service::Effects, Error> {
-    if configuration.limits.domain != limits.local.smith {
+    if configuration.limits.domain != limits.local.smith || configuration.limits.io != limits.process.io {
         return Err(Error::Process);
     }
     for endpoint in &limits.local.endpoints {
@@ -879,6 +935,12 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
     service.wall = wall;
     service.route_completions();
     service.accounts_pass(now, wall);
+    let process_env = service.below.process().at(now, wall);
+    service.below.process_mut().io_up(&process_env);
+    match &mut service.below {
+        Effects::Inline { agent, local } => local.effects_up(agent),
+        Effects::Spawned(_) => {}
+    }
     if let Some(effects) = service.below.inline_mut() {
         effects.up(now, wall);
         for _ in 0..service.limits.queue {
@@ -892,7 +954,6 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
             });
         }
     }
-    let process_env = service.below.process().at(now, wall);
     service.below.process_mut().up(
         &process_env,
         &mut service.host_events,
@@ -916,8 +977,18 @@ pub fn iterate(service: &mut Service, now: Time, wall: Wall) {
         &mut service.host_events,
         &mut service.stream,
     );
-    if let Some(effects) = service.below.inline_mut() {
-        effects.down();
+    match &mut service.below {
+        Effects::Inline { agent, local } => {
+            agent.down();
+            for _ in 0..agent.io_requests().capacity() {
+                if local.io_requests().room() == 0 {
+                    break;
+                }
+                let Some(request) = agent.io_requests().pop() else { break };
+                local.io_requests().push(request);
+            }
+        }
+        Effects::Spawned(_) => {}
     }
     service.flush_submissions();
     service.advance_end();

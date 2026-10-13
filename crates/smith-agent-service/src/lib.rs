@@ -41,6 +41,6 @@ pub use sinks::Destination;
 pub use answers::{AnswerMeta, Answered, Last, accepted, answer_record, last};
 
 pub use service::{
-    Config, ConfigError, Effects, Failure, Limits, Service, done, effects_worst_case, failure, iterate, next_deadline,
-    next_policy_deadline, work_pending, worst_case,
+    Config, ConfigError, Effects, Failure, Limits, Service, done, effects_parts, effects_worst_case, failure,
+    io_worst_case, iterate, next_deadline, next_policy_deadline, work_pending, worst_case,
 };
