@@ -1860,3 +1860,13 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    they split cleanly. Ruling: 10.5 lands what it holds, with its process
    Proof and at most 951 lines; 10.21 takes the two refinements with
    literal unit tests.
+104. **skein-07.s7 and smith-10.s2: the inline product fits 2 GiB** (block
+   of 2026-10-13T00:42:16Z, smith 10.5; the designer's answer of
+   00:49:24Z, smith 1c14b678 and cf28726e, skein d77165ba). The inline
+   product derived 3,996,976,576 bytes against 2 GiB: a whole agent
+   service built and stripped for its effects, a host channel and io
+   counted more than once, and skein's per-item replay reservation. Two
+   steps not in the plan: skein-07.s7 (replay values charged at their
+   total) and smith-10.s2 (each part counted once, the repin, the
+   breakdown by part); 10.5 needs both, and lands nothing until the
+   default product fits.

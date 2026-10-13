@@ -402,6 +402,30 @@ Don't: `smith check` creates no cache; read no mode bit or owner in
 place of `directory_access`.
 Size: at most 300. Removes: nothing.
 
+### 10.s2 The inline product counts each part once
+Added during the run (decisions.md, 13.104), from the designer's answer
+of 2026-10-13T00:49:24Z (smith 1c14b678, limits.md section 5). Scope:
+`Effects` gets its own constructor and worst case, never a whole agent
+service built and stripped (`Effects::new`, `effects_worst_case`); the
+local service and the shell price one io, and no host channel in inline
+mode; smith repins skein at skein-07.s7's commit or later; the product's
+memory check at default settings reports its worst case by part (the
+local domain, the effects' parts, io, the store, the terminal, delivery
+and the front) and fits shell.md 6.3's 2 GiB.
+Needs: skein-07.s7.
+Files: `crates/smith-agent-service/src/service.rs` (`Effects`), the local
+service and shell's memory accounting, `Cargo.toml`, `Cargo.lock`; their
+tests.
+Shape: no new type beyond `Effects`' own constructor.
+Test shape: the product's memory check at default settings fits 2 GiB,
+with the breakdown by part asserted against the measured parts; it
+fails on the parent. Under 0.5 s.
+Proof: that test, once.
+Don't: lower `memory`; if the default still passes 2 GiB, stop and report
+by part (the designer then lowers a provisional value, `conversations`
+first).
+Size: README rule 9's.
+
 ### 10.5 `smith exec`
 Scope (shell.md, 4.2 and 4.3; events.md, 5.2): the command and its usage
 errors; the headless local domain composed inline (`compose`); chats by

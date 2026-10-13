@@ -115,3 +115,24 @@ fails on the parent. Under 20 ms each.
 Proof: those tests, once.
 Don't: change `adopt_append` or a child's pipes.
 Size: README rule 9's.
+
+### 07.s7 Replay values charged at their total
+Added during the run (decisions.md, 13.104), from the designer's answer
+of 2026-10-13T00:49:24Z (skein d77165ba, llm.md 4.2). Scope: a client's
+replay storage is reserved today per output item at a reasoning item's
+worst case, twice (`client.rs`, the `replay_records` term,
+`List::<Compact>::worst_case(tokens) x output_items x 2`); replay values
+are held at their own length and charged at the total a completion's
+blocks keep, within the receiving reservation; the per-item fixed
+reservation goes.
+Needs: nothing.
+Files: `crates/skein-llm/src/client.rs` and the replay storage; their
+tests.
+Shape: no new type.
+Test shape: a client's worst case at the standard declaration falls by
+the per-item term, and a completion whose replay values reach the
+receiving share is still held; it fails on the parent. Under 20 ms.
+Proof: those tests, once.
+Don't: change `output_items`, the reasoning share or the receiving
+reservation.
+Size: README rule 9's.
