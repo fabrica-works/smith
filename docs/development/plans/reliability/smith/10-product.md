@@ -594,7 +594,10 @@ the task in the start, to the task and `suites/probes.toml` (decisions.md, 12.21
 Gains (decisions.md, 13.89): the harness reads an exec or chat arm's teardown bound from `smith check`, through 10.14's decoder, with `an_exec_arms_teardown_bound_comes_from_check`.
 Needs: session 00's one command per probe run [00.27], for its proof;
 `smith check` taking the invocation it checks (shell.md, 4.4), a step its
-supervisor names.
+supervisor names; the standard profile's `conversations` at 5 (shell.md,
+6.3, as the designer ruled on 2026-10-13) in `standard()`
+(`crates/smith-agent-service/src/profile/quantities.rs:155`), so that the
+default product's worst case fits 2 GiB.
 Files: `benchmarks/src/agent/smith/` (`prepare.rs:84`, `settings.rs`,
 `faces.rs`, `events.rs`, `events/classify.rs`),
 `benchmarks/agents/smith/faces.toml`, `benchmarks/src/credential.rs`,
