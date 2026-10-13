@@ -101,7 +101,7 @@ fn run(shared: &crate::command::Shared, name: &str, clock: &Clock) -> Result<Log
             let limits = super::limits(io, 1);
             let mut sources = List::with_capacity(1);
             assert!(sources.push(source).is_ok(), "one login source");
-            let entropy = crate::local_shell::oauth_entropy()?;
+            let entropy = crate::startup::oauth_entropy()?;
             let mut driver =
                 Accounts::new(sources, limits, entropy).map_err(|why| format!("account driver: {why:?}"))?;
             assert!(driver.sign_in(0), "selected sign-in account");

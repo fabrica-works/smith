@@ -16,7 +16,7 @@ impl Local {
         handed: Option<&crate::credentials::Prepared>,
         headless: Option<&crate::front::headless::Headless>,
         interactive: Option<&crate::front::interactive::Interactive>,
-    ) -> Result<(u64, u32), crate::local_shell::Failure> {
+    ) -> Result<(u64, u32), crate::startup::Failure> {
         let io_limits = limits.process.io;
         let file_operations = if headless.is_some_and(|front| front.file_memory != 0) { 4 } else { 0 };
         let base_operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())

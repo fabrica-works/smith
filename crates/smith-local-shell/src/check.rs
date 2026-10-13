@@ -314,7 +314,7 @@ fn derive_invocation(
     let result_file = files.teardown_bound().map_err(|why| why.line())?;
     let host = smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits)
         .map_err(|why| String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned())?;
-    let mut limits = crate::local_shell::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
+    let mut limits = crate::startup::service_limits(resolved.limits.clone(), host, &resolved.agent.service)?;
     let available = if interactive {
         interactive_header(resolved, &mut limits, result_file)?
     } else {

@@ -119,14 +119,14 @@ fn the_same_chat_runs_with_its_agent_in_process() {
     let first = Scratch::new();
     let second = Scratch::new();
     let mut hosted = World::new(15, &first, Placement::Spawned, b"First answer");
-    let mut colocated = World::new(15, &second, Placement::InProcess, b"First answer");
+    let mut colocated_world = World::new(15, &second, Placement::InProcess, b"First answer");
     hosted.settle();
-    colocated.settle();
+    colocated_world.settle();
     let spawned = hosted.seen();
-    let in_process = colocated.seen();
-    assert_eq!(spawned.shown, in_process.shown);
+    let colocated = colocated_world.seen();
+    assert_eq!(spawned.shown, colocated.shown);
     let mut spawned_queries = spawned.queries.clone();
-    let mut colocated_queries = in_process.queries.clone();
+    let mut colocated_queries = colocated.queries.clone();
     // Placement has its own run key and elapsed startup clock. Verify its
     // exact fixed-at-open budget before comparing all remaining request bytes.
     for (queries, seconds) in [(&mut spawned_queries, 3600), (&mut colocated_queries, 3600)] {
@@ -151,7 +151,7 @@ fn the_same_chat_runs_with_its_agent_in_process() {
         }
     }
     assert_eq!(spawned_queries, colocated_queries);
-    assert_eq!(spawned.exit, in_process.exit);
-    assert_eq!(hosted.turns(), colocated.turns());
-    review(&in_process, colocated.checkout(), Ending::Report(b"First answer".to_vec())).assert_passed(15);
+    assert_eq!(spawned.exit, colocated.exit);
+    assert_eq!(hosted.turns(), colocated_world.turns());
+    review(&colocated, colocated_world.checkout(), Ending::Report(b"First answer".to_vec())).assert_passed(15);
 }

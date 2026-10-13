@@ -25,7 +25,7 @@ impl Local {
         pid: u64,
         view: View,
         result_file: skein_lib::Duration,
-    ) -> Result<(Option<smith_events::SessionStarted>, u64), crate::local_shell::Failure> {
+    ) -> Result<(Option<smith_events::SessionStarted>, u64), crate::startup::Failure> {
         match trace {
             Some(trace) => {
                 let header = Self::trace_header(configuration, limits, trace, chat.into(), pid, view, result_file)?;
@@ -50,7 +50,7 @@ impl Local {
         pid: u64,
         view: View,
         result_file: skein_lib::Duration,
-    ) -> Result<smith_events::SessionStarted, crate::local_shell::Failure> {
+    ) -> Result<smith_events::SessionStarted, crate::startup::Failure> {
         let options = smith_charter::CEILINGS.llm_effort_some;
         let write_deadline = match configuration.service.limits.events {
             Some(events) => events.write_deadline,
@@ -81,7 +81,7 @@ impl Local {
                 AgentLimits::Spawned(_) => {}
             }
         }
-        Ok(crate::local_shell::stream_header(
+        Ok(crate::startup::stream_header(
             chat,
             trace.capture,
             trace.delivery,
@@ -115,7 +115,7 @@ fn names(
     configuration: &config::Configuration,
     limits: &service::Limits,
     result_file: skein_lib::Duration,
-) -> Result<List<smith_events::EffectiveLimit>, crate::local_shell::Failure> {
+) -> Result<List<smith_events::EffectiveLimit>, crate::startup::Failure> {
     let inventory = service::profile::effective(
         &configuration.profile,
         &configuration.declarations,

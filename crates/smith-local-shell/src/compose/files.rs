@@ -157,7 +157,7 @@ impl Files {
     pub(super) fn attach_private(&mut self, local: &mut crate::Local) -> Result<(), Refused> {
         if let Some(path) = self.temporary.clone() {
             local.ephemeral(self.parent_root()?, &path).map_err(|_| {
-                Refused::Local(crate::local_shell::Failure::Host { detail: "private parent cannot be adopted".into() })
+                Refused::Local(crate::startup::Failure::Host { detail: "private parent cannot be adopted".into() })
             })?;
         }
         Ok(())
@@ -242,7 +242,7 @@ impl ResultFile {
         let _exit = skein_shell::drive(kernel, clock, &mut file);
         match file.failure() {
             None => Ok(()),
-            Some(Failure::Write(why) | Failure::Close(why)) => Err(Refused::Local(crate::local_shell::Failure::Host {
+            Some(Failure::Write(why) | Failure::Close(why)) => Err(Refused::Local(crate::startup::Failure::Host {
                 detail: format!("generated agent configuration: {why:?}"),
             })),
         }

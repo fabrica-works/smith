@@ -449,8 +449,7 @@ fn inline_default() -> (super::resolve::Resolved, smith_local_service::Limits) {
     let resolved = composed("").unwrap_or_else(|why| panic!("{}", why.line()));
     let host =
         smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits).unwrap();
-    let mut limits =
-        crate::local_shell::service_limits(resolved.limits.clone(), host, &resolved.agent.service).unwrap();
+    let mut limits = crate::startup::service_limits(resolved.limits.clone(), host, &resolved.agent.service).unwrap();
     limits.local.agent = smith_local_domain::AgentLimits::inline(
         limits.local.smith,
         limits.local.unsaved,

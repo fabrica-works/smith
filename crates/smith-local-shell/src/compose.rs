@@ -3,7 +3,7 @@
 //! carries one kernel from the stdin phase into the local host's run.
 use crate::{
     command::{Command, Exec, Prompt, Usage},
-    credentials, local_shell, settings,
+    credentials, settings, startup,
 };
 mod files;
 mod spawned;
@@ -52,7 +52,7 @@ pub enum Refused {
     /// A selected source has no usable credential.
     Credentials(credentials::Refusal),
     /// Resource opening or complete memory admission refused.
-    Local(local_shell::Failure),
+    Local(startup::Failure),
 }
 
 impl Refused {
@@ -119,13 +119,13 @@ fn open_mode(
     let operations =
         crate::Local::kernel_operations(&resolved.agent.service.limits.io, resolved.agent.service.limits.routes, true)
             .ok_or_else(|| {
-                Refused::Local(local_shell::Failure::Configuration { detail: "local operation bound overflows".into() })
+                Refused::Local(startup::Failure::Configuration { detail: "local operation bound overflows".into() })
             })?;
     let operations = operations
         .checked_add(if invocation.output.is_some() { 4 } else { 0 })
         .ok_or_else(|| Refused::Usage(Usage("the output operation bound overflows".into())))?;
     let mut kernel = Kernel::open(Config { operations })
-        .map_err(|why| Refused::Local(local_shell::Failure::Host { detail: format!("local kernel: {why}") }))?;
+        .map_err(|why| Refused::Local(startup::Failure::Host { detail: format!("local kernel: {why}") }))?;
     let maximum = resolved.limits.line_bytes;
     let input_closed = match &invocation.prompt {
         Prompt::Stdin => true,
@@ -152,9 +152,8 @@ fn open_mode(
         return Err(Refused::Usage(Usage("the prompt is not UTF-8".into())));
     }
     invocation.prompt = Prompt::Argument(prompt);
-    let seed = skein_shell::seed().map_err(|why| {
-        Refused::Local(local_shell::Failure::Host { detail: format!("local seed failed (errno {why})") })
-    })?;
+    let seed = skein_shell::seed()
+        .map_err(|why| Refused::Local(startup::Failure::Host { detail: format!("local seed failed (errno {why})") }))?;
     Ok((Opened { resolved, invocation, seed, wall, input_closed, interactive, document }, kernel))
 }
 
@@ -198,7 +197,7 @@ fn compose(
     let host_limits =
         smith_local_service::profile::host_limits(&resolved.agent.profile, &resolved.agent.service.limits).map_err(
             |why| {
-                Refused::Local(local_shell::Failure::Configuration {
+                Refused::Local(startup::Failure::Configuration {
                     detail: String::from_utf8_lossy(&smith_agent_service::profile::words(&why)).into_owned(),
                 })
             },
@@ -206,8 +205,8 @@ fn compose(
     if matches!(kind, AgentKind::Spawned { .. }) {
         resolved.limits.agent = smith_local_domain::AgentLimits::Spawned(host_limits);
     }
-    let mut limits = local_shell::service_limits(resolved.limits, host_limits, &resolved.agent.service)
-        .map_err(|detail| Refused::Local(local_shell::Failure::Configuration { detail }))?;
+    let mut limits = startup::service_limits(resolved.limits, host_limits, &resolved.agent.service)
+        .map_err(|detail| Refused::Local(startup::Failure::Configuration { detail }))?;
     let (trace, header, available) = files.prepare_stream(
         &mut resolved.agent,
         &resolved.local.chat,
@@ -287,14 +286,13 @@ fn startup_resources(
             skein_shell::Watch::Termination
         })
         .map_err(|errno| {
-            Refused::Local(local_shell::Failure::Host { detail: format!("termination signals failed (errno {errno})") })
+            Refused::Local(startup::Failure::Host { detail: format!("termination signals failed (errno {errno})") })
         })?,
         delivery_roots,
         effect_roots,
         delivery_environment: environment,
         seed,
-        oauth_entropy: local_shell::oauth_entropy()
-            .map_err(|detail| Refused::Local(local_shell::Failure::Host { detail }))?,
+        oauth_entropy: startup::oauth_entropy().map_err(|detail| Refused::Local(startup::Failure::Host { detail }))?,
     })
 }
 
@@ -326,9 +324,8 @@ fn prepare_front(
     }
     let mut front = crate::front::headless::Headless::new(
         json,
-        skein_shell::prepare_output(skein_io::kernel::Fd::new(1)).map_err(|why| {
-            Refused::Local(local_shell::Failure::Host { detail: format!("standard output: {why:?}") })
-        })?,
+        skein_shell::prepare_output(skein_io::kernel::Fd::new(1))
+            .map_err(|why| Refused::Local(startup::Failure::Host { detail: format!("standard output: {why:?}") }))?,
         limits.local.show_bytes,
         limits.local.smith.run.outcome_bytes,
     );
@@ -349,11 +346,11 @@ fn start_stream(
             trace.path.file_name().ok_or_else(|| Refused::Usage(Usage("the trace requires a file name".into())))?;
         let descriptor = root(parent)?;
         let fd = skein_shell::open_append(descriptor, name.as_encoded_bytes(), 0o600)
-            .map_err(|why| Refused::Local(local_shell::Failure::Host { detail: format!("trace append: {why:?}") }))?;
+            .map_err(|why| Refused::Local(startup::Failure::Host { detail: format!("trace append: {why:?}") }))?;
         local
             .adopt_trace(fd, Some(descriptor), now, header.take().expect("configured header"), trace.delivery)
             .map_err(|why| {
-                Refused::Local(local_shell::Failure::Host {
+                Refused::Local(startup::Failure::Host {
                     detail: format!("trace descriptor {} cannot be adopted", why.raw()),
                 })
             })?;
@@ -378,7 +375,7 @@ fn workspace_roots(local: &smith_local_domain::Config, kind: &AgentKind) -> Resu
             .map(|directory| {
                 skein_shell::open_root(Path::new(std::str::from_utf8(&directory.host).expect("resolved host path")))
                     .map_err(|errno| {
-                        Refused::Local(local_shell::Failure::Host {
+                        Refused::Local(startup::Failure::Host {
                             detail: format!("workspace root failed (errno {errno})"),
                         })
                     })
@@ -461,12 +458,12 @@ pub(crate) fn prepare_stream(
 }
 
 fn host(why: &std::io::Error) -> Refused {
-    Refused::Local(local_shell::Failure::Host { detail: why.to_string() })
+    Refused::Local(startup::Failure::Host { detail: why.to_string() })
 }
 
 fn root(path: &Path) -> Result<skein_io::kernel::Fd, Refused> {
     skein_shell::open_root(path).map_err(|errno| {
-        Refused::Local(local_shell::Failure::Host {
+        Refused::Local(startup::Failure::Host {
             detail: format!("directory {} failed (errno {errno})", path.display()),
         })
     })

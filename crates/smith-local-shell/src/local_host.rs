@@ -117,7 +117,7 @@ impl Local {
         available_bytes: u64,
         handed: Option<crate::credentials::Prepared>,
         front: Option<crate::front::Front>,
-    ) -> Result<Self, crate::local_shell::Failure> {
+    ) -> Result<Self, crate::startup::Failure> {
         let (front, interactive) = match front {
             Some(crate::front::Front::Headless(front)) => (Some(front), None),
             Some(crate::front::Front::Interactive(front)) => (None, Some(front)),
@@ -268,7 +268,7 @@ impl Local {
         &mut self,
         configuration: &agent::Config,
         available: u64,
-    ) -> Result<(), crate::local_shell::Failure> {
+    ) -> Result<(), crate::startup::Failure> {
         let bytes = agent::events::worst_case(&configuration.limits)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_trace")))?;
         let worst =
@@ -861,10 +861,10 @@ fn derivation_refusal(field: &'static str) -> String {
     })
 }
 
-fn configuration_failure(detail: String) -> crate::local_shell::Failure {
-    crate::local_shell::Failure::Configuration { detail }
+fn configuration_failure(detail: String) -> crate::startup::Failure {
+    crate::startup::Failure::Configuration { detail }
 }
 
-fn host_failure(detail: String) -> crate::local_shell::Failure {
-    crate::local_shell::Failure::Host { detail }
+fn host_failure(detail: String) -> crate::startup::Failure {
+    crate::startup::Failure::Host { detail }
 }
