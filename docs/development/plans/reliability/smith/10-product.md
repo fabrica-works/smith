@@ -793,7 +793,15 @@ Split from 10.24 (decisions.md, 13.120). Scope: 10.24's `/model` and
 main's endpoint's models, which 08.s1 composes at startup; another
 endpoint's model is refused in words, the chat kept, naming `smith --chat
 NAME -m ENDPOINT/NAME`; `/effort LEVEL` sets the next activation's
-charter effort, refused in words when the dialect has no such effort;
+charter effort. Efforts are the model's, as the designer ruled on
+2026-10-13 (shell.md, 4.1, 5.2 and 6.1; charter.md, section 2;
+agent.md, section 4): each model declares its `efforts`, optional,
+beside its other declared values (presets from their provider's
+documentation, with the source; settings' `[models."<e>/<n>"].efforts`);
+`smith check`, `--effort`, `/effort` and the run's entrance refuse an
+effort outside the main model's list, naming it and the list; a model
+that declares none takes any effort within 32 bytes, its provider's
+refusal being the request's failure; skein holds no list;
 both take effect only once the live activation has answered or parked;
 `sub_agents`' models and the needed accounts are unchanged; 10.24's
 interim refusal of both goes. It starts from 10.24's preserved WIP (the
@@ -801,12 +809,16 @@ startup inventory's model resolution and the next charter's private
 model and effort state).
 Needs: 10.24; 08.s1.
 Files: 10.24's.
-Shape: no new crossing type: the local host's next-start charter fields
-and 08.s1's `Effort`.
+Shape: the local host's next-start charter fields and 08.s1's `Effort`;
+a model's declared `efforts` in the settings schema, the presets, the
+agent configuration's models (`smith-agent-shell`) and the run's
+entrance check (`smith-domain-run`), Files beyond 10.24's, which the
+supervisor sizes.
 Test shape: unit: each `/model` and `/effort` line's choice or refusal,
 its words. World, on the scripted `Terminal` (13.119):
 `slash_model_applies_from_the_next_activation`,
-`slash_model_on_another_endpoint_is_refused_and_the_chat_kept`. End to
+`slash_model_on_another_endpoint_is_refused_and_the_chat_kept`,
+`slash_effort_outside_the_models_efforts_is_refused_naming_them`. End to
 end: `slash_effort_reaches_the_next_request`. Ceilings: 20 ms, 0.5 s, 2 s.
 Proof: process, `slash_effort_reaches_the_next_request`; once, under 2 s.
 Don't: nothing composed again within the process; no endpoint but
