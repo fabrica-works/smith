@@ -136,7 +136,9 @@ impl Expectations for Meeting {
                     Ending::Dropped => b"not delivered",
                     Ending::AgentEnded => b"run failed: the agent ended without answering",
                     Ending::Change { .. } => b"Change delivered",
-                    Ending::Unavailable => borrowed_text.unwrap_or(b"credential"),
+                    Ending::Unavailable => {
+                        borrowed_text.unwrap_or(b"Line 1 not delivered: the run ended without reading it")
+                    }
                     Ending::HostFailure | Ending::HostFailureBeforeAnswer => b"could not be kept: write failed",
                 };
                 if matches!(self.ending, Ending::Unavailable) {
@@ -588,7 +590,7 @@ impl skein_world::Referee<crate::process::Proc> for Run {
         }
         let authenticated = procs.iter().any(|p| matches!(p, Proc::Issuer(_)));
         if authenticated && !self.saved_before_query && crate::llm::queries(peer).next().is_some() {
-            let tokens = smith_local_shell::local_tokens::Tokens::new(
+            let tokens = crate::credential_fixture::Tokens::new(
                 &self.token_directory,
                 smith_local_shell::local_host::token_limits(),
             )

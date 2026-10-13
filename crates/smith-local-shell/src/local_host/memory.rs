@@ -2,7 +2,6 @@
 //! Native owners price their allocations; this owner adds the shell, handed
 //! credentials, headless front and routing once, before any resource adoption.
 use super::{Local, Route, configuration_failure, derivation_refusal};
-use crate::local_auth;
 use skein_io::{self as io, kernel};
 use skein_lib::{Map, Queue, Token};
 use smith_agent_service as agent;
@@ -25,7 +24,8 @@ impl Local {
         let operations = base_operations
             .checked_add(file_operations)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
-        let mut worst = accounted_memory(limits, accounts, lower_routes).map_err(configuration_failure)?;
+        let mut worst = accounted_memory(limits, if handed.is_some() { 0 } else { accounts }, lower_routes)
+            .map_err(configuration_failure)?;
         if let Some(prepared) = handed {
             worst = worst
                 .checked_add(
@@ -105,8 +105,8 @@ fn shell_parts(limits: &service::Limits, accounts: u32, lower_routes: u32) -> Re
     let queue = limits.queue;
     let show_bytes = limits.local.show_bytes;
     let io_limits = limits.process.io;
-    let accounts = local_auth::worst_case()
-        .and_then(|bound| bound.checked_mul(u64::from(accounts)))
+    let accounts = service::accounts_worst_case(&crate::credentials::limits(io_limits, accounts.max(1)))
+        .map(|bound| if accounts == 0 { 0 } else { bound })
         .ok_or_else(|| derivation_refusal("account_worst_case"))?;
     let operations = io::operations(&io_limits)
         .and_then(|count| count.checked_mul(2))

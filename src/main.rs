@@ -17,6 +17,9 @@ const USAGE: &str = "usage: smith agent CONFIG.json | smith local SETTINGS.json 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().collect();
     let clock = skein_shell::Clock::new();
+    if let Some(code) = smith_local_shell::credentials::command(&args, &clock) {
+        return ExitCode::from(code);
+    }
     if let Some(code) = smith_local_shell::compose::start(&args, clock.now(), &clock) {
         return ExitCode::from(code);
     }

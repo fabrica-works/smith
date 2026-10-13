@@ -324,10 +324,10 @@ fn token_directory(configured: Option<&str>) -> Result<std::path::PathBuf, Strin
     if let Some(configured) = configured {
         return Ok(configured.into());
     }
-    let base = match std::env::var_os("XDG_CONFIG_HOME") {
+    let base = match std::env::var_os("XDG_STATE_HOME") {
         Some(base) => std::path::PathBuf::from(base),
         None => std::path::PathBuf::from(std::env::var_os("HOME").ok_or("HOME is absent; configure token_directory")?)
-            .join(".config"),
+            .join(".local/state"),
     };
     Ok(base.join("smith/tokens"))
 }

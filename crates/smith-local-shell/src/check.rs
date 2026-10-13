@@ -319,7 +319,7 @@ fn derive_execution(
     let count = u32::try_from(resolved.accounts.len()).map_err(|_| "too many account sources".to_owned())?;
     let mut locations = skein_lib::List::with_capacity(count);
     for account in &resolved.accounts {
-        let source = crate::credentials::source(&account.fields, &resolved.settings.workspace, false);
+        let source = crate::credentials::source(&account.fields, &resolved.settings.workspace, false, &account.name);
         locations
             .push(crate::credentials::Location { account: account.number, name: account.name.clone(), source })
             .expect("selected locations fit their account bound");
@@ -341,7 +341,7 @@ fn derive_execution(
 #[must_use]
 pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
     let (shared, json, execution) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
-        Ok(Command::Legacy(_) | Command::Exec(_)) => return None,
+        Ok(Command::Legacy(_) | Command::Exec(_) | Command::Login { .. }) => return None,
         Ok(Command::Check { shared, json, execution }) => (shared, json, execution),
         Err(usage) => {
             eprintln!("smith: usage: {}", usage.0);

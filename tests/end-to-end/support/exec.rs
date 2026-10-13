@@ -73,6 +73,7 @@ fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
     }
 }
 
+#[must_use]
 pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option<skein_fake_peers::llm::Peer>) -> Ran {
     run_fixture(scratch, arguments, input, provider, false)
 }

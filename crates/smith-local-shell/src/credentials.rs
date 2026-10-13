@@ -6,8 +6,16 @@ use skein_lib::Wall;
 use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
 use std::{collections::BTreeMap, path::PathBuf};
 
+mod legacy;
+pub use legacy::prepare as prepare_legacy;
+mod login;
 mod product;
+mod sign_in;
+pub use crate::settings::resolve::Account;
+pub use login::{LoginOutcome, command, credential_words};
+pub(crate) use product::codex as product_codex;
 pub use product::{Location, Prepared, limits, prepare};
+pub use sign_in::{Registered, registration};
 
 /// An account's state reported without its credential value.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -75,13 +83,13 @@ pub enum Source {
     Borrow { file: PathBuf, format: LoginFormat, program: String },
     /// The named variable is read once before the loop.
     Env { variable: String, codex: bool },
-    /// Existing shell OAuth remains the owner until sign-in moves to the driver.
-    SignIn,
+    /// The native driver keeps this account in its private state file.
+    SignIn { file: PathBuf },
 }
 
 /// Resolve one account descriptor without exposing a variable's value.
 #[must_use]
-pub fn source(fields: &BTreeMap<String, Sourced>, workspace: &std::path::Path, codex: bool) -> Source {
+pub fn source(fields: &BTreeMap<String, Sourced>, workspace: &std::path::Path, codex: bool, name: &str) -> Source {
     let text = |key: &str| fields.get(key).and_then(|field| field.value.as_str()).unwrap_or_default();
     match text("source") {
         "borrow" => {
@@ -94,7 +102,7 @@ pub fn source(fields: &BTreeMap<String, Sourced>, workspace: &std::path::Path, c
             Source::Borrow { file, format: LoginFormat::Codex, program: text("program").into() }
         }
         "env" => Source::Env { variable: text("variable").into(), codex },
-        _ => Source::SignIn,
+        _ => Source::SignIn { file: sign_in::record_path(name) },
     }
 }
 
@@ -130,7 +138,7 @@ pub fn inspect(source: &Source, wall: Wall) -> Credential {
             }
             None => Credential::Unset { variable: variable.clone() },
         },
-        Source::SignIn => Credential::NotSignedIn,
+        Source::SignIn { file } => sign_in::inspect(file, wall),
     }
 }
 
@@ -216,7 +224,7 @@ fn catalog(
                 return None;
             }
             let codex = needed.is_some_and(|needed| product::codex(resolved, needed.number));
-            let credential = inspect(&source(&fields, &settings.workspace, codex), wall);
+            let credential = inspect(&source(&fields, &settings.workspace, codex, &account), wall);
             Some((account, AccountReport { required: needed.is_some(), credential }))
         })
         .collect()

@@ -84,8 +84,8 @@ It is configured by the environment. A missing variable, marker or
 signed-in record fails the test, naming it:
 
 - `SMITH_TEST_LIVE_TOKEN_DIR`: an absolute, private directory reserved for
-  this suite, holding each provider's account-zero record in a
-  subdirectory and the marker the bootstrap writes. Never point it at
+  this suite, holding each provider's private state under its named
+  subdirectory (`smith/tokens` within it) and the marker the bootstrap writes. Never point it at
   another tool's login or copy a refresh token from one: issuers rotate
   refresh tokens, and a copy logs that tool out.
 - `SMITH_TEST_LIVE_PROVIDERS`: `codex`, `anthropic` or `codex,anthropic`.
@@ -109,13 +109,12 @@ export SMITH_TEST_LIVE_PROVIDERS=codex
 export SMITH_TEST_LIVE_CODEX_ACCOUNT_FILE="$HOME/smith-live-codex-account.json"
 export SMITH_TEST_LIVE_BOOTSTRAP_DIR="$HOME/.local/state/smith-live-bootstrap"
 cargo nextest run -p smith --test live --profile live -E 'test(=bootstrap_settings)'
-cargo run -p smith -- local "$SMITH_TEST_LIVE_BOOTSTRAP_DIR/codex/settings.json" "$SMITH_TEST_LIVE_BOOTSTRAP_DIR/codex"
+XDG_CONFIG_HOME="$SMITH_TEST_LIVE_BOOTSTRAP_DIR/codex/config" XDG_STATE_HOME="$SMITH_TEST_LIVE_TOKEN_DIR/codex" cargo run -p smith -- login codex
 ```
 
-Type a short message, open the sign-in URL shown and complete the
-redirect; after the response, close input with Ctrl-D. For Anthropic, do
-the same with its account file, `anthropic` selected and the `anthropic`
-paths. Then run the suite without the bootstrap directory:
+Open the sign-in URL and complete the redirect; login then exits. For
+Anthropic, use its account file, `anthropic` selected, the `anthropic`
+paths and `smith login anthropic`. Then run the suite without the bootstrap directory:
 
 ```sh
 unset SMITH_TEST_LIVE_BOOTSTRAP_DIR

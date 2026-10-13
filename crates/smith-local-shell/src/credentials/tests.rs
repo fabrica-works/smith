@@ -53,7 +53,7 @@ fn resolved(files: &Files, needed_file: PathBuf) -> settings::resolve::Resolved 
         .collect();
     settings::resolve::Resolved {
         settings: settings::Settings { workspace: files.0.clone(), values },
-        accounts: vec![settings::resolve::Account { name: "codex".into(), number: 0, fields }],
+        accounts: vec![Account { name: "codex".into(), number: 0, fields }],
         agent: smith_agent_shell::config::Configuration {
             service: lower,
             memory: u64::MAX,

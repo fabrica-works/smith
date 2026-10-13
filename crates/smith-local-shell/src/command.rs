@@ -21,6 +21,8 @@ pub enum Command {
     Check { shared: Shared, json: bool, execution: Option<Exec> },
     /// One headless run, with its prompt supplied before the activation starts.
     Exec(Exec),
+    /// Sign in to a named account, or inspect its handed-in source.
+    Login { shared: Shared, account: String },
     /// The existing agent and local entry points, removed by product migration.
     Legacy(Vec<OsString>),
 }
@@ -53,6 +55,9 @@ pub struct Usage(pub String);
 pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     if arguments.first().is_some_and(|argument| argument == "agent" || argument == "local") {
         return Ok(Command::Legacy(arguments));
+    }
+    if arguments.first().is_some_and(|argument| argument == "login") {
+        return login(arguments);
     }
     let mut arguments = arguments.into_iter();
     let name = arguments.next();
@@ -110,6 +115,22 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     } else {
         Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, ephemeral, deliver, json }))
     }
+}
+
+fn login(arguments: Vec<OsString>) -> Result<Command, Usage> {
+    let mut arguments = arguments.into_iter().skip(1).collect::<Vec<_>>().into_iter();
+    let mut shared = Shared::default();
+    let mut account = None;
+    while let Some(argument) = arguments.next() {
+        let argument = argument.to_str().ok_or_else(|| Usage("an argument is not UTF-8".into()))?;
+        match argument {
+            "-C" => shared.directory = Some(value(&mut arguments, "-C")?.into()),
+            "-c" => shared.overrides.push(text(&mut arguments, "-c")?),
+            name if !name.starts_with('-') && account.is_none() => account = Some(name.into()),
+            _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
+        }
+    }
+    Ok(Command::Login { shared, account: account.ok_or_else(|| Usage("smith login requires an account".into()))? })
 }
 
 fn set_prompt(place: &mut Option<Prompt>, prompt: Prompt) -> Result<(), Usage> {

@@ -215,8 +215,6 @@ impl Private {
                 CredentialRequest::Closed
                 | CredentialRequest::Notice { .. }
                 | CredentialRequest::Visit { .. }
-                | CredentialRequest::Http(_)
-                | CredentialRequest::Save { .. }
                 | CredentialRequest::Failed { .. } => {}
             }
             assert!(self.outcomes.push(outcome).is_ok(), "bounded outcomes");
@@ -287,7 +285,7 @@ impl Private {
                 CredentialRequest::Failed { .. } => Some(Until::Failed),
                 CredentialRequest::Closed => Some(Until::Closed),
                 CredentialRequest::SignedIn { .. } => Some(Until::SignedIn),
-                CredentialRequest::Http(_) | CredentialRequest::Save { .. } | CredentialRequest::Notice { .. } => None,
+                CredentialRequest::Notice { .. } => None,
             };
             if kind == Some(until) {
                 count = count.checked_add(1).expect("bounded outcomes");

@@ -19,7 +19,6 @@
 extern crate alloc;
 
 mod borrowed;
-mod credential;
 mod delivery_store;
 mod git;
 mod git_child;
@@ -32,7 +31,6 @@ mod terminal;
 mod tests;
 
 pub use borrowed::{Borrowed, LoginFormat, LoginRefusal, decode_login, login_worst_case};
-pub use credential::{Begin, Credential, CredentialEvent, CredentialLimits, CredentialRequest, credential_worst_case};
 pub use delivery_store::{decode_delivery, save_delivery};
 pub use git::{Git, GitAction, GitCompletion, GitLimits, git_worst_case};
 pub use git_child::{GitChild, git_child_worst_case};

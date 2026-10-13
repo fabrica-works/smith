@@ -847,6 +847,11 @@ pub fn trust(der: Option<&str>) -> Result<tls::Config, String> {
     trust_source(&source)
 }
 
+/// Load account trust arrays through the existing bounded root owner.
+pub fn configured_trust(sources: &[skein_shell::Trust]) -> Result<tls::Config, String> {
+    trust_sources(sources).map_err(ConfigurationRefusal::detail)
+}
+
 fn trust_source(source: &skein_shell::Trust) -> Result<tls::Config, String> {
     trust_sources(std::slice::from_ref(source)).map_err(ConfigurationRefusal::detail)
 }

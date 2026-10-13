@@ -132,6 +132,7 @@ impl Environment {
                             | "address"
                             | "server_name"
                             | "json"
+                            | "trust_der"
                     )
                 ),
                 "public OAuth registration cannot contain credentials or unknown fields"
@@ -154,14 +155,7 @@ impl Environment {
                 "provider tokens must stay in the dedicated directory"
             );
             if !bootstrap {
-                let saved = smith_local_shell::local_tokens::Tokens::new(
-                    &tokens,
-                    smith_local_shell::local_host::token_limits(),
-                )
-                .expect("private test token store")
-                .load(0)
-                .expect("valid private token record");
-                assert!(saved.is_some(), "provider must be signed in by hand; missing dedicated 0.json record");
+                assert!(record_path(&tokens, name).is_file(), "provider must be signed in by hand with smith login");
             }
             backends.push(Backend {
                 name: name.into(),
@@ -199,43 +193,39 @@ impl Backend {
                         else {serde_json::json!({"form":"report","max":4096})}},
                 "environment":{"inherit":[],"set":{"PATH":required("PATH")}}});
         }
-        let (host, identity, headers) = if self.name == "codex" {
-            ("chatgpt.com", "plain", skein_llm::openai::identity::headers().iter().map(|header| serde_json::json!({"name":String::from_utf8_lossy(&header.name),"value":String::from_utf8_lossy(&header.value)})).collect::<Vec<_>>())
-        } else {
-            let mut headers = skein_llm::anthropic::identity::claude_code_headers();
-            for header in &mut headers {
-                if header.name.eq_ignore_ascii_case(b"anthropic-beta") {
-                    header.value = b"claude-code-20250219,oauth-2025-04-20".as_slice().into();
-                }
-            }
-            ("api.anthropic.com", "claude-code", headers.iter().map(|header| serde_json::json!({"name":String::from_utf8_lossy(&header.name),"value":String::from_utf8_lossy(&header.value)})).collect::<Vec<_>>())
-        };
-        let mut settings = serde_json::json!({
-            "agent":{"profile":{"name":"standard","declared":{"memory":2_147_483_648_u64},"policy":{"group_stop":1000}},
-                "endpoints":[{"name":self.name,"number":0,"dialect":0,"account":0,"provider":self.name,"connect":10000,"handshake":10000,"address":format!("{host}:443"),"server_name":host,"transport":"tls","identity":identity,"headers":headers,"reasoning_effort":if self.name == "codex" { Some("low") } else { None }}],
-                "environment":[],"trace":{"path":directory.join("agent-trace.jsonl"),"capture":"calls"}},
-            "chat":"chat","instructions":"@local-shell Follow the user's requested outcome exactly. Use the tools and call finish when done.",
-            "models":[{"endpoint":self.name,"name":self.model,"window":8192,"output":4096,"reasoning_item":2048,"head":60000,"idle":30000,"input_price":1_250_000,"cached_price":125_000,"output_price":10_000_000,"price_unit":1_000_000}],
-            "budget":{"turns":512,"spend":25_000_000,"seconds":3600},"waiting_seconds":30,
-            "contract":{"form":"report","max":4096},"token_directory":self.tokens,"accounts":[self.account]
-        });
-        if change {
-            settings.as_object_mut().expect("settings object").insert(
-                "directories".into(),
-                serde_json::json!([{"name":"repo","path":directory.join("repo"),"writable":true,"git":true}]),
-            );
-            settings.as_object_mut().expect("settings object").insert(
-                "conventions".into(),
-                serde_json::json!({"guide":".smith-test/guide","checks":".smith-test/check"}),
-            );
-            settings.as_object_mut().expect("settings object").insert("contract".into(), serde_json::json!({"form":"change","checks_must_pass":true,"fields":[{"name":"title","max":256},{"name":"body","max":4096}]}));
+        let oauth = self.account.get("oauth").expect("public registration");
+        let mut account = serde_json::json!({"source":"sign_in", "client_id":oauth["client_id"],
+            "authorization_url":oauth["authorization_url"], "token_url":oauth["token_endpoint"],
+            "redirect_uri":oauth["redirect_uri"], "scope":oauth["scope"],
+            "token_format":if oauth["json"].as_bool().unwrap_or(false) {"json"} else {"form"}});
+        if let Some(trust) = oauth.get("trust_der").and_then(serde_json::Value::as_str) {
+            account.as_object_mut().expect("account fields").insert("trust".into(), serde_json::json!({"der":[trust]}));
+        }
+        let mut settings = serde_json::json!({"model":format!("{}/{}",self.name,self.model),
+            "effort":if self.name == "codex" {Some("low")} else {None}, "chat":"chat",
+            "instructions":"Follow the user's requested outcome exactly. Use the tools and call finish when done.",
+            "endpoints":{&self.name:{"preset":self.name,"connect":10,"handshake":10,"identity":if self.name == "codex" {"plain"} else {"claude-code"}}},
+            "models":{format!("{}/{}",self.name,self.model):{"window":262_144,"output":32_768,"reasoning_item":2048,
+                "head":60,"idle":30,"input_price":1.25,"cached_price":0.125,"output_price":10,"price_unit":1_000_000}},
+            "accounts":{&self.name:account},
+            "budget":{"turns":512,"spend":25,"seconds":3600}, "waiting_seconds":30,
+            "deployment":{"group_stop":1,"memory":2_147_483_648_u64},
+            "workspace":{"directories":[{"name":"repo","path":directory.join("repo"),"writable":true,"git":change}],
+                "conventions":{"guide":".smith-test/guide","checks":".smith-test/check"},
+                "contract":if change {serde_json::json!({"form":"change","checks_must_pass":true,
+                    "fields":[{"name":"title","max":256},{"name":"body","max":4096}]})}
+                    else {serde_json::json!({"form":"report","max":4096})}},
+            "trace":{"path":directory.join("agent-trace.jsonl"),"capture":"calls"},
+            "environment":{"inherit":[],"set":{"PATH":required("PATH")}}});
+        if self.name != "codex" {
+            settings.as_object_mut().expect("settings").remove("effort");
         }
         settings
     }
 
     pub fn configure(&self, scratch: &Scratch, change: bool, push: Option<(&str, &str)>) {
         let mut settings = self.settings(scratch.path(), change);
-        if self.borrowed.is_some() {
+        {
             if push.is_some() {
                 settings
                     .get_mut("workspace")
@@ -255,29 +245,18 @@ impl Backend {
                 }
             }
             self.write_product(scratch, &settings);
-            return;
         }
-        if let Some((remote, branch)) = push {
-            settings
-                .as_object_mut()
-                .expect("settings object")
-                .insert("push".into(), serde_json::json!([{"remote":remote,"branch":branch}]));
-            settings.as_object_mut().expect("settings object").insert(
-                "delivery_environment".into(),
-                serde_json::json!(
-                    ["HOME", "PATH", "SSH_AUTH_SOCK"]
-                        .into_iter()
-                        .filter_map(|name| setting(name).map(|value| format!("{name}={value}")))
-                        .collect::<Vec<_>>()
-                ),
-            );
-        }
-        std::fs::write(
-            smith_bench::guard::write_path(&scratch.path().join("settings.json")).expect("guarded live settings"),
-            serde_json::to_vec(&settings).expect("live settings JSON"),
-        )
-        .expect("live settings");
     }
+}
+
+#[must_use]
+pub fn record_path(state: &Path, name: &str) -> PathBuf {
+    use std::fmt::Write;
+    let mut file = String::new();
+    for byte in name.as_bytes() {
+        write!(&mut file, "{byte:02x}").expect("record name");
+    }
+    state.join("smith/tokens").join(format!("{file}.token"))
 }
 
 #[cfg(test)]
@@ -291,18 +270,78 @@ mod tests {
             let backend = Backend {
                 name: name.into(),
                 model: "configured-model".into(),
-                account: serde_json::json!({"number":0,"account_id":"public-account","oauth":{}}),
+                account: serde_json::json!({"oauth":{"authorization_url":"https://issuer.example/authorize", "token_endpoint":"https://issuer.example/token", "client_id":"client", "redirect_uri":"http://127.0.0.1:2345/callback", "scope":"read", "json":false}}),
                 tokens: scratch.path().join("dedicated-tokens"),
                 borrowed: None,
             };
             let settings = backend.settings(scratch.path(), true);
-            let endpoint = &settings["agent"]["endpoints"][0];
-            assert_eq!(endpoint["transport"], "tls");
-            assert!(endpoint.get("trust_der").is_none());
-            assert_eq!(endpoint["identity"], if name == "anthropic" { "claude-code" } else { "plain" });
-            assert_eq!(settings["token_directory"], serde_json::json!(backend.tokens));
-            assert!(settings.get("push").is_none());
-            assert_eq!(settings["contract"]["checks_must_pass"], true);
+            assert_eq!(settings["endpoints"][name]["preset"], name);
+            assert!(settings["accounts"][name].get("trust").is_none());
+            assert_eq!(settings["accounts"][name]["source"], "sign_in");
+            assert!(settings["workspace"].get("delivery").is_none());
+            assert_eq!(settings["workspace"]["contract"]["checks_must_pass"], true);
+        }
+    }
+
+    #[test]
+    fn sign_in_live_settings_keep_their_limits_on_the_product_face() {
+        let scratch = Scratch::new();
+        for name in ["codex", "anthropic"] {
+            let backend = Backend {
+                name: name.into(),
+                model: "configured-model".into(),
+                account: serde_json::json!({"oauth":{"authorization_url":"http://127.0.0.1:444/authorize",
+                    "token_endpoint":"http://127.0.0.1:444/token","client_id":"client",
+                    "redirect_uri":"http://127.0.0.1:2345/callback","scope":"read","json":false}}),
+                tokens: scratch.path().join(name),
+                borrowed: None,
+            };
+            let mut document = backend.settings(scratch.path(), false);
+            let endpoint = document
+                .get_mut("endpoints")
+                .expect("endpoints")
+                .get_mut(name)
+                .expect("provider")
+                .as_object_mut()
+                .expect("fields");
+            endpoint.insert("address".into(), serde_json::json!("127.0.0.1:34443"));
+            endpoint.insert("server_name".into(), serde_json::json!("skein.test"));
+            endpoint
+                .insert("trust".into(), serde_json::json!({"der":[scratch.path().join("root.der")],"system":false}));
+            backend.write_product(&scratch, &document);
+            let clock = skein_shell::Clock::new();
+            let result = smith_bench::process::execute(
+                &clock,
+                skein_world::end_to_end::Command {
+                    program: env!("CARGO_BIN_EXE_smith").into(),
+                    arguments: vec!["check".into(), "--json".into()],
+                    environment: vec![
+                        ("HOME".into(), scratch.path().into()),
+                        ("XDG_CONFIG_HOME".into(), scratch.path().join("config").into()),
+                        ("XDG_STATE_HOME".into(), backend.tokens.clone().into()),
+                        ("PATH".into(), "/usr/bin:/bin".into()),
+                    ],
+                    directory: scratch.path().into(),
+                },
+                Box::default(),
+                smith_bench::process::Capture::Raw,
+                smith_bench::process::Bounds {
+                    hard: skein_lib::Duration::from_secs(1),
+                    teardown: skein_lib::Duration::ZERO,
+                    grace: skein_lib::Duration::from_millis(20),
+                    settlement: skein_lib::Duration::from_secs(1),
+                    stdout: 1_048_576,
+                    stderr: 65_536,
+                    force_walk: true,
+                },
+            )
+            .expect("synthetic check settles");
+            assert_eq!(
+                result.exit,
+                smith_bench::Exit::Code(3),
+                "native settings reach the absent synthetic record: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
         }
     }
 

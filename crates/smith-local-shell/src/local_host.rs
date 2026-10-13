@@ -20,11 +20,7 @@ use smith_agent_service as agent;
 use smith_local_domain as domain;
 use smith_local_service as service;
 
-use crate::{
-    local_auth::{self, Auth},
-    local_settings::Account,
-    local_tokens::Tokens,
-};
+use crate::local_settings::Account;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Route {
@@ -70,9 +66,7 @@ pub struct Local {
     service: service::Service,
     result_file: Option<Box<crate::compose::ResultFile>>,
     ephemeral_directory: Option<Box<[u8]>>,
-    tokens: Option<Tokens>,
     headless: Option<crate::front::headless::Headless>,
-    accounts: Box<[Auth]>,
     credential_locations: skein_lib::List<crate::credentials::Location>,
     writer: Option<io::Io>,
     env: Env<io::Limits>,
@@ -198,9 +192,14 @@ impl Local {
         let outer_queue =
             queue.checked_mul(2).ok_or_else(|| configuration_failure(derivation_refusal("local_queue")))?;
         let io_limits = config.limits.process.io;
-        if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
-            return Err(configuration_failure("local IO limits cannot carry OAuth TLS records".into()));
-        }
+        let handed = match handed {
+            Some(prepared) => Some(prepared),
+            None if resources.accounts.is_empty() => None,
+            None => Some(
+                crate::credentials::prepare_legacy(&resources.accounts, &resources.token_directory, io_limits, None)
+                    .map_err(configuration_failure)?,
+            ),
+        };
         let (worst, operations) = Self::startup_memory(
             &config.limits,
             u32::try_from(resources.accounts.len())
@@ -224,11 +223,6 @@ impl Local {
             }
             None => skein_lib::List::with_capacity(0),
         };
-        let tokens = if resources.accounts.is_empty() {
-            None
-        } else {
-            Some(Tokens::new(&resources.token_directory, token_limits()).map_err(host_failure)?)
-        };
         let mut writer = if service.inline() { None } else { Some(io::Io::new(&io_limits)) };
         let output = if headless.as_ref().is_some_and(|front| front.json) {
             None
@@ -242,21 +236,11 @@ impl Local {
             )
         };
         let requests = Queue::with_capacity(queue);
-        let accounts = resources
-            .accounts
-            .into_vec()
-            .into_iter()
-            .enumerate()
-            .map(|(position, account)| Auth::new(account, position, resources.oauth_entropy))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(host_failure)?;
         let mut local = Self {
             service,
             result_file: None,
             ephemeral_directory: None,
-            tokens,
             headless,
-            accounts: accounts.into(),
             credential_locations,
             writer,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: io_limits },
@@ -468,82 +452,7 @@ impl Local {
     }
 
     fn credential(&mut self, account: u32) {
-        if let Some(auth) = self.accounts.iter_mut().find(|auth| auth.account() == account) {
-            auth.request();
-        } else {
-            self.service
-                .local_event(domain::Event::NoCredential { account, reason: domain::CredentialFailure::Missing });
-        }
-    }
-
-    #[expect(
-        clippy::single_match_else,
-        reason = "10-product replaces the shell token-store driver with skein OAuth io"
-    )]
-    fn authentication(&mut self) {
-        for auth in &mut self.accounts {
-            if self.service.closing() {
-                auth.close(self.env.now, self.env.wall, &mut self.requests);
-            }
-            auth.due(self.env.now);
-            if auth.wants() {
-                match self.tokens.as_ref().expect("legacy auth owns its tokens").load(auth.account()) {
-                    Ok(saved) => auth.begin(saved, self.env.now, self.env.wall),
-                    Err(_) => {
-                        auth.load_failed();
-                        self.service.local_event(domain::Event::NoCredential {
-                            account: auth.account(),
-                            reason: domain::CredentialFailure::Missing,
-                        });
-                    }
-                }
-            }
-            auth.tick(self.env.now, self.env.wall, &mut self.requests);
-            if let Some(url) = auth.shown_url() {
-                let mut text = b"Sign in: ".to_vec();
-                text.extend_from_slice(&url);
-                text.push(b'\n');
-                self.service.output().push(text.into());
-            }
-            for _ in 0..8 {
-                let Some(request) = auth.take() else { break };
-                match request {
-                    smith_local_protocol::CredentialRequest::Visit { url } => auth.visit(url, &mut self.requests),
-                    smith_local_protocol::CredentialRequest::Http(request) => auth.http(request),
-                    smith_local_protocol::CredentialRequest::Save { account, bytes } => {
-                        match self.tokens.as_ref().expect("legacy auth owns its tokens").save(account, &bytes) {
-                            Ok(()) => auth.stored(self.env.wall),
-                            Err(_) => auth.store_failed(),
-                        }
-                    }
-                    smith_local_protocol::CredentialRequest::Ready {
-                        event: domain::Event::Credential { grant },
-                        value,
-                    } => {
-                        let length = u16::try_from(auth.account_id().len()).expect("bounded account identifier");
-                        let mut envelope = Vec::with_capacity(
-                            auth.account_id()
-                                .len()
-                                .checked_add(value.len())
-                                .and_then(|bytes| bytes.checked_add(2))
-                                .expect("bounded credential envelope"),
-                        );
-                        envelope.extend_from_slice(&length.to_be_bytes());
-                        envelope.extend_from_slice(auth.account_id());
-                        envelope.extend_from_slice(&value);
-                        auth.lent(grant.valid, self.env.now);
-                        self.service.credential(grant, envelope.into());
-                    }
-                    smith_local_protocol::CredentialRequest::Failed { event } => self.service.local_event(event),
-                    smith_local_protocol::CredentialRequest::SignedIn { .. }
-                    | smith_local_protocol::CredentialRequest::Closed
-                    | smith_local_protocol::CredentialRequest::Notice { .. }
-                    | smith_local_protocol::CredentialRequest::Ready { .. } => {
-                        unreachable!("credential translator lends only a grant")
-                    }
-                }
-            }
-        }
+        self.service.local_event(domain::Event::NoCredential { account, reason: domain::CredentialFailure::Missing });
     }
 
     fn writer_up(&mut self) {
@@ -569,11 +478,6 @@ impl Local {
             }
         }
         while let Some(event) = self.events.pop() {
-            let owner = local_auth::event_owner(&event);
-            if let Some(auth) = self.accounts.iter_mut().find(|auth| auth.owns(owner)) {
-                auth.event(event, self.env.now, self.env.wall, &mut self.requests);
-                continue;
-            }
             match event {
                 io::Event::Output { owner, up: OutputUp::Settled { right, outcome } } if Some(owner) == self.output => {
                     let (wanted, text) = self.pending.take().expect("terminal has one output right");
@@ -829,13 +733,11 @@ impl Host for Local {
         service::iterate(&mut self.service, now, wall);
         self.files();
         self.product_files(now, wall);
-        self.authentication();
         self.writer_down();
         if self.service.closing()
             && self.terminal == Terminal::Closed
             && self.writer.as_ref().is_none_or(io::Io::is_empty)
             && self.result_file.as_ref().is_none_or(|file| file.is_empty())
-            && self.accounts.iter().all(Auth::closed)
             && self.launch_root.is_none()
             && !self.launch_closing
             && self.pending.is_none()
@@ -869,7 +771,6 @@ impl Host for Local {
     fn work_pending(&self, now: Time) -> bool {
         self.service.work_pending(now)
             || self.result_file.as_ref().is_some_and(|file| file.work_pending(now))
-            || self.accounts.iter().any(Auth::pending)
             || self.writer.as_ref().is_some_and(io::Io::is_ready)
             || self.writer.as_ref().is_some_and(|writer| writer.is_due(now))
             || !self.completions.is_empty()
@@ -883,14 +784,13 @@ impl Host for Local {
             .into_iter()
             .flatten()
             .chain(self.result_file.as_ref().and_then(|file| file.next_deadline()))
-            .chain(self.accounts.iter().filter_map(Auth::deadline))
             .min()
     }
 
     /// The service's and the accounts' deadlines; the terminal writer's io
     /// deadline is no policy deadline.
     fn next_policy_deadline(&self) -> Option<Time> {
-        self.service.next_deadline().into_iter().chain(self.accounts.iter().filter_map(Auth::deadline)).min()
+        self.service.next_deadline()
     }
     fn is_empty(&self) -> bool {
         self.exit.is_some()

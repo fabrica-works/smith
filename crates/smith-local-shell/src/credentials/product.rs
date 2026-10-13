@@ -26,7 +26,7 @@ impl Prepared {
     pub fn worst_case(&self) -> Option<u64> {
         let mut bytes = service::accounts_worst_case(&self.limits)?
             .checked_add(List::<Location>::worst_case(self.locations.capacity())?)?
-            .checked_add(Queue::<smith_local_protocol::CredentialRequest>::worst_case(service::ACCOUNTS_MAX_OUT)?)?
+            .checked_add(Queue::<smith_local_service::CredentialRequest>::worst_case(service::ACCOUNTS_MAX_OUT)?)?
             .checked_add(
                 u64::from(self.limits.client.document.token_bytes).checked_mul(u64::from(service::ACCOUNTS_MAX_OUT))?,
             )?;
@@ -36,7 +36,7 @@ impl Prepared {
                     file.as_os_str().as_encoded_bytes().len().checked_add(program.len())?
                 }
                 Source::Env { variable, .. } => variable.len(),
-                Source::SignIn => 0,
+                Source::SignIn { file } => file.as_os_str().as_encoded_bytes().len(),
             };
             let length = location.name.len().checked_add(source)?.checked_add(256)?;
             bytes = bytes.checked_add(u64::try_from(length).ok()?.checked_mul(4)?)?;
@@ -45,7 +45,7 @@ impl Prepared {
     }
 }
 
-pub(super) fn codex(resolved: &Resolved, account: u32) -> bool {
+pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
     for model in &resolved.local.models {
         if model.account == account {
             let endpoint = resolved
@@ -81,7 +81,8 @@ pub fn prepare(resolved: &Resolved, wall: Wall) -> Result<Prepared, Refusal> {
     let mut sources = List::with_capacity(count);
     let mut locations = List::with_capacity(count);
     for account in &resolved.accounts {
-        let descriptor = source(&account.fields, &resolved.settings.workspace, codex(resolved, account.number));
+        let descriptor =
+            source(&account.fields, &resolved.settings.workspace, codex(resolved, account.number), &account.name);
         locations
             .push(Location { account: account.number, name: account.name.clone(), source: descriptor.clone() })
             .expect("selected locations fit their account bound");
@@ -114,7 +115,20 @@ pub fn prepare(resolved: &Resolved, wall: Wall) -> Result<Prepared, Refusal> {
                 }
                 service::Source::Env { account: account.number, borrowed }
             }
-            Source::SignIn => return Err(unavailable(&account.name, Credential::NotSignedIn)),
+            Source::SignIn { file } => {
+                let credential = super::sign_in::inspect(&file, wall);
+                if !credential.usable() {
+                    return Err(unavailable(&account.name, credential));
+                }
+                super::sign_in::private_source(
+                    account.number,
+                    &file,
+                    super::registration(account, codex(resolved, account.number), &resolved.settings.workspace)
+                        .map_err(Refusal::Configuration)?,
+                    false,
+                )
+                .map_err(|_| unavailable(&account.name, Credential::Unreadable { file }))?
+            }
         };
         assert!(sources.push(handed).is_ok(), "selected sources fit their account bound");
     }
@@ -128,13 +142,13 @@ fn unavailable(account: &str, credential: Credential) -> Refusal {
 /// Receiving bounds for handed-in accounts; no exchange or public listener is opened.
 #[must_use]
 pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::Limits {
-    // Handed-in records never open a socket; the native component requires one dormant slot.
-    io.sockets = 1;
+    // One exchange, its callback and its listener need three socket slots.
+    io.sockets = 3;
     skein_oauth_accounts::Limits {
         accounts,
         file_stall: Duration::from_secs(30),
         exchanges: 1,
-        listeners: 0,
+        listeners: 1,
         server: skein_http::server::Limits {
             head: 1024,
             headers: 8,
@@ -143,10 +157,29 @@ pub fn limits(mut io: skein_io::Limits, accounts: u32) -> skein_oauth_accounts::
             response: 1024,
             send: 1024,
         },
-        refresh_lead: crate::local_auth::limits().refresh_before,
-        client: crate::local_auth::limits().oauth,
+        refresh_lead: Duration::from_secs(60),
+        client: client_limits(),
         http: skein_http::client::Limits { request: 16_384, head: 16_384, headers: 128, read: 16_384, send: 16_384 },
         tls: skein_tls::client::Limits { read: 16_384, send: 16_384, records: 1_048_576 },
         io,
+    }
+}
+
+/// Native exchange bounds shared by startup inspection and private sign-in.
+#[must_use]
+pub fn client_limits() -> skein_oauth::ClientLimits {
+    skein_oauth::ClientLimits {
+        document: crate::local_host::token_limits(),
+        uri_bytes: 4096,
+        scope_bytes: 1024,
+        state_bytes: 64,
+        code_bytes: 4096,
+        url_bytes: 8192,
+        request_bytes: 16_384,
+        sign_in_time: Duration::from_secs(120),
+        request_time: Duration::from_secs(20),
+        backoff_base: Duration::from_secs(1),
+        backoff_ceiling: Duration::from_secs(8),
+        max_attempts: 3,
     }
 }

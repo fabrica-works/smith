@@ -1069,7 +1069,6 @@ dependencies = [
 name = "smith-local-protocol"
 version = "0.0.0"
 dependencies = [
- "skein-fake-oauth",
  "skein-io",
  "skein-json",
  "skein-lib",
@@ -1122,7 +1121,6 @@ dependencies = [
 name = "smith-local-shell"
 version = "0.0.0"
 dependencies = [
- "libc",
  "serde",
  "serde_json",
  "skein-channel",
@@ -1136,7 +1134,6 @@ dependencies = [
  "skein-io",
  "skein-lib",
  "skein-llm",
- "skein-llm-connection",
  "skein-oauth",
  "skein-oauth-accounts",
  "skein-shell",

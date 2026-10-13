@@ -73,7 +73,17 @@ pub fn resolve(settings: &Settings, _command: &crate::command::Command) -> Resul
     let limits = local::limits(&settings, &models, &agent)?;
     let local = local::build(&settings, &models, &agent, &accounts)?;
     local.validate(&limits).map_err(|why| relationships::local(&settings, &local, &limits, why))?;
-    Ok(Resolved { agent, local, accounts, limits, settings, outside_models })
+    let resolved = Resolved { agent, local, accounts, limits, settings, outside_models };
+    for account in &resolved.accounts {
+        if account.fields.get("source").and_then(|value| value.value.as_str()) == Some("sign_in") {
+            crate::credentials::registration(
+                account,
+                crate::credentials::product_codex(&resolved, account.number),
+                &resolved.settings.workspace,
+            )?;
+        }
+    }
+    Ok(resolved)
 }
 
 /// Expand preset defaults, then select only models whose account names a source.

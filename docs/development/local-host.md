@@ -182,8 +182,8 @@ An uncertain token POST is not repeated. A refused credential shows account
 unavailability and starts no run.
 
 Unless `token_directory` is set, records live in
-`$XDG_CONFIG_HOME/smith/tokens`, or `$HOME/.config/smith/tokens` when
-`XDG_CONFIG_HOME` is absent. The directory is private (0700); files are private
+`$XDG_STATE_HOME/smith/tokens`, or `$HOME/.local/state/smith/tokens` when
+`XDG_STATE_HOME` is absent. The directory is private (0700); files are private
 (0600) and named `<account-number>.json`. Skein's saved-token codec owns their
 format. The host refuses symbolic links, nonregular records, extra hard links,
 public permissions and account/filename mismatches. Replacement syncs the file,

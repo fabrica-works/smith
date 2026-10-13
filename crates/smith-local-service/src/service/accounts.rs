@@ -75,11 +75,9 @@ impl Service {
                     self.output.push(line.finish());
                 }
                 Some(crate::CredentialRequest::SignedIn { .. }) => {}
-                Some(
-                    crate::CredentialRequest::Http(_)
-                    | crate::CredentialRequest::Save { .. }
-                    | crate::CredentialRequest::Ready { .. },
-                ) => unreachable!("the native driver owns its exchange and keeper"),
+                Some(crate::CredentialRequest::Ready { .. }) => {
+                    unreachable!("the native driver owns its exchange and keeper")
+                }
             }
         }
         self.accounts = Some(accounts);

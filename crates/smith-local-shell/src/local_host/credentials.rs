@@ -34,7 +34,7 @@ impl Local {
                 }
                 None => Credential::Unset { variable: variable.clone() }.line(&location.name),
             },
-            Source::SignIn => return None,
+            Source::SignIn { .. } => Credential::NotSignedIn.line(&location.name),
         };
         let cap = usize::try_from(self.service.show_bytes().checked_sub(1)?).ok()?;
         if line.len() > cap {

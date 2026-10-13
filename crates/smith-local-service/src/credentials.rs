@@ -8,7 +8,9 @@ use skein_io::{self as io, file, file_layer, kernel};
 use skein_lib::{CryptoRng, Env, List, Queue, Secret, Time, Token, Wall};
 use skein_oauth_accounts as oauth;
 use smith_local_domain as local;
-use smith_local_protocol::{Borrowed, CredentialRequest, LoginFormat, decode_login};
+use smith_local_protocol::{Borrowed, LoginFormat, decode_login};
+mod boundary;
+pub use boundary::CredentialRequest;
 
 mod private;
 mod transport;

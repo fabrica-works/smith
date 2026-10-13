@@ -1,6 +1,7 @@
 //! The shared harness owns every loop, hosted admission and descriptor lifecycle.
 //! This module supplies scenario configuration and the fake machine's filesystem
 //! and git face, never process routing (testing.md, sections 2.1, 3.2 and 5).
+use crate::credential_fixture;
 use crate::{
     process::{self, Launch, Proc},
     referee::{CheckoutRead, Ending, Run},
@@ -14,7 +15,7 @@ use skein_io::kernel;
 use skein_lib::{Duration, Queue, Wall};
 use skein_world::{HostedProgram, Memory, Outcome};
 use smith_local_domain as local;
-use smith_local_shell::{local_host::token_limits, local_tokens};
+use smith_local_shell::local_host::token_limits;
 use smith_local_world::git::History;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -359,6 +360,18 @@ impl skein_world::Machine for Machine {
         } else {
             skein_fake_machine::step(&mut self.files, call, answers);
         }
+        if let Ok(root) = self.files.open(self.master, b"tokens", How::Directory) {
+            if let Ok(file) = self.files.open(root, b"0.json", How::Read) {
+                let bytes = self.files.read(file, 0, token_limits().record_bytes).expect("native kept record");
+                self.files.close(file);
+                let directory = self.chat_path.parent().expect("fixture home").join("tokens");
+                credential_fixture::Tokens::new(&directory, token_limits())
+                    .expect("fixture directory")
+                    .save(0, &bytes)
+                    .expect("outside native record observation");
+            }
+            self.files.close(root);
+        }
     }
 }
 
@@ -599,7 +612,7 @@ impl World {
             None,
         );
         let token_directory = files.path.join("tokens");
-        let tokens = local_tokens::Tokens::new(&token_directory, token_limits()).expect("token directory");
+        let tokens = credential_fixture::Tokens::new(&token_directory, token_limits()).expect("token directory");
         if tokens.load(0).expect("token record").is_none() {
             let saved = skein_oauth::SavedToken {
                 key: 0,
@@ -668,15 +681,15 @@ impl World {
             seed,
             files,
             placement,
-            if mode == Authentication::Refused { b"credential" } else { b"First answer" },
+            if mode == Authentication::Refused { b"not delivered" } else { b"First answer" },
         );
         world.scenario.launch.authenticated = true;
         world.scenario.authentication = Some(mode);
         if mode == Authentication::Refused {
             world.scenario.ending = Ending::Unavailable;
         }
-        let tokens =
-            local_tokens::Tokens::new(&world.scenario.launch.token_directory, token_limits()).expect("private store");
+        let tokens = credential_fixture::Tokens::new(&world.scenario.launch.token_directory, token_limits())
+            .expect("private store");
         if mode == Authentication::SignIn {
             std::fs::remove_file(world.scenario.launch.token_directory.join("0.json")).expect("no saved token");
         } else {
@@ -723,6 +736,17 @@ impl World {
             config.faults.cancel_race = 500;
         }
         let mut machine = self.machine.take().expect("one invocation");
+        if launch.authenticated {
+            machine.files.make_directory(machine.master, b"tokens", 0o700).expect("native keeper directory");
+            if let Ok(bytes) = std::fs::read(launch.token_directory.join("0.json")) {
+                let file = machine
+                    .files
+                    .open(machine.master, b"tokens/0.json", How::Create { mode: 0o600 })
+                    .expect("native input record");
+                machine.files.write(file, 0, &bytes).expect("native fixture bytes");
+                machine.files.close(file);
+            }
+        }
         let opened = machine.files.open_handles();
         assert_eq!(opened, 1);
         let terminal_root = machine.files.open(machine.master, b".", How::Directory).expect("terminal root");

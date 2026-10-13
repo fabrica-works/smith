@@ -16,3 +16,5 @@ pub mod process;
 
 pub mod world;
 pub use world::{Authentication, Borrowing, Files, Placement, World};
+
+pub mod credential_fixture;

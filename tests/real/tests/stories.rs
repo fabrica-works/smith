@@ -20,7 +20,7 @@ fn a_first_run_signs_in_and_keeps_its_token() {
     assert_eq!(oauth.posts, 1);
     assert_eq!(oauth.pages, 1);
     assert!(oauth.browser_replied && oauth.saved_before_query);
-    let tokens = smith_local_shell::local_tokens::Tokens::new(
+    let tokens = smith_local_process_world::credential_fixture::Tokens::new(
         &world.scenario.launch.token_directory,
         smith_local_shell::local_host::token_limits(),
     )

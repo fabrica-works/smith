@@ -69,7 +69,7 @@ pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<(Opene
     let resolved = settings::resolve::resolve(&settings, &command).map_err(Refused::Settings)?;
     let mut invocation = match command {
         Command::Exec(invocation) => invocation,
-        Command::Check { .. } | Command::Legacy(_) => unreachable!("one exec invocation"),
+        Command::Check { .. } | Command::Legacy(_) | Command::Login { .. } => unreachable!("one exec invocation"),
     };
     let operations =
         crate::Local::kernel_operations(&resolved.agent.service.limits.io, resolved.agent.service.limits.routes, true)
@@ -356,7 +356,7 @@ fn root(path: &std::path::Path) -> Result<skein_io::kernel::Fd, Refused> {
 pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clock) -> Option<u8> {
     let invocation = match crate::command::parse(arguments.iter().skip(1).cloned().collect()) {
         Ok(Command::Exec(invocation)) => invocation,
-        Ok(Command::Check { .. } | Command::Legacy(_)) => return None,
+        Ok(Command::Check { .. } | Command::Legacy(_) | Command::Login { .. }) => return None,
         Err(why) => {
             eprintln!("{}", Refused::Usage(why).line());
             return Some(2);

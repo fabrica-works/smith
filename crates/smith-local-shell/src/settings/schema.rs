@@ -48,6 +48,7 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         | ["budget", "reserve"]
         | ["models" | "endpoints" | "accounts", _]
         | ["endpoints", _, "headers" | "trust"]
+        | ["accounts", _, "trust"]
         | ["deployment", "compaction_threshold"]
         | ["workspace", "conventions" | "contract" | "delivery"]
         | ["environment", "set"] => Some(Kind::Table),
@@ -66,14 +67,20 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
         | ["models", _, "input_price" | "cached_price" | "cache_write_price" | "output_price"]
         | ["deployment", "max_spend"] => Some(Kind::Number),
         ["endpoints", _, "preset" | "dialect" | "address" | "server_name" | "identity" | "account"]
-        | ["accounts", _, "variable" | "program" | "file" | "client_id" | "scope" | "redirect_uri"]
+        | [
+            "accounts",
+            _,
+            "variable" | "program" | "file" | "client_id" | "scope" | "redirect_uri" | "authorization_url"
+            | "token_url",
+        ]
         | ["workspace", "conventions", "guide" | "checks"]
         | ["trace", "path"] => Some(Kind::Text(4096)),
         ["endpoints", _, "headers", _] => Some(Kind::Text(8192)),
-        ["endpoints", _, "trust", "der" | "pem"] | ["environment", "inherit"] | ["build", "caches"] => {
+        ["endpoints" | "accounts", _, "trust", "der" | "pem"] | ["environment", "inherit"] | ["build", "caches"] => {
             Some(Kind::Strings)
         }
         ["accounts", _, "source"] => Some(Kind::Choice(&["sign_in", "borrow", "env"])),
+        ["accounts", _, "token_format"] => Some(Kind::Choice(&["json", "form"])),
         ["accounts", _, "format"] => Some(Kind::Choice(&["codex"])),
         ["deployment", "memory" | "llm_pool"] => Some(Kind::Integer(i64::MAX.unsigned_abs())),
         ["workspace", "directories"] => Some(Kind::Directories),

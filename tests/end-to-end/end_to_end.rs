@@ -734,3 +734,61 @@ fn an_ephemeral_directory_is_removed_when_product_startup_refuses() {
     assert!(ran.stdout.is_empty());
     assert!(std::fs::read_dir(scratch.path().join("state")).unwrap().next().is_none());
 }
+
+fn login_settings(scratch: &Scratch, registration: &str) {
+    let directory = scratch.path().join("config/smith");
+    std::fs::create_dir_all(&directory).expect("scratch user layer");
+    std::fs::write(directory.join("config.toml"), format!("[accounts.test]\nsource='sign_in'\n{registration}"))
+        .expect("scratch registration");
+}
+
+#[test]
+fn smith_login_signs_in_against_the_fake_issuer_and_exits_0() {
+    let scratch = Scratch::new();
+    login_settings(
+        &scratch,
+        "client_id='client'\nauthorization_url='http://127.0.0.1:34444/authorize'\ntoken_url='http://127.0.0.1:34444/token'\nredirect_uri='http://127.0.0.1:2345/callback'\nscope='read'\ntoken_format='form'\n",
+    );
+    let ran = support::login::sign_in(&scratch);
+    assert_eq!(ran.code, 0);
+    assert!(String::from_utf8_lossy(&ran.stderr).contains("account test: signed in"));
+    let file = scratch.path().join("state/smith/tokens/74657374.token");
+    let secret = skein_shell::read_private_file(
+        &file,
+        smith_local_shell::local_host::token_limits().record_bytes,
+        skein_shell::effective_user(),
+    )
+    .expect("kept private record");
+    let record = skein_oauth::decode_record(secret.expose(), &smith_local_shell::local_host::token_limits())
+        .expect("native record");
+    assert_eq!(record.access_token.as_ref(), b"access-new");
+    assert_eq!(record.refresh_token.as_deref(), Some(b"refresh-new".as_slice()));
+}
+
+#[test]
+fn smith_login_of_an_unknown_account_exits_2() {
+    let scratch = Scratch::new();
+    let ran = support::run_product(&scratch, &["login", "missing"], b"", None);
+    assert_eq!(ran.code, 2);
+    assert!(String::from_utf8_lossy(&ran.stderr).contains("unknown account missing"));
+    assert!(!scratch.path().join("state/smith/tokens").exists());
+}
+
+#[test]
+fn smith_check_and_startup_refuse_missing_sign_in_registration_keys_by_name() {
+    let scratch = Scratch::new();
+    let directory = scratch.path().join("config/smith");
+    std::fs::create_dir_all(&directory).expect("scratch user layer");
+    let base = String::from_utf8(support::fake_provider_settings(&scratch))
+        .expect("settings")
+        .replace("source='borrow'", "source='sign_in'");
+    std::fs::write(directory.join("config.toml"), base).expect("missing registration fixture");
+    for arguments in [&["check"][..], &["exec", "hello"][..]] {
+        let ran = support::run_product(&scratch, arguments, b"", None);
+        assert_eq!(ran.code, 2);
+        let line = String::from_utf8_lossy(&ran.stderr);
+        assert!(line.contains("accounts.codex.client_id"));
+        assert!(line.contains("config.toml"));
+    }
+    assert!(!scratch.path().join("state/smith/tokens").exists());
+}

@@ -60,7 +60,7 @@ fn a_lent_grant_refreshes_while_the_model_is_running_before_it_lapses() {
     let post = world.first_token_post().expect("scheduled refresh reached the peer");
     assert!(post.as_nanos() >= skein_tls_world::pki::VALID.as_nanos() + skein_lib::Duration::from_secs(1).as_nanos());
     assert!(post.as_nanos() < skein_tls_world::pki::VALID.as_nanos() + skein_lib::Duration::from_secs(61).as_nanos());
-    let token = smith_local_shell::local_tokens::Tokens::new(
+    let token = smith_local_process_world::credential_fixture::Tokens::new(
         &files.path().join("tokens"),
         smith_local_shell::local_host::token_limits(),
     )

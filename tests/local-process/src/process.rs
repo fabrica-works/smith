@@ -294,8 +294,14 @@ pub fn issuer() -> Issuer {
 /// The identical issuer domain, with TLS selected in the real-loop tier.
 #[must_use]
 pub fn issuer_with(transport: skein_fake_peers::Transport) -> Issuer {
-    let scheme = if transport == skein_fake_peers::Transport::Tls { "https" } else { "http" };
     let port = if transport == skein_fake_peers::Transport::Tls { 34_444 } else { 444 };
+    issuer_at(transport, port)
+}
+
+/// The same fake issuer domain at an explicitly selected test port.
+#[must_use]
+pub fn issuer_at(transport: skein_fake_peers::Transport, port: u16) -> Issuer {
+    let scheme = if transport == skein_fake_peers::Transport::Tls { "https" } else { "http" };
     let limits = fake_oauth::Limits {
         document: token_limits(),
         uri_bytes: 8192,
@@ -518,6 +524,11 @@ impl IssuerProcess {
     pub fn configured(transport: skein_fake_peers::Transport) -> Self {
         Self { peer: issuer_with(transport), first_post: None }
     }
+    /// Prepare a new process story at an unprivileged port.
+    #[must_use]
+    pub fn at(transport: skein_fake_peers::Transport, port: u16) -> Self {
+        Self { peer: issuer_at(transport, port), first_post: None }
+    }
     /// Peer observations only.
     #[must_use]
     pub fn peer(&self) -> &Issuer {
@@ -685,6 +696,9 @@ pub fn local_roots(spawn: &kernel::Spawn) -> Vec<StartupRoot> {
         name: b"state".as_slice().into(),
         path: launch.state_directory.as_os_str().as_encoded_bytes().into(),
     });
+    if launch.authenticated {
+        roots.push(StartupRoot { name: b"credential".as_slice().into(), path: path.into() });
+    }
     if launch.change {
         let path = launch.root_path.join("repo");
         roots.push(StartupRoot {
@@ -739,7 +753,17 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
     let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
-    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io);
+    let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io).or_else(|| {
+        launch.authenticated.then(|| {
+            smith_local_shell::credentials::prepare_legacy(
+                &accounts_with(true, launch.tls, launch.trust_der.as_deref()),
+                &launch.token_directory,
+                config.limits.process.io,
+                Some(&[root(inherited, b"credential")]),
+            )
+            .expect("native authenticated sources")
+        })
+    });
     let mut local = Local::within_memory(
         config,
         lower,
@@ -756,7 +780,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
                 Box::new([])
             },
             delivery_environment: Box::new([]),
-            accounts: if launch.borrowing.is_some() {
+            accounts: if handed.is_some() {
                 Box::new([])
             } else {
                 accounts_with(launch.authenticated, launch.tls, launch.trust_der.as_deref())

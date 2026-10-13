@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use skein_lib::{Duration, Wall};
 use skein_shell::Host;
 use smith_local_domain as local;
+use smith_local_process_world::credential_fixture;
 use smith_local_service as service;
 use smith_local_shell::local_host::{Local, Resources, token_limits};
-use smith_local_shell::{local_settings, local_tokens};
+use smith_local_shell::local_settings;
 
 fn configuration(root: skein_io::kernel::Fd) -> (service::Config, smith_agent_service::Config) {
     let lower = smith_agent_process_world::configuration();
@@ -97,7 +98,7 @@ impl Invocation {
         let output = sim.open_inherited_write(pid);
         let signals = sim.open_signal_source(pid);
         let token_directory = directory.join("tokens");
-        let tokens = local_tokens::Tokens::new(&token_directory, token_limits()).expect("private tokens");
+        let tokens = credential_fixture::Tokens::new(&token_directory, token_limits()).expect("private tokens");
         let token = skein_oauth::encode_record(
             &skein_oauth::SavedToken {
                 key: 0,

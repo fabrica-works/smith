@@ -145,7 +145,7 @@ impl Referee<Process> for Judge {
         }
         let authenticated = procs.iter().any(|p| matches!(p, Process::Script(Proc::Issuer(_))));
         if authenticated && !self.saved && procs.iter().any(|p| matches!(p, Process::Script(Proc::Peer(p)) if smith_local_process_world::llm::queries(p).next().is_some())) {
-            let store = smith_local_shell::local_tokens::Tokens::new(&self.tokens, smith_local_shell::local_host::token_limits()).expect("private tokens");
+            let store = smith_local_process_world::credential_fixture::Tokens::new(&self.tokens, smith_local_shell::local_host::token_limits()).expect("private tokens");
             assert_eq!(store.load(0).expect("token read").expect("saved before grant use").access_token.as_ref(), b"access-new", "token persists before provider query");
             self.saved = true;
         }
@@ -230,7 +230,7 @@ fn start_program(program: &Path, arguments: Vec<std::ffi::OsString>, directory: 
 pub fn settings(scratch: &Scratch, scenario: &Scenario) {
     let trust = scratch.path().join("root.der");
     if !scenario.launch.authenticated {
-        let tokens = smith_local_shell::local_tokens::Tokens::new(
+        let tokens = smith_local_process_world::credential_fixture::Tokens::new(
             &scenario.launch.token_directory,
             smith_local_shell::local_host::token_limits(),
         )
@@ -640,4 +640,6 @@ pub fn smith(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
 }
 
 mod exec;
-pub use exec::{Reply, exec_with_foreign_file, exec_with_provider, fake_provider_settings};
+pub use exec::{Reply, exec_with_foreign_file, exec_with_provider, fake_provider_settings, run as run_product};
+
+pub mod login;
