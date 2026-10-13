@@ -2218,3 +2218,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    12.5's 6 and 12.6's 10, the $45 and every suite's per-call attempts,
    wall, tokens and no-rerun settings unchanged; README's "past its
    line's budget by half stops on a question" now counts from 149.
+132. **12.5's large effects: disjoint ranges** (block of
+   2026-10-13T23:05:03Z, smith 12.5). benchmarks.md 3.1 and 11.5 report
+   the repository task's "large effects only" and name no threshold;
+   session 12's Questions to raise propose "an effect is large when the
+   arms' ranges of a metric do not overlap; the report states nothing
+   else as a difference". Ruling: that, as the implementer reads it: for
+   each permitted cross-agent metric (task and process wall, each token
+   field under both conventions, commonly priced spend), the observed
+   minimum and maximum over each arm's three attempts; disjoint ranges
+   are a large effect, overlapping ranges are none; a missing or
+   lower-bound measurement keeps its reason and claims no separation;
+   failed, setup and budget attempts stay in the counts and in every
+   metric they have; no significance is inferred from three attempts.
+   12.7 states the threshold beside the results.
