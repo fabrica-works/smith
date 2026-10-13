@@ -953,26 +953,30 @@ screen (10.24).
 Size: README rule 9's; past 700, it stops and asks.
 Removes: the view's whole-record slots.
 
-### 10.10 Raw terminal input
-Scope (shell.md, 4.1; skein shell.md, 6.3): with a terminal and without
-`--plain`, raw input at startup with the interrupt key kept as a signal;
-the modes restored once `drive` returns, on every path, before the last
-line; `Resized` heard and `Window` read for the status line's width.
-Needs: smith 10.24's interactive owner (`front/interactive.rs`, the status line, `--plain`; decisions.md, 13.113) and 10.s1's repin (decisions.md, 13.75); skein's terminal modes (skein 02.6): `raw_input`,
-`Kept::restore`, `open_signals(Watch::TerminationAndWindow)`, io's
-`Resized` and `Window`. Repin skein in its own commit first.
+### 10.10 The terminal's window size
+Scope (shell.md, 2 and 4.1; skein shell.md, 6.3), as the designer ruled
+on 2026-10-13: the chat stays in the terminal's own line mode, which
+echoes and edits the line, ends input at its end-of-input key and keeps
+its interrupt key as the signal; smith sets no terminal mode, so there
+is nothing to restore. With a terminal and without `--plain`, `Window`
+read at startup and `Resized` heard for the status line's width. Raw
+input waits for a key-at-a-time view (hosts.md, open questions).
+Needs: smith 10.24's interactive owner (`front/interactive.rs`, the status line, `--plain`; decisions.md, 13.113) and 10.s1's repin (decisions.md, 13.75); skein's
+`open_signals(Watch::TerminationAndWindow)`, io's `Resized` and `Window`
+(skein 02.6, pinned at `83122ea0`).
 Files: `smith-local-shell` (`compose.rs`, `front/interactive.rs`,
 `local_host.rs`), `smith-local-service`, `src/main.rs`, `Cargo.lock`,
 `tests/end-to-end`.
 Shape: `front::interactive::Screen::Terminal { columns: u16 }`.
 Test shape: end to end at a pseudo-terminal, with skein's
 `resize_terminal` and `terminal_modes`:
-`the_terminal_modes_are_restored_after_smith_exits`,
-`the_terminal_modes_are_restored_after_an_interrupt`,
+`the_terminal_modes_are_unchanged_after_smith_exits`,
+`end_of_input_at_the_terminal_lets_the_run_answer_then_exits_0`,
 `a_window_size_change_reaches_the_status_line`; 2 s each.
-Proof: process, `the_terminal_modes_are_restored_after_an_interrupt`;
-once, under 2 s.
-Don't: no terminal syscall in smith.
+Proof: process, `a_window_size_change_reaches_the_status_line`; once,
+under 2 s.
+Don't: no terminal syscall in smith; no raw input, and no line editor
+of smith's.
 Size: at most 200.
 Removes: nothing.
 
