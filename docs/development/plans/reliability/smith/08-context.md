@@ -505,7 +505,10 @@ section 4; session.md, sections 3 and 8.2; transcript.md, section 2), for
   startup with main's account, the derivation the largest of them; the
   run's charter still names main's model;
 - the transcript's `Turn` records its `model` and `effort` (transcript 3,
-  in place);
+  in place): an ordinary turn its completion's, a window turn the model
+  and effort of the window it opens, the charter's, as the designer
+  ruled on 2026-10-13 (transcript.md, section 2), so a resume after a
+  model change does not compact again;
 - `smith-domain-session`: a session opened from a window whose last
   turn's model is not its charter's main model compacts first, with the
   window's own model, and opens the new window with the charter's; a
@@ -539,7 +542,8 @@ charter names none; a turn's model and effort round-trip in the
 transcript; the configuration holds each model of main's endpoint and
 none of another's. World:
 `a_session_resumed_with_another_model_compacts_first_with_the_windows_model`,
-`a_later_activation_with_another_effort_keeps_its_window`. Ceilings:
+`a_later_activation_with_another_effort_keeps_its_window`,
+`a_resume_after_a_model_change_compaction_does_not_compact_again`. Ceilings:
 20 ms, 0.5 s.
 Proof: world,
 `a_session_resumed_with_another_model_compacts_first_with_the_windows_model`;
