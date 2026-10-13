@@ -532,8 +532,24 @@ Split from 10.5 (decisions.md, 13.103). Scope: 10.5's rendering left at
 its 950-line stop: the last assistant text kept across later tool-only
 turns for the result, and smith 06's words and notices carrying shell.md
 4.3's named forms (the account and endpoint, the budget used against its
-limit), through the existing words owner.
-Needs: 10.5.
+limit), through the existing words owner. As the designer ruled on
+2026-10-13 (run.md, section 10; channel.md, section 4; events.md, 3.10;
+shell.md, 4.3): the answer's failure carries the values its forms need,
+and no notice is paired with it:
+- an exhausted account: the account's number and, when its provider
+  said, how long until it may be used again, measured when the run
+  answers (`run::Fault::Exhausted`, the channel's `ModelFault`, the
+  host's and the inline agent's, and the trace's `retry_after_ms`);
+- a budget failure: what ran out, with `used` and `bound` in its unit,
+  time being the run's wall time as its budget counted it, never the
+  product's elapsed;
+- `words` stays one function, of the answer failure and the two facts
+  only the host has: each account's name and its clock when the answer
+  came.
+
+Those crossings are a step its supervisor names, under channel 2 and
+events 1 (the README's rule 5), with the codecs and goldens regenerated.
+Needs: 10.5; that step.
 Files: 10.5's rendering files; smith 06's words owner, for those forms.
 Test shape: unit tests with literal expected lines for each form, and
 one for a result whose last text precedes tool-only turns. Under 20 ms.
