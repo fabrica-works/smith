@@ -1,6 +1,6 @@
 # Hosts
 
-Provisional, 2026-10-07, revised 2026-10-09. The host's side of the
+Provisional, 2026-10-07, revised 2026-10-13. The host's side of the
 protocol:
 
 - `smith-host-protocol`, the host's half of the channel, a component that
@@ -199,8 +199,9 @@ what its host's protocol layer would do:
 Each account has one credential source (domain/host.md, section 7):
 
 - **`sign_in`, smith's own,** with skein's OAuth client and its driver
-  (skein's `oauth.md`, section 6) and a provider preset where the
-  provider sanctions a public client. The authorization page's address
+  (skein's `oauth.md`, section 6), as a public client with the
+  registration its account's settings give; no preset carries one
+  (`docs/design/shell.md`, section 7). The authorization page's address
   is shown at the terminal, and the redirect comes back to a loopback
   listener bound to 127.0.0.1. A
   redirect registered as `localhost` is accepted, and compared exactly,

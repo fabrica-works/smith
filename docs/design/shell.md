@@ -539,7 +539,7 @@ source = "borrow"
 | `[budget]` | spend, seconds, turns and the reserve | 6.4 |
 | `[models."<endpoint>/<name>"]` | a model's declared values, and its prices | the preset's, 6.1 |
 | `[endpoints.<name>]` | a preset, or its dialect, address, TLS name, trust, headers, identity and account | `codex` and `anthropic` |
-| `[accounts.<name>]` | the credential source and its fields (section 7) | none: each account names its source; `sign_in` takes the preset's registration |
+| `[accounts.<name>]` | the credential source and its fields (section 7) | none: each account names its source; `sign_in` takes its registration from these fields, never from a preset |
 | `[deployment]` | declared deployment values | the profile's, 6.3 |
 | `[workspace]` | directories, conventions, the contract, delivery fields, the title field, pushes | the workspace directory; a report |
 | `[environment]` | `inherit`, the names taken from smith's own environment, and `set` | the core list (section 8) |
@@ -679,7 +679,7 @@ profile (2.1).
 | endpoint | `chatgpt.com:443`, TLS name `chatgpt.com`, the Codex dialect | `api.anthropic.com:443`, TLS name `api.anthropic.com`, the Anthropic dialect and its identity profile |
 | `connect`, `handshake` | 10 s each | 10 s each |
 | `connection_keep` | 30 s, provisional | 30 s, provisional |
-| sign-in | the provider's public client, where smith may use it (section 11) | the same |
+| sign-in | none: an account's own registration (section 7) | the same |
 
 The connection keep is a live service's policy, never how it ends:
 pools close at the answer (section 9). It and the deadlines are policy
@@ -742,10 +742,26 @@ names (section 2.3):
 Each account has one source:
 
 - **`sign_in`:** smith's own OAuth sign-in (protocol/hosts.md, section
-  5.4), with the preset's registration and a `localhost` redirect where
-  the provider's client uses one. The record is kept in smith's private
-  secret store under `$XDG_STATE_HOME/smith/tokens`, and its refresh
-  token never leaves it.
+  5.4), as a public client, with the registration its account's settings
+  give. The record is kept in smith's private secret store under
+  `$XDG_STATE_HOME/smith/tokens`, and its refresh token never leaves it.
+  - **No preset carries a registration.** No smith preset names a
+    provider's client, or another program's, so the presets' accounts
+    use `borrow` or `env`. A provider that sanctions smith's use of its
+    public client would let its preset carry one, as a change to this
+    document.
+  - **The registration's keys,** under `[accounts.<name>]`: `client_id`;
+    `authorization_url` and `token_url`, `https`, or `http` on loopback;
+    `redirect_uri`, on loopback with an explicit port and a path, a
+    `localhost` one compared exactly (skein's `oauth.md`, section 1);
+    `scope`; `token_format`, `json` or `form`, how the token endpoint
+    speaks; and `trust`, the token endpoint's roots, the machine's unless
+    a DER file is named. The token endpoint's address and TLS name are
+    its URL's host and port. There is no client secret: a public client
+    has none.
+  - **Missing keys are refused,** each naming the key and its file, by
+    `smith check` and at startup (5.3), and a `sign_in` account without
+    them never reaches the driver.
 - **`borrow`:** another tool's login file, such as Codex's, read-only.
   smith takes the access token and the account's identifier, and nothing
   else: it never reads the refresh token into its state, never writes
@@ -879,9 +895,6 @@ Within the focused suite's 15 seconds and the fuzzy suite's 60:
 
 ## 11. Open questions
 
-- **Public clients:** whether each provider sanctions smith's use of its
-  public client for `sign_in`. Until one does, its preset's accounts use
-  `borrow` or `env`.
 - **The Anthropic window:** whether the preset's window should be the
   models' 1,000,000 tokens once the `history` and `cache-reuse` probes measure
   cost and quality there.
