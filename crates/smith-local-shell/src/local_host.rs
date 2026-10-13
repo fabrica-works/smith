@@ -26,6 +26,7 @@ use crate::{
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Route {
+    ResultFile(Token),
     Service(Token),
     Writer(Token),
     Launch,
@@ -65,6 +66,7 @@ pub struct Resources {
 /// The local service and its shell effects, independent of the driving loop.
 pub struct Local {
     service: service::Service,
+    result_file: Option<Box<crate::compose::ResultFile>>,
     tokens: Option<Tokens>,
     headless: Option<crate::front::headless::Headless>,
     accounts: Box<[Auth]>,
@@ -196,7 +198,11 @@ impl Local {
         if !resources.accounts.is_empty() && !crate::local_auth_http::fits(&io_limits) {
             return Err(configuration_failure("local IO limits cannot carry OAuth TLS records".into()));
         }
-        let operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())
+        let file_operations = if headless.as_ref().is_some_and(|front| front.file_memory != 0) { 4 } else { 0 };
+        let base_operations = Self::kernel_operations(&io_limits, lower_routes, handed.is_some())
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
+        let operations = base_operations
+            .checked_add(file_operations)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
         let mut worst = accounted_memory(
             &config.limits,
@@ -224,6 +230,12 @@ impl Local {
                 )
                 .ok_or_else(|| configuration_failure(derivation_refusal("headless_worst_case")))?;
         }
+        let file_routes = Map::<Token, Route>::worst_case(operations)
+            .and_then(|bytes| bytes.checked_sub(Map::<Token, Route>::worst_case(base_operations)?))
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
+        worst = worst
+            .checked_add(file_routes)
+            .ok_or_else(|| configuration_failure(derivation_refusal("local_worst_case")))?;
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
             .map_err(configuration_failure)?;
@@ -267,6 +279,7 @@ impl Local {
             .map_err(host_failure)?;
         let mut local = Self {
             service,
+            result_file: None,
             tokens,
             headless,
             accounts: accounts.into(),
@@ -415,6 +428,11 @@ impl Local {
         Ok(parts)
     }
 
+    /// Attach the product result owner before its first pass.
+    pub(crate) fn result_file(&mut self, file: Option<Box<crate::compose::ResultFile>>) {
+        self.result_file = file;
+    }
+
     /// The completed invocation's status after every lower close settles.
     #[must_use]
     pub fn result(&self) -> Option<Result<domain::ExitStatus, &str>> {
@@ -449,6 +467,9 @@ impl Local {
                     let Some(front) = &mut self.headless else { continue };
                     let elapsed = self.env.now.saturating_since(self.started.unwrap_or(self.env.now));
                     let ending = front.answered(&answer, self.service.chat_name(), elapsed);
+                    if let Some(file) = &mut self.result_file {
+                        file.begin(ending.text.clone());
+                    }
                     if !front.json && !ending.text.is_empty() {
                         self.service.output().push(ending.text);
                     }
@@ -641,6 +662,43 @@ impl Local {
         }
     }
 
+    fn product_files(&mut self, now: Time, wall: Wall) {
+        let Some(file) = &mut self.result_file else { return };
+        if self.service.closing() && file.waiting() {
+            file.begin(Box::new([]));
+        }
+        if self.service.aborted() {
+            file.abort();
+        }
+        file.iterate(now, wall);
+        if let Some(failure) = file.failure() {
+            match failure {
+                crate::compose::ResultFileFailure::Write(error) => {
+                    if self.service.result_file_failed() {
+                        let text = format!(
+                            "run accepted, but its result could not be written to {}: {error:?}\n",
+                            file.path().display()
+                        );
+                        self.operator_line(text.into_bytes().into());
+                    } else {
+                        drop(writeln!(
+                            self.errors,
+                            "smith: warning: its result could not be written to {}: {error:?}",
+                            file.path().display()
+                        ));
+                    }
+                }
+                crate::compose::ResultFileFailure::Close(error) => {
+                    drop(writeln!(
+                        self.errors,
+                        "smith: warning: result directory for {} could not close: {error:?}",
+                        file.path().display()
+                    ));
+                }
+            }
+        }
+    }
+
     fn write_failed(&mut self) {
         self.error = Some("terminal output failed".into());
         self.service.local_event(domain::Event::StoreFailed { turn: None, reason: domain::StoreFailure::Write });
@@ -703,6 +761,7 @@ impl Local {
                 let wanted = match route {
                     Route::Service(_) => Route::Service(target),
                     Route::Writer(_) => Route::Writer(target),
+                    Route::ResultFile(_) => Route::ResultFile(target),
                     Route::Launch | Route::TraceRoot => unreachable!("startup directory only closes"),
                 };
                 let target = self
@@ -791,6 +850,12 @@ impl Host for Local {
                 Route::Writer(op) => {
                     self.store_completions.push(kernel::Complete { op, kind: complete.kind, result: complete.result });
                 }
+                Route::ResultFile(op) => self
+                    .result_file
+                    .as_mut()
+                    .expect("product file owns its operations")
+                    .completions()
+                    .push(kernel::Complete { op, kind: complete.kind, result: complete.result }),
                 Route::TraceRoot => {
                     if complete.result.is_err() {
                         self.error = Some("trace directory close failed".into());
@@ -807,11 +872,13 @@ impl Host for Local {
         self.writer_up();
         service::iterate(&mut self.service, now, wall);
         self.files();
+        self.product_files(now, wall);
         self.authentication();
         self.writer_down();
         if self.service.closing()
             && self.terminal == Terminal::Closed
             && self.writer.as_ref().is_none_or(io::Io::is_empty)
+            && self.result_file.as_ref().is_none_or(|file| file.is_empty())
             && self.accounts.iter().all(Auth::closed)
             && self.launch_root.is_none()
             && !self.launch_closing
@@ -824,6 +891,13 @@ impl Host for Local {
         while let Some(submit) = self.service.submissions().pop() {
             let op = submit.op;
             self.submit(submit, Route::Service(op));
+        }
+        if let Some(mut file) = self.result_file.take() {
+            while let Some(submit) = file.submissions().pop() {
+                let op = submit.op;
+                self.submit(submit, Route::ResultFile(op));
+            }
+            self.result_file = Some(file);
         }
         while let Some(submit) = self.store_submissions.pop() {
             let op = submit.op;
@@ -838,6 +912,7 @@ impl Host for Local {
     }
     fn work_pending(&self, now: Time) -> bool {
         self.service.work_pending(now)
+            || self.result_file.as_ref().is_some_and(|file| file.work_pending(now))
             || self.accounts.iter().any(Auth::pending)
             || self.writer.as_ref().is_some_and(io::Io::is_ready)
             || self.writer.as_ref().is_some_and(|writer| writer.is_due(now))
@@ -851,6 +926,7 @@ impl Host for Local {
         [self.service.next_deadline(), self.writer.as_ref().and_then(io::Io::next_deadline)]
             .into_iter()
             .flatten()
+            .chain(self.result_file.as_ref().and_then(|file| file.next_deadline()))
             .chain(self.accounts.iter().filter_map(Auth::deadline))
             .min()
     }
@@ -865,6 +941,7 @@ impl Host for Local {
             && self.terminal == Terminal::Closed
             && self.writer.as_ref().is_none_or(io::Io::is_empty)
             && self.pending.is_none()
+            && self.result_file.as_ref().is_none_or(|file| file.is_empty())
             && self.routes.is_empty()
             && !self.launch_closing
             && self.launch_root.is_none()

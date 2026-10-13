@@ -5,6 +5,9 @@ use crate::{
     command::{Command, Exec, Prompt, Usage},
     credentials, local_shell, settings,
 };
+mod files;
+pub(crate) use files::{Failure as ResultFileFailure, ResultFile};
+
 use skein_lib::Wall;
 use skein_shell::{Clock, Config, Kernel};
 
@@ -54,14 +57,13 @@ impl Refused {
 pub(crate) struct Opened {
     pub resolved: settings::resolve::Resolved,
     pub invocation: Exec,
-    pub kernel: Kernel,
     pub seed: u64,
     pub wall: Wall,
     pub input_closed: bool,
 }
 
 /// Read the product layers and one complete prompt before any credentials are inspected.
-pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<Opened, Refused> {
+pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<(Opened, Kernel), Refused> {
     let settings = settings::read(&invocation.shared).map_err(Refused::Settings)?;
     let command = Command::Exec(invocation);
     let resolved = settings::resolve::resolve(&settings, &command).map_err(Refused::Settings)?;
@@ -74,6 +76,9 @@ pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<Opened
             .ok_or_else(|| {
                 Refused::Local(local_shell::Failure::Configuration { detail: "local operation bound overflows".into() })
             })?;
+    let operations = operations
+        .checked_add(if invocation.output.is_some() { 4 } else { 0 })
+        .ok_or_else(|| Refused::Usage(Usage("the output operation bound overflows".into())))?;
     let mut kernel = Kernel::open(Config { operations })
         .map_err(|why| Refused::Local(local_shell::Failure::Host { detail: format!("local kernel: {why}") }))?;
     let maximum = resolved.limits.line_bytes;
@@ -105,21 +110,26 @@ pub(crate) fn open(invocation: Exec, wall: Wall, clock: &Clock) -> Result<Opened
     let seed = skein_shell::seed().map_err(|why| {
         Refused::Local(local_shell::Failure::Host { detail: format!("local seed failed (errno {why})") })
     })?;
-    Ok(Opened { resolved, invocation, kernel, seed, wall, input_closed })
+    Ok((Opened { resolved, invocation, seed, wall, input_closed }, kernel))
 }
 
 struct Composed {
     local: crate::Local,
-    kernel: Kernel,
 }
 
 /// Compose the selected native values with their roots and source driver, without a configuration file.
-fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time) -> Result<Composed, Refused> {
-    let Opened { mut resolved, invocation, kernel, seed, wall, input_closed } = opened;
+fn compose(
+    opened: Opened,
+    kind: AgentKind,
+    now: skein_lib::Time,
+    files: &mut files::Files,
+) -> Result<Composed, Refused> {
+    let Opened { mut resolved, invocation, seed, wall, input_closed } = opened;
     match kind {
         AgentKind::Inline => {}
     }
     let prepared = credentials::prepare(&resolved, wall).map_err(Refused::Credentials)?;
+    files.prepare_output(seed)?;
     if invocation.shared.chat.is_none() {
         resolved.local.chat = format!("exec-{seed:016x}").into_bytes().into();
     }
@@ -162,6 +172,11 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time) -> Result<Comp
         limits.local.smith.run.outcome_bytes,
     );
     front.input_closed = input_closed;
+    front.file_memory =
+        files.live_memory().ok_or_else(|| Refused::Usage(Usage("the product file bound overflows".into())))?;
+    let available = available
+        .checked_sub(files.reservation())
+        .ok_or_else(|| Refused::Usage(Usage("the file choices exceed declared memory".into())))?;
     let environment = resolved.agent.service.environment.command_entries();
     let config = smith_local_service::Config {
         local: resolved.local,
@@ -204,7 +219,8 @@ fn compose(opened: Opened, kind: AgentKind, now: skein_lib::Time) -> Result<Comp
     )
     .map_err(Refused::Local)?;
     start_stream(&mut local, trace, header, now)?;
-    Ok(Composed { local, kernel })
+    local.result_file(files.output.take());
+    Ok(Composed { local })
 }
 
 fn start_stream(
@@ -341,15 +357,25 @@ pub fn start(arguments: &[std::ffi::OsString], at: skein_shell::Now, clock: &Clo
             return Some(2);
         }
     };
-    let started = open(invocation, at.wall, clock).and_then(|opened| compose(opened, AgentKind::Inline, at.now));
-    match started {
-        Ok(mut started) => Some(match skein_shell::drive(&mut started.kernel, clock, &mut started.local) {
-            skein_io::kernel::Exit::Code(code) => code,
-            skein_io::kernel::Exit::Signal(_) => 130,
-        }),
+    let result = run(invocation, at, clock);
+    Some(match result {
+        Ok(code) => code,
         Err(why) => {
             eprintln!("{}", why.line());
-            Some(why.code())
+            why.code()
         }
-    }
+    })
+}
+
+fn run(invocation: Exec, at: skein_shell::Now, clock: &Clock) -> Result<u8, Refused> {
+    let (opened, mut kernel) = open(invocation, at.wall, clock)?;
+    let mut files = files::Files::prepare(&opened)?;
+    let result = compose(opened, AgentKind::Inline, at.now, &mut files).map(|mut started| {
+        match skein_shell::drive(&mut kernel, clock, &mut started.local) {
+            skein_io::kernel::Exit::Code(code) => code,
+            skein_io::kernel::Exit::Signal(_) => 130,
+        }
+    });
+    files.close_startup(&mut kernel, clock);
+    result
 }

@@ -520,15 +520,7 @@ impl Store {
                 if selected {
                     if self.fresh.is_some() {
                         self.versions.remove(&entry.name);
-                        Self::io(
-                            file::Request::Remove {
-                                owner: self.owner,
-                                root: self.descriptor,
-                                name: entry.name.clone(),
-                            },
-                            now,
-                            out,
-                        );
+                        self.remove_file(entry.name.clone(), now, out);
                     } else {
                         self.load(entry.name.clone(), now, out);
                     }
@@ -589,6 +581,10 @@ impl Store {
         }
     }
 
+    fn remove_file(&self, name: Box<[u8]>, now: Time, out: &mut Queue<Action>) {
+        Self::io(file::Request::Remove { owner: self.owner, root: self.descriptor, name, directory: false }, now, out);
+    }
+
     fn write(&mut self, record: RecordName, file: File, terminal: local::Event, now: Time, out: &mut Queue<Action>) {
         if file.bytes.len() > usize::try_from(self.limits.file_bytes).expect("file bound fits") {
             self.fail(record, StoreFault::TooLarge { file: record }, now, out);
@@ -647,6 +643,7 @@ impl Store {
                         owner: self.owner,
                         root: self.descriptor,
                         name: b"fresh".as_slice().into(),
+                        directory: false,
                     },
                     now,
                     out,

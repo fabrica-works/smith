@@ -530,7 +530,7 @@ fn smith_exec_json_ends_accepted_with_its_events_and_exit_0() {
         .stdout
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice(line).unwrap())
+        .map(|line| serde_json::from_slice(line).expect("event record"))
         .collect();
     assert_eq!(records.first().unwrap()["type"], "session.started");
     assert_eq!(records.first().unwrap()["mode"], "exec");
@@ -578,4 +578,94 @@ fn the_trace_file_is_read_as_it_grows() {
     for line in bytes.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()) {
         let _record: serde_json::Value = serde_json::from_slice(line).unwrap();
     }
+}
+
+#[test]
+fn smith_exec_replaces_the_result_file_with_only_its_text() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let path = scratch.path().join("answer.txt");
+    std::fs::write(&path, b"an older and longer result\n").unwrap();
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "-o", "answer.txt", "-"],
+        b"Ask first\n",
+        support::Reply::Accepted,
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(std::fs::read(path).unwrap(), b"First answer");
+    assert_eq!(ran.stdout, b"First answer");
+    assert!(
+        ran.stderr
+            .split(|byte| *byte == b'\n')
+            .rfind(|line| !line.is_empty())
+            .unwrap()
+            .starts_with(b"smith: accepted in ")
+    );
+}
+
+#[test]
+fn smith_exec_json_writes_its_result_file_beside_the_event_stream() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--json", "-o", "answer.txt", "-"],
+        b"Ask first\n",
+        support::Reply::Accepted,
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert_eq!(std::fs::read(scratch.path().join("answer.txt")).unwrap(), b"First answer");
+    let records = output_records(&ran.stdout);
+    assert_eq!(records.last().unwrap()["type"], "session.ended");
+    assert_eq!(records.last().unwrap()["exit"], 0);
+    assert_eq!(records.iter().find(|record| record["type"] == "run.completed").unwrap()["status"], "accepted");
+}
+
+#[test]
+fn smith_exec_result_file_failure_exits_1_after_an_accepted_run() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    std::fs::create_dir(scratch.path().join("answer.txt")).unwrap();
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--json", "-o", "answer.txt", "-"],
+        b"Ask first\n",
+        support::Reply::Accepted,
+    );
+    assert_eq!(ran.code, 1, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(
+        ran.stderr.ends_with(b"smith: run accepted, but its result could not be written to answer.txt: IsADirectory\n")
+    );
+    let records = output_records(&ran.stdout);
+    assert_eq!(records.last().unwrap()["type"], "session.ended");
+    assert_eq!(records.last().unwrap()["exit"], 1);
+    assert_eq!(records.iter().find(|record| record["type"] == "run.completed").unwrap()["status"], "accepted");
+    assert!(scratch.path().join("answer.txt").is_dir());
+}
+
+#[test]
+fn smith_exec_result_file_failure_warns_before_a_parked_answers_last_line() {
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    std::fs::create_dir(scratch.path().join("answer.txt")).unwrap();
+    let ran = support::exec_with_provider(
+        &scratch,
+        &["exec", "--chat", "plan", "--json", "-o", "answer.txt", "-"],
+        b"Ask first\n",
+        support::Reply::Wait,
+    );
+    assert_eq!(ran.code, 5, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(ran.stderr.ends_with(b"smith: warning: its result could not be written to answer.txt: IsADirectory\nsmith: needs input: answer with `smith exec --chat plan`\n"));
+    let records = output_records(&ran.stdout);
+    assert_eq!(records.last().unwrap()["exit"], 5);
+    assert_eq!(records.iter().find(|record| record["type"] == "run.completed").unwrap()["status"], "parked");
+}
+
+fn output_records(bytes: &[u8]) -> Vec<serde_json::Value> {
+    bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("event record"))
+        .collect()
 }

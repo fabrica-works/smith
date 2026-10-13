@@ -76,6 +76,18 @@ impl Service {
         }
     }
 
+    /// A result file failure changes only the product exit after an accepted answer.
+    pub fn result_file_failed(&mut self) -> bool {
+        match &mut self.ending {
+            Ending::Closing { exit, .. } if *exit == local::ExitStatus::Accepted => {
+                *exit = local::ExitStatus::RunFailed;
+                true
+            }
+            Ending::Closing { .. } => false,
+            Ending::Live { .. } | Ending::Closed { .. } => unreachable!("result output settles during product closes"),
+        }
+    }
+
     /// Whether outstanding graceful closes were interrupted by a termination signal.
     #[must_use]
     pub fn aborted(&self) -> bool {

@@ -30,6 +30,7 @@ pub enum Command {
 pub struct Exec {
     pub shared: Shared,
     pub prompt: Prompt,
+    pub output: Option<PathBuf>,
     pub deliver: bool,
     pub json: bool,
 }
@@ -62,6 +63,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     let mut shared = Shared::default();
     let mut json = false;
     let mut prompt = None;
+    let mut output = None;
     let mut deliver = false;
     while let Some(argument) = arguments.next() {
         let argument = argument.to_str().ok_or_else(|| Usage("a flag is not UTF-8".into()))?;
@@ -73,6 +75,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             "--effort" => shared.effort = Some(text(&mut arguments, "--effort")?),
             "--chat" => shared.chat = Some(text(&mut arguments, "--chat")?),
             "-c" => shared.overrides.push(text(&mut arguments, "-c")?),
+            "-o" if exec => output = Some(value(&mut arguments, "-o")?.into()),
             "--deliver" if exec => deliver = true,
             "-" if exec => set_prompt(&mut prompt, Prompt::Stdin)?,
             value if exec && !value.starts_with('-') => {
@@ -85,7 +88,7 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
         }
     }
     if exec {
-        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), deliver, json }))
+        Ok(Command::Exec(Exec { shared, prompt: prompt.unwrap_or(Prompt::Stdin), output, deliver, json }))
     } else {
         Ok(Command::Check { shared, json })
     }
@@ -190,5 +193,18 @@ mod tests {
     #[test]
     fn an_empty_prompt_argument_is_a_usage_refusal() {
         assert_eq!(parse(arguments(&["exec", " "])), Err(Usage("the prompt is empty".into())));
+    }
+    #[test]
+    fn exec_names_a_result_file_without_changing_its_prompt() {
+        let Command::Exec(exec) = parse(arguments(&["exec", "-o", "result.txt", "message"])).unwrap() else {
+            panic!("exec command")
+        };
+        assert_eq!(exec.output, Some(PathBuf::from("result.txt")));
+        assert_eq!(exec.prompt, Prompt::Argument(b"message".as_slice().into()));
+    }
+
+    #[test]
+    fn a_result_file_without_its_name_is_a_usage_refusal() {
+        assert_eq!(parse(arguments(&["exec", "-o"])), Err(Usage("-o requires a value".into())));
     }
 }
