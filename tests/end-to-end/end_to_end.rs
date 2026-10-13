@@ -108,6 +108,87 @@ fn a_second_run_resumes_the_chat_from_its_files() {
 }
 
 #[test]
+fn a_second_smith_resumes_the_chat_from_its_files() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let script = || vec![Action::Send(b"hello\n".as_slice().into()), Action::Eof];
+    let (first, first_queries) = support::chat(&scratch, script());
+    assert_eq!(first.code, 0, "{}", String::from_utf8_lossy(&first.stderr));
+    let (second, second_queries) = support::chat(&scratch, script());
+    assert_eq!(second.code, 0, "{}", String::from_utf8_lossy(&second.stderr));
+    assert!(second_queries[0].messages.len() > first_queries[0].messages.len());
+    assert!(second_queries[0].messages.iter().flat_map(|message| message.parts.iter()).any(|part| {
+        matches!(part, skein_fake_llm_domain::api::Part::ToolCall { name, arguments, .. }
+            if name.as_ref() == b"finish" && arguments.windows(12).any(|bytes| bytes == b"First answer"))
+    }));
+}
+
+#[test]
+fn an_interrupt_cancels_the_run() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let _file = support::user_layer(&scratch, &support::fake_provider_settings(&scratch));
+    let ran = support::chat_waiting(
+        &scratch,
+        vec![
+            Action::Send(b"hello\n".as_slice().into()),
+            Action::Wait(b"Starting now".as_slice().into()),
+            Action::Send(Box::new([3])),
+            Action::Wait(b"interrupted: the run was cancelled".as_slice().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(ran.stdout.windows(34).any(|part| part == b"interrupted: the run was cancelled"));
+}
+
+#[test]
+fn smith_on_a_terminal_signs_in_and_commits_in_place() {
+    use smith_local_process_world::terminal::Action;
+    let scratch = Scratch::new();
+    let mut settings: toml::Value =
+        toml::from_str(std::str::from_utf8(&support::fake_provider_settings(&scratch)).unwrap()).unwrap();
+    settings["accounts"]["codex"] = toml::Value::try_from(serde_json::json!({
+        "source":"sign_in", "client_id":"client", "authorization_url":"http://127.0.0.1:34444/authorize",
+        "token_url":"http://127.0.0.1:34444/token", "redirect_uri":"http://127.0.0.1:2345/callback",
+        "scope":"read", "token_format":"form"
+    }))
+    .unwrap();
+    settings.as_table_mut().unwrap().insert(
+        "workspace".into(),
+        toml::Value::try_from(serde_json::json!({
+            "directories":[{"name":"repo","path":scratch.path().join("repo"),"writable":true,"git":true}],
+            "conventions":{"guide":".smith-test/guide","checks":".smith-test/check"},
+            "contract":{"form":"change","checks_must_pass":true,
+                "fields":[{"name":"title","max":256},{"name":"body","max":1024}]}
+        }))
+        .unwrap(),
+    );
+    let _file = support::user_layer(&scratch, toml::to_string(&settings).unwrap().as_bytes());
+    let before = scratch.checkout().head().unwrap();
+    let ran = support::chat_signed_in(
+        &scratch,
+        vec![
+            Action::Send(b"change it\n".as_slice().into()),
+            Action::Wait(b"Change delivered".as_slice().into()),
+            Action::Eof,
+        ],
+    );
+    assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
+    assert!(String::from_utf8_lossy(&ran.stdout).contains("Sign in: http://127.0.0.1:34444/authorize"));
+    assert!(scratch.path().join("state/smith/tokens/636f646578.token").is_file());
+    let checkout = scratch.checkout();
+    let after = checkout.head().unwrap();
+    assert_ne!(before, after);
+    let files = checkout.files(&after);
+    assert_eq!(files[b"original.txt".as_slice()], b"edited\n");
+    assert_eq!(files[b"result.txt".as_slice()], b"new\n");
+    assert_eq!(files[b"command.txt".as_slice()], b"ran\n");
+    assert_eq!(files[b"checks-ran.txt".as_slice()], b"checked\n");
+}
+
+#[test]
 fn the_startup_refusals_of_both_commands_are_observed_outside() {
     let scratch = Scratch::new();
     for command in ["agent", "local"] {

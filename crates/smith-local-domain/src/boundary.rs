@@ -162,6 +162,8 @@ pub enum ExitStatus {
 pub enum Event {
     /// Person text, bounded by `Limits::line_bytes` before retention.
     Line { text: Box<[u8]> },
+    /// A bounded local command; it never becomes a run message.
+    Slash(crate::Slash),
     /// The person asks to cancel a live run or leave an idle chat.
     Interrupt,
     /// A second interrupt asks the selected child to drop now; `Gone` follows settlement.

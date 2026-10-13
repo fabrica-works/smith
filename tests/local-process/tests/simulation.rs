@@ -221,6 +221,114 @@ fn a_follow_up_sent_as_the_run_finishes_is_read_once_in_both_placements() {
 }
 
 #[test]
+fn a_follow_up_typed_as_the_run_finishes_is_read_next() {
+    let files = Files::new();
+    let mut world = World::finishing(49, &files, Placement::InProcess);
+    world.interactive();
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"Second answer".to_vec())).assert_passed(49);
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+    assert_eq!(
+        world
+            .facts()
+            .iter()
+            .filter(|fact| matches!(fact,
+        smith_local_domain::Fact::Answered { read: Some(name), .. } if name.raw() == 2))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn lines_then_end_of_input_answer_then_exit_0() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::finishing(51, &files, Placement::InProcess);
+    world.interactive();
+    world.scenario.ending = Ending::Report(b"Third answer".to_vec());
+    world.scenario.commands = vec![
+        Action::Send(b"hello\n".as_slice().into()),
+        Action::Wait(b"Finishing now".as_slice().into()),
+        Action::Send(b"follow-up\nlast line\n".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"Third answer".to_vec())).assert_passed(51);
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+    assert_eq!(world.facts().iter().filter(|fact| matches!(fact, smith_local_domain::Fact::Started { .. })).count(), 2);
+    assert_eq!(world.queries().len(), 3);
+}
+
+#[test]
+fn an_interrupt_with_a_line_unread_shows_it_not_delivered() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::interrupted(53, &files, Placement::InProcess);
+    world.interactive();
+    world.scenario.commands = vec![
+        Action::Send(b"hello\nfollow-up\n".as_slice().into()),
+        Action::Wait(b"interrupted: the run was cancelled".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Cancelled).assert_passed(53);
+    assert!(world.shown().windows(20).any(|text| text == b"Line 2 not delivered"));
+    assert_eq!(world.facts().iter().filter(|fact| matches!(fact, smith_local_domain::Fact::Started { .. })).count(), 1);
+}
+
+#[test]
+fn slash_new_starts_a_chat_and_slash_resume_reopens_it() {
+    use smith_local_process_world::terminal::Action;
+    let files = Files::new();
+    let mut world = World::new(55, &files, Placement::InProcess, b"Second answer");
+    world.interactive();
+    world.scenario.commands = vec![
+        Action::Send(b"main hello\n".as_slice().into()),
+        Action::Wait(b"First answer".as_slice().into()),
+        Action::Send(b"/new\nnew hello\n".as_slice().into()),
+        Action::Wait(b"First answerWaiting for a message\n\ntool finish".as_slice().into()),
+        Action::Send(b"/resume main\nhello\n".as_slice().into()),
+        Action::Wait(b"Second answer".as_slice().into()),
+        Action::Eof,
+    ];
+    world.settle();
+    review(&world.seen(), &world, Ending::Report(b"Second answer".to_vec())).assert_passed(55);
+    assert_eq!(world.exit(), Some(kernel::Exit::Code(0)));
+    assert!(!world.chat_files(b"56").is_empty());
+    assert!(!world.chat_files(b"main").is_empty());
+    let queries = world.queries();
+    assert_eq!(queries.len(), 3);
+    let calls: Vec<_> = queries[2]
+        .messages
+        .iter()
+        .flat_map(|message| message.parts.iter())
+        .filter_map(|part| {
+            if let skein_fake_llm_domain::api::Part::ToolCall { name, arguments, .. } = part {
+                (name.as_ref() == b"finish").then_some(arguments.as_ref())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(calls.iter().any(|call| call.windows(12).any(|text| text == b"First answer")));
+    assert!(!calls.iter().any(|call| call.windows(13).any(|text| text == b"Second answer")));
+    assert!(queries[2].messages.iter().flat_map(|message| message.parts.iter()).any(|part| {
+        matches!(part, skein_fake_llm_domain::api::Part::Text { text } if text.windows(10).any(|part| part == b"main hello"))
+    }));
+    assert!(!queries[2].messages.iter().flat_map(|message| message.parts.iter()).any(|part| {
+        matches!(part, skein_fake_llm_domain::api::Part::Text { text } if text.windows(9).any(|part| part == b"new hello"))
+    }));
+    assert!(
+        !queries
+            .iter()
+            .flat_map(|query| query.messages.iter())
+            .flat_map(|message| message.parts.iter())
+            .any(|part| matches!(part, skein_fake_llm_domain::api::Part::Text { text }
+            if text.starts_with(b"/new") || text.starts_with(b"/resume")))
+    );
+}
+
+#[test]
 fn an_interrupt_with_a_line_unread_starts_nothing_in_both_placements() {
     use smith_local_domain::Fact;
     use smith_local_process_world::terminal::Action;

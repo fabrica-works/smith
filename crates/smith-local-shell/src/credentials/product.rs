@@ -64,7 +64,7 @@ pub(crate) fn codex(resolved: &Resolved, account: u32) -> bool {
 }
 
 /// Inspect selected accounts, report startup warnings once, and open read-only roots.
-pub fn prepare(resolved: &Resolved, wall: Wall) -> Result<Prepared, Refusal> {
+pub fn prepare(resolved: &Resolved, wall: Wall, interactive: bool) -> Result<Prepared, Refusal> {
     for warning in crate::check::startup_warnings(&resolved.settings).map_err(Refusal::Configuration)? {
         eprintln!("smith: {}", crate::check::warnings::line(&warning));
     }
@@ -117,7 +117,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall) -> Result<Prepared, Refusal> {
             }
             Source::SignIn { file } => {
                 let credential = super::sign_in::inspect(&file, wall);
-                if !credential.usable() {
+                if !interactive && !credential.usable() {
                     return Err(unavailable(&account.name, credential));
                 }
                 super::sign_in::private_source(
@@ -125,7 +125,7 @@ pub fn prepare(resolved: &Resolved, wall: Wall) -> Result<Prepared, Refusal> {
                     &file,
                     super::registration(account, codex(resolved, account.number), &resolved.settings.workspace)
                         .map_err(Refusal::Configuration)?,
-                    false,
+                    interactive,
                 )
                 .map_err(|_| unavailable(&account.name, Credential::Unreadable { file }))?
             }

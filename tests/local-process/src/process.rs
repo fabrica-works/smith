@@ -36,6 +36,9 @@ pub struct Launch {
     /// Start one unattended run from the fixture's retained prompt.
     #[serde(default)]
     pub headless: bool,
+    /// Select the product's line-mode front on the same local composition.
+    #[serde(default)]
+    pub interactive: bool,
     /// Admit three tool turns, so the fourth would exceed the budget.
     #[serde(default)]
     pub budget_failure: bool,
@@ -300,6 +303,10 @@ pub fn issuer_with(transport: skein_fake_peers::Transport) -> Issuer {
 /// The same fake issuer domain at an explicitly selected test port.
 #[must_use]
 pub fn issuer_at(transport: skein_fake_peers::Transport, port: u16) -> Issuer {
+    issuer_with_token(transport, port, b"access-new".as_slice().into())
+}
+
+fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_token: Box<[u8]>) -> Issuer {
     let scheme = if transport == skein_fake_peers::Transport::Tls { "https" } else { "http" };
     let limits = fake_oauth::Limits {
         document: token_limits(),
@@ -329,7 +336,7 @@ pub fn issuer_at(transport: skein_fake_peers::Transport, port: u16) -> Issuer {
         .queue(fake_oauth::Plan {
             status: 200,
             body: fake_oauth::Body::Token(skein_oauth::TokenResponse {
-                access_token: b"access-new".as_slice().into(),
+                access_token,
                 refresh_token: Some(b"refresh-new".as_slice().into()),
                 expires_in: 7200,
             }),
@@ -527,6 +534,10 @@ impl IssuerProcess {
     #[must_use]
     pub fn at(transport: skein_fake_peers::Transport, port: u16) -> Self {
         Self { peer: issuer_at(transport, port), first_post: None }
+    }
+    /// Issue this synthetic token for the product's claim extraction story.
+    pub fn with_token(transport: skein_fake_peers::Transport, port: u16, token: Box<[u8]>) -> Self {
+        Self { peer: issuer_with_token(transport, port, token), first_post: None }
     }
     /// Peer observations only.
     #[must_use]
@@ -743,7 +754,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
             .expect("trace limits"),
         );
     }
-    let (lower, header) = if launch.traced {
+    let (lower, header) = if launch.traced || launch.interactive {
         let (lower, header) = product_header(&mut config, lower, &launch);
         (lower, Some(header))
     } else {
@@ -751,6 +762,11 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
     };
     let fd = inherited.pipes.iter().find(|(child, _)| *child == 2).expect("stderr").1;
     let (writer, capture) = skein_world::PipeWriter::new(fd, 4096);
+    let interactive = launch.interactive.then(|| {
+        smith_local_shell::front::Front::Interactive(
+            smith_local_shell::front::interactive::Interactive::new(true, &lower.limits).expect("bounded screen"),
+        )
+    });
     let (lower, spawned) = if launch.in_process { (Some(lower), None) } else { (None, Some(lower)) };
     let handed = borrowed_accounts(&launch, spawn, inherited, config.limits.process.io).or_else(|| {
         launch.authenticated.then(|| {
@@ -790,7 +806,7 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         Box::new(writer),
         u64::MAX,
         handed,
-        None,
+        interactive,
     )
     .expect("actual shared local shell");
     if let Some(configuration) = &spawned
@@ -803,6 +819,8 @@ pub fn make_local(spawn: &kernel::Spawn, inherited: &Inherited) -> Proc {
         let delivery = smith_agent_service::sinks::Delivery::Complete;
         let header = header.expect("traced product header");
         local.adopt_trace(fd, None, Time::ZERO, header, delivery).expect("product trace adoption");
+    } else if let Some(header) = header {
+        local.start_session(Time::ZERO, header);
     }
     Proc::Local(Box::new(LocalProcess::new(capture.host(local), launch.keep_facts)))
 }
@@ -843,7 +861,7 @@ fn product_header(
         &trace,
         b"main".as_slice().into(),
         101,
-        smith_local_shell::local_host::View { destinations: 1, front: false },
+        smith_local_shell::local_host::View { destinations: 1, front: launch.interactive },
         skein_lib::Duration::ZERO,
     )
     .expect("product effective header");

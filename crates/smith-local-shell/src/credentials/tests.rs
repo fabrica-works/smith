@@ -121,7 +121,7 @@ fn the_credential_catalog_uses_the_resolvers_needed_accounts_and_omits_values() 
 fn an_expired_selected_login_refuses_composition_with_exit_three() {
     let files = Files::new();
     let resolved = resolved(&files, files.login("expired.json"));
-    let Err(failure) = prepare(&resolved, wall()) else {
+    let Err(failure) = prepare(&resolved, wall(), false) else {
         panic!("the expired source must refuse before its directory is adopted");
     };
     assert_eq!(failure.exit_code(), 3, "selected credentials have their own refusal code");

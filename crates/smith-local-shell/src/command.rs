@@ -17,6 +17,8 @@ pub struct Shared {
 /// One product invocation, or the legacy arguments retained until their replacements ship.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
+    /// The workspace chat in line mode, with optional plain output.
+    Interactive { shared: Shared, plain: bool },
     /// Resolve and validate settings without starting a run.
     Check { shared: Shared, json: bool, execution: Option<Exec> },
     /// One headless run, with its prompt supplied before the activation starts.
@@ -59,14 +61,17 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
     if arguments.first().is_some_and(|argument| argument == "login") {
         return login(arguments);
     }
+    let interactive = !arguments.first().is_some_and(|argument| argument == "exec" || argument == "check");
     let mut arguments = arguments.into_iter();
-    let name = arguments.next();
+    let name = if interactive { None } else { arguments.next() };
     let mut exec = match name.as_deref().and_then(std::ffi::OsStr::to_str) {
         Some("exec") => true,
         Some("check") => false,
+        None if interactive => false,
         _ => return Err(Usage("expected `smith exec [FLAGS] [PROMPT | -]` or `smith check [--json]`".into())),
     };
-    let checking = !exec;
+    let checking = !interactive && !exec;
+    let mut plain = false;
     let mut report_json = false;
     let mut shared = Shared::default();
     let mut json = false;
@@ -82,7 +87,8 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
                 report_json = json;
                 json = false;
             }
-            "--json" => json = true,
+            "--json" if !interactive => json = true,
+            "--plain" if interactive => plain = true,
             "-C" => shared.directory = Some(value(&mut arguments, "-C")?.into()),
             "--trace" => shared.trace = Some(value(&mut arguments, "--trace")?.into()),
             "-m" => shared.model = Some(text(&mut arguments, "-m")?),
@@ -102,7 +108,9 @@ pub fn parse(arguments: Vec<OsString>) -> Result<Command, Usage> {
             _ => return Err(Usage(format!("unexpected argument `{argument}`"))),
         }
     }
-    if checking {
+    if interactive {
+        Ok(Command::Interactive { shared, plain })
+    } else if checking {
         let execution = exec.then(|| Exec {
             shared: shared.clone(),
             prompt: prompt.unwrap_or(Prompt::Stdin),
@@ -153,6 +161,38 @@ mod tests {
     use super::*;
     fn arguments(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn the_interactive_command_accepts_shared_flags_and_plain_mode() {
+        let Command::Interactive { shared, plain } = parse(arguments(&[
+            "--plain",
+            "-C",
+            "work",
+            "-m",
+            "codex/small",
+            "--effort",
+            "low",
+            "--chat",
+            "work",
+            "--trace",
+            "trace",
+            "-c",
+            "budget.turns=4",
+        ]))
+        .expect("interactive flags") else {
+            panic!("interactive invocation")
+        };
+        assert!(plain);
+        assert_eq!(shared.directory, Some("work".into()));
+        assert_eq!(shared.model.as_deref(), Some("codex/small"));
+        assert_eq!(shared.effort.as_deref(), Some("low"));
+        assert_eq!(shared.chat.as_deref(), Some("work"));
+        assert_eq!(shared.trace, Some("trace".into()));
+        assert_eq!(shared.overrides, ["budget.turns=4"]);
+        assert!(matches!(parse(Vec::new()), Ok(Command::Interactive { plain: false, .. })));
+        assert!(parse(arguments(&["--json"])).is_err());
+        assert!(parse(arguments(&["a prompt"])).is_err());
     }
 
     #[test]

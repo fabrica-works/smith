@@ -78,6 +78,10 @@ impl Files {
         front.file_memory =
             self.live_memory().ok_or_else(|| Refused::Usage(Usage("the product file bound overflows".into())))?;
         front.cleanup_memory = self.cleanup_memory();
+        self.reserve_available(available)
+    }
+
+    pub(crate) fn reserve_available(&self, available: u64) -> Result<u64, Refused> {
         available
             .checked_sub(self.reservation)
             .ok_or_else(|| Refused::Usage(Usage("the file choices exceed declared memory".into())))
@@ -101,9 +105,10 @@ impl Files {
         limits: &mut smith_local_service::Limits,
         json: bool,
         wall: Wall,
+        front: bool,
     ) -> Result<(Option<smith_agent_shell::trace::TraceConfig>, Option<smith_events::SessionStarted>, u64), Refused>
     {
-        super::prepare_stream(agent, chat, limits, json, wall, self.teardown_bound()?)
+        super::prepare_stream(agent, chat, limits, json, wall, self.teardown_bound()?, front)
     }
 
     pub(super) fn live_memory(&self) -> Option<u64> {

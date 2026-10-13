@@ -325,6 +325,7 @@ fn derive_invocation(
             invocation.json,
             wall,
             result_file,
+            false,
         )
         .map_err(|why| why.line())?
         .2
@@ -358,12 +359,21 @@ fn derive_invocation(
         locations,
         limits: crate::credentials::limits(resolved.agent.service.limits.io, count.max(1)),
     };
+    let screen = if interactive {
+        Some(
+            crate::front::interactive::Interactive::new(false, &resolved.agent.service.limits)
+                .ok_or_else(|| "interactive footprint overflows".to_owned())?,
+        )
+    } else {
+        None
+    };
     let (required, _) = crate::Local::startup_memory(
         &limits,
         0,
         resolved.agent.service.limits.routes,
         Some(&handed),
         if interactive { None } else { Some(&front) },
+        screen.as_ref(),
     )
     .map_err(|why| why.detail().to_owned())?;
     smith_agent_service::profile::validate::memory(required, available)
@@ -399,7 +409,7 @@ fn interactive_header(
 #[must_use]
 pub fn command(arguments: &[OsString], wall: skein_lib::Wall) -> Option<u8> {
     let (shared, json, execution) = match command::parse(arguments.iter().skip(1).cloned().collect()) {
-        Ok(Command::Legacy(_) | Command::Exec(_) | Command::Login { .. }) => return None,
+        Ok(Command::Legacy(_) | Command::Exec(_) | Command::Login { .. } | Command::Interactive { .. }) => return None,
         Ok(Command::Check { shared, json, execution }) => (shared, json, execution),
         Err(usage) => {
             eprintln!("smith: usage: {}", usage.0);

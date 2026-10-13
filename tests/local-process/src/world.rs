@@ -398,6 +398,25 @@ pub struct World {
     saved_before_query: bool,
 }
 impl World {
+    /// Adopt the workspace's chats root with its initial private chat.
+    pub fn interactive(&mut self) {
+        self.scenario.launch.interactive = true;
+        let machine = self.machine.as_mut().expect("before the invocation");
+        let root = machine.files.open(machine.master, b"chat", How::Directory).unwrap();
+        machine.files.make_directory(root, b"main", 0o700).unwrap();
+        machine.files.close(root);
+        std::fs::create_dir_all(machine.chat_path.join("main")).unwrap();
+    }
+
+    /// The settled private records of one selected chat, observed from the fake disk.
+    pub fn chat_files(&mut self, name: &[u8]) -> Vec<Box<[u8]>> {
+        let machine = &mut self.outcome.as_mut().expect("settled").machine;
+        let path = [b"chat/".as_slice(), name].concat();
+        let root = machine.files.open(machine.master, &path, How::Directory).unwrap();
+        let entries = machine.files.list(root, 16384, 1 << 20).unwrap();
+        machine.files.close(root);
+        entries.into_iter().map(|(_, name)| name).collect()
+    }
     #[must_use]
     pub fn new(seed: u64, files: &Files, placement: Placement, answer: &[u8]) -> Self {
         Self::configured(
@@ -638,6 +657,7 @@ impl World {
                     tools: false,
                     read_report: false,
                     headless: false,
+                    interactive: false,
                     budget_failure: false,
                     in_process: placement == Placement::InProcess,
                     keep_facts,
@@ -848,8 +868,13 @@ impl World {
         }
         self.outcome = Some(world.run());
         let machine = &mut self.outcome.as_mut().expect("settled").machine;
-        let root = machine.files.open(machine.master, b"chat", How::Directory).expect("settled chat");
-        for entry in std::fs::read_dir(&machine.chat_path).expect("outside fixture") {
+        let (path, outside) = if launch.interactive {
+            (b"chat/main".as_slice(), machine.chat_path.join("main"))
+        } else {
+            (b"chat".as_slice(), machine.chat_path.clone())
+        };
+        let root = machine.files.open(machine.master, path, How::Directory).expect("settled chat");
+        for entry in std::fs::read_dir(&outside).expect("outside fixture") {
             let entry = entry.expect("chat entry");
             if entry.path().is_file() {
                 std::fs::remove_file(entry.path()).expect("replace outside fixture");
@@ -859,7 +884,7 @@ impl World {
             if kind == skein_fake_machine::Is::File {
                 let file = machine.files.open(root, &name, How::Read).expect("chat file");
                 let bytes = machine.files.read(file, 0, 64 << 20).expect("chat bytes");
-                std::fs::write(machine.chat_path.join(std::str::from_utf8(&name).expect("chat record name")), bytes)
+                std::fs::write(outside.join(std::str::from_utf8(&name).expect("chat record name")), bytes)
                     .expect("outside record");
                 machine.files.close(file);
             }
@@ -1117,6 +1142,16 @@ pub fn load_chat(path: &Path, endpoints: &smith_protocol_channel::Endpoints) -> 
 pub fn headless_provider(wait: bool, credential: skein_llm::Credential) -> crate::llm::Peer {
     smith_agent_process_world::fake::configured_transport(
         if wait { waiting_scripts() } else { scripts() },
+        credential,
+        Duration::ZERO,
+        skein_fake_peers::Transport::Tls,
+    )
+}
+
+/// The existing checked change script with the product story's synthetic grant.
+pub fn change_provider(credential: skein_llm::Credential) -> crate::llm::Peer {
+    smith_agent_process_world::fake::configured_transport(
+        tool_scripts(),
         credential,
         Duration::ZERO,
         skein_fake_peers::Transport::Tls,

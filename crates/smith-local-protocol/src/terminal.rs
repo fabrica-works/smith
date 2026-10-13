@@ -6,7 +6,9 @@ use alloc::boxed::Box;
 use skein_lib::{List, Queue};
 use smith_local_domain as local;
 
+mod entered;
 mod failure;
+pub use entered::{Entered, Slash, entered};
 
 /// Receiving and display bounds of one local terminal.
 #[derive(Clone, Copy, Debug)]

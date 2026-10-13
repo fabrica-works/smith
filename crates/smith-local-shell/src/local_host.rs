@@ -68,6 +68,7 @@ pub struct Local {
     result_file: Option<Box<crate::compose::ResultFile>>,
     ephemeral_directory: Option<Box<[u8]>>,
     headless: Option<crate::front::headless::Headless>,
+    interactive: Option<crate::front::interactive::Interactive>,
     credential_locations: skein_lib::List<crate::credentials::Location>,
     writer: Option<io::Io>,
     env: Env<io::Limits>,
@@ -139,8 +140,13 @@ impl Local {
         errors: Box<dyn Write>,
         available_bytes: u64,
         handed: Option<crate::credentials::Prepared>,
-        front: Option<crate::front::headless::Headless>,
+        front: Option<crate::front::Front>,
     ) -> Result<Self, crate::local_shell::Failure> {
+        let (front, interactive) = match front {
+            Some(crate::front::Front::Headless(front)) => (Some(front), None),
+            Some(crate::front::Front::Interactive(front)) => (None, Some(front)),
+            None => (None, None),
+        };
         let headless = front.or_else(|| match &config.local.mode {
             domain::Mode::Headless { .. } => Some(crate::front::headless::Headless::new(
                 false,
@@ -208,6 +214,7 @@ impl Local {
             lower_routes,
             handed.as_ref(),
             headless.as_ref(),
+            interactive.as_ref(),
         )?;
         smith_agent_service::profile::validate::memory(worst, available_bytes)
             .map_err(profile_refusal)
@@ -215,6 +222,10 @@ impl Local {
         let mut service = service::Service::new(config, resources.seed)
             .map_err(|error| configuration_failure(format!("local service: {error:?}")))?;
         service.adopt_store(resources.state_root).map_err(|error| host_failure(format!("chat store: {error:?}")))?;
+        if let Some(front) = &interactive {
+            service.line_mode(front.plain());
+            service.initial_chat();
+        }
         let credential_locations = match handed {
             Some(prepared) => {
                 service
@@ -242,6 +253,7 @@ impl Local {
             result_file: None,
             ephemeral_directory: None,
             headless,
+            interactive,
             credential_locations,
             writer,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: io_limits },
@@ -588,7 +600,7 @@ impl Local {
     fn writer_down(&mut self) {
         if self.pending.is_none()
             && self.terminal == Terminal::Live
-            && let Some(text) = self.service.output().pop()
+            && let Some(text) = self.display_text()
         {
             let right = Token::new(self.right);
             self.right = self.right.checked_add(1).expect("terminal output names remain representable");
@@ -605,6 +617,7 @@ impl Local {
             && self.terminal == Terminal::Live
             && self.pending.is_none()
             && self.service.output().is_empty()
+            && !self.live_pending()
         {
             self.terminal = Terminal::Closing(agent::Close::Graceful);
             if let Some(output) = self.output {
@@ -635,6 +648,18 @@ impl Local {
                 self.service.writer_requests().push(request);
             }
         }
+    }
+
+    fn display_text(&mut self) -> Option<Box<[u8]>> {
+        if let Some(text) = self.service.output().pop() {
+            return Some(text);
+        }
+        let front = self.interactive.as_mut()?;
+        front.screen.record(self.service.pop_front()?)
+    }
+
+    fn live_pending(&self) -> bool {
+        self.interactive.is_some() && self.service.front_pending()
     }
     fn submit(&mut self, submit: kernel::Submit, route: Route) {
         let kind = match submit.kind {
@@ -692,7 +717,7 @@ impl Host for Local {
     fn drain(&mut self) {
         if self.announcement == Announcement::BeforeStart {
             self.announcement = Announcement::Running;
-            if self.headless.is_some() {
+            if self.headless.is_some() || self.interactive.is_some() {
                 drop(writeln!(self.errors, "smith: chat {}", String::from_utf8_lossy(self.service.chat_name())));
             } else {
                 drop(writeln!(self.errors, "smith: local host started; worst case {} bytes", self.worst));
@@ -762,6 +787,7 @@ impl Host for Local {
             && self.launch_root.is_none()
             && !self.launch_closing
             && self.pending.is_none()
+            && !self.live_pending()
             && self.store_submissions.is_empty()
             && self.requests.is_empty()
         {
@@ -791,6 +817,7 @@ impl Host for Local {
     }
     fn work_pending(&self, now: Time) -> bool {
         self.service.work_pending(now)
+            || self.live_pending()
             || self.result_file.as_ref().is_some_and(|file| file.work_pending(now))
             || self.writer.as_ref().is_some_and(io::Io::is_ready)
             || self.writer.as_ref().is_some_and(|writer| writer.is_due(now))

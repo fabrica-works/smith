@@ -219,6 +219,7 @@ pub struct Service {
     snapshot_state: SnapshotState,
     ending: Ending,
     terminal: protocol::Terminal,
+    line_mode: Option<bool>,
     terminal_events: Queue<protocol::TerminalEvent>,
     output: Queue<Box<[u8]>>,
     local_events: Queue<local::Event>,
@@ -308,6 +309,7 @@ impl Service {
             snapshot_state: SnapshotState::Idle,
             ending: Ending::Live { shell_closed: true },
             terminal,
+            line_mode: None,
             terminal_events: Queue::with_capacity(queue),
             output: Queue::with_capacity(queue),
             local_events: Queue::with_capacity(queue),
@@ -408,6 +410,18 @@ impl Service {
     /// Queue a terminal, store, git or OAuth outcome from the shell.
     pub fn local_event(&mut self, event: local::Event) {
         self.local_events.push(event);
+    }
+
+    /// Select the already prepared initial chat beneath the adopted chats root.
+    pub fn initial_chat(&mut self) {
+        let name = self.local.initial_chat();
+        self.below.process_mut().store_request(protocol::StoreRequest::SelectChat { name, create: false });
+    }
+
+    /// Enable the product's line commands and terminal prompt before receiving input.
+    pub fn line_mode(&mut self, plain: bool) {
+        self.line_mode = Some(plain);
+        self.local.line_mode();
     }
 
     /// First local cause of an unanswering run, kept through effects settlement.
@@ -881,6 +895,10 @@ impl Service {
     }
 
     fn notice(&mut self, now: Time, notice: local::Notice) {
+        if self.line_mode == Some(false) && notice == local::Notice::Waiting {
+            self.terminal.show(b"> ".as_slice().into(), &mut self.terminal_events);
+            return;
+        }
         let handed = match &notice {
             local::Notice::Failure(local::Failure::Credential { account, reason }) => match reason {
                 local::CredentialFailure::BorrowedExpiring { .. }
@@ -936,7 +954,33 @@ impl Service {
             }
             let Some(event) = self.terminal_events.pop() else { break };
             match event {
-                protocol::TerminalEvent::Domain(event) => self.local_events.push(*event),
+                protocol::TerminalEvent::Domain(event) => match *event {
+                    local::Event::Line { text } if self.line_mode.is_some() => match protocol::entered(text) {
+                        protocol::Entered::Message(text) => self.local_events.push(local::Event::Line { text }),
+                        protocol::Entered::Slash(choice) => self.local_events.push(local::Event::Slash(choice)),
+                        protocol::Entered::Refused => self
+                            .terminal
+                            .show(b"Unknown or incomplete command".as_slice().into(), &mut self.terminal_events),
+                    },
+                    event @ (local::Event::Line { .. }
+                    | local::Event::Slash(_)
+                    | local::Event::Interrupt
+                    | local::Event::Drop
+                    | local::Event::Closed
+                    | local::Event::SelectChat { .. }
+                    | local::Event::ChatSelected { .. }
+                    | local::Event::Loaded { .. }
+                    | local::Event::StateSaved
+                    | local::Event::TurnSaved { .. }
+                    | local::Event::DeliverySaved { .. }
+                    | local::Event::Git { .. }
+                    | local::Event::PlainStatus { .. }
+                    | local::Event::StoreFailed { .. }
+                    | local::Event::Credential { .. }
+                    | local::Event::NoCredential { .. }
+                    | local::Event::Below { .. }
+                    | local::Event::Process(_)) => self.local_events.push(event),
+                },
                 protocol::TerminalEvent::DropRun => self.local_events.push(local::Event::Drop),
                 protocol::TerminalEvent::Write(text) => self.output.push(text),
             }
@@ -1128,6 +1172,7 @@ fn local_pass(service: &mut Service, now: Time, wall: Wall) {
                 }
             }
             other @ (local::Event::Line { .. }
+            | local::Event::Slash(_)
             | local::Event::Interrupt
             | local::Event::Drop
             | local::Event::Closed

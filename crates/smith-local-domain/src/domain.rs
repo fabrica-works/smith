@@ -32,6 +32,9 @@ pub fn max_out(limits: &Limits) -> u32 {
 pub struct Domain {
     pub(crate) config: Config,
     chat_seed: u64,
+    pub(crate) choice: Option<crate::Slash>,
+    pub(crate) interactive: bool,
+    pub(crate) closing_last: Option<u64>,
     agent: Agent,
     pub(crate) chat: Chat,
     transcript: Option<agent::Transcript>,
@@ -120,6 +123,25 @@ impl Reconcile {
 }
 
 impl Domain {
+    /// Enable the product's initial waiting prompt before receiving input.
+    pub fn line_mode(&mut self) {
+        self.interactive = true;
+    }
+
+    pub(crate) fn new_chat_name(&self) -> Box<[u8]> {
+        skein_lib::Decimal::of(self.chat_seed).as_bytes().into()
+    }
+
+    fn reading(&self) -> crate::Reading {
+        if self.choice.is_some() { crate::Reading::Held } else { self.lines.reading() }
+    }
+
+    /// Reserve the initial chat selection before this invocation sends its first Load.
+    pub fn initial_chat(&mut self) -> Box<[u8]> {
+        assert!(self.chat.phase == Phase::Loading && !self.chat.load_requested, "startup precedes Load");
+        self.chat.load_requested = true;
+        self.config.chat.clone()
+    }
     /// The existing terminal's verdict for one told tool result.
     #[must_use]
     pub fn tool_verdict(result: &smith_domain::session::llm::Returned) -> &'static [u8] {
@@ -177,6 +199,9 @@ impl Domain {
         Ok(Domain {
             config,
             chat_seed: seed,
+            choice: None,
+            interactive: false,
+            closing_last: None,
             agent: Agent::new(&child_limits, agent_config, seed, max_out(limits))?,
             chat: Chat::new(seed),
             transcript: None,
@@ -307,10 +332,11 @@ impl Domain {
 
 /// Handle one typed event and its immediate child handoffs.
 pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
-    let reading = domain.lines.reading();
+    let reading = domain.reading();
     drain_agent_content(domain, env);
     match event {
         Event::Line { text } => receive_line(domain, env, text, out),
+        Event::Slash(choice) => crate::choices::receive(domain, choice, env, out),
         Event::Interrupt => interrupt(domain, env, out),
         Event::Drop => drop_run(domain, env),
         Event::Closed => closed(domain, out),
@@ -330,8 +356,8 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
     }
     route_agent(domain, env, out);
     release_held(domain, env, out);
-    if reading != domain.lines.reading() {
-        out.push(Request::Input { reading: domain.lines.reading() });
+    if reading != domain.reading() {
+        out.push(Request::Input { reading: domain.reading() });
     }
 }
 
@@ -478,7 +504,13 @@ fn stop_names(domain: &mut Domain, out: &mut Queue<Request>) {
     out.push(Request::Exit { status: crate::end::exit_status(domain.end_cause) });
 }
 
-fn select_chat(domain: &mut Domain, env: &Env<Limits>, name: Box<[u8]>, create: bool, out: &mut Queue<Request>) {
+pub(crate) fn select_chat(
+    domain: &mut Domain,
+    env: &Env<Limits>,
+    name: Box<[u8]>,
+    create: bool,
+    out: &mut Queue<Request>,
+) {
     let refusal = if name.len() > usize::try_from(env.limits.chat_bytes).expect("bounded chat name") {
         Some(crate::ChatRefusal::Name)
     } else if domain.chat.phase != Phase::Idle
@@ -596,6 +628,10 @@ fn resume_loading(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Reques
     }
     domain.chat.phase = Phase::Idle;
     domain.chat.load_requested = false;
+    crate::choices::apply(domain, env, out);
+    if domain.chat.phase != Phase::Idle {
+        return;
+    }
     if domain.chat.closed && domain.lines.is_empty() {
         domain.chat.phase = Phase::Done;
         let status = match domain.config.mode {
@@ -605,6 +641,9 @@ fn resume_loading(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Reques
         out.push(Request::Exit { status });
     } else {
         dispatch_line(domain, env, out);
+        if domain.interactive && domain.chat.phase == Phase::Idle && domain.lines.is_empty() {
+            out.push(Request::Notice { notice: Notice::Waiting });
+        }
     }
 }
 
@@ -925,10 +964,14 @@ fn interrupt(domain: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
     }
 }
 
-fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
+pub(crate) fn closed(domain: &mut Domain, out: &mut Queue<Request>) {
     match domain.config.mode {
         crate::Mode::Headless { .. } => return,
         crate::Mode::Chat { .. } => {}
+    }
+    if domain.interactive && !domain.chat.closed {
+        let extra = if domain.run.is_some() || domain.chat.phase == Phase::Starting { 1 } else { 2 };
+        domain.closing_last = Some(domain.chat.state.activation.saturating_add(extra));
     }
     domain.chat.closed = true;
     if domain.chat.phase == Phase::Idle && domain.lines.is_empty() {

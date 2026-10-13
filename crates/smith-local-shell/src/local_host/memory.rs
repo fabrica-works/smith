@@ -16,6 +16,7 @@ impl Local {
         lower_routes: u32,
         handed: Option<&crate::credentials::Prepared>,
         headless: Option<&crate::front::headless::Headless>,
+        interactive: Option<&crate::front::interactive::Interactive>,
     ) -> Result<(u64, u32), crate::local_shell::Failure> {
         let io_limits = limits.process.io;
         let file_operations = if headless.is_some_and(|front| front.file_memory != 0) { 4 } else { 0 };
@@ -48,6 +49,9 @@ impl Local {
         let file_routes = Map::<Token, Route>::worst_case(operations)
             .and_then(|bytes| bytes.checked_sub(Map::<Token, Route>::worst_case(base_operations)?))
             .ok_or_else(|| configuration_failure(derivation_refusal("local_routes")))?;
+        worst = worst
+            .checked_add(interactive.map_or(0, crate::front::interactive::Interactive::worst_case))
+            .ok_or_else(|| configuration_failure(derivation_refusal("interactive_worst_case")))?;
         worst = worst
             .checked_add(file_routes)
             .ok_or_else(|| configuration_failure(derivation_refusal("local_worst_case")))?;

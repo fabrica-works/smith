@@ -1043,6 +1043,7 @@ impl World {
                         None
                     }
                     Event::Line { .. }
+                    | Event::Slash(_)
                     | Event::Interrupt
                     | Event::Drop
                     | Event::Closed

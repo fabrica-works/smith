@@ -395,6 +395,13 @@ pub(crate) fn finish_answer(domain: &mut Domain, out: &mut Queue<Request>) {
         crate::Mode::Headless { .. } => true,
         crate::Mode::Chat { .. } => false,
     };
+    let drained = match domain.closing_last {
+        Some(last) => domain.chat.state.activation >= last,
+        None => false,
+    };
+    if domain.chat.closed && drained {
+        show_dropped(&mut domain.lines, out);
+    }
     if (domain.chat.closed && domain.lines.is_empty()) || headless {
         domain.chat.phase = Phase::Done;
         out.push(Request::Exit { status });

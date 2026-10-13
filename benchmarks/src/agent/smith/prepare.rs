@@ -115,12 +115,16 @@ pub fn prepare_checked(context: &Context<'_>) -> Result<(Prepared, Option<crate:
         .ancestors()
         .find(|path| path.join(".git").exists())
         .ok_or_else(|| configuration("Smith pin needs its source repository for arm ancestry"))?;
-    let registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
+    let mut registry = faces::face(&build.arm, &faces::read(&directory.join("faces.toml"))?, repository)?;
+    if registry.shape == super::events::Shape::Chat && context.variant.is_some_and(|variant| variant.name == "headless")
+    {
+        registry.shape = super::events::Shape::Exec;
+    }
     match registry.shape {
-        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace | super::events::Shape::Exec => {}
-        super::events::Shape::Chat => {
-            return Err(configuration("this event front end awaits its shipped product invocation"));
-        }
+        super::events::Shape::LocalTrace
+        | super::events::Shape::LocalAgentTrace
+        | super::events::Shape::Exec
+        | super::events::Shape::Chat => {}
     }
     let bytes = fs::read(directory.join(&pin.pin.configuration)).map_err(|error| configuration(error.to_string()))?;
     if bytes.len() > 65_536 {
@@ -129,7 +133,7 @@ pub fn prepare_checked(context: &Context<'_>) -> Result<(Prepared, Option<crate:
     let base = serde_json::from_slice(&bytes).map_err(|error| configuration(error.to_string()))?;
     let root = context.private.root.join("smith");
     crate::run::private_parent(context.guard, &root).map_err(configuration)?;
-    if registry.shape == super::events::Shape::Exec {
+    if matches!(registry.shape, super::events::Shape::Exec | super::events::Shape::Chat) {
         return exec(context, &base, program, registry);
     }
     let tokens = root.join("tokens");
@@ -181,7 +185,11 @@ fn exec(
         toml::to_string(&document).map_err(|error| configuration(error.to_string()))?.as_bytes(),
     )?;
     let mut check_arguments = vec!["check".into(), "--json".into()];
-    check_arguments.extend(exec_arguments(&rendered));
+    if registry.shape == super::events::Shape::Chat {
+        check_arguments.extend(product_arguments(&rendered));
+    } else {
+        check_arguments.extend(exec_arguments(&rendered));
+    }
     let receipt = crate::process::execute(
         &skein_shell::Clock::new(),
         skein_world::end_to_end::Command {
@@ -217,6 +225,13 @@ fn exec(
             context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
         Credential::Record(Some(crate::credential::smith_borrowed(&login, context.wall, lifetime)?))
     };
+    let trace = if registry.shape == super::events::Shape::Chat {
+        let trace = context.private.root.join("smith/trace.jsonl");
+        write(context, &trace, &[])?;
+        Some(trace)
+    } else {
+        None
+    };
     let prepared = Prepared {
         face: registry.shape,
         registry,
@@ -225,36 +240,52 @@ fn exec(
         settings,
         state: context.private.state.clone(),
         credential,
-        trace: None,
+        trace,
         teardown,
     };
     Ok((prepared, refused.then_some(receipt)))
 }
 
-fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
+fn product_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
     vec![
-        "exec".into(),
-        "--json".into(),
         "-C".into(),
         rendered["workspace"]["directories"][0]["path"].as_str().expect("rendered workspace").into(),
         "-m".into(),
         rendered["model"].as_str().expect("rendered model").into(),
         "--effort".into(),
         rendered["effort"].as_str().expect("rendered effort").into(),
-        "-".into(),
     ]
+}
+
+fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
+    let mut arguments = vec!["exec".into(), "--json".into()];
+    arguments.extend(product_arguments(rendered));
+    arguments.push("-".into());
+    arguments
 }
 
 impl Prepared {
     /// The product check's retained setup document; historical invocations have none.
     #[must_use]
     pub fn check_document(&self) -> Option<PathBuf> {
-        (self.face == super::events::Shape::Exec).then(|| self.settings.with_file_name("check.json"))
+        matches!(self.face, super::events::Shape::Exec | super::events::Shape::Chat)
+            .then(|| self.settings.with_file_name("check.json"))
     }
 
     /// Invoke the frozen native local front end with its own private state.
     #[must_use]
     pub fn command(&self) -> Invocation {
+        if self.face == super::events::Shape::Chat {
+            let mut arguments = product_arguments(&self.rendered);
+            arguments.extend(["--trace".into(), self.trace.as_ref().expect("Chat trace").as_os_str().into()]);
+            return Invocation {
+                program: self.program.clone(),
+                arguments,
+                environment: Vec::new(),
+                mode: skein_world::end_to_end::Mode::Terminal,
+                teardown: self.teardown,
+            };
+        }
         if self.face == super::events::Shape::Exec {
             return Invocation {
                 program: self.program.clone(),
@@ -280,12 +311,71 @@ impl Prepared {
 
 #[cfg(test)]
 mod tests {
-    use super::teardown_from_check;
+    use super::{Credential, Prepared, teardown_from_check};
+    use crate::agent::smith::{FaceSince, Receiving, events::Shape};
     use crate::isolate::SetupStep;
     use serde_json::json;
 
     fn report(limits: &serde_json::Value) -> Vec<u8> {
         serde_json::to_vec(&json!({"version":1,"limits":limits})).expect("check fixture")
+    }
+
+    fn invocation(face: Shape) -> Prepared {
+        Prepared {
+            face,
+            settings: "/scratch/config/smith/config.toml".into(),
+            credential: Credential::Record(None),
+            trace: (face == Shape::Chat).then(|| "/scratch/smith/trace.jsonl".into()),
+            registry: FaceSince {
+                commit: "0".repeat(40),
+                shape: face,
+                receiving: Receiving { string: 64, content: 4096, items: 32, encoded_line: 65536 },
+                session_ended_aborted: true,
+            },
+            rendered: json!({"workspace":{"directories":[{"path":"/scratch/workspace"}]},
+                "model":"codex/gpt-6-luna","effort":"low"}),
+            program: "/arm/smith".into(),
+            state: "/scratch/state".into(),
+            teardown: skein_lib::Duration::from_secs(10),
+        }
+    }
+
+    #[test]
+    fn the_chat_face_types_at_a_terminal_and_reads_its_private_trace() {
+        let prepared = invocation(Shape::Chat);
+        let command = prepared.command();
+        assert!(matches!(command.mode, skein_world::end_to_end::Mode::Terminal));
+        let arguments: Vec<_> =
+            command.arguments.iter().map(|argument| argument.to_str().expect("UTF-8 fixture")).collect();
+        assert_eq!(
+            arguments,
+            [
+                "-C",
+                "/scratch/workspace",
+                "-m",
+                "codex/gpt-6-luna",
+                "--effort",
+                "low",
+                "--trace",
+                "/scratch/smith/trace.jsonl"
+            ]
+        );
+        assert_eq!(prepared.check_document().expect("product check"), prepared.settings.with_file_name("check.json"));
+        assert_eq!(command.teardown, prepared.teardown);
+    }
+
+    #[test]
+    fn the_headless_face_keeps_exec_json_on_pipes() {
+        let prepared = invocation(Shape::Exec);
+        let command = prepared.command();
+        assert!(matches!(command.mode, skein_world::end_to_end::Mode::Pipes));
+        let arguments: Vec<_> =
+            command.arguments.iter().map(|argument| argument.to_str().expect("UTF-8 fixture")).collect();
+        assert_eq!(
+            arguments,
+            ["exec", "--json", "-C", "/scratch/workspace", "-m", "codex/gpt-6-luna", "--effort", "low", "-"]
+        );
+        assert!(prepared.trace.is_none());
     }
 
     #[test]

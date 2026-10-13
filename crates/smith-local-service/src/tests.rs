@@ -163,6 +163,102 @@ fn a_local_service_reserves_the_selected_childs_complete_transition() {
 }
 
 #[test]
+fn line_mode_selects_the_initial_chat_before_loading_and_shows_its_read_fence() {
+    let mut service = Service::new(config(), 7).unwrap();
+    service.line_mode(false);
+    service.initial_chat();
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    let Some(smith_local_protocol::StoreRequest::SelectChat { name, create: false }) = service.store_requests().pop()
+    else {
+        panic!("select before loading")
+    };
+    assert_eq!(name.as_ref(), b"main");
+    assert!(service.store_requests().is_empty());
+    service.local_event(local::Event::ChatSelected { name, result: Ok(()) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    let Some(smith_local_protocol::StoreRequest::Load) = service.store_requests().pop() else {
+        panic!("load selection")
+    };
+    service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    assert_eq!(service.output().pop().unwrap().as_ref(), b"> ");
+}
+
+#[test]
+fn slash_new_and_resume_route_only_to_the_idle_store() {
+    let mut service = Service::new(config(), 7).unwrap();
+    service.line_mode(true);
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    service.store_requests().pop().unwrap();
+    service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    for (line, expected, create) in [(b"/new\n".as_slice(), b"7".as_slice(), true), (b"/resume main\n", b"main", false)]
+    {
+        for byte in line {
+            service.feed(*byte);
+        }
+        iterate(&mut service, Time::ZERO, Wall::EPOCH);
+        let Some(smith_local_protocol::StoreRequest::SelectChat { name, create: selected }) =
+            service.store_requests().pop()
+        else {
+            panic!("a local command selects, without a run")
+        };
+        assert_eq!(name.as_ref(), expected);
+        assert_eq!(selected, create);
+        assert!(service.shell_requests().is_empty());
+        service.local_event(local::Event::ChatSelected { name, result: Ok(()) });
+        iterate(&mut service, Time::ZERO, Wall::EPOCH);
+        let Some(smith_local_protocol::StoreRequest::Load) = service.store_requests().pop() else {
+            panic!("load selection")
+        };
+        service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+        iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    }
+}
+
+#[test]
+fn an_unknown_slash_line_never_requests_a_credential_or_starts_a_run() {
+    let mut service = Service::new(config(), 7).unwrap();
+    service.line_mode(true);
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    service.store_requests().pop().unwrap();
+    service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    while service.output().pop().is_some() {}
+    for byte in b"/unknown\n" {
+        service.feed(*byte);
+    }
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    assert!(service.shell_requests().is_empty());
+    assert!(service.store_requests().is_empty());
+    assert_eq!(service.output().pop().unwrap().as_ref(), b"Unknown or incomplete command");
+}
+
+#[test]
+fn model_and_effort_are_refused_in_words_without_changing_the_chat() {
+    let mut service = Service::new(config(), 7).unwrap();
+    service.line_mode(true);
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    service.store_requests().pop().unwrap();
+    service.local_event(local::Event::Loaded { state: None, transcript: None, deliveries: Box::new([]) });
+    iterate(&mut service, Time::ZERO, Wall::EPOCH);
+    while service.output().pop().is_some() {}
+    for (line, words) in [
+        (b"/model other/small\n".as_slice(), b"/model is not yet available".as_slice()),
+        (b"/effort high\n", b"/effort is not yet available"),
+    ] {
+        for byte in line {
+            service.feed(*byte);
+        }
+        iterate(&mut service, Time::ZERO, Wall::EPOCH);
+        assert_eq!(service.output().pop().unwrap().as_ref(), words);
+        assert_eq!(service.chat_name(), b"main");
+        assert!(service.shell_requests().is_empty());
+        assert!(service.store_requests().is_empty());
+    }
+}
+
+#[test]
 fn a_local_service_refuses_lower_configuration_for_the_other_agent_kind() {
     let mut inline = colocated_config();
     inline.agent = crate::AgentConfig::Spawned;

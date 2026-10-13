@@ -37,6 +37,7 @@ extern crate alloc;
 mod agent;
 mod boundary;
 mod chat;
+mod choices;
 mod config;
 mod credentials;
 mod delivery;
@@ -59,6 +60,7 @@ pub use boundary::{
     DeliveryState, Event, ExitStatus, Failure, GitOp, GitResult, IntentDirectory, Notice, Reading, Request,
     StoreFailure, Undelivered, Warning,
 };
+pub use choices::Slash;
 pub use config::{Config, Contract, Invalid, Mode, PushTarget, charter};
 pub use domain::{Domain, fire, max_out, resume, step};
 pub use end::EndCause;

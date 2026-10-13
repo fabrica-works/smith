@@ -38,13 +38,36 @@ pub fn exec_with_provider(scratch: &Scratch, arguments: &[&str], input: &[u8], r
 
 #[must_use]
 pub fn exec_with_foreign_file(scratch: &Scratch, arguments: &[&str], input: &[u8]) -> Ran {
-    run_fixture(scratch, arguments, input, Some(provider(scratch, Reply::Accepted)), true)
+    run_fixture(scratch, arguments, Some(provider(scratch, Reply::Accepted)), true, person(input), false).0
 }
 
-fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
+#[must_use]
+pub fn chat(scratch: &Scratch, commands: Vec<Action>) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
+    run_fixture(scratch, &[], Some(provider(scratch, Reply::Accepted)), false, (Mode::Terminal, commands), false)
+}
+
+#[must_use]
+pub fn chat_waiting(scratch: &Scratch, commands: Vec<Action>) -> Ran {
+    run_fixture(scratch, &[], Some(provider(scratch, Reply::Wait)), false, (Mode::Terminal, commands), false).0
+}
+
+#[must_use]
+pub fn chat_signed_in(scratch: &Scratch, commands: Vec<Action>) -> Ran {
+    run_fixture(
+        scratch,
+        &[],
+        Some(world::change_provider(credential(scratch))),
+        false,
+        (Mode::Terminal, commands),
+        true,
+    )
+    .0
+}
+
+fn credential(scratch: &Scratch) -> skein_llm::Credential {
     let login = std::fs::read(scratch.path().join("auth.json")).expect("scratch login");
     let document: serde_json::Value = serde_json::from_slice(&login).expect("scratch login document");
-    let credential = skein_llm::Credential {
+    skein_llm::Credential {
         access_token: document
             .get("tokens")
             .and_then(|tokens| tokens.get("access_token"))
@@ -53,7 +76,11 @@ fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
             .as_bytes()
             .into(),
         account_id: b"acc".as_slice().into(),
-    };
+    }
+}
+
+fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
+    let credential = credential(scratch);
     match reply {
         Reply::Wait => world::headless_provider(true, credential),
         Reply::Accepted => world::headless_provider(false, credential),
@@ -75,16 +102,21 @@ fn provider(scratch: &Scratch, reply: Reply) -> skein_fake_peers::llm::Peer {
 
 #[must_use]
 pub fn run(scratch: &Scratch, arguments: &[&str], input: &[u8], provider: Option<skein_fake_peers::llm::Peer>) -> Ran {
-    run_fixture(scratch, arguments, input, provider, false)
+    run_fixture(scratch, arguments, provider, false, person(input), false).0
+}
+
+fn person(input: &[u8]) -> (Mode, Vec<Action>) {
+    (Mode::Pipes, if input.is_empty() { vec![Action::Eof] } else { vec![Action::Send(input.into()), Action::Eof] })
 }
 
 fn run_fixture(
     scratch: &Scratch,
     arguments: &[&str],
-    input: &[u8],
     provider: Option<skein_fake_peers::llm::Peer>,
     foreign: bool,
-) -> Ran {
+    person: (Mode, Vec<Action>),
+    sign_in: bool,
+) -> (Ran, Vec<skein_fake_llm_domain::api::Query>) {
     assert_no_children();
     let mut binary = Binary::start(
         Command {
@@ -98,13 +130,12 @@ fn run_fixture(
             ],
             directory: scratch.path().into(),
         },
-        Mode::Pipes,
+        person.0,
         1_048_576,
     )
     .expect("headless product pipes");
     let streams = binary.take_streams().expect("product streams");
     let descriptors = streams.descriptors();
-    let Streams::Pipes { input: stdin, output } = streams else { unreachable!("pipes") };
     let clock = Clock::new();
     let now = clock.now().now;
     let mut world = real::World::new(Refusal {
@@ -118,14 +149,24 @@ fn run_fixture(
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Binary(Box::new(binary)));
     world.spawn_with_fds(descriptors, || {
-        Process::Script(Proc::Terminal(Box::new(Terminal::piped(
-            stdin,
-            output,
-            if input.is_empty() { vec![Action::Eof] } else { vec![Action::Send(input.into()), Action::Eof] },
-        ))))
+        let terminal = match streams {
+            Streams::Pipes { input, output } => Terminal::piped(input, output, person.1),
+            Streams::Terminal { stream } => Terminal::attached(stream, person.1),
+        };
+        Process::Script(Proc::Terminal(Box::new(terminal)))
     });
     if let Some(peer) = provider {
         world.spawn(|| Process::Script(Proc::Peer(Box::new(peer))));
+    }
+    if sign_in {
+        world.spawn(|| {
+            Process::Script(Proc::Issuer(Box::new(smith_local_process_world::process::IssuerProcess::with_token(
+                skein_fake_peers::Transport::Plaintext,
+                34_444,
+                credential(scratch).access_token,
+            ))))
+        });
+        world.spawn(|| Process::Script(Proc::Browser(Box::default())));
     }
     let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(outcome.procs.iter().all(Host::is_empty), "product and peers drain");
@@ -133,5 +174,13 @@ fn run_fixture(
     let Process::Script(Proc::Terminal(person)) = outcome.procs.get(1).expect("person") else { unreachable!("person") };
     let Some(Exit::Code(code)) = binary.exit_status() else { panic!("exit code") };
     assert_no_children();
-    Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }
+    let queries = outcome
+        .procs
+        .iter()
+        .find_map(|process| match process {
+            Process::Script(Proc::Peer(peer)) => Some(smith_local_process_world::llm::queries(peer).cloned().collect()),
+            Process::Binary(_) | Process::Script(_) => None,
+        })
+        .unwrap_or_default();
+    (Ran { code, stdout: person.shown().into(), stderr: binary.stderr().into() }, queries)
 }

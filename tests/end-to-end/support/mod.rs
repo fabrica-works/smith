@@ -415,12 +415,37 @@ impl Referee<Process> for Refusal {
             }
         }
         let exit = procs.iter().find_map(|p| if let Process::Binary(p) = p { p.exit_status() } else { None });
+        let url = procs.iter().find_map(|process| match process {
+            Process::Binary(binary) => binary.stderr().split_inclusive(|byte| *byte == b'\n').find_map(|line| {
+                line.strip_suffix(b"\n").and_then(|line| line.strip_prefix(b"Sign in: ")).map(Vec::from)
+            }),
+            Process::Script(Proc::Terminal(person)) => person
+                .shown()
+                .split_inclusive(|byte| *byte == b'\n')
+                .find_map(|line| line.trim_ascii_end().strip_prefix(b"Sign in: ").map(Vec::from)),
+            Process::Script(_) => None,
+        });
+        let listening = procs.iter().any(|process| {
+            matches!(process,
+            Process::Script(Proc::Issuer(issuer)) if issuer.peer().address().is_some())
+        });
         if let Some(exit) = exit {
             for p in procs {
                 match p {
                     Process::Script(Proc::Terminal(p)) => p.finished(exit),
                     Process::Script(Proc::Peer(p)) => p.shutdown(),
+                    Process::Script(Proc::Issuer(p)) => p.shutdown(),
+                    Process::Script(Proc::Browser(p)) => p.shutdown(),
                     Process::Binary(_) | Process::Script(_) => {}
+                }
+            }
+        } else if listening {
+            for process in procs {
+                if let Process::Script(Proc::Browser(browser)) = process
+                    && browser.pages() == 0
+                    && let Some(url) = &url
+                {
+                    browser.visit(url);
                 }
             }
         }
@@ -653,6 +678,9 @@ pub fn smith_with_environment(
 }
 
 mod exec;
-pub use exec::{Reply, exec_with_foreign_file, exec_with_provider, fake_provider_settings, run as run_product};
+pub use exec::{
+    Reply, chat, chat_signed_in, chat_waiting, exec_with_foreign_file, exec_with_provider, fake_provider_settings,
+    run as run_product,
+};
 
 pub mod login;
