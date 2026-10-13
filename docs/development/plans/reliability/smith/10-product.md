@@ -774,7 +774,10 @@ Files: 10.8's, and `benchmarks/agents/smith/faces.toml` for one appended
 Chat entry (decisions.md, 13.118).
 Shape: 10.8's.
 Test shape: 10.8's units of each `/` line and of the renderer per record
-kind, its four world stories and its three end-to-end tests.
+kind, its four world stories and its three end-to-end tests. The four world
+stories run on the scripted `Terminal` with the test world's interactive
+launch flag; the end-to-end tests keep `Terminal::attached`
+(decisions.md, 13.119).
 Proof: 10.8's live Proof.
 Don't: 10.8's.
 Size: README rule 9's; past 700, it stops and asks.

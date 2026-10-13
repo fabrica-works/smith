@@ -2018,3 +2018,16 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    complete candidate commit as 10.15's Exec entry was, with the Exec
    entry's receiving caps and `session.ended` policy; no earlier entry
    changes, and `first-request/headless` stays on the Exec face.
+119. **10.24's world stories on the scripted terminal** (block of
+   2026-10-13T11:54:01Z, smith 10.24). 10.8's Test shape, which 10.24
+   takes, puts its four world stories in `tests/local-process/tests/simulation.rs`
+   "with `Terminal::attached`"; that constructor needs one duplex
+   pseudo-terminal descriptor, which the simulated world does not have,
+   and skein's world has no pseudo-terminal attachment. Ruling: the
+   implementer's proposal, as the plan's Test shape: the four world
+   stories run through the existing scripted `Terminal` with an
+   interactive launch flag of the test world (not a product flag), on
+   the same local host, domain, parser and root as the product; the
+   three end-to-end stories keep `Terminal::attached` on a real
+   pseudo-terminal. No shared terminal mechanism is invented, and
+   skein's world is unchanged.
