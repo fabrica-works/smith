@@ -2103,3 +2103,17 @@ broken provider. In the design: protocol/events.md 3.1, 3.10.
    configuration at startup. `smith-domain` (`config.rs`, `route.rs`)
    and the local `Config` join 10.25's Files; `smith-domain-run` leaves
    them unless its tests need the new field (README rule 8).
+125. **10.25's entrance refusal of an effort: one variant, the words
+   from the host** (block of 2026-10-13T16:05:14Z, smith 10.25). The
+   designer's answer of 15:58:37Z has the run's entrance refuse an effort
+   outside the model's list, "naming it and the list"; the refusal crosses
+   as `smith-domain-run`'s `Invalid` (Copy), the channel's `InvalidStart`
+   and the host's `RunInvalid`, whose `llm` carries no detail. Ruling, as
+   the plan's Shape: each gains a unit variant `effort` (channel 2, in
+   place, README rule 5; channel.md 4: "invalid, saying what"), and the
+   host's words owner names the effort and the model's declared list from
+   the charter it sent and its own configuration, which hold both; no
+   payload crosses, and `Invalid` stays Copy. `smith-agent-service`'s
+   `profile::Model` carries the model's `efforts` so the startup
+   derivation prices them exactly. These owners, their codecs (generated
+   by the pinned generator, 13.105) and goldens join 10.25's Files.

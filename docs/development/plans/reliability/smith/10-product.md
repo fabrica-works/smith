@@ -820,7 +820,11 @@ one. Files beyond 10.24's: `smith-local-shell` (`settings/`, `presets.rs`,
 `check.rs`), `smith-agent-shell` (`config.rs`), `smith-domain`
 (`config.rs`'s `ConfiguredModel.efforts` and `Config::check_model`,
 `route.rs`; decisions.md, 13.124), the local `Config`'s per-model
-efforts. No preset declares efforts in 10.25 (13.123).
+efforts. The entrance refusal: a unit variant `effort` in
+`smith-domain-run`'s `Invalid`, the channel's `InvalidStart` (channel 2,
+in place) and the host's `RunInvalid`, worded by the host from its
+charter and configuration; `smith-agent-service`'s `profile::Model`
+carries `efforts` for pricing (decisions.md, 13.125). No preset declares efforts in 10.25 (13.123).
 Test shape: unit: each `/model` and `/effort` line's choice or refusal,
 its words. World, on the scripted `Terminal` (13.119):
 `slash_model_applies_from_the_next_activation`,
