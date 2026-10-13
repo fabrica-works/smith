@@ -717,3 +717,36 @@ fn a_forced_exit_after_a_parked_or_cancelled_answer_keeps_its_terminal() {
         assert_eq!(exit, Some(expected));
     }
 }
+
+#[test]
+fn the_host_answer_clock_precedes_teardown_and_durable_saves() {
+    let (mut domain, mut env, mut out) = running(crate::tests::config());
+    env.wall = Wall::from_nanos(36_000_000_000_000);
+    domain.chat.state_pending = true;
+    assert_eq!(domain.answer_wall(), None);
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Answered {
+            client: Token::new(1),
+            answer: host::Answer { read: None, turns: 3, spent: 29, result: host::RunResult::Parked },
+            detail: Box::default(),
+        },
+        &mut out,
+    );
+    assert!(out.is_empty());
+    let answered_at = Some(env.wall);
+    env.wall = Wall::from_nanos(39_600_000_000_000);
+    parent_request(
+        &mut domain,
+        &env,
+        parent::Request::Gone { client: Token::new(1), end: host::End::Settled, detail: Box::default() },
+        &mut out,
+    );
+    assert_eq!(domain.answer_wall(), answered_at);
+    assert!(out.is_empty());
+    crate::step(&mut domain, &env, Event::StateSaved, &mut out);
+    assert_eq!(domain.answer_wall(), answered_at);
+    let Some(Request::Show { .. }) = out.pop() else { panic!("settled answer is shown") };
+    let Some(Request::Answered { .. }) = out.pop() else { panic!("settled answer reaches the shell") };
+}

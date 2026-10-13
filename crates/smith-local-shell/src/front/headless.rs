@@ -105,7 +105,7 @@ impl Headless {
     /// Show tool status and keep the latest told text, with names clipped for the operator.
     pub fn told(&mut self, turn: &smith_domain::Turn, errors: &mut dyn Write) {
         use smith_domain::session::llm::{Block, Role};
-        self.text.clear();
+        let mut replaced = false;
         for message in &turn.messages {
             if message.role != Role::Assistant {
                 continue;
@@ -113,6 +113,10 @@ impl Headless {
             for block in &message.content {
                 match block {
                     Block::Text { text, .. } | Block::Refusal { text, .. } => {
+                        if !replaced {
+                            self.text.clear();
+                            replaced = true;
+                        }
                         for byte in text {
                             if self.text.push(*byte).is_err() {
                                 break;
@@ -169,6 +173,63 @@ impl Headless {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn turn(content: Box<[smith_domain::session::llm::Block]>) -> smith_domain::Turn {
+        use smith_domain::session::{llm, record::Kind};
+        smith_domain::Turn {
+            version: 3,
+            kind: Kind::Ordinary,
+            endpoint: llm::Endpoint(0),
+            dialect: 0,
+            sequence: 1,
+            usage: llm::Usage::ZERO,
+            spent: 0,
+            messages: Box::new([llm::Message { role: llm::Role::Assistant, content }]),
+        }
+    }
+
+    #[test]
+    fn a_headless_result_keeps_its_last_text_across_tool_only_turns() {
+        use smith_domain::session::llm::{Block, Decoded};
+        let mut front = Headless::new(false, skein_shell::OutputKind::Pipe, 32, 32);
+        let mut errors = Vec::new();
+        front.told(
+            &turn(Box::new([Block::Text { text: b"Please answer".as_slice().into(), replay: None }])),
+            &mut errors,
+        );
+        front.told(
+            &turn(Box::new([Block::ToolCall {
+                id: b"call".as_slice().into(),
+                name: b"wait".as_slice().into(),
+                input: b"{}".as_slice().into(),
+                call: Decoded::Historical,
+                replay: None,
+            }])),
+            &mut errors,
+        );
+        let answer =
+            smith_host_domain::Answer { read: None, turns: 2, spent: 17, result: smith_host_domain::RunResult::Parked };
+        let ending = front.answered(&answer, b"plan", Duration::from_millis(5));
+        assert_eq!(ending.text.as_ref(), b"Please answer");
+        assert_eq!(ending.line.unwrap().as_ref(), b"needs input: answer with `smith exec --chat plan`\n");
+        assert_eq!(errors, b"smith: tool wait\n");
+    }
+
+    #[test]
+    fn a_new_headless_text_replaces_the_previous_turn_within_its_cap() {
+        use smith_domain::session::llm::Block;
+        let mut front = Headless::new(false, skein_shell::OutputKind::Pipe, 5, 5);
+        let mut errors = Vec::new();
+        front.told(&turn(Box::new([Block::Text { text: b"old".as_slice().into(), replay: None }])), &mut errors);
+        front.told(
+            &turn(Box::new([
+                Block::Text { text: b"new".as_slice().into(), replay: None },
+                Block::Refusal { text: b" text".as_slice().into(), replay: None },
+            ])),
+            &mut errors,
+        );
+        assert_eq!(front.text.as_slice(), b"new t");
+    }
 
     #[test]
     fn each_local_terminal_has_its_product_code() {

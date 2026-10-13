@@ -10,16 +10,37 @@ pub(super) fn run(
     why: host::RunFailure,
     diagnostic: &[u8],
     models: &[smith_domain::run::charter::Llm],
+    account_name: Option<&[u8]>,
+    endpoint_name: Option<&[u8]>,
+    answered_at: Option<skein_lib::Wall>,
 ) {
     let mut value = failed(why);
     match why {
         host::RunFailure::Cancelled => append(text, b"interrupted: "),
         host::RunFailure::Model(host::ModelFault::Completion { model, .. }) => {
             if let Some(model) = models.get(usize::try_from(model).expect("model index fits usize")) {
-                value.endpoint = Some(skein_lib::Decimal::of(u64::from(model.endpoint.0)).as_bytes().into());
-                value.model = Some(model.model.clone());
+                value.endpoint = Some(match endpoint_name {
+                    Some(name) => clip(name).into(),
+                    None => skein_lib::Decimal::of(u64::from(model.endpoint.0)).as_bytes().into(),
+                });
+                value.model = Some(clip(&model.model).into());
+                value.account = Some(u64::from(model.account));
             }
-            append(text, b"run failed: ");
+            match value.completion.as_ref().expect("completion failure").class {
+                FailureClass::Unauthorized if value.account.is_some() => {}
+                FailureClass::Unauthorized
+                | FailureClass::Overloaded
+                | FailureClass::RateLimited
+                | FailureClass::Exhausted
+                | FailureClass::Unavailable
+                | FailureClass::TimedOut
+                | FailureClass::ContextTooLong
+                | FailureClass::Invalid
+                | FailureClass::Limit
+                | FailureClass::Protocol
+                | FailureClass::Cancelled
+                | FailureClass::Unknown(_) => append(text, b"run failed: "),
+            }
         }
         host::RunFailure::Model(_)
         | host::RunFailure::Budget { exhausted: _, .. }
@@ -27,13 +48,13 @@ pub(super) fn run(
         | host::RunFailure::Transcript(_)
         | host::RunFailure::Stale => append(text, b"run failed: "),
     }
-    append(text, &words(&value));
+    append(text, &words(&value, account_name, answered_at));
     detail(text, diagnostic);
 }
 
 pub(super) fn refused(text: &mut Shown, why: host::Refusal) {
     append(text, b"run refused: ");
-    append(text, &words(&refusal(why)));
+    append(text, &words(&refusal(why), None, None));
 }
 
 pub(super) fn detail(text: &mut Shown, diagnostic: &[u8]) {

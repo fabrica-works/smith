@@ -271,7 +271,7 @@ impl Host for Agent {
             }
             match service::last(&self.service) {
                 Some(service::Last::Failed { failure, detail }) => {
-                    let words = smith_events::words(&failure);
+                    let words = smith_events::words(&failure, None, None);
                     let mut line = format!(
                         "run failed: {}",
                         String::from_utf8(words.into_vec()).expect("operator words are UTF-8")

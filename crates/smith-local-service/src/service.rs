@@ -642,6 +642,18 @@ impl Service {
         self.local.pop_fact()
     }
 
+    /// The host wall clock at its last answer, before teardown and store settlement.
+    #[must_use]
+    pub fn answer_wall(&self) -> Option<Wall> {
+        self.local.answer_wall()
+    }
+
+    /// Configured endpoint text for the operator, without provider addresses.
+    #[must_use]
+    pub fn endpoint_name(&self, number: u32) -> Option<&[u8]> {
+        self.below.process().endpoint_name(number)
+    }
+
     /// One headless told turn, retained until the shell renders its status.
     pub fn take_told_turn(&mut self) -> Option<agent::Turn> {
         self.told.take()

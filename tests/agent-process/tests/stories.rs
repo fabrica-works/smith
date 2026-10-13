@@ -24,7 +24,7 @@ fn a_failed_answer_ends_standard_error_with_its_failure_in_words() {
     let mut world = World::new(7, &charter());
     assert!(world.settle());
     let errors = String::from_utf8(world.errors()).expect("diagnostic UTF-8");
-    assert_eq!(errors.lines().last(), Some("smith: run failed: out of turns"));
+    assert_eq!(errors.lines().last(), Some("smith: run failed: out of turns: used 1 of 1"));
     assert_eq!(errors.lines().filter(|line| line.starts_with("smith: run failed:")).count(), 1);
     assert_eq!(world.exit(), Some(skein_io::kernel::Exit::Code(0)));
     world.assert_agent_clean();

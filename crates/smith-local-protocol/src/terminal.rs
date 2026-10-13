@@ -162,7 +162,9 @@ impl Terminal {
                     },
                 ),
                 local::Failure::HeadUnavailable => append(&mut text, b"Repository head unavailable"),
-                local::Failure::Run { failure, detail } => failure::run(&mut text, *failure, detail, models),
+                local::Failure::Run { failure, detail } => {
+                    failure::run(&mut text, *failure, detail, models, None, None, None);
+                }
                 local::Failure::Refused(refusal) => failure::refused(&mut text, *refusal),
                 local::Failure::Unstarted(end) => failure::end(&mut text, *end),
                 local::Failure::Credential { account, reason } => failure::credential(&mut text, *account, *reason),
@@ -250,6 +252,23 @@ pub fn notice_text(
     cap: u32,
 ) -> Box<[u8]> {
     Terminal::notice_text(notice, chat, models, cap)
+}
+
+/// Render a run failure with names and the host clock from its answer, within the notice cap.
+#[must_use]
+pub fn run_failure_text(
+    failure: smith_host_domain::RunFailure,
+    diagnostic: &[u8],
+    models: &[smith_domain::run::charter::Llm],
+    cap: u32,
+    account_name: Option<&[u8]>,
+    endpoint_name: Option<&[u8]>,
+    answered_at: Option<skein_lib::Wall>,
+) -> Box<[u8]> {
+    let mut text = Shown { bytes: List::with_capacity(cap), cut: false };
+    failure::run(&mut text, failure, diagnostic, models, account_name, endpoint_name, answered_at);
+    newline(&mut text);
+    text.bytes.into_boxed()
 }
 
 struct Shown {
@@ -505,6 +524,75 @@ mod failure_tests {
 
     fn shown(failure: local::Failure) -> Box<[u8]> {
         notice_text(&local::Notice::Failure(failure), b"main", &[], 512)
+    }
+
+    fn named_failure(failure: host::RunFailure, detail: &[u8]) -> Box<[u8]> {
+        let models = [smith_domain::run::charter::Llm {
+            prices: smith_domain::run::Prices { input: 1, cached: 1, cache_write: None, output: 1, unit: 1 },
+            dialect: 0,
+            account: 7,
+            endpoint: smith_domain::run::charter::Endpoint(3),
+            model: b"small".as_slice().into(),
+            window: 16,
+            output: 8,
+        }];
+        run_failure_text(
+            failure,
+            detail,
+            &models,
+            512,
+            Some(b"work"),
+            Some(b"codex"),
+            Some(skein_lib::Wall::from_nanos(36_000_000_000_000)),
+        )
+    }
+
+    #[test]
+    fn a_model_failure_uses_its_endpoint_name_and_clipped_detail() {
+        let failure = host::RunFailure::Model(host::ModelFault::Completion {
+            failure: host::CompletionFailure::Unavailable,
+            evidence: host::CompletionEvidence::Response { status: Some(503) },
+            model: 0,
+            attempts: 3,
+        });
+        assert_eq!(
+            named_failure(failure, b"provider reason\nignored").as_ref(),
+            b"run failed: codex/small unavailable (HTTP 503) after 3 attempts: provider reason\n"
+        );
+    }
+
+    #[test]
+    fn an_exhausted_failure_uses_its_answer_account_and_clock() {
+        for (wait, expected) in [
+            (Some(60_000), b"run failed: account work exhausted, usable again at 10:01\n".as_slice()),
+            (None, b"run failed: account work exhausted\n".as_slice()),
+        ] {
+            let failure = host::RunFailure::Model(host::ModelFault::Exhausted { account: 7, retry_after_ms: wait });
+            assert_eq!(named_failure(failure, b"").as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn a_credential_failure_uses_its_answer_models_account_name() {
+        let failure = host::RunFailure::Model(host::ModelFault::Completion {
+            failure: host::CompletionFailure::Unauthorized,
+            evidence: host::CompletionEvidence::Response { status: Some(401) },
+            model: 0,
+            attempts: 3,
+        });
+        assert_eq!(named_failure(failure, b"").as_ref(), b"account work: the provider rejected its credential\n");
+    }
+
+    #[test]
+    fn each_budget_last_line_uses_the_runs_counted_values() {
+        for (exhausted, used, bound, expected) in [
+            (host::Exhausted::Turns, 7, 8, b"run failed: out of turns: used 7 of 8\n".as_slice()),
+            (host::Exhausted::Spend, 103, 101, b"run failed: out of spend: used 103 of 101\n".as_slice()),
+            (host::Exhausted::Time, 1234, 1500, b"run failed: out of time: used 1234 of 1500\n".as_slice()),
+        ] {
+            let failure = host::RunFailure::Budget { exhausted, used: Some(used), bound: Some(bound) };
+            assert_eq!(named_failure(failure, b"").as_ref(), expected);
+        }
     }
 
     #[test]

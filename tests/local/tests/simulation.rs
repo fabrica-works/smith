@@ -809,7 +809,7 @@ fn a_headless_delivery_commits_in_place() {
 fn a_budget_failure_is_shown_naming_what_ran_out() {
     let mut world = World::headless_budget(47, b"Update the source");
     world.drive_to_exit(300);
-    assert!(world.shown().iter().any(|text| text.as_ref() == b"run failed: out of turns\n"));
+    assert!(world.shown().iter().any(|text| text.as_ref() == b"run failed: out of turns: used 3 of 3\n"));
 }
 
 #[test]

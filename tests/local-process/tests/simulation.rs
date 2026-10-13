@@ -431,8 +431,8 @@ fn a_forced_exit_after_a_failed_answer_keeps_its_code_and_last_line() {
         assert_eq!(world.exit(), Some(kernel::Exit::Code(4)));
         let errors = String::from_utf8_lossy(world.errors());
         let last = match placement {
-            Placement::InProcess => "smith: run failed: out of turns\n",
-            Placement::Spawned => "smith: run failed: out of turns: smith: run failed: out of turns\n",
+            Placement::InProcess => "smith: run failed: out of turns: used 3 of 3\n",
+            Placement::Spawned => "smith: run failed: out of turns: used 3 of 3: iled: out of turns: used 3 of 3\n",
         };
         assert!(errors.ends_with(last));
         assert_eq!(errors.contains("warning: agent forced to exit after answering"), placement == Placement::Spawned);

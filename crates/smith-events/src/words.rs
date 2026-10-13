@@ -2,7 +2,7 @@
 //! section 6; shell.md, section 4.3). No process state or credential is known.
 use crate::{AnswerClass, AnswerFailure, FailureClass};
 use alloc::boxed::Box;
-use skein_lib::{Decimal, List};
+use skein_lib::{Decimal, List, Wall};
 
 /// The vocabulary's byte ceiling on an operator's detail.
 pub const DETAIL_BYTES: usize = 512;
@@ -26,13 +26,23 @@ pub fn clip(detail: &[u8]) -> &[u8] {
     }
 }
 
-/// A typed answer failure in operator words, including unknown vocabulary values.
+/// Render one failure, using its named account and the host clock at its answer when known.
 #[must_use]
-pub fn words(failure: &AnswerFailure) -> Box<[u8]> {
+pub fn words(failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: Option<Wall>) -> Box<[u8]> {
     let mut line = List::with_capacity(4096);
     match &failure.class {
-        AnswerClass::Model => model(&mut line, failure),
-        AnswerClass::Budget => named(&mut line, b"out of ", failure.which.as_deref(), b"budget"),
+        AnswerClass::Model => model(&mut line, failure, account_name, answered_at),
+        AnswerClass::Budget => {
+            named(&mut line, b"out of ", failure.which.as_deref(), b"budget");
+            if let Some(used) = failure.used
+                && let Some(bound) = failure.bound
+            {
+                put(&mut line, b": used ");
+                put(&mut line, Decimal::of(used).as_bytes());
+                put(&mut line, b" of ");
+                put(&mut line, Decimal::of(bound).as_bytes());
+            }
+        }
         AnswerClass::Policy => named(&mut line, b"policy: ", failure.reason.as_deref(), b"unfinished result"),
         AnswerClass::Cancelled => put(&mut line, b"the run was cancelled"),
         AnswerClass::Stale => named(&mut line, b"stale: ", failure.reason.as_deref(), b"workspace changed"),
@@ -48,7 +58,40 @@ pub fn words(failure: &AnswerFailure) -> Box<[u8]> {
     line.into_boxed()
 }
 
-fn model(line: &mut List<u8>, failure: &AnswerFailure) {
+fn model(line: &mut List<u8>, failure: &AnswerFailure, account_name: Option<&[u8]>, answered_at: Option<Wall>) {
+    if let Some(number) = failure.account {
+        match &failure.completion {
+            None => {
+                account(line, number, account_name);
+                put(line, b" exhausted");
+                if let Some(wait) = failure.retry_after_ms
+                    && let Some(wall) = answered_at
+                {
+                    put(line, b", usable again at ");
+                    clock(line, Wall::from_nanos(wall.as_nanos().saturating_add(wait.saturating_mul(1_000_000))));
+                }
+                return;
+            }
+            Some(completion) => match &completion.class {
+                FailureClass::Unauthorized => {
+                    account(line, number, account_name);
+                    put(line, b": the provider rejected its credential");
+                    return;
+                }
+                FailureClass::Overloaded
+                | FailureClass::RateLimited
+                | FailureClass::Exhausted
+                | FailureClass::Unavailable
+                | FailureClass::TimedOut
+                | FailureClass::ContextTooLong
+                | FailureClass::Invalid
+                | FailureClass::Limit
+                | FailureClass::Protocol
+                | FailureClass::Cancelled
+                | FailureClass::Unknown(_) => {}
+            },
+        }
+    }
     if let Some(endpoint) = &failure.endpoint {
         put(line, clip(endpoint));
         named(line, b"/", failure.model.as_deref(), b"unknown model");
@@ -89,6 +132,29 @@ fn model(line: &mut List<u8>, failure: &AnswerFailure) {
         put(line, Decimal::of(attempts).as_bytes());
         put(line, b" attempts");
     }
+}
+
+fn account(line: &mut List<u8>, number: u64, name: Option<&[u8]>) {
+    put(line, b"account ");
+    match name {
+        Some(name) => put(line, clip(name)),
+        None => put(line, Decimal::of(number).as_bytes()),
+    }
+}
+
+fn clock(line: &mut List<u8>, at: Wall) {
+    let minutes = at.as_nanos() / 60_000_000_000;
+    let hours = (minutes / 60) % 24;
+    let minutes = minutes % 60;
+    if hours < 10 {
+        put(line, b"0");
+    }
+    put(line, Decimal::of(hours).as_bytes());
+    put(line, b":");
+    if minutes < 10 {
+        put(line, b"0");
+    }
+    put(line, Decimal::of(minutes).as_bytes());
 }
 
 fn class(class: &FailureClass) -> &[u8] {

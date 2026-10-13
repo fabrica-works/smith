@@ -44,5 +44,5 @@ pub use store::{
 };
 pub use terminal::{
     Event as TerminalEvent, Limits as TerminalLimits, Terminal, max_out as terminal_max_out, notice_text,
-    worst_case as terminal_worst_case,
+    run_failure_text, worst_case as terminal_worst_case,
 };

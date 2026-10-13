@@ -10,6 +10,7 @@ use std::path::PathBuf;
 mod credentials;
 mod header;
 mod memory;
+mod words;
 
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{OutputDown, OutputOutcome, OutputUp};
@@ -424,6 +425,8 @@ impl Local {
                 domain::Request::Notice { notice } => {
                     let text = if let Some(text) = self.credential_notice(&notice) {
                         self.service.output().push(text.clone());
+                        text
+                    } else if let Some(text) = self.run_notice(&notice) {
                         text
                     } else {
                         smith_local_protocol::notice_text(

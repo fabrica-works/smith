@@ -6,7 +6,7 @@ use crate::agent::{Agent, Output, RunStart, command};
 use crate::{AccountFailure, AgentFailure, Checks, Failure, Notice, Undelivered};
 use alloc::boxed::Box;
 use core::mem;
-use skein_lib::{Env, List, Map, Queue, Time, Token};
+use skein_lib::{Env, List, Map, Queue, Time, Token, Wall};
 use smith_domain as agent;
 use smith_host_domain::{self as host, parent};
 
@@ -53,6 +53,7 @@ pub struct Domain {
     pub(crate) stop_failed: bool,
     pub(crate) end_cause: Option<crate::EndCause>,
     told: crate::end::Told,
+    answer_wall: Option<Wall>,
     pub(crate) cancel_requested: Option<Time>,
     agent_failed: Option<AgentFailure>,
     pub(crate) agent_life: AgentLife,
@@ -195,6 +196,7 @@ impl Domain {
             stop_failed: false,
             end_cause: None,
             told: crate::end::Told::new(),
+            answer_wall: None,
             cancel_requested: None,
             agent_failed: None,
             agent_life: AgentLife::Starting,
@@ -210,6 +212,12 @@ impl Domain {
     #[must_use]
     pub const fn end_cause(&self) -> Option<crate::EndCause> {
         self.end_cause
+    }
+
+    /// The host wall clock when its last answer arrived, before settlement.
+    #[must_use]
+    pub fn answer_wall(&self) -> Option<Wall> {
+        self.answer_wall
     }
 
     /// Bounded chat name for the shell's final operator line.
@@ -991,7 +999,10 @@ fn parent_request(domain: &mut Domain, env: &Env<Limits>, event: parent::Request
             domain.told.read = turn.read;
             accept_turn(domain, env, turn.number, turn.read, turn.opens_window, turn.body.into_value(), out);
         }
-        parent::Request::Answered { answer, detail, .. } => crate::person::answered(domain, answer, detail, out),
+        parent::Request::Answered { answer, detail, .. } => {
+            domain.answer_wall = Some(env.wall);
+            crate::person::answered(domain, answer, detail, out);
+        }
         parent::Request::Waiting { read, .. } => crate::person::waiting(&mut domain.lines, read, out),
         parent::Request::Long { operation, .. } => {
             if domain.long.begin(operation) {

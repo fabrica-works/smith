@@ -314,6 +314,10 @@ impl ProcessAdapter {
         Ok(())
     }
 
+    pub(crate) fn endpoint_name(&self, number: u32) -> Option<&[u8]> {
+        self.endpoints.name_for(number)
+    }
+
     pub(crate) fn cleanup_warning(&mut self) -> Option<kernel::Error> {
         self.cleanup_warning.take()
     }

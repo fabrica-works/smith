@@ -186,11 +186,11 @@ fn every_answer_class_has_its_words() {
         (AnswerClass::Unknown(b"future".as_slice().into()), b"unknown failure: future".as_slice()),
     ];
     for (class, expected) in cases {
-        assert_eq!(crate::words(&word_failure(class)).as_ref(), expected);
+        assert_eq!(crate::words(&word_failure(class), None, None).as_ref(), expected);
     }
     let mut turns = word_failure(AnswerClass::Budget);
     turns.which = Some(b"turns".as_slice().into());
-    assert_eq!(crate::words(&turns).as_ref(), b"out of turns");
+    assert_eq!(crate::words(&turns, None, None).as_ref(), b"out of turns");
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn every_provider_class_has_its_words() {
             status: None,
             detail: None,
         });
-        assert_eq!(crate::words(&failure).as_ref(), expected);
+        assert_eq!(crate::words(&failure, None, None).as_ref(), expected);
     }
 }
 
@@ -240,4 +240,52 @@ fn clip_keeps_the_first_line() {
     assert_eq!(crate::clip(b"provider refused\nsecond line"), b"provider refused");
     assert_eq!(crate::clip(b"provider refused\r\nsecond line"), b"provider refused");
     assert_eq!(crate::clip(b""), b"");
+}
+
+#[test]
+fn an_exhausted_answer_names_its_account_and_time_when_known() {
+    let mut failure = word_failure(crate::AnswerClass::Model);
+    failure.account = Some(7);
+    failure.retry_after_ms = Some(120_000);
+    let at = Some(skein_lib::Wall::from_nanos(86_340_000_000_000));
+    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted, usable again at 00:01");
+    failure.retry_after_ms = Some(0);
+    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted, usable again at 23:59");
+    failure.retry_after_ms = None;
+    assert_eq!(crate::words(&failure, Some(b"work"), at).as_ref(), b"account work exhausted");
+    assert_eq!(crate::words(&failure, None, None).as_ref(), b"account 7 exhausted");
+}
+
+#[test]
+fn each_settled_budget_answer_names_its_used_and_bound() {
+    for (which, used, bound, expected) in [
+        (b"turns".as_slice(), 7, 8, b"out of turns: used 7 of 8".as_slice()),
+        (b"spend".as_slice(), 103, 101, b"out of spend: used 103 of 101".as_slice()),
+        (b"time".as_slice(), 1234, 1500, b"out of time: used 1234 of 1500".as_slice()),
+    ] {
+        let mut failure = word_failure(crate::AnswerClass::Budget);
+        failure.which = Some(which.into());
+        failure.used = Some(used);
+        failure.bound = Some(bound);
+        assert_eq!(crate::words(&failure, None, None).as_ref(), expected);
+    }
+}
+
+#[test]
+fn a_rejected_credential_names_its_account_in_the_shared_words() {
+    let mut failure = word_failure(crate::AnswerClass::Model);
+    failure.account = Some(7);
+    failure.completion = Some(crate::CompletionFailure {
+        class: crate::FailureClass::Unauthorized,
+        evidence: crate::Evidence::Response,
+        retry_after_ms: None,
+        phase: None,
+        limit: None,
+        status: Some(401),
+        detail: None,
+    });
+    assert_eq!(
+        crate::words(&failure, Some(b"work\nignored"), None).as_ref(),
+        b"account work: the provider rejected its credential"
+    );
 }

@@ -178,8 +178,10 @@ impl Expectations for Meeting {
                     errors.strip_suffix(b"smith: run failed: the agent ended without answering (exit 7); terminated\n")
                 } else if matches!(self.ending, Ending::Budget) {
                     errors
-                        .strip_suffix(b"smith: run failed: out of turns: smith: run failed: out of turns\n")
-                        .or_else(|| errors.strip_suffix(b"smith: run failed: out of turns\n"))
+                        .strip_suffix(
+                            b"smith: run failed: out of turns: used 3 of 3: iled: out of turns: used 3 of 3\n",
+                        )
+                        .or_else(|| errors.strip_suffix(b"smith: run failed: out of turns: used 3 of 3\n"))
                 } else if matches!(self.ending, Ending::Cancelled) {
                     errors.strip_suffix(b"smith: interrupted: the run was cancelled\n").or_else(|| {
                         errors
@@ -239,7 +241,10 @@ impl Expectations for Meeting {
                     shown.windows(expected.len()).any(|part| part == expected)
                         || (matches!(self.ending, Ending::Budget)
                             && errors.starts_with(b"smith: chat main\n")
-                            && errors.ends_with(b"smith: run failed: out of turns\n")),
+                            && (errors.ends_with(b"smith: run failed: out of turns: used 3 of 3\n")
+                                || errors.ends_with(
+                                    b"smith: run failed: out of turns: used 3 of 3: iled: out of turns: used 3 of 3\n",
+                                ))),
                     "expected terminal text",
                 );
                 let private = borrowed_text.and_then(|line| shown.strip_suffix(line)).unwrap_or(&shown);
