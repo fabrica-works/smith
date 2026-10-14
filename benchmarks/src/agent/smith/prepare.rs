@@ -82,7 +82,7 @@ fn write(context: &Context<'_>, path: &Path, bytes: &[u8]) -> Result<(), Setup> 
 
 /// Prepare the selected arm, refusing a nonzero product startup check.
 pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
-    let (prepared, receipt) = prepare_checked(context)?;
+    let (prepared, receipt) = prepare_checked(context, &[])?;
     if let Some(receipt) = receipt {
         return Err(configuration(format!("Smith check refused setup with {:?}", receipt.exit)));
     }
@@ -90,7 +90,10 @@ pub fn prepare(context: &Context<'_>) -> Result<Prepared, Setup> {
 }
 
 /// Retain a refused check's process receipt for the runner's explicit startup stories.
-pub fn prepare_checked(context: &Context<'_>) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
+pub fn prepare_checked(
+    context: &Context<'_>,
+    overrides: &[String],
+) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
     if context.pin.pin.agent != crate::Agent::Smith
         || context.pin.pin.provider != crate::Provider::Codex
         || context.pin.pin.version != "built-arm"
@@ -134,7 +137,7 @@ pub fn prepare_checked(context: &Context<'_>) -> Result<(Prepared, Option<crate:
     let root = context.private.root.join("smith");
     crate::run::private_parent(context.guard, &root).map_err(configuration)?;
     if matches!(registry.shape, super::events::Shape::Exec | super::events::Shape::Chat) {
-        return exec(context, &base, program, registry);
+        return exec(context, &base, program, registry, overrides);
     }
     let tokens = root.join("tokens");
     let trace = root.join("trace.jsonl");
@@ -171,6 +174,7 @@ fn exec(
     base: &serde_json::Value,
     program: PathBuf,
     registry: FaceSince,
+    overrides: &[String],
 ) -> Result<(Prepared, Option<crate::process::ProcessResult>), Setup> {
     let login = context.home.join("auth.json");
     let mut rendered = settings::product(context, base, &login)?;
@@ -198,6 +202,7 @@ fn exec(
     } else {
         check_arguments.extend(exec_arguments(&rendered));
     }
+    crate::batch::settings_arguments(&mut check_arguments, overrides);
     let receipt = crate::process::execute(
         &skein_shell::Clock::new(),
         skein_world::end_to_end::Command {

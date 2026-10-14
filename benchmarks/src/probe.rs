@@ -247,6 +247,53 @@ fn request(
     })
 }
 
+fn task_requests(
+    repository: &Path,
+    entry: &crate::CatalogueTask,
+    suite: &Suite,
+    arm: &ArmRef,
+    run: (&str, &str, Option<crate::SmithFace>, &str),
+    repetitions: u32,
+    requests: &mut Vec<crate::run::Prepared>,
+) -> Result<(), String> {
+    for agent in &suite.agents {
+        if !agent.tasks.is_empty() && !agent.tasks.contains(&entry.name) {
+            continue;
+        }
+        let installed;
+        let selected = if agent.agent == Agent::Codex && matches!(arm, ArmRef::Built(_)) {
+            installed = codex()?;
+            &installed
+        } else {
+            arm
+        };
+        let overrides: Vec<_> = suite
+            .arms
+            .iter()
+            .filter_map(|arm| match arm {
+                crate::Arm::Override { name, smith } => Some((name, smith)),
+                crate::Arm::Binary { .. } | crate::Arm::Agent { .. } => None,
+            })
+            .collect();
+        let executions = overrides.len().max(1);
+        for index in 0..executions {
+            for _ in 0..repetitions {
+                let mut request = request(repository, entry, suite, agent, selected, run, requests.len() + 1)?;
+                if let Some((name, fields)) = overrides.get(index) {
+                    request.identity.arm.clone_from(name);
+                    request.arguments = crate::suite::override_arguments(fields);
+                }
+                requests.push(request);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "../tests/overrides/suite.rs"]
+mod override_tests;
+
 fn narrowed(file: &Path, order: &Order) -> Result<toml::Value, String> {
     let mut value: toml::Value = crate::formats::read_document(file).map_err(|error| error.to_string())?;
     let fields = value.as_table_mut().ok_or("suite must be a TOML table")?;
@@ -350,35 +397,22 @@ fn prepare(
         } else {
             task.repetitions.unwrap_or(suite.repetitions)
         };
-        for agent in &suite.agents {
-            if !agent.tasks.is_empty() && !agent.tasks.contains(&name) {
-                continue;
-            }
-            let installed;
-            let selected = if agent.agent == Agent::Codex && matches!(arm, ArmRef::Built(_)) {
-                installed = codex()?;
-                &installed
-            } else {
-                arm
-            };
-            for _ in 0..repetitions {
-                let request = request(
-                    repository,
-                    &entry,
-                    &suite,
-                    agent,
-                    selected,
-                    (&run, &started, face, &harness_commit),
-                    requests.len() + 1,
-                )?;
-                write(
-                    &guard,
-                    &directory.join(format!("{}.json", request.identity.attempt)),
-                    &serde_json::to_vec_pretty(&request).map_err(|error| error.to_string())?,
-                )?;
-                requests.push(request);
-            }
-        }
+        task_requests(
+            repository,
+            &entry,
+            &suite,
+            arm,
+            (&run, &started, face, &harness_commit),
+            repetitions,
+            &mut requests,
+        )?;
+    }
+    for request in &requests {
+        write(
+            &guard,
+            &directory.join(format!("{}.json", request.identity.attempt)),
+            &serde_json::to_vec_pretty(request).map_err(|error| error.to_string())?,
+        )?;
     }
     Ok(Planned { run, suite: suite_file, directory, requests })
 }

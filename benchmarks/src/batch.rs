@@ -33,7 +33,7 @@ fn requests(directory: &Path) -> Result<Vec<Prepared>, String> {
     paths.into_iter().map(|entry| read_prepared(&entry.path())).collect()
 }
 
-fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prepared>, String> {
+pub(crate) fn ordered(suite: &Suite, requests: Vec<Prepared>, seed: u64) -> Result<Vec<Prepared>, String> {
     order(suite, requests, seed, false)
 }
 
@@ -84,6 +84,13 @@ fn order(suite: &Suite, requests: Vec<Prepared>, seed: u64, logical: bool) -> Re
         return Err("prepared suite has no requests".into());
     }
     Ok(ordered)
+}
+
+/// Append settings after the task's settings and before its positional input.
+pub(crate) fn settings_arguments(arguments: &mut Vec<std::ffi::OsString>, overrides: &[String]) {
+    let end =
+        if arguments.last().is_some_and(|argument| argument == "-") { arguments.len() - 1 } else { arguments.len() };
+    arguments.splice(end..end, overrides.iter().map(Into::into));
 }
 
 fn observed_checks(result: &AttemptResult, names: &[&str]) -> bool {
@@ -181,6 +188,23 @@ fn allowed_agents(suite: &Suite) -> Vec<crate::SuiteAgent> {
     allowed
 }
 
+fn check_override(suite: &Suite, request: &Prepared) -> Result<(), String> {
+    if !suite.arms.is_empty() && matches!(suite.arms[0], crate::Arm::Override { .. }) {
+        let fields = suite
+            .arms
+            .iter()
+            .find_map(|arm| match arm {
+                crate::Arm::Override { name, smith } if name == &request.identity.arm => Some(smith),
+                crate::Arm::Binary { .. } | crate::Arm::Override { .. } | crate::Arm::Agent { .. } => None,
+            })
+            .ok_or("prepared request names an undeclared override arm")?;
+        if request.arguments != crate::suite::override_arguments(fields) {
+            return Err("prepared override settings differ from the suite".into());
+        }
+    }
+    Ok(())
+}
+
 fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Result<(), String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let catalogue =
@@ -205,6 +229,7 @@ fn check_requests(suite_file: &Path, suite: &Suite, requests: &[Prepared]) -> Re
         if !selected.contains(&request.identity.task) {
             return Err("prepared request is not a selected suite task".into());
         }
+        check_override(suite, request)?;
         let entry = catalogue
             .iter()
             .find(|entry| {

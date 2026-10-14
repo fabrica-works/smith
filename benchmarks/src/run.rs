@@ -818,7 +818,11 @@ fn invocation(
                 None,
             ));
         };
-        if !work.prepared.arguments.is_empty() {
+        if !work.prepared.arguments.is_empty()
+            && (result.identity.agent != crate::Agent::Smith
+                || !work.prepared.arguments.len().is_multiple_of(2)
+                || work.prepared.arguments.chunks_exact(2).any(|pair| pair[0] != "-c"))
+        {
             return Err("pinned adapters render their own arguments".into());
         }
         if crate::arm::binary_digest(&work.prepared.program)? != result.identity.binary_sha256 {
@@ -851,7 +855,7 @@ fn invocation(
             environment: &environment,
         };
         let (prepared, receipt) = match result.identity.agent {
-            crate::Agent::Smith => crate::agent::smith::prepare_checked(&context)
+            crate::Agent::Smith => crate::agent::smith::prepare_checked(&context, &work.prepared.arguments)
                 .map(|(prepared, receipt)| (crate::agent::Prepared::Smith(prepared), receipt)),
             crate::Agent::Codex | crate::Agent::ClaudeCode => {
                 result.identity.agent.prepare(&context).map(|prepared| (prepared, None))
@@ -873,7 +877,8 @@ fn invocation(
         {
             return Err(format!("Smith check refused setup with {:?}", receipt.exit));
         }
-        let invocation = prepared.command();
+        let mut invocation = prepared.command();
+        crate::batch::settings_arguments(&mut invocation.arguments, &work.prepared.arguments);
         environment.extend(invocation.environment);
         Ok((
             Command {

@@ -53,6 +53,14 @@ pub enum Arm {
     Agent { name: String, agent: Agent, provider: Provider, config: String },
 }
 
+pub(crate) fn override_arguments(fields: &BTreeMap<String, toml::Value>) -> Vec<String> {
+    let mut arguments = Vec::new();
+    for (key, value) in fields {
+        arguments.extend(["-c".into(), format!("{key}={value}")]);
+    }
+    arguments
+}
+
 /// A committed run specification supplied by its author to the runner.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -182,6 +190,13 @@ pub fn validate_suite(
         validate_agent(file, agent, &suite.tier, agents, models)?;
     }
     let mut arm_names = BTreeSet::new();
+    if suite.arms.iter().any(|arm| matches!(arm, Arm::Override { .. }))
+        && (suite.agents.len() != 1
+            || suite.agents[0].agent != Agent::Smith
+            || suite.arms.iter().any(|arm| !matches!(arm, Arm::Override { .. })))
+    {
+        return Err(Refusal::new(file, "arm", "override arms require one smith agent and only override arms"));
+    }
     for arm in &suite.arms {
         let name = match arm {
             Arm::Binary { name, commit } => {
