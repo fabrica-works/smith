@@ -111,6 +111,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(processes)?
         .checked_add(pipes)?
         .checked_add(output)?
+        // lib.md, section 7: each output pipe can deliver its maximum.
+        .checked_add(u64::from(crate::process::OUTPUT_READ).checked_mul(2)?)?
         .checked_add(search)?
         .checked_add(listing)?
         .checked_add(environment)?

@@ -297,7 +297,7 @@ fn parse(input: &[u8]) -> Option<tools::Hit> {
                             None => max,
                         }
                     }
-                    Read::Nothing | Read::Line { .. } => return None,
+                    Read::Nothing | Read::Line { .. } | Read::Arrived { .. } => return None,
                 };
                 if count <= remaining.len() {
                     let delivery = Box::from(remaining.get(..count)?);

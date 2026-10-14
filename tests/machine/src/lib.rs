@@ -13,12 +13,14 @@ use skein_io::file;
 use skein_io::file_layer::{self, FileIo};
 use skein_io::kernel::{Complete, Fd, Submit};
 use skein_io::{self as io, Io};
-use skein_lib::stream::Up;
+use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
 use skein_sim::{Answer, Ask, Config, Handle, Program, Reply};
 use skein_world::{Expectation, Expectations, Host, Memory, Referee};
 use smith_domain::{run, tools};
 use smith_protocol_machine::{Below, BelowEvent, Component, FromDomain, Limits, ToDomain};
+
+const FLOOD_MOST: usize = 1 << 20;
 
 fn machine_limits() -> Limits {
     Limits {
@@ -64,6 +66,8 @@ pub struct World {
     now: Time,
     memory: Memory,
     trace: Vec<String>,
+    /// The child-output deliveries in the last settled run.
+    pub deliveries: usize,
     heap: Vec<(u64, u64)>,
     environment: Vec<smith_protocol_machine::Variable>,
     spawns: Rc<RefCell<Vec<Spawned>>>,
@@ -123,6 +127,7 @@ impl World {
             now: Time::ZERO,
             memory: Memory::Unchecked,
             trace: Vec::new(),
+            deliveries: 0,
             heap: Vec::new(),
             environment: Vec::new(),
             spawns: Rc::default(),
@@ -211,7 +216,7 @@ impl World {
 
     /// Preserve the bounded child-event flood fixture at the component seam.
     pub fn flood(&mut self, owner: Token, bytes: &[u8], head: u32, tail: u32) -> ToDomain {
-        assert!(bytes.len() <= 4096, "bounded flood fixture");
+        assert!(bytes.len() <= FLOOD_MOST, "bounded flood fixture");
         self.run(&Job::Flood { owner, bytes: bytes.into(), head, tail })
     }
 
@@ -240,6 +245,7 @@ impl World {
         });
         let outcome = world.run();
         let terminal = copy_terminal(outcome.procs[0].terminals.first().expect("one terminal"));
+        self.deliveries = outcome.procs[0].deliveries;
         self.trace.extend(outcome.trace.iter().map(|entry| format!("{entry:?}")));
         self.now = Time::from_nanos(self.now.as_nanos().checked_add(outcome.end.as_nanos()).expect("scenario clock"));
         if let Some(heap) = &outcome.heap {
@@ -462,6 +468,7 @@ struct Application {
     completions: Queue<Complete>,
     file_flights: BTreeSet<Token>,
     terminals: Vec<ToDomain>,
+    deliveries: usize,
 }
 
 impl Application {
@@ -515,6 +522,7 @@ impl Application {
             completions: Queue::with_capacity(128),
             file_flights: BTreeSet::new(),
             terminals: Vec::with_capacity(1),
+            deliveries: 0,
         }
     }
 
@@ -572,25 +580,37 @@ impl Application {
         }
         let stdout = Token::new(8001);
         let stderr = Token::new(8002);
-        self.component.from_below(
-            &self.machine_env,
-            BelowEvent::Process(io::Event::Spawned {
-                owner,
-                child: Token::new(8000),
-                pipes: Box::new([stdout, stderr]),
-            }),
-            &mut self.to_domain,
-            &mut self.below,
-        );
-        assert!(self.below.pop().is_some() && self.below.pop().is_some(), "both pipe demands");
-        for byte in bytes {
+        let pipes = Box::new([stdout, stderr]);
+        let event = io::Event::Spawned { owner, child: Token::new(8000), pipes };
+        self.component.from_below(&self.machine_env, BelowEvent::Process(event), &mut self.to_domain, &mut self.below);
+        let mut demand = self.below.pop().expect("stdout demand");
+        assert!(self.below.pop().is_some(), "stderr demand");
+        let mut at = 0;
+        while at < bytes.len() {
+            let count = match demand {
+                Below::Process(io::Request::Stream {
+                    down: Down::Demand { read: Read::Arrived { max }, .. }, ..
+                }) => (max as usize).min(bytes.len() - at),
+                Below::Process(io::Request::Stream { down: Down::Demand { read: Read::Fill(n), .. }, .. }) => {
+                    n as usize
+                }
+                other @ (Below::File { .. }
+                | Below::CancelFile { .. }
+                | Below::OpenRead { .. }
+                | Below::OpenDirectory { .. }
+                | Below::Spawn { .. }
+                | Below::Process(_)) => panic!("expected output read: {other:?}"),
+            };
+            let up = Up::Bytes(Box::from(&bytes[at..at + count]));
             self.component.from_below(
                 &self.machine_env,
-                BelowEvent::Process(io::Event::Stream { owner: stdout, up: Up::Bytes(Box::new([*byte])) }),
+                BelowEvent::Process(io::Event::Stream { owner: stdout, up }),
                 &mut self.to_domain,
                 &mut self.below,
             );
-            assert!(self.below.pop().is_some(), "demand after each byte");
+            at += count;
+            self.deliveries += 1;
+            demand = self.below.pop().expect("demand after each delivery");
         }
         self.component.from_below(
             &self.machine_env,
@@ -876,7 +896,7 @@ impl Host for Application {
         smith_protocol_machine::worst_case(&self.machine_env.limits)
             .and_then(|bound| bound.checked_add(FileIo::worst_case(16, 128, 32, 128)?))
             .and_then(|bound| bound.checked_add(io::worst_case(&self.process_env.limits)?))
-            // Finite queues, one maximal request/terminal and the 4096-byte flood.
+            // Finite queues, one maximal request/terminal and the bounded flood.
             .and_then(|bound| bound.checked_add(2_097_152))
             .expect("application heap bound")
     }

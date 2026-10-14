@@ -1018,3 +1018,22 @@ fn a_listing_directory_failure_or_cancel_never_launches_rg() {
     assert_eq!(up.pop(), Some(ToDomain::Done { owner, done: tools::Done::Cancelled }));
     assert!(down.is_empty());
 }
+
+#[test]
+fn a_tools_output_is_the_same_whatever_its_deliveries() {
+    use crate::process::{Process, Purpose, stream};
+    use skein_lib::stream::Up;
+    let bytes = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-";
+    let mut answers = skein_lib::List::with_capacity(2);
+    for cut in [64, 1] {
+        let mut process = Process::new(Purpose::Shell, Time::ZERO, 8, 8, None);
+        process.pipes = [Some(Token::new(1)), Some(Token::new(2))];
+        let mut below = Queue::with_capacity(1);
+        for delivery in bytes.chunks(cut) {
+            stream(&mut process, Token::new(1), Up::Bytes(Box::from(delivery)), &mut below);
+            assert!(below.pop().is_some());
+        }
+        answers.push(process.answer(Token::new(3))).expect("two delivery cuts");
+    }
+    assert_eq!(answers.get(0), answers.get(1));
+}

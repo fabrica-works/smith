@@ -158,6 +158,26 @@ fn a_command_that_floods_its_output_keeps_its_head_and_tail() {
 }
 
 #[test]
+fn a_megabyte_of_output_takes_few_deliveries() {
+    let mut world = World::new(8, &[]);
+    let output: Vec<u8> = (0_u32..1_048_576).map(|at| b'a' + u8::try_from(at % 26).expect("alphabet")).collect();
+    assert_eq!(
+        world.flood(Token::new(40), &output, 8, 8),
+        ToDomain::Done {
+            owner: Token::new(40),
+            done: tools::Done::Exited {
+                exit: tools::Exit::Code { code: 0 },
+                head: Box::from(&output[..8]),
+                tail: Box::from(&output[output.len() - 8..]),
+                dropped: 1_048_560,
+            },
+        }
+    );
+    assert!(world.deliveries <= 1024);
+    world.settle();
+}
+
+#[test]
 fn referee_writes_only_within_a_writable_root_and_answers_each_call_once() {
     let mut readonly = World::read_only(9, &[Item::file(b"kept", b"old")]);
     let denied = readonly.request(FromDomain::Op {

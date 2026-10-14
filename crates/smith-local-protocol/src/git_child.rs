@@ -21,6 +21,8 @@ use smith_local_domain as local;
 
 use crate::{Git, GitAction, GitCompletion, GitLimits};
 
+const GIT_READ: u32 = 4096;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Life {
     Active,
@@ -55,6 +57,8 @@ pub struct GitChild {
 pub fn git_child_worst_case(limits: &GitLimits) -> Option<u64> {
     crate::git_worst_case(limits)?
         .checked_add(8192)?
+        // lib.md, section 7: one maximum delivery for each output stream.
+        .checked_add(u64::from(GIT_READ).checked_mul(2)?)?
         .checked_add(List::<Box<[u8]>>::worst_case(64)?)?
         .checked_add(List::<u8>::worst_case(limits.output_bytes.checked_add(1)?)?)?
         .checked_add(List::<u8>::worst_case(limits.detail_bytes)?.checked_mul(2)?)?
@@ -127,7 +131,7 @@ impl GitChild {
                     *self.pipes.get_mut(index).expect("two pipe slots") = Some(*pipe);
                     below.push(io::Request::Stream {
                         stream: *pipe,
-                        down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },
+                        down: stream::Down::Demand { read: stream::Read::Arrived { max: GIT_READ }, room: 0 },
                     });
                 }
                 if self.timed_out {
@@ -160,7 +164,7 @@ impl GitChild {
                     }
                     below.push(io::Request::Stream {
                         stream: owner,
-                        down: stream::Down::Demand { read: stream::Read::Fill(1), room: 0 },
+                        down: stream::Down::Demand { read: stream::Read::Arrived { max: GIT_READ }, room: 0 },
                     });
                 }
                 stream::Up::End => below.push(io::Request::Close { entity: owner }),

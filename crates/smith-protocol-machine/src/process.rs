@@ -14,6 +14,8 @@ use crate::limits::Limits;
 use crate::listing::Listing;
 use crate::search::Search;
 
+pub(crate) const OUTPUT_READ: u32 = 4096;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Purpose {
     Shell,
@@ -227,7 +229,7 @@ impl Process {
             assert!(routes.insert(*pipe, owner).is_ok(), "reserved two routes per child");
             below.push(Below::Process(io::Request::Stream {
                 stream: *pipe,
-                down: Down::Demand { read: Read::Fill(1), room: 0 },
+                down: Down::Demand { read: Read::Arrived { max: OUTPUT_READ }, room: 0 },
             }));
         }
         match self.stop {
@@ -568,7 +570,7 @@ pub(crate) fn stream(process: &mut Process, pipe: Token, up: Up, below: &mut Que
             }
             below.push(Below::Process(io::Request::Stream {
                 stream: pipe,
-                down: Down::Demand { read: Read::Fill(1), room: 0 },
+                down: Down::Demand { read: Read::Arrived { max: OUTPUT_READ }, room: 0 },
             }));
         }
         Up::End => below.push(Below::Process(io::Request::Close { entity: pipe })),

@@ -187,7 +187,7 @@ fn tokenize(input: &[u8], limits: &Limits, encoded_line: u32) -> Result<List<Tok
                             None => max,
                         }
                     }
-                    Read::Nothing | Read::Line { .. } => return Err(Error::Malformed),
+                    Read::Nothing | Read::Line { .. } | Read::Arrived { .. } => return Err(Error::Malformed),
                 };
                 if count <= remaining.len() {
                     let delivery = bytes::copy_of(remaining.get(..count).ok_or(Error::Malformed)?);
