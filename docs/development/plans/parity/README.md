@@ -163,7 +163,11 @@ until the run ends.
    request, on a branch that changes `benchmarks/src/agent/smith/` or
    `benchmarks/agents/smith/`, while `main`'s last landed smoke passed:
    that stops its step on a question, and the line goes on (decisions.md,
-   ruling 107).
+   ruling 107). Before it escalates a second failure refused at setup,
+   the coordinator runs the smoke once on `origin/main` (`build
+   origin/main`, then the probe on that arm) and puts both summary lines
+   in `blocked.md`: in ruling 115, `main` itself was refused, by
+   more than the step's branch.
 9. **Live runs** (lesson 10). Every live command goes through `heavy
    --gate`. A `suite` runs in one call, unsplit, whatever its attempts. A
    `probe` runs at most 12 attempts a call; a `calibrate`, at most 12 on

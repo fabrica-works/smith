@@ -165,6 +165,12 @@ Scope: limits.md 3.5 and 5 (the worst case within `declared.memory`);
   ruling 114. On `main` at `25388ac8`, `first-request`'s overrides refuse
   at startup: "service.worst_case=2147682394 bytes; declared.memory=2147462772
   bytes", 219,622 bytes over (`probes-first-request-25388ac8-20261014T192031Z/01/stderr.log`).
+  The smoke's own configuration refuses too, by more: "service.worst_case=2147712231
+  bytes; declared.memory=2147462772 bytes", 249,459 bytes over
+  (`probes-smoke-tools-25388ac8-20261014T192551Z/01/stderr.log`; ruling
+  115). Each of 07.1 (`bde09510`) and 08.3 (`257a41bd`) passed its
+  smoke on a tree without the other; start the search with their
+  combination.
 Needs: 08.3.
 Budget: 3 runs, 60 minutes (README rule 5), to find the priced term that
   grew past the bound.
@@ -179,7 +185,9 @@ Test shape: `every_probe_tasks_overrides_pass_the_actual_public_startup_derivati
   (one outcome over each `benchmarks/tasks/probes/*/task.toml`, as `:449`
   does for one profile), and the heap test that shows the overcount.
   Under 0.5 s each.
-Proof: unit, those tests; the smoke (rule 8).
+Proof: unit, those tests; the smoke (rule 8), which must pass on its
+  branch: until 08.s1 lands, it is the only smith code landing that runs
+  the smoke (ruling 115).
 Don't: raise memory or change a probe.
 Size: 60 lines.
 Removes: the overcount.

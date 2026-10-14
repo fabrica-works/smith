@@ -127,7 +127,7 @@ Removes: the compaction's use of the conversation's choice.
 ### 07.2 The summary, framed
 Scope: session.md 8.2 (the new window, the summary); run.md 3.3 (the
   preamble given at open); limits.md 3.9; transcript.md 2 (findings K3).
-Needs: 07.1; smith 11's transcript version 4 [11.1].
+Needs: 07.1; smith 11's transcript version 4 [11.1]; 08.s1 (ruling 115).
 Files: `crates/smith-domain-session/src/session.rs` (the conversation's
   `summary`, `:186`; the opening's bytes, `:2025`, `:2055`),
   `crates/smith-domain-session/src/compaction.rs` (`open_window`,
