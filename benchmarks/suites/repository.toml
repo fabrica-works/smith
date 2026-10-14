@@ -10,7 +10,7 @@ tasks = ["repository/shell-cwd"]
 [[agents]]
 agent = "smith"
 provider = "codex"
-config = "compare"
+config = "standard"
 
 [[agents]]
 agent = "codex"

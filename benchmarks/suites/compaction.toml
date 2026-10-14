@@ -11,7 +11,7 @@ tasks = ["probes/history/small-window"]
 [[agents]]
 agent = "smith"
 provider = "codex"
-config = "cache-reuse"
+config = "everything"
 
 [[arm]]
 source = "override"

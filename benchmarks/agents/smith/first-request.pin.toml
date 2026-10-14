@@ -1,5 +1,0 @@
-name = "first-request"
-agent = "smith"
-provider = "codex"
-version = "built-arm"
-configuration = "first-request.json"

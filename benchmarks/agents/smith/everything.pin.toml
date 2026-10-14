@@ -1,5 +1,5 @@
-name = "budget"
+name = "everything"
 agent = "smith"
 provider = "codex"
 version = "built-arm"
-configuration = "first-request.json"
+configuration = "everything.toml"

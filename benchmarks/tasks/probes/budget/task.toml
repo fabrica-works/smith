@@ -14,27 +14,7 @@ seconds = 300
 turns = 12
 
 [smith]
-window = 272000
-output = 32000
-reasoning_item = 65536
-head = 60000
-idle = 300000
-connect = 10000
-handshake = 10000
-conversations = 5
-tool_payload = 40960
-file_bytes = 1048576
-calls_per_response = 16
-read_window = 32768
-guide = 16384
-shell_output = 16384
-shell_head = 16384
-shell_tail = 49152
-search_hits = 100
-search_bytes = 16384
-list_entries = 512
-llm_pool = 134217728
-memory = 2147483648
+"budget.reserve.seconds" = 150
 
 [[outcome]]
 check = "end"
@@ -51,6 +31,7 @@ status = "accepted"
 
 [[variant]]
 name = "child-quota"
+smith = { sub_agents = true }
 prompt = "Delegate one read-only child with max_turns 2. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report the sum. Wait for its answer, then finish with ALPHA and the child's partial or full report.\n"
 deciding = ["child-share", "conversation-opened", "main-after-child"]
 [[variant.event]]
@@ -66,6 +47,7 @@ check = "main-after-child"
 
 [[variant]]
 name = "wrap-up"
+smith = { sub_agents = true }
 prompt = "Delegate one read-only child with max_turns 3. Require it to read part01.txt through part10.txt in order using exactly one read per completion and no batched reads, shell, or nested delegation, then report its sum. Wait for the child's budget-stopped report, then finish with ALPHA and that report.\n"
 deciding = ["final-turn", "conversation-opened", "main-after-child"]
 [[variant.event]]
@@ -79,6 +61,7 @@ check = "main-after-child"
 
 [[variant]]
 name = "starvation"
+smith = { sub_agents = true }
 prompt = "Delegate one read-only child with max_turns 64 to survey part01.txt through part10.txt, exactly one read per completion without batching, shell, or nested delegation. The run has only six turns including your finishing reserve: let the effective child share clamp, wait for its full or partial report, and finish with ALPHA and what it learned. Do not abandon the child or finish before its return.\n"
 deciding = ["main-after-child", "conversation-opened"]
 [variant.budget]
@@ -107,6 +90,7 @@ check = "usage-sums"
 
 [[variant]]
 name = "visibility"
+smith = { sub_agents = true }
 prompt = "Delegate one read-only child with max_turns 2 to read part01.txt and report its value. Wait for its return. In the child's native usage line, find the last ordinary-left turns and time you were told. Finish with exactly ALPHA, that turns count, and that time in whole seconds (for less than a second use 0). For example ALPHA 6 7. Report what you were told before this reporting completion, excluding spend. No other child, read, shell, or change.\n"
 deciding = ["budget-visible", "budget-told", "budget-report", "conversation-opened", "main-after-child"]
 [[variant.event]]

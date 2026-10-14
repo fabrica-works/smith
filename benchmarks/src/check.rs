@@ -510,7 +510,7 @@ fn declared_file_bytes(
     override_value: Option<&toml::Value>,
 ) -> Option<u64> {
     override_value
-        .or_else(|| smith.get("file_bytes"))
+        .or_else(|| smith.get("deployment.file_bytes"))
         .and_then(toml::Value::as_integer)
         .and_then(|value| u64::try_from(value).ok())
 }
@@ -520,7 +520,7 @@ fn declared_tool_payload(
     override_value: Option<&toml::Value>,
 ) -> Option<u64> {
     override_value
-        .or_else(|| smith.get("tool_payload"))
+        .or_else(|| smith.get("deployment.tool_payload"))
         .and_then(toml::Value::as_integer)
         .and_then(|value| u64::try_from(value).ok())
 }
@@ -536,7 +536,7 @@ fn event_checks(
         file,
         key,
         checks,
-        declared_file_bytes(smith, overrides.and_then(|values| values.get("file_bytes"))),
-        declared_tool_payload(smith, overrides.and_then(|values| values.get("tool_payload"))),
+        declared_file_bytes(smith, overrides.and_then(|values| values.get("deployment.file_bytes"))),
+        declared_tool_payload(smith, overrides.and_then(|values| values.get("deployment.tool_payload"))),
     )
 }

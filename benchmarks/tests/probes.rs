@@ -39,7 +39,7 @@ fn history_reads_one_file_per_completion_to_its_sum() {
         clamped: None,
     }));
     assert!(task.event.contains(&smith_bench::EventCheck::CallsPerResponse { tool: "read".into(), at_most: 1 }));
-    assert_eq!(task.smith["calls_per_response"].as_integer(), Some(1));
+    assert_eq!(task.smith["deployment.calls_per_response"].as_integer(), Some(1));
 }
 
 fn history_observer(records: &mut [smith_events::Record]) -> smith_bench::agent::smith::events::Observer {
@@ -61,14 +61,14 @@ fn small_window_requires_a_compaction_and_no_prompt_past_its_window() {
     let base = history();
     let task = base.with_variant("small-window").expect("small window");
     assert_eq!(task.smith.len(), base.smith.len());
-    assert_eq!(task.smith["window"].as_integer(), Some(65536));
+    assert_eq!(task.smith["models.\"{model}\".window"].as_integer(), Some(65536));
     for (key, value) in &base.smith {
-        if key != "window" {
+        if key != "models.\"{model}\".window" {
             assert_eq!(&task.smith[key], value);
         }
     }
     assert_eq!(task.prompt, base.prompt);
-    assert!(32 * 8192 >= 4 * task.smith["window"].as_integer().expect("window"));
+    assert!(32 * 8192 >= 4 * task.smith["models.\"{model}\".window"].as_integer().expect("window"));
     let compacted = smith_bench::EventCheck::ConversationOpened {
         kind: "compaction".into(),
         count: smith_bench::Count::AtLeast(1),

@@ -13,27 +13,7 @@ seconds = 600
 turns = 12
 
 [smith]
-window = 272000
-output = 32000
-reasoning_item = 65536
-head = 60000
-idle = 300000
-connect = 10000
-handshake = 10000
-conversations = 5
-tool_payload = 40960
-file_bytes = 1048576
-calls_per_response = 16
-read_window = 32768
-guide = 16384
-shell_output = 16384
-shell_head = 16384
-shell_tail = 49152
-search_hits = 100
-search_bytes = 16384
-list_entries = 512
-llm_pool = 134217728
-memory = 2147483648
+"deployment.tool_payload" = 40960
 
 [[variant]]
 name = "one-turn"
@@ -52,7 +32,7 @@ check = "no-request"
 
 [[variant]]
 name = "unknown-model"
-smith = { model = "smith-bench-nonexistent-model-2026-10-11" }
+smith = { "model" = "codex/smith-bench-nonexistent-model-2026-10-11", "models.\"codex/smith-bench-nonexistent-model-2026-10-11\".window" = 272000, "models.\"codex/smith-bench-nonexistent-model-2026-10-11\".output" = 32000, "models.\"codex/smith-bench-nonexistent-model-2026-10-11\".input_price" = 0.1, "models.\"codex/smith-bench-nonexistent-model-2026-10-11\".cached_price" = 0.01, "models.\"codex/smith-bench-nonexistent-model-2026-10-11\".output_price" = 0.5 }
 deciding = ["end", "run-completed", "provider-failure", "stream-whole", "tree-ended"]
 [[variant.outcome]]
 check = "end"
@@ -69,7 +49,7 @@ detail_bytes_at_most = 1024
 
 [[variant]]
 name = "derived-limit"
-smith = { read_window = 40961 }
+smith = { "deployment.read_window" = 40961 }
 deciding = ["end", "exit-code", "last-line", "no-run", "tree-ended"]
 [[variant.outcome]]
 check = "end"
@@ -85,7 +65,7 @@ check = "no-run"
 
 [[variant]]
 name = "bad-setting"
-smith = { output = 0 }
+smith = { "models.\"{model}\".output" = 0 }
 deciding = ["end", "exit-code", "last-line", "no-run", "tree-ended"]
 [[variant.outcome]]
 check = "end"

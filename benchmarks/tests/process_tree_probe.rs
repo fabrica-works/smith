@@ -29,7 +29,7 @@ fn nested_process_task_freezes_the_command_profile_and_tree_criterion() {
     suite.tasks = vec!["probes/process-tree".into()];
     suite.agents.retain(|agent| agent.tasks.iter().any(|name| name == "probes/process-tree"));
     suite.agents[0].tasks.clone_from(&suite.tasks);
-    assert_eq!(suite.agents[0].config, "first-request");
+    assert_eq!(suite.agents[0].config, "everything");
     let catalogue = smith_bench::catalogue(&root.join("tasks"), &root.join("../docs/design")).expect("catalogue");
     let tiers = smith_bench::read_model_tiers(&root.join("agents/models.toml")).expect("tiers");
     assert_eq!(

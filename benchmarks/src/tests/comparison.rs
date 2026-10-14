@@ -196,7 +196,7 @@ fn a_suite_without_codex_compares_against_its_named_reference() {
     let mut suite = super::sample_suite();
     suite.design = crate::Design::Interleaved;
     suite.agents[0].agent = crate::Agent::Smith;
-    suite.agents[0].config = "cache-reuse".into();
+    suite.agents[0].config = "everything".into();
     suite.arms = ["smith", "codex"]
         .map(|name| crate::Arm::Override { name: name.into(), smith: std::collections::BTreeMap::new() })
         .into();

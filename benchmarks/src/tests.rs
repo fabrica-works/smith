@@ -1050,7 +1050,7 @@ fn committed_costs_require_only_the_agents_selected_for_that_task() {
     suite.agents[0].tasks = vec!["probes/recorded".into()];
     let mut excluded = suite.agents[0].clone();
     excluded.agent = crate::Agent::Smith;
-    excluded.config = "smoke".into();
+    excluded.config = "standard".into();
     excluded.tasks = vec!["probes/recorded/short".into()];
     suite.agents.push(excluded);
     let mut result = recorded_result();

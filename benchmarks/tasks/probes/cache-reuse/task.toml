@@ -15,27 +15,7 @@ seconds = 300
 turns = 40
 
 [smith]
-window = 272000
-output = 32000
-reasoning_item = 65536
-head = 60000
-idle = 300000
-connect = 10000
-handshake = 10000
-conversations = 5
-tool_payload = 40960
-file_bytes = 1048576
-calls_per_response = 16
-read_window = 32768
-guide = 16384
-shell_output = 16384
-shell_head = 16384
-shell_tail = 49152
-search_hits = 100
-search_bytes = 16384
-list_entries = 512
-llm_pool = 134217728
-memory = 2147483648
+"budget.reserve.seconds" = 150
 
 [[outcome]]
 check = "end"
@@ -69,6 +49,7 @@ full_misses_per_ten_at_most = 1
 
 [[variant]]
 name = "children"
+smith = { sub_agents = true }
 replace_checks = true
 prompt = "Delegate two read-only children in turn, waiting for the first to return before starting the second. Give each max_turns 16 and the same independent task: follow the twelve-file pointer chain beginning at node-cobalt.txt; exactly one read per completion, no list, batched reads, writes, edits, or nested delegation; sum the value fields and finish after the twelfth read. Main does not read the files. After both have returned, finish with exactly ALPHA and the two sums in order.\n"
 deciding = ["end", "exit-code", "answer", "run-completed", "tool-call", "completions", "calls-per-response", "conversation-opened", "children-in-turn", "cache-reuse"]

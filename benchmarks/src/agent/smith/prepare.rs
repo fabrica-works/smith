@@ -133,40 +133,15 @@ pub fn prepare_checked(
     if bytes.len() > 65_536 {
         return Err(configuration("Smith settings template exceeds its bound"));
     }
-    let base = serde_json::from_slice(&bytes).map_err(|error| configuration(error.to_string()))?;
+    let text = std::str::from_utf8(&bytes).map_err(|error| configuration(error.to_string()))?;
+    let base: toml::Value = toml::from_str(text).map_err(|error| configuration(error.to_string()))?;
+    let base = serde_json::to_value(base).map_err(|error| configuration(error.to_string()))?;
     let root = context.private.root.join("smith");
     crate::run::private_parent(context.guard, &root).map_err(configuration)?;
-    if matches!(registry.shape, super::events::Shape::Exec | super::events::Shape::Chat) {
-        return exec(context, &base, program, registry, overrides);
+    if !matches!(registry.shape, super::events::Shape::Exec | super::events::Shape::Chat) {
+        return Err(configuration("Smith product settings require a product face"));
     }
-    let tokens = root.join("tokens");
-    let trace = root.join("trace.jsonl");
-    let settings_path = root.join("settings.json");
-    let dry = settings::settings(context, &base, "prepared-account", &trace, &tokens)?;
-    let teardown = settings::teardown(&dry)?;
-    let lifetime =
-        context.lifetime.checked_add(teardown).ok_or_else(|| configuration("credential lifetime overflow"))?;
-    let converted = crate::credential::smith(context.guard, context.home, &tokens, context.wall, lifetime)?;
-    let rendered = settings::settings(context, &base, &converted.account_id, &trace, &tokens)?;
-    let encoded = serde_json::to_vec_pretty(&rendered).map_err(|error| configuration(error.to_string()))?;
-    write(context, &settings_path, &encoded)?;
-    write(context, &trace, &[])?;
-    let state = root.join("state");
-    crate::run::private_parent(context.guard, &state).map_err(configuration)?;
-    Ok((
-        Prepared {
-            face: registry.shape,
-            settings: settings_path,
-            credential: Credential::Record(Some(converted.borrowed)),
-            trace: Some(trace),
-            registry,
-            rendered,
-            program,
-            state,
-            teardown,
-        },
-        None,
-    ))
+    exec(context, &base, program, registry, overrides)
 }
 
 fn exec(
@@ -189,19 +164,15 @@ fn exec(
     let directory = context.private.config.join("smith");
     crate::run::private_parent(context.guard, &directory).map_err(configuration)?;
     let settings = directory.join("config.toml");
-    let document: toml::Value =
-        serde_json::from_value(rendered.clone()).map_err(|error| configuration(error.to_string()))?;
+    let mut layer = rendered.clone();
+    layer.as_object_mut().expect("product layer").remove("invocation");
+    let document: toml::Value = serde_json::from_value(layer).map_err(|error| configuration(error.to_string()))?;
     write(
         context,
         &settings,
         toml::to_string(&document).map_err(|error| configuration(error.to_string()))?.as_bytes(),
     )?;
-    let mut check_arguments = vec!["check".into(), "--json".into()];
-    if registry.shape == super::events::Shape::Chat {
-        check_arguments.extend(product_arguments(&rendered));
-    } else {
-        check_arguments.extend(exec_arguments(&rendered));
-    }
+    let mut check_arguments = check_arguments(registry.shape, &rendered);
     crate::batch::settings_arguments(&mut check_arguments, overrides);
     let receipt = crate::process::execute(
         &skein_shell::Clock::new(),
@@ -254,19 +225,31 @@ fn exec(
 
 fn chat_trace(rendered: &mut serde_json::Value, path: Option<&Path>) {
     if let Some(path) = path {
-        rendered["trace"] = serde_json::json!({"path":path,"capture":"everything"});
+        rendered["trace"]["path"] = serde_json::json!(path);
     }
 }
 
 fn product_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
-    vec![
-        "-C".into(),
-        rendered["workspace"]["directories"][0]["path"].as_str().expect("rendered workspace").into(),
-        "-m".into(),
-        rendered["model"].as_str().expect("rendered model").into(),
-        "--effort".into(),
-        rendered["effort"].as_str().expect("rendered effort").into(),
-    ]
+    rendered["invocation"]
+        .as_array()
+        .expect("prepared invocation")
+        .iter()
+        .map(|value| value.as_str().expect("prepared product argument").into())
+        .collect()
+}
+
+fn check_arguments(face: super::events::Shape, rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
+    let mut arguments = vec!["check".into(), "--json".into(), "exec".into()];
+    match face {
+        super::events::Shape::Exec => arguments.push("--json".into()),
+        super::events::Shape::Chat => {}
+        super::events::Shape::LocalTrace | super::events::Shape::LocalAgentTrace => {
+            unreachable!("product preparation only")
+        }
+    }
+    arguments.extend(product_arguments(rendered));
+    arguments.push("-".into());
+    arguments
 }
 
 fn exec_arguments(rendered: &serde_json::Value) -> Vec<std::ffi::OsString> {
@@ -323,7 +306,7 @@ impl Prepared {
 
 #[cfg(test)]
 mod tests {
-    use super::{Credential, Prepared, chat_trace, teardown_from_check};
+    use super::{Credential, Prepared, chat_trace, check_arguments, teardown_from_check};
     use crate::agent::smith::{FaceSince, Receiving, events::Shape};
     use crate::isolate::SetupStep;
     use serde_json::json;
@@ -344,8 +327,7 @@ mod tests {
                 receiving: Receiving { string: 64, content: 4096, items: 32, encoded_line: 65536 },
                 session_ended_aborted: true,
             },
-            rendered: json!({"workspace":{"directories":[{"path":"/scratch/workspace"}]},
-                "model":"codex/gpt-6-luna","effort":"low"}),
+            rendered: json!({"trace":{"capture":"everything"},"invocation":["-C","/scratch/workspace","-m","codex/gpt-6-luna","--effort","low"]}),
             program: "/arm/smith".into(),
             state: "/scratch/state".into(),
             teardown: skein_lib::Duration::from_secs(10),
@@ -392,7 +374,21 @@ mod tests {
             ["exec", "--json", "-C", "/scratch/workspace", "-m", "codex/gpt-6-luna", "--effort", "low", "-"]
         );
         assert!(prepared.trace.is_none());
-        assert!(prepared.rendered.get("trace").is_none());
+        assert!(prepared.rendered["trace"].get("path").is_none());
+    }
+
+    #[test]
+    fn check_keeps_one_event_destination_for_each_product_face() {
+        for (face, event_json) in [(Shape::Exec, true), (Shape::Chat, false)] {
+            let prepared = invocation(face);
+            let command = smith_local_shell::command::parse(check_arguments(face, &prepared.rendered))
+                .expect("product check flags");
+            let smith_local_shell::command::Command::Check { json, execution: Some(execution), .. } = command else {
+                panic!("check keeps its exec invocation");
+            };
+            assert!(json, "{face:?}");
+            assert_eq!(execution.json, event_json, "{face:?}");
+        }
     }
 
     #[test]

@@ -66,12 +66,12 @@ impl ExecFixture {
         let arm =
             smith_bench::arm::ArmRef::Built(smith_bench::arm::read_build(&built.join("smith")).expect("built fixture"));
         std::fs::write(repository.join("faces.toml"), format!("[[face]]\ncommit='{commit}'\nshape='exec'\nsession_ended_aborted=true\nreceiving={{string=128,content=1024,items=16,encoded_line=16384}}\n")).expect("Exec registry");
-        std::fs::write(repository.join("settings.json"), include_bytes!("../../agents/smith/first-request.json"))
+        std::fs::write(repository.join("settings.toml"), include_bytes!("../../agents/smith/standard.toml"))
             .expect("pin template");
         let pin_file = repository.join("exec.pin.toml");
         std::fs::write(
             &pin_file,
-            b"name='exec'\nagent='smith'\nprovider='codex'\nversion='built-arm'\nconfiguration='settings.json'\n",
+            b"name='exec'\nagent='smith'\nprovider='codex'\nversion='built-arm'\nconfiguration='settings.toml'\n",
         )
         .expect("fixture pin");
         let pin = smith_bench::read_configuration(&pin_file).expect("pin");
@@ -124,7 +124,8 @@ fn an_exec_arm_borrows_the_login_file_without_copying_it() {
     let login = fixture.root.join("user/.codex/auth.json");
     assert_eq!(prepared.rendered["accounts"]["codex"]["file"], serde_json::json!(login));
     assert_eq!(prepared.state, fixture.private.state);
-    assert!(prepared.rendered.get("trace").is_none());
+    assert_eq!(prepared.rendered["trace"]["capture"], "calls");
+    assert!(prepared.rendered["trace"].get("path").is_none());
     assert!(prepared.settings.starts_with(&fixture.private.config));
     assert!(!fixture.private.root.join("smith/tokens").exists());
     let Credential::Record(Some(borrowed)) = prepared.credential else { panic!("borrowed source") };
@@ -148,13 +149,19 @@ fn an_exec_arm_refused_by_check_is_a_setup_refusal() {
 #[test]
 fn an_exec_arms_teardown_bound_comes_from_check() {
     let fixture = ExecFixture::new("exec-check-bound", 0);
-    let prepared = smith_bench::agent::smith::prepare(&fixture.context()).expect("checked bound");
+    let mut task = fixture.task.clone();
+    task.smith.clear();
+    task.budget.turns = None;
+    task.budget.seconds = None;
+    task.budget.spend = None;
+    let context = smith_bench::agent::Context { task: &task, environment: &[], ..fixture.context() };
+    let prepared = smith_bench::agent::smith::prepare(&context).expect("checked bound");
     assert_eq!(prepared.teardown.as_nanos(), 12_345_000_000);
     let command = prepared.command();
     assert_eq!(command.teardown, prepared.teardown);
     assert_eq!(
         command.arguments.iter().map(|value| value.to_str().expect("argument")).collect::<Vec<_>>(),
-        vec![
+        [
             "exec",
             "--json",
             "-C",

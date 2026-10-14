@@ -52,7 +52,7 @@ fn a_probe_order_writes_one_request_per_attempt_with_its_pin_and_tier() {
     for request in planned.requests {
         assert_eq!(request.identity.model.requested_model, "gpt-6-luna");
         assert_eq!(request.identity.model.requested_effort, "low");
-        assert!(request.configuration.expect("pin").ends_with("smith/smoke.pin.toml"));
+        assert!(request.configuration.expect("pin").ends_with("smith/everything.pin.toml"));
         assert!(planned.directory.join(format!("{}.json", request.identity.attempt)).exists());
     }
     assert_eq!(smith_bench::read_suite(&planned.suite).expect("suite").rerun_failed, 0);

@@ -1,6 +1,5 @@
 name = "standard"
 agent = "smith"
 provider = "codex"
-# A built arm's exact source commit is its version in each attempt result.
 version = "built-arm"
-configuration = "smoke.json"
+configuration = "standard.toml"

@@ -175,7 +175,7 @@ fn the_frozen_path_tasks_keep_namespace_authority_and_two_completion_bounds() {
     let suite = smith_bench::read_suite(&project.join("suites/probes.toml")).expect("native suite");
     let agent =
         suite.agents.iter().find(|agent| agent.tasks.iter().any(|name| name == "probes/paths")).expect("probe pin");
-    assert_eq!(agent.config, "first-request");
+    assert_eq!(agent.config, "everything");
     assert_eq!(task.protected.len(), 2);
     assert_eq!(task.working_directory, Some(PathBuf::from("app")));
     assert!(task.prompt.contains("../spec/rules.txt"));
@@ -184,8 +184,8 @@ fn the_frozen_path_tasks_keep_namespace_authority_and_two_completion_bounds() {
     assert_eq!(task.variant[0].name, "single");
     assert!(task.variant[0].replace_checks);
     assert!(!task.variant[0].prompt.as_ref().expect("single prompt").contains("app"));
-    assert_eq!(task.smith["directories"].as_array().expect("mounts").len(), 2);
-    assert_eq!(task.variant[0].smith["directories"].as_array().expect("single mount").len(), 1);
+    assert_eq!(task.smith["workspace.directories"].as_array().expect("mounts").len(), 2);
+    assert_eq!(task.variant[0].smith["workspace.directories"].as_array().expect("single mount").len(), 1);
     assert!(task.event.iter().any(|check| matches!(check, EventCheck::ToolPath { path, aliases, .. }
         if path == "../spec/rules.txt" && aliases == &["/spec/rules.txt".to_owned()])));
     for checks in [&task.event, &task.variant[0].event] {

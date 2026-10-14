@@ -1,5 +1,0 @@
-name = "failures"
-agent = "smith"
-provider = "codex"
-version = "built-arm"
-configuration = "first-request.json"

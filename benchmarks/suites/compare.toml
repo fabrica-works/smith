@@ -11,7 +11,7 @@ when_asked = ["fixtures/03-planner"]
 [[agents]]
 agent = "smith"
 provider = "codex"
-config = "compare"
+config = "standard"
 
 [[agents]]
 agent = "codex"

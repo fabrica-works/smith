@@ -763,7 +763,7 @@ mod native_suite_pin_tests {
 
     pub(super) fn native_built_suite_pin_verifies_full_arm_commit_and_binary() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let pin_file = root.join("agents/smith/smoke.pin.toml");
+        let pin_file = root.join("agents/smith/everything.pin.toml");
         let pin = crate::read_configuration(&pin_file).expect("native built-arm pin");
         let task_file = root.join("tasks/probes/first-request/task.toml");
         let task = crate::read_task(&task_file).expect("frozen author input");
@@ -829,7 +829,7 @@ mod native_suite_pin_tests {
         let suite_file = root.join("suites/probes.toml");
         let mut suite = probe_suite(&suite_file, "probes/failures/unknown-model", 1).expect("failure suite");
         suite.tasks = vec!["probes/failures/unknown-model".into()];
-        let pin_file = root.join("agents/smith/failures.pin.toml");
+        let pin_file = root.join("agents/smith/everything.pin.toml");
         let pin = crate::read_configuration(&pin_file).expect("failure pin");
         request.task = root.join("tasks/probes/failures/task.toml");
         let task =
@@ -841,7 +841,7 @@ mod native_suite_pin_tests {
         request.identity.seed_sha256 = task.seed_sha256;
         // The actual closed admission seam refuses a tier-labelled secret override.
         assert!(check_requests(&suite_file, &suite, std::slice::from_ref(request)).is_err());
-        request.identity.model.requested_model = "smith-bench-nonexistent-model-2026-10-11".into();
+        request.identity.model.requested_model = "codex/smith-bench-nonexistent-model-2026-10-11".into();
         let valid = check_requests(&suite_file, &suite, std::slice::from_ref(request));
         assert!(valid.is_ok(), "truthful authored provider rejection identity admitted: {valid:?}");
     }

@@ -97,9 +97,9 @@ fn the_compare_suite_names_both_fixtures_and_both_agents() {
         suite.agents.iter().map(|agent| agent.agent).collect::<Vec<_>>(),
         [smith_bench::Agent::Smith, smith_bench::Agent::Codex]
     );
-    assert_eq!(suite.agents.iter().map(|agent| agent.config.as_str()).collect::<Vec<_>>(), ["compare", "standard"]);
-    let pin = smith_bench::read_configuration(&root.join("agents/smith/compare.pin.toml")).expect("comparison pin");
-    assert_eq!(pin.pin.configuration, PathBuf::from("first-request.json"));
+    assert_eq!(suite.agents.iter().map(|agent| agent.config.as_str()).collect::<Vec<_>>(), ["standard", "standard"]);
+    let pin = smith_bench::read_configuration(&root.join("agents/smith/standard.pin.toml")).expect("comparison pin");
+    assert_eq!(pin.pin.configuration, PathBuf::from("standard.toml"));
 }
 
 fn refuses(name: &str, key: &str, reason: &str) {

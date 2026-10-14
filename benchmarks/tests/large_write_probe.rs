@@ -110,15 +110,15 @@ fn version_nine_exercises_the_actual_call_bound_with_small_repair_pieces() {
     assert_eq!(medium.budget, variant.budget);
     let mut historical_settings = medium.smith.clone();
     let mut live_settings = variant.smith.clone();
-    assert_eq!(historical_settings.remove("conversations"), Some(toml::Value::Integer(6)));
-    assert_eq!(live_settings.remove("conversations"), Some(toml::Value::Integer(5)));
+    assert_eq!(historical_settings.remove("deployment.conversations"), Some(toml::Value::Integer(6)));
+    assert_eq!(live_settings.remove("deployment.conversations"), Some(toml::Value::Integer(5)));
     assert_eq!(historical_settings, live_settings);
     assert_eq!(medium.seed_sha256, variant.seed_sha256);
     assert_eq!(medium.event, variant.event);
     assert_eq!(medium.outcome, variant.outcome);
     assert_eq!(medium.deciding, variant.deciding);
-    assert_eq!(variant.smith["tool_payload"].as_integer(), Some(2048));
-    assert_eq!(variant.smith["read_window"].as_integer(), Some(2048));
+    assert_eq!(variant.smith["deployment.tool_payload"].as_integer(), Some(2048));
+    assert_eq!(variant.smith["deployment.read_window"].as_integer(), Some(2048));
     assert!(variant.prompt.contains("MEANT TO BE REFUSED"));
     assert!(!variant.prompt.contains("Do not read"));
     assert!(variant.event.contains(&EventCheck::OversizedWrite {
@@ -328,8 +328,8 @@ fn version_five_judges_saved_call_bytes_and_measures_seed_fidelity() {
     assert_eq!(task.smith, oversized.smith);
     assert_eq!(task.budget.seconds, Some(300));
     assert_eq!(task.deadline_seconds, 330);
-    assert_eq!(task.smith["read_window"].as_integer(), Some(32768));
-    assert_eq!(task.smith["tool_payload"].as_integer(), Some(40960));
+    assert_eq!(task.smith["deployment.read_window"].as_integer(), Some(32768));
+    assert_eq!(task.smith["deployment.tool_payload"].as_integer(), Some(40960));
     for (name, size, lines) in [("source.txt", 36000, 600), ("oversized-source.txt", 50000, 834)] {
         let text =
             std::fs::read_to_string(file.parent().expect("task directory").join("seed").join(name)).expect("prose");
@@ -526,8 +526,8 @@ fn version_four_copies_all_prose_lines_and_exact_tail() {
     assert_eq!(task.smith, oversized.smith);
     assert_eq!(task.budget.seconds, Some(300));
     assert_eq!(task.deadline_seconds, 330);
-    assert_eq!(task.smith["read_window"].as_integer(), Some(32768));
-    assert_eq!(task.smith["tool_payload"].as_integer(), Some(40960));
+    assert_eq!(task.smith["deployment.read_window"].as_integer(), Some(32768));
+    assert_eq!(task.smith["deployment.tool_payload"].as_integer(), Some(40960));
     for (name, expected, windows, lines, prompt) in
         [("source.txt", 32768, 1, 552, &task.prompt), ("oversized-source.txt", 50000, 2, 827, &oversized.prompt)]
     {

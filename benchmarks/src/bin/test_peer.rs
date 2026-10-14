@@ -7,10 +7,13 @@ use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
-fn replay(recording: &Path, settings: &Path) -> Result<(), Box<dyn Error>> {
-    let settings: serde_json::Value = serde_json::from_slice(&fs::read(settings)?)?;
-    let trace = settings["agent"]["trace"]["path"].as_str().ok_or("settings need agent.trace.path")?;
+fn replay(recording: &Path, trace: &Path) -> Result<(), Box<dyn Error>> {
+    let mut input = std::io::stdin().lock();
+    let mut line = String::new();
+    input.read_line(&mut line)?;
     fs::copy(recording, trace)?;
+    line.clear();
+    input.read_line(&mut line)?;
     Ok(())
 }
 
@@ -36,21 +39,26 @@ fn terminal(recording: &Path, trace: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut arguments = std::env::args_os().skip(1);
+    let raw: Vec<_> = std::env::args_os().collect();
+    if raw.get(1).is_some_and(|argument| argument == "check") {
+        std::io::stdout()
+            .write_all(br#"{"version":1,"limits":[{"name":"service.teardown","value":1000,"unit":"ms"}]}"#)?;
+        return Ok(());
+    }
+    if let Some(index) = raw.iter().position(|argument| argument == "--trace") {
+        let trace = raw.get(index + 1).ok_or("product replay needs trace")?;
+        return replay(&std::env::current_exe()?.with_file_name("recording.jsonl"), &PathBuf::from(trace));
+    }
+    let mut arguments = raw.into_iter().skip(1);
     let mode = arguments.next().ok_or("test-peer needs a mode")?;
     match mode.to_str() {
         Some("replay") => replay(
             &PathBuf::from(arguments.next().ok_or("replay needs a recording")?),
-            &PathBuf::from(arguments.next().ok_or("replay needs settings")?),
+            &PathBuf::from(arguments.next().ok_or("replay needs trace")?),
         ),
         Some("terminal") => terminal(
             &PathBuf::from(arguments.next().ok_or("terminal needs a recording")?),
             &PathBuf::from(arguments.next().ok_or("terminal needs a trace")?),
-        ),
-        // The copied replay arm receives the local smith invocation.
-        Some("local") => replay(
-            &std::env::current_exe()?.with_file_name("recording.jsonl"),
-            &PathBuf::from(arguments.next().ok_or("local replay needs settings")?),
         ),
         Some(_) | None => Err("unknown test-peer mode".into()),
     }

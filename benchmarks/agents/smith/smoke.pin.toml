@@ -1,5 +1,0 @@
-name = "smoke"
-agent = "smith"
-provider = "codex"
-version = "built-arm"
-configuration = "smoke.json"

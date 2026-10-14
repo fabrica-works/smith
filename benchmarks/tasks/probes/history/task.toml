@@ -15,11 +15,12 @@ turns = 64
 spend = 2.0
 
 [smith]
-window = 272000
-output = 8192
-calls_per_response = 1
-tool_payload = 8192
-read_window = 8192
+"models.\"{model}\".window" = 272000
+"budget.reserve.seconds" = 150
+"models.\"{model}\".output" = 8192
+"deployment.calls_per_response" = 1
+"deployment.tool_payload" = 8192
+"deployment.read_window" = 8192
 
 [[outcome]]
 check = "end"
@@ -50,7 +51,7 @@ check = "prompt-within-window"
 name = "small-window"
 deciding = ["conversation-opened", "compaction-choice"]
 [variant.smith]
-window = 65536
+"models.\"{model}\".window" = 65536
 [[variant.event]]
 check = "conversation-opened"
 kind = "compaction"

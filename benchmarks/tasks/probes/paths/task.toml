@@ -17,28 +17,8 @@ seconds = 300
 turns = 8
 
 [smith]
-window = 272000
-output = 32000
-reasoning_item = 65536
-head = 60000
-idle = 300000
-connect = 10000
-handshake = 10000
-conversations = 5
-tool_payload = 40960
-file_bytes = 1048576
-calls_per_response = 16
-read_window = 32768
-guide = 16384
-shell_output = 16384
-shell_head = 16384
-shell_tail = 49152
-search_hits = 100
-search_bytes = 16384
-list_entries = 512
-llm_pool = 134217728
-memory = 2147483648
-directories = [{ name = "app", path = "app", writable = true, git = false }, { name = "spec", path = "spec", writable = false, git = false }]
+"budget.reserve.seconds" = 150
+"workspace.directories" = [{ name = "app", path = "app", writable = true, git = false }, { name = "spec", path = "spec", writable = false, git = false }]
 
 [[outcome]]
 check = "end"
@@ -86,7 +66,7 @@ name = "single"
 replace_checks = true
 prompt = "Read input.txt in the working directory, then copy its integer followed by a newline to answer.txt in the working directory. Use relative paths; no directory name is needed (a leading ./ is fine). Request the read first, then the answer write and finish together, using at most two provider completions before finish. Do not modify input.txt. This message is the complete task; do not wait for more instructions.\n"
 [variant.smith]
-directories = [{ name = "app", path = "app", writable = true, git = false }]
+"workspace.directories" = [{ name = "app", path = "app", writable = true, git = false }]
 [[variant.outcome]]
 check = "end"
 end = "completed"

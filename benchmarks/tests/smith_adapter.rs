@@ -1,7 +1,7 @@
 //! Native preparation and trace replay use unissued credentials and immutable fixtures.
 
 pub mod common;
-use common::{unexecuted_arm, unissued_auth};
+use common::unissued_auth;
 
 use std::path::{Path, PathBuf};
 
@@ -11,86 +11,6 @@ use skein_world::end_to_end::Command;
 use smith_bench::agent::smith::{Credential, FaceSince, Observing, Prepared};
 use smith_bench::process::{Bounds, Capture, execute};
 use smith_bench::{End, Forced, Measure};
-
-#[test]
-fn the_first_request_pin_renders_only_the_probes_empty_instructions() {
-    use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
-
-    let directory = root("first-request-settings");
-    let source = directory.join("user/.codex");
-    std::fs::create_dir_all(&source).expect("synthetic login directory");
-    let auth = unissued_auth();
-    std::fs::write(source.join("auth.json"), &auth).expect("synthetic source only");
-    let guard = smith_bench::guard::Guard::new(
-        &directory.join("user"),
-        &directory.join("config"),
-        &directory.join("state"),
-        &[],
-    )
-    .expect("fixture guard");
-    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let suite = smith_bench::read_suite(&project.join("suites/probes.toml")).expect("dedicated suite");
-    let agent = suite
-        .agents
-        .iter()
-        .find(|agent| agent.tasks.iter().any(|name| name == "probes/first-request"))
-        .expect("probe pin");
-    assert_eq!(agent.config, "first-request");
-    let pin_file = project.join("agents/smith").join(format!("{}.pin.toml", agent.config));
-    let pin = smith_bench::read_configuration(&pin_file).expect("selected committed pin");
-    let task = smith_bench::read_task(&project.join("tasks/probes/first-request/task.toml")).expect("original task");
-    let model = smith_bench::ModelChoice { model: Some("selected-model".into()), effort: Some("low".into()) };
-    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
-    let environment = vec![("NAMED".into(), "exact-value".into())];
-    let mut context = Context {
-        guard: &guard,
-        private: &private,
-        pin: &pin,
-        pin_file: &pin_file,
-        task: &task,
-        variant: None,
-        model: &model,
-        arm: &arm,
-        installed_version: match &arm {
-            ArmRef::Built(build) => &build.arm.commit,
-            ArmRef::Installed { .. } => unreachable!("fixture arm"),
-        },
-        home: &source,
-        wall: skein_lib::Wall::from_nanos(100_000_000_000),
-        lifetime: Duration::from_secs(20),
-        environment: &environment,
-    };
-    let first = smith_bench::agent::smith::prepare(&context).expect("actual first-request native preparation");
-    assert_eq!(first.rendered["instructions"], "", "empty brief must not demand AGENTS/read calls");
-    let converted = match first.credential {
-        Credential::Record(Some(borrowed)) => borrowed,
-        Credential::Record(None) => panic!("synthetic credential prepared"),
-    };
-    assert!(converted.finish(&guard).expect("no process was started").source_unchanged);
-    std::fs::remove_dir_all(private.root.join("smith")).expect("remove first unused preparation");
-    let old_file = project.join("agents/smith/smoke.pin.toml");
-    let old = smith_bench::read_configuration(&old_file).expect("unchanged smoke pin");
-    context.pin = &old;
-    context.pin_file = &old_file;
-    let prepared = smith_bench::agent::smith::prepare(&context).expect("old native preparation");
-    let mut expected = prepared.rendered;
-    expected["instructions"] = serde_json::json!("");
-    assert_eq!(first.rendered, expected, "all other native fields remain identical");
-    assert_eq!(
-        smith_bench::read_suite(&project.join("suites/calibrate.toml")).expect("other probes").agents[0].config,
-        "smoke"
-    );
-    match prepared.credential {
-        Credential::Record(Some(borrowed)) => {
-            assert!(borrowed.finish(&guard).expect("unused preparation").source_unchanged);
-        }
-        Credential::Record(None) => panic!("synthetic credential prepared"),
-    }
-    assert_eq!(std::fs::read(source.join("auth.json")).expect("source unchanged"), auth);
-    std::fs::remove_dir_all(directory).expect("remove fixture");
-}
 
 #[test]
 fn a_terminal_peer_can_close_its_stdio_before_the_leader_exits_without_hangup() {
@@ -494,63 +414,18 @@ fn a_later_person_line_waits_for_its_named_tool_cue_and_eof_follows_that_line() 
 }
 
 #[test]
-#[expect(clippy::too_many_lines, reason = "one bounded native mount admission and refusal matrix")]
 fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials() {
-    use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
-    let directory = root("path-settings");
-    let source = directory.join("user/.codex");
-    std::fs::create_dir_all(&source).expect("synthetic source");
-    let auth = unissued_auth();
-    std::fs::write(source.join("auth.json"), &auth).expect("unissued credential");
-    let guard = smith_bench::guard::Guard::new(
-        &directory.join("user"),
-        &directory.join("config"),
-        &directory.join("state"),
-        &[],
-    )
-    .expect("fixture guard");
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let task = smith_bench::check_task(&project.join("tasks/probes/paths/task.toml"), &project.join("../docs/design"))
-        .expect("frozen task");
-    let private = smith_bench::isolate::prepare(
-        &guard,
-        &project.join("tasks/probes/paths/seed"),
-        &task.seed_sha256,
-        &directory.join("scratch"),
-    )
-    .expect("actual frozen seed materialisation");
-    let pin_file = project.join("agents/smith/first-request.pin.toml");
-    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
-    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
-    let installed_version = match &arm {
-        ArmRef::Built(build) => &build.arm.commit,
-        ArmRef::Installed { .. } => unreachable!("fixture arm"),
-    };
-    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
-    let context = Context {
-        guard: &guard,
-        private: &private,
-        pin: &pin,
-        pin_file: &pin_file,
-        task: &task,
-        variant: None,
-        model: &model,
-        arm: &arm,
-        installed_version,
-        home: &source,
-        wall: skein_lib::Wall::from_nanos(100_000_000),
-        lifetime: Duration::from_secs(200),
-        environment: &[],
-    };
+    let fixture = exec::ExecFixture::new("path-settings", 0);
+    let mut task = authored_task("paths");
+    let context = fixture.context();
+    let private = context.private;
+    for name in ["app", "spec"] {
+        std::fs::create_dir(private.workspace.join(name)).expect("mount fixture");
+    }
     for variant in [None, Some(&task.variant[0])] {
-        let context = Context { variant, ..context };
-        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
-        assert_eq!(prepared.rendered["instructions"], "");
-        let resolved = native_product(&context);
-        let local = resolved.local;
-        local.validate(&resolved.limits).expect("actual mounted run policy");
-        let mounts = &local.workspace.as_ref().expect("workspace").directories;
+        let context = smith_bench::agent::Context { task: &task, variant, ..context };
+        let resolved = resolved_product(&context);
+        let mounts = &resolved.local.workspace.as_ref().expect("workspace").directories;
         assert_eq!(mounts.len(), if variant.is_some() { 1 } else { 2 });
         assert_eq!(mounts[0].name.as_ref(), b"app");
         assert!(mounts[0].writable);
@@ -561,30 +436,22 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
             assert!(!mounts[1].writable);
             assert_eq!(mounts[1].host.as_ref(), private.workspace.join("spec").as_os_str().as_encoded_bytes());
         }
-        match prepared.credential {
-            Credential::Record(Some(borrowed)) => {
-                assert!(borrowed.finish(&guard).expect("unused arm").source_unchanged);
-            }
-            Credential::Record(None) => panic!("synthetic credential prepared"),
-        }
-        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
     }
-    let mut default_mount = task.clone();
-    default_mount.smith.remove("directories");
-    let default_context = Context { task: &default_mount, ..context };
-    let default_prepared = smith_bench::agent::smith::prepare(&default_context).expect("default task working mount");
-    assert_eq!(default_prepared.rendered["directories"].as_array().expect("default mount").len(), 1);
-    assert_eq!(default_prepared.rendered["directories"][0]["path"], serde_json::json!(private.workspace.join("app")));
-    match default_prepared.credential {
-        Credential::Record(Some(borrowed)) => {
-            assert!(borrowed.finish(&guard).expect("unused default mount").source_unchanged);
-        }
-        Credential::Record(None) => panic!("synthetic credential prepared"),
-    }
-    std::fs::remove_dir_all(private.root.join("smith")).expect("reset default mount");
-    let outside = directory.join("outside");
+    task.smith.remove("workspace.directories");
+    let resolved = resolved_product(&smith_bench::agent::Context { task: &task, ..context });
+    let mounts = &resolved.local.workspace.as_ref().expect("default workspace").directories;
+    assert_eq!(mounts.len(), 1);
+    assert_eq!(mounts[0].host.as_ref(), private.workspace.join("app").as_os_str().as_encoded_bytes());
+    mount_refusals(&context, &mut task);
+    assert_eq!(std::fs::read(context.home.join("auth.json")).expect("source"), unissued_auth());
+    fixture.clean();
+}
+
+fn mount_refusals(context: &smith_bench::agent::Context<'_>, task: &mut smith_bench::Task) {
+    let outside = context.private.root.join("outside");
     std::fs::create_dir(&outside).expect("owned outside fixture");
-    std::os::unix::fs::symlink(&outside, private.workspace.join("escaped")).expect("owned symlink escape");
+    std::os::unix::fs::symlink(&outside, context.private.workspace.join("escaped")).expect("escape fixture");
+    std::fs::write(context.private.workspace.join("app/input.txt"), []).expect("file mount fixture");
     let refusals = [
         "[]",
         "[{ name = 'app', path = '../outside', writable = true, git = false }]",
@@ -601,267 +468,72 @@ fn path_mounts_reach_native_policy_and_escaped_mounts_refuse_before_credentials(
         "[{ name = 'app', path = 'app', writable = true, git = false, extra = 1 }]",
         "[{ name = 'app', path = 'app', git = false }]",
     ];
-    for refusal in refusals {
-        let mut refused_task = task.clone();
-        let value: toml::Value = toml::from_str(&format!("directories = {refusal}")).expect("authored TOML");
-        refused_task.smith.insert("directories".into(), value["directories"].clone());
-        let context = Context { task: &refused_task, home: &directory.join("missing-login"), ..context };
-        let refusal = smith_bench::agent::smith::prepare(&context).expect_err("refusal before source login lookup");
-        assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration);
-        assert!(!private.root.join("smith/tokens").exists(), "no credential conversion");
-        std::fs::remove_dir_all(private.root.join("smith")).expect("reset refused dry rendering");
+    for row in refusals {
+        let value: toml::Value = toml::from_str(&format!("directories = {row}")).expect("authored TOML");
+        task.smith.insert("workspace.directories".into(), value["directories"].clone());
+        let context = smith_bench::agent::Context { task, home: &outside, ..*context };
+        let refusal = product_arguments(&context).expect_err("refusal before login");
+        assert_eq!(refusal.step, smith_bench::isolate::SetupStep::Configuration, "{row}");
+        assert!(!context.private.root.join("smith/tokens").exists());
     }
-    assert_eq!(std::fs::read(source.join("auth.json")).expect("synthetic source"), auth);
-    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
 }
 
 #[test]
 fn tool_output_profiles_render_and_pass_the_actual_public_startup_derivation() {
-    use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
-    let directory = root("tool-output-settings");
-    let source = directory.join("user/.codex");
-    std::fs::create_dir_all(&source).expect("synthetic source");
-    std::fs::write(source.join("auth.json"), unissued_auth()).expect("unissued credential");
-    let guard = smith_bench::guard::Guard::new(
-        &directory.join("user"),
-        &directory.join("config"),
-        &directory.join("state"),
-        &[],
-    )
-    .expect("fixture guard");
-    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let task =
-        smith_bench::check_task(&project.join("tasks/probes/tool-output/task.toml"), &project.join("../docs/design"))
-            .expect("frozen task");
-    let pin_file = project.join("agents/smith/first-request.pin.toml");
-    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
-    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
-    let installed_version = match &arm {
-        ArmRef::Built(build) => &build.arm.commit,
-        ArmRef::Installed { .. } => unreachable!("fixture arm"),
-    };
-    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
+    let fixture = exec::ExecFixture::new("tool-output-settings", 0);
+    let task = authored_task("tool-output");
     for variant in &task.variant {
-        let context = Context {
-            guard: &guard,
-            private: &private,
-            pin: &pin,
-            pin_file: &pin_file,
-            task: &task,
-            variant: Some(variant),
-            model: &model,
-            arm: &arm,
-            installed_version,
-            home: &source,
-            wall: skein_lib::Wall::from_nanos(100_000_000),
-            lifetime: Duration::from_secs(200),
-            environment: &[],
-        };
-        let mut prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
-        let endpoint = prepared.rendered["agent"]["endpoints"][0].as_object_mut().expect("fixture endpoint");
-        endpoint.insert("address".into(), serde_json::json!("127.0.0.1:443"));
-        endpoint.insert("transport".into(), serde_json::json!("plaintext"));
-        endpoint.remove("server_name");
-        let settings_path = private.root.join("settings.json");
-        std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
-            .expect("private settings");
-        let resolved = native_product(&context);
-        let local = resolved.local;
-        let configured = resolved.agent;
+        let context = smith_bench::agent::Context { task: &task, variant: Some(variant), ..fixture.context() };
+        let resolved = resolved_product(&context);
         if variant.name == "timeout" {
-            assert_eq!(configured.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_secs(1));
+            assert_eq!(resolved.agent.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
+            assert_eq!(resolved.agent.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
+            assert_eq!(resolved.agent.service.limits.machine.group_stop, Duration::from_secs(1));
         }
-        let allowances = configured
-            .service
-            .domain
-            .models
-            .iter()
-            .map(|model| model.protocol_allowance)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        assert_eq!(local.models.len(), 3);
-        assert_eq!(allowances.len(), 3);
-        local.validate(&resolved.limits).expect("actual run policy admitted");
-        match prepared.credential {
-            Credential::Record(Some(borrowed)) => {
-                assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
-            }
-            Credential::Record(None) => panic!("synthetic credential prepared"),
-        }
-        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
+        assert_eq!(resolved.local.models.len(), 3);
+        assert_eq!(resolved.agent.service.domain.models.len(), 3);
+        resolved.local.validate(&resolved.limits).expect("mounted product policy");
     }
-    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
+    fixture.clean();
 }
 
 #[test]
 fn process_tree_profile_renders_and_passes_the_actual_public_startup_derivation() {
-    use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
-    let directory = root("process-tree-settings");
-    let source = directory.join("user/.codex");
-    std::fs::create_dir_all(&source).expect("synthetic source");
-    std::fs::write(source.join("auth.json"), unissued_auth()).expect("unissued credential");
-    let guard = smith_bench::guard::Guard::new(
-        &directory.join("user"),
-        &directory.join("config"),
-        &directory.join("state"),
-        &[],
-    )
-    .expect("fixture guard");
-    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let task =
-        smith_bench::check_task(&project.join("tasks/probes/process-tree/task.toml"), &project.join("../docs/design"))
-            .expect("frozen task");
-    let pin_file = project.join("agents/smith/first-request.pin.toml");
-    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
-    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
-    let installed_version = match &arm {
-        ArmRef::Built(build) => &build.arm.commit,
-        ArmRef::Installed { .. } => unreachable!("fixture arm"),
-    };
-    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
-    {
-        let variant = None;
-        let context = Context {
-            guard: &guard,
-            private: &private,
-            pin: &pin,
-            pin_file: &pin_file,
-            task: &task,
-            variant,
-            model: &model,
-            arm: &arm,
-            installed_version,
-            home: &source,
-            wall: skein_lib::Wall::from_nanos(100_000_000),
-            lifetime: Duration::from_secs(200),
-            environment: &[],
-        };
-        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
-        let settings_path = private.root.join("settings.json");
-        std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
-            .expect("private settings");
-        let resolved = native_product(&context);
-        let local = resolved.local;
-        let configured = resolved.agent;
-        {
-            assert_eq!(configured.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
-            assert_eq!(configured.service.limits.machine.group_stop, Duration::from_secs(1));
-        }
-        let allowances = configured
-            .service
-            .domain
-            .models
-            .iter()
-            .map(|model| model.protocol_allowance)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        assert_eq!(local.models.len(), 3);
-        assert_eq!(allowances.len(), 3);
-        local.validate(&resolved.limits).expect("actual run policy admitted");
-        match prepared.credential {
-            Credential::Record(Some(borrowed)) => {
-                assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
-            }
-            Credential::Record(None) => panic!("synthetic credential prepared"),
-        }
-        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
-    }
-    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
+    let fixture = exec::ExecFixture::new("process-tree-settings", 0);
+    let task = authored_task("process-tree");
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let resolved = resolved_product(&context);
+    assert_eq!(resolved.agent.service.limits.domain.session.tools.tool_deadline, Duration::from_secs(1));
+    assert_eq!(resolved.agent.service.limits.domain.session.tools.shell_timeout, Duration::from_secs(1));
+    assert_eq!(resolved.agent.service.limits.machine.group_stop, Duration::from_secs(1));
+    assert_eq!(resolved.local.models.len(), 3);
+    assert_eq!(resolved.agent.service.domain.models.len(), 3);
+    resolved.local.validate(&resolved.limits).expect("product policy");
+    fixture.clean();
 }
 
 #[test]
 fn slow_completion_profile_renders_and_passes_the_actual_public_startup_derivation() {
-    use smith_bench::agent::Context;
-    use smith_bench::arm::ArmRef;
-    let directory = root("slow-completion-settings");
-    let source = directory.join("user/.codex");
-    std::fs::create_dir_all(&source).expect("synthetic source");
-    let mut auth: serde_json::Value = serde_json::from_slice(&unissued_auth()).expect("synthetic credential");
-    let claims = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, b"{\"exp\":5000}");
-    auth["tokens"]["access_token"] = serde_json::json!(format!("header.{claims}.signature"));
-    std::fs::write(source.join("auth.json"), serde_json::to_vec(&auth).expect("fixture"))
-        .expect("unissued credential lasts the authored offline lifetime");
-    let guard = smith_bench::guard::Guard::new(
-        &directory.join("user"),
-        &directory.join("config"),
-        &directory.join("state"),
-        &[],
-    )
-    .expect("fixture guard");
-    let private = smith_bench::isolate::empty(&guard, &directory.join("scratch")).expect("private fixture");
-    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let task = smith_bench::check_task(
-        &project.join("tasks/probes/slow-completion/task.toml"),
-        &project.join("../docs/design"),
-    )
-    .expect("frozen task");
-    let pin_file = project.join("agents/smith/first-request.pin.toml");
-    let pin = smith_bench::read_configuration(&pin_file).expect("native pin");
-    let arm = ArmRef::Built(unexecuted_arm(&directory, project.parent().expect("repository")));
-    let installed_version = match &arm {
-        ArmRef::Built(build) => &build.arm.commit,
-        ArmRef::Installed { .. } => unreachable!("fixture arm"),
-    };
-    let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("high".into()) };
-    {
-        let variant = None;
-        let context = Context {
-            guard: &guard,
-            private: &private,
-            pin: &pin,
-            pin_file: &pin_file,
-            task: &task,
-            variant,
-            model: &model,
-            arm: &arm,
-            installed_version,
-            home: &source,
-            wall: skein_lib::Wall::from_nanos(100_000_000),
-            lifetime: Duration::from_secs(1000),
-            environment: &[],
-        };
-        let prepared = smith_bench::agent::smith::prepare(&context).expect("actual native renderer");
-        let settings_path = private.root.join("settings.json");
-        std::fs::write(&settings_path, serde_json::to_vec(&prepared.rendered).expect("rendered JSON"))
-            .expect("private settings");
-        let resolved = native_product(&context);
-        let local = resolved.local;
-        let configured = resolved.agent;
-        assert_eq!(local.progress[0].head, Duration::from_millis(60000));
-        assert_eq!(local.progress[0].idle, Duration::from_millis(300_000));
-        assert_eq!(configured.declarations.endpoints[0].models[0].reasoning_item, 65536);
-        assert_eq!(
-            configured.declarations.endpoints[0].models[0].oversized_reasoning,
-            smith_agent_service::profile::OversizedReasoning::Fail
-        );
-        assert_eq!(prepared.rendered["effort"], "high");
-        let allowances = configured
-            .service
-            .domain
-            .models
-            .iter()
-            .map(|model| model.protocol_allowance)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        assert_eq!(local.models.len(), 3);
-        assert_eq!(allowances.len(), 3);
-        local.validate(&resolved.limits).expect("actual run policy admitted");
-        match prepared.credential {
-            Credential::Record(Some(borrowed)) => {
-                assert!(borrowed.finish(&guard).expect("never executed").source_unchanged);
-            }
-            Credential::Record(None) => panic!("synthetic credential prepared"),
-        }
-        std::fs::remove_dir_all(private.root.join("smith")).expect("reset unused preparation");
-    }
-    std::fs::remove_dir_all(directory).expect("private fixture cleanup");
+    let fixture = exec::ExecFixture::new("slow-completion-settings", 0);
+    let task = authored_task("slow-completion");
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let resolved = resolved_product(&context);
+    assert_eq!(resolved.local.progress[0].head, Duration::from_millis(60000));
+    assert_eq!(resolved.local.progress[0].idle, Duration::from_millis(300_000));
+    assert_eq!(resolved.agent.declarations.endpoints[0].models[0].reasoning_item, 65536);
+    assert_eq!(
+        resolved.agent.declarations.endpoints[0].models[0].oversized_reasoning,
+        smith_agent_service::profile::OversizedReasoning::Fail
+    );
+    assert_eq!(resolved.local.models.len(), 3);
+    assert_eq!(resolved.agent.service.domain.models.len(), 3);
+    resolved.local.validate(&resolved.limits).expect("product policy");
+    fixture.clean();
+}
+
+fn authored_task(name: &str) -> smith_bench::Task {
+    smith_bench::read_task(&Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tasks/probes/{name}/task.toml")))
+        .expect("authored task")
 }
 
 #[path = "smith_adapter/exec.rs"]
@@ -916,62 +588,73 @@ fn the_current_source_arm_selects_the_exec_face() {
     assert_eq!(selected.credential(), smith_bench::agent::smith::CredentialShape::Borrowed);
 }
 
-/// Resolve the authored pin through the product's settings and native startup owners.
-fn native_product(context: &smith_bench::agent::Context<'_>) -> smith_local_shell::settings::resolve::Resolved {
-    let path = context.pin_file.parent().expect("product fixture").join(&context.pin.pin.configuration);
-    let mut base: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(path).expect("product fixture")).expect("product fixture");
-    base["agent"]["endpoints"][0]["address"] = serde_json::json!("127.0.0.1:443");
-    let mut task = context.task.clone();
-    let mut variant = context.variant.cloned();
-    for fields in std::iter::once(&mut task.smith).chain(variant.iter_mut().map(|variant| &mut variant.smith)) {
-        if fields.get("group_stop").and_then(toml::Value::as_integer) == Some(250) {
-            fields.insert("group_stop".into(), toml::Value::Integer(1000));
-        }
-    }
-    let context = smith_bench::agent::Context { task: &task, variant: variant.as_ref(), ..*context };
-    let product = smith_bench::agent::smith::product_settings(&context, &base, &context.private.root.join("auth.json"))
-        .expect("product renderer");
-    resolve_product(product, &context.private.root)
+fn product_rendered(context: &smith_bench::agent::Context<'_>) -> serde_json::Value {
+    let path = context.pin_file.parent().expect("pin directory").join(&context.pin.pin.configuration);
+    let base: toml::Value = toml::from_str(&std::fs::read_to_string(path).expect("user layer")).expect("TOML");
+    smith_bench::agent::smith::product_settings(
+        context,
+        &serde_json::to_value(base).expect("layer"),
+        &context.home.join("auth.json"),
+    )
+    .expect("product layer")
 }
 
-fn resolve_product(
-    mut document: serde_json::Value,
-    workspace: &std::path::Path,
-) -> smith_local_shell::settings::resolve::Resolved {
-    omit_null(&mut document);
-    let value: toml::Value = serde_json::from_value(document).expect("product TOML values");
+fn product_arguments(context: &smith_bench::agent::Context<'_>) -> Result<Vec<String>, smith_bench::isolate::Setup> {
+    let path = context.pin_file.parent().expect("pin directory").join(&context.pin.pin.configuration);
+    let base: toml::Value = toml::from_str(&std::fs::read_to_string(path).expect("user layer")).expect("TOML");
+    let rendered = smith_bench::agent::smith::product_settings(
+        context,
+        &serde_json::to_value(base).expect("layer"),
+        &context.home.join("auth.json"),
+    )?;
+    Ok(rendered["invocation"]
+        .as_array()
+        .expect("prepared flags")
+        .iter()
+        .map(|value| value.as_str().expect("argument").to_owned())
+        .collect())
+}
+
+fn product_layer(context: &smith_bench::agent::Context<'_>) -> serde_json::Value {
+    let mut layer = product_rendered(context);
+    layer.as_object_mut().expect("layer").remove("invocation");
+    layer
+}
+
+fn product_sources(context: &smith_bench::agent::Context<'_>) -> smith_local_shell::settings::Settings {
+    let value: toml::Value = serde_json::from_value(product_layer(context)).expect("layer values");
     let source = smith_local_shell::settings::Source {
         layer: smith_local_shell::settings::Layer::User,
-        path: workspace.join("fixture.toml"),
-        text: toml::to_string(&value).expect("product fixture"),
+        path: context.private.config.join("smith/config.toml"),
+        text: toml::to_string(&value).expect("layer TOML"),
     };
-    let settings = smith_local_shell::settings::from_sources(
-        &smith_local_shell::command::Shared::default(),
-        workspace.into(),
-        &[source],
-    )
-    .unwrap_or_else(|why| panic!("{}", why.line()));
-    smith_local_shell::settings::resolve::resolve_startup(&settings).unwrap_or_else(|why| panic!("{}", why.line())).0
+    let arguments = product_arguments(context).expect("product arguments");
+    let command = smith_local_shell::command::parse(arguments.into_iter().map(Into::into).collect()).expect("flags");
+    let smith_local_shell::command::Command::Interactive { shared, .. } = command else { panic!("shared flags") };
+    smith_local_shell::settings::from_sources(&shared, shared.directory.clone().expect("workspace flag"), &[source])
+        .unwrap_or_else(|why| panic!("{}", why.line()))
 }
 
-fn omit_null(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(object) => {
-            object.retain(|_, value| !value.is_null());
-            for value in object.values_mut() {
-                omit_null(value);
-            }
-        }
-        serde_json::Value::Array(array) => {
-            for value in array {
-                omit_null(value);
-            }
-        }
-        serde_json::Value::Null
-        | serde_json::Value::Bool(_)
-        | serde_json::Value::Number(_)
-        | serde_json::Value::String(_) => {}
+fn resolved_product(context: &smith_bench::agent::Context<'_>) -> smith_local_shell::settings::resolve::Resolved {
+    smith_local_shell::settings::resolve::resolve_startup(&product_sources(context))
+        .unwrap_or_else(|why| panic!("{}", why.line()))
+        .0
+}
+
+#[test]
+fn every_smith_pin_is_a_product_settings_layer() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("agents/smith");
+    for name in ["standard", "everything"] {
+        let pin = smith_bench::read_configuration(&root.join(format!("{name}.pin.toml"))).expect("pin");
+        assert_eq!(pin.pin.configuration, PathBuf::from(format!("{name}.toml")));
+        let layer: toml::Value =
+            toml::from_str(&std::fs::read_to_string(root.join(&pin.pin.configuration)).expect("TOML layer"))
+                .expect("product TOML");
+        assert_eq!(
+            layer.as_table().expect("layer").keys().map(String::as_str).collect::<Vec<_>>(),
+            ["accounts", "trace"]
+        );
+        assert_eq!(layer["trace"]["capture"].as_str(), Some(if name == "standard" { "calls" } else { "everything" }));
     }
 }
 
@@ -1003,4 +686,83 @@ fn a_time_breakdown_sums_to_task_wall_within_one_second() {
     assert_eq!(timing.first_byte_ms, record.first_byte_ms);
     assert_eq!(timing.largest_gap_ms, record.largest_gap_ms);
     assert!(value(&timing.longest_completion_ms) > 10_000);
+}
+
+#[test]
+fn a_task_override_reaches_smith_as_a_product_setting() {
+    let fixture = exec::ExecFixture::new("task-setting", 0);
+    let mut task = authored_task("first-request");
+    task.smith.insert("models.\"{model}\".output".into(), toml::Value::Integer(8192));
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let arguments = product_arguments(&context).expect("overrides");
+    assert!(arguments.contains(&"models.\"codex/gpt-6-luna\".output=8192".into()));
+    assert_eq!(resolved_product(&context).agent.declarations.endpoints[0].models[0].output, 8192);
+    fixture.clean();
+}
+
+#[test]
+fn a_comparison_pin_keeps_every_preset_value_and_the_default_role() {
+    let fixture = exec::ExecFixture::new("comparison-settings", 0);
+    let mut task = authored_task("first-request");
+    task.smith.clear();
+    task.budget.turns = None;
+    task.budget.seconds = None;
+    task.budget.spend = None;
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let settings = product_sources(&context);
+    for (key, value) in &settings.values {
+        if key.starts_with("models.")
+            || key.starts_with("endpoints.")
+            || key.starts_with("deployment.")
+            || key == "instructions"
+        {
+            assert!(
+                !matches!(
+                    value.origin,
+                    smith_local_shell::settings::Origin::File { layer: smith_local_shell::settings::Layer::User, .. }
+                ),
+                "{key}"
+            );
+        }
+    }
+    let recorded: serde_json::Value =
+        serde_json::from_str(include_str!("recorded/smith-product-check.json")).expect("recorded product check");
+    assert_eq!(recorded["version"], 1);
+    for (key, leaf) in recorded["settings"]["values"].as_object().expect("recorded leaves") {
+        if key.starts_with("models.")
+            || key.starts_with("endpoints.")
+            || key.starts_with("deployment.")
+            || key == "instructions"
+        {
+            assert_eq!(leaf["origin"]["kind"], "built_in", "{key}");
+            assert_eq!(
+                serde_json::to_value(&settings.values[key].value).expect("setting value"),
+                leaf["value"],
+                "{key}"
+            );
+        }
+    }
+    let resolved = resolved_product(&context);
+    assert!(!resolved.local.instructions.is_empty());
+    fixture.clean();
+}
+
+#[test]
+fn a_task_without_a_budget_renders_the_products_defaults() {
+    let fixture = exec::ExecFixture::new("default-budget", 0);
+    let mut task = authored_task("first-request");
+    task.smith.remove("budget.reserve.seconds");
+    task.budget.turns = None;
+    task.budget.seconds = None;
+    task.budget.spend = None;
+    let context = smith_bench::agent::Context { task: &task, ..fixture.context() };
+    let settings = product_sources(&context);
+    for (key, expected) in [("budget.turns", 512), ("budget.seconds", 3600)] {
+        assert_eq!(settings.values[key].value.as_integer(), Some(expected));
+        assert!(matches!(settings.values[key].origin, smith_local_shell::settings::Origin::BuiltIn));
+    }
+    assert!(
+        !product_arguments(&context).expect("default flags").iter().any(|argument| argument.starts_with("budget."))
+    );
+    fixture.clean();
 }

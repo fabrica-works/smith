@@ -31,13 +31,13 @@ fn failure_variants_keep_their_class_codes_and_do_not_invent_startup_terminals()
         reason: None,
     }));
     let unknown = task.with_variant("unknown-model").expect("provider failure");
-    assert_eq!(unknown.smith["model"].as_str(), Some("smith-bench-nonexistent-model-2026-10-11"));
+    assert_eq!(unknown.smith["model"].as_str(), Some("codex/smith-bench-nonexistent-model-2026-10-11"));
     let derived = task.with_variant("derived-limit").expect("named relationship");
-    assert_eq!(derived.smith["read_window"].as_integer(), Some(40961));
-    assert_eq!(derived.smith["tool_payload"].as_integer(), Some(40960));
+    assert_eq!(derived.smith["deployment.read_window"].as_integer(), Some(40961));
+    assert_eq!(derived.smith["deployment.tool_payload"].as_integer(), Some(40960));
     assert!(!derived.event.iter().any(|check| matches!(check, EventCheck::RunCompleted { .. })));
     let bad = task.with_variant("bad-setting").expect("invalid native setting");
-    assert_eq!(bad.smith["output"].as_integer(), Some(0));
+    assert_eq!(bad.smith["models.\"{model}\".output"].as_integer(), Some(0));
     assert!(bad.event.contains(&EventCheck::NoRun));
     let mut empty = Observer::new(&common::events::LIMITS).expect("reader");
     empty.finish().expect("empty native capture framed completely");

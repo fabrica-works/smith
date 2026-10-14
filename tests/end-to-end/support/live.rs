@@ -353,10 +353,10 @@ mod tests {
             .expect("guard");
         let private = smith_bench::isolate::empty(&guard, &root.join("attempt")).expect("private paths");
         let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmarks");
-        let pin_file = project.join("agents/smith/first-request.pin.toml");
+        let pin_file = project.join("agents/smith/everything.pin.toml");
         let pin = smith_bench::read_configuration(&pin_file).expect("pin");
         let mut task = smith_bench::read_task(&project.join("tasks/probes/first-request/task.toml")).expect("task");
-        task.smith.insert("conversations".into(), toml::Value::Integer(conversations));
+        task.smith.insert("deployment.conversations".into(), toml::Value::Integer(conversations));
         let model = smith_bench::ModelChoice { model: Some("gpt-6-luna".into()), effort: Some("low".into()) };
         let arm = smith_bench::arm::ArmRef::Installed { program: "/unused".into() };
         let environment = smith_bench::isolate::environment(
@@ -384,10 +384,12 @@ mod tests {
             lifetime: Duration::from_secs(20),
             environment: &environment,
         };
-        let base: serde_json::Value =
-            serde_json::from_slice(include_bytes!("../../../benchmarks/agents/smith/first-request.json"))
-                .expect("template");
-        let rendered = smith_bench::agent::smith::product_settings(&context, &base, &login).expect("product rendering");
+        let layer: toml::Value =
+            toml::from_str(include_str!("../../../benchmarks/agents/smith/everything.toml")).expect("product layer");
+        let base = serde_json::to_value(layer).expect("layer values");
+        let mut rendered =
+            smith_bench::agent::smith::product_settings(&context, &base, &login).expect("product rendering");
+        let invocation = rendered.as_object_mut().expect("layer").remove("invocation").expect("product flags");
         let directory = private.config.join("smith");
         std::fs::create_dir(&directory).expect("user layer directory");
         let document: toml::Value = serde_json::from_value(rendered).expect("TOML document");
@@ -397,17 +399,7 @@ mod tests {
             &clock,
             skein_world::end_to_end::Command {
                 program: env!("CARGO_BIN_EXE_smith").into(),
-                arguments: vec![
-                    "check".into(),
-                    "--json".into(),
-                    "exec".into(),
-                    "--json".into(),
-                    "-C".into(),
-                    private.workspace.clone().into(),
-                    "-o".into(),
-                    root.join("unopened/result").into(),
-                    "--ephemeral".into(),
-                ],
+                arguments: product_check_arguments(&invocation, &private.workspace, root),
                 environment,
                 directory: private.workspace.clone(),
             },
@@ -427,6 +419,28 @@ mod tests {
         assert!(!root.join("unopened").exists());
         assert_eq!(std::fs::read_dir(&private.state).expect("scratch state").count(), 0);
         result
+    }
+
+    fn product_check_arguments(
+        invocation: &serde_json::Value,
+        workspace: &Path,
+        root: &Path,
+    ) -> Vec<std::ffi::OsString> {
+        let mut arguments = vec![
+            "check".into(),
+            "--json".into(),
+            "exec".into(),
+            "--json".into(),
+            "-C".into(),
+            workspace.into(),
+            "-o".into(),
+            root.join("unopened/result").into(),
+            "--ephemeral".into(),
+        ];
+        arguments.extend(
+            invocation.as_array().expect("product flags").iter().map(|value| value.as_str().expect("flag").into()),
+        );
+        arguments
     }
 
     #[test]

@@ -23,8 +23,8 @@ struct Directory {
 pub(super) fn render(context: &Context<'_>) -> Result<Value, String> {
     let requested = context
         .variant
-        .and_then(|variant| variant.smith.get("directories"))
-        .or_else(|| context.task.smith.get("directories"));
+        .and_then(|variant| variant.smith.get("workspace.directories"))
+        .or_else(|| context.task.smith.get("workspace.directories"));
     let Some(requested) = requested else {
         let working = crate::isolate::working_directory(context.guard, context.private, context.task)?;
         return Ok(json!([{"name":"repo","path":working,"writable":true,"git":true}]));

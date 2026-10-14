@@ -4,7 +4,7 @@ fn fixture() -> (PathBuf, crate::CatalogueTask, Suite, ArmRef) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest = root.join("tasks/probes/history/task.toml");
     let task = crate::read_task(&manifest).expect("history").with_variant("small-window").expect("variant");
-    let suite = toml::from_str("name='compaction'\ntier='small'\ndesign='interleaved'\nreference='80-percent'\nrepetitions=5\nrerun_failed=0\nmax_wall_seconds=3600\nmax_tokens=12000000\ntasks=['probes/history/small-window']\n[[agents]]\nagent='smith'\nprovider='codex'\nconfig='cache-reuse'\n[[arm]]\nsource='override'\nname='80-percent'\n[arm.smith]\n'deployment.compaction_threshold.numerator'=4\n'deployment.compaction_threshold.denominator'=5\n[[arm]]\nsource='override'\nname='60-percent'\n[arm.smith]\n'deployment.compaction_threshold.numerator'=3\n'deployment.compaction_threshold.denominator'=5\n").expect("suite");
+    let suite = toml::from_str("name='compaction'\ntier='small'\ndesign='interleaved'\nreference='80-percent'\nrepetitions=5\nrerun_failed=0\nmax_wall_seconds=3600\nmax_tokens=12000000\ntasks=['probes/history/small-window']\n[[agents]]\nagent='smith'\nprovider='codex'\nconfig='everything'\n[[arm]]\nsource='override'\nname='80-percent'\n[arm.smith]\n'deployment.compaction_threshold.numerator'=4\n'deployment.compaction_threshold.denominator'=5\n[[arm]]\nsource='override'\nname='60-percent'\n[arm.smith]\n'deployment.compaction_threshold.numerator'=3\n'deployment.compaction_threshold.denominator'=5\n").expect("suite");
     let arm = ArmRef::Built(crate::arm::Build {
         directory: "/unexecuted-arm".into(),
         arm: crate::arm::BuiltArm {

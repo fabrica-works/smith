@@ -69,7 +69,7 @@ fn build(settings: &Settings, document: bool) -> Result<(Resolved, Box<[u8]>), s
         .iter()
         .filter_map(|(key, value)| key.strip_prefix("trace.").map(|field| (field, &value.value)))
         .collect();
-    if !trace.is_empty() {
+    if trace.contains_key("path") {
         generated
             .as_object_mut()
             .expect("configuration object")

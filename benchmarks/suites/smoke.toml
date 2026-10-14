@@ -7,7 +7,8 @@ max_wall_seconds = 720
 max_tokens = 300000
 tasks = ["probes/first-request", "probes/smoke-tools", "probes/large-write", "probes/budget/child-quota", "probes/budget/wrap-up"]
 
+
 [[agents]]
 agent = "smith"
 provider = "codex"
-config = "smoke"
+config = "everything"

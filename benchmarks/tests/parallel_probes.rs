@@ -29,7 +29,7 @@ fn parallel_tasks_are_frozen_and_decide_actual_call_and_child_evidence() {
         smith_bench::check_task(&root.join("tasks/probes/parallel-read/task.toml"), &root.join("../docs/design"))
             .expect("parallel reads");
     assert!(read.event.contains(&EventCheck::CallsInOneResponse { tool: "read".into(), at_least: 20 }));
-    assert_eq!(read.smith["calls_per_response"].as_integer(), Some(20));
+    assert_eq!(read.smith["deployment.calls_per_response"].as_integer(), Some(20));
     let children =
         smith_bench::check_task(&root.join("tasks/probes/parallel-children/task.toml"), &root.join("../docs/design"))
             .expect("parallel children");
