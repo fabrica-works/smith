@@ -1,0 +1,26 @@
+wall_h	36.0	h
+running_h	35.8	h
+steps_planned	82	steps
+steps_added	26	steps
+steps_dropped	0	steps
+step_h	0.33	h per step
+escalations	cross-session scope 34, design gap 44, infrastructure 9, plan Files and Shape gap 2, plan Files gap 2, plan Shape and Files gap 3, plan Shape and validation gap 1, plan Shape gap 2, plan Test-shape gap 1, plan defect 99, plan scope question 1, process 13, process Proof allowance 1, process instruction gap 1	by kind
+escalation_wait_min	1.8	min, median
+blocked_h	-67.8	h
+answers_reversed	15	answers
+steers	10 sent, 0 points refused	
+restarts	the 1	by cause
+tokens_coordinator	540161554 in (99% cached), 1112844 out	tokens
+tokens_implementers	1600931549 in (98% cached), 6000513 out	tokens
+tokens_claude	4252587609 in (97% cached), 9343522 out; in: 0 before the claim, 4043320583 in the run, 209267026 after	tokens
+tokens_per_step	57406217	tokens per step, the run's
+coordinator_requests	2813, 168 after a wait ran out	requests
+compactions	7	compactions
+gates_per_step	3.5	gates per step
+queue_wait_ratio	0.93	waiting per running
+suites	first: scripts/check.sh passed: 2222 tests / 6.280 s; 34 tests / 14.528 s; 59 s in all; last: none (Markdown only)	Gate-Result
+proofs	unit 28, world 28, process 23, live 17, none 5, 7 below plan	steps
+report_lines	10 median, 12 p90	lines
+lines	code +132760 -30530, tests +21804 -4400	lines
+pin_lag	smith: skein 1; temper: skein 262, smith 783	commits behind upstream main
+contexts	245K median, 348K p90 of the sessions' peaks; 41 handovers	
