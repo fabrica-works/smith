@@ -1119,6 +1119,7 @@ impl World {
             match request {
                 agent::Request::Turn { .. }
                 | agent::Request::Priced { .. }
+                | agent::Request::JobsCancelled { .. }
                 | agent::Request::Opened { .. }
                 | agent::Request::Yielded { .. }
                 | agent::Request::Used { .. }
@@ -1150,6 +1151,7 @@ impl World {
                 );
                 session.priced += 1;
             }
+            agent::Request::JobsCancelled { .. } => {}
             agent::Request::Opened { opener, session } => self.opened(opener.raw(), session),
             agent::Request::Yielded { opener, stop, text } => self.yielded(opener.raw(), stop, text),
             agent::Request::Used { opener, usage } => {
@@ -1944,7 +1946,7 @@ impl World {
             }
             agent::FactKind::CompactionEnded { .. } => return,
             agent::FactKind::Opened { .. } => &mut told.opened,
-            agent::FactKind::ReasoningDropped { .. } => &mut told.reasoning_dropped,
+            agent::FactKind::JobEnded { .. } | agent::FactKind::ReasoningDropped { .. } => &mut told.reasoning_dropped,
             agent::FactKind::CompletionStarted { .. } => &mut told.completions_started,
             agent::FactKind::CompletionAnswered { .. } => &mut told.completions_answered,
             agent::FactKind::CompletionFailed { .. } => &mut told.completions_failed,
@@ -2067,6 +2069,7 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
         | agent::Event::AnswerCancelled { owner, .. } => Some(*owner),
         agent::Event::Open { .. }
         | agent::Event::Continue { .. }
+        | agent::Event::CancelJobs { .. }
         | agent::Event::Close { .. }
         | agent::Event::Completed { .. }
         | agent::Event::Overflowed { .. }
@@ -2081,6 +2084,7 @@ fn ended_run(event: &agent::Event) -> Option<Token> {
 
 fn describe_agent_event(event: &agent::Event) -> String {
     match event {
+        agent::Event::CancelJobs { session } => format!("cancel jobs {}", session.raw()),
         agent::Event::AnswerWithheld { owner } => format!("answer withheld {}", owner.raw()),
         agent::Event::AnswerCancelled { owner, spent, .. } => format!("answer cancelled {} {spent}", owner.raw()),
         agent::Event::Open { opener, opening } => format!("open {} {opening:?}", opener.raw()),
@@ -2109,6 +2113,7 @@ fn describe_agent_event(event: &agent::Event) -> String {
 
 fn describe_agent_request(request: &agent::Request) -> String {
     match request {
+        agent::Request::JobsCancelled { opener } => format!("jobs cancelled {}", opener.raw()),
         agent::Request::Turn { opener, turn } => format!("turn {} {turn:?}", opener.raw()),
         agent::Request::Priced { opener, spent, own_spent } => {
             format!("priced {} {spent} own {own_spent}", opener.raw())

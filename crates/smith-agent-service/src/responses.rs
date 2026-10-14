@@ -722,7 +722,8 @@ impl Book {
                     })
                     .expect("one conversation terminal");
             }
-            session::FactKind::ReasoningDropped { .. }
+            session::FactKind::JobEnded { .. }
+            | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }
             | session::FactKind::DelegateAnswered { .. }

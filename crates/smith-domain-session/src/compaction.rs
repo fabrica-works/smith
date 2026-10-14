@@ -409,6 +409,7 @@ pub(super) fn tell(conversation: &mut Conversation, facts: &mut crate::facts::Fa
             conversation.compaction = Compaction::Idle;
         }
         Request::Ended { .. }
+        | Request::JobsCancelled { .. }
         | Request::Opened { .. }
         | Request::Yielded { .. }
         | Request::Used { .. }

@@ -140,6 +140,8 @@ pub enum FactKind {
     DelegateCancelled { opener: Token },
     /// The opener parked its own wait without a historical result.
     DelegateWithheld { opener: Token },
+    /// An unanswered job ended before its session closed; its provider identity is in Fact.call.
+    JobEnded { opener: Token, job: tools::JobNumber, end: tools::JobEnd, unread_bytes: u64, started: Time },
     /// The session yielded.
     Yielded { opener: Token, stop: Yield },
     /// A completion came back, and used one turn and `usage`.

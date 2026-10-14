@@ -149,7 +149,7 @@ impl Harness {
     /// Opens a kit for `session` with `authority`, and returns its token.
     fn open(&mut self, session: u64, authority: Authority) -> Token {
         let session = Token::new(session);
-        match self.step(Event::Open { session, authority }) {
+        match self.step(Event::Open { jobs: 0, session, authority }) {
             Some(Request::Opened { session: echoed, kit }) => {
                 assert_eq!(echoed, session);
                 kit
@@ -269,7 +269,7 @@ fn edit(text: &[u8]) -> Call {
 /// Opening a kit with `authority` under `limits` is refused as invalid.
 fn invalid(limits: Limits, authority: Authority) {
     let mut h = Harness::new(limits);
-    let refused = h.step(Event::Open { session: Token::new(1), authority });
+    let refused = h.step(Event::Open { jobs: 0, session: Token::new(1), authority });
     assert_eq!(refused, Some(Request::Refused { session: Token::new(1), refusal: Refusal::Invalid }));
     assert_eq!(h.domain.kits(), 0);
 }
@@ -462,7 +462,7 @@ fn a_kit_opens_and_closes() {
 fn opens_beyond_the_kit_slots_are_refused_as_busy() {
     let mut h = Harness::new(Limits { kits: 1, ..LIMITS });
     let _: Token = h.open(1, authority(ALL));
-    let refused = h.step(Event::Open { session: Token::new(2), authority: authority(ALL) });
+    let refused = h.step(Event::Open { jobs: 0, session: Token::new(2), authority: authority(ALL) });
     assert_eq!(refused, Some(Request::Refused { session: Token::new(2), refusal: Refusal::Busy }));
 }
 
@@ -1406,7 +1406,7 @@ fn a_kit_tells_what_happens_as_facts() {
     assert_eq!(told(&mut h).as_slice(), &expected);
     let mut bad = authority(ALL);
     bad.repos[1].root = bad.repos[0].root;
-    drop(h.step(Event::Open { session: Token::new(6), authority: bad }));
+    drop(h.step(Event::Open { jobs: 0, session: Token::new(6), authority: bad }));
     let refused = Fact::Refused { session: Token::new(6), refusal: Refusal::Invalid };
     assert_eq!(told(&mut h).as_slice(), &[refused]);
 }
@@ -1522,7 +1522,7 @@ fn fact_emission_times_and_call_context_survive_a_delayed_drain() {
     );
     let mut invalid = authority(ALL);
     invalid.repos[1].root = invalid.repos[0].root;
-    drop(h.step(Event::Open { session: Token::new(6), authority: invalid }));
+    drop(h.step(Event::Open { jobs: 0, session: Token::new(6), authority: invalid }));
     assert_eq!(h.pop_fact().expect("refused fact").at, h.env.now);
 }
 

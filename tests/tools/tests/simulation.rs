@@ -1288,7 +1288,7 @@ fn a_command_whose_child_outlives_it_ends_with_its_group_at_the_deadline() {
     tools::step(
         &mut domain,
         &env,
-        tools::Event::Open { session: Token::new(1), authority: Fixture::new().authority(ALL) },
+        tools::Event::Open { jobs: 0, session: Token::new(1), authority: Fixture::new().authority(ALL) },
         &mut out,
     );
     let Some(tools::Request::Opened { kit, .. }) = out.pop() else { panic!("native kit opened") };

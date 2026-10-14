@@ -49,3 +49,26 @@ pub(crate) fn completion_done(domain: &mut Domain, owner: Token) -> IssuedComple
     domain.notices.push(Request::LongDone { host_run });
     issued
 }
+
+/// A held command's read or stop owns a new bounded long-operation span.
+pub(crate) fn job(
+    domain: &mut Domain,
+    env: &skein_lib::Env<crate::Limits>,
+    owner: Token,
+    act: tools::JobAct,
+    out: &mut Queue<Request>,
+) {
+    let wait = match act {
+        tools::JobAct::Read { wait, .. } => wait,
+        tools::JobAct::Stop { .. } => env.limits.session.tools.tool_deadline,
+    };
+    let conversation = domain.session.io_opener(owner).expect("job owner retains its session");
+    let host_run = run::host_name(&domain.run, conversation).expect("job retains its run");
+    let old = domain.commands.insert(owner, host_run).expect("one active job act per owner");
+    assert!(old.is_none(), "the previous job act ended");
+    out.push(Request::Long {
+        host_run,
+        operation: Operation::Command,
+        until: env.now.saturating_add(wait.min(env.limits.session.tools.tool_deadline)),
+    });
+}

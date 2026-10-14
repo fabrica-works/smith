@@ -50,11 +50,11 @@ pub(crate) struct Read {
 }
 
 impl Jobs {
-    pub(crate) fn new(limits: &Limits) -> Self {
+    pub(crate) fn new(limits: &Limits, highest: u32) -> Self {
         Self {
             held: Map::with_capacity(limits.jobs),
             reads: Map::with_capacity(limits.calls),
-            highest: 0,
+            highest,
             next_read: 0,
             cancelling: false,
         }

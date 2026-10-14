@@ -92,6 +92,8 @@ pub enum Event {
     /// End the session, whatever its state: it cancels what is in flight, and
     /// ends once that has settled. A `session` that has ended is dropped.
     Close { session: Token },
+    /// Cancel the session's jobs; `JobsCancelled` follows their settlement.
+    CancelJobs { session: Token },
     /// Terminal for `Complete`: the LLM produced its next message.
     Completed {
         owner: Token,
@@ -152,6 +154,8 @@ pub enum Request {
     /// The session for `opener` was admitted, and `session` names it from now
     /// on.
     Opened { opener: Token, session: Token },
+    /// The opener's requested cancellation has settled every running job.
+    JobsCancelled { opener: Token },
     /// A settled turn, copied at emission. Its values contain no session tickets.
     Turn {
         opener: Token,

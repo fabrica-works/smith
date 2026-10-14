@@ -165,3 +165,41 @@ fn a_job_stop_has_the_write_effect() {
         crate::Call::Job { job: JobNumber(1), wait: crate::Wait::Default, output: crate::Budget::Default, stop: true };
     assert_eq!(crate::effect(&call), crate::Effect::Write);
 }
+
+#[test]
+fn a_resumed_kits_first_job_follows_its_saved_highest() {
+    use super::{ALL, Harness, LIMITS, authority, bytes};
+    use crate::{Budget, Call, Event, Request, Timeout, Yield};
+    let mut harness = Harness::new(LIMITS);
+    let opened = harness.step(Event::Open { session: Token::new(1), jobs: 3, authority: authority(ALL) });
+    let Some(Request::Opened { kit, .. }) = opened else { panic!("kit admitted") };
+    let spawned = harness.send(
+        kit,
+        1,
+        Call::Shell {
+            command: bytes(b"cargo build"),
+            timeout: Timeout::Default,
+            output: Budget::Default,
+            after: Yield::Asked(Duration::from_secs(1)),
+        },
+    );
+    let Some(Request::Io { owner, .. }) = spawned else { panic!("shell spawned") };
+    assert_eq!(
+        harness.step(Event::Done {
+            owner,
+            done: crate::Done::Held { head: Box::default(), tail: Box::default(), dropped: 0 }
+        }),
+        Some(Request::Answer {
+            to: skein_lib::ReplyTo::new(Token::new(1)),
+            outcome: Outcome::Running {
+                job: JobNumber(4),
+                head: Box::default(),
+                tail: Box::default(),
+                dropped: 0,
+                timeout: TimeoutClamp::Within,
+                output: BytesClamp::Within,
+                after: TimeoutClamp::Within,
+            }
+        })
+    );
+}

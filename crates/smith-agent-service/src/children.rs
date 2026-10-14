@@ -75,6 +75,7 @@ impl Book {
             | session::FactKind::CompletionFailed { .. }
             | session::FactKind::CompletionCancelled { .. }
             | session::FactKind::CompletionRetried { .. }
+            | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }
@@ -113,6 +114,7 @@ impl Book {
             | session::FactKind::CompletionFailed { .. }
             | session::FactKind::CompletionCancelled { .. }
             | session::FactKind::CompletionRetried { .. }
+            | session::FactKind::JobEnded { .. }
             | session::FactKind::ReasoningDropped { .. }
             | session::FactKind::Tools { .. }
             | session::FactKind::DelegateStarted { .. }

@@ -153,6 +153,7 @@ fn observe_fill(out: &mut Queue<Request>, observed: &mut [(bool, u32, u32, u32, 
     let mut asked = None;
     while let Some(request) = out.pop() {
         match request {
+            Request::JobsCancelled { .. } => {}
             Request::Complete { owner, .. } => {
                 assert!(asked.is_none() || matches!(asked, Some(Asked::Other)));
                 asked = Some(Asked::Complete { owner });
@@ -494,7 +495,8 @@ fn recorded_delegated_turns_cut_results_and_hold_history_for_compaction() {
                     assert_eq!((spent, own_spent), (0, 0));
                 }
                 Request::Ended { end, .. } => ended = Some(end),
-                Request::Opened { .. }
+                Request::JobsCancelled { .. }
+                | Request::Opened { .. }
                 | Request::Yielded { .. }
                 | Request::Used { .. }
                 | Request::Cancel { .. }
@@ -820,7 +822,7 @@ fn memory_seen(out: &mut Queue<Request>) -> MemorySeen {
                 seen.io[seen.io_count] = Some(owner);
                 seen.io_count += 1;
             }
-            Request::Opened { .. } => {}
+            Request::JobsCancelled { .. } | Request::Opened { .. } => {}
             Request::Used { usage, .. } => {
                 assert_eq!(usage, Usage::ZERO);
                 seen.used += 1;

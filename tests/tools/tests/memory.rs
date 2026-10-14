@@ -53,7 +53,7 @@ fn fill(limits: Limits) {
     let deadline = Time::ZERO.saturating_add(Duration::from_secs(60));
     let mut file = 0;
     for session in 0..limits.kits {
-        let opened = step(Event::Open { session: Token::new(session.into()), authority: authority(&limits) });
+        let opened = step(Event::Open { jobs: 0, session: Token::new(session.into()), authority: authority(&limits) });
         let [kit] = opened[..] else { panic!("{limits:?}: the authority fits") };
         let list = smith_domain_tools::Call::List {
             path: smith_domain_tools::Path { absolute: true, parts: Box::new([]) },
@@ -140,7 +140,7 @@ fn fill_jobs() {
             &env,
             &mut out,
             &meter,
-            Event::Open { session: Token::new(u64::from(session)), authority: authority(&LIMITS) },
+            Event::Open { jobs: 0, session: Token::new(u64::from(session)), authority: authority(&LIMITS) },
         );
         let Request::Opened { kit, .. } = requests[0] else { panic!("one admitted kit") };
         let mut owners = Vec::new();

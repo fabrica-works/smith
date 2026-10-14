@@ -40,6 +40,8 @@ pub enum Event {
     /// Open a kit for the session `session`, with `authority`.
     Open {
         session: Token,
+        /// Highest job number recorded by the conversation, zero when fresh.
+        jobs: u32,
         /// Explicit roots, grants and working directory admitted by the kit.
         authority: Authority,
     },

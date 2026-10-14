@@ -160,7 +160,8 @@ impl Harness {
                     self.turns = self.turns.checked_add(1).expect("bounded completions");
                     self.usage = usage_sum(self.usage, usage).expect("only accepted usage is reported");
                 }
-                request @ (Request::Opened { .. }
+                request @ (Request::JobsCancelled { .. }
+                | Request::Opened { .. }
                 | Request::Yielded { .. }
                 | Request::Ended { .. }
                 | Request::Complete { .. }
@@ -200,7 +201,8 @@ impl Harness {
                     }
                     self.turn_records.push(turn).expect("configured fixture turn observation bound");
                 }
-                other @ (Request::Opened { .. }
+                other @ (Request::JobsCancelled { .. }
+                | Request::Opened { .. }
                 | Request::Yielded { .. }
                 | Request::Used { .. }
                 | Request::Ended { .. }
@@ -233,7 +235,8 @@ impl Harness {
                     runs.push(owner).expect("room for a batch");
                 }
                 Request::Used { .. } => {}
-                other @ (Request::Opened { .. }
+                other @ (Request::JobsCancelled { .. }
+                | Request::Opened { .. }
                 | Request::Yielded { .. }
                 | Request::Ended { .. }
                 | Request::Complete { .. }
@@ -2013,7 +2016,8 @@ fn completion_name_exhaustion_ends_before_any_owned_or_delegated_effect() {
                     );
                     ended = true;
                 }
-                Request::Opened { .. }
+                Request::JobsCancelled { .. }
+                | Request::Opened { .. }
                 | Request::Yielded { .. }
                 | Request::Complete { .. }
                 | Request::Cancel { .. }

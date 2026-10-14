@@ -666,7 +666,7 @@ impl World {
             match delivery {
                 Delivery::Open { session } => {
                     let authority = self.session_mut(session).authority.take().expect("a session opens once");
-                    self.stage.push(tools::Event::Open { session: Token::new(session), authority });
+                    self.stage.push(tools::Event::Open { jobs: 0, session: Token::new(session), authority });
                 }
                 Delivery::Next { session } => self.step(session),
                 Delivery::Job { owner } => self.job_tick(owner),

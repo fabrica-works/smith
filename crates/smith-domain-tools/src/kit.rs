@@ -70,6 +70,7 @@ pub(crate) fn open(
     domain: &mut Domain,
     env: &Env<Limits>,
     session: Token,
+    jobs: u32,
     authority: Authority,
     out: &mut Queue<Request>,
 ) {
@@ -86,7 +87,7 @@ pub(crate) fn open(
         checkout,
         knowledge: Knowledge::new(env.limits.known_files),
         flights: Set::with_capacity(env.limits.calls),
-        jobs: crate::jobs::Jobs::new(&env.limits),
+        jobs: crate::jobs::Jobs::new(&env.limits, jobs),
         state: State::Open,
     };
     let id = domain.kits.insert(kit).expect("checked for room above");

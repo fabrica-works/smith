@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Deadlines, Duration, List, Queue, Slab};
+use skein_lib::{Deadlines, Duration, List, Map, Queue, Slab};
 use smith_domain_tools as tools;
 
 use crate::boundary::Budget;
@@ -127,14 +127,18 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let sessions = Slab::<Session>::worst_case(limits.sessions)?;
     // Rules 1 and 5: two whole batches per session share their completion
     // payload; each run owns a cell, not a fresh complete provider answer.
-    let runs = Slab::<Run>::worst_case(runs(limits)?)?
-        .checked_add(u64::from(limits.sessions).checked_mul(2)?.checked_mul(limits.completion_bytes)?)?;
+    let runs = Slab::<Run>::worst_case(runs(limits)?)?;
+    // Active calls share two completion payloads. Retained job identities and
+    // closing observations each hold at most one answer's id/name bytes per
+    // job. Use the larger joint envelope, counting each owned copy once.
+    let previous = limits.completion_bytes.checked_mul(2)?.checked_add(limits.answer_bytes)?;
+    let identities = u64::from(limits.tools.jobs).checked_mul(2)?.checked_add(4)?.checked_mul(limits.answer_bytes)?;
+    let metadata = u64::from(limits.sessions).checked_mul(previous.max(identities))?;
     let alarms = Deadlines::<Alarm>::worst_case(alarms(limits)?)?;
     let ready = Ready::worst_case(limits.sessions)?;
     // Rule 5: the parent drains facts before its next child entrance; copied
     // call IDs/names share one answer total per emitting session.
-    let facts = Queue::<Fact>::worst_case(limits.facts)?
-        .checked_add(u64::from(limits.sessions).checked_mul(limits.answer_bytes)?)?;
+    let facts = Queue::<Fact>::worst_case(limits.facts)?;
     let tools = tools::worst_case(&limits.tools)?;
     let tools_out = Queue::<tools::Request>::worst_case(tools::max_out(&limits.tools))?;
     // Each session owns its transcript's list and up to its byte limit.
@@ -152,6 +156,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let session = List::<Message>::worst_case(limits.history_messages)?
         .checked_add(List::<Box<[u8]>>::worst_case(calls)?)?
         .checked_add(slots)?
+        .checked_add(Map::<u32, crate::ToolCall>::worst_case(limits.tools.jobs)?)?
         .checked_add(limits.history_bytes)?
         .checked_add(u64::from(limits.failure_bytes))?;
     let held = u64::from(limits.sessions).checked_mul(session)?;
@@ -167,6 +172,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(limits.completion_bytes)?;
     sessions
         .checked_add(runs)?
+        .checked_add(metadata)?
         .checked_add(alarms)?
         .checked_add(ready)?
         .checked_add(facts)?

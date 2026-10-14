@@ -3,6 +3,9 @@
 //! keeps for them, and the hand-offs it defers to the ready list. What each
 //! child domain does on its own is its own tests' business.
 
+#[path = "tests/jobs.rs"]
+mod jobs;
+
 use alloc::boxed::Box;
 
 use skein_lib::{Duration, Env, List, Queue, ReplyTo, Time, Token, Wall};

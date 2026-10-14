@@ -194,6 +194,7 @@ pub fn step(domain: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queu
         }
         Event::Continue { session, content } => session::continued(domain, env, session, content, out),
         Event::Close { session } => session::close(domain, env, session, out),
+        Event::CancelJobs { session } => session::cancel_jobs(domain, env, session, out),
         Event::Completed { owner, completion } => session::completed(domain, env, owner, completion, out),
         Event::Overflowed { owner, end } => session::overflowed(domain, env, owner, end, out),
         Event::BudgetDenied { owner, reason } => session::budget_denied(domain, env, owner, reason, out),

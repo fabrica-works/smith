@@ -135,6 +135,8 @@
 mod compaction;
 #[path = "history.rs"]
 mod history;
+#[path = "jobs.rs"]
+mod jobs;
 
 use alloc::boxed::Box;
 use core::mem::{self, size_of};
@@ -209,6 +211,7 @@ struct Conversation {
     /// inserted Closed, holding nothing, and given its kit as it opens.
     kit: Token,
     recording: Recording,
+    jobs: jobs::Jobs,
     closing_tools: Option<Tools>,
     /// Last failure text, bounded by `Limits::failure_bytes` and kept outside history.
     detail: Box<[u8]>,
@@ -409,9 +412,11 @@ fn open_admitted(
 ) {
     // Closed until its kit opens and the first call is made, which a budget
     // just admitted pays for.
+    let highest = conversation.jobs.highest;
     let session = Session { conversation, state: State::Closed };
     let id = domain.sessions.insert(session).expect("checked for room above");
-    let heard = tools_step(&mut domain.calls, env, tools::Event::Open { session: id.token(), authority }, out);
+    let heard =
+        tools_step(&mut domain.calls, env, tools::Event::Open { session: id.token(), jobs: highest, authority }, out);
     let session = domain.sessions.get_mut(id).expect("inserted above");
     match heard.kit {
         Some(News::Opened { kit }) => {
@@ -464,6 +469,8 @@ pub(crate) fn continued(
     };
     conclude(domain, env, id, out, mark);
 }
+
+pub(crate) use jobs::cancel as cancel_jobs;
 
 pub(crate) fn close(domain: &mut Domain, env: &Env<Limits>, session: Token, out: &mut Queue<Request>) {
     let mark = out.len();
@@ -900,6 +907,7 @@ pub(crate) fn io_done(
         None => {}
         Some(News::Opened { .. } | News::Refused { .. }) => unreachable!("an operation's end opens no kit"),
     }
+    jobs::cancelled(domain, heard.cancelled, out);
     if let Some(id) = concerned {
         conclude(domain, env, id, out, mark);
     }
@@ -914,11 +922,12 @@ fn owned_answered(
     result: Returned,
     out: &mut Queue<Request>,
 ) -> Id<Session> {
-    let Run { session: id, slot, block, by, credit, metadata: _, ended: _ } = ended_run(&mut domain.calls.runs, run);
+    let Run { session: id, slot, block, by, credit, metadata, ended: _ } = ended_run(&mut domain.calls.runs, run);
     assert!(by == By::Tools, "the tools answer only the calls they were given");
     let session = domain.sessions.get_mut(id).expect("a session lives until its requests have ended");
     let state = mem::replace(&mut session.state, State::Closed);
     let conversation = &mut session.conversation;
+    conversation.jobs.answered(&result, metadata);
     session.state = match state {
         State::Tooling { tools } => {
             tool_ran(conversation, id, &mut domain.calls, tools, slot, block, credit, result, env, out)
@@ -1020,6 +1029,9 @@ pub(crate) fn pass_on_facts(domain: &mut Domain, env: &Env<Limits>) {
         };
         let session = domain.sessions.get(Id::from_token(kit_session(fact.kind)));
         let opener = session.expect("a kit's session lives until the reclaim point").conversation.opener;
+        if jobs::pass_on(domain, opener, &fact) {
+            continue;
+        }
         let kind = FactKind::Tools { opener, fact: fact.kind };
         match fact.call {
             Some(call) => {
@@ -1072,6 +1084,7 @@ fn ended_run(runs: &mut Slab<Run>, run: Id<Run>) -> Run {
 struct Heard {
     answer: Option<(Id<Run>, Returned)>,
     kit: Option<News>,
+    cancelled: Option<Token>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1090,7 +1103,7 @@ fn tools_step(calls: &mut Calls, env: &Env<Limits>, event: tools::Event, out: &m
     assert!(calls.tools.facts_room() >= tools::max_facts(&env.limits.tools), "session reserved child observations");
     let tools_env = Env { now: env.now, wall: env.wall, limits: env.limits.tools };
     tools::step(&mut calls.tools, &tools_env, event, &mut calls.out);
-    let mut heard = Heard { answer: None, kit: None };
+    let mut heard = Heard { answer: None, kit: None, cancelled: None };
     for _ in 0..tools::max_out(&env.limits.tools) {
         let Some(request) = calls.out.pop() else {
             break;
@@ -1114,7 +1127,7 @@ fn tools_step(calls: &mut Calls, env: &Env<Limits>, event: tools::Event, out: &m
             tools::Request::Opened { session: _, kit } => heard.kit = Some(News::Opened { kit }),
             tools::Request::Refused { session: _, refusal } => heard.kit = Some(News::Refused { refusal }),
             tools::Request::Closed { session } => heard.kit = Some(News::Closed { session: Id::from_token(session) }),
-            tools::Request::JobsCancelled { .. } => unreachable!("session cancellation is added in 10.3"),
+            tools::Request::JobsCancelled { session } => heard.cancelled = Some(session),
         }
     }
     assert!(calls.out.is_empty(), "the tools emit no more than their max_out");
@@ -1207,6 +1220,10 @@ fn settle(domain: &mut Domain, env: &Env<Limits>, id: Id<Session>, out: &mut Que
     let waiting = Waiting { kit, ..waiting };
     let session = domain.sessions.get_mut(id).expect("looked up above");
     if waiting == SETTLED {
+        if !session.conversation.jobs.empty() {
+            pass_on_facts(domain, env);
+        }
+        let session = domain.sessions.get_mut(id).expect("session lives through its terminal");
         let Conversation { opener, turns, usage, reported, .. } = session.conversation;
         let detail = mem::replace(&mut session.conversation.detail, Box::new([]));
         out.push(Request::Ended { opener, end, turns, usage, reported, detail });
@@ -1262,7 +1279,8 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<
                 let run = runs.get(Id::from_token(*owner)).expect("a run lives while its call is asked for");
                 FactKind::DelegateStarted { opener, block: run.block }
             }
-            Request::Turn { .. }
+            Request::JobsCancelled { .. }
+            | Request::Turn { .. }
             | Request::Priced { .. }
             | Request::Cancel { .. }
             | Request::Withdraw { .. }
@@ -1283,7 +1301,8 @@ fn tell(facts: &mut Facts, runs: &Slab<Run>, session: &mut Session, out: &Queue<
                 facts.push_response(fact, u64::from(session.conversation.turns), Some(spent));
             }
             Request::Opened { .. } | Request::Yielded { .. } | Request::Ended { .. } => facts.push(fact),
-            Request::Turn { .. }
+            Request::JobsCancelled { .. }
+            | Request::Turn { .. }
             | Request::Priced { .. }
             | Request::Cancel { .. }
             | Request::Withdraw { .. }
@@ -1526,6 +1545,8 @@ fn advance(
                     continue;
                 };
                 assert!(answered == run, "the tools answer at once only the call they were given");
+                let metadata = calls.runs.get(run).expect("answered run").metadata.clone();
+                conversation.jobs.answered(&result, metadata);
                 calls.runs.retire(run);
                 // Refused at the entrance: its block and its id were counted
                 // when the message was recorded, and a refusal holds nothing
@@ -2081,6 +2102,7 @@ fn admit(
         // holds nothing.
         kit: Token::new(0),
         recording,
+        jobs: jobs::Jobs::new(limits.tools.jobs),
         closing_tools: None,
         detail: Box::default(),
     };
@@ -3013,6 +3035,7 @@ fn restore(
 ) -> Result<u32, crate::record::Refusal> {
     use crate::record::Refusal;
     let (sequence, mut bytes, resumed) = validate_transcript(conversation, &transcript, &answered, dialect, limits)?;
+    conversation.jobs.highest = transcript.turns.last().expect("validated nonempty history").jobs;
     compaction::restore(conversation, &transcript, &mut bytes)?;
     conversation.affinity = match transcript.turns.first().expect("validated nonempty history").kind {
         crate::record::Kind::First { affinity } | crate::record::Kind::Window { affinity } => affinity,
@@ -3210,7 +3233,7 @@ fn tell_turn(conversation: &mut Conversation, out: &mut Queue<Request>) -> Optio
         sequence: next,
         usage,
         spent,
-        jobs: 0,
+        jobs: conversation.jobs.highest,
         messages: messages.into_boxed(),
     };
     out.push(Request::Turn { opener: conversation.opener, turn });

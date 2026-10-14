@@ -907,6 +907,7 @@ fn dropped_reasoning_has_one_fact_per_item_and_never_enters_history() {
             | session::FactKind::DelegateCancelled { .. }
             | session::FactKind::Yielded { .. }
             | session::FactKind::Used { .. }
+            | session::FactKind::JobEnded { .. }
             | session::FactKind::Ended { .. } => None,
         })
         .collect();

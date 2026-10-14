@@ -103,6 +103,13 @@ pub struct World {
     ///
     /// World contract: domain/session.md, sections 10 and 12; testing-strategy.md, section 2.2.
     pub cancelled_operations: Vec<Token>,
+    /// Commands retained by the machine after their shell call answered running.
+    pub held: std::collections::BTreeSet<Token>,
+    /// Outstanding acts retain the original machine owner until their answer.
+    pub job_acts: Vec<(Token, smith_domain_tools::JobAct)>,
+    /// Settlement acknowledgements returned to the scripted opener.
+    pub jobs_cancelled: u32,
+    jobs: std::collections::BTreeSet<u32>,
     /// Complete deterministic state snapshots at loop boundaries, separate
     /// from the referee's external observations.
     ///
@@ -167,6 +174,10 @@ impl World {
             origins: vec![],
             operations: vec![],
             cancelled_operations: vec![],
+            held: std::collections::BTreeSet::new(),
+            job_acts: vec![],
+            jobs_cancelled: 0,
+            jobs: std::collections::BTreeSet::new(),
             snapshots: vec![],
             prompts: vec![],
             turns: vec![],
@@ -204,15 +215,33 @@ impl World {
                     self.delegated.iter().position(|pending| pending == owner).expect("one terminal per delegate");
                 self.delegated.remove(position);
             }
-            session::Event::Done { owner, .. } => {
-                let position = self
-                    .operations
-                    .iter()
-                    .position(|(pending, _)| pending == owner)
-                    .expect("one terminal per owned operation");
-                self.operations.remove(position);
+            session::Event::Done { owner, done } => {
+                if self.held.contains(owner) {
+                    let position = self
+                        .job_acts
+                        .iter()
+                        .position(|(pending, _)| pending == owner)
+                        .expect("one terminal per job act");
+                    self.job_acts.remove(position);
+                    if !matches!(done, smith_domain_tools::Done::Job { end: smith_domain_tools::JobEnd::Running, .. }) {
+                        assert!(self.held.remove(owner));
+                    }
+                } else {
+                    let position = self
+                        .operations
+                        .iter()
+                        .position(|(pending, _)| pending == owner)
+                        .expect("one terminal per owned operation");
+                    self.operations.remove(position);
+                    if matches!(done, smith_domain_tools::Done::Held { .. }) {
+                        assert!(self.held.insert(*owner));
+                    }
+                }
             }
-            session::Event::Open { .. } | session::Event::Continue { .. } | session::Event::Close { .. } => {}
+            session::Event::CancelJobs { .. }
+            | session::Event::Open { .. }
+            | session::Event::Continue { .. }
+            | session::Event::Close { .. } => {}
         }
         self.domain.reclaim();
         session::step(&mut self.domain, &self.env, event, &mut self.out);
@@ -234,7 +263,13 @@ impl World {
             self.observe(request);
         }
         while let Some(fact) = self.domain.pop_fact() {
+            if let session::FactKind::JobEnded { job, .. } = fact.kind {
+                assert!(self.jobs.remove(&job.0), "one terminal per job");
+            }
             self.facts.push(fact);
+        }
+        if self.end.is_some() {
+            assert!(self.jobs.is_empty() && self.held.is_empty(), "no job outlives its session");
         }
         self.snapshots.push(format!("{:?}", self.domain));
     }
@@ -243,6 +278,7 @@ impl World {
     /// Contract: domain/session.md, sections 3, 6 and 12; testing-strategy.md, section 2.2.
     fn observe(&mut self, request: session::Request) {
         match request {
+            session::Request::JobsCancelled { .. } => self.jobs_cancelled += 1,
             session::Request::Opened { opener, session } => {
                 assert_eq!(opener, Token::new(31));
                 assert!(self.session.replace(session).is_none());
@@ -258,6 +294,27 @@ impl World {
             }
             session::Request::Turn { opener, turn } => {
                 assert_eq!(opener, Token::new(31));
+                for block in turn.messages.iter().flat_map(|message| &message.content) {
+                    match block {
+                        llm::Block::ToolResult {
+                            result: llm::Returned::Owned { outcome: smith_domain_tools::Outcome::Running { job, .. } },
+                            ..
+                        } => {
+                            assert!(self.jobs.insert(job.0), "a shell answers a fresh job");
+                        }
+                        llm::Block::ToolResult {
+                            result: llm::Returned::Owned { outcome: smith_domain_tools::Outcome::Job { job, end, .. } },
+                            ..
+                        } if *end != smith_domain_tools::JobEnd::Running => {
+                            assert!(self.jobs.remove(&job.0), "one terminal per job");
+                        }
+                        llm::Block::Opaque { .. }
+                        | llm::Block::Refusal { .. }
+                        | llm::Block::Text { .. }
+                        | llm::Block::ToolCall { .. }
+                        | llm::Block::ToolResult { .. } => {}
+                    }
+                }
                 self.turns.push(turn);
             }
             session::Request::Priced { opener, spent, own_spent } => {
@@ -281,9 +338,13 @@ impl World {
                 assert!(!self.operations.iter().any(|(pending, _)| pending == &owner));
                 self.operations.push((owner, op));
             }
-            session::Request::Job { .. } => unreachable!("the tools issue no job act yet"),
+            session::Request::Job { owner, act } => {
+                assert!(self.held.contains(&owner));
+                assert!(!self.job_acts.iter().any(|(pending, _)| *pending == owner));
+                self.job_acts.push((owner, act));
+            }
             session::Request::CancelIo { owner } => {
-                assert!(self.operations.iter().any(|(pending, _)| pending == &owner));
+                assert!(self.operations.iter().any(|(pending, _)| pending == &owner) || self.held.contains(&owner));
                 self.cancelled_operations.push(owner);
             }
         }
@@ -327,7 +388,13 @@ impl World {
         assert_eq!(self.domain.sessions(), 0);
         assert_eq!(self.domain.runs(), 0);
         assert_eq!(self.domain.kits(), 0);
-        assert!(self.completing.is_none() && self.delegated.is_empty() && self.operations.is_empty());
+        assert!(
+            self.completing.is_none()
+                && self.delegated.is_empty()
+                && self.operations.is_empty()
+                && self.held.is_empty()
+                && self.job_acts.is_empty()
+        );
     }
 }
 

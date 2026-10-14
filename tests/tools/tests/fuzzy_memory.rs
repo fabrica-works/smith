@@ -44,7 +44,7 @@ fn churn(limits: Limits, seed: u64, rounds: u32) {
     for round in 0..u64::from(rounds) {
         env.now = Time::from_nanos(round * 1_000_000);
         let event = match rng.below(10) {
-            0 => Some(Event::Open { session: Token::new(round), authority: authority(&limits) }),
+            0 => Some(Event::Open { jobs: 0, session: Token::new(round), authority: authority(&limits) }),
             1..=4 if !kits.is_empty() => {
                 let kit = kits[usize::try_from(rng.below(kits.len() as u64)).expect("an index")];
                 let reply_to = ReplyTo::new(Token::new(round));
