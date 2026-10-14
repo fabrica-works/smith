@@ -266,15 +266,16 @@ pub fn settings(scratch: &Scratch, scenario: &Scenario) -> Box<[u8]> {
         [deployment]\nmemory=4294967296\nconversations=2\nllm_pool=134217728\ngroup_stop=1\n\
         [models.'fake/fake']\nwindow=2097152\noutput=65536\nreasoning_item=2048\nhead=60\nidle=30\n\
         input_price=1.25\ncached_price=0.125\noutput_price=10.0\nprice_unit=1000000\n\
-        [endpoints.fake]\npreset='codex'\naccount='fake'\naddress='127.0.0.1:34443'\nserver_name='skein.test'\n\
+        [endpoints.fake]\npreset='codex'\naccount='fake'\naddress='{}:34443'\nserver_name='skein.test'\n\
         identity='plain'\ntrust.system=false\ntrust.der=['{}']\n\
         [environment]\ninherit=[]\n[trace]\npath='{}'\ncapture='calls'\n",
+        smith_real_world::loopback(),
         scratch.path().join("root.der").display(),
         scratch.path().join("agent-trace.jsonl").display()
     );
     if scenario.launch.authenticated {
-        text.push_str("[accounts.fake]\nsource='sign_in'\nclient_id='client'\nauthorization_url='http://127.0.0.1:34444/authorize'\n\
-            token_url='http://127.0.0.1:34444/token'\nredirect_uri='http://127.0.0.1:2345/callback'\nscope='read'\ntoken_format='form'\n");
+        write!(text, "[accounts.fake]\nsource='sign_in'\nclient_id='client'\nauthorization_url='http://{host}:34444/authorize'\n\
+            token_url='http://{host}:34444/token'\nredirect_uri='http://127.0.0.1:{redirect}/callback'\nscope='read'\ntoken_format='form'\n", host = smith_real_world::loopback(), redirect = smith_real_world::redirect_port()).expect("fixture string");
     } else {
         write!(
             text,

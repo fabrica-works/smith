@@ -5,6 +5,8 @@
 
 pub mod settled;
 
+pub use smith_agent_process_world::fake::{loopback, redirect_port};
+
 use skein_fake_checkout::git::Tree;
 use skein_lib::Duration;
 use skein_shell::{Clock, Host};
@@ -77,6 +79,7 @@ impl Scratch {
         for (tool, path) in [("git", "/usr/bin/git"), ("rg", "/usr/bin/rg"), ("sh", "/bin/sh")] {
             assert!(Path::new(path).is_file(), "real world requires {tool} at {path}");
         }
+        smith_agent_process_world::fake::real_loopback();
         let files = Files::new();
         let repo = files.path().join("repo");
         std::fs::create_dir(&repo).expect("scratch repository");
@@ -247,5 +250,16 @@ impl World {
     pub fn elapsed(&self) -> Duration {
         let outcome = self.outcome.as_ref().expect("settled world");
         outcome.end.saturating_since(outcome.start)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn two_processes_never_share_a_loopback_address() {
+        let first = smith_agent_process_world::fake::loopback_for(1);
+        let second = smith_agent_process_world::fake::loopback_for(4_194_303);
+        assert_ne!(first, second, "distinct live process ids have distinct addresses");
+        assert!(first.is_loopback() && second.is_loopback(), "both addresses stay within 127/8");
     }
 }

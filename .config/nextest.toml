@@ -27,14 +27,6 @@ slow-timeout = { period = "20s" }
 global-timeout = "1h"
 slow-timeout = { period = "60s" }
 
-# TLS fixtures share the same loopback addresses across real stories.
-[test-groups.real-local]
-max-threads = 1
-
-[[profile.default.overrides]]
-filter = "package(smith-real-world) or binary(end_to_end)"
-test-group = "real-local"
-
 # Real backends are opt-in and never part of the merge gate.
 [profile.live]
 default-filter = "binary(=live)"

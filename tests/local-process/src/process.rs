@@ -123,16 +123,18 @@ fn issuer_with_token(transport: skein_fake_peers::Transport, port: u16, access_t
         rotations: 4,
         plans: 4,
     };
+    let host = smith_agent_process_world::fake::loopback();
+    let redirect = smith_agent_process_world::fake::redirect_port();
     let mut issuer = Issuer::new(
-        (std::net::Ipv4Addr::LOCALHOST, port).into(),
+        (host, port).into(),
         transport,
         smith_agent_process_world::fake::limits(),
         fake_oauth::Config {
-            authorization_url: format!("{scheme}://127.0.0.1:{port}/authorize").into_bytes().into(),
-            token_endpoint: format!("{scheme}://127.0.0.1:{port}/token").into_bytes().into(),
+            authorization_url: format!("{scheme}://{host}:{port}/authorize").into_bytes().into(),
+            token_endpoint: format!("{scheme}://{host}:{port}/token").into_bytes().into(),
             client_id: b"client".as_slice().into(),
             client_secret: None,
-            redirect_uri: b"http://127.0.0.1:2345/callback".as_slice().into(),
+            redirect_uri: format!("http://127.0.0.1:{redirect}/callback").into_bytes().into(),
             refresh_token: b"refresh-old".as_slice().into(),
         },
         limits,

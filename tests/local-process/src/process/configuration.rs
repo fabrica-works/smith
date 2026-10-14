@@ -289,7 +289,7 @@ pub fn agent_document(launch: &Launch) -> serde_json::Value {
     }
     let mut endpoint = serde_json::json!({"name":if launch.choices {"main"} else {"fake"},"number":0,"dialect":0,
         "account":0,"provider":"codex","connect":1000,"handshake":1000,"models":models,
-        "identity":"plain","address":if launch.tls {"127.0.0.1:34443"} else {"127.0.0.1:443"},
+        "identity":"plain","address":format!("{}:{}", smith_agent_process_world::fake::loopback(), if launch.tls {34_443} else {443}),
         "transport":if launch.tls {"tls"} else {"plaintext"},
         "headers":[{"name":"originator","value":"skein-world"}]});
     if launch.tls {
@@ -326,15 +326,16 @@ pub fn prepared_accounts(
     let mut sources = skein_lib::List::with_capacity(1);
     let source = if authenticated {
         let port = if tls { 34_444 } else { 444 };
+        let host = smith_agent_process_world::fake::loopback();
         let registration = skein_oauth::Registration {
-            authorization_url: format!("{}://127.0.0.1:{port}/authorize", if tls { "https" } else { "http" })
+            authorization_url: format!("{}://{host}:{port}/authorize", if tls { "https" } else { "http" })
                 .into_bytes()
                 .into(),
-            token_endpoint: format!("{}://127.0.0.1:{port}/token", if tls { "https" } else { "http" })
-                .into_bytes()
-                .into(),
+            token_endpoint: format!("{}://{host}:{port}/token", if tls { "https" } else { "http" }).into_bytes().into(),
             client_id: b"client".as_slice().into(),
-            redirect_uri: b"http://127.0.0.1:2345/callback".as_slice().into(),
+            redirect_uri: format!("http://127.0.0.1:{}/callback", smith_agent_process_world::fake::redirect_port())
+                .into_bytes()
+                .into(),
             scope: b"read".as_slice().into(),
             wire: skein_oauth::WireFormat::Form,
             client_secret: None,
@@ -349,7 +350,7 @@ pub fn prepared_accounts(
             file: b"0.json".as_slice().into(),
             registration,
             endpoint: skein_oauth_accounts::Endpoint {
-                address: (std::net::Ipv4Addr::LOCALHOST, port).into(),
+                address: (host, port).into(),
                 transport: if tls {
                     skein_oauth_accounts::Transport::Tls {
                         server_name: skein_tls_world::pki::name(),

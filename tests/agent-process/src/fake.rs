@@ -6,6 +6,47 @@ use skein_fake_llm_protocol::{documents, provider};
 use skein_fake_peers::{Limits, Transport, llm};
 use skein_lib::Duration;
 
+static REAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Scratch fixtures select process-specific addresses for their real peers.
+pub fn real_loopback() {
+    REAL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A Linux process id maps to one distinct address within 127/8.
+#[must_use]
+pub fn loopback_for(process_id: u32) -> std::net::Ipv4Addr {
+    let address = std::net::Ipv4Addr::from(0x7f01_0000_u32.checked_add(process_id).expect("Linux process id fits"));
+    assert!(address.is_loopback(), "Linux process id stays within loopback");
+    address
+}
+
+/// Real peers use this process's address; simulated peers keep localhost.
+#[must_use]
+pub fn loopback() -> std::net::Ipv4Addr {
+    if REAL.load(std::sync::atomic::Ordering::Relaxed) {
+        loopback_for(std::process::id())
+    } else {
+        std::net::Ipv4Addr::LOCALHOST
+    }
+}
+
+/// Real sign-in takes one free localhost port per process; simulation keeps 2345.
+#[must_use]
+pub fn redirect_port() -> u16 {
+    static PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    if !REAL.load(std::sync::atomic::Ordering::Relaxed) {
+        return 2345;
+    }
+    *PORT.get_or_init(|| {
+        std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("free sign-in redirect port")
+            .local_addr()
+            .expect("redirect listener address")
+            .port()
+    })
+}
+
 /// Bounded loopback transport and observation settings for Smith's peers.
 #[must_use]
 pub fn limits() -> Limits {
@@ -118,7 +159,7 @@ fn configured_bounds(
     protocol.documents.openai.output_items = 256;
     protocol.documents.anthropic.output_items = 256;
     llm::Peer::new(
-        (std::net::Ipv4Addr::LOCALHOST, if transport == Transport::Tls { 34_443 } else { 443 }).into(),
+        (loopback(), if transport == Transport::Tls { 34_443 } else { 443 }).into(),
         transport,
         limits(),
         provider::Config {

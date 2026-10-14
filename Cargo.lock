@@ -1278,6 +1278,7 @@ dependencies = [
  "skein-shell",
  "skein-tls-world",
  "skein-world",
+ "smith-agent-process-world",
  "smith-agent-shell",
  "smith-local-domain",
  "smith-local-process-world",

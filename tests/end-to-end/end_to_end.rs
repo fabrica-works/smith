@@ -203,9 +203,11 @@ fn smith_on_a_terminal_signs_in_and_commits_in_place() {
     let scratch = Scratch::new();
     let mut settings: toml::Value =
         toml::from_str(std::str::from_utf8(&support::fake_provider_settings(&scratch)).unwrap()).unwrap();
+    let host = smith_real_world::loopback();
+    let redirect = smith_real_world::redirect_port();
     settings["accounts"]["codex"] = toml::Value::try_from(serde_json::json!({
-        "source":"sign_in", "client_id":"client", "authorization_url":"http://127.0.0.1:34444/authorize",
-        "token_url":"http://127.0.0.1:34444/token", "redirect_uri":"http://127.0.0.1:2345/callback",
+        "source":"sign_in", "client_id":"client", "authorization_url":format!("http://{host}:34444/authorize"),
+        "token_url":format!("http://{host}:34444/token"), "redirect_uri":format!("http://127.0.0.1:{redirect}/callback"),
         "scope":"read", "token_format":"form"
     }))
     .unwrap();
@@ -230,7 +232,7 @@ fn smith_on_a_terminal_signs_in_and_commits_in_place() {
         ],
     );
     assert_eq!(ran.code, 0, "{}", String::from_utf8_lossy(&ran.stderr));
-    assert!(String::from_utf8_lossy(&ran.stdout).contains("Sign in: http://127.0.0.1:34444/authorize"));
+    assert!(String::from_utf8_lossy(&ran.stdout).contains(&format!("Sign in: http://{host}:34444/authorize")));
     assert!(scratch.path().join("state/smith/tokens/636f646578.token").is_file());
     let checkout = scratch.checkout();
     let after = checkout.head().unwrap();
@@ -903,7 +905,11 @@ fn smith_login_signs_in_against_the_fake_issuer_and_exits_0() {
     let scratch = Scratch::new();
     login_settings(
         &scratch,
-        "client_id='client'\nauthorization_url='http://127.0.0.1:34444/authorize'\ntoken_url='http://127.0.0.1:34444/token'\nredirect_uri='http://127.0.0.1:2345/callback'\nscope='read'\ntoken_format='form'\n",
+        &format!(
+            "client_id='client'\nauthorization_url='http://{host}:34444/authorize'\ntoken_url='http://{host}:34444/token'\nredirect_uri='http://127.0.0.1:{redirect}/callback'\nscope='read'\ntoken_format='form'\n",
+            host = smith_real_world::loopback(),
+            redirect = smith_real_world::redirect_port()
+        ),
     );
     let ran = support::login::sign_in(&scratch);
     assert_eq!(ran.code, 0);
