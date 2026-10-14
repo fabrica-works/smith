@@ -227,6 +227,13 @@ until the run ends.
     `benchmarks/src/run.rs` (01, 02, 03), `benchmarks/src/summary.rs` (03,
     04), `benchmarks/src/check.rs` (01, 02, 03, 04) and `Cargo.lock`. Keep
     increments small; conflicts are development.md 8.5's.
+16. **One behaviour per test** (decisions.md, ruling 111). A test whose
+    cases expect different outcomes is several tests: each its own test,
+    named for what it shows in about eight words, with its expected value
+    as a literal. A loop over seeds or inputs that share one expected
+    outcome stays one test. Landed tests in files an increment does not
+    otherwise change stay as they are, and so do test names the plan
+    gives.
 
 ## Live services
 
