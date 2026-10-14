@@ -812,7 +812,11 @@ fn build_models(endpoint: &Endpoint) -> Result<service::profile::Endpoint, Confi
     let mut names = std::collections::BTreeSet::new();
     let mut prepared = Vec::with_capacity(models.len());
     for (index, model) in models.iter().enumerate() {
-        if model.efforts.iter().any(|name| name.is_empty() || name.len() > 32) {
+        if model.efforts.iter().any(|name| {
+            name.is_empty()
+                || name.len()
+                    > usize::try_from(smith_charter::CEILINGS.llm_effort_some).expect("effort bound fits usize")
+        }) {
             return Err("model efforts must be names within 32 bytes".into());
         }
         let index = u32::try_from(index).map_err(|_| {

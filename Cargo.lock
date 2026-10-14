@@ -912,6 +912,7 @@ name = "smith-domain-run"
 version = "0.0.0"
 dependencies = [
  "skein-lib",
+ "smith-charter",
  "smith-machine-world",
 ]
 

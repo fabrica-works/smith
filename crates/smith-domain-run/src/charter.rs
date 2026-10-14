@@ -417,7 +417,7 @@ pub(crate) fn cost(charter: &Charter) -> Option<u64> {
 /// Whether an LLM declares positive quantities and a positive price unit.
 fn valid_llm(llm: &Llm) -> bool {
     if let Some(effort) = &llm.effort
-        && effort.len() > 32
+        && effort.len() > usize::try_from(smith_charter::CEILINGS.llm_effort_some).expect("effort bound fits usize")
     {
         return false;
     }

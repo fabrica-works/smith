@@ -21,7 +21,8 @@ pub(super) fn kind(path: &[String]) -> Option<Kind> {
     let parts: Vec<_> = path.iter().map(String::as_str).collect();
     match parts.as_slice() {
         ["model"] => Some(Kind::Text(193)),
-        ["effort"] | ["workspace", "contract", "form"] => Some(Kind::Text(32)),
+        ["effort"] => Some(Kind::Text(u64::from(smith_charter::CEILINGS.llm_effort_some))),
+        ["workspace", "contract", "form"] => Some(Kind::Text(32)),
         ["models", _, "efforts"] => Some(Kind::Efforts),
         ["chat"]
         | ["models", _, "oversized_reasoning"]
@@ -116,7 +117,14 @@ pub(super) fn check(value: &Value, kind: Kind) -> Result<(), Problem> {
         Kind::Boolean => value.is_bool(),
         Kind::Strings => value.as_array().is_some_and(|values| values.iter().all(Value::is_str)),
         Kind::Efforts => value.as_array().is_some_and(|values| {
-            values.iter().all(|value| value.as_str().is_some_and(|name| !name.is_empty() && name.len() <= 32))
+            values.iter().all(|value| {
+                value.as_str().is_some_and(|name| {
+                    !name.is_empty()
+                        && name.len()
+                            <= usize::try_from(smith_charter::CEILINGS.llm_effort_some)
+                                .expect("effort bound fits usize")
+                })
+            })
         }),
         Kind::Directories | Kind::Fields => value.as_array().is_some_and(|array| array.iter().all(Value::is_table)),
     };

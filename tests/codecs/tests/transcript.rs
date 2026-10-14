@@ -156,3 +156,8 @@ fn round_trip_outcome(value: &smith_transcript::Outcome) {
     assert_eq!(&decoded, value, "result {value:?}");
     assert!(reader.is_empty(), "the result consumed all bytes");
 }
+
+#[test]
+fn the_transcripts_effort_bound_equals_the_charters() {
+    assert_eq!(smith_transcript::CEILINGS.turn_effort_some, smith_charter::CEILINGS.llm_effort_some);
+}
