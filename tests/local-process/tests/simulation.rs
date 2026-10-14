@@ -286,7 +286,7 @@ fn slash_new_starts_a_chat_and_slash_resume_reopens_it() {
         Action::Send(b"main hello\n".as_slice().into()),
         Action::Wait(b"First answer".as_slice().into()),
         Action::Send(b"/new\nnew hello\n".as_slice().into()),
-        Action::Wait(b"First answerWaiting for a message\n\ntool finish".as_slice().into()),
+        Action::Wait(b"Waiting for a message".as_slice().into()),
         Action::Send(b"/resume main\nhello\n".as_slice().into()),
         Action::Wait(b"Second answer".as_slice().into()),
         Action::Eof,

@@ -11,7 +11,7 @@ use skein_world::Host;
 
 const OWNER: Token = Token::new(1);
 const ROOT_CLOSE: Token = Token::new(1 << 63);
-const PIPED_OUTPUT: Token = Token::new((1 << 63) + 1);
+const OUTPUT_READ: u32 = 4096;
 
 /// One person's bounded input, output wait, signal or end-of-input action.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,7 +28,6 @@ pub enum Action {
 
 /// Simulator-free terminal process implementing the shared Host boundary.
 pub struct Terminal {
-    piped_output: Option<kernel::Fd>,
     terminal: Option<kernel::Fd>,
     terminal_reading: bool,
     terminal_writing: bool,
@@ -117,7 +116,6 @@ impl Terminal {
             },
         });
         Self {
-            piped_output: None,
             terminal: None,
             terminal_reading: false,
             terminal_writing: false,
@@ -164,36 +162,14 @@ impl Terminal {
         while person.requests.pop().is_some() {}
         person.root = None;
         person.root_closed = true;
+        person.env.limits.intake = OUTPUT_READ;
+        person.env.limits.receive = OUTPUT_READ;
+        person.io = io::Io::new(&person.env.limits);
         person.input = Some(person.io.adopt_write_pipe(input, None).expect("person input pipe"));
-        person.piped_output = Some(output);
-        person.submissions.push(kernel::Submit {
-            op: PIPED_OUTPUT,
-            kind: kernel::Op::PipeRead { fd: output, buf: vec![0; 4096].into() },
-        });
+        let output = person.io.adopt_read_pipe(output).expect("person output pipe");
+        person.output = Some(output);
+        person.read(output);
         person
-    }
-
-    fn piped_complete(&mut self, complete: kernel::Complete) {
-        let kind = match complete.kind {
-            kernel::Op::PipeRead { fd, buf } => {
-                let Ok(kernel::Done::Count(count)) = complete.result else { panic!("person pipe read failed") };
-                let count = usize::try_from(count).expect("person pipe read size");
-                if count == 0 {
-                    kernel::Op::Close { fd }
-                } else {
-                    assert!(self.shown.len() + count <= 65_536, "bounded terminal observations");
-                    self.shown.extend_from_slice(&buf[..count]);
-                    kernel::Op::PipeRead { fd, buf }
-                }
-            }
-            kernel::Op::Close { .. } => {
-                assert!(complete.result.is_ok());
-                self.piped_output = None;
-                return;
-            }
-            _ => unreachable!("person output submits pipe read and close only"),
-        };
-        self.submissions.push(kernel::Submit { op: PIPED_OUTPUT, kind });
     }
 
     /// Insert a line supplied by the scripted person's observed peer cue.
@@ -318,7 +294,10 @@ impl Terminal {
     }
 
     fn read(&mut self, stream: Token) {
-        self.requests.push(io::Request::Stream { stream, down: Down::Demand { read: Read::Fill(1), room: 0 } });
+        self.requests.push(io::Request::Stream {
+            stream,
+            down: Down::Demand { read: Read::Arrived { max: OUTPUT_READ }, room: 0 },
+        });
     }
 
     fn event(&mut self, event: io::Event) {
@@ -427,8 +406,6 @@ impl Host for Terminal {
             if complete.op == ROOT_CLOSE {
                 assert!(complete.result.is_ok());
                 self.root_closed = true;
-            } else if complete.op == PIPED_OUTPUT {
-                self.piped_complete(complete);
             } else {
                 io::up(&mut self.io, &self.env, complete, &mut self.events, &mut self.submissions);
             }
@@ -498,7 +475,6 @@ impl Host for Terminal {
                 && self.completions.is_empty();
         }
         self.exit.is_some()
-            && self.piped_output.is_none()
             && self.root_closed
             && self.io.is_empty()
             && self.requests.is_empty()
@@ -506,7 +482,8 @@ impl Host for Terminal {
             && self.submissions.is_empty()
     }
     fn worst_case(&self) -> u64 {
-        io::worst_case(&self.env.limits).expect("terminal bound") + 1_000_000
+        // lib.md, section 7: each output stream owns one maximum delivery.
+        io::worst_case(&self.env.limits).expect("terminal bound") + 1_000_000 + u64::from(OUTPUT_READ) * 2
     }
     fn operations(&self) -> u32 {
         io::operations(&self.env.limits).expect("terminal operations") + 1
